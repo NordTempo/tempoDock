@@ -53,12 +53,40 @@ export const Route = createFileRoute("/_app/console/servers_/$server")({
         ),
       ]);
     } catch (error) {
+      // Caught by this route's notFoundComponent, inside the console shell.
       if (error instanceof ApiError && error.status === 404) throw notFound();
       throw error;
     }
   },
   component: ServerPage,
+  notFoundComponent: ServerNotFound,
 });
+
+/** A server name with no server (removed, or a typo), with the way back. */
+function ServerNotFound() {
+  const { server } = Route.useParams();
+  return (
+    <>
+      <PageBar
+        parent={
+          <Link to="/console/servers" className="hover:text-fg">
+            Servers
+          </Link>
+        }
+        title={<span className="font-mono">{server}</span>}
+      />
+      <Page gap="gap-3">
+        <h2 className="text-lg font-semibold">
+          Server <span className="font-mono">{server}</span> not found
+        </h2>
+        <p className="text-mut">It may have been removed or renamed.</p>
+        <Link to="/console/servers" className="btn pri self-start">
+          Back to servers
+        </Link>
+      </Page>
+    </>
+  );
+}
 
 function ServerPage() {
   const { server: name } = Route.useParams();
@@ -399,9 +427,8 @@ function Services({
   );
   return (
     <section aria-labelledby="services">
-      <SectionHead id="services" aside="by memory, latest minute sample">
-        Services on {name}
-      </SectionHead>
+      {/* Sorted by memory, from the latest minute's sample. */}
+      <SectionHead id="services">Services on {name}</SectionHead>
       {services.length === 0 ? (
         <p className="text-mut">No services run here.</p>
       ) : (

@@ -77,7 +77,6 @@ export function Activity({ project }: { project: string }) {
     <section aria-labelledby="activity" className="min-w-0">
       <SectionHead
         id="activity"
-        aside="people and agents"
         right={
           <Link to="/$org/audit" params={{ org }} search={{ project }}>
             All activity

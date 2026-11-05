@@ -52,7 +52,17 @@ export function byteSize(n: number) {
   return `${(n / 1024 ** 3).toFixed(1)} GB`;
 }
 
-/** One line of text for a cell in a grid row. */
+/**
+ * A timestamp in UTC or without a zone, as Postgres' ISO text
+ * ("2026-01-01 07:00:00.25+00") or JSON's ("2026-01-01T07:00:00.000Z").
+ */
+const isoTime =
+  /^(\d{4}-\d\d-\d\d)[T ](\d\d:\d\d:\d\d)(?:\.\d+)?(?:Z|[+-]00(?::?00)?)?$/;
+
+/**
+ * One line of text for a cell in a grid row. Timestamps show to the
+ * second (the grid's header says UTC); the row details have them whole.
+ */
 export function cellText(cell: DataCell, typeName: string): string {
   if (cell === null) return "NULL";
   if (typeof cell === "object") {
@@ -61,6 +71,10 @@ export function cellText(cell: DataCell, typeName: string): string {
       : `${oneLine(cell.truncated)}… ${byteSize(cell.bytes)}`;
   }
   if (typeof cell !== "string") return String(cell);
+  if (typeName === "timestamptz" || typeName === "timestamp") {
+    const m = isoTime.exec(cell);
+    if (m) return `${m[1]} ${m[2]}`;
+  }
   if (typeName === "bytea" && cell.length > 34) {
     return `${cell.slice(0, 34)}… ${byteSize((cell.length - 2) / 2)}`;
   }

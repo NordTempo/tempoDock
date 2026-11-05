@@ -71,14 +71,15 @@ function NewConnection() {
           <ConnectionFields
             form={form}
             onChange={(next) => setForm(next)}
-            namePlaceholder={suggestName(form.url) || "shop"}
+            namePlaceholder={suggestName(form.url) || "from the database name"}
           />
           <TestResult tested={tested === probe} test={test} />
           <div className="flex flex-wrap items-center gap-2">
+            {/* Enter tests until the test passes, then saves. */}
             <Btn
-              primary={!passed}
               type={passed ? "button" : "submit"}
               disabled={!form.url.trim() || test.isPending}
+              title={form.url.trim() ? undefined : "Enter a URL first"}
               onClick={passed ? runTest : undefined}
             >
               {test.isPending ? "Testing" : "Test"}
@@ -88,6 +89,7 @@ function NewConnection() {
               primary
               type={passed ? "submit" : "button"}
               disabled={!passed || !name || create.isPending}
+              title={passed ? undefined : "Test the connection first"}
             >
               Save {passed && <Kbd>↵</Kbd>}
             </Btn>

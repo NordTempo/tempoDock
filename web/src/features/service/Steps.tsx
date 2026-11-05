@@ -84,11 +84,15 @@ export function deploySteps(
       name: "Build",
       state: state(0),
       ms: span(buildStart, buildEnd ?? (current === 0 ? end : undefined)),
-      detail: (
-        <span className="text-mut">
-          {build?.message ?? (r.image_ref ? `image ${r.image_ref}` : "waiting")}
-        </span>
-      ),
+      detail:
+        state(0) === "failed" ? (
+          <span className="text-fail">{errorSummary(r)}</span>
+        ) : (
+          <span className="text-mut">
+            {build?.message ??
+              (r.image_ref ? `image ${r.image_ref}` : "waiting")}
+          </span>
+        ),
     },
     {
       name: "Start",
@@ -134,17 +138,20 @@ export function deploySteps(
       name: "Cutover",
       state: state(3),
       ms: span(healthy?.time, switched?.time),
-      detail: (
-        <span className="text-mut">
-          {state(3) === "skipped"
-            ? old
-              ? `Skipped. Traffic stayed on ${old}.`
-              : "Skipped."
-            : state(3) === "done"
-              ? "Traffic switched"
-              : `Switch traffic to r${r.number}${old && !stateful ? `, then stop ${old}` : ""}`}
-        </span>
-      ),
+      detail:
+        state(3) === "failed" ? (
+          <span className="text-fail">{errorSummary(r)}</span>
+        ) : (
+          <span className="text-mut">
+            {state(3) === "skipped"
+              ? old
+                ? `Skipped. Traffic stayed on ${old}.`
+                : "Skipped."
+              : state(3) === "done"
+                ? "Traffic switched"
+                : `Switch traffic to r${r.number}${old && !stateful ? `, then stop ${old}` : ""}`}
+          </span>
+        ),
     },
   ];
 }

@@ -47,24 +47,24 @@ export function Dialog({
       }}
       // A click on the backdrop lands on the <dialog> itself.
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-      className={`dlg w-full rounded-panel border border-edge bg-panel p-0 text-fg ${className ?? `m-auto ${wide ? "max-w-[640px]" : "max-w-[440px]"}`}`}
+      className={`dlg w-full rounded-panel border border-edge bg-panel p-0 text-left whitespace-normal text-fg ${className ?? `m-auto ${wide ? "max-w-[640px]" : "max-w-[440px]"}`}`}
     >
       {bare ? (
         children
       ) : (
         <>
-          <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-            <h2 className="text-[13px] font-semibold">{title}</h2>
+          <div className="flex items-center justify-between border-b border-line px-5 py-3">
+            <h2 className="text-md font-semibold">{title}</h2>
             <button
               type="button"
               aria-label="Close"
-              className="text-faint hover:text-fg"
+              className="rounded-ctl p-0.5 text-faint hover:text-fg"
               onClick={onClose}
             >
-              esc
+              <kbd>esc</kbd>
             </button>
           </div>
-          <div className="px-4 py-3.5">{children}</div>
+          <div className="px-5 py-4">{children}</div>
         </>
       )}
     </dialog>

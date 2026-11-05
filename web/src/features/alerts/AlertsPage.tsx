@@ -6,6 +6,7 @@ import { since } from "../../ui/format";
 import {
   Act,
   Button,
+  Confirm,
   CopyButton,
   ErrorText,
   Glyph,
@@ -202,7 +203,6 @@ function Channels() {
     <section aria-labelledby="channels" className="flex flex-col gap-2">
       <SectionHead
         id="channels"
-        aside="where alerts are sent"
         right={
           !adding && (
             <Button small onClick={() => setAdding(true)}>
@@ -288,7 +288,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
               {result.ok ? "Sent" : "Not sent"}
             </span>
           )}
-          <ErrorText error={test.error ?? remove.error} />
+          <ErrorText error={test.error} />
           <Act
             small
             cli={`dock alerts channel test ${ch.name}`}
@@ -297,25 +297,28 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
           >
             Send test
           </Act>
-          {confirming ? (
-            <>
-              <Act
-                small
-                danger
-                cli={`dock alerts channel remove ${ch.name}`}
-                disabled={remove.isPending}
-                onClick={() => remove.mutate(ch.name)}
-              >
-                Remove now
-              </Act>
-              <Button small onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button small onClick={() => setConfirming(true)}>
-              Remove
-            </Button>
+          <Button small danger onClick={() => setConfirming(true)}>
+            Remove
+          </Button>
+          {confirming && (
+            <Confirm
+              danger
+              action={`Remove ${ch.name}`}
+              cli={`dock alerts channel remove ${ch.name}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(ch.name, {
+                  onSuccess: () => setConfirming(false),
+                })
+              }
+              onCancel={() => {
+                remove.reset();
+                setConfirming(false);
+              }}
+            >
+              Alerts stop going to <b>{ch.name}</b> ({ch.target}).
+            </Confirm>
           )}
         </span>
       </td>
@@ -450,7 +453,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
           <select
             value={severity}
             onChange={(e) => setSeverity(e.target.value as Severity)}
-            className="field py-[7px]"
+            className="py-[7px] text-sm"
           >
             <option value="warning">warning and critical</option>
             <option value="critical">critical only</option>

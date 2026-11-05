@@ -1,4 +1,11 @@
-import { lazy, type ReactNode, Suspense, useState } from "react";
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useShortcuts } from "../../shell/keys";
 import { ago } from "../../ui/format";
 import {
@@ -13,7 +20,6 @@ import {
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
 import { Act, ErrorText, Kbd } from "./kit";
-import { levelText } from "./policy";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
@@ -43,6 +49,15 @@ const ranks: Record<DataLevel, number> = {
 export const atLeast = (level: DataLevel, wanted: DataLevel) =>
   ranks[level] >= ranks[wanted];
 
+/** What the caller may do, after "you can" in the panel's bar. */
+const canText: Record<DataLevel, string> = {
+  none: "do nothing",
+  schema: "see the schema",
+  read: "read",
+  propose: "read, propose",
+  write: "read, write",
+};
+
 /**
  * The database panel (style G) inside a DataSourceContext: a Dock
  * service's Data tab or a tempoBase connection. A bar with the tabs
@@ -71,7 +86,6 @@ export function DataPanel({
     info.data?.status === "ready" && !!access && access.level !== "none";
   const schema = useDataSchema(ready);
   const [editing, setEditing] = useState(false);
-  const [why, setWhy] = useState(false);
   const edit = useEditActions(access, () => {
     setEditing(false);
     onView({ ...view, tab: "changes" });
@@ -119,14 +133,18 @@ export function DataPanel({
   const shell = (children: ReactNode) => (
     <div className={`g flex flex-col ${className}`}>{children}</div>
   );
+  // Until it's ready the panel is a few lines, not a full-height box.
+  const status = (children: ReactNode) => (
+    <div className="g flex flex-col">{children}</div>
+  );
 
   if (info.error)
-    return shell(<p className="p-5 text-(--g-fail)">{info.error.message}</p>);
+    return status(<p className="p-5 text-(--g-fail)">{info.error.message}</p>);
   if (!info.data || !access)
-    return shell(
+    return status(
       <p className="p-5 text-(--g-mut)">Connecting to the database</p>,
     );
-  if (!ready) return shell(<StatusView info={info.data} />);
+  if (!ready) return status(<StatusView info={info.data} />);
 
   const tables = schema.data?.tables ?? [];
   const selected = tables.find((t) => tableName(t) === view.table) ?? tables[0];
@@ -166,33 +184,22 @@ export function DataPanel({
               editing{production && ` ${confirmName}`}
             </span>
           ) : (
-            "read only"
+            "viewing"
           )}{" "}
           as{" "}
           <span className="font-mono">{writing ? roles.writer : reader}</span> ·
-          you:{" "}
-          <span className="text-(--g-text)">{levelText[access.level]}</span>
-          {access.sensitive === "masked" && ", sensitive masked"}
-          {access.approve && ", approve"}{" "}
-          <button
-            type="button"
-            className="g-lnk"
-            aria-expanded={why}
-            onClick={() => setWhy((w) => !w)}
-          >
-            why
-          </button>
+          you can{" "}
+          <span className="text-(--g-text)">
+            {canText[access.level]}
+            {access.approve && ", approve"}
+          </span>
+          {access.sensitive === "masked" && " (sensitive masked)"}{" "}
+          <WhyLink info={info.data} />
           {info.data.used_by?.length
             ? ` · used by ${info.data.used_by.join(", ")}`
             : ""}
         </span>
       </div>
-      {why && (
-        <div className="flex flex-col gap-2 border-b border-(--g-line) px-5 py-2">
-          <Why access={access} />
-          <SetupLine info={info.data} />
-        </div>
-      )}
 
       {schema.error ? (
         <p className="p-5 text-(--g-fail)">{schema.error.message}</p>
@@ -262,6 +269,55 @@ export function DataPanel({
 }
 
 /**
+ * "why" after the caller's access: a popover under it with the steps that
+ * decided that access, and the panel's roles. Esc or a click outside
+ * closes it.
+ */
+function WhyLink({ info }: { info: DataInfo }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => {
+      if (e.target instanceof Node && !box.current?.contains(e.target))
+        setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <span ref={box} className="relative">
+      <button
+        type="button"
+        className="g-lnk"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        why
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Your access"
+          className="absolute top-full right-0 z-30 mt-2 flex w-[360px] flex-col gap-3 rounded-lg border border-(--g-edge) bg-(--g-panel) p-3 text-left text-xs whitespace-normal text-(--g-dim)"
+        >
+          <section className="flex flex-col gap-1">
+            <h2 className="font-semibold text-(--g-text)">Your access</h2>
+            <Why access={info.access} />
+          </section>
+          <SetupLine info={info} />
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
  * Who set up the panel's roles and when, and for those who manage the
  * database, setting them up again with new passwords (`dock db setup`).
  */
@@ -270,14 +326,15 @@ function SetupLine({ info }: { info: DataInfo }) {
   const setup = useDataSetup();
   const cli = useCli();
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--g-mut)">
-      <span>
-        Roles {roles.reader} and {roles.writer}
+    <section className="flex flex-col items-start gap-1.5 border-t border-(--g-line) pt-3">
+      <h2 className="font-semibold text-(--g-text)">Roles</h2>
+      <p>
+        {roles.reader} and {roles.writer}
         {info.set_up_at
-          ? ` set up ${ago(info.set_up_at)}${info.set_up_by ? ` by ${info.set_up_by}` : ""}`
+          ? `, set up ${ago(info.set_up_at)}${info.set_up_by ? ` by ${info.set_up_by}` : ""}`
           : ""}
         .
-      </span>
+      </p>
       {info.access.manage && (
         <Act
           small
@@ -289,7 +346,7 @@ function SetupLine({ info }: { info: DataInfo }) {
         </Act>
       )}
       <ErrorText error={setup.error} />
-    </p>
+    </section>
   );
 }
 

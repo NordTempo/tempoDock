@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useMatch, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 import {
   DataSourceContext,
@@ -12,7 +12,8 @@ import { connectionSource } from "../data/source";
 /**
  * The open connection's tables in the sidebar (G1), in place of the
  * panel's own list (DataPanel tableList={false}). Choosing one shows it
- * in the Tables tab, or the Schema tab when that is open.
+ * in the Tables tab, or the Schema tab when that is open. A table is
+ * marked current only while Tables or Schema shows it.
  */
 export default function ConnectionTables({
   connection,
@@ -33,10 +34,14 @@ function Tables({ connection }: { connection: string }) {
     info.data?.status === "ready" && info.data.access.level !== "none";
   const schema = useDataSchema(ready);
   const search = useSearch({ strict: false });
+  const panel = useMatch({ from: "/_app/c/$connection/", shouldThrow: false });
   const navigate = useNavigate();
   const tables = schema.data?.tables ?? [];
   if (!tables.length) return null;
-  const selected = search.table ?? (tables[0] && tableName(tables[0]));
+  const showsTable = !!panel && (!search.tab || search.tab === "schema");
+  const selected = showsTable
+    ? (search.table ?? (tables[0] && tableName(tables[0])))
+    : undefined;
   return (
     <div className="flex max-h-[60vh] min-h-0 flex-col pb-2 pl-5">
       <TableList

@@ -12,11 +12,12 @@ import {
   ErrorText,
   Page,
   PageBar,
+  Scroll,
 } from "../../ui/kit";
 import { isPending, requestQueries, useDecideRequest } from "./data";
 
-// The access request inbox (ADR 0044, mock "Review A"): the list beside
-// the selected request, with its exact call and arguments, what changed
+// The access request inbox (ADR 0044): a table of requests, the selected
+// one opened under its row with its exact call and arguments, what changed
 // since, and Approve and run or Reject. Live over `access_request` events.
 
 type Status = AccessRequest["status"];
@@ -30,25 +31,25 @@ const statusText: Record<Status, string> = {
   expired: "text-faint",
 };
 
+/** The status in the list's words: "waiting", "running", "failed". */
+const statusWord: Record<Status, string> = {
+  pending: "waiting",
+  approved: "running",
+  done: "done",
+  failed: "failed",
+  rejected: "rejected",
+  expired: "expired",
+};
+
 /** The status as read now: a pending request past its time is expired. */
 const statusOf = (r: AccessRequest): Status =>
   r.status === "pending" && !isPending(r) ? "expired" : r.status;
 
-/** "pending", "running", "done, approved by saile", "rejected by saile". */
-function statusLabel(r: AccessRequest) {
-  const status = statusOf(r);
-  const by = r.decided_by ? ` by ${r.decided_by}` : "";
-  switch (status) {
-    case "approved":
-      return `running, approved${by}`;
-    case "done":
-    case "failed":
-      return `${status}, approved${by}`;
-    case "rejected":
-      return `rejected${by}`;
-    default:
-      return status;
-  }
+/** An API message as a sentence: capital first letter, full stop. */
+function sentence(text: string) {
+  const t = text.trim();
+  const s = t.charAt(0).toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
 }
 
 /**
@@ -69,69 +70,133 @@ export function RequestsPage({ selected }: { selected?: number }) {
           <span className="text-xs text-faint">
             {pending > 0
               ? `${plural(pending, "request")} waiting`
-              : "tokens ask here when a locked environment stops them"}
+              : plural(requests.length, "request")}
           </span>
         }
       />
       <Page gap="gap-5">
         {requests.length === 0 ? (
-          <p className="text-mut">No access requests yet.</p>
+          <p className="text-mut">
+            No access requests. Tokens ask here when a locked environment stops
+            them.
+          </p>
         ) : (
-          <div className="panel grid md:min-h-[420px] md:grid-cols-[300px_minmax(0,1fr)]">
-            <ul className="border-line max-md:border-b md:border-r">
-              {requests.map((r) => (
-                <li key={r.id}>
-                  <RequestItem request={r} current={r.id === id} />
-                </li>
-              ))}
-            </ul>
-            {id !== undefined && (
-              <Detail
-                key={id}
-                id={id}
-                item={requests.find((r) => r.id === id)}
-              />
+          <Scroll>
+            <table>
+              <thead>
+                <tr>
+                  <th className="pl-2.5">Request</th>
+                  <th>Who</th>
+                  <th>Where</th>
+                  <th>Asked</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((r) => (
+                  <RequestRow key={r.id} request={r} open={r.id === id} />
+                ))}
+              </tbody>
+            </table>
+            {id !== undefined && !requests.some((r) => r.id === id) && (
+              // One older than the list, opened from a link.
+              <div className="border-b border-soft">
+                <Detail id={id} />
+              </div>
             )}
-          </div>
+          </Scroll>
         )}
       </Page>
     </>
   );
 }
 
-function RequestItem({
+/** A request's row; the open one has its detail in a row under it. */
+function RequestRow({
   request: r,
-  current,
+  open,
 }: {
   request: AccessRequest;
-  current: boolean;
+  open: boolean;
 }) {
   const org = useOrg();
+  const status = statusOf(r);
   return (
-    <Link
-      to="/$org/requests"
-      params={{ org }}
-      search={{ id: r.id }}
-      replace
-      aria-current={current ? "true" : undefined}
-      className={`block border-b border-soft px-3.5 py-2 ${current ? "bg-sel" : "hover:bg-hover"}`}
-    >
-      <span className="block truncate">{r.summary}</span>
-      <span className="block truncate text-2xs text-faint">
-        {r.requested_by} · {ago(r.created_at)} ·{" "}
-        <span className={statusText[statusOf(r)]}>{statusLabel(r)}</span>
-      </span>
-    </Link>
+    <>
+      <tr className={open ? "bg-sel" : undefined}>
+        <td className="pl-2.5">
+          <Link
+            to="/$org/requests"
+            params={{ org }}
+            search={{ id: r.id }}
+            replace
+            aria-current={open ? "true" : undefined}
+            className="hover:underline"
+          >
+            <span className="font-mono text-mut">#{r.id}</span> {r.title}
+          </Link>
+        </td>
+        <td>
+          <Actor name={r.requested_by} kind={actorKind(r.requested_by)} />
+        </td>
+        <td className="font-mono">
+          {r.project}/{r.environment}
+        </td>
+        <td
+          className="text-mut"
+          title={new Date(r.created_at).toLocaleString()}
+        >
+          {ago(r.created_at)}
+        </td>
+        <td>
+          <span className={statusText[status]}>{statusWord[status]}</span>
+          {status === "pending" && (
+            <span className="text-mut">
+              {" "}
+              · expires in {until(r.expires_at)}
+            </span>
+          )}
+        </td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={5} className="bg-panel p-0 whitespace-normal">
+            <Detail id={r.id} item={r} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
+/** A request's arguments as rows, when they are a flat object. */
+function argRows(args: unknown): [string, string][] | null {
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return null;
+  }
+  return Object.entries(args).map(([k, v]) => [
+    k.charAt(0).toUpperCase() + k.slice(1).replaceAll("_", " ").toLowerCase(),
+    typeof v === "string" ? v : JSON.stringify(v),
+  ]);
+}
+
+/** The service a request's arguments name, for a link to it. */
+function argService(args: unknown): string | undefined {
+  if (typeof args !== "object" || args === null) return undefined;
+  const found = Object.entries(args).find(
+    ([k, v]) => k.toLowerCase() === "service" && typeof v === "string",
+  );
+  return typeof found?.[1] === "string" ? found[1] : undefined;
+}
+
 /**
- * One request: what it asks, as the exact call and its arguments, and its
- * decision and outcome. The list's copy shows at once; the detail adds the
- * arguments and the changes since (admins). One older than the list is
- * fetched by itself.
+ * One request: what it asks, as the exact call and its arguments, then
+ * the decision and, apart from it, how the run went. The list's copy
+ * shows at once; the detail adds the arguments and the changes since
+ * (admins). One older than the list is fetched by itself.
  */
 function Detail({ id, item }: { id: number; item?: AccessRequest }) {
+  const org = useOrg();
   const detail = useQuery(requestQueries.one(id));
   const r = detail.data ?? item;
   if (!r) {
@@ -148,16 +213,25 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
   const status = statusOf(r);
   const where = `${r.project}/${r.environment}`;
   const changes = r.changes_since ?? 0;
+  const args = argRows(r.args);
+  const service = argService(r.args);
   return (
     <div className="flex min-w-0 flex-col gap-3.5 px-4 py-3.5">
-      <h2 className="text-md font-semibold">{r.summary}</h2>
-      <dl className="grid grid-cols-[100px_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+      <dl className="grid grid-cols-[100px_minmax(0,1fr)] gap-x-3 gap-y-1">
         {r.reason && <Row label="Reason">{r.reason}</Row>}
         <Row label="Call">
-          {r.title} ·{" "}
-          <span className="font-mono">
-            {r.operation} ({r.via === "mcp" ? "MCP" : "API"})
+          {r.title}{" "}
+          <span className="font-mono text-mut">
+            {r.operation} via {r.via === "mcp" ? "MCP" : "API"}
           </span>
+        </Row>
+        {args?.map(([k, v]) => (
+          <Row key={k} label={k}>
+            <span className="font-mono">{v}</span>
+          </Row>
+        ))}
+        <Row label="Runs as">
+          <Actor name={r.requested_by} kind={actorKind(r.requested_by)} />
         </Row>
         <Row label="Asked">
           {ago(r.created_at)}
@@ -168,31 +242,54 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
             </span>
           )}
         </Row>
-        <Row label="Runs as">
-          <Actor name={r.requested_by} kind={actorKind(r.requested_by)} />
-        </Row>
-        <Row label="Status">
-          <span className={statusText[status]}>{statusLabel(r)}</span>
-          {r.decided_at && (
-            <span className="text-mut"> · {ago(r.decided_at)}</span>
-          )}
-        </Row>
+        {r.decided_by && (
+          <Row label="Decision">
+            {status === "rejected" ? "Rejected" : "Approved"} by {r.decided_by}
+            {r.decided_at && (
+              <span className="text-mut"> · {ago(r.decided_at)}</span>
+            )}
+          </Row>
+        )}
         {r.comment && <Row label="Comment">{r.comment}</Row>}
+        {(status === "approved" ||
+          status === "done" ||
+          status === "failed") && (
+          <Row label="Run">
+            <span className={statusText[status]}>
+              {status === "approved"
+                ? "Running"
+                : status === "done"
+                  ? "Done"
+                  : "Failed"}
+            </span>
+            {r.error && (
+              <span className="block whitespace-pre-wrap text-sec">
+                {sentence(r.error)}
+              </span>
+            )}
+          </Row>
+        )}
+        {status === "expired" && (
+          <Row label="Status">
+            <span className="text-mut">
+              Expired without a decision. The token can ask again.
+            </span>
+          </Row>
+        )}
       </dl>
-      {r.changes && r.changes.length > 0 && (
-        <VariableDiff changes={r.changes} />
-      )}
-      {r.args !== undefined && r.args !== null && (
+      {args === null && r.args !== undefined && r.args !== null && (
         <pre className="overflow-auto rounded-panel border border-line bg-page px-3 py-2.5 font-mono text-2xs leading-relaxed text-sec">
           {JSON.stringify(r.args, null, 2)}
         </pre>
       )}
-      {changes > 0 && (
+      {r.changes && r.changes.length > 0 && (
+        <VariableDiff changes={r.changes} />
+      )}
+      {changes > 0 && status === "pending" && (
         <p className="text-warn-text">
           ▲ {plural(changes, "change")} in {where} since this was asked
         </p>
       )}
-      {r.error && <p className="whitespace-pre-wrap text-fail">{r.error}</p>}
       {r.result !== undefined && r.result !== null && (
         <details>
           <summary className="cursor-pointer text-xs text-mut hover:text-fg">
@@ -203,7 +300,32 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
           </pre>
         </details>
       )}
-      {status === "pending" && <Decide id={r.id} />}
+      {status === "pending" ? (
+        <Decide request={r} />
+      ) : (
+        <p className="flex flex-wrap gap-4">
+          {service ? (
+            <Link
+              to="/$org/$project/$environment/$service"
+              params={{
+                org,
+                project: r.project,
+                environment: r.environment,
+                service,
+              }}
+            >
+              Open {service}
+            </Link>
+          ) : (
+            <Link
+              to="/$org/$project/$environment"
+              params={{ org, project: r.project, environment: r.environment }}
+            >
+              Open {where}
+            </Link>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -255,7 +377,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * Approve and run, or Reject, with an optional comment. Only admins in a
  * UI session decide; tokens never can, so there is no CLI equivalent.
  */
-function Decide({ id }: { id: number }) {
+function Decide({ request: r }: { request: AccessRequest }) {
+  const id = r.id;
   const session = useSession();
   const decide = useDecideRequest();
   const [comment, setComment] = useState("");
@@ -295,8 +418,8 @@ function Decide({ id }: { id: number }) {
         >
           Reject
         </Button>
-        <span className="text-2xs text-faint">
-          Runs once, as the token, with today's checks
+        <span className="text-xs text-mut">
+          Runs this once as {r.requested_by}. The lock stays on.
         </span>
       </div>
       <ErrorText error={decide.error} />

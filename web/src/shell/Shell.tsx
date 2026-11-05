@@ -7,6 +7,7 @@ import { useSession } from "../data/queries";
 import { type SSOChoice, useStartSSO } from "../features/sso/data";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
+import { Notices } from "../ui/notice";
 import { CommandLine } from "./CommandLine";
 import { PaletteProvider } from "./palette";
 import { Sidebar, useShellMode } from "./Sidebar";
@@ -47,6 +48,7 @@ function OrgShell() {
           <CommandLine />
         </main>
       </div>
+      <Notices />
     </PaletteProvider>
   );
 }

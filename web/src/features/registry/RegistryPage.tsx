@@ -6,6 +6,7 @@ import { plural, since, size } from "../../ui/format";
 import {
   Act,
   Button,
+  CopyButton,
   ErrorText,
   Fact,
   Facts,
@@ -26,6 +27,9 @@ import {
 // where (ADR 0034), how pruning and moves went since the daemon started,
 // and the services keeping images in it (ADR 0014 section 4).
 
+/** Turns the registry on: install.sh again, from the release's deploy/. */
+const ENABLE = "sudo REGISTRY=1 ./deploy/install.sh";
+
 export function RegistryPage() {
   const org = useOrg();
   const registry = useRegistry();
@@ -34,13 +38,30 @@ export function RegistryPage() {
   if (!registry.enabled) {
     return (
       <>
-        <PageBar title="Registry" />
-        <Page>
-          <p className="text-mut">
-            This Dock has no registry: images stay on the server that built
-            them. A second server needs one; install.sh sets it up with{" "}
-            <span className="font-mono">REGISTRY=1</span>.
+        <PageBar
+          title="Registry"
+          after={<span className="text-xs text-faint">off</span>}
+        />
+        <Page gap="gap-3">
+          <p>
+            No registry: images stay on the server that built them. A second
+            server needs one. Run install.sh again on the control plane with{" "}
+            <span className="font-mono">REGISTRY=1</span>:
           </p>
+          <div className="flex max-w-[760px] items-center gap-2.5 rounded-ctl border border-line px-3 py-2">
+            <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+              {ENABLE}
+            </code>
+            <CopyButton text={ENABLE} />
+          </div>
+          <a
+            href="https://github.com/NordTempo/tempoDock/blob/main/docs/guide/install.md#registry"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="lnk self-start"
+          >
+            Registry in the install guide →
+          </a>
         </Page>
       </>
     );

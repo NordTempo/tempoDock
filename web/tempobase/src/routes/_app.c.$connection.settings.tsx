@@ -8,7 +8,6 @@ import {
 } from "../../../src/features/data/api";
 import { Btn, ErrorText, Head } from "../../../src/features/data/kit";
 import { PolicyEditor } from "../../../src/features/data/PolicyEditor";
-import { kindNames } from "../../../src/features/data/policy";
 import { StatusView } from "../../../src/features/data/StatusView";
 import type { Connection } from "../api/types";
 import { builtIn, fromText, subjectNames } from "../data/policy";
@@ -45,17 +44,14 @@ function Settings() {
   return (
     <DataSourceContext value={source}>
       <Head crumb={connection} title="Settings" />
-      <main className="flex max-w-[860px] flex-col gap-7 px-5 py-6">
+      <main className="flex max-w-[960px] flex-col gap-7 px-5 py-6">
         <Section title="Connection">
           <Edit key={c.name} c={c} />
         </Section>
         <Section title="Data access">
           <Access />
         </Section>
-        <Section
-          title="Rules for this connection"
-          note={`Override the default policy here, for ${kindNames[c.production ? "production" : "non_production"]} only.`}
-        >
+        <Section title="Rules for this connection">
           <ConnectionPolicy c={c} />
         </Section>
         <Section title="Remove">
@@ -66,23 +62,10 @@ function Settings() {
   );
 }
 
-function Section({
-  title,
-  note,
-  children,
-}: {
-  title: string;
-  note?: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-[13px] font-semibold">
-        {title}
-        {note && (
-          <span className="ml-2 font-normal text-(--g-mut)">{note}</span>
-        )}
-      </h2>
+      <h2 className="text-[13px] font-semibold">{title}</h2>
       {children}
     </section>
   );
@@ -132,26 +115,25 @@ function Edit({ c }: { c: Connection }) {
         );
       }}
     >
-      <p className="font-mono text-xs text-(--g-dim)">
-        {c.url}
-        {c.custom_ca && (
-          <span className="font-sans text-(--g-mut)"> · custom CA</span>
-        )}
-      </p>
       <ConnectionFields
+        key={c.url}
         form={form}
         onChange={setForm}
+        currentUrl={`${c.url}${c.custom_ca ? " · custom CA" : ""}`}
         urlHint="Blank keeps the current URL. A new one applies at once; if it points at another database, set up data access again."
       />
-      <div className="flex items-center gap-2">
-        <Btn primary type="submit" disabled={!dirty || update.isPending}>
-          Save
-        </Btn>
-        <Btn disabled={!dirty} onClick={() => setForm(initial)}>
-          Discard
-        </Btn>
-        <ErrorText error={update.error} />
-      </div>
+      {/* Save and Discard show once something changed. */}
+      {(dirty || update.error) && (
+        <div className="flex items-center gap-2">
+          <Btn primary type="submit" disabled={!dirty || update.isPending}>
+            Save
+          </Btn>
+          <Btn disabled={!dirty} onClick={() => setForm(initial)}>
+            Discard
+          </Btn>
+          <ErrorText error={update.error} />
+        </div>
+      )}
     </form>
   );
 }
@@ -235,8 +217,8 @@ DROP ROLE tempobase_reader;`}
         }}
       >
         <input
-          className="g-field h-7 w-56 font-mono"
-          placeholder={name}
+          className="g-field h-7 w-56 font-mono placeholder:font-sans"
+          placeholder={`type ${name} to confirm`}
           aria-label={`Type ${name} to remove it`}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}

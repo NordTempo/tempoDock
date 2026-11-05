@@ -84,7 +84,11 @@ export default function DeployDialog({
   ];
 
   return (
-    <Dialog title={`Deploy ${ref.service}`} onClose={onClose} wide>
+    <Dialog
+      title={`Deploy ${ref.service} to ${ref.environment}`}
+      onClose={onClose}
+      wide
+    >
       {release !== null ? (
         <Following serviceRef={ref} number={release} onClose={onClose} />
       ) : (
@@ -115,6 +119,7 @@ export default function DeployDialog({
               current={view.service.image}
               busy={busy}
               onStarted={setRelease}
+              onClose={onClose}
             />
           )}
           {mode === "git" && conn && (
@@ -434,15 +439,22 @@ function ImageDeploy({
   current,
   busy,
   onStarted,
+  onClose,
 }: {
   serviceRef: ServiceRef;
   current: string | undefined;
   busy: string | undefined;
   onStarted: (release: number) => void;
+  onClose: () => void;
 }) {
   const client = useQueryClient();
   const [image, setImage] = useState(current ?? "");
   const wanted = image.trim();
+  // The newest release of this very image, when it failed: say so before
+  // the same deploy runs again.
+  const lastOfImage = useReleases(ref).find((r) => r.image_ref === wanted);
+  const failedBefore =
+    lastOfImage?.status === "failed" ? lastOfImage : undefined;
   const deploy = useMutation({
     mutationFn: (img: string) =>
       body(
@@ -473,6 +485,12 @@ function ImageDeploy({
           className="field w-full font-mono text-xs"
         />
       </label>
+      {failedBefore && (
+        <p className="text-xs text-warn-text">
+          r{failedBefore.number} {failurePhrase(failedBefore)} with this image
+          {failedBefore.error ? `: ${failedBefore.error}` : "."}
+        </p>
+      )}
       {wanted && wanted !== current && (
         <p className="text-xs text-mut">
           {current ? (
@@ -486,6 +504,11 @@ function ImageDeploy({
         </p>
       )}
       <div className="flex flex-wrap items-start gap-2">
+        <span className="min-w-0 flex-1 self-center text-xs">
+          {busy && <span className="text-fail">{busy}. </span>}
+          <ErrorText error={deploy.error} />
+        </span>
+        <Button onClick={onClose}>Cancel</Button>
         <Act
           primary
           type="submit"
@@ -495,10 +518,6 @@ function ImageDeploy({
         >
           Deploy image
         </Act>
-        <span className="self-center text-xs">
-          {busy && <span className="text-fail">{busy}. </span>}
-          <ErrorText error={deploy.error} />
-        </span>
       </div>
     </form>
   );
@@ -554,6 +573,10 @@ function GitDeploy({
         />
       </label>
       <div className="flex flex-wrap items-start gap-2">
+        <span className="min-w-0 flex-1 self-center text-xs">
+          <ErrorText error={deploy.error} />
+        </span>
+        <Button onClick={onClose}>Cancel</Button>
         <Act
           primary
           type="submit"
@@ -562,9 +585,6 @@ function GitDeploy({
         >
           Deploy {target || conn.branch}
         </Act>
-        <span className="self-center text-xs">
-          <ErrorText error={deploy.error} />
-        </span>
       </div>
     </form>
   );

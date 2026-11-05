@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { AuditEvent, EnvironmentLock } from "../data/types";
 import { CliHint } from "./CliHint";
+import { Dialog } from "./Dialog";
 import { clock } from "./format";
 import { Icon } from "./icons";
 import { type GlyphChar, type State, toneText } from "./status";
@@ -211,52 +212,101 @@ export function Check({
 }
 
 /**
- * Asks before a change that is hard to take back: what happens, the
- * button that does it (with its CLI equivalent) and Cancel.
+ * The app's one confirmation: a small modal that asks before a change that
+ * is hard to take back. The title asks the question ("Roll back to r7?",
+ * from `action` unless `title` is given), `children` say in plain words what
+ * will happen, and the button names the action. The CLI equivalent sits in
+ * the footer. `typed` asks the person to type a name first; keep it for
+ * destructive changes that can't be undone (deleting an organization).
+ * Render it only while asking: Esc, the backdrop and Cancel call onCancel.
+ * The safe button has focus, so Enter never destroys by accident.
  */
 export function Confirm({
   children,
+  title,
   action,
   cli,
   danger,
+  typed,
   pending,
   error,
   onConfirm,
   onCancel,
 }: {
   children: ReactNode;
+  title?: string;
   action: string;
   cli?: string;
   danger?: boolean;
+  typed?: string;
   pending?: boolean;
   error?: Error | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const [text, setText] = useState("");
+  const ready = !pending && (!typed || text.trim() === typed);
   return (
-    <div
-      role="alertdialog"
-      aria-label={action}
-      className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border bg-panel px-3.5 py-3 whitespace-normal ${danger ? "border-fail-edge" : "border-edge"}`}
-    >
-      <span className="min-w-0 flex-[1_1_320px]">{children}</span>
-      <span className="flex items-center gap-2">
-        <Button
-          small
-          danger={danger}
-          primary={!danger}
-          disabled={pending}
-          onClick={onConfirm}
-        >
-          {action}
-        </Button>
-        <Button small onClick={onCancel}>
-          Cancel
-        </Button>
-      </span>
-      {cli && <code className="font-mono text-2xs text-faint">{cli}</code>}
-      <ErrorText error={error} />
-    </div>
+    <Dialog title={title ?? `${action}?`} onClose={onCancel} bare>
+      <form
+        className="flex flex-col"
+        onSubmit={(e) => {
+          // A Confirm can open inside another form; its submit is its own.
+          e.preventDefault();
+          e.stopPropagation();
+          if (ready) onConfirm();
+        }}
+      >
+        <div className="flex flex-col gap-2 px-5 pt-4 pb-4">
+          <h2 className="text-md font-semibold text-fg">
+            {title ?? `${action}?`}
+          </h2>
+          <div className="text-[13px] leading-relaxed text-sec [&_b]:font-semibold [&_b]:text-fg">
+            {children}
+          </div>
+          {typed && (
+            <label className="mt-1 flex flex-col gap-1.5 text-xs text-mut">
+              <span>
+                Type <b className="font-mono font-medium text-fg">{typed}</b> to
+                confirm
+              </span>
+              <input
+                className="field font-mono"
+                value={text}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(e) => setText(e.target.value)}
+              />
+            </label>
+          )}
+          <ErrorText error={error} />
+        </div>
+        <div className="flex flex-col gap-2.5 border-t border-line px-5 py-3">
+          {cli && (
+            <code className="font-mono text-2xs break-all text-faint">
+              {cli}
+            </code>
+          )}
+          <span className="flex justify-end gap-2">
+            <Button
+              data-autofocus={typed ? undefined : true}
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              danger={danger}
+              primary={!danger}
+              className={danger ? "solid" : ""}
+              disabled={!ready}
+            >
+              {action}
+            </Button>
+          </span>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

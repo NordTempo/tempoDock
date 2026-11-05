@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useBackups, useCanDeploy } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { ago, clock, day, size } from "../../ui/format";
+import { ago, clock, day, plural, size } from "../../ui/format";
 import {
   Act,
   Button,
@@ -70,7 +70,6 @@ export function SnapshotsPanel({
     <section aria-labelledby="snapshots" className="flex flex-col gap-2.5">
       <SectionHead
         id="snapshots"
-        aside={`volume copies${server ? ` on ${server}` : ""}, paused while copied · keeps ${snaps.keep}, ${snaps.keep_days} days`}
         right={
           <form
             aria-label="Take snapshot"
@@ -112,6 +111,17 @@ export function SnapshotsPanel({
       >
         Snapshots
       </SectionHead>
+      <dl className="props grid-cols-[120px_minmax(0,1fr)]">
+        <dt>How</dt>
+        <dd>
+          volume copies{server ? ` on ${server}` : ""}, the service paused while
+          copied
+        </dd>
+        <dt>Keeps</dt>
+        <dd>
+          {plural(snaps.keep, "snapshot")}, {plural(snaps.keep_days, "day")}
+        </dd>
+      </dl>
       {restored && (
         <RestoringInto serviceRef={ref} service={restored} kind={kind} />
       )}
@@ -125,6 +135,7 @@ export function SnapshotsPanel({
                 <th>#</th>
                 <th>Taken</th>
                 <th>Why</th>
+                <th>Status</th>
                 <th>Size</th>
                 <th>Paused</th>
                 <th className="w-full">Note</th>
@@ -133,7 +144,7 @@ export function SnapshotsPanel({
             </thead>
             <tbody>
               {snaps.snapshots.map((s) => (
-                <SnapshotRows
+                <SnapshotRow
                   key={s.id}
                   serviceRef={ref}
                   snapshot={s}
@@ -155,8 +166,11 @@ export function SnapshotsPanel({
   );
 }
 
-/** One snapshot, its actions, and the confirm or form one of them opened. */
-function SnapshotRows({
+/** An empty cell's hyphen, so a missing value reads as missing. */
+const none = <span className="text-faint">-</span>;
+
+/** One snapshot, its actions, and the confirmation one of them opened. */
+function SnapshotRow({
   serviceRef: ref,
   snapshot: s,
   intoNew,
@@ -176,135 +190,124 @@ function SnapshotRows({
   const restore = useRestoreSnapshot();
   const remove = useDeleteSnapshot();
   const flags = `-s ${ref.service} -e ${ref.environment}`;
-  const title = canAct ? undefined : "Needs deploy access, and nothing running";
+  const reason = canAct
+    ? undefined
+    : "needs deploy access, and nothing running";
   const cancel = (reset: () => void) => () => {
     reset();
     onAsk(null);
   };
+  const ready = s.status === "ready";
   return (
-    <>
-      <tr>
-        <td className="font-mono">{s.id}</td>
-        <td title={`${day(s.started_at)} ${clock(s.started_at)}`}>
-          {ago(s.started_at)}
-        </td>
-        <td>
-          {why[s.trigger]}
-          {s.created_by !== "system" && (
-            <span className="text-mut"> by {s.created_by}</span>
-          )}
-        </td>
-        <td className="font-mono">
-          {s.status === "ready" ? size(s.size_bytes) : ""}
-        </td>
-        <td className="font-mono">
-          {s.status === "ready" ? seconds(s.paused_ms) : ""}
-        </td>
-        <td className="max-w-[420px] whitespace-normal">
-          {s.status !== "ready" && (
-            <StateText state={snapshotStates[s.status]} />
-          )}{" "}
-          {s.error ? <span className="text-fail">{s.error}</span> : s.note}
-        </td>
-        <td>
-          {ask === null && s.status !== "running" && (
-            <span className="flex gap-1.5">
-              {s.status === "ready" && intoNew && (
-                <Button
-                  small
-                  disabled={!canAct}
-                  title={title}
-                  onClick={() => onAsk("new")}
-                >
-                  Restore as new
-                </Button>
-              )}
-              {s.status === "ready" && (
-                <Button
-                  small
-                  disabled={!canAct}
-                  title={title}
-                  onClick={() => onAsk("in_place")}
-                >
-                  In place
-                </Button>
-              )}
+    <tr>
+      <td className="font-mono">{s.id}</td>
+      <td title={`${day(s.started_at)} ${clock(s.started_at)}`}>
+        {ago(s.started_at)}
+      </td>
+      <td>
+        {why[s.trigger]}
+        {s.created_by !== "system" && (
+          <span className="text-mut"> by {s.created_by}</span>
+        )}
+      </td>
+      <td>
+        <StateText state={snapshotStates[s.status]} />
+      </td>
+      <td className="font-mono">{ready ? size(s.size_bytes) : none}</td>
+      <td className="font-mono">{ready ? seconds(s.paused_ms) : none}</td>
+      <td className="max-w-[420px] whitespace-normal">
+        {s.error ? (
+          <span className="text-fail">{s.error}</span>
+        ) : (
+          s.note || none
+        )}
+      </td>
+      <td>
+        {s.status !== "running" && (
+          <span className="flex gap-1.5">
+            {ready && intoNew && (
               <Button
                 small
                 disabled={!canAct}
-                title={title}
-                onClick={() => onAsk("delete")}
+                reason={reason}
+                onClick={() => onAsk("new")}
               >
-                Delete
+                Restore as new
               </Button>
-            </span>
-          )}
-        </td>
-      </tr>
-      {ask && (
-        <tr>
-          <td colSpan={7}>
-            {ask === "new" ? (
-              <RestoreForm
-                serviceRef={ref}
-                id={s.id}
-                onCancel={() => onAsk(null)}
-                onRestored={(service) => {
-                  onAsk(null);
-                  onRestored(service);
-                }}
-              />
-            ) : ask === "in_place" ? (
-              <Confirm
-                danger
-                action={`Restore ${s.id} in place`}
-                cli={`dock volume snapshot restore ${s.id} ${flags} --in-place`}
-                pending={restore.isPending}
-                error={restore.error}
-                onConfirm={() =>
-                  restore.mutate(
-                    { ref, id: s.id, in_place: true },
-                    { onSuccess: () => onAsk(null) },
-                  )
-                }
-                onCancel={cancel(restore.reset)}
-              >
-                Replace {ref.service}'s data with snapshot {s.id}?{" "}
-                <span className="text-mut">
-                  The service stops while it is copied in. Its current data is
-                  snapshotted first, and restoring that snapshot undoes this.
-                </span>
-              </Confirm>
-            ) : (
-              <Confirm
-                danger
-                action={`Delete ${s.id}`}
-                cli={`dock volume snapshot delete ${s.id} ${flags}`}
-                pending={remove.isPending}
-                error={remove.error}
-                onConfirm={() =>
-                  remove.mutate(
-                    { ref, id: s.id },
-                    { onSuccess: () => onAsk(null) },
-                  )
-                }
-                onCancel={cancel(remove.reset)}
-              >
-                Delete snapshot {s.id}?{" "}
-                <span className="text-mut">
-                  Its files on the server are removed.
-                </span>
-              </Confirm>
             )}
-          </td>
-        </tr>
-      )}
-    </>
+            {ready && (
+              <Button
+                small
+                disabled={!canAct}
+                reason={reason}
+                onClick={() => onAsk("in_place")}
+              >
+                In place
+              </Button>
+            )}
+            <Button
+              small
+              disabled={!canAct}
+              reason={reason}
+              onClick={() => onAsk("delete")}
+            >
+              Delete
+            </Button>
+          </span>
+        )}
+        {ask === "new" && (
+          <RestoreConfirm
+            serviceRef={ref}
+            id={s.id}
+            onCancel={() => onAsk(null)}
+            onRestored={(service) => {
+              onAsk(null);
+              onRestored(service);
+            }}
+          />
+        )}
+        {ask === "in_place" && (
+          <Confirm
+            danger
+            title={`Replace ${ref.service}'s data with snapshot ${s.id}?`}
+            action={`Restore snapshot ${s.id}`}
+            cli={`dock volume snapshot restore ${s.id} ${flags} --in-place`}
+            pending={restore.isPending}
+            error={restore.error}
+            onConfirm={() =>
+              restore.mutate(
+                { ref, id: s.id, in_place: true },
+                { onSuccess: () => onAsk(null) },
+              )
+            }
+            onCancel={cancel(restore.reset)}
+          >
+            The service stops while it is copied in. Its current data is
+            snapshotted first, and restoring that snapshot undoes this.
+          </Confirm>
+        )}
+        {ask === "delete" && (
+          <Confirm
+            danger
+            action={`Delete snapshot ${s.id}`}
+            cli={`dock volume snapshot delete ${s.id} ${flags}`}
+            pending={remove.isPending}
+            error={remove.error}
+            onConfirm={() =>
+              remove.mutate({ ref, id: s.id }, { onSuccess: () => onAsk(null) })
+            }
+            onCancel={cancel(remove.reset)}
+          >
+            Its files on the server are removed. This can't be undone.
+          </Confirm>
+        )}
+      </td>
+    </tr>
   );
 }
 
-/** Names the new service and restores the snapshot into it. */
-function RestoreForm({
+/** Asks for the new service's name and restores the snapshot into it. */
+function RestoreConfirm({
   serviceRef: ref,
   id,
   onCancel,
@@ -320,44 +323,35 @@ function RestoreForm({
   const [name, setName] = useState(fallback);
   const as = name.trim();
   return (
-    <form
-      aria-label="Restore as new service"
-      className="flex flex-wrap items-center gap-2.5 whitespace-normal"
-      onSubmit={(e) => {
-        e.preventDefault();
+    <Confirm
+      title={`Restore snapshot ${id} as a new service?`}
+      action="Restore"
+      cli={`dock volume snapshot restore ${id} -s ${ref.service} -e ${ref.environment}${as && as !== fallback ? ` --as ${as}` : ""}`}
+      pending={restore.isPending || !as}
+      error={restore.error}
+      onConfirm={() =>
         restore.mutate(
           { ref, id, as },
           { onSuccess: (res) => onRestored(res.service?.name ?? as) },
-        );
-      }}
-      onKeyDown={(e) => e.key === "Escape" && onCancel()}
+        )
+      }
+      onCancel={onCancel}
     >
-      <label htmlFor={`snapshot-restore-${id}`} className="text-mut">
-        Restore <span className="font-mono">{id}</span> into a new service
+      <p>
+        The snapshot is restored into a new service. The live {ref.service} is
+        not touched.
+      </p>
+      <label className="mt-3 flex flex-col gap-1.5 text-xs text-mut">
+        New service
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="field font-mono"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </label>
-      <input
-        id={`snapshot-restore-${id}`}
-        // biome-ignore lint/a11y/noAutofocus: the form opens on request
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="field py-[5px] font-mono"
-      />
-      <Act
-        primary
-        small
-        type="submit"
-        cli={`dock volume snapshot restore ${id} -s ${ref.service} -e ${ref.environment}${as && as !== fallback ? ` --as ${as}` : ""}`}
-        disabled={restore.isPending || !as}
-      >
-        Restore
-      </Act>
-      <Button small onClick={onCancel}>
-        Cancel
-      </Button>
-      <span className="text-mut">The live {ref.service} is not touched.</span>
-      <ErrorText error={restore.error} />
-    </form>
+    </Confirm>
   );
 }
 

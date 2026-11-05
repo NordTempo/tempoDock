@@ -29,7 +29,8 @@ export const Route = createFileRoute(
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
     );
-    if (!findService(overview, params)) throw notFound();
+    if (!findService(overview, params))
+      throw notFound({ routeId: "/_app/$org" });
     await Promise.all([
       queryClient.ensureQueryData(queries.releases(params)),
       queryClient.ensureQueryData(queries.changes(params)),

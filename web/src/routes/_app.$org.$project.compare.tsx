@@ -25,7 +25,7 @@ import {
   promotionPlan,
 } from "../features/promote/plan";
 import { EnvServer } from "../features/servers/parts";
-import { imageLabel } from "../features/service/releases";
+import { imageLabel, shortImage } from "../features/service/releases";
 import { useShortcuts } from "../shell/keys";
 import { useOrg } from "../shell/location";
 import { limits } from "../ui/format";
@@ -216,11 +216,9 @@ function Compare() {
         }
       />
       <Page gap="gap-[18px]">
-        <p className="text-mut">
-          <span className="text-warn">Yellow</span> marks a difference.
-          Variables compare by name{isAdmin ? " unless you compare values" : ""}
-          .{notReady && pair && <> Promote is off: {notReady}.</>}
-        </p>
+        {notReady && pair && (
+          <p className="text-mut">Promote is off: {notReady}.</p>
+        )}
         {pair && search.promote && (
           <PromotePanel
             key={`${fromName}:${toName}`}
@@ -298,18 +296,18 @@ function CompareTable({
   return (
     <>
       <Panel>
-        <table>
+        <table className="table-fixed">
           <thead>
             <tr>
-              <th>Service</th>
-              <th className="border-l border-line pl-4">
+              <th className="w-[120px]">Service</th>
+              <th className="w-[24%] border-l border-line pl-4">
                 {from.environment.name}{" "}
                 <EnvServer name={from.environment.server} />
               </th>
-              <th className="border-l border-line pl-4">
+              <th className="w-[24%] border-l border-line pl-4">
                 {to.environment.name} <EnvServer name={to.environment.server} />
               </th>
-              <th className="w-full border-l border-line pl-4">Differences</th>
+              <th className="border-l border-line pl-4">Differences</th>
             </tr>
           </thead>
           <tbody>
@@ -330,13 +328,16 @@ function CompareTable({
                   {diffs.length === 0 ? (
                     <span className="text-mut">same</span>
                   ) : (
-                    diffs.map((d, i) => (
-                      <span key={d.kind}>
-                        {i > 0 && " · "}
-                        <span className="text-warn">{d.kind}</span>
-                        {d.detail && <>: {d.detail}</>}
-                      </span>
-                    ))
+                    <dl className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-1">
+                      {diffs.map((d) => (
+                        <div key={d.kind} className="contents">
+                          <dt className="text-warn">{d.kind}</dt>
+                          <dd className="min-w-0 break-words text-sec">
+                            {d.detail}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
                   )}
                 </td>
               </tr>
@@ -364,9 +365,10 @@ function Side({
   diff: boolean;
 }) {
   const org = useOrg();
-  if (!view) return <span className="text-mut">not in this environment</span>;
+  if (!view) return <span className="text-faint">not here</span>;
   const state = serviceState(view);
   const active = view.active_release;
+  const image = (active ? imageLabel(active) : view.service.image) ?? "";
   const failed =
     !view.deploying && view.latest_release?.status === "failed"
       ? view.latest_release
@@ -389,9 +391,10 @@ function Side({
         {view.deploying && ` → r${view.deploying.number}`}
       </span>
       <div
-        className={`max-w-[36ch] font-mono break-all whitespace-normal ${diff ? "text-warn" : "text-mut"}`}
+        title={image}
+        className={`truncate font-mono text-xs ${diff ? "text-warn" : "text-mut"}`}
       >
-        {active ? imageLabel(active) : view.service.image}
+        {shortImage(image)}
       </div>
     </Link>
   );
@@ -410,11 +413,21 @@ function differences(
     volumes: (s: ServiceView) => Volume[];
   },
 ): Diff[] {
-  if (!a || !b) return [{ kind: "only in one environment" }];
+  if (!a || !b) {
+    const where = (a ?? b)?.service.environment;
+    return [{ kind: "only in", detail: where }];
+  }
   const diffs: Diff[] = [];
   const ia = a.active_release?.image_id;
   const ib = b.active_release?.image_id;
-  if (ia !== ib) diffs.push({ kind: "image" });
+  if (ia !== ib) {
+    const label = (s: ServiceView) =>
+      shortImage(
+        (s.active_release ? imageLabel(s.active_release) : s.service.image) ??
+          "",
+      ) || "none";
+    diffs.push({ kind: "image", detail: `${label(a)} → ${label(b)}` });
+  }
 
   const vars = (list: Variable[], s: ServiceView) =>
     new Map(
@@ -439,12 +452,12 @@ function differences(
       detail: (
         <>
           {[
-            onlyA.length > 0 && `only ${envA} has ${onlyA.join(", ")}`,
-            onlyB.length > 0 && `only ${envB} has ${onlyB.join(", ")}`,
-            changed.length > 0 && `different ${changed.join(", ")}`,
+            onlyA.length > 0 && `${envA} only: ${onlyA.join(", ")}`,
+            onlyB.length > 0 && `${envB} only: ${onlyB.join(", ")}`,
+            changed.length > 0 && `different: ${changed.join(", ")}`,
           ]
             .filter(Boolean)
-            .join("; ")}
+            .join(". ")}
         </>
       ),
     });
@@ -455,13 +468,13 @@ function differences(
   ) {
     diffs.push({
       kind: "limits",
-      detail: `${limits(a.service)} vs ${limits(b.service)}`,
+      detail: `${limits(a.service)} → ${limits(b.service)}`,
     });
   }
   if (a.service.port !== b.service.port) {
     diffs.push({
       kind: "port",
-      detail: `${a.service.port || 8080} vs ${b.service.port || 8080}`,
+      detail: `${a.service.port || 8080} → ${b.service.port || 8080}`,
     });
   }
   const mounts = (s: ServiceView) =>
@@ -474,7 +487,7 @@ function differences(
   if (mounts(a) !== mounts(b)) {
     diffs.push({
       kind: "volumes",
-      detail: `${mounts(a) || "none"} vs ${mounts(b) || "none"}`,
+      detail: `${mounts(a) || "none"} → ${mounts(b) || "none"}`,
     });
   }
   return diffs;

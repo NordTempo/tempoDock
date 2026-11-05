@@ -161,7 +161,7 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </Item>
       </dl>
       <p className="text-xs text-mut">
-        Click a value to edit it. Edits are staged until applied.
+        Dotted values are editable. Edits are staged until you apply them.
       </p>
 
       <ApplyBox env={envPath(ref)} reveal={false} service={ref.service} />
@@ -339,7 +339,21 @@ function PreDeploySnapshot({
   );
 }
 
-/** A setting value; click to edit. Staged values show old → new. */
+/** A formatted setting with its "(default)" part quiet, so set values stand out. */
+function Shown({ text }: { text: string }) {
+  if (!text.endsWith(" (default)")) return text;
+  return (
+    <>
+      {text.slice(0, -" (default)".length)}{" "}
+      <span className="text-faint">default</span>
+    </>
+  );
+}
+
+/**
+ * A setting value, dotted-underlined: click to edit. Staged values show
+ * old → new.
+ */
 function Editable({
   serviceRef: ref,
   settingKey: key,
@@ -394,7 +408,7 @@ function Editable({
           setError(null);
           setDraft(editText(key, change ? change.new : value));
         }}
-        className={`-mx-1 rounded-[4px] px-1 text-left font-mono break-all hover:bg-panel ${change ? "bg-stage-bg" : ""}`}
+        className={`-mx-1 cursor-text rounded-[4px] px-1 text-left font-mono break-all underline decoration-dash decoration-dotted underline-offset-4 hover:bg-hover hover:decoration-mut ${change ? "bg-stage-bg" : ""}`}
       >
         {change ? (
           <>
@@ -405,7 +419,7 @@ function Editable({
             {formatSetting(key, change.new)}
           </>
         ) : (
-          formatSetting(key, value)
+          <Shown text={formatSetting(key, value)} />
         )}
       </button>
       {change && (

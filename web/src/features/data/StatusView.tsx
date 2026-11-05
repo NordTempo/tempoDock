@@ -53,7 +53,7 @@ export function StatusView({ info }: { info: DataInfo }) {
     case "unreachable":
       return (
         <State
-          glyph="✕"
+          glyph="×"
           tone="text-(--g-fail)"
           title="Can't reach the database"
         >

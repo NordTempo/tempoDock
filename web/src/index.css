@@ -24,7 +24,7 @@
 }
 
 /*
- * Style A (docs/design/README.md): near-black surfaces, quiet lines, four
+ * Style A (docs/design/README.md): true black pages, quiet lines, four
  * text tones and status colours. Components use these names, never literals.
  */
 @theme {
@@ -44,24 +44,24 @@
   --radius-ctl: 6px;
   --radius-panel: 10px;
 
-  /* Surfaces. */
-  --color-side: #0a0a0b;
-  --color-page: #0e0e10;
-  --color-panel: #151517;
+  /* Surfaces: true black pages, raised steps for panels, hover and selection. */
+  --color-side: #000;
+  --color-page: #000;
+  --color-panel: #0b0b0c;
   --color-sel: #1c1c1f;
-  --color-chip: #1f1f23;
+  --color-chip: #222226;
   --color-hover: #141416;
 
   /* Lines: dividers, subtle rows, control borders. */
-  --color-line: #232326;
-  --color-soft: #1c1c1f;
-  --color-edge: #2e2e33;
-  --color-field: #2e2e33;
+  --color-line: #1f1f22;
+  --color-soft: #161618;
+  --color-edge: #2c2c30;
+  --color-field: #2c2c30;
   --color-dash: #3a3a40;
 
   /* Text: primary, secondary, muted, faint. */
-  --color-fg: #ededef;
-  --color-sec: #c8c8cf;
+  --color-fg: #fafafa;
+  --color-sec: #d0d0d6;
   --color-mut: #a1a1aa;
   --color-faint: #8b8b94;
   --color-kbd: #a1a1aa;
@@ -121,10 +121,22 @@
     outline-offset: 2px;
   }
 
+  /* Rows and controls drawn flush (table rows, menu items) ring inside. */
+  tr:focus-visible,
+  [role="menuitem"]:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /*
+   * Inter's space is narrow in semibold; on 1x screens it rounds down to
+   * 3px and "What failed" reads as one word. A hair of word spacing keeps
+   * headings' words apart.
+   */
   h1,
   h2,
   h3 {
     letter-spacing: -0.005em;
+    word-spacing: 0.12em;
   }
 
   /* Links read as text; ones inside running text are blue. */
@@ -167,8 +179,43 @@
     background: var(--color-panel);
   }
 
-  ::placeholder {
+  /*
+   * Every native select looks like the kit's controls: a border, the app's
+   * chevron, no OS chrome. Still the native element underneath, so the
+   * keyboard and screen readers work as usual.
+   */
+  select {
+    appearance: none;
+    border: 1px solid var(--color-edge);
+    border-radius: var(--radius-ctl);
+    padding: 4px 26px 4px 9px;
+    font-size: 12px;
+    line-height: 18px;
+    background-color: var(--color-page);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23a1a1aa' stroke-width='1.4'%3E%3Cpath d='M2.5 4l2.5 2.5L7.5 4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    cursor: pointer;
+    transition: border-color 0.1s;
+  }
+
+  select:hover:not(:disabled) {
+    border-color: var(--color-dash);
+  }
+
+  select:disabled {
     color: var(--color-faint);
+    cursor: not-allowed;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--color-fg);
+  }
+
+  /* Darker than any typed value, so an example never reads as filled in. */
+  ::placeholder {
+    color: #5f5f68;
   }
 
   kbd {
@@ -188,10 +235,10 @@
   }
 
   th {
-    font-weight: 400;
+    font-weight: 500;
     font-size: 11px;
     text-align: left;
-    color: var(--color-faint);
+    color: var(--color-mut);
     padding: 8px 14px 8px 0;
     white-space: nowrap;
     border-bottom: 1px solid var(--color-line);
@@ -212,7 +259,13 @@
 @layer components {
   /* ui/Dialog.tsx: no transition, a flat dim backdrop. */
   .dlg::backdrop {
-    background: rgb(0 0 0 / 0.6);
+    background: rgb(0 0 0 / 0.72);
+  }
+
+  .dlg {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.02),
+      0 24px 64px rgb(0 0 0 / 0.8);
   }
   .btn {
     display: inline-flex;
@@ -230,9 +283,21 @@
     text-decoration: none;
   }
 
-  .btn:hover {
+  .btn {
+    transition:
+      background-color 0.1s,
+      border-color 0.1s,
+      color 0.1s;
+  }
+
+  .btn:hover:not(:disabled) {
     color: var(--color-fg);
-    background: var(--color-panel);
+    background: var(--color-hover);
+    border-color: var(--color-dash);
+  }
+
+  .btn:active:not(:disabled) {
+    background: var(--color-sel);
   }
 
   .btn:disabled {
@@ -248,9 +313,10 @@
     font-weight: 600;
   }
 
-  .btn.pri:hover {
-    background: #fff;
-    border-color: #fff;
+  .btn.pri:hover:not(:disabled) {
+    background: #d4d4d8;
+    border-color: #d4d4d8;
+    color: #000;
   }
 
   .btn.pri kbd {
@@ -259,10 +325,9 @@
     border-color: var(--color-side);
   }
 
+  /* A primary that can't run yet keeps its shape, dimmed. */
   .btn.pri:disabled {
-    background: var(--color-sel);
-    border-color: var(--color-sel);
-    color: var(--color-faint);
+    opacity: 0.35;
   }
 
   .btn.sm {
@@ -274,6 +339,30 @@
     border-color: var(--color-fail-edge);
   }
 
+  .btn.danger:hover:not(:disabled) {
+    background: var(--color-fail-bg);
+    border-color: var(--color-fail);
+  }
+
+  /* The confirm button of a destructive change: filled red. */
+  .btn.danger.solid {
+    background: var(--color-fail);
+    border-color: var(--color-fail);
+    color: #000;
+    font-weight: 600;
+  }
+
+  .btn.danger.solid:hover:not(:disabled) {
+    background: #fca5a5;
+    border-color: #fca5a5;
+  }
+
+  .btn.danger.solid:disabled {
+    background: var(--color-fail-bg);
+    border-color: var(--color-fail-edge);
+    color: var(--color-faint);
+  }
+
   /* A text button that reads like a quiet link. */
   .lnk {
     color: var(--color-mut);
@@ -282,17 +371,19 @@
 
   .lnk:hover {
     color: var(--color-fg);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .field {
-    background: var(--color-panel);
-    border: 1px solid var(--color-line);
+    background-color: var(--color-panel);
+    border: 1px solid var(--color-edge);
     border-radius: var(--radius-ctl);
     padding: 6px 9px;
   }
 
   .field:hover {
-    border-color: var(--color-edge);
+    border-color: var(--color-dash);
   }
 
   .field:focus {
@@ -408,6 +499,7 @@
 
   .seg > *:hover {
     color: var(--color-fg);
+    background: var(--color-hover);
   }
 
   .seg > [aria-pressed="true"],
@@ -428,6 +520,7 @@
 
   .tabs > a:hover {
     color: var(--color-fg);
+    background: var(--color-hover);
   }
 
   .tabs > a[aria-current="page"] {
@@ -448,7 +541,7 @@
   }
 
   .nav-row:hover {
-    background: var(--color-panel);
+    background: var(--color-hover);
     color: var(--color-fg);
   }
 

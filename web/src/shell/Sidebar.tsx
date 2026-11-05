@@ -10,7 +10,6 @@ import { type ReactNode, useState } from "react";
 import { useLogout } from "../data/mutations";
 import {
   canDeploy,
-  isDatabase,
   queries,
   serviceRef,
   useIsAdmin,
@@ -178,11 +177,8 @@ function AppNav() {
       <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
       <Me />
       {operator && (
-        <Link
-          to="/console"
-          className="mx-1 mt-1.5 flex items-center gap-2 rounded-ctl border border-dashed border-dash px-2 py-1.5 text-xs text-warn hover:bg-warn-bg"
-        >
-          <Icon name="console" size={13} />
+        <Link to="/console" className="nav-row mt-0.5">
+          <Icon name="console" size={14} className="text-warn" />
           <span className="flex-1">Platform console</span>
           <OpenAlertCount />
         </Link>
@@ -611,13 +607,12 @@ function ServiceLink({ view }: { view: ServiceView }) {
   const org = useOrg();
   const state = serviceState(view);
   const { service } = view;
+  // Only what needs a look: a healthy service says nothing.
   const note =
     service.staged === "archive" && !view.deploying
       ? "archive staged"
       : state.tone === "ok"
-        ? isDatabase(service)
-          ? "db"
-          : service.status.updated_at && since(service.status.updated_at)
+        ? undefined
         : view.deploying
           ? "deploying"
           : state.label;
@@ -682,11 +677,13 @@ function SettingsNav() {
         </NavLink>
       )}
       <NavLink to="/$org/audit" params={params}>
-        Activity
+        Audit log
       </NavLink>
       <NavLink to="/$org/settings/general" params={params}>
         General
       </NavLink>
+      <div className={groupLabel}>You</div>
+      <NavLink to="/account">Account</NavLink>
       <div className="min-h-6 flex-1" />
       <Me />
     </>

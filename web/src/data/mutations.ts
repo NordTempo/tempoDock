@@ -7,6 +7,7 @@ import {
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done, setOrg } from "../api/client";
 import type { components } from "../api/schema";
+import { notify } from "../ui/notice";
 import { currentMe, envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
@@ -32,10 +33,13 @@ import type {
 export function useAction<Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
   touches: (vars: Vars) => QueryKey[],
+  /** What to tell the person once it worked ("Restarting web"), as a notice. */
+  said?: (vars: Vars, data: Data) => string,
 ) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
+    onSuccess: said && ((data, vars) => notify(said(vars, data))),
     onSettled: (_data, _error, vars) =>
       Promise.all(
         touches(vars).map((queryKey) =>
@@ -62,6 +66,7 @@ export const useDeploy = () =>
         ),
       ),
     serviceWide,
+    (ref, r) => `Deploying ${ref.service} as r${r.number}`,
   );
 
 export const useRollback = () =>
@@ -74,6 +79,7 @@ export const useRollback = () =>
         ),
       ),
     ({ ref }) => serviceWide(ref),
+    ({ ref, to }, r) => `Rolling back ${ref.service} to r${to} as r${r.number}`,
   );
 
 export const useRestart = () =>
@@ -86,6 +92,7 @@ export const useRestart = () =>
         ),
       ),
     serviceWide,
+    (ref) => `Restarting ${ref.service}`,
   );
 
 // Staging touches the environment (changes, variables) and the overview,
@@ -208,6 +215,7 @@ export const useRemoveDomain = () =>
         ),
       ),
     ({ ref }) => serviceWide(ref),
+    ({ hostname }) => `Removed ${hostname}`,
   );
 
 /**
@@ -322,6 +330,7 @@ export const useArchiveService = () =>
         ),
       ),
     (ref) => [keys.overview(ref.project), ["audit"]],
+    (ref) => `Archived ${ref.service}`,
   );
 
 /**
@@ -337,6 +346,7 @@ export const useArchiveProject = () =>
         }),
       ),
     (project) => [keys.projects, keys.project(project), ["audit"]],
+    (project) => `Archived ${project}`,
   );
 
 /** Resolves with the token and its secret, which is shown exactly once. */
@@ -351,6 +361,7 @@ export const useRevokeToken = () =>
     (id: number) =>
       done(api.DELETE("/api/v1/tokens/{id}", { params: { path: { id } } })),
     () => [keys.tokens, ["audit"]],
+    () => "Token revoked",
   );
 
 export const useCreateUser = () =>

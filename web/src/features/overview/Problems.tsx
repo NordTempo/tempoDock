@@ -45,12 +45,7 @@ export function Problems({ project }: { project: string }) {
   const n = problems.length;
   return (
     <section aria-labelledby="problems">
-      <SectionHead
-        id="problems"
-        aside={`worst first · press ${n === 1 ? "1" : `1 to ${Math.min(n, 9)}`}`}
-      >
-        {plural(n, "problem")}
-      </SectionHead>
+      <SectionHead id="problems">{plural(n, "problem")}</SectionHead>
       <ol className="panel">
         {problems.map((problem, i) => (
           <ProblemRow

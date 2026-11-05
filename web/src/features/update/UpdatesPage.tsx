@@ -1,4 +1,4 @@
-import { ErrorBlock } from "../../ui/ErrorBlock";
+import type { ReactNode } from "react";
 import { ago, day, plural } from "../../ui/format";
 import {
   Act,
@@ -24,6 +24,10 @@ import { Notes } from "./Notes";
 // beside what an update does to each server, in order. While an update
 // runs its steps replace the plan; a failed or rolled-back update stays on
 // top with the end of its log. Update events keep it current.
+
+/** The install guide's section on updating by hand. */
+const UPGRADING =
+  "https://github.com/NordTempo/tempoDock/blob/main/docs/guide/install.md#upgrading";
 
 /** How many releases' notes are shown; older ones are a count. */
 const NOTES_SHOWN = 8;
@@ -117,17 +121,38 @@ function Problems({
   return (
     <>
       {st.check_error && (
-        <ErrorBlock
-          error={new Error(`Could not check ${st.source}: ${st.check_error}`)}
-          onRetry={onCheck}
-        />
+        <p
+          role="alert"
+          title={st.check_error}
+          className="flex flex-wrap items-baseline gap-x-3"
+        >
+          <span className="text-fail">
+            <Glyph char="✕" /> Could not check for releases:{" "}
+            {/* The daemon says "<source> answered 404: <why>"; the page
+                already names the source, so keep the why (all in title). */}
+            {st.check_error.replace(/^\S+ answered \d+: /, "")}
+          </span>
+          <button type="button" className="lnk" onClick={onCheck}>
+            Try again
+          </button>
+        </p>
       )}
       {!st.updater && (
-        <p className="text-warn">
-          <Glyph char="▲" /> This control plane has no updater
-          (dock-update.path). Update it by hand once, with install.sh from the
-          new release (docs/guide/install.md#upgrading); later updates run from
-          here.
+        <p className="text-warn-text">
+          <span className="text-warn">
+            <Glyph char="▲" />
+          </span>{" "}
+          No updater on this control plane. Update it once by hand with the new
+          release's install.sh (
+          <a
+            href={UPGRADING}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-fg underline underline-offset-3"
+          >
+            Upgrading
+          </a>
+          ); later updates run from here.
         </p>
       )}
     </>
@@ -186,9 +211,11 @@ function ReleaseNotes({ st }: { st: UpdateStatus }) {
       </SectionHead>
       {shown.length === 0 ? (
         <p className="text-mut">
-          {st.latest
-            ? `${st.latest} is the newest release.`
-            : "No releases found yet."}
+          {st.check_error
+            ? "Unknown until the check works."
+            : st.latest
+              ? `${st.latest} is the newest release.`
+              : "No releases found yet."}
           {st.last?.status === "succeeded" &&
             ` Last update: ${st.last.from} to ${st.last.to}, ${ago(st.last.finished_at)}.`}
         </p>
@@ -240,6 +267,12 @@ function Plan({ st }: { st: UpdateStatus }) {
   const selfUpdate = target !== st.version;
   const cp = (st.servers ?? []).find((s) => s.local);
   const nodes = (st.servers ?? []).filter((s) => !s.local);
+  // A failed check can't tell whether anything is behind.
+  const current = st.check_error ? (
+    <span className="text-mut">unknown</span>
+  ) : (
+    <span className="text-mut">up to date</span>
+  );
   let n = 1;
   return (
     <section aria-labelledby="plan" className="min-w-0">
@@ -276,8 +309,11 @@ function Plan({ st }: { st: UpdateStatus }) {
             {cp && (
               <tr>
                 {selfUpdate && <td className="py-2 text-faint">{n++}</td>}
-                <td className="py-2 font-mono whitespace-nowrap">
-                  {cp.name} <span className="text-faint">control plane</span>
+                <td className="py-2 font-mono">
+                  {cp.name}{" "}
+                  <span className="font-sans text-xs whitespace-nowrap text-mut">
+                    control plane
+                  </span>
                 </td>
                 <td className="py-2 font-mono">{cp.version}</td>
                 <td className="py-2">
@@ -289,7 +325,7 @@ function Plan({ st }: { st: UpdateStatus }) {
                       </span>
                     </>
                   ) : (
-                    <span className="text-mut">up to date</span>
+                    current
                   )}
                 </td>
               </tr>
@@ -300,6 +336,7 @@ function Plan({ st }: { st: UpdateStatus }) {
                 s={s}
                 target={target}
                 step={selfUpdate ? n++ : null}
+                current={current}
               />
             ))}
           </tbody>
@@ -320,13 +357,16 @@ function NodeRow({
   s,
   target,
   step,
+  current,
 }: {
   s: UpdateServer;
   target: string;
   step: number | null;
+  /** What a server on the target shows: up to date, or unknown. */
+  current: ReactNode;
 }) {
   const offline = s.status !== "online";
-  let then = <span className="text-mut">up to date</span>;
+  let then = current;
   if (s.manual) {
     then = (
       <span className="text-warn">

@@ -13,6 +13,7 @@ import {
   platformSecurityQuery,
   useSetPlatformSecurity,
 } from "../features/console/security";
+import { roleNote } from "../features/org/data";
 import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
 import { day, plural } from "../ui/format";
@@ -24,12 +25,11 @@ import {
   CopyButton,
   ErrorText,
   Glyph,
-  Menu,
-  menuItem,
   Page,
   PageBar,
   Panel,
 } from "../ui/kit";
+import { notify } from "../ui/notice";
 
 // People who sign in to the UI. Nobody can disable, delete or reset
 // themselves here.
@@ -50,6 +50,7 @@ function Users() {
   const me = useSession();
   const org = useOrg();
   const [reset, setReset] = useState<Reset>();
+  const [adding, setAdding] = useState(false);
   const active = users.filter((u) => !u.disabled_at).length;
 
   return (
@@ -62,12 +63,18 @@ function Users() {
             {users.length > active && ` · ${users.length - active} disabled`}
           </span>
         }
+        actions={
+          !adding && (
+            <Button primary onClick={() => setAdding(true)}>
+              Add user
+            </Button>
+          )
+        }
       />
       <Page width="max-w-[1240px]">
         <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
           <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
-            <OperatorsTwoFactor />
-            <AddUser />
+            {adding && <AddUser onClose={() => setAdding(false)} />}
             {reset && (
               <section
                 aria-labelledby="new-password"
@@ -107,8 +114,9 @@ function Users() {
                     <th title="Whether they sign in with a second factor">
                       Two-factor
                     </th>
-                    <th title="Signed-in browser sessions">Sessions</th>
-                    <th title="Usable tokens they created">Tokens</th>
+                    <th title="Signed-in browser sessions and usable tokens they created">
+                      Access
+                    </th>
                     <th>Added</th>
                     <th />
                   </tr>
@@ -141,6 +149,7 @@ function Users() {
               </Link>
               .
             </p>
+            <OperatorsTwoFactor />
           </div>
           <RoleGuide />
         </div>
@@ -159,7 +168,7 @@ function OperatorsTwoFactor() {
   ).data;
   const set = useSetPlatformSecurity();
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="flex flex-col gap-1 border-t border-line pt-4">
       <CliHint
         cli={`dock security operators-two-factor ${on ? "off" : "on"}`}
         className="act"
@@ -172,47 +181,43 @@ function OperatorsTwoFactor() {
         />
       </CliHint>
       <span className="text-xs text-mut">
-        Operators who signed in without one keep their organizations but not the
-        console.
+        Without one, operators keep their organizations but not the console.
       </span>
       <ErrorText error={set.error} />
     </div>
   );
 }
 
-const roleText: Record<Scope, string> = {
-  admin:
-    "Everything in the organization: members, tokens and data access. Reveals secret values. Operators also run the platform console.",
-  deploy:
-    "Deploy, roll back, restart, edit variables and settings. Values stay hidden.",
-  read: "Status, deploys, logs and metrics. Read only.",
-};
-
-/** What each role may do, next to the users table (A4). */
+/**
+ * What each role can do, beside the users table: the same words as the
+ * organization's Members page (roleNote), plus what operators add.
+ */
 function RoleGuide() {
   return (
     <aside
       aria-labelledby="roles"
-      className="flex min-w-0 flex-[1_1_260px] flex-col gap-3"
+      className="flex max-w-[360px] min-w-0 flex-[1_1_280px] flex-col gap-3"
     >
-      <h2 id="roles" className="text-sm font-semibold">
+      <h2 id="roles" className="font-semibold">
         What each role can do
       </h2>
       <dl className="panel">
-        {(["admin", "deploy", "read"] as const).map((role) => (
+        {(["read", "deploy", "admin"] as const).map((role) => (
           <div
             key={role}
-            className="border-b border-line px-3.5 py-3 last:border-0"
+            className="border-b border-soft px-3.5 py-3 last:border-b-0"
           >
-            <dt className="font-mono">{role}</dt>
-            <dd className="text-xs text-mut">{roleText[role]}</dd>
+            <dt className="font-medium">{role}</dt>
+            <dd className="text-xs text-mut">{roleNote[role]}</dd>
           </div>
         ))}
+        <div className="px-3.5 py-3">
+          <dt className="font-medium text-warn">operator</dt>
+          <dd className="text-xs text-mut">
+            also runs this console: servers, users, backups and updates
+          </dd>
+        </div>
       </dl>
-      <p className="text-2xs leading-relaxed text-faint">
-        A token can be narrowed to one project or environment, and never exceeds
-        the person who made it.
-      </p>
     </aside>
   );
 }
@@ -242,6 +247,13 @@ const UserRow = memo(function UserRow({
     setPassword("");
     setAsking(null);
   };
+  // Live sessions and usable tokens, as on Members: "2 sessions · 1 token".
+  const access = [
+    u.sessions > 0 && plural(u.sessions, "session"),
+    u.tokens > 0 && plural(u.tokens, "token"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const sessions = u.sessions
     ? `Their ${plural(u.sessions, "session")} end now.`
     : "They have no open sessions.";
@@ -259,14 +271,20 @@ const UserRow = memo(function UserRow({
         pending={setDisabled.isPending}
         error={setDisabled.error}
         onConfirm={() =>
-          setDisabled.mutate({ id: u.id, disabled: true }, { onSuccess: close })
+          setDisabled.mutate(
+            { id: u.id, disabled: true },
+            {
+              onSuccess: () => {
+                close();
+                notify(`${u.name} disabled`);
+              },
+            },
+          )
         }
         onCancel={close}
       >
-        Disable <b className="font-semibold">{u.email}</b>?{" "}
-        <span className="text-mut">
-          They can't sign in. {sessions} {tokens} Enable them again any time.
-        </span>
+        <b>{u.email}</b> can't sign in. {sessions} {tokens} Enable them again
+        any time.
       </Confirm>
     ),
     delete: (
@@ -276,19 +294,24 @@ const UserRow = memo(function UserRow({
         cli={`dock user delete ${u.email}`}
         pending={remove.isPending}
         error={remove.error}
-        onConfirm={() => remove.mutate(u.id, { onSuccess: close })}
+        onConfirm={() =>
+          remove.mutate(u.id, {
+            onSuccess: () => {
+              close();
+              notify(`${u.name} deleted`);
+            },
+          })
+        }
         onCancel={close}
       >
-        Delete <b className="font-semibold">{u.email}</b>?{" "}
-        <span className="text-mut">
-          The account is gone and they can't sign in. {sessions} Their audit
-          history stays. {tokens}
-        </span>
+        The account of <b>{u.email}</b> is gone and they can't sign in.{" "}
+        {sessions} Their audit history stays. {tokens}
       </Confirm>
     ),
     reset: (
       <Confirm
         action="Reset password"
+        title={`Reset the password of ${u.email}?`}
         cli={`dock user reset-password ${u.email}${password ? " --password …" : ""}`}
         pending={resetPassword.isPending}
         error={resetPassword.error}
@@ -306,13 +329,10 @@ const UserRow = memo(function UserRow({
         }
         onCancel={close}
       >
-        Reset the password of <b className="font-semibold">{u.email}</b>?{" "}
-        <span className="text-mut">
-          {password
-            ? "They sign in with the one typed here."
-            : "A new one is generated and shown once."}{" "}
-          {sessions} Their dock login tokens are revoked.
-        </span>
+        {password
+          ? "They sign in with the one typed here."
+          : "A new one is generated and shown once."}{" "}
+        {sessions} Their dock login tokens are revoked.
         <input
           type="password"
           aria-label="New password, optional"
@@ -327,217 +347,203 @@ const UserRow = memo(function UserRow({
   };
 
   return (
-    <>
-      <tr
-        className={`*:align-middle ${disabled ? "text-faint" : "hover:bg-hover"}`}
-      >
-        <td className="py-2.5">
-          <span className="flex items-center gap-2.5">
-            <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg">
-              {u.name.slice(0, 1).toUpperCase()}
-            </span>
-            <span>
-              <span className="font-medium">{u.name}</span>
-              {you && <span className="text-faint"> (you)</span>}
-              <span className="block text-2xs text-faint">{u.email}</span>
-            </span>
+    <tr
+      className={`*:align-middle ${disabled ? "text-faint" : "hover:bg-hover"}`}
+    >
+      <td className="py-2.5">
+        {/* The confirm is a modal; this cell only holds it. */}
+        {asking && (
+          <span className="whitespace-normal">{confirms[asking]}</span>
+        )}
+        <span className="flex items-center gap-2.5">
+          <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg">
+            {u.name.slice(0, 1).toUpperCase()}
           </span>
-        </td>
-        <td className="py-2.5 font-mono">
-          {u.role}
-          {u.operator && <span className="text-warn"> · operator</span>}
-        </td>
-        <td className="py-2.5">
-          {disabled && u.disabled_at ? (
-            `disabled ${day(u.disabled_at)}`
-          ) : (
-            <span className="text-ok">
-              <Glyph char="●" /> active
-            </span>
-          )}
-        </td>
-        <td className="py-2.5">
-          {u.two_factor ? (
-            <span className="text-ok">
-              <Glyph char="●" /> on
-            </span>
-          ) : (
-            <span className="text-faint">
-              <Glyph char="○" /> off
-            </span>
-          )}
-        </td>
-        <td className={`py-2.5 font-mono ${u.sessions ? "" : "text-faint"}`}>
-          {u.sessions}
-        </td>
-        <td className={`py-2.5 font-mono ${u.tokens ? "" : "text-faint"}`}>
-          {u.tokens}
-        </td>
-        <td className="py-2.5 text-faint">{day(u.created_at)}</td>
-        <td className="w-full py-1.5 text-right">
-          {!you && (
-            // CLI equivalents show as tooltips here and in each confirm.
-            <Menu
-              label={`More for ${u.name}`}
-              right
-              className="inline-flex"
-              button={
-                <span className="rounded-ctl px-2 py-0.5 text-mut hover:bg-panel hover:text-fg">
-                  ···
-                </span>
-              }
+          <span>
+            <span className="font-medium">{u.name}</span>
+            {you && <span className="text-faint"> (you)</span>}
+            <span className="block text-2xs text-faint">{u.email}</span>
+          </span>
+        </span>
+      </td>
+      <td className="py-2.5">
+        {u.role}
+        {u.operator && <span className="text-warn"> · operator</span>}
+      </td>
+      <td className="py-2.5">
+        {disabled && u.disabled_at ? (
+          `disabled ${day(u.disabled_at)}`
+        ) : (
+          <span className="text-ok">
+            <Glyph char="●" /> active
+          </span>
+        )}
+      </td>
+      <td className="py-2.5">
+        {u.two_factor ? (
+          <span className="text-ok">
+            <Glyph char="●" /> on
+          </span>
+        ) : (
+          <span className="text-faint">
+            <Glyph char="○" /> off
+          </span>
+        )}
+      </td>
+      <td className={`py-2.5 ${access ? "text-mut" : "text-faint"}`}>
+        {access || "none"}
+      </td>
+      <td className="py-2.5 text-faint">{day(u.created_at)}</td>
+      <td className="w-full py-1.5 text-right">
+        {!you && (
+          // Text buttons, so three fit beside the role guide; each title is
+          // its CLI equivalent, and each confirm shows it too.
+          <span className="inline-flex gap-3">
+            {disabled ? (
+              <button
+                type="button"
+                className="lnk"
+                title={`dock user enable ${u.email}`}
+                disabled={setDisabled.isPending}
+                onClick={() =>
+                  setDisabled.mutate(
+                    { id: u.id, disabled: false },
+                    { onSuccess: () => notify(`${u.name} enabled`) },
+                  )
+                }
+              >
+                Enable
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="lnk"
+                title={`dock user disable ${u.email}`}
+                onClick={() => setAsking("disable")}
+              >
+                Disable
+              </button>
+            )}
+            <button
+              type="button"
+              className="lnk"
+              title={`dock user reset-password ${u.email}`}
+              onClick={() => setAsking("reset")}
             >
-              {(close) => (
-                <>
-                  {disabled ? (
-                    <button
-                      type="button"
-                      className={menuItem}
-                      title={`dock user enable ${u.email}`}
-                      disabled={setDisabled.isPending}
-                      onClick={() => {
-                        close();
-                        setDisabled.mutate({ id: u.id, disabled: false });
-                      }}
-                    >
-                      Enable
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className={menuItem}
-                      title={`dock user disable ${u.email}`}
-                      onClick={() => {
-                        close();
-                        setAsking("disable");
-                      }}
-                    >
-                      Disable
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className={menuItem}
-                    title={`dock user reset-password ${u.email}`}
-                    onClick={() => {
-                      close();
-                      setAsking("reset");
-                    }}
-                  >
-                    Reset password
-                  </button>
-                  <button
-                    type="button"
-                    className={`${menuItem} text-fail`}
-                    title={`dock user delete ${u.email}`}
-                    onClick={() => {
-                      close();
-                      setAsking("delete");
-                    }}
-                  >
-                    Delete
-                  </button>
-                </>
-              )}
-            </Menu>
-          )}
-          {!asking && <ErrorText error={setDisabled.error} />}
-        </td>
-      </tr>
-      {asking && (
-        <tr>
-          <td colSpan={8} className="border-0 pb-3">
-            {confirms[asking]}
-          </td>
-        </tr>
-      )}
-    </>
+              Reset password
+            </button>
+            <button
+              type="button"
+              className="lnk text-fail"
+              title={`dock user delete ${u.email}`}
+              onClick={() => setAsking("delete")}
+            >
+              Delete
+            </button>
+          </span>
+        )}
+        {!asking && <ErrorText error={setDisabled.error} />}
+      </td>
+    </tr>
   );
 });
 
-const roles: Scope[] = ["deploy", "read", "admin"];
+const roles: Scope[] = ["read", "deploy", "admin"];
 
-/** Adds a person with a first password they change after signing in. */
-function AddUser() {
+/**
+ * Adds a person with a first password they change after signing in;
+ * opened from the bar's Add user.
+ */
+function AddUser({ onClose }: { onClose: () => void }) {
   const create = useCreateUser();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Scope>("deploy");
   const [operator, setOperator] = useState(false);
+  const label = "flex flex-col gap-1.5 text-xs text-mut";
   return (
     <form
       aria-label="Add a user"
-      className="flex flex-wrap items-center gap-2.5"
+      className="flex flex-col gap-3 border-b border-line pb-5"
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
       onSubmit={(e) => {
         e.preventDefault();
         create.mutate(
           { email: email.trim(), name: name.trim(), password, role, operator },
           {
             onSuccess: () => {
-              setEmail("");
-              setName("");
-              setPassword("");
-              setOperator(false);
+              notify(`${name.trim()} added`);
+              onClose();
             },
           },
         );
       }}
     >
-      <input
-        type="email"
-        aria-label="Email"
-        placeholder="name@company.com"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        className="field min-w-0 flex-[1_1_220px] py-[7px]"
+      <div className="flex flex-wrap items-end gap-3">
+        <label className={`${label} min-w-0 flex-[2_1_220px]`}>
+          Email
+          <input
+            type="email"
+            placeholder="name@company.com"
+            // biome-ignore lint/a11y/noAutofocus: opened by "Add user"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="field py-[7px] text-sm text-fg"
+          />
+        </label>
+        <label className={`${label} min-w-0 flex-[1_1_150px]`}>
+          Name
+          <input
+            placeholder="Ada Lovelace"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="field py-[7px] text-sm text-fg"
+          />
+        </label>
+        <label className={`${label} min-w-0 flex-[1_1_180px]`}>
+          Password, 12+ characters
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="field py-[7px] text-sm text-fg"
+          />
+        </label>
+        <label className={label}>
+          Role
+          <select
+            value={role}
+            onChange={(e) =>
+              setRole(roles.find((r) => r === e.target.value) ?? "read")
+            }
+            className="py-[7px] text-sm text-fg"
+          >
+            {roles.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <Check
+        label="Operator: also runs this console"
+        checked={operator}
+        onChange={setOperator}
       />
-      <input
-        aria-label="Name"
-        placeholder="name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="field w-36 py-[7px]"
-      />
-      <input
-        type="password"
-        aria-label="First password"
-        placeholder="first password, 12+ characters"
-        autoComplete="new-password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className="field w-56 py-[7px]"
-      />
-      <select
-        aria-label="Role"
-        value={role}
-        onChange={(e) =>
-          setRole(roles.find((r) => r === e.target.value) ?? "read")
-        }
-        className="field py-[7px]"
-      >
-        {roles.map((r) => (
-          <option key={r}>{r}</option>
-        ))}
-      </select>
-      <label className="flex items-center gap-1.5 text-xs text-sec">
-        <input
-          type="checkbox"
-          className="accent-fg"
-          checked={operator}
-          onChange={(e) => setOperator(e.target.checked)}
-        />
-        Operator
-      </label>
-      <Act
-        primary
-        type="submit"
-        cli={`dock user create --email ${email.trim() || "<email>"} --name ${JSON.stringify(name.trim() || "<name>")} --role ${role}${operator ? " --operator" : ""}`}
-        disabled={create.isPending || !email || !name || !password}
-      >
-        Add user
-      </Act>
-      <ErrorText error={create.error} />
+      <div className="flex flex-wrap items-center gap-2.5">
+        <Act
+          primary
+          type="submit"
+          cli={`dock user create --email ${email.trim() || "<email>"} --name ${JSON.stringify(name.trim() || "<name>")} --role ${role}${operator ? " --operator" : ""}`}
+          disabled={create.isPending}
+        >
+          Add user
+        </Act>
+        <Button onClick={onClose}>Cancel</Button>
+        <ErrorText error={create.error} />
+      </div>
     </form>
   );
 }

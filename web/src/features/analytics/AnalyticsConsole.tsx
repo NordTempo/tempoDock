@@ -1,10 +1,12 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServers } from "../../data/queries";
 import { ErrorBlock } from "../../ui/ErrorBlock";
-import { bytes } from "../../ui/format";
+import { bytes, plural } from "../../ui/format";
 import {
   Act,
+  Button,
   Confirm,
   ErrorText,
   Fact,
@@ -13,6 +15,7 @@ import {
   PageBar,
   SectionHead,
 } from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import {
   analyticsDefaultsQuery,
   analyticsStatusQuery,
@@ -29,24 +32,24 @@ export function AnalyticsConsole() {
   const { data: status, refetch } = useSuspenseQuery(analyticsStatusQuery());
   return (
     <>
-      <PageBar
-        title="Analytics"
-        after={
-          <span className="text-xs text-faint">
-            cookieless visits, counted per site
-          </span>
-        }
-      />
+      <PageBar title="Analytics" />
       <Page>
         <Facts>
           <Fact label="Analytics">{status.enabled ? "on" : "off"}</Fact>
           <Fact
             label="Server"
             note={
-              status.server_online ? (
+              // Off, nothing runs there yet: its health isn't the store's.
+              !status.enabled ? undefined : status.server_online ? (
                 "online"
               ) : (
-                <span className="text-fail">offline</span>
+                <Link
+                  to="/console/servers/$server"
+                  params={{ server: status.server }}
+                  className="text-fail"
+                >
+                  offline, the store can't run
+                </Link>
               )
             }
           >
@@ -72,9 +75,7 @@ export function AnalyticsConsole() {
           >
             {status.events.toLocaleString("en-US")}
           </Fact>
-          <Fact label="Locations" note="IP Geolocation by DB-IP, CC BY 4.0">
-            {status.geoip || "not downloaded"}
-          </Fact>
+          <Fact label="Locations">{status.geoip || "not downloaded"}</Fact>
         </Facts>
         {status.moving_to && (
           <p>
@@ -100,6 +101,9 @@ export function AnalyticsConsole() {
           moving={!!status.moving_to}
         />
         <Defaults />
+        <p className="text-2xs text-faint">
+          IP Geolocation by DB-IP, CC BY 4.0
+        </p>
       </Page>
     </>
   );
@@ -126,9 +130,7 @@ function ServerPicker({
   const cli = `dock analytics server ${server}${online ? "" : " --start-empty"}`;
   return (
     <section aria-labelledby="server" className="flex flex-col gap-2">
-      <SectionHead id="server" aside="its data moves with it">
-        Analytics server
-      </SectionHead>
+      <SectionHead id="server">Analytics server</SectionHead>
       <span className="flex items-center gap-2.5">
         <select
           aria-label="Analytics server"
@@ -144,11 +146,13 @@ function ServerPicker({
         <Act
           cli={cli}
           disabled={server === current || moving || move.isPending}
+          reason={server === current ? "pick another server" : undefined}
           onClick={() => setConfirming(true)}
         >
           Move the store
         </Act>
       </span>
+      <span className="text-xs text-mut">Its data moves with it.</span>
       {confirming && (
         <Confirm
           action={`Move to ${server}`}
@@ -186,9 +190,7 @@ function Defaults() {
   const ok = fields.every((f) => valid(f.key, draft[f.key] ?? ""));
   return (
     <section aria-labelledby="defaults" className="flex flex-col gap-2">
-      <SectionHead id="defaults" aside="sites use these where they set nothing">
-        Site defaults
-      </SectionHead>
+      <SectionHead id="defaults">Site defaults</SectionHead>
       <form
         className="flex max-w-xl flex-col gap-4"
         onSubmit={(e) => {
@@ -200,7 +202,12 @@ function Defaults() {
                 ...changed.map((f) => value(f.key, draft[f.key] ?? "")),
               ),
             },
-            { onSuccess: () => setBase(draft) },
+            {
+              onSuccess: () => {
+                setBase(draft);
+                notify("Site defaults saved");
+              },
+            },
           );
         }}
       >
@@ -221,20 +228,35 @@ function Defaults() {
             <span className="text-xs text-faint">{field.help}</span>
           </div>
         ))}
-        <ErrorText error={set.error} />
-        <span>
-          <Act
-            primary
-            type="submit"
-            cli={`dock analytics defaults set${changed
-              .flatMap((f) => flags(f.key, draft[f.key] ?? ""))
-              .map((f) => ` ${f}`)
-              .join("")}`}
-            disabled={!changed.length || !ok || set.isPending}
-          >
-            {set.isPending ? "Saving…" : "Save defaults"}
-          </Act>
-        </span>
+        {/* Nothing saves on its own: a changed form gets a bar that stays
+            in view above the command line until saved or discarded. */}
+        {changed.length > 0 && (
+          <div className="sticky bottom-[60px] z-10 flex flex-wrap items-center gap-2.5 border-t border-line bg-page py-3">
+            <Act
+              primary
+              type="submit"
+              cli={`dock analytics defaults set${changed
+                .flatMap((f) => flags(f.key, draft[f.key] ?? ""))
+                .map((f) => ` ${f}`)
+                .join("")}`}
+              disabled={!ok || set.isPending}
+            >
+              {set.isPending ? "Saving…" : "Save defaults"}
+            </Act>
+            <Button
+              onClick={() => {
+                set.reset();
+                setDraft(base);
+              }}
+            >
+              Discard
+            </Button>
+            <span className="text-xs text-mut">
+              {plural(changed.length, "change")}
+            </span>
+            <ErrorText error={set.error} />
+          </div>
+        )}
       </form>
     </section>
   );

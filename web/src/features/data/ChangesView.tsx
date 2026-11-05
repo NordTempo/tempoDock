@@ -99,6 +99,43 @@ export function ChangesView({
   if (!list.data)
     return <p className="p-5 text-(--g-mut)">Loading changesets</p>;
 
+  const importFile = actions && (
+    <label
+      className="g-btn sm focus-within:ring-1 focus-within:ring-(--g-accent)"
+      title={cli("dock db apply -f changes.json")}
+    >
+      Import changeset file
+      <input
+        type="file"
+        accept=".json,application/json"
+        className="sr-only"
+        onChange={async (e) => {
+          const picked = e.target.files?.[0];
+          e.target.value = "";
+          if (!picked) return;
+          const read = parseChangesFile(picked.name, await picked.text());
+          setFileError(read instanceof Error ? read : null);
+          setFile(read instanceof Error ? null : read);
+        }}
+      />
+    </label>
+  );
+
+  // Nothing yet: one line across the panel, no filter.
+  if (!list.data.length && !file) {
+    return (
+      <div className="flex flex-wrap items-center gap-3 p-5">
+        <p className="text-(--g-mut)">
+          {access.approve
+            ? "No changesets yet. Edits from Tables and agent proposals appear here."
+            : "No changesets yet. Edit a table to propose one."}
+        </p>
+        {importFile}
+        <ErrorText error={fileError} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 flex-1">
       <ul className="flex w-[320px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-(--g-line) p-2">
@@ -117,39 +154,12 @@ export function ChangesView({
               <option key={s}>{s}</option>
             ))}
           </select>
-          {actions && (
-            <label
-              className="g-btn sm focus-within:ring-1 focus-within:ring-(--g-accent)"
-              title={cli("dock db apply -f changes.json")}
-            >
-              Open changes file
-              <input
-                type="file"
-                accept=".json,application/json"
-                className="sr-only"
-                onChange={async (e) => {
-                  const picked = e.target.files?.[0];
-                  e.target.value = "";
-                  if (!picked) return;
-                  const read = parseChangesFile(
-                    picked.name,
-                    await picked.text(),
-                  );
-                  setFileError(read instanceof Error ? read : null);
-                  setFile(read instanceof Error ? null : read);
-                }}
-              />
-            </label>
-          )}
+          {importFile}
           <ErrorText error={fileError} />
         </li>
         {!shown.length && (
           <li className="px-1.5 text-(--g-mut)">
-            {status
-              ? `No ${status} changesets.`
-              : access.approve
-                ? "No changesets yet. Proposals from people and agents show up here for you to approve."
-                : "No changesets yet. Edit a table to propose one."}
+            {status ? `No ${status} changesets.` : "No changesets yet."}
           </li>
         )}
         {shown.slice(0, 200).map((c) => {

@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useServiceLogs } from "../data/live";
-import { useDeploy, useRollback } from "../data/mutations";
+import { useDeploy } from "../data/mutations";
 import {
   findService,
   queries,
@@ -21,7 +21,8 @@ import type { LogLine, Release } from "../data/types";
 import { openDeploy } from "../features/deploy/start";
 import { shortSha, useGitDeploy } from "../features/git/api";
 import { LogRow } from "../features/service/LogsPane";
-import { copiedConfig, imageLabel } from "../features/service/releases";
+import { RollbackConfirm } from "../features/service/ReleasesTable";
+import { imageLabel } from "../features/service/releases";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useShortcuts } from "../shell/keys";
 import { useOrg } from "../shell/location";
@@ -30,7 +31,6 @@ import {
   Act,
   Actor,
   actorKind,
-  Confirm,
   ErrorText,
   Glyph,
   Page,
@@ -47,11 +47,13 @@ export const Route = createFileRoute(
 )({
   loader: async ({ context: { queryClient }, params }) => {
     const number = Number(params.number);
-    if (!Number.isInteger(number) || number < 1) throw notFound();
+    if (!Number.isInteger(number) || number < 1)
+      throw notFound({ routeId: "/_app/$org" });
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
     );
-    if (!findService(overview, params)) throw notFound();
+    if (!findService(overview, params))
+      throw notFound({ routeId: "/_app/$org" });
     const ref = servicePath(params);
     await Promise.all([
       queryClient.ensureQueryData(queries.release(ref, number)),
@@ -70,13 +72,13 @@ function ReleasePage() {
   const releases = useReleases(ref);
   const deploy = useDeploy();
   const gitDeploy = useGitDeploy(ref);
-  const rollback = useRollback();
   const mayDeploy = useCanDeploy(ref);
   const [rollingBack, setRollingBack] = useState(false);
   const blocked = useDeployBlock(ref);
   const navigate = useNavigate();
   const { service } = view;
   const serving = service.active_release ?? null;
+  const servingRelease = useReleases(ref).find((x) => x.status === "active");
   const failed = release.status === "failed";
   const r = `r${release.number}`;
   // What it replaced (or would have): the release before it that served.
@@ -244,33 +246,13 @@ function ReleasePage() {
             </span>
           </div>
           {rollingBack && (
-            <Confirm
-              action={`Roll back to ${r}`}
-              cli={`dock rollback ${release.number} -s ${ref.service} -e ${ref.environment}`}
-              pending={rollback.isPending}
-              error={rollback.error}
-              onConfirm={() =>
-                rollback.mutate(
-                  { ref, to: release.number },
-                  {
-                    onSuccess: () =>
-                      navigate({
-                        to: "/$org/$project/$environment/$service",
-                        params: { org, ...ref },
-                      }),
-                  },
-                )
-              }
-              onCancel={() => {
-                rollback.reset();
-                setRollingBack(false);
-              }}
-            >
-              A new release with {r}'s image and config:{" "}
-              <span className="font-mono text-mut">
-                {copiedConfig(release)}
-              </span>
-            </Confirm>
+            <RollbackConfirm
+              serviceRef={ref}
+              target={release}
+              serving={servingRelease}
+              blocked={!!view.deploying || !!blocked}
+              onDone={() => setRollingBack(false)}
+            />
           )}
         </section>
 

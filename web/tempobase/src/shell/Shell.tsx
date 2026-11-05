@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, Outlet, useParams } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 import { initials } from "../../../src/features/data/kit";
-import { queries, useIsAdmin, useLogout, useMe } from "../data/queries";
+import { queries, useIsAdmin, useMe } from "../data/queries";
 
 // The open connection's tables, under it in the sidebar. Lazy: it shares
 // the panel's data hooks, which stay out of the entry chunk.
@@ -24,15 +24,14 @@ export function Shell() {
 
 /**
  * The product, the connections (the open one with its tables), the
- * settings pages (admin ones for admins) and the account.
+ * settings pages (admin ones for admins) and the account, whose page has
+ * Sign out.
  */
 function Sidebar() {
   const admin = useIsAdmin();
   const me = useMe();
   const connections = useQuery(queries.connections());
   const { connection: open } = useParams({ strict: false });
-  const logout = useLogout();
-  const navigate = useNavigate();
   const pages = [
     ["/settings/tokens", "Agents & MCP"],
     ...(admin ? ([["/settings/people", "People"]] as const) : []),
@@ -130,32 +129,18 @@ function Sidebar() {
             {label}
           </Link>
         ))}
-        <div className="mt-1 flex h-9 items-center gap-2 px-2.5">
+        <Link
+          to="/settings/account"
+          className="g-item mt-1 h-9"
+          activeProps={{ "aria-current": "page" }}
+          title="Account"
+        >
           <span className="g-avatar" aria-hidden>
             {initials(me.name)}
           </span>
-          <Link
-            to="/settings/account"
-            className="min-w-0 flex-1 truncate text-(--g-dim)!"
-            activeProps={{ "aria-current": "page" }}
-            title="Account"
-          >
-            {me.name}
-          </Link>
+          <span className="min-w-0 flex-1 truncate">{me.name}</span>
           <span className="text-2xs text-(--g-mut)">{roleNames[me.role]}</span>
-        </div>
-        <button
-          type="button"
-          className="g-item text-xs"
-          disabled={logout.isPending}
-          onClick={() =>
-            logout.mutate(undefined, {
-              onSuccess: () => navigate({ to: "/login" }),
-            })
-          }
-        >
-          Sign out
-        </button>
+        </Link>
       </div>
     </nav>
   );

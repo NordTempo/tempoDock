@@ -107,9 +107,13 @@ function Totals({ traffic: { totals: t } }: { traffic: ServiceTraffic }) {
         label="Errors"
         value={
           <>
-            <span className="text-warn">{count(t.status_4xx)}</span>
+            <span className={t.status_4xx ? "text-warn" : undefined}>
+              {count(t.status_4xx)}
+            </span>
             <span className="text-sm font-normal text-mut"> 4xx </span>
-            <span className="text-fail">{count(t.status_5xx)}</span>
+            <span className={t.status_5xx ? "text-fail" : undefined}>
+              {count(t.status_5xx)}
+            </span>
             <span className="text-sm font-normal text-mut"> 5xx</span>
           </>
         }

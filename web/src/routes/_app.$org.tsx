@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { currentOrg, setOrg } from "../api/client";
 import { queries } from "../data/queries";
+import { NotFound } from "../ui/RouteStates";
 
 // Everything in one organization (/$org/...): the API calls act in the
 // org in the URL. Moving to another org drops what was cached for the
@@ -16,4 +17,6 @@ export const Route = createFileRoute("/_app/$org")({
     });
     await queryClient.ensureQueryData(queries.session());
   },
+  // Pages under an org that don't exist render inside the shell.
+  notFoundComponent: NotFound,
 });

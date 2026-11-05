@@ -6,7 +6,7 @@ import { useIsAdmin, useSession } from "../../data/queries";
 import type { Project } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
-import { Act, Button, ErrorText, SectionHead } from "../../ui/kit";
+import { Act, Button, Confirm, SectionHead } from "../../ui/kit";
 
 // A project's General settings (ADR 0059): its name, its config file and
 // archiving it. They were on the project page before.
@@ -105,39 +105,34 @@ export function ArchiveProject({ project }: { project: string }) {
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
   if (!isAdmin) return null;
-  if (!confirming) {
-    return (
-      <div>
-        <button
-          type="button"
-          className="lnk text-xs"
-          onClick={() => setConfirming(true)}
-        >
-          Archive {project}
-        </button>
-      </div>
-    );
-  }
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-panel border border-fail-edge bg-fail-bg/40 px-3.5 py-3">
-      <span>
-        Archive <b className="font-semibold">{project}</b>? Every service stops
-        and its routes are removed. Volumes and history are kept.
+    <section className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-fail-edge pt-4">
+      <span className="min-w-0 flex-1 text-mut">
+        Archiving stops every service and removes its routes. Volumes and
+        history are kept.
       </span>
-      <Button
-        danger
-        small
-        disabled={archive.isPending}
-        onClick={() =>
-          archive.mutate(project, { onSuccess: () => navigate({ to: "/" }) })
-        }
-      >
+      <Button danger onClick={() => setConfirming(true)}>
         Archive {project}
       </Button>
-      <Button small onClick={() => setConfirming(false)}>
-        Cancel
-      </Button>
-      <ErrorText error={archive.error} />
-    </div>
+      {confirming && (
+        <Confirm
+          danger
+          action={`Archive ${project}`}
+          cli={`dock project archive ${project}`}
+          pending={archive.isPending}
+          error={archive.error}
+          onConfirm={() =>
+            archive.mutate(project, { onSuccess: () => navigate({ to: "/" }) })
+          }
+          onCancel={() => {
+            archive.reset();
+            setConfirming(false);
+          }}
+        >
+          Every service in <b>{project}</b> stops and its routes are removed.
+          Volumes and history are kept.
+        </Confirm>
+      )}
+    </section>
   );
 }

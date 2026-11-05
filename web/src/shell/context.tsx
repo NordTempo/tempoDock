@@ -62,7 +62,7 @@ export function EnvSwitch({
   );
   const pr = here?.environment.preview;
   const pill = (
-    <span className="flex items-center gap-[7px] rounded-full border border-edge bg-panel px-[9px] py-1 text-xs hover:border-dash">
+    <span className="flex items-center gap-[7px] rounded-ctl border border-edge px-[9px] py-1 text-xs hover:border-dash hover:bg-hover">
       <span className={toneText[envTone(here?.services ?? [])]}>
         <span className="dot" />
       </span>
@@ -89,8 +89,21 @@ export function EnvSwitch({
       pill
     ) : (
       <Menu label={`Environment: ${environment}`} button={pill}>
-        {(close) =>
-          others.map((e) => {
+        {(close) => [
+          // The one in view first, checked, so the menu reads as a choice.
+          <div
+            key="here"
+            aria-current="true"
+            className={`${menuItem} cursor-default text-fg hover:bg-transparent`}
+          >
+            <span aria-hidden className="w-[7px] text-2xs">
+              ✓
+            </span>
+            <span className="flex-1">
+              {environment} <LockMark lock={here?.environment.lock} />
+            </span>
+          </div>,
+          ...others.map((e) => {
             const twin = e.services.find((s) => s.service.name === service);
             const dot = (
               <span
@@ -140,8 +153,19 @@ export function EnvSwitch({
                 <PrMark preview={e.environment.preview} />
               </Link>
             );
-          })
-        }
+          }),
+          <div key="line" className="my-1 border-t border-line" />,
+          <Link
+            key="compare"
+            to="/$org/$project/compare"
+            params={{ org, project }}
+            onClick={close}
+            className={menuItem}
+          >
+            <span aria-hidden className="w-[7px]" />
+            <span className="flex-1">Compare environments</span>
+          </Link>,
+        ]}
       </Menu>
     );
   return (

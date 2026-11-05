@@ -31,13 +31,18 @@ import { useRegistry } from "../registry/data";
 import { useControlPlaneVersion, Version } from "../servers/parts";
 import { useUpdateNote } from "../update/data";
 
-// The console's landing page: what needs an admin now, then the numbers,
-// servers at a glance, open alerts and recent activity. It reads what the
+// The console's landing page: what needs setting up or fixing (not the
+// alerts, which have their own panel), then the numbers, servers at a
+// glance, open alerts and recent activity. It reads what the
 // other console pages read (each cached and kept live by events), so
 // nothing here polls (ADR 0025).
 
 /** Disk use worth a line on its own; retention prunes at 80% by default. */
 const DISK_WARN = 85;
+
+/** A section's link to its page: quiet, with an arrow, underlined on hover. */
+const more =
+  "text-xs text-mut hover:text-fg hover:underline underline-offset-3";
 
 export function ConsoleOverview() {
   const servers = useServers();
@@ -51,7 +56,11 @@ export function ConsoleOverview() {
         <section aria-labelledby="servers">
           <SectionHead
             id="servers"
-            right={<Link to="/console/servers">All servers</Link>}
+            right={
+              <Link to="/console/servers" className={more}>
+                All servers →
+              </Link>
+            }
           >
             Servers
           </SectionHead>
@@ -62,7 +71,11 @@ export function ConsoleOverview() {
           <section aria-labelledby="activity">
             <SectionHead
               id="activity"
-              right={<Link to="/console/audit">Audit</Link>}
+              right={
+                <Link to="/console/audit" className={more}>
+                  Audit →
+                </Link>
+              }
             >
               Recent activity
             </SectionHead>
@@ -76,7 +89,11 @@ export function ConsoleOverview() {
 
 type Item = { key: string; tone: Tone; text: ReactNode; to: ReactNode };
 
-/** Everything that needs an admin, worst first; one line when nothing does. */
+/**
+ * What needs an operator besides the alerts (which have their own panel
+ * below): updates, servers, backups and the registry, worst first; one
+ * line when nothing does.
+ */
 function Attention() {
   const servers = useServers();
   const version = useControlPlaneVersion();
@@ -108,14 +125,6 @@ function Attention() {
         </>
       ),
       to: <Link to="/console/updates">Updates</Link>,
-    });
-  }
-  for (const a of alerts) {
-    items.push({
-      key: `alert-${a.id}`,
-      tone: a.severity === "critical" ? "fail" : "warn",
-      text: a.title,
-      to: <Link to="/console/alerts">Alerts</Link>,
     });
   }
   for (const s of servers) {
@@ -162,6 +171,8 @@ function Attention() {
   }
   items.sort((a, b) => Number(b.tone === "fail") - Number(a.tone === "fail"));
   if (items.length === 0) {
+    // Open alerts are listed further down; don't call that nothing.
+    if (alerts.length > 0) return null;
     return (
       <p className="text-ok">
         <Glyph char="●" /> Nothing needs attention.
@@ -179,7 +190,9 @@ function Attention() {
             <Glyph char={item.tone === "fail" ? "✕" : "▲"} />
           </span>
           <span className="flex-1">{item.text}</span>
-          <span className="text-xs">{item.to}</span>
+          <span className="text-xs text-mut [&_a:hover]:text-fg [&_a:hover]:underline [&_a]:underline-offset-3">
+            {item.to} <span aria-hidden>→</span>
+          </span>
         </li>
       ))}
     </ul>
@@ -405,7 +418,14 @@ function OpenAlerts() {
   const alerts = useOpenAlerts().slice(0, 6);
   return (
     <section aria-labelledby="alerts">
-      <SectionHead id="alerts" right={<Link to="/console/alerts">Alerts</Link>}>
+      <SectionHead
+        id="alerts"
+        right={
+          <Link to="/console/alerts" className={more}>
+            Alerts →
+          </Link>
+        }
+      >
         Open alerts
       </SectionHead>
       {alerts.length === 0 ? (

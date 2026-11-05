@@ -6,8 +6,16 @@ import { AddServer } from "../features/servers/AddServer";
 import { Ingress, statusTitle, Version } from "../features/servers/parts";
 import { useServerSwitches } from "../features/servers/switches";
 import { useShortcuts } from "../shell/keys";
-import { pct, plural, since, size, until } from "../ui/format";
-import { Act, ErrorText, Page, PageBar, Panel, StateText } from "../ui/kit";
+import { pct, since, size, until } from "../ui/format";
+import {
+  Act,
+  ErrorText,
+  Glyph,
+  Page,
+  PageBar,
+  Panel,
+  StateText,
+} from "../ui/kit";
 import { serverState } from "../ui/status";
 
 // Every server: link status, version, ingress, what it accepts, how loaded
@@ -61,7 +69,7 @@ function Servers() {
       />
       <Page width="max-w-[1400px]" gap="gap-[18px]">
         {adding && <AddServer onClose={() => setAdding(false)} />}
-        <Kinds servers={servers} />
+        <Kinds servers={servers} onAdd={() => setAdding(true)} />
         <Panel>
           <table>
             <thead>
@@ -97,69 +105,60 @@ function Servers() {
 const COLUMNS = 12;
 
 /**
- * Where each kind of environment can go (B1's pools): the servers that
- * accept it and how much of their memory is reserved, and a warning
- * when one server carries everything.
+ * Where each kind of environment can go (B1's pools), as one line: how
+ * much memory the servers accepting it have reserved. With one server, an
+ * amber line says it carries everything.
  */
-function Kinds({ servers }: { servers: Server[] }) {
+function Kinds({ servers, onAdd }: { servers: Server[]; onAdd: () => void }) {
   const live = servers.filter((s) => s.status !== "revoked");
   const kinds = [
     ["Production", live.filter((s) => s.accepts_production)],
     ["Non-production", live.filter((s) => s.accepts_non_production)],
   ] as const;
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
-      {kinds.map(([label, accepting]) => {
-        const memory = accepting.reduce((n, s) => n + s.memory_bytes, 0);
-        const reserved = accepting.reduce(
-          (n, s) => n + s.reserved_memory_bytes,
-          0,
-        );
-        const share = memory ? Math.min(1, reserved / memory) : 0;
-        return (
-          <section
-            key={label}
-            aria-label={`${label} environments`}
-            className="flex flex-col gap-2 rounded-panel border border-line px-3.5 py-3"
-          >
-            <div className="flex items-baseline gap-2">
-              <h2 className="flex-1 font-medium">{label}</h2>
-              <span className="text-xs text-faint">
-                {plural(accepting.length, "server")}
+    <div className="flex flex-col gap-1.5">
+      <p className="flex flex-wrap gap-x-5 gap-y-1">
+        {kinds.map(([label, accepting]) => {
+          const memory = accepting.reduce((n, s) => n + s.memory_bytes, 0);
+          const reserved = accepting.reduce(
+            (n, s) => n + s.reserved_memory_bytes,
+            0,
+          );
+          return (
+            <span key={label} title={accepting.map((s) => s.name).join(", ")}>
+              {label}{" "}
+              <span className="text-mut">
+                {!accepting.length
+                  ? "no server"
+                  : memory
+                    ? `${pct((100 * reserved) / memory)} reserved`
+                    : "memory unknown"}
               </span>
-            </div>
-            <div className="h-1 overflow-hidden rounded-full bg-chip">
-              <div
-                className="h-full rounded-full bg-sec"
-                style={{ width: `${share * 100}%` }}
-              />
-            </div>
-            <span className="text-xs text-mut">
-              {memory
-                ? `${pct(share * 100)} of memory reserved`
-                : "memory unknown"}{" "}
-              · {accepting.map((s) => s.name).join(", ") || "no server"}
             </span>
-          </section>
-        );
-      })}
+          );
+        })}
+      </p>
       {live.length === 1 && (
-        <section
-          aria-label="Single point of failure"
-          className="flex flex-col gap-1.5 rounded-panel border border-warn-edge bg-warn-bg/60 px-3.5 py-3"
-        >
-          <h2 className="font-medium">Single point of failure</h2>
-          <span className="text-xs text-warn-text">
-            Everything, the control plane included, runs on one server. Add a
-            second to spread the load.
-          </span>
-        </section>
+        <p className="text-warn-text">
+          <span className="text-warn">
+            <Glyph char="▲" />
+          </span>{" "}
+          Single server: the control plane and every app run on one. Add a
+          second to spread the load.{" "}
+          <button
+            type="button"
+            className="text-fg underline underline-offset-3"
+            onClick={onAdd}
+          >
+            Add server
+          </button>
+        </p>
       )}
     </div>
   );
 }
 
-/** A server's row with its switches, and a confirm row when asked. */
+/** A server's row with its switches, and a row holding the confirm or error. */
 const ServerRow = memo(function ServerRow({ server }: { server: Server }) {
   const { accepts, placement, builder, confirm, error } =
     useServerSwitches(server);
@@ -172,8 +171,12 @@ const ServerRow = memo(function ServerRow({ server }: { server: Server }) {
         builder={builder}
       />
       {(confirm || error) && (
+        // The confirm is a modal; the row only holds it (or the error).
         <tr>
-          <td colSpan={COLUMNS} className="border-0 pb-3">
+          <td
+            colSpan={COLUMNS}
+            className={confirm ? "border-0 p-0" : "border-0 pb-3"}
+          >
             {confirm ?? <ErrorText error={error} />}
           </td>
         </tr>

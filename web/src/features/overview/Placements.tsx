@@ -24,9 +24,7 @@ export function Placements({ project }: { project: string }) {
   const operator = useIsOperator();
   return (
     <section aria-labelledby="placement" className="min-w-0">
-      <SectionHead id="placement" aside="each kind stays on one server">
-        Placement
-      </SectionHead>
+      <SectionHead id="placement">Placement</SectionHead>
       <Panel>
         <table>
           <thead>

@@ -3,9 +3,9 @@ import {
   type QueryKey,
   queryOptions,
   type UseQueryOptions,
+  useQueries,
   useQuery,
   useQueryClient,
-  useSuspenseQueries,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import { notFound } from "@tanstack/react-router";
@@ -503,12 +503,16 @@ export const useProjects = () => useSuspenseQuery(queries.projects()).data;
 export const useProjectOverview = (project: string) =>
   useSuspenseQuery(queries.overview(project)).data;
 
-/** Every project's overview: the sidebar tree and the command palette. */
+/**
+ * Every project's overview: the sidebar tree and the command palette. The
+ * shell's loader fetched them; one that failed to load is left out here
+ * (its own page says why) instead of taking the whole shell down.
+ */
 export function useProjectTree() {
   const projects = useProjects();
-  return useSuspenseQueries({
+  return useQueries({
     queries: projects.map((p) => queries.overview(p.name)),
-    combine: (results) => results.map((r) => r.data),
+    combine: (results) => results.flatMap((r) => (r.data ? [r.data] : [])),
   });
 }
 

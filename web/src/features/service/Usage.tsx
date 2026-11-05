@@ -23,7 +23,7 @@ const MiB = 1024 * 1024;
 const HIGH = 0.9;
 
 const Default = ({ on }: { on: boolean }) =>
-  on ? <span className="font-sans text-mut"> default</span> : null;
+  on ? <span className="font-sans text-faint"> default</span> : null;
 
 /** Share of the memory limit in use, 0 to 1, or null without a sample. */
 export const memoryShare = (s: Limited) =>

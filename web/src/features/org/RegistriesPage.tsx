@@ -1,11 +1,12 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
-import { since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, Panel, TitleRow } from "../../ui/kit";
+import { plural, since } from "../../ui/format";
+import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
 import {
   orgQueries,
   useDeleteRegistryCredential,
+  useOrgName,
   useSetRegistryCredential,
 } from "./data";
 
@@ -16,71 +17,83 @@ import {
  * Passwords are write-only.
  */
 export function RegistriesPage() {
+  const org = useOrgName();
   if (!useIsAdmin()) {
     return (
-      <Page>
-        <TitleRow title="Registries" />
-        <p className="text-mut">
-          Only the organization's admins see registry credentials.
-        </p>
-      </Page>
+      <>
+        <PageBar parent={org} title="Registries" />
+        <Page>
+          <p className="text-mut">
+            Only the organization's admins see registry credentials.
+          </p>
+        </Page>
+      </>
     );
   }
-  return <Registries />;
+  return <Registries org={org} />;
 }
 
-function Registries() {
+function Registries({ org }: { org: string }) {
   const creds = useSuspenseQuery(orgQueries.registryCredentials()).data;
   // The form's host and username; Replace on a row fills them in.
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
   const password = useRef<HTMLInputElement>(null);
   return (
-    <Page width="max-w-[900px]" gap="gap-5">
-      <TitleRow
+    <>
+      <PageBar
+        parent={org}
         title="Registries"
-        context="Deploys pull private images with these. Other hosts are pulled anonymously."
+        after={
+          <span className="text-xs text-faint">
+            {plural(creds.length, "registry", "registries")}
+          </span>
+        }
       />
-      {creds.length === 0 ? (
-        <p className="text-mut">No registry credentials yet.</p>
-      ) : (
-        <Panel>
-          <table>
-            <thead>
-              <tr>
-                <th>Host</th>
-                <th>Username</th>
-                <th>Updated</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {creds.map((c) => (
-                <CredentialRow
-                  key={c.host}
-                  host={c.host}
-                  username={c.username}
-                  updated={c.updated_at}
-                  by={c.updated_by}
-                  onReplace={() => {
-                    setHost(c.host);
-                    setUsername(c.username);
-                    password.current?.focus();
-                  }}
-                />
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      )}
-      <CredentialForm
-        host={host}
-        username={username}
-        password={password}
-        onHost={setHost}
-        onUsername={setUsername}
-      />
-    </Page>
+      <Page width="max-w-[900px]" gap="gap-5">
+        {creds.length === 0 ? (
+          <p className="text-mut">
+            No registry logins. Deploys pull every image anonymously.
+          </p>
+        ) : (
+          <Panel>
+            <table>
+              <thead>
+                <tr>
+                  <th>Host</th>
+                  <th>Username</th>
+                  <th>Updated</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {creds.map((c) => (
+                  <CredentialRow
+                    key={c.host}
+                    host={c.host}
+                    username={c.username}
+                    updated={c.updated_at}
+                    by={c.updated_by}
+                    onReplace={() => {
+                      setHost(c.host);
+                      setUsername(c.username);
+                      password.current?.focus();
+                    }}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+        )}
+        <CredentialForm
+          host={host}
+          username={username}
+          password={password}
+          onHost={setHost}
+          onUsername={setUsername}
+        />
+      </Page>
+    </>
   );
 }
 

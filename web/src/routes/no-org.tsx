@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useLogout } from "../data/mutations";
-import { queries } from "../data/queries";
-import { Button, Page } from "../ui/kit";
+import { queries, useSession } from "../data/queries";
+import { Button } from "../ui/kit";
 
 // Where a signed-in person who belongs to no organization lands: the app
 // shows one org's projects, so there is nothing to show them yet.
@@ -23,18 +23,30 @@ export const Route = createFileRoute("/no-org")({
 
 function NoOrg() {
   const logout = useLogout();
+  const session = useSession();
   return (
-    <Page width="max-w-[560px]" gap="gap-4">
-      <h1 className="pt-10 text-xl font-semibold">No organization yet</h1>
-      <p className="text-mut">
-        Open the invite link an organization's admin sent you, or create one
-        with <span className="font-mono text-fg">dock org create</span>.
-      </p>
-      <p>
-        <Button small onClick={() => logout.mutate()}>
-          Log out
-        </Button>
-      </p>
-    </Page>
+    <div className="flex min-h-screen flex-col items-center px-4 pt-[16vh] pb-10">
+      <main className="flex w-full max-w-[420px] flex-col gap-[22px]">
+        <div className="flex flex-col gap-1">
+          <span className="font-mono text-lg font-bold">dock</span>
+          <h1 className="text-xl font-semibold">
+            You're not in an organization yet
+          </h1>
+          <span className="font-mono text-xs text-mut">
+            {session?.email ?? session?.name}
+          </span>
+        </div>
+        <p>
+          Ask an admin to invite you, then open the link they send. To start
+          your own, run{" "}
+          <span className="font-mono">dock org create &lt;slug&gt;</span>.
+        </p>
+        <div>
+          <Button disabled={logout.isPending} onClick={() => logout.mutate()}>
+            Sign out
+          </Button>
+        </div>
+      </main>
+    </div>
   );
 }

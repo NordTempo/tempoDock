@@ -13,6 +13,7 @@ import {
   Act,
   Button,
   Check,
+  Confirm,
   ErrorText,
   Panel,
   SectionHead,
@@ -74,12 +75,16 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           {backups.off_box ? (
             <span>off-box, to the configured repository</span>
           ) : (
-            <span className="text-warn">
-              local, not off-box.{" "}
-              <span className="text-mut">
-                An admin can set a repository with{" "}
-                <code className="font-mono">dock backup configure</code>.
-              </span>
+            <span title="dock backup configure">
+              <span className="text-warn">local, not off-box</span>
+              {" · "}
+              {operator ? (
+                <Link to="/console/backups">Configure a repository</Link>
+              ) : (
+                <span className="text-mut">
+                  an operator can configure a repository
+                </span>
+              )}
             </span>
           )}
         </Item>
@@ -175,7 +180,6 @@ function Schedule({
             <select
               aria-label="Hour"
               title={`${cli} --hour N, or --default-hour`}
-              className="field py-0.5 font-mono text-xs"
               value={schedule.default_hour ? "default" : schedule.hour}
               disabled={busy}
               onChange={(e) =>
@@ -188,8 +192,8 @@ function Schedule({
             >
               <option value="default">
                 {schedule.default_hour
-                  ? `${hourLabel(schedule.hour)}, the default`
-                  : "the default hour"}
+                  ? `${hourLabel(schedule.hour)} (default)`
+                  : "Default hour"}
               </option>
               {Array.from({ length: 24 }, (_, h) => (
                 <option key={h} value={h}>
@@ -247,7 +251,7 @@ function Runs({
         </thead>
         <tbody>
           {backups.runs.map((r) => (
-            <RunRows
+            <RunRow
               key={r.id}
               serviceRef={ref}
               run={r}
@@ -273,7 +277,10 @@ function Runs({
   );
 }
 
-function RunRows({
+/** An empty cell's hyphen, so a missing value reads as missing. */
+const none = <span className="text-faint">-</span>;
+
+function RunRow({
   serviceRef: ref,
   run: r,
   restorable,
@@ -293,90 +300,85 @@ function RunRows({
   const org = useOrg();
   const restore = r.operation === "restore";
   return (
-    <>
-      <tr>
-        <td className="font-mono" title={ago(r.started_at)}>
-          {day(r.started_at)} {clock(r.started_at)}
-        </td>
-        <td>
-          {restore
-            ? "restore"
-            : r.trigger === "schedule"
-              ? "scheduled"
-              : "manual"}
-          {r.created_by !== "system" && (
-            <span className="text-mut"> by {r.created_by}</span>
-          )}
-        </td>
-        <td>
-          <StateText state={runStates[r.status]} />
-        </td>
-        <td className="font-mono">
-          {r.size_bytes > 0 ? size(r.size_bytes) : ""}
-        </td>
-        <td className="font-mono">
-          {r.snapshot ? (
-            <span className={r.pruned ? "text-mut line-through" : undefined}>
-              {r.snapshot.slice(0, 8)}
-            </span>
-          ) : (
-            ""
-          )}
-        </td>
-        <td className={r.off_box ? "font-mono" : "font-mono text-warn"}>
-          {r.repository}
-        </td>
-        <td className="max-w-[420px] whitespace-normal">
-          {restore && r.restored_to && (
-            <>
-              into{" "}
-              <Link
-                to="/$org/$project/$environment/$service"
-                params={{ org, ...ref, service: r.restored_to }}
-                className="font-mono"
-              >
-                {r.restored_to}
-              </Link>{" "}
-            </>
-          )}
-          {r.pruned && <span className="text-mut">removed by retention </span>}
-          {r.error && <span className="text-fail">{r.error}</span>}
-        </td>
-        <td>
-          {restorable && !open && (
-            <Button
-              small
-              disabled={!canRestore}
-              title={
-                canRestore
-                  ? undefined
-                  : "Needs deploy access, and nothing running"
-              }
-              onClick={() => onOpen(true)}
+    <tr>
+      <td title={`${day(r.started_at)} ${clock(r.started_at)}`}>
+        {ago(r.started_at)}
+      </td>
+      <td>
+        {restore
+          ? "restore"
+          : r.trigger === "schedule"
+            ? "scheduled"
+            : "manual"}
+        {r.created_by !== "system" && (
+          <span className="text-mut"> by {r.created_by}</span>
+        )}
+      </td>
+      <td>
+        <StateText state={runStates[r.status]} />
+      </td>
+      <td className="font-mono">
+        {r.size_bytes > 0 ? size(r.size_bytes) : none}
+      </td>
+      <td className="font-mono">
+        {r.snapshot ? (
+          <span className={r.pruned ? "text-mut line-through" : undefined}>
+            {r.snapshot.slice(0, 8)}
+          </span>
+        ) : (
+          none
+        )}
+      </td>
+      <td className={r.off_box ? "font-mono" : "font-mono text-warn"}>
+        {r.repository}
+      </td>
+      <td className="max-w-[420px] whitespace-normal">
+        {restore && r.restored_to && (
+          <>
+            into{" "}
+            <Link
+              to="/$org/$project/$environment/$service"
+              params={{ org, ...ref, service: r.restored_to }}
+              className="font-mono"
             >
-              Restore as new
-            </Button>
-          )}
-        </td>
-      </tr>
-      {open && r.snapshot && (
-        <tr>
-          <td colSpan={8}>
-            <RestoreForm
-              serviceRef={ref}
-              snapshot={r.snapshot}
-              onCancel={() => onOpen(false)}
-              onRestored={onRestored}
-            />
-          </td>
-        </tr>
-      )}
-    </>
+              {r.restored_to}
+            </Link>{" "}
+          </>
+        )}
+        {r.pruned && <span className="text-mut">removed by retention </span>}
+        {r.error && <span className="text-fail">{r.error}</span>}
+        {!(restore && r.restored_to) && !r.pruned && !r.error && none}
+      </td>
+      <td>
+        {restorable && (
+          <Button
+            small
+            disabled={!canRestore}
+            reason={
+              canRestore
+                ? undefined
+                : "needs deploy access, and nothing running"
+            }
+            onClick={() => onOpen(true)}
+          >
+            Restore as new
+          </Button>
+        )}
+        {open && r.snapshot && (
+          <RestoreConfirm
+            serviceRef={ref}
+            snapshot={r.snapshot}
+            onCancel={() => onOpen(false)}
+            onRestored={onRestored}
+          />
+        )}
+      </td>
+    </tr>
   );
 }
 
-/** Names the new service and starts the restore. */
-function RestoreForm({
+/** Asks for the new service's name and starts the restore into it. */
+function RestoreConfirm({
   serviceRef: ref,
   snapshot,
   onCancel,
@@ -389,45 +391,36 @@ function RestoreForm({
 }) {
   const restore = useRestoreBackup();
   const [name, setName] = useState(`${ref.service}-restored`);
+  const as = name.trim();
   return (
-    <form
-      aria-label="Restore as new service"
-      className="flex flex-wrap items-center gap-2.5 whitespace-normal"
-      onSubmit={(e) => {
-        e.preventDefault();
+    <Confirm
+      title={`Restore ${snapshot.slice(0, 8)} as a new service?`}
+      action="Restore"
+      cli={`dock backup restore ${ref.service} --snapshot ${snapshot.slice(0, 8)} --as ${as || "<name>"} -e ${ref.environment}`}
+      pending={restore.isPending || !as}
+      error={restore.error}
+      onConfirm={() =>
         restore.mutate(
-          { ref, snapshot, as: name.trim() },
+          { ref, snapshot, as },
           { onSuccess: (res) => onRestored(res.service.name) },
-        );
-      }}
-      onKeyDown={(e) => e.key === "Escape" && onCancel()}
+        )
+      }
+      onCancel={onCancel}
     >
-      <label htmlFor={`restore-${snapshot}`} className="text-mut">
-        Restore <span className="font-mono">{snapshot.slice(0, 8)}</span> into a
-        new service
+      <p>
+        The backup is restored into a new service. The live {ref.service} is not
+        touched.
+      </p>
+      <label className="mt-3 flex flex-col gap-1.5 text-xs text-mut">
+        New service
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="field font-mono"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </label>
-      <input
-        id={`restore-${snapshot}`}
-        // biome-ignore lint/a11y/noAutofocus: the form opens on request
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="field py-[5px] font-mono"
-      />
-      <Act
-        primary
-        small
-        type="submit"
-        cli={`dock backup restore ${ref.service} --snapshot ${snapshot.slice(0, 8)} --as ${name.trim() || "<name>"} -e ${ref.environment}`}
-        disabled={restore.isPending || !name.trim()}
-      >
-        Restore
-      </Act>
-      <Button small onClick={onCancel}>
-        Cancel
-      </Button>
-      <span className="text-mut">The live {ref.service} is not touched.</span>
-      <ErrorText error={restore.error} />
-    </form>
+    </Confirm>
   );
 }

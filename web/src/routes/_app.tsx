@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { queries } from "../data/queries";
 import { Shell } from "../shell/Shell";
+import { ShellPending } from "../ui/RouteStates";
 
 // Pathless layout for everything behind login: sidebar, palette, live updates.
 export const Route = createFileRoute("/_app")({
@@ -33,11 +34,15 @@ export const Route = createFileRoute("/_app")({
       queryClient.ensureQueryData(queries.servers()),
       queryClient.ensureQueryData(queries.orgs()),
     ]);
-    await Promise.all(
+    // One project failing to load fails its own page, not the shell.
+    await Promise.allSettled(
       projects.map((p) =>
         queryClient.ensureQueryData(queries.overview(p.name)),
       ),
     );
   },
   component: Shell,
+  // A slow first load shows the frame, not a blank page.
+  pendingComponent: ShellPending,
+  pendingMs: 300,
 });

@@ -1,0 +1,68 @@
+import { useSyncExternalStore } from "react";
+
+/**
+ * Short confirmations that an action went through ("Restarted web"), shown
+ * at the bottom right for a few seconds. A module-level store, so any code
+ * (a mutation's onSuccess) can call notify() without a provider. Static on
+ * purpose: no enter or exit animation. Each notice holds one timeout until
+ * it goes; nothing runs while none is shown.
+ */
+type Notice = { id: number; text: string; tone: "ok" | "fail" };
+
+let notices: Notice[] = [];
+let next = 1;
+const listeners = new Set<() => void>();
+const emit = () => {
+  for (const l of listeners) l();
+};
+
+/** How long a notice stays, long enough to read a short sentence. */
+const showMs = 4000;
+
+/** Shows text as a notice; at most three at once, the newest last. */
+export function notify(text: string, tone: Notice["tone"] = "ok") {
+  const id = next++;
+  notices = [...notices.slice(-2), { id, text, tone }];
+  emit();
+  setTimeout(() => dismiss(id), showMs);
+}
+
+function dismiss(id: number) {
+  notices = notices.filter((n) => n.id !== id);
+  emit();
+}
+
+/** The notices, for the shell to render once. */
+export function Notices() {
+  const list = useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => notices,
+  );
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="pointer-events-none fixed right-4 bottom-20 z-50 flex flex-col items-end gap-2"
+    >
+      {list.map((n) => (
+        <button
+          key={n.id}
+          type="button"
+          onClick={() => dismiss(n.id)}
+          className="pointer-events-auto flex items-center gap-2 rounded-ctl border border-edge bg-panel px-3 py-2 text-[13px] text-fg shadow-lg shadow-black/60"
+        >
+          <span
+            aria-hidden
+            className={n.tone === "ok" ? "text-ok" : "text-fail"}
+          >
+            {n.tone === "ok" ? "✓" : "✕"}
+          </span>
+          {n.text}
+        </button>
+      ))}
+    </div>
+  );
+}

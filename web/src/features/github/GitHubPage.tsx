@@ -30,14 +30,7 @@ export function GitHubPage() {
   const { data: gh, refetch, isFetching } = useGitHub();
   return (
     <>
-      <PageBar
-        title="GitHub"
-        after={
-          <span className="text-xs text-faint">
-            pushes deploy services with no webhook or token of their own
-          </span>
-        }
-      />
+      <PageBar title="GitHub" />
       <Page width="max-w-[900px]" gap="gap-5">
         {gh.hooks_hint && (
           <p className="text-warn">
@@ -78,7 +71,7 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
   return (
     <Panel>
       <table>
-        <tbody>
+        <tbody className="[&>tr>td]:align-middle">
           <tr>
             <td className="w-36 py-2.5 text-faint">App</td>
             <td className="py-2.5 whitespace-normal">
@@ -118,7 +111,10 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
           <tr>
             <td className="py-2.5 text-faint" />
             <td className="py-1.5 whitespace-normal">
-              {asking ? (
+              <Button small danger onClick={() => setAsking(true)}>
+                Remove App
+              </Button>
+              {asking && (
                 <Confirm
                   danger
                   action={`Remove ${app.slug}`}
@@ -126,18 +122,14 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
                   pending={remove.isPending}
                   error={remove.error}
                   onConfirm={() => remove.mutate()}
-                  onCancel={() => setAsking(false)}
+                  onCancel={() => {
+                    remove.reset();
+                    setAsking(false);
+                  }}
                 >
-                  Forget the App?{" "}
-                  <span className="text-mut">
-                    Services connected through it stop deploying until they are
-                    reconnected. Delete it on GitHub too.
-                  </span>
+                  Dock forgets the App. Services connected through it stop
+                  deploying until they are reconnected. Delete it on GitHub too.
                 </Confirm>
-              ) : (
-                <Button small danger onClick={() => setAsking(true)}>
-                  Remove App
-                </Button>
               )}
             </td>
           </tr>
@@ -238,7 +230,7 @@ function InstallationRow({
           disabled={pending}
           title={cli(i.org ?? "")}
           onChange={(e) => onAssign(e.target.value)}
-          className={`field py-[5px] ${i.org ? "" : "text-warn"}`}
+          className={i.org ? "" : "text-warn"}
         >
           <option value="">unassigned</option>
           {orgs.map((o) => (
@@ -267,7 +259,6 @@ function InstallForm({ orgs }: { orgs: string[] }) {
         aria-label="Org"
         value={org}
         onChange={(e) => setOrg(e.target.value)}
-        className="field py-[5px]"
       >
         {orgs.map((o) => (
           <option key={o}>{o}</option>
@@ -295,7 +286,7 @@ function CreateForm({ disabled }: { disabled: boolean }) {
   return (
     <Panel>
       <table>
-        <tbody>
+        <tbody className="[&>tr>td]:align-middle">
           <tr>
             <td className="w-36 py-2.5 text-faint">App</td>
             <td className="py-2.5 text-mut">none yet</td>

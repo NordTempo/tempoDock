@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
-import { useIsAdmin, useSession } from "../../data/queries";
+import { useIsAdmin, useOrgs, useSession } from "../../data/queries";
 import { useOrg } from "../../shell/location";
 import { ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
 import { roleNote } from "../org/data";
@@ -30,6 +30,7 @@ const useChangePassword = () =>
 
 export function AccountPage() {
   const me = useSession();
+  const orgs = useOrgs();
   if (!me) return null;
   return (
     <>
@@ -46,13 +47,13 @@ export function AccountPage() {
           {me.email && (
             <>
               <dt>Email</dt>
-              <dd className="font-mono">{me.email}</dd>
+              <dd>{me.email}</dd>
             </>
           )}
           {me.org && (
             <>
               <dt>Organization</dt>
-              <dd className="font-mono">{me.org}</dd>
+              <dd>{orgs.find((o) => o.slug === me.org)?.name ?? me.org}</dd>
             </>
           )}
           {me.scope && (

@@ -6,7 +6,14 @@ import {
   useState,
 } from "react";
 
-/** CLI hints exist only while hovered or focused, and stay inside the viewport. */
+/** How long the pointer rests on an action before its CLI line shows. */
+const hoverMs = 450;
+
+/**
+ * CLI hints exist only while hovered (after a short pause, so passing over
+ * a row of buttons doesn't flash them) or focused from the keyboard, go
+ * away on click, and stay inside the viewport.
+ */
 export function CliHint({
   cli,
   className,
@@ -18,6 +25,12 @@ export function CliHint({
 }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const hint = useRef<HTMLSpanElement>(null);
+  const wait = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hide = () => {
+    clearTimeout(wait.current);
+    setAnchor(null);
+  };
+  useEffect(() => () => clearTimeout(wait.current), []);
 
   useLayoutEffect(() => {
     if (!anchor || !hint.current) return;
@@ -54,18 +67,19 @@ export function CliHint({
     // biome-ignore lint/a11y/noStaticElementInteractions: observes the child button, not a separate control
     <span
       className={className}
-      onMouseEnter={(event) =>
-        setAnchor(event.currentTarget.getBoundingClientRect())
-      }
-      onMouseLeave={(event) => {
-        if (!event.currentTarget.contains(document.activeElement))
-          setAnchor(null);
+      onMouseEnter={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        clearTimeout(wait.current);
+        wait.current = setTimeout(() => setAnchor(rect), hoverMs);
       }}
-      onFocus={(event) =>
-        setAnchor(event.currentTarget.getBoundingClientRect())
-      }
+      onMouseLeave={hide}
+      onPointerDown={hide}
+      onFocus={(event) => {
+        if (event.target.matches(":focus-visible"))
+          setAnchor(event.currentTarget.getBoundingClientRect());
+      }}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setAnchor(null);
+        if (!event.currentTarget.contains(event.relatedTarget)) hide();
       }}
     >
       {children}

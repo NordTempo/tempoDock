@@ -1,8 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { day, plural } from "../../ui/format";
 import {
@@ -54,7 +56,7 @@ export function MembersPage() {
 }
 
 /** A created invite's link, shown once. */
-type Link = { email: string; url: string };
+type InviteLinkInfo = { email: string; url: string };
 
 function Members({ org }: { org: string }) {
   const members = useSuspenseQuery(orgQueries.members()).data;
@@ -62,8 +64,9 @@ function Members({ org }: { org: string }) {
   const without = members.filter((u) => !u.two_factor).length;
   const invites = useSuspenseQuery(orgQueries.invites()).data;
   const me = useSession();
+  const slug = useOrg();
   const [inviting, setInviting] = useState(false);
-  const [link, setLink] = useState<Link>();
+  const [link, setLink] = useState<InviteLinkInfo>();
   return (
     <>
       <PageBar
@@ -73,7 +76,23 @@ function Members({ org }: { org: string }) {
           <span className="text-xs text-faint">
             {plural(members.length, "person", "people")}
             {invites.length > 0 && ` · ${invites.length} invited`}
-            {without > 0 && ` · ${without} without two-factor`}
+            {without > 0 && (
+              <>
+                {" · "}
+                <Link
+                  to="/$org/settings/general"
+                  params={{ org: slug }}
+                  className="text-warn hover:underline"
+                  title={
+                    required
+                      ? "They can't act here until they add one"
+                      : "Require two-factor sign-in in General"
+                  }
+                >
+                  {without} without two-factor
+                </Link>
+              </>
+            )}
           </span>
         }
         actions={
@@ -128,7 +147,7 @@ function Members({ org }: { org: string }) {
                 </tbody>
               </table>
             </Panel>
-            <p className="text-2xs text-faint">
+            <p className="text-xs text-mut">
               Removing someone takes them out of this organization; their
               account stays. Leave the organization from General.
             </p>
@@ -166,7 +185,13 @@ function Roles() {
 }
 
 /** The link of an invite just created, with copy; it isn't shown again. */
-function InviteLink({ link, onDone }: { link: Link; onDone: () => void }) {
+function InviteLink({
+  link,
+  onDone,
+}: {
+  link: InviteLinkInfo;
+  onDone: () => void;
+}) {
   return (
     <section
       aria-labelledby="invite-link"
@@ -200,7 +225,7 @@ function InviteForm({
   onCreated,
   onCancel,
 }: {
-  onCreated: (link: Link) => void;
+  onCreated: (link: InviteLinkInfo) => void;
   onCancel: () => void;
 }) {
   const create = useCreateInvite();
@@ -268,7 +293,6 @@ function RoleSelect({
       onChange={(e) =>
         onChange(roles.find((r) => r === e.target.value) ?? value)
       }
-      className="field py-[5px]"
     >
       {roles.map((r) => (
         <option key={r}>{r}</option>
@@ -320,28 +344,6 @@ function MemberRow({
   const setRole = useSetMemberRole();
   const remove = useRemoveMember();
   const [asking, setAsking] = useState(false);
-  if (asking) {
-    return (
-      <tr>
-        <td colSpan={6} className="py-2">
-          <Confirm
-            danger
-            action={`Remove ${email}`}
-            cli={`dock org member remove ${email}`}
-            pending={remove.isPending}
-            error={remove.error}
-            onConfirm={() =>
-              remove.mutate(id, { onSuccess: () => setAsking(false) })
-            }
-            onCancel={() => setAsking(false)}
-          >
-            Remove <b className="font-semibold">{email}</b> from the
-            organization? <span className="text-mut">Their account stays.</span>
-          </Confirm>
-        </td>
-      </tr>
-    );
-  }
   const access = signedIn(member);
   return (
     <tr className="*:align-middle">
@@ -358,15 +360,25 @@ function MemberRow({
         </span>
       </td>
       <td className="py-1.5">
-        <CliHint cli={`dock org member role ${email} <role>`} className="act">
-          <RoleSelect
-            label={`Role of ${email}`}
-            value={role}
-            disabled={setRole.isPending}
-            onChange={(r) => setRole.mutate({ id, role: r })}
-          />
-        </CliHint>
-        <ErrorText error={setRole.error} />
+        {you ? (
+          // Your own role changes through another admin.
+          <span className="px-[9px]">{role}</span>
+        ) : (
+          <>
+            <CliHint
+              cli={`dock org member role ${email} <role>`}
+              className="act"
+            >
+              <RoleSelect
+                label={`Role of ${email}`}
+                value={role}
+                disabled={setRole.isPending}
+                onChange={(r) => setRole.mutate({ id, role: r })}
+              />
+            </CliHint>
+            <ErrorText error={setRole.error} />
+          </>
+        )}
       </td>
       <td className="py-2">
         {member.two_factor ? (
@@ -375,10 +387,10 @@ function MemberRow({
           </span>
         ) : (
           <span
-            className={required ? "text-warn" : "text-faint"}
+            className="text-warn"
             title={required ? "Can't act here until they add one" : undefined}
           >
-            <Glyph char="○" /> off
+            off
           </span>
         )}
       </td>
@@ -392,6 +404,26 @@ function MemberRow({
             Remove
           </Button>
         )}
+        {/* The modal inherits the cell's alignment and nowrap. */}
+        <div className="contents text-left whitespace-normal">
+          {asking && (
+            <Confirm
+              danger
+              action={`Remove ${email}`}
+              cli={`dock org member remove ${email}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(id, { onSuccess: () => setAsking(false) })
+              }
+              onCancel={() => setAsking(false)}
+            >
+              They lose access to this organization's projects right away
+              {access ? `, and their ${access} here stop working` : ""}. Their
+              account stays, and an admin can invite them again.
+            </Confirm>
+          )}
+        </div>
       </td>
     </tr>
   );

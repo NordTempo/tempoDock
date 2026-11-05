@@ -12,6 +12,7 @@ import { ago, since } from "../../ui/format";
 import {
   Act,
   Button,
+  Confirm,
   CopyButton,
   ErrorText,
   Panel,
@@ -378,28 +379,31 @@ function DomainRow({
       </td>
       <td className="text-mut">{since(d.created_at)}</td>
       <td className="py-1">
-        {confirming ? (
-          <span className="flex items-center gap-2">
-            <span className="text-mut">Traffic to it stops.</span>
-            <Act
-              small
-              danger
-              cli={`dock domain remove ${d.hostname} -s ${ref.service} -e ${ref.environment}`}
-              disabled={remove.isPending}
-              onClick={() => remove.mutate({ ref, hostname: d.hostname })}
-            >
-              Remove
-            </Act>
-            <Button small onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </span>
-        ) : (
-          <Button small onClick={() => setConfirming(true)}>
-            Remove
-          </Button>
+        <Button small danger onClick={() => setConfirming(true)}>
+          Remove
+        </Button>
+        {confirming && (
+          <Confirm
+            danger
+            action={`Remove ${d.hostname}`}
+            cli={`dock domain remove ${d.hostname} -s ${ref.service} -e ${ref.environment}`}
+            pending={remove.isPending}
+            error={remove.error}
+            onConfirm={() =>
+              remove.mutate(
+                { ref, hostname: d.hostname },
+                { onSuccess: () => setConfirming(false) },
+              )
+            }
+            onCancel={() => {
+              remove.reset();
+              setConfirming(false);
+            }}
+          >
+            Requests to <b>{d.hostname}</b> stop reaching {ref.service}. You can
+            add it again later.
+          </Confirm>
         )}
-        <ErrorText error={remove.error} />
       </td>
     </tr>
   );

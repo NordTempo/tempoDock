@@ -50,9 +50,32 @@ export function Act({ cli, ...props }: BtnProps & { cli?: string }) {
   );
 }
 
-/** A key hint: "⌘↵", "E". */
-export function Kbd({ children }: { children: ReactNode }) {
-  return <kbd className="g-kbd">{children}</kbd>;
+/**
+ * A key hint: "E", "Esc", `${modKey}↵`. Style G uses system fonts, and
+ * many (Linux's among them) have no ↵, so it is drawn instead of typed.
+ */
+export function Kbd({ children }: { children: string | readonly string[] }) {
+  const text = typeof children === "string" ? children : children.join("");
+  if (!text.includes("↵")) return <kbd className="g-kbd">{text}</kbd>;
+  return (
+    <kbd
+      className="g-kbd inline-flex items-center gap-0.5"
+      aria-label={text.replace("↵", "Enter")}
+    >
+      {text.replace("↵", "")}
+      <svg
+        aria-hidden
+        width="9"
+        height="9"
+        viewBox="0 0 10 10"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+      >
+        <path d="M8.5 1.5v4h-7M3.5 3.5l-2 2 2 2" />
+      </svg>
+    </kbd>
+  );
 }
 
 /** Copies text to the clipboard and says so until the pointer leaves. */

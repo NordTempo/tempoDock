@@ -69,6 +69,8 @@ function Palette({
   const [index, setIndex] = useState(0);
   const [error, setError] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);
+  // A rollback runs on a second Enter, after the footer says what it does.
+  const [armed, setArmed] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
 
   const rows = useMemo((): Row[] => {
@@ -77,13 +79,23 @@ function Palette({
       group: m.command.group,
     }));
     if (query) return matches;
-    // With nothing typed, the last few commands come first.
+    // With nothing typed, the last few commands come first, then places to
+    // go, then actions: Enter on an untouched palette never changes anything.
     const recent = recentIds().flatMap((id) => {
       const command = commands.find((c) => c.id === id);
       return command ? [{ command, score: 0, group: "Recent" }] : [];
     });
     const seen = new Set(recent.map((r) => r.command.id));
-    return [...recent, ...matches.filter((m) => !seen.has(m.command.id))];
+    const rest = matches.filter((m) => !seen.has(m.command.id));
+    return [
+      ...recent.filter((r) => r.command.group === "Go to"),
+      ...rest.filter((m) => m.group === "Go to"),
+      // Recent actions lead the actions, under the same heading.
+      ...recent
+        .filter((r) => r.command.group !== "Go to")
+        .map((r) => ({ ...r, group: r.command.group })),
+      ...rest.filter((m) => m.group !== "Go to"),
+    ];
   }, [commands, query]);
   const selected = rows[Math.min(index, rows.length - 1)];
 
@@ -104,6 +116,10 @@ function Palette({
 
   async function run(command: Command | undefined) {
     if (!command || busy) return;
+    if (asks(command) && armed !== command.id) {
+      setArmed(command.id);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -159,6 +175,7 @@ function Palette({
             onChange={(e) => {
               setQuery(e.target.value);
               setIndex(0);
+              setArmed(null);
             }}
             placeholder="Search or run"
             aria-label="Search or run"
@@ -171,7 +188,9 @@ function Palette({
             }
             className="min-w-0 flex-1 bg-transparent text-md outline-none"
           />
-          {here.project && <span className="pill">{here.project}</span>}
+          {here.project && (
+            <span className="text-xs text-faint">in {here.project}</span>
+          )}
         </div>
 
         <div
@@ -195,13 +214,28 @@ function Palette({
                 id={optionId(i)}
                 command={row.command}
                 selected={row === selected}
-                onHover={() => setIndex(i)}
+                onHover={() => {
+                  if (i !== selectedIndex) setArmed(null);
+                  setIndex(i);
+                }}
                 onRun={() => run(row.command)}
               />
             </div>
           ))}
         </div>
 
+        {armed && armed === selected?.command.id && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 border-t border-warn-edge bg-stage-bg px-4 py-2.5 text-xs text-warn-text"
+          >
+            <span className="font-semibold">{selected.command.label}?</span>
+            <span>A new release with that one's image and config.</span>
+            <span className="ml-auto">
+              <kbd>↵</kbd> again to confirm
+            </span>
+          </div>
+        )}
         <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 border-t border-line px-4 py-2.5 text-xs text-faint">
           <span>
             <kbd>↑</kbd> <kbd>↓</kbd> move
@@ -245,7 +279,9 @@ function Item({
       onMouseMove={onHover}
       onClick={onRun}
       className={`mx-1 flex cursor-pointer flex-wrap items-baseline gap-x-3.5 gap-y-0.5 rounded-ctl px-3 py-[7px] ${
-        selected ? "bg-sel" : "hover:bg-hover"
+        selected
+          ? "bg-sel text-fg shadow-[inset_2px_0_0_var(--color-fg)]"
+          : "text-sec hover:bg-hover"
       }`}
     >
       <span>
@@ -264,6 +300,9 @@ function Item({
     </div>
   );
 }
+
+/** Commands that change what runs and can't be taken back quietly. */
+const asks = (command: Command) => command.id.startsWith("rollback:");
 
 /** The label with its strong part bold and release numbers in mono. */
 function Label({ text, strong }: { text: string; strong?: string }) {

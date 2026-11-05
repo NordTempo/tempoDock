@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 // The connection form's fields, for adding one and for its settings.
 
 export type ConnectionForm = {
@@ -20,44 +22,80 @@ export function suggestName(url: string) {
 
 /**
  * URL, name, production and a CA for verify-ca and verify-full
- * (collapsed). `urlHint` says what an empty URL means when editing.
+ * (collapsed). When editing, `currentUrl` shows the stored URL with
+ * Change, which opens an empty URL field (blank keeps the current one);
+ * `urlHint` says what a new one does.
  */
 export function ConnectionFields({
   form,
   onChange,
   namePlaceholder,
+  currentUrl,
   urlHint,
 }: {
   form: ConnectionForm;
   onChange: (next: ConnectionForm) => void;
   namePlaceholder?: string;
+  currentUrl?: string;
   urlHint?: string;
 }) {
+  const [changing, setChanging] = useState(false);
   const set = <K extends keyof ConnectionForm>(k: K, v: ConnectionForm[K]) =>
     onChange({ ...form, [k]: v });
+  const editUrl = currentUrl === undefined || changing;
   return (
     <>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs text-(--g-dim)">URL</span>
-        <input
-          className="g-field h-8 font-mono"
-          // biome-ignore lint/a11y/noAutofocus: the form's first field
-          autoFocus
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="postgres://user:password@host:5432/database?sslmode=require"
-          value={form.url}
-          onChange={(e) => set("url", e.target.value)}
-        />
-        <span className="text-xs text-(--g-mut)">
-          {urlHint ??
-            "Its user sets up tempoBase's roles, so it needs CREATEROLE. Only sslmode is allowed as a parameter (prefer by default). Stored encrypted."}
-        </span>
-      </label>
+      {editUrl ? (
+        <label className="flex flex-col gap-1.5">
+          <span className="flex items-center gap-3 text-xs text-(--g-dim)">
+            URL
+            {currentUrl !== undefined && (
+              <button
+                type="button"
+                className="g-lnk"
+                onClick={() => {
+                  setChanging(false);
+                  set("url", "");
+                }}
+              >
+                Keep the current one
+              </button>
+            )}
+          </span>
+          <input
+            className="g-field h-8 font-mono placeholder:font-sans"
+            // biome-ignore lint/a11y/noAutofocus: the form's first field, or opened on request
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="postgres://user:password@host:5432/db"
+            value={form.url}
+            onChange={(e) => set("url", e.target.value)}
+          />
+          <span className="text-xs text-(--g-mut)">
+            {urlHint ??
+              "Its user sets up tempoBase's roles, so it needs CREATEROLE. Only sslmode is allowed as a parameter (prefer by default). Stored encrypted."}
+          </span>
+        </label>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-(--g-dim)">URL</span>
+          <p className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-xs">{currentUrl}</span>
+            <button
+              type="button"
+              className="g-lnk"
+              onClick={() => setChanging(true)}
+            >
+              Change
+            </button>
+          </p>
+        </div>
+      )}
       <label className="flex flex-col gap-1.5">
         <span className="text-xs text-(--g-dim)">Name</span>
         <input
-          className="g-field h-8 w-64 font-mono"
+          className="g-field h-8 w-64 font-mono placeholder:font-sans"
           autoComplete="off"
           spellCheck={false}
           pattern="[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?"

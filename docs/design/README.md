@@ -57,11 +57,11 @@ variables once, not as literals in components.
 
 | Token | Value |
 |---|---|
-| Sidebar background | `#0a0a0b` |
-| Page background | `#0e0e10` |
-| Panel, selected row | `#151517`, `#1c1c1f` |
-| Lines | `#232326` (dividers), `#1c1c1f` (subtle), `#2e2e33` (controls) |
-| Text | `#ededef` primary, `#c8c8cf` secondary, `#a1a1aa` muted, `#8b8b94` faint |
+| Sidebar background | `#000`, set off by a 1px line |
+| Page background | `#000` |
+| Panel, hover, selected row | `#0b0b0c`, `#141416`, `#1c1c1f` |
+| Lines | `#1f1f22` (dividers), `#161618` (subtle), `#2c2c30` (controls) |
+| Text | `#fafafa` primary, `#d0d0d6` secondary, `#a1a1aa` muted, `#8b8b94` faint |
 | Live, healthy | `#4ade80` (dot and text), `#14261b` tint |
 | Staged, warning | `#fbbf24`, `#fcd77a` text, `#2a2210` / `#17140b` tints, `#3a2f12` border |
 | Failed | `#f87171` |
@@ -76,8 +76,8 @@ variables once, not as literals in components.
 
 | Token | Value |
 |---|---|
-| Page background | `#0a0a0a` |
-| Sidebar | `#0f0f0f`, `flex: 1 1 240px; max-width: 264px` |
+| Page background | `#000` |
+| Sidebar | `#000` with a 1px line, `flex: 1 1 240px; max-width: 264px` |
 | Raised surfaces | `rgba(255,255,255,.03)` to `.05`, `#191a1d` popovers |
 | Lines | `rgba(255,255,255,.06)` dividers, `.08` controls, `.04` grid |
 | Text | `#f5f5f5` primary, `#a3a3a3` secondary, `#8a8a8a` muted, `#525252` faint |
@@ -98,7 +98,15 @@ for everything.
 
 - Dense, quiet, no decorative card chrome, minimal copy, no em dashes.
 - No continuously repainting animations (spinners, pulse, shimmer).
-- The near-black backgrounds above replace the old true black `#000`.
+- True black (`#000`) pages in both styles; panels, hover and selection
+  are the few raised steps above it (2026-11 UI pass).
+- One confirmation: the kit's `Confirm`, a small modal that asks the
+  question ("Roll back to r7?"), says what happens in plain words and names
+  the action on its button. The safe button has focus. `typed` (type the
+  name) only for destructive changes that can't be undone.
+- Feedback: `notify()` (ui/notice.tsx) says an action went through; static,
+  gone after a few seconds. Dialogs end in one footer: the error or why it
+  can't submit on the left, Cancel and the named action on the right.
 - Keyboard first: every action reachable without a mouse, visible focus.
 
 ## Fonts and performance

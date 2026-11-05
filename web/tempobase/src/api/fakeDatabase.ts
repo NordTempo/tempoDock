@@ -410,10 +410,15 @@ export function applyChanges(
 const writeRe =
   /^\s*(insert|update|delete|create|drop|alter|truncate|grant)\b/i;
 
+/** What the fake can't run; it says so instead of ignoring it. */
+const unsupportedRe =
+  /\b(join|group\s+by|order\s+by|having|union|intersect|except|distinct|with)\b|\w+\s*\(/i;
+
 /**
- * Runs read-only SQL the fake way: `SELECT ... FROM table [WHERE col =
- * 'v'] [LIMIT n]` returns the table's rows (every column), `SELECT 1`
- * style expressions one row, writes and anything else an error frame.
+ * Runs read-only SQL the fake way: `SELECT * | col, ... FROM table [WHERE
+ * col = 'v'] [LIMIT n]` returns the table's rows, `SELECT 1` style
+ * expressions one row, writes and anything else (joins, aggregates,
+ * ordering) an error frame that says what the in-memory database runs.
  */
 export function* runQuery(
   tables: readonly FakeTable[],
@@ -474,6 +479,18 @@ export function* runQuery(
     yield end(1);
     return;
   }
+  const unsupported = {
+    type: "error",
+    error: {
+      message:
+        "the in-memory database runs only select * or plain columns from one table, with where column = value and limit",
+      sqlstate: "0A000",
+    },
+  } as const satisfies DataQueryFrame;
+  if (unsupportedRe.test(text)) {
+    yield unsupported;
+    return;
+  }
   const name = (from[1] ?? "").replaceAll('"', "");
   const t = findTable(tables, name);
   if (!t) {
@@ -495,12 +512,29 @@ export function* runQuery(
     t,
     where ? [{ column: where[1] ?? "", op: "eq", value: where[2] }] : [],
   );
-  const rows = mask(t, all.slice(0, Math.min(limit, maxRows)), hidden(t));
+  // The select list: * or columns of the table, by index.
+  const columns = t.meta.columns ?? [];
+  const list = /^select\s+(.+?)\s+from\b/is.exec(text)?.[1]?.trim() ?? "*";
+  const picked =
+    list === "*"
+      ? columns.map((_, i) => i)
+      : list
+          .split(",")
+          .map((n) =>
+            columns.findIndex((c) => c.name === n.trim().replaceAll('"', "")),
+          );
+  if (picked.includes(-1)) {
+    yield unsupported;
+    return;
+  }
+  const rows = mask(t, all.slice(0, Math.min(limit, maxRows)), hidden(t)).map(
+    (r) => picked.map((i) => r[i] ?? null),
+  );
   yield {
     type: "header",
-    columns: (t.meta.columns ?? []).map((c) => ({
-      name: c.name,
-      type_name: c.type_name,
+    columns: picked.map((i) => ({
+      name: columns[i]?.name ?? "",
+      type_name: columns[i]?.type_name ?? "text",
     })),
   };
   for (let i = 0; i < rows.length; i += 500) {

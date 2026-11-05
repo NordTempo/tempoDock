@@ -37,11 +37,9 @@ export function BackupStorage({
   );
   return (
     <section aria-labelledby="storage" className="flex flex-col gap-2">
-      <SectionHead id="storage" aside="where every backup goes">
-        Storage
-      </SectionHead>
+      <SectionHead id="storage">Storage</SectionHead>
       {repos.length === 0 ? (
-        <p className="text-mut">No backups yet.</p>
+        <p className="text-mut">Local disk on each server.</p>
       ) : (
         <Panel>
           <table>
