@@ -1,5 +1,5 @@
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { setOrg } from "../../api/client";
 import { useIsAdmin, useSession } from "../../data/queries";
@@ -26,8 +26,9 @@ import {
 
 /**
  * The organization itself: its name, address (slug), whether members
- * must sign in with a second factor, locked environments (admins),
- * leaving it, and deleting it while it has no projects.
+ * must sign in with a second factor or single sign-on, locked
+ * environments (admins), leaving it, and deleting it while it has no
+ * projects.
  */
 export function GeneralPage() {
   const org = useSuspenseQuery(orgQueries.org()).data;
@@ -98,6 +99,20 @@ export function GeneralPage() {
                 <td className="py-2.5 text-faint">Sign-in</td>
                 <td className="py-2.5">
                   <RequireTwoFactor on={org.require_two_factor} admin={admin} />
+                </td>
+              </tr>
+              <tr>
+                <td className="py-2.5 text-faint">Single sign-on</td>
+                <td className="py-2.5">
+                  {org.sso_only ? "Required for members" : "Not required"}
+                  {admin && (
+                    <>
+                      {" · "}
+                      <Link to="/$org/settings/sso" params={{ org: org.slug }}>
+                        providers
+                      </Link>
+                    </>
+                  )}
                 </td>
               </tr>
               <tr>

@@ -98,6 +98,9 @@ var codeHints = map[string]string{
 	// A dock login token counts as two-factor only when the browser
 	// sign-in that approved it used a second factor (ADR 0057).
 	"two_factor_required": "Add a passkey or an authenticator app on your account page in the browser, then run `dock login` again: its new token counts as two-factor.",
+	// A dock login token is bound to the organization whose single
+	// sign-on the approving browser sign-in went through (ADR 0058).
+	"sso_required": "Sign in with SSO in the browser (the sign-in page's Sign in with SSO), then run `dock login` again: its new token acts in that organization.",
 	// Step-ups only ask browser sessions; tokens skip them.
 	"reauth_required": "Confirm it's you in the browser, where the action asks, then try again.",
 	"server_offline":  "The control plane is fine; the server the environment runs on isn't connected, and its apps keep running. Check `dock server list`, and the node there (`journalctl -u dock-node`).",

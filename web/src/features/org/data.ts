@@ -1,13 +1,14 @@
 import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
+import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys, revealed, revealRequest, useOrgs } from "../../data/queries";
 import type { OrgLockSettings, Scope } from "../../data/types";
 import { useOrg } from "../../shell/location";
 
 // An organization's settings (ADR 0027): the org, members, invites,
-// variables, lock settings and registry credentials (ADR 0051) of the
-// org the UI acts in.
+// variables, lock settings, registry credentials (ADR 0051) and single
+// sign-on (ADR 0058) of the org the UI acts in.
 
 /** What each role may do, in a few words: the account page and Members. */
 export const roleNote: Record<Scope, string> = {
@@ -33,6 +34,7 @@ const orgKeys = {
   lockSettings: ["org", "lock-settings"],
   // live.ts refetches it on org.registry_credential_* audit events.
   registryCredentials: ["org", "registry-credentials"],
+  ssoProviders: ["org", "sso-providers"],
 };
 
 export const orgQueries = {
@@ -74,6 +76,12 @@ export const orgQueries = {
       queryKey: orgKeys.registryCredentials,
       queryFn: () => list(api.GET("/api/v1/org/registry-credentials")),
     }),
+  /** The org's single sign-on providers (ADR 0058); admins only. */
+  ssoProviders: () =>
+    queryOptions({
+      queryKey: orgKeys.ssoProviders,
+      queryFn: () => list(api.GET("/api/v1/org/sso-providers")),
+    }),
   invite: (code: string) =>
     queryOptions({
       queryKey: ["invite", code],
@@ -98,6 +106,55 @@ export const useSetOrgTwoFactor = () =>
     (require: boolean) =>
       body(api.PUT("/api/v1/org/two-factor", { body: { require } })),
     () => [orgKeys.org, keys.orgs, ["audit"]],
+  );
+
+/**
+ * Requires (or stops requiring) members to sign in through the org's
+ * single sign-on (ADR 0058). Turning it on needs a provider and the
+ * caller's own sign-in to have gone through one; other sessions lose the
+ * org until they sign in with SSO.
+ */
+export const useSetOrgSSOOnly = () =>
+  useAction(
+    (sso_only: boolean) =>
+      body(api.PUT("/api/v1/org/sso-only", { body: { sso_only } })),
+    () => [orgKeys.org, keys.orgs, keys.session, ["audit"]],
+  );
+
+/** Adds a single sign-on provider; its issuer must answer discovery. */
+export const useCreateSSOProvider = () =>
+  useAction(
+    (req: components["schemas"]["CreateSSOProviderRequest"]) =>
+      body(api.POST("/api/v1/org/sso-providers", { body: req })),
+    () => [orgKeys.ssoProviders, ["audit"]],
+  );
+
+/** Changes a provider; fields left out (a blank client secret) stay. */
+export const useUpdateSSOProvider = () =>
+  useAction(
+    ({
+      name,
+      ...req
+    }: components["schemas"]["UpdateSSOProviderRequest"] & { name: string }) =>
+      body(
+        api.PATCH("/api/v1/org/sso-providers/{name}", {
+          params: { path: { name } },
+          body: req,
+        }),
+      ),
+    () => [orgKeys.ssoProviders, ["audit"]],
+  );
+
+/** Removes a provider and the identities linked through it. */
+export const useDeleteSSOProvider = () =>
+  useAction(
+    (name: string) =>
+      done(
+        api.DELETE("/api/v1/org/sso-providers/{name}", {
+          params: { path: { name } },
+        }),
+      ),
+    () => [orgKeys.ssoProviders, ["audit"]],
   );
 
 export const useDeleteOrg = () =>

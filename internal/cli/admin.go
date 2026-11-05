@@ -25,7 +25,7 @@ func newAdminCmd() *cobra.Command {
 		Short: "Server-side administration (run on the server)",
 	})
 	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newRegistryConfigCmd(), newRegistryStorageCmd(), newFirewallCmd(),
-		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd(), newResetTwoFactorCmd())
+		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd(), newResetTwoFactorCmd(), newAdminSSOOnlyCmd())
 	return cmd
 }
 
@@ -145,6 +145,54 @@ running.`,
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Reset the two-factor sign-in of %s: removed their second factors and recovery codes, and ended their sessions and dock login tokens.\nThey sign in with their password and set up a new factor on their account page.\n", email)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
+	return cmd
+}
+
+// newAdminSSOOnlyCmd is `dock admin sso-only <org> off`, the break-glass
+// for an organization whose identity provider is down while it requires
+// single sign-on (ADR 0058). Like reset-2fa it opens the state directly:
+// shell access to the server is the proof.
+func newAdminSSOOnlyCmd() *cobra.Command {
+	configPath := config.DefaultPath
+	cmd := &cobra.Command{
+		Use:   "sso-only <org> off",
+		Short: "Turn off an organization's single sign-on requirement, when its provider is down",
+		Long: `Members of the organization act in it again after signing in with a password.
+Its providers stay; an admin turns the requirement back on with
+` + "`dock org sso-only on`" + `. The audit log records it (org.sso_only).
+
+Run it on the server, as root or the service user. Safe to run while the
+daemon is running.`,
+		Example: "  sudo dock admin sso-only acme off",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[1] != "off" {
+				return usageError("only off is done on the server", "Turn single sign-on on from a sign-in through it: `dock org sso-only on`.")
+			}
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return err
+			}
+			st, box, err := openState(cmd.Context(), cfg)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = st.Close() }()
+			c, err := core.New(cmd.Context(), core.Options{Config: cfg, Store: st, Secrets: box})
+			if err != nil {
+				return err
+			}
+			if err := c.ResetOrgSSOOnly(cmd.Context(), core.System, args[0]); err != nil {
+				if core.CodeOf(err) == apitypes.CodeNotFound {
+					return &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Check the organization's slug: the audit log and `dock org list` show it."}
+				}
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Organization %s no longer requires single sign-on: its members sign in with a password again.\n", args[0])
 			return err
 		},
 	}

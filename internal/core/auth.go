@@ -101,6 +101,9 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 		if t.TwoFactor {
 			a.Factor = factorLogin
 		}
+		if t.SsoOrgID != nil && row.SsoOrgSlug != nil {
+			a.SSOOrgID, a.SSOOrg = *t.SsoOrgID, *row.SsoOrgSlug
+		}
 		return c.actIn(ctx, c.gateOperator(a), org, apitypes.Scope(t.Scope))
 	}
 	if t.OrgID == nil || row.OrgSlug == nil { // manual tokens always have one
@@ -146,6 +149,9 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Act
 	}
 	a := userActor(row.User)
 	a.SessionID, a.Factor = s.ID, s.Factor
+	if s.SsoOrgID != nil && row.SsoOrgSlug != nil {
+		a.SSOOrgID, a.SSOOrg = *s.SsoOrgID, *row.SsoOrgSlug
+	}
 	if s.VerifiedAt != nil {
 		a.VerifiedAt = *s.VerifiedAt
 	}
@@ -158,12 +164,24 @@ func userActor(u store.User) Actor {
 }
 
 // actIn puts a user's actor (a session or a `dock login` token) in the org
-// named by slug, or with none in the user's only org; a user with several
-// and no slug gets no org, and org-scoped operations say to choose one.
-// The actor's scope is the user's role there, capped at most. An org that
-// requires a second factor the actor didn't use leaves it in none, and
-// org-scoped operations say so (ADR 0057).
+// named by slug, or with none in the user's only org (a single sign-on's
+// org, for one); a user with several and no slug gets no org, and
+// org-scoped operations say to choose one. The actor's scope is the user's
+// role there, capped at most. An org that requires a second factor or a
+// single sign-on the actor didn't use leaves it in none, and org-scoped
+// operations say so (ADR 0057, 0058).
 func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Scope) (Actor, error) {
+	if slug == "" && a.SSOOrg != "" {
+		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: a.SSOOrg})
+		if store.IsNotFound(err) {
+			a.ssoGate, a.orgs = fmt.Sprintf("you signed in through the single sign-on of organization %s and aren't a member of it any more; sign in with your password, or ask an admin of %s for an invite", a.SSOOrg, a.SSOOrg), 1
+			return a, nil
+		}
+		if err != nil {
+			return Actor{}, err
+		}
+		return a.gatedMember(m.Org, m.Role, most), nil
+	}
 	if slug != "" {
 		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: slug})
 		if store.IsNotFound(err) {
@@ -185,14 +203,23 @@ func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Sc
 	return a, nil
 }
 
-// gatedMember is member, unless org requires a second factor the actor
-// didn't use: then it acts in no org and says why.
+// gatedMember is member, unless a sign-in rule keeps the actor out of
+// org: a single sign-on through another org's provider (it vouches only
+// there), an org that requires its single sign-on, or one that requires a
+// second factor the actor didn't use. Then it acts in no org and says why.
 func (a Actor) gatedMember(org store.Org, role string, most apitypes.Scope) Actor {
-	if org.RequireTwoFactor && a.Factor == "" {
-		a.needs2FAOrg, a.orgs = org.Slug, 1
-		return a
+	switch {
+	case a.SSOOrgID != 0 && a.SSOOrgID != org.ID:
+		a.ssoGate = fmt.Sprintf("you signed in through the single sign-on of organization %s, which vouches for you only there; to act in %s, sign in with your password or through its single sign-on", a.SSOOrg, org.Slug)
+	case org.SsoOnly && a.SSOOrgID != org.ID:
+		a.ssoGate = fmt.Sprintf("organization %s requires signing in through its single sign-on; sign out and sign in with SSO", org.Slug)
+	case org.RequireTwoFactor && a.Factor == "":
+		a.needs2FAOrg = org.Slug
+	default:
+		return a.member(org, role, most)
 	}
-	return a.member(org, role, most)
+	a.orgs = 1
+	return a
 }
 
 // member is the actor acting in org with role, capped at most.
@@ -234,9 +261,9 @@ func (c *Core) Login(ctx context.Context, email, password, clientIP string) (Log
 		return LoginResult{}, err
 	}
 	if n > 0 {
-		return c.startSecondFactor(ctx, u)
+		return c.startSecondFactor(ctx, u, signInVia{})
 	}
-	return c.signIn(ctx, u, "", clientIP)
+	return c.signIn(ctx, u, signInVia{}, clientIP)
 }
 
 // checkPassword returns the user if password is theirs. At most a few
@@ -262,20 +289,21 @@ func (c *Core) checkPassword(ctx context.Context, email, password string) (store
 	return u, nil
 }
 
-// newSession starts a UI session for u, whose sign-in used factor ("" for
-// a password alone), verified now. It returns the session's secret and
-// the actor it authenticates, in no org yet.
-func (c *Core) newSession(ctx context.Context, u store.User, factor string) (secret string, expires time.Time, a Actor, err error) {
+// newSession starts a UI session for u, signed in via (a password alone
+// when empty), verified now. It returns the session's secret and the
+// actor it authenticates, in no org yet.
+func (c *Core) newSession(ctx context.Context, u store.User, via signInVia) (secret string, expires time.Time, a Actor, err error) {
 	secret, hash := newSecret(sessionPrefix)
 	t := now()
 	expires = t.Add(SessionTTL)
-	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: factor, VerifiedAt: &t})
+	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &t, SsoOrgID: via.ssoOrgIDPtr()})
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
 	_ = c.store.DeleteExpiredSessions(ctx, now())
 	a = userActor(u)
-	a.SessionID, a.Factor, a.VerifiedAt = id, factor, t
+	a.SessionID, a.Factor, a.VerifiedAt = id, via.factor, t
+	a.SSOOrgID, a.SSOOrg = via.ssoOrgID, via.ssoOrg
 	return secret, expires, c.gateOperator(a), nil
 }
 
@@ -318,7 +346,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 		return "", time.Time{}, err
 	}
 	if a.Kind == "user" {
-		if secret, expires, _, err = c.newSession(ctx, u, a.Factor); err != nil {
+		if secret, expires, _, err = c.newSession(ctx, u, signInVia{factor: a.Factor, ssoOrgID: a.SSOOrgID, ssoOrg: a.SSOOrg}); err != nil {
 			return "", time.Time{}, err
 		}
 	}

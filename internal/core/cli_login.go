@@ -259,7 +259,7 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 		}
 		tok, err = q.CreateCLILoginToken(ctx, store.CreateCLILoginTokenParams{
 			Name: cliTokenName(l.Hostname), Hash: hash, Scope: string(apitypes.ScopeAdmin), CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
-			TwoFactor: l.TwoFactor,
+			TwoFactor: l.TwoFactor, SsoOrgID: l.SsoOrgID,
 		})
 		return err
 	})
@@ -272,6 +272,11 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 	ua := userActor(u)
 	if l.TwoFactor {
 		ua.Factor = factorLogin
+	}
+	if l.SsoOrgID != nil {
+		if org, err := c.store.GetOrg(ctx, *l.SsoOrgID); err == nil {
+			ua.SSOOrgID, ua.SSOOrg = org.ID, org.Slug
+		}
 	}
 	if a, err := c.actIn(ctx, ua, "", apitypes.ScopeAdmin); err == nil {
 		out.Scope = a.Scope // their role, if they have one org
@@ -310,7 +315,13 @@ func (c *Core) DecideCLILogin(ctx context.Context, a Actor, userCode, clientIP s
 		}
 		status = "approved"
 	}
-	n, err := c.store.DecideCLILogin(ctx, store.DecideCLILoginParams{Status: status, UserID: &a.UserID, TwoFactor: a.Factor != "", ID: l.ID, ExpiresAt: now()})
+	// The token carries what the approving sign-in proved: a second factor,
+	// and the org whose single sign-on it went through (ADR 0058).
+	var ssoOrg *int64
+	if a.SSOOrgID != 0 {
+		ssoOrg = &a.SSOOrgID
+	}
+	n, err := c.store.DecideCLILogin(ctx, store.DecideCLILoginParams{Status: status, UserID: &a.UserID, TwoFactor: a.Factor != "", SsoOrgID: ssoOrg, ID: l.ID, ExpiresAt: now()})
 	if err != nil {
 		return err
 	}

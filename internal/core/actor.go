@@ -57,6 +57,17 @@ type Actor struct {
 	// platform's requirement took Operator away.
 	needs2FAOrg      string
 	operatorNeeds2FA bool
+
+	// SSOOrgID is the org whose single sign-on the sign-in went through
+	// (ADR 0058) and SSOOrg its slug; 0 and "" for none. Such an actor acts
+	// only in that org and never operates the platform: an org's identity
+	// provider vouches for people there, nowhere else.
+	SSOOrgID int64
+	SSOOrg   string
+	// ssoGate says why a single sign-on rule left the actor in no org;
+	// operatorSSO is set when signing in through one took Operator away.
+	ssoGate     string
+	operatorSSO bool
 }
 
 // approval is the access request an actor's call runs for, and who
@@ -97,7 +108,24 @@ func (a Actor) Me() apitypes.Me {
 		Kind: a.Kind, Name: a.Name, Email: a.Email, Scope: a.Scope, Org: a.OrgSlug, Operator: a.Operator,
 		Project: a.ProjectName, Environment: a.EnvironmentName,
 		TwoFactor: a.Factor, TwoFactorRequired: a.twoFactorRequired(),
+		SSO: a.SSOOrg, SSORequired: a.ssoRequired(),
 	}
+}
+
+// errOperatorSSO is why a single sign-on session doesn't operate the
+// platform.
+const errOperatorSSO = "operating the platform needs a sign-in with your password; an organization's single sign-on vouches for you only in that organization"
+
+// ssoRequired says what a single sign-on rule keeps from the actor, and
+// how to get it; "" when nothing.
+func (a Actor) ssoRequired() string {
+	if a.ssoGate != "" {
+		return a.ssoGate
+	}
+	if a.operatorSSO {
+		return errOperatorSSO
+	}
+	return ""
 }
 
 // twoFactorRequired says what a second factor the actor didn't use would
@@ -162,6 +190,9 @@ func (a Actor) noOrg(action string) error {
 	if a.needs2FAOrg != "" {
 		return errf(apitypes.CodeTwoFactorRequired, "%s", a.twoFactorRequired())
 	}
+	if a.ssoGate != "" {
+		return errf(apitypes.CodeSSORequired, "%s", a.ssoGate)
+	}
 	if a.orgs > 1 {
 		return errf(apitypes.CodeValidation, "%s belongs to %d organizations; %s needs one: pass --org (or ?org=) with its slug, see `dock org list`", a, a.orgs, action)
 	}
@@ -173,6 +204,9 @@ func (a Actor) noOrg(action string) error {
 func (a Actor) requireOperator(action string) error {
 	if a.Operator {
 		return nil
+	}
+	if a.operatorSSO {
+		return errf(apitypes.CodeSSORequired, "%s: %s", action, errOperatorSSO)
 	}
 	if a.operatorNeeds2FA {
 		return errf(apitypes.CodeTwoFactorRequired, "%s requires two-factor sign-in: %s", action, a.twoFactorRequired())

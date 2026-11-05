@@ -291,16 +291,7 @@ func (c *Core) AcceptInvite(ctx context.Context, a Actor, code string) (apitypes
 	case !strings.EqualFold(inv.Email, a.Email):
 		return apitypes.Org{}, errf(apitypes.CodeForbidden, "this invite is for %s, and you are signed in as %s", inv.Email, a.Email)
 	}
-	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		n, err := q.AcceptOrgInvite(ctx, store.AcceptOrgInviteParams{AcceptedAt: ptr(now()), ID: inv.ID})
-		if err != nil {
-			return err
-		}
-		if n == 0 {
-			return errf(apitypes.CodeExpired, "this invite was used or revoked; ask an admin of %s for a new one", org.Name)
-		}
-		return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: org.ID, UserID: a.UserID, Role: inv.Role})
-	})
+	err = c.store.Tx(ctx, func(q *store.Queries) error { return joinTx(ctx, q, org, &inv, a.UserID, inv.Role) })
 	if store.IsUnique(err) {
 		return apitypes.Org{}, conflict("you are a member of %s already", org.Name)
 	}
@@ -310,6 +301,22 @@ func (c *Core) AcceptInvite(ctx context.Context, a Actor, code string) (apitypes
 	in := a.member(org, inv.Role, apitypes.ScopeAdmin)
 	c.audit(ctx, in, "org.join", nil, nil, a.Email, fmt.Sprintf("%s joined as %s", a.Email, inv.Role))
 	return toOrg(org, apitypes.Scope(inv.Role)), nil
+}
+
+// joinTx makes user userID a member of org with role, in transaction q,
+// spending invite inv (nil for none): AcceptInvite, and signing in
+// through single sign-on (ADR 0058).
+func joinTx(ctx context.Context, q *store.Queries, org store.Org, inv *store.OrgInvite, userID int64, role string) error {
+	if inv != nil {
+		n, err := q.AcceptOrgInvite(ctx, store.AcceptOrgInviteParams{AcceptedAt: ptr(now()), ID: inv.ID})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errf(apitypes.CodeExpired, "this invite was used or revoked; ask an admin of %s for a new one", org.Name)
+		}
+	}
+	return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: org.ID, UserID: userID, Role: role})
 }
 
 // invite loads an invite by its code, for a signed-in user.

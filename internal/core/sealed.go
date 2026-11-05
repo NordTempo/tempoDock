@@ -46,6 +46,8 @@ var (
 	// sealedUserFactor is a second factor's key (ADR 0057): one
 	// authenticator app per user, passkeys by credential ID.
 	sealedUserFactor = secrets.Column{Table: "user_factors", Name: "secret", Key: []string{"user_id", "kind", "coalesce(hex(credential_id), '')"}}
+	// sealedSSOSecret is an org's OpenID Connect client secret (ADR 0058).
+	sealedSSOSecret = secrets.Column{Table: "sso_providers", Name: "client_secret", Key: []string{"org_id", "name"}}
 
 	sealedColumns = []secrets.Column{
 		sealedVariableValue, sealedVariablePending, sealedOrgVariable, sealedReleaseConfig,
@@ -53,6 +55,7 @@ var (
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
+		sealedSSOSecret,
 	}
 )
 
@@ -79,6 +82,11 @@ func variableAAD(envID int64, serviceID *int64, key string) secrets.AAD {
 // passkey's, nil for an authenticator app.
 func factorAAD(userID int64, kind string, credentialID []byte) secrets.AAD {
 	return sealedUserFactor.AAD(strconv.FormatInt(userID, 10), kind, strings.ToUpper(hex.EncodeToString(credentialID)))
+}
+
+// ssoSecretAAD binds the client secret of an org's provider name.
+func ssoSecretAAD(orgID int64, name string) secrets.AAD {
+	return sealedSSOSecret.AAD(strconv.FormatInt(orgID, 10), name)
 }
 
 // orgVariableAAD binds an org variable's value.

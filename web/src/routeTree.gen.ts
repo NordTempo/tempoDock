@@ -42,6 +42,7 @@ import { Route as AppOrgSettingsIndexRouteImport } from './routes/_app.$org.sett
 import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.settings.general'
 import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.settings.members'
 import { Route as AppOrgSettingsRegistriesRouteImport } from './routes/_app.$org.settings.registries'
+import { Route as AppOrgSettingsSsoRouteImport } from './routes/_app.$org.settings.sso'
 import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
 import { Route as AppOrgSettingsVariablesRouteImport } from './routes/_app.$org.settings.variables'
 import { Route as AppConsoleServersServerRouteImport } from './routes/_app.console.servers_.$server'
@@ -234,6 +235,11 @@ const AppOrgSettingsRegistriesRoute =
     path: '/settings/registries',
     getParentRoute: () => AppOrgRoute,
   } as any)
+const AppOrgSettingsSsoRoute = AppOrgSettingsSsoRouteImport.update({
+  id: '/settings/sso',
+  path: '/settings/sso',
+  getParentRoute: () => AppOrgRoute,
+} as any)
 const AppOrgSettingsTokensRoute = AppOrgSettingsTokensRouteImport.update({
   id: '/settings/tokens',
   path: '/settings/tokens',
@@ -419,6 +425,7 @@ export interface FileRoutesByFullPath {
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
+  '/$org/settings/sso': typeof AppOrgSettingsSsoRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
@@ -477,6 +484,7 @@ export interface FileRoutesByTo {
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
+  '/$org/settings/sso': typeof AppOrgSettingsSsoRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
@@ -538,6 +546,7 @@ export interface FileRoutesById {
   '/_app/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/_app/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/_app/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
+  '/_app/$org/settings/sso': typeof AppOrgSettingsSsoRoute
   '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/_app/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
@@ -600,6 +609,7 @@ export interface FileRouteTypes {
     | '/$org/settings/general'
     | '/$org/settings/members'
     | '/$org/settings/registries'
+    | '/$org/settings/sso'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/console/servers/$server'
@@ -658,6 +668,7 @@ export interface FileRouteTypes {
     | '/$org/settings/general'
     | '/$org/settings/members'
     | '/$org/settings/registries'
+    | '/$org/settings/sso'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/console/servers/$server'
@@ -718,6 +729,7 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/general'
     | '/_app/$org/settings/members'
     | '/_app/$org/settings/registries'
+    | '/_app/$org/settings/sso'
     | '/_app/$org/settings/tokens'
     | '/_app/$org/settings/variables'
     | '/_app/console/servers_/$server'
@@ -990,6 +1002,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSettingsRegistriesRouteImport
       parentRoute: typeof AppOrgRoute
     }
+    '/_app/$org/settings/sso': {
+      id: '/_app/$org/settings/sso'
+      path: '/settings/sso'
+      fullPath: '/$org/settings/sso'
+      preLoaderRoute: typeof AppOrgSettingsSsoRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
     '/_app/$org/settings/tokens': {
       id: '/_app/$org/settings/tokens'
       path: '/settings/tokens'
@@ -1255,6 +1274,7 @@ interface AppOrgRouteChildren {
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
   AppOrgSettingsMembersRoute: typeof AppOrgSettingsMembersRoute
   AppOrgSettingsRegistriesRoute: typeof AppOrgSettingsRegistriesRoute
+  AppOrgSettingsSsoRoute: typeof AppOrgSettingsSsoRoute
   AppOrgSettingsTokensRoute: typeof AppOrgSettingsTokensRoute
   AppOrgSettingsVariablesRoute: typeof AppOrgSettingsVariablesRoute
   AppOrgProjectIndexRoute: typeof AppOrgProjectIndexRoute
@@ -1272,6 +1292,7 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,
   AppOrgSettingsMembersRoute: AppOrgSettingsMembersRoute,
   AppOrgSettingsRegistriesRoute: AppOrgSettingsRegistriesRoute,
+  AppOrgSettingsSsoRoute: AppOrgSettingsSsoRoute,
   AppOrgSettingsTokensRoute: AppOrgSettingsTokensRoute,
   AppOrgSettingsVariablesRoute: AppOrgSettingsVariablesRoute,
   AppOrgProjectIndexRoute: AppOrgProjectIndexRoute,

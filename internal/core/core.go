@@ -158,6 +158,9 @@ type Core struct {
 	// spend from loginLimit like passwords.
 	ceremonies   *ceremonies
 	operators2FA atomic.Bool
+	// sso is single sign-on's flows in flight and the HTTP client that
+	// talks to identity providers (sso_signin.go).
+	sso ssoState
 
 	// data is the database panel's engine and panel the shared panel
 	// over it, with Dock as its host (data_host.go).
@@ -243,6 +246,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
 		ceremonies: newCeremonies(),
+		sso:        newSSOState(),
 		backups:    newBackupState(),
 		snapshots:  newSnapshotState(),
 		uptime:     newUptimeState(),
