@@ -1,8 +1,12 @@
 import { Link, Outlet } from "@tanstack/react-router";
+import { useState } from "react";
+import { currentOrg, setOrg } from "../api/client";
 import { useLiveUpdates } from "../data/live";
 import { useLogout } from "../data/mutations";
 import { useSession } from "../data/queries";
+import { type SSOChoice, useStartSSO } from "../features/sso/data";
 import { Icon } from "../ui/icons";
+import { ErrorText } from "../ui/kit";
 import { CommandLine } from "./CommandLine";
 import { PaletteProvider } from "./palette";
 import { Sidebar, useShellMode } from "./Sidebar";
@@ -11,8 +15,9 @@ import { Sidebar, useShellMode } from "./Sidebar";
  * Everything behind login: the sidebar, the page (which brings its own
  * PageBar), and the command line at the bottom. The platform console
  * (servers) gets an amber bar across the top. A person whose org needs a
- * second factor they didn't sign in with acts in none: they get their
- * account page alone, to add one (ADR 0057).
+ * second factor (ADR 0057) or single sign-on (ADR 0058) they didn't sign
+ * in with acts in none: they get their account page alone, with the way
+ * back.
  */
 export function Shell() {
   const session = useSession();
@@ -85,15 +90,91 @@ function TwoFactorNotice() {
 }
 
 /**
+ * Why a single sign-on rule leaves the person in no organization
+ * (Me.sso_required, ADR 0058), and the way in: signing in through the
+ * organization's SSO, or for a single sign-on session that wandered into
+ * another organization, back to its own.
+ */
+function SSONotice() {
+  const me = useSession();
+  const start = useStartSSO();
+  // The organization's providers, when it has several.
+  const [choices, setChoices] = useState<SSOChoice[]>([]);
+  if (!me?.sso_required) return null;
+  const org = currentOrg();
+  const link = "text-warn-text underline disabled:opacity-60";
+  const own = me.sso;
+  let action = null;
+  if (own && own !== org) {
+    action = (
+      <button
+        type="button"
+        className={link}
+        onClick={() => {
+          setOrg(own);
+          window.location.assign("/");
+        }}
+      >
+        Back to {own}
+      </button>
+    );
+  } else if (!own && me.email) {
+    const email = me.email;
+    action =
+      choices.length > 0 ? (
+        choices.map((c) => (
+          <button
+            key={c.provider}
+            type="button"
+            className={link}
+            disabled={start.isPending}
+            onClick={() =>
+              start.mutate({ org: c.org, provider: c.provider, to: "/" })
+            }
+          >
+            Sign in with {c.provider}
+          </button>
+        ))
+      ) : (
+        <button
+          type="button"
+          className={link}
+          disabled={start.isPending}
+          onClick={() =>
+            start.mutate(
+              { email, to: "/", only: org },
+              { onSuccess: (c) => setChoices(c ?? []) },
+            )
+          }
+        >
+          Sign in with SSO
+        </button>
+      );
+  }
+  return (
+    <div
+      role="status"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-warn-edge bg-stage-bg px-5 py-2 text-xs"
+    >
+      <span className="text-warn">Single sign-on required</span>
+      <span className="min-w-0 flex-1 text-warn-text">{me.sso_required}.</span>
+      {action}
+      <ErrorText error={start.error} />
+    </div>
+  );
+}
+
+/**
  * The shell with no organization to act in, because the person's needs
- * a second factor: the notice and their account page, nothing that
- * reads an org (projects, servers, live events).
+ * a second factor or single sign-on: the notice and their account page,
+ * nothing that reads an org (projects, servers, live events).
  */
 function AccountOnly() {
   const logout = useLogout();
   return (
     <main id="main" className="flex min-h-screen flex-col">
       <TwoFactorNotice />
+      <SSONotice />
       <div className="flex flex-1 flex-col">
         <Outlet />
       </div>

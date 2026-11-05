@@ -36,7 +36,11 @@ const (
 	// CodeTwoFactorRequired means the org (or the platform, for operators)
 	// requires a second factor this session or token didn't use.
 	CodeTwoFactorRequired ErrorCode = "two_factor_required"
-	CodeInternal          ErrorCode = "internal"
+	// CodeSSORequired means the org requires signing in through its single
+	// sign-on, or the action a sign-in that didn't go through an org's
+	// (ADR 0058).
+	CodeSSORequired ErrorCode = "sso_required"
+	CodeInternal    ErrorCode = "internal"
 )
 
 // Release failure codes (Release.ErrorCode). Release.Error has the details.

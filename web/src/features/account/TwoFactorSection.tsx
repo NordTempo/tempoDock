@@ -23,7 +23,9 @@ const RecoveryCodesDialog = lazy(() => import("./RecoveryCodesDialog"));
  * is on, their passkeys and authenticator app, adding them, and recovery
  * codes.
  * Changes ask to confirm it's you when the session is older than 15
- * minutes (the API client's step-up).
+ * minutes (the API client's step-up). A single sign-on session only
+ * shows them: an org's provider vouches for the person only in that org,
+ * not for their account (ADR 0058).
  */
 export function TwoFactorSection() {
   const tf = useSuspenseQuery(twoFactorQuery()).data;
@@ -35,6 +37,8 @@ export function TwoFactorSection() {
   const on = tf.factors.length > 0;
   const passkeys = tf.factors.filter((f) => f.kind === "passkey");
   const apps = tf.factors.filter((f) => f.kind === "totp");
+  // Managed from a password sign-in only.
+  const readOnly = !!me?.sso;
 
   return (
     <section aria-labelledby="two-factor" className="flex flex-col gap-3">
@@ -56,7 +60,9 @@ export function TwoFactorSection() {
           <span className="text-mut">
             {on
               ? "signing in takes a second factor"
-              : "your password alone signs you in"}
+              : readOnly
+                ? "no second factor in Dock"
+                : "your password alone signs you in"}
             {me?.two_factor &&
               `; this session used ${factorWord(me.two_factor)}`}
           </span>
@@ -64,16 +70,22 @@ export function TwoFactorSection() {
         <dt>Passkeys</dt>
         <dd className="flex flex-col gap-2">
           {passkeys.map((f) => (
-            <FactorRow key={f.id} factor={f} />
+            <FactorRow key={f.id} factor={f} readOnly={readOnly} />
           ))}
-          <AddPasskey onRecoveryCodes={setCodes} />
+          {passkeys.length === 0 && readOnly && (
+            <span className="text-mut">none</span>
+          )}
+          {!readOnly && <AddPasskey onRecoveryCodes={setCodes} />}
         </dd>
         <dt>Authenticator app</dt>
         <dd className="flex flex-col gap-2">
           {apps.map((f) => (
-            <FactorRow key={f.id} factor={f} />
+            <FactorRow key={f.id} factor={f} readOnly={readOnly} />
           ))}
-          {apps.length === 0 && !setup && (
+          {apps.length === 0 && readOnly && (
+            <span className="text-mut">none</span>
+          )}
+          {apps.length === 0 && !setup && !readOnly && (
             <span className="flex flex-wrap items-center gap-3">
               <Button
                 small
@@ -103,11 +115,22 @@ export function TwoFactorSection() {
           <>
             <dt>Recovery codes</dt>
             <dd>
-              <RecoveryCodes left={tf.recovery_codes} onNew={setCodes} />
+              <RecoveryCodes
+                left={tf.recovery_codes}
+                onNew={setCodes}
+                readOnly={readOnly}
+              />
             </dd>
           </>
         )}
       </dl>
+      {readOnly && (
+        <p className="text-xs text-mut">
+          You signed in with the single sign-on of{" "}
+          <span className="font-mono">{me?.sso}</span>, which vouches for you
+          only there. Sign in with your password to change your second factors.
+        </p>
+      )}
       <p className="text-xs text-mut">
         Lost your second factors and your recovery codes? Someone with shell
         access to the server runs{" "}
@@ -137,6 +160,8 @@ function factorWord(kind: string) {
       return "your authenticator app";
     case "recovery":
       return "a recovery code";
+    case "sso":
+      return "single sign-on";
     default:
       return kind;
   }
@@ -193,7 +218,13 @@ function AddPasskey({
 }
 
 /** A passkey or authenticator app with when it was added and used, and Remove. */
-function FactorRow({ factor: f }: { factor: Factor }) {
+function FactorRow({
+  factor: f,
+  readOnly,
+}: {
+  factor: Factor;
+  readOnly: boolean;
+}) {
   const remove = useRemoveFactor();
   const [asking, setAsking] = useState(false);
   if (asking) {
@@ -226,9 +257,11 @@ function FactorRow({ factor: f }: { factor: Factor }) {
         added {day(f.created_at)}
         {f.last_used_at ? `, used ${ago(f.last_used_at)}` : ", never used"}
       </span>
-      <Button small onClick={() => setAsking(true)}>
-        Remove
-      </Button>
+      {!readOnly && (
+        <Button small onClick={() => setAsking(true)}>
+          Remove
+        </Button>
+      )}
     </span>
   );
 }
@@ -237,9 +270,11 @@ function FactorRow({ factor: f }: { factor: Factor }) {
 function RecoveryCodes({
   left,
   onNew,
+  readOnly,
 }: {
   left: number;
   onNew: (codes: string[]) => void;
+  readOnly: boolean;
 }) {
   const create = useNewRecoveryCodes();
   const [asking, setAsking] = useState(false);
@@ -272,9 +307,11 @@ function RecoveryCodes({
       <span className={left <= 2 ? "text-warn" : undefined}>
         {plural(left, "unused code")}
       </span>
-      <Button small onClick={() => setAsking(true)}>
-        New codes
-      </Button>
+      {!readOnly && (
+        <Button small onClick={() => setAsking(true)}>
+          New codes
+        </Button>
+      )}
     </span>
   );
 }

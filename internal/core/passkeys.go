@@ -293,7 +293,7 @@ func (c *Core) finishPasskeyLogin(ctx context.Context, pu *passkeyUser, cred *we
 	if err := c.usePasskey(ctx, pu, cred); err != nil {
 		return LoginResult{}, err
 	}
-	return c.signIn(ctx, u, factorPasskey, clientIP)
+	return c.signIn(ctx, u, signInVia{factor: factorPasskey}, clientIP)
 }
 
 // PasskeyRegistration starts adding a passkey to the caller's account;

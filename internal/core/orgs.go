@@ -74,5 +74,5 @@ func createOrgTx(ctx context.Context, q *store.Queries, slug, name string) (stor
 }
 
 func toOrg(o store.Org, role apitypes.Scope) apitypes.Org {
-	return apitypes.Org{Slug: o.Slug, Name: o.Name, Role: role, CreatedAt: o.CreatedAt, RequireTwoFactor: o.RequireTwoFactor}
+	return apitypes.Org{Slug: o.Slug, Name: o.Name, Role: role, CreatedAt: o.CreatedAt, RequireTwoFactor: o.RequireTwoFactor, SSOOnly: o.SsoOnly}
 }

@@ -51,6 +51,7 @@ const settings = new Set<keyof FileRoutesById>([
   "/_app/$org/settings/general",
   "/_app/$org/settings/tokens",
   "/_app/$org/settings/registries",
+  "/_app/$org/settings/sso",
   "/_app/$org/audit",
   "/_app/account",
 ]);
@@ -670,6 +671,11 @@ function SettingsNav() {
       {admin && (
         <NavLink to="/$org/settings/registries" params={params}>
           Registries
+        </NavLink>
+      )}
+      {admin && (
+        <NavLink to="/$org/settings/sso" params={params}>
+          Single sign-on
         </NavLink>
       )}
       <NavLink to="/$org/audit" params={params}>

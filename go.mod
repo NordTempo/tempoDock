@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/containerd/errdefs v1.0.0
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/distribution/reference v0.6.0
 	github.com/fxamacker/cbor/v2 v2.9.4
@@ -21,6 +22,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20261009124904-c1c5bffae3b5
 	golang.org/x/crypto v0.58.0
 	golang.org/x/mod v0.42.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/term v0.47.0
 	google.golang.org/grpc v1.84.0
@@ -60,6 +62,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -125,7 +128,6 @@ require (
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect

@@ -65,7 +65,7 @@ func (q *Queries) CountOrgProjects(ctx context.Context, orgID int64) (int64, err
 }
 
 const createOrg = `-- name: CreateOrg :one
-INSERT INTO orgs (slug, name) VALUES (?, ?) RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor
+INSERT INTO orgs (slug, name) VALUES (?, ?) RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only
 `
 
 type CreateOrgParams struct {
@@ -84,6 +84,7 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		&i.LockProduction,
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
+		&i.SsoOnly,
 	)
 	return i, err
 }
@@ -222,7 +223,7 @@ func (q *Queries) DeleteRegistryCredential(ctx context.Context, arg DeleteRegist
 }
 
 const getInviteByHash = `-- name: GetInviteByHash :one
-SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor
+SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only
 FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id
 WHERE org_invites.hash = +?
 `
@@ -255,6 +256,7 @@ func (q *Queries) GetInviteByHash(ctx context.Context, hash string) (GetInviteBy
 		&i.Org.LockProduction,
 		&i.Org.RequestTtlHours,
 		&i.Org.RequireTwoFactor,
+		&i.Org.SsoOnly,
 	)
 	return i, err
 }
@@ -295,7 +297,7 @@ func (q *Queries) GetMemberRoleByEmail(ctx context.Context, arg GetMemberRoleByE
 }
 
 const getMembership = `-- name: GetMembership :one
-SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, org_members.role
+SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, org_members.role
 FROM org_members JOIN orgs ON orgs.id = org_members.org_id
 WHERE org_members.user_id = +?1 AND orgs.slug = +?2
 `
@@ -322,13 +324,14 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 		&i.Org.LockProduction,
 		&i.Org.RequestTtlHours,
 		&i.Org.RequireTwoFactor,
+		&i.Org.SsoOnly,
 		&i.Role,
 	)
 	return i, err
 }
 
 const getOrg = `-- name: GetOrg :one
-SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor FROM orgs WHERE id = +?
+SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only FROM orgs WHERE id = +?
 `
 
 func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
@@ -342,12 +345,13 @@ func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
 		&i.LockProduction,
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
+		&i.SsoOnly,
 	)
 	return i, err
 }
 
 const getOrgBySlug = `-- name: GetOrgBySlug :one
-SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor FROM orgs WHERE slug = +?
+SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only FROM orgs WHERE slug = +?
 `
 
 func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
@@ -361,6 +365,7 @@ func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
 		&i.LockProduction,
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
+		&i.SsoOnly,
 	)
 	return i, err
 }
@@ -648,7 +653,7 @@ func (q *Queries) ListRegistryCredentials(ctx context.Context, orgID int64) ([]R
 }
 
 const listUserOrgs = `-- name: ListUserOrgs :many
-SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, org_members.role
+SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, org_members.role
 FROM org_members JOIN orgs ON orgs.id = org_members.org_id
 WHERE org_members.user_id = +?
 ORDER BY org_members.org_id
@@ -678,6 +683,7 @@ func (q *Queries) ListUserOrgs(ctx context.Context, userID int64) ([]ListUserOrg
 			&i.Org.LockProduction,
 			&i.Org.RequestTtlHours,
 			&i.Org.RequireTwoFactor,
+			&i.Org.SsoOnly,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -722,7 +728,7 @@ func (q *Queries) RemoveOrgMember(ctx context.Context, arg RemoveOrgMemberParams
 }
 
 const renameOrg = `-- name: RenameOrg :one
-UPDATE orgs SET name = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor
+UPDATE orgs SET name = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only
 `
 
 type RenameOrgParams struct {
@@ -741,6 +747,7 @@ func (q *Queries) RenameOrg(ctx context.Context, arg RenameOrgParams) (Org, erro
 		&i.LockProduction,
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
+		&i.SsoOnly,
 	)
 	return i, err
 }

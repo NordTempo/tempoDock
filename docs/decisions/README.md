@@ -65,6 +65,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted |
 | [0056](0056-preview-environments.md) | Preview environments per pull request | accepted |
 | [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
+| [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | accepted |
 
 ## Template
 
