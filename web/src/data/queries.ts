@@ -75,7 +75,7 @@ export const keys = {
   servers: ["servers"],
   server: (name: string) => ["servers", name],
   /**
-   * Preview settings and open previews (ADR 0052); live.ts refetches them
+   * Preview settings and open previews (ADR 0056); live.ts refetches them
    * on preview audits and on releases and domains of preview environments.
    */
   previews: (project: string) => ["project", project, "previews"],
@@ -147,7 +147,7 @@ export const isDatabase = (s: Service) =>
 
 /**
  * Sets archived services apart from live ones, puts preview environments
- * (ADR 0052) after the regular ones and turns the API's null lists into
+ * (ADR 0056) after the regular ones and turns the API's null lists into
  * arrays.
  */
 function toOverview(

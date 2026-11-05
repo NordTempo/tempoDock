@@ -132,7 +132,7 @@ type GetAppGitConnectionsParams struct {
 
 // The App connections of one repository, which an App push delivery is
 // routed to. Preview environments' connections are left out: only their
-// pull request's events deploy them (ADR 0052).
+// pull request's events deploy them (ADR 0056).
 func (q *Queries) GetAppGitConnections(ctx context.Context, arg GetAppGitConnectionsParams) ([]GitConnection, error) {
 	rows, err := q.db.QueryContext(ctx, getAppGitConnections, arg.RepoID, arg.InstallationID)
 	if err != nil {

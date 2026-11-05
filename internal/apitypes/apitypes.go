@@ -222,7 +222,7 @@ type Environment struct {
 	// Lock is set while the environment is locked (ADR 0044), also while
 	// it is opened for a while.
 	Lock *EnvironmentLock `json:"lock,omitempty"`
-	// Preview is set on a preview environment (ADR 0052): the pull
+	// Preview is set on a preview environment (ADR 0056): the pull
 	// request it previews.
 	Preview *PullRequestRef `json:"preview,omitempty" doc:"The pull request this preview environment belongs to"`
 }

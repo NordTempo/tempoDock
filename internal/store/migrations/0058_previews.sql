@@ -1,4 +1,4 @@
--- Preview environments per pull request (ADR 0052).
+-- Preview environments per pull request (ADR 0056).
 --
 -- preview_settings is a project's opt-in: pull requests to a repository
 -- the base environment's services deploy get an environment cloned from

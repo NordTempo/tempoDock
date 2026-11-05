@@ -7,7 +7,7 @@ SELECT * FROM git_connections WHERE hook_id = +?;
 -- name: GetAppGitConnections :many
 -- The App connections of one repository, which an App push delivery is
 -- routed to. Preview environments' connections are left out: only their
--- pull request's events deploy them (ADR 0052).
+-- pull request's events deploy them (ADR 0056).
 SELECT * FROM git_connections
 WHERE repo_id = +? AND installation_id = +?
   AND NOT EXISTS (SELECT 1 FROM services JOIN previews ON previews.environment_id = services.environment_id

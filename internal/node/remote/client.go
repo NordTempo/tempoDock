@@ -163,8 +163,8 @@ func (c *Client) EnsureVolume(ctx context.Context, name string, labels node.Labe
 }
 
 // removeVolumeProtocol is the first node protocol that has remove-volume
-// (ADR 0052).
-const removeVolumeProtocol = 19
+// (ADR 0056).
+const removeVolumeProtocol = 20
 
 // RemoveVolume implements node.Containers. An older node doesn't have the
 // operation: its volumes stay.

@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// newPreviewsCmd is `dock env previews` (ADR 0052), also registered as
+// newPreviewsCmd is `dock env previews` (ADR 0056), also registered as
 // `dock environment previews`: a project's preview settings and open
 // previews, with enable, disable and close below it.
 func newPreviewsCmd(g *globals) *cobra.Command {

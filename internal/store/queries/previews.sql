@@ -1,4 +1,4 @@
--- Preview environments per pull request (ADR 0052).
+-- Preview environments per pull request (ADR 0056).
 
 -- name: GetPreviewSettings :one
 SELECT * FROM preview_settings WHERE project_id = +?;
@@ -118,13 +118,13 @@ ORDER BY services.environment_id, services.name, domains.hostname;
 
 -- name: DeleteEnvironmentGitConnections :exec
 -- Removes a closed preview's git connections, which hold a copy of the
--- base's GitHub token (ADR 0052).
+-- base's GitHub token (ADR 0056).
 DELETE FROM git_connections
 WHERE service_id IN (SELECT id FROM services WHERE environment_id = +?);
 
 -- name: DeleteEnvironmentVariables :exec
 -- Removes a closed preview's variables, live and staged: its values go
--- with it (ADR 0052).
+-- with it (ADR 0056).
 DELETE FROM variables WHERE environment_id = +?;
 
 -- name: ArchiveEnvironment :exec

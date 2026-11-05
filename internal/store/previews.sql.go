@@ -138,7 +138,7 @@ WHERE service_id IN (SELECT id FROM services WHERE environment_id = +?)
 `
 
 // Removes a closed preview's git connections, which hold a copy of the
-// base's GitHub token (ADR 0052).
+// base's GitHub token (ADR 0056).
 func (q *Queries) DeleteEnvironmentGitConnections(ctx context.Context, environmentID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteEnvironmentGitConnections, environmentID)
 	return err
@@ -149,7 +149,7 @@ DELETE FROM variables WHERE environment_id = +?
 `
 
 // Removes a closed preview's variables, live and staged: its values go
-// with it (ADR 0052).
+// with it (ADR 0056).
 func (q *Queries) DeleteEnvironmentVariables(ctx context.Context, environmentID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteEnvironmentVariables, environmentID)
 	return err
@@ -337,7 +337,7 @@ const getPreviewSettings = `-- name: GetPreviewSettings :one
 SELECT project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at FROM preview_settings WHERE project_id = +?
 `
 
-// Preview environments per pull request (ADR 0052).
+// Preview environments per pull request (ADR 0056).
 func (q *Queries) GetPreviewSettings(ctx context.Context, projectID int64) (PreviewSetting, error) {
 	row := q.db.QueryRowContext(ctx, getPreviewSettings, projectID)
 	var i PreviewSetting

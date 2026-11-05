@@ -303,7 +303,7 @@ type cloneRules struct {
 	literal func(apitypes.VariableRef) bool
 	// orgRefsLiteral treats a reference to an org variable
 	// (${{org.KEY}}) as a literal value: it reads a secret the org holds,
-	// which a preview gets only when listed (ADR 0052).
+	// which a preview gets only when listed (ADR 0056).
 	orgRefsLiteral bool
 }
 

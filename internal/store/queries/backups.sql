@@ -33,7 +33,7 @@ ON CONFLICT (service_id) DO UPDATE SET enabled = excluded.enabled, hour = exclud
 -- in a live project) with its server and schedule override, for the
 -- scheduler. A stopped service changes nothing to back up (ADR 0050).
 -- Preview environments' services are never backed up on a schedule: their
--- data is thrown away when the pull request closes (ADR 0052).
+-- data is thrown away when the pull request closes (ADR 0056).
 SELECT services.id, services.created_at, environments.server_id,
        CAST(coalesce(backup_schedules.enabled, 1) AS BOOLEAN) AS enabled,
        backup_schedules.hour

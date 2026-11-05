@@ -31,7 +31,7 @@ import { LockForm, LockStrip } from "./EnvironmentLock";
 
 /**
  * One environment on the project overview: a row per service. A preview
- * environment (ADR 0052) also shows its pull request, status and
+ * environment (ADR 0056) also shows its pull request, status and
  * addresses, and can be closed.
  */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {

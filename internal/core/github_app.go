@@ -337,7 +337,7 @@ func (c *Core) GitHubManifest(state, origin string) (string, []byte, error) {
 		Description: "Deploys pushes and previews pull requests with Tempo Dock.",
 		RedirectURL: base + GitHubAppCallbackPath,
 		SetupURL:    base + GitHubInstallCallbackPath, SetupOnUpdate: true,
-		// Pull requests: write lets previews comment (ADR 0052).
+		// Pull requests: write lets previews comment (ADR 0056).
 		DefaultPermissions: map[string]string{"contents": "read", "metadata": "read", "statuses": "write", "pull_requests": "write"},
 		DefaultEvents:      []string{"push", "pull_request"},
 	}

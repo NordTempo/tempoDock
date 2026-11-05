@@ -13,7 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// What a preview tells its pull request (ADR 0052): one comment, edited
+// What a preview tells its pull request (ADR 0056): one comment, edited
 // in place as the preview changes, and a dock/preview commit status on
 // the head commit linking to its address. Both go through the base
 // connection's credentials (the App's installation token, or a webhook

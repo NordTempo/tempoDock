@@ -10,7 +10,7 @@ import {
   useClosePreview,
 } from "./data";
 
-// A preview environment's parts on the project overview (ADR 0052): its
+// A preview environment's parts on the project overview (ADR 0056): its
 // pull request, status and addresses, and closing it.
 
 const previewStates: Record<Preview["status"], State> = {

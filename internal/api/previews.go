@@ -11,7 +11,7 @@ import (
 )
 
 // registerPreviews serves preview environments per pull request (ADR
-// 0052): a project's settings and open previews, and one preview by its
+// 0056): a project's settings and open previews, and one preview by its
 // environment.
 func registerPreviews(s *Server, a huma.API) {
 	tags := []string{"previews"}

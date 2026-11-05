@@ -145,11 +145,11 @@ type Containers interface {
 	// EnsureVolume creates the named volume if it doesn't exist. An existing
 	// volume labelled for a different service is an error. Volumes are never
 	// removed by the runtime except through RemoveVolume, which core calls
-	// only for an archived preview environment's volumes (ADR 0052).
+	// only for an archived preview environment's volumes (ADR 0056).
 	EnsureVolume(ctx context.Context, name string, labels Labels) error
 	// RemoveVolume removes a managed volume whose labels match labels
 	// (Labels.Matches, like RemoveNetwork), so a closed preview
-	// environment's data goes with it (ADR 0052). Any other volume, or
+	// environment's data goes with it (ADR 0056). Any other volume, or
 	// none, is ErrNotFound (wrapped). Docker refuses while a container
 	// uses it (an error); it is never forced.
 	RemoveVolume(ctx context.Context, name string, labels Labels) error

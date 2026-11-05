@@ -26,7 +26,7 @@ function envTone(services: ServiceView[]): Tone {
   return worst.find((t) => tones.has(t)) ?? "mut";
 }
 
-/** "PR #12": marks a preview environment (ADR 0052) in lists. */
+/** "PR #12": marks a preview environment (ADR 0056) in lists. */
 export function PrMark({ preview }: { preview: PullRequest | undefined }) {
   if (!preview) return null;
   return (

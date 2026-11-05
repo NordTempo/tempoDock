@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
-// Preview environments per pull request (ADR 0052), read only: an agent
+// Preview environments per pull request (ADR 0056), read only: an agent
 // working on a pull request finds its preview's address and status.
 
 // PreviewInput names a preview: by its environment, or by its pull

@@ -5,7 +5,7 @@ import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
 
-// Preview environments per pull request (ADR 0052): a project's preview
+// Preview environments per pull request (ADR 0056): a project's preview
 // settings and open previews. live.ts refetches them on preview audit
 // events and on releases and domains of preview environments.
 

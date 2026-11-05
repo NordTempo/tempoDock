@@ -54,7 +54,7 @@ type retention struct {
 	pruned  map[int64]time.Time // by server ID
 	pruning map[int64]bool
 	// full are the servers whose last sample showed Docker's disk past
-	// [retention] prune_disk_percent: no new preview goes there (ADR 0052).
+	// [retention] prune_disk_percent: no new preview goes there (ADR 0056).
 	full map[int64]bool
 }
 

@@ -15,7 +15,7 @@ const canManage = (s: Session | null, project: string) =>
   (!s.project || s.project === project);
 
 /**
- * The project's Previews settings (ADR 0052): whether pull requests get a
+ * The project's Previews settings (ADR 0056): whether pull requests get a
  * preview environment, cloned from which base, how many at once, which
  * literal variables they copy and whether forks count. Admins edit them;
  * everyone else sees them read-only.

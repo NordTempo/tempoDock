@@ -17,7 +17,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Preview environments per pull request (ADR 0052). A project opts in
+// Preview environments per pull request (ADR 0056). A project opts in
 // with a base environment (PreviewSettings). A pull_request event for a
 // repository a base service deploys, to the branch that service deploys,
 // clones the base into pr-<number> (non-production, placed by ADR 0015),
@@ -974,7 +974,7 @@ func (c *Core) archivePreview(ctx context.Context, es envScope, pv store.Preview
 
 // removePreviewVolumes removes an archived preview's volumes in the
 // background, once stopped is done (its containers are gone): a preview's
-// data is thrown away with it, unlike any other volume (ADR 0052). A
+// data is thrown away with it, unlike any other volume (ADR 0056). A
 // server that can't be reached keeps them; they are logged.
 func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []store.Volume, stopped *sync.WaitGroup) {
 	if len(vols) == 0 {

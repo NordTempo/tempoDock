@@ -49,7 +49,7 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	if err != nil {
 		return out, err
 	}
-	// Preview environments come and go with pull requests (ADR 0052): a
+	// Preview environments come and go with pull requests (ADR 0056): a
 	// project file that named them would make them ordinary ones.
 	previews, err := c.previewEnvironments(ctx, p.ID)
 	if err != nil {

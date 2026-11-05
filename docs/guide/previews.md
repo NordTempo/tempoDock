@@ -4,7 +4,7 @@ Every pull request can get its own environment, `pr-<number>`, cloned
 from a base environment such as `staging`, built from the pull request's
 head commit and given its own addresses. It follows new commits and is
 archived, with its containers, volumes and addresses, when the pull
-request closes ([ADR 0052](../decisions/0052-preview-environments.md)).
+request closes ([ADR 0056](../decisions/0056-preview-environments.md)).
 
 ## Turn them on
 

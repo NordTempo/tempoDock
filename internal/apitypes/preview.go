@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Preview environments per pull request (ADR 0052): a project's base
+// Preview environments per pull request (ADR 0056): a project's base
 // environment is cloned into pr-<number> for every pull request to a
 // repository its services deploy, and archived when the pull request
 // closes.
