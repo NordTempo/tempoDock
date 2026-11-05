@@ -51,7 +51,10 @@ const (
 // $SNAPSHOT, first in a .part directory that is renamed when complete, so
 // a cut-short copy is never taken for a snapshot. It refuses a copy that
 // would leave less than a tenth of the disk free, and a copy that fails
-// anyway (the disk filled up meanwhile) removes what it wrote.
+// anyway (the disk filled up meanwhile) removes what it wrote. The size it
+// reports is the volumes' (du before the copy): the service is paused for
+// the whole job, so the copy is the same size, and a second du of it would
+// stat every file again while the service stays frozen.
 const snapshotScript = `set -eu
 dir="` + snapshotsPath + `/$SNAPSHOT"
 rm -rf "$dir" "$dir.part"
@@ -67,7 +70,7 @@ fi
 mkdir -p "$dir.part"
 for v in $VOLUMES; do cp -a "` + snapshotVolumesPath + `/$v" "$dir.part/$v"; done
 mv "$dir.part" "$dir"
-echo "dock-snapshot: size $(du -sk "$dir" | cut -f1)"
+echo "dock-snapshot: size $need"
 `
 
 // snapshotRestoreScript replaces the contents of every volume in $VOLUMES

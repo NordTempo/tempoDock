@@ -15,7 +15,9 @@ SELECT * FROM volume_snapshots WHERE service_id = +? ORDER BY id DESC LIMIT +?;
 
 -- name: ListExpiredSnapshots :many
 -- Finished snapshots taken before a time, oldest first, for retention.
-SELECT * FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY id LIMIT +?;
+-- Ordered by started_at so it seeks volume_snapshots_started instead of
+-- scanning the table in ID order.
+SELECT * FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY started_at, id LIMIT +?;
 
 -- name: DeleteSnapshot :exec
 DELETE FROM volume_snapshots WHERE id = +?;
