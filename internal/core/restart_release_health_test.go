@@ -28,7 +28,7 @@ func TestRestartedReleaseAdoptsHealth(t *testing.T) {
 	if err := h.rt.Stop(h.ctx, id, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.rt.Remove(h.ctx, id); err != nil {
+	if err := h.rt.Remove(h.ctx, id, node.RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.c.ensureRunning(h.ctx, ss, active); err != nil {
