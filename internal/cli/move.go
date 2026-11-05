@@ -104,7 +104,7 @@ environment's lock applies.`,
 		},
 	}
 	f.add(cmd, needEnvironment)
-	cmd.Flags().StringVar(&to, "to", "", "the server to move to (see `dock server list`)")
+	cmd.Flags().StringVar(&to, "to", "", "the server to move to (see dock server list)")
 	cmd.Flags().BoolVar(&status, "status", false, "show the running or latest move instead of starting one")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	addDetachFlag(cmd, &detach)
