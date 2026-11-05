@@ -214,9 +214,8 @@ function ReleasePage() {
               cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
-                  to: "/$org/$project/$environment",
+                  to: "/$org/$project/$environment/$service/variables",
                   params: { org, ...ref },
-                  search: { service: ref.service },
                 })
               }
             >

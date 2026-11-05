@@ -4,6 +4,7 @@ import { useRestart, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
+  serviceRef as refOf,
   useCanDeploy,
   useChanges,
   useDeployBlock,
@@ -18,7 +19,7 @@ import { useOrg } from "../../shell/location";
 import { ago, plural, since } from "../../ui/format";
 import {
   Act,
-  Button,
+  Confirm,
   ErrorText,
   Glyph,
   PageBar,
@@ -33,6 +34,7 @@ import {
   serviceState,
   stepPhrase,
 } from "../../ui/status";
+import { openDeploy } from "../deploy/start";
 import { EnvServer } from "../servers/parts";
 import { useStartService, useStopService } from "./data";
 import { copiedConfig, errorSummary, rollbackTarget } from "./releases";
@@ -44,17 +46,7 @@ import { CpuUsage, MemoryUsage } from "./Usage";
  * state and, on the Overview tab, Stop or Start, Restart, Roll back and
  * Deploy.
  */
-export function ServiceBar({
-  serviceRef: ref,
-  full,
-  onDeploy,
-}: {
-  serviceRef: ServiceRef;
-  /** With the actions, as on the Overview tab. */
-  full: boolean;
-  /** Opens the Deploy window (folder, image or GitHub). */
-  onDeploy: () => void;
-}) {
+export function ServiceBar({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const view = useService(ref);
   const state = serviceState(view);
@@ -89,7 +81,7 @@ export function ServiceBar({
           </span>
         </>
       }
-      actions={full && <Actions serviceRef={ref} onDeploy={onDeploy} />}
+      actions={<Actions serviceRef={ref} />}
     />
   );
 }
@@ -107,6 +99,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   useShortcuts(
     shown.map((tab) => ({
       key: tab.key,
+      label: tab.label.toLowerCase(),
       run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
   );
@@ -125,7 +118,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   return (
     <nav
       aria-label="Service"
-      className="tabs flex flex-wrap gap-0.5 border-b border-line px-4 py-2"
+      className="tabs flex gap-0.5 overflow-x-auto border-b border-line px-4 py-2 whitespace-nowrap [scrollbar-width:thin]"
     >
       {shown.map((tab) => (
         <Link
@@ -215,7 +208,19 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
 /** One sentence on what the service is doing and what happens next. */
 export function StatusSentence({ view }: { view: ServiceView }) {
+  const org = useOrg();
+  const mayDeploy = useCanDeploy(refOf(view.service));
   const { service, deploying, latest_release: latest } = view;
+  // A release named in the sentence links to its page, which says why.
+  const releaseLink = (number: number, text: string) => (
+    <Link
+      to="/$org/$project/$environment/$service/releases/$number"
+      params={{ org, ...refOf(service), number: String(number) }}
+      className="text-inherit underline decoration-faint underline-offset-2 hover:decoration-current"
+    >
+      {text}
+    </Link>
+  );
   const { status } = service;
   const serving = service.active_release;
   const mut = (text: string) => <span className="text-mut">{text}</span>;
@@ -253,7 +258,10 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         )}{" "}
         {latest?.status === "failed" && latest.number > (serving ?? 0) && (
           <span className="text-fail">
-            r{latest.number} {failurePhrase(latest)} {ago(latest.created_at)}.
+            {releaseLink(
+              latest.number,
+              `r${latest.number} ${failurePhrase(latest)} ${ago(latest.created_at)}.`,
+            )}
           </span>
         )}
       </>
@@ -282,10 +290,25 @@ export function StatusSentence({ view }: { view: ServiceView }) {
     sentence = (
       <>
         <span className="text-mut">○</span> Not deployed yet.{" "}
-        {latest?.status === "failed" &&
-          mut(
-            `r${latest.number} ${failurePhrase(latest)}: ${errorSummary(latest)}.`,
-          )}
+        {latest?.status === "failed" ? (
+          <span className="text-mut">
+            {releaseLink(
+              latest.number,
+              `r${latest.number} ${failurePhrase(latest)}: ${errorSummary(latest)}.`,
+            )}
+          </span>
+        ) : (
+          !latest &&
+          mayDeploy && (
+            <button
+              type="button"
+              className="lnk text-md text-info"
+              onClick={() => openDeploy(refOf(service))}
+            >
+              Deploy it
+            </button>
+          )
+        )}
       </>
     );
   } else if (status.state !== "running") {
@@ -324,7 +347,10 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           )}{" "}
         {latest?.status === "failed" && latest.number > serving && (
           <span className="text-fail">
-            r{latest.number} {failurePhrase(latest)} {ago(latest.created_at)}.
+            {releaseLink(
+              latest.number,
+              `r${latest.number} ${failurePhrase(latest)} ${ago(latest.created_at)}.`,
+            )}
           </span>
         )}
       </>
@@ -337,13 +363,8 @@ export function StatusSentence({ view }: { view: ServiceView }) {
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
  * equivalents. Stop and roll back ask first.
  */
-function Actions({
-  serviceRef: ref,
-  onDeploy,
-}: {
-  serviceRef: ServiceRef;
-  onDeploy: () => void;
-}) {
+function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const onDeploy = () => openDeploy(ref);
   const { service, deploying } = useService(ref);
   const releases = useReleases(ref);
   const mayDeploy = useCanDeploy(ref);
@@ -411,48 +432,46 @@ function Actions({
 
   if (confirming === "stop") {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs">
-          Stop <b className="font-mono font-medium">{ref.service}</b>? Its
-          domains answer 503 until it starts again.
-        </span>
-        <Button
-          danger
-          disabled={!canStop}
-          onClick={() =>
-            stop.mutate(ref, { onSuccess: () => setConfirming(null) })
-          }
-        >
-          Stop
-        </Button>
-        <Button onClick={() => setConfirming(null)}>Cancel</Button>
-        <ErrorText error={stop.error} />
-      </div>
+      <Confirm
+        action={`Stop ${ref.service}`}
+        cli={`dock service stop ${ref.service} -e ${ref.environment}`}
+        danger
+        pending={!canStop}
+        error={stop.error}
+        onConfirm={() =>
+          stop.mutate(ref, { onSuccess: () => setConfirming(null) })
+        }
+        onCancel={() => {
+          stop.reset();
+          setConfirming(null);
+        }}
+      >
+        Its domains answer 503 until it starts again.
+      </Confirm>
     );
   }
 
   if (confirming === "rollback" && target) {
     return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs">
-          Roll back to <b className="font-mono font-medium">r{target.number}</b>
-          : <span className="font-mono text-mut">{copiedConfig(target)}</span>
-        </span>
-        <Button
-          primary
-          disabled={!canRollback}
-          onClick={() =>
-            rollback.mutate(
-              { ref, to: target.number },
-              { onSuccess: () => setConfirming(null) },
-            )
-          }
-        >
-          Roll back
-        </Button>
-        <Button onClick={() => setConfirming(null)}>Cancel</Button>
-        <ErrorText error={rollback.error} />
-      </div>
+      <Confirm
+        action={`Roll back to r${target.number}`}
+        cli={`dock rollback ${target.number} ${flags}`}
+        pending={!canRollback}
+        error={rollback.error}
+        onConfirm={() =>
+          rollback.mutate(
+            { ref, to: target.number },
+            { onSuccess: () => setConfirming(null) },
+          )
+        }
+        onCancel={() => {
+          rollback.reset();
+          setConfirming(null);
+        }}
+      >
+        A new release with r{target.number}'s image and config:{" "}
+        <span className="font-mono text-mut">{copiedConfig(target)}</span>
+      </Confirm>
     );
   }
 

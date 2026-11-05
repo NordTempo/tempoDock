@@ -48,11 +48,18 @@ export function VariablesEditor({
   env,
   service,
   footer,
+  inService = false,
 }: {
   env: EnvRef;
   /** The service whose runtime view to show; null for shared lines only. */
   service: string | null;
   footer?: ReactNode;
+  /**
+   * Shown as a service's Variables tab: under the service's own header,
+   * so no bar of its own, and the scope list switches between services'
+   * tabs.
+   */
+  inService?: boolean;
 }) {
   const org = useOrg();
   const all = useVariables(env, null);
@@ -92,38 +99,41 @@ export function VariablesEditor({
   const shown = (v: Variable) => revealAll || revealedIds.has(idOf(v));
 
   const sharedCount = shared.length;
+  const actions = (
+    <>
+      {isAdmin && (
+        <Button onClick={() => setRevealAll(!revealAll)}>
+          {revealAll ? "Hide values" : "Reveal values"}
+        </Button>
+      )}
+      <Button onClick={() => setPasting(!pasting)}>
+        Paste .env <kbd>P</kbd>
+      </Button>
+      <Button onClick={() => newLine.current?.focus()}>
+        Add variable <kbd>N</kbd>
+      </Button>
+    </>
+  );
   return (
     <>
-      <PageBar
-        parent={
-          <Link
-            to="/$org/$project"
-            params={{ org, project: env.project }}
-            className="hover:text-fg"
-          >
-            {env.project}
-          </Link>
-        }
-        title="Variables"
-        after={
-          <EnvSwitch project={env.project} environment={env.environment} />
-        }
-        actions={
-          <>
-            {isAdmin && (
-              <Button onClick={() => setRevealAll(!revealAll)}>
-                {revealAll ? "Hide values" : "Reveal values"}
-              </Button>
-            )}
-            <Button onClick={() => setPasting(!pasting)}>
-              Paste .env <kbd>P</kbd>
-            </Button>
-            <Button onClick={() => newLine.current?.focus()}>
-              Add variable <kbd>N</kbd>
-            </Button>
-          </>
-        }
-      />
+      {!inService && (
+        <PageBar
+          parent={
+            <Link
+              to="/$org/$project"
+              params={{ org, project: env.project }}
+              className="hover:text-fg"
+            >
+              {env.project}
+            </Link>
+          }
+          title="Variables"
+          after={
+            <EnvSwitch project={env.project} environment={env.environment} />
+          }
+          actions={actions}
+        />
+      )}
       <div className="flex flex-1 flex-col md:flex-row">
         <nav
           aria-label="Applies to"
@@ -146,12 +156,20 @@ export function VariablesEditor({
             const ownCount = all.filter(
               (v) => v.scope === "service" && v.service === name,
             ).length;
+            const link = inService
+              ? ({
+                  to: "/$org/$project/$environment/$service/variables",
+                  params: { org, ...env, service: name },
+                } as const)
+              : ({
+                  to: "/$org/$project/$environment",
+                  params: { org, ...env },
+                  search: { service: name },
+                } as const);
             return (
               <Link
                 key={s.service.id}
-                to="/$org/$project/$environment"
-                params={{ org, ...env }}
-                search={{ service: name }}
+                {...link}
                 activeOptions={{ exact: true }}
                 className="nav-row"
               >
@@ -173,10 +191,11 @@ export function VariablesEditor({
           </p>
         </nav>
 
-        <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-6 pt-5 pb-10">
+        <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-4 pt-5 pb-10 sm:px-6">
           <SectionHead
             id="vars"
             aside={revealAll ? "values shown" : "values hidden"}
+            right={inService && actions}
           >
             {service
               ? `${service} sees at runtime`

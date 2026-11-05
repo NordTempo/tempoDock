@@ -38,7 +38,7 @@ function ServiceOverview() {
 
   return (
     <div className="flex flex-1 flex-wrap">
-      <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-7 pt-6 pb-10">
+      <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-4 pt-6 pb-10 sm:px-7">
         <StatusSentence view={service} />
         <ServiceFacts serviceRef={ref} />
         {/* `dock connect` reaches a set port, or a database's own. */}
@@ -66,7 +66,7 @@ function ServiceOverview() {
               )
             }
           >
-            Deploys
+            Releases
           </SectionHead>
           <ReleasesTable
             serviceRef={ref}

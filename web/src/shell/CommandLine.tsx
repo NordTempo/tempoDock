@@ -58,7 +58,10 @@ export function CommandLine() {
     }
   }
 
-  const legendText = legend.map((s) => `${s.key.toUpperCase()} ${s.label}`);
+  // G-sequences (tabs) are many; ? lists them, the idle line doesn't.
+  const legendText = legend
+    .filter((s) => !s.key.startsWith("g "))
+    .map((s) => `${s.key.toUpperCase()} ${s.label}`);
 
   return (
     <div className="sticky bottom-0 z-20 bg-page px-5 pt-1.5 pb-3">
