@@ -302,3 +302,39 @@ func TestStoppedServiceAndRestoreInPlace(t *testing.T) {
 		t.Fatalf("after the restore: %+v", svc.Status)
 	}
 }
+
+// An in-place restore that loaded the service just before a stop went
+// through doesn't start it again: it reads whether the service is stopped
+// once it holds the service, not from what it loaded before.
+func TestRestoreInPlaceAfterRacingStop(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	app := h.volumeService("app")
+	s := h.snapshot(app)
+	svc, err := h.c.GetService(h.ctx, testSystem, app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := h.c.scopeOf(h.ctx, svc.ID) // loaded before the stop
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := h.store.GetSnapshot(h.ctx, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.StopService(h.ctx, testSystem, app); err != nil {
+		t.Fatal(err)
+	}
+	var res apitypes.SnapshotRestoreResult
+	h.untilFree(func() (err error) {
+		res, err = h.c.restoreInPlace(h.ctx, testSystem, stale, snap)
+		return err
+	})
+	if r := h.waitRestore(app, res.Restore.ID); r.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore = %+v", r)
+	}
+	if running := h.rt.Running(); len(running) != 0 {
+		t.Fatalf("the restore started the stopped service: running %v", running)
+	}
+}

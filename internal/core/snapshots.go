@@ -513,6 +513,17 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	c.setRestoringInPlace(ss.svc.ID, true)
+	// Read the service again now that StopService refuses to run: a stop
+	// that went ahead after ss was loaded is seen here, so the restore
+	// leaves the service stopped instead of starting it again.
+	svc, err := c.store.GetService(ctx, ss.svc.ID)
+	if err != nil {
+		c.setRestoringInPlace(ss.svc.ID, false)
+		c.failSafety(ctx, safety, "the service couldn't be read")
+		c.releaseService(ss.svc.ID)
+		return apitypes.SnapshotRestoreResult{}, err
+	}
+	ss.svc = svc
 	row, err := c.store.CreateSnapshotRestore(ctx, store.CreateSnapshotRestoreParams{
 		SnapshotID: &snap.ID, ServiceID: ss.svc.ID, ToServiceID: ss.svc.ID, InPlace: true, SafetyID: &safety.ID,
 		CreatedBy: a.Name, StartedAt: now(),
