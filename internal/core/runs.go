@@ -420,9 +420,9 @@ func (c *Core) publishRun(ss svcScope, rel store.Release, row store.ServiceRun) 
 }
 
 // interruptRuns ends the runs a restart cut short, at start: their
-// containers were removed with the daemon (or are, by the job's own
-// cleanup on a crash, an orphan the next prune finds), and each is
-// audited as it would have been.
+// containers were removed with the daemon (or, after a crash, by the
+// runtime's start-up sweep of its stranded jobs, docker's
+// UnpauseStranded), and each is audited as it would have been.
 func (c *Core) interruptRuns(ctx context.Context) error {
 	rows, err := c.store.ListRunningServiceRuns(ctx)
 	if err != nil {
