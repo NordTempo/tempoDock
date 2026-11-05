@@ -119,11 +119,10 @@ function DrainRow({
         {admin && (
           <span className="inline-flex items-center gap-3">
             {test.data && (
-              <span
-                className={test.data.ok ? "text-ok" : "text-fail"}
-                title={test.data.error}
-              >
-                {test.data.ok ? "Sent" : "Not sent"}
+              <span className={test.data.ok ? "text-ok" : "text-fail"}>
+                {test.data.ok
+                  ? "Sent"
+                  : `Not sent${test.data.error ? `: ${test.data.error}` : ""}`}
               </span>
             )}
             <ErrorText error={test.error ?? remove.error} />
@@ -267,6 +266,7 @@ function AddDrain({ env, onClose }: { env: EnvRef; onClose: () => void }) {
           type="submit"
           cli={cli}
           disabled={add.isPending || !url.trim()}
+          reason={add.isPending ? undefined : "Enter the drain's URL first."}
         >
           Add drain
         </Act>
