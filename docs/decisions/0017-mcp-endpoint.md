@@ -29,7 +29,7 @@ data MCP.
 | Implementation | A small hand-written server (`internal/mcp`), input schemas and validation from Huma. The official Go SDK is the test client |
 | Auth | `Authorization: Bearer` with an API token or a `dock login` token. No cookies |
 | Permissions | Core's checks, unchanged: the tool calls core as the token's actor |
-| Tools | 26 tools: status, releases, logs, deploys, variables, domains, servers, audit, data. No archive, revoke or token management |
+| Tools | 60 tools: status, releases (and waiting for one), logs, deploys, stopping and starting, one-off commands, services and their settings, variables, volumes and snapshots, domains, project files, resource use, servers, registry credentials, alerts, audit, access requests, analytics, data. No archive, revoke, lock or token management |
 | Resources | The user guide, `dock://docs/<page>`, embedded in the binary |
 | Long operations | Deploy-like tools wait for the release on the event bus (default 300 s, at most 900 s), with progress notifications |
 | Output | One text block: a one-line summary, a blank line, compact JSON |
@@ -105,7 +105,7 @@ up with protocol versions costs more than its weight.
 Names are snake_case. Descriptions are written for the model and state the
 safety model where it matters (a failed deploy needs no rollback, secret
 values are write-only, data changes are proposals). Annotations mark
-read-only tools (clients may auto-approve them) and the two destructive
+read-only tools (clients may auto-approve them) and the three destructive
 ones.
 
 | Tool | Does | Core operation | Needs |
@@ -113,14 +113,33 @@ ones.
 | `whoami` | Token name, scope, limits | `Actor.Me` | any |
 | `list_projects` | Project names | `ListProjects` | read |
 | `project_overview` | Environments, services, state, releases, domains | `Overview` | read |
+| `export_project` | The project's live configuration, variable names only | `ExportProject` | read |
 | `service_status` | One service's state, active and latest release | `GetService`, `ListReleases` | read |
+| `service_stats` | CPU, memory and I/O: latest sample, averages, peaks, at most 24 points | `ServiceStats` | read |
 | `list_releases` | Releases, newest first | `ListReleases` | read |
 | `release_details` | One release with steps; failed: reason, container and build log tails | `GetRelease`, `ServiceLogs`, `BuildLog` | read |
+| `wait_for_release` | Follow a running release (default: the in-flight one) to its end | `ListReleases`, `GetRelease`, `Events` | read |
 | `logs` | Last lines of a release's container | `ServiceLogs` | read |
 | `deploy_image` | Deploy a prebuilt image, wait | `DeployImage` | deploy |
 | `redeploy` | Restart (new identical release), wait | `Restart` | deploy |
+| `stop_service` | Stop a service, keeping its release and config | `StopService` | deploy |
+| `start_service` | Start a stopped service (new identical release), wait | `StartService` | deploy |
+| `run_command` | One-off command in the service's image, wait, last 16 KB of output | `RunCommand` | deploy |
+| `list_runs` | A service's latest one-off commands, without output | `ListRuns` | read |
 | `rollback` | New release from an earlier live one, wait | `Rollback` | deploy |
 | `promote` | Images from one environment to another, wait | `Promote` | deploy on target |
+| `clone_environment` | New environment copied from another, optionally deployed, wait | `CloneEnvironment` | deploy on the project |
+| `create_service` | New service (or a database template, which deploys) | `CreateService` | deploy |
+| `update_service` | Stage settings: port, health check, image, limits, ... | `UpdateService` | deploy |
+| `set_pre_deploy_command` | Stage the command run before a release gets traffic | `UpdateService` | deploy |
+| `list_volumes` | Volumes, staged ones marked | `ListVolumes` | read |
+| `add_volume` | Stage a volume | `AddVolume` | deploy |
+| `list_snapshots` | Volume snapshots, restores, retention | `ServiceSnapshots` | read |
+| `create_snapshot` | Snapshot a service's volumes now, wait | `CreateSnapshot` | deploy |
+| `restore_snapshot` | Restore into a new service (never in place), wait | `RestoreSnapshot` | deploy |
+| `plan_project_file` | Compare a project file with the live state | `PlanProject` | read |
+| `apply_project_file` | Stage a project file's plan, optionally apply and wait | `ApplyProject` | deploy |
+| `import_compose` | Convert a Compose file to a project file and plan it; changes nothing | `ImportCompose`, `PlanProject` | read |
 | `list_variables` | Names and pending changes; values only with `reveal` | `ListVariables` | read (admin to reveal) |
 | `set_variables` | Stage sets and unsets | `SetVariables` | deploy |
 | `show_changes` | Staged changes as a diff, values masked | `GetChanges` | read |
@@ -129,8 +148,23 @@ ones.
 | `list_domains` | Domains with status and DNS records | `ListDomains` | read |
 | `add_domain` | Custom hostname; returns the DNS records to create | `AddDomain` | deploy |
 | `generate_domain` | Hostname under the server's base domain | `GenerateDomain` | deploy |
+| `check_domain` | Check a domain's verification, DNS and certificate now | `CheckDomainNow` | deploy |
+| `remove_domain` | Remove a hostname and Dock's DNS record for it (destructive hint) | `RemoveDomain` | deploy |
 | `list_servers` | Servers, status, accepted kinds | `ListServers` | read |
+| `list_alerts` | Open alerts, or all with `all` | `ListAlerts` | operator |
+| `list_registry_credentials` | Registry hosts and usernames the org pulls with, never passwords | `ListRegistryCredentials` | admin |
 | `audit_log` | Audit events | `ListAudit` | read |
+| `request_access` | File an access request for a change, with a reason ([0044](0044-environment-lock.md)) | `FileRequest` | read |
+| `wait_for_request` | Wait for a request's decision and run | `WaitRequest` | read |
+| `list_requests` | The caller's access requests | `ListRequests` | read |
+| `analytics_sites` | A project's analytics sites | `ListSites` | read |
+| `analytics_stats` | A site's dashboard: totals against the period before, series, top values | `SiteStats` | read |
+| `analytics_breakdown` | Top values of one dimension | `SiteBreakdown` | read |
+| `analytics_errors` | Uncaught errors grouped, or one group in full | `SiteErrors`, `SiteError` | read |
+| `analytics_vitals` | Web Vitals at p75, by dimension and over time | `SiteVitals` | read |
+| `analytics_replays` | Session replays, listed only (watched in the UI) | `SiteReplays` | read |
+| `analytics_goals` | Goals and who reached them | `SiteGoals` | read |
+| `analytics_funnel` | A funnel's steps, or the funnels | `SiteFunnels`, `SiteFunnel` | read |
 | `data_status` | Database state and the caller's data access, with why | `DataInfo` | sees the service |
 | `data_schema` | Tables, columns, keys; one table in full | `DataSchema` | data `schema` |
 | `data_rows` | One keyset page with filters, sensitive columns masked | `DataRows` | data `read` |
@@ -143,10 +177,14 @@ token: there the changeset stays pending for an admin. That is stricter
 than the API, where a `dock login` user may commit production with a
 confirmation; an agent must not type that confirmation for a person.
 
-Not exposed in v1: archiving projects and services, token, user and
-server management, data setup, policy, sensitive columns, approving or
-rejecting changesets, revealing sensitive columns, volumes, creating
-projects, environments and services. Admins do those in the UI or CLI.
+Not exposed: archiving projects and services, token, user and server
+management, data setup, policy, sensitive columns, approving or
+rejecting changesets, revealing sensitive columns, removing volumes,
+deleting snapshots and restoring them in place, creating projects and
+environments (cloning aside), locking and unlocking environments,
+approving access requests, log drains, a service's access password,
+adding registry credentials, git connections, backups, alert channels and resolving alerts. Admins do
+those in the UI or CLI.
 
 ## Resources
 
@@ -162,8 +200,10 @@ and point at `dock://docs/agents`.
 
 ## Long operations
 
-`deploy_image`, `redeploy`, `rollback`, `promote`, `apply_changes`, and
-`add_domain`/`generate_domain` when they redeploy to publish a port:
+`deploy_image`, `redeploy`, `rollback`, `promote`, `clone_environment`
+with deploy, `apply_changes`, and `add_domain`/`generate_domain` when they
+redeploy to publish a port; `wait_for_release` from step 2, for a release
+already running:
 
 1. Start the release(s) through core, as the API does.
 2. Subscribe to the event bus for the environment (`core.Events`, the
@@ -174,7 +214,7 @@ and point at `dock://docs/agents`.
    into an event stream at the first one.
 4. Return when every release is `active` or `failed`, or after
    `wait_seconds` (default 300, at most 900, 0 for no wait). Unfinished
-   releases say so, and the summary points at `release_details`.
+   releases say so, and the summary points at `wait_for_release`.
 5. Failed releases come with the reason and the last 40 lines of their
    container's output (saved when the release failed) and of their build
    or pull.
@@ -189,11 +229,13 @@ disconnects cancels the request's context, which ends the wait.
 |---|---|
 | Success | One `text` content block: a one-line summary for the person watching and the model, a blank line, compact JSON |
 | Data | Compact views: releases without config and image IDs, services as state plus release summaries, domains as `URL (status)` |
-| Tool error | `isError: true`, `"<code>: <message>"`, a blank line and `{"error": {"code", "message", "hint"}}` with the API's codes (`forbidden`, `not_found`, `deploy_in_progress`, ...), as the CLI prints them |
+| Tool error | `isError: true`, `"<code>: <message>"`, a blank line and `{"error": {"code", "message", "hint"}}` with the API's codes (`forbidden`, `not_found`, `deploy_in_progress`, ...), as the CLI prints them; `deploy_in_progress` adds `release`, the number of the release deploying, as the API's error does |
 | Protocol error | JSON-RPC error: unknown method, unknown tool, unknown resource |
 
 Errors core reports go back as tool errors, so the model reads them and the
-hints say what to do (stop on `forbidden`, wait on `deploy_in_progress`).
+hints say what to do (stop on `forbidden`, `wait_for_release` on
+`deploy_in_progress`, look before retrying a `conflict`, back off on
+`rate_limited`, ...).
 Invalid arguments are tool errors too, naming the field but never echoing
 its value (it may be a secret).
 
@@ -205,6 +247,8 @@ its value (it may be a secret).
 | `release_details` log lines (per log) | 40 | 500 |
 | `list_releases` | 10 | 100 |
 | `audit_log` events | 50 | 500 |
+| `list_alerts` with `all` | 50 | 500 |
+| `service_stats` points | | 24 (averaged) |
 | `data_rows` page | 50 rows | 200 rows |
 | `data_query` rows | 100 | 1000 |
 | `data_rows`, `data_query` result | | 512 KB of rows, then `truncated` |
@@ -226,7 +270,7 @@ the actor's name, so a deploy through MCP is `release.deploy` by
 |---|---|
 | Idle | No goroutines, timers or subscriptions. The tool table is built on the first request. |
 | Per call | One auth lookup, one decode, the core calls; no session state. `BenchmarkToolCall` (handler only): `whoami` 40 µs and 15 KB, `service_status` 130 µs and 43 KB. Over loopback HTTP with the SDK client, p50 0.17 ms and 0.30 ms. |
-| Waiting | One event bus subscription per waiting call, gone when it returns. A test checks no goroutines remain after calls. |
+| Waiting | One event bus subscription per waiting call, gone when it returns. A test checks no goroutine of the endpoint remains after calls. |
 | Binary | +0.4 MB. |
 
 ## Client config
@@ -272,3 +316,40 @@ claude mcp add --transport http --scope project dock https://dock.example.com/ap
 | MCP as a local stdio process wrapping the CLI | Every client machine needs the CLI; a second code path to keep in sync; nothing gained over HTTP with a token. |
 | Stateful sessions with server-to-client streams | State per client in the daemon for features no tool needs. |
 | Return at once and let the agent poll | Agents poll badly and burn context; waiting on the bus is cheaper for both sides. |
+
+## Amendment (2026-11-04): waiting for a running release, fixing services
+
+Decided by the agent.
+
+Two gaps showed in use:
+
+- **Nothing waited on a release that was already running.** When a tool's
+  wait ran out, or a deploy was refused with `deploy_in_progress`, the
+  summary and hint pointed at `release_details`, which answers at once.
+  The agent was left to poll it, which the Alternatives table rejects.
+  `wait_for_release` follows a running release (default: the service's
+  in-flight one) exactly like the deploy tools: one bus subscription,
+  progress notifications, the final state with the failure logs. With
+  nothing in flight it returns the latest release's state at once. It is
+  read only: it changes nothing, so a `read` token may wait too.
+  `deploy_in_progress` errors now carry the deploying release's number as
+  `release`, in the tool error and the API's problem response alike.
+- **The most common failure couldn't be fixed over MCP.** A health check
+  that fails on a wrong port or path needs a settings change; the agent
+  could read the reason but not act on it. `update_service` and
+  `add_volume` stage like `set_variables` (review with `show_changes`,
+  then `apply_changes`); `create_service`, `remove_domain` (destructive
+  hint), `list_volumes`, `service_stats` and `list_alerts` (operators)
+  round it out. All call core with the token's actor, so their limits
+  are the API's, and a locked environment refuses them and files an
+  access request like any other change.
+
+Hints now cover every code a tool can return: `validation`, `conflict`,
+`hostname_taken`, `rate_limited`, `too_large` and `internal` too, and
+`environment_locked` says to wait for the request it filed (or ask a
+human to unlock) and never to look for another token.
+
+Left out on purpose: locking and unlocking (a token must not loosen what
+a person set), log drains (they send logs off the server), deleting
+snapshots and in-place restores (they throw data away), a service's
+access password (a credential a person chooses).

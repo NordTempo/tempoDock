@@ -737,8 +737,14 @@ func setServiceImage(ctx context.Context, q *store.Queries, s store.Service, ima
 	})
 }
 
+// deployInProgress is the error for a deploy refused because release r of
+// the service is still in flight. It carries r's number, so the API and
+// MCP callers can wait for that release before retrying.
 func deployInProgress(ss svcScope, r store.Release) error {
-	return errf(apitypes.CodeDeployInProgress, "release %d of %s is already deploying (%s); wait for it to finish", r.Number, ss, r.Status)
+	return &Error{
+		Code: apitypes.CodeDeployInProgress, Release: r.Number,
+		Msg: fmt.Sprintf("release %d of %s is already deploying (%s); wait for it to finish", r.Number, ss, r.Status),
+	}
 }
 
 // DeployImage deploys a prebuilt image (default: the service's image

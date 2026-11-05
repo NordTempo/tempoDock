@@ -210,7 +210,7 @@ func (s *Server) problem(err error) error {
 	var ce *core.Error
 	if errors.As(err, &ce) {
 		status := statusForCode(ce.Code)
-		e := &apitypes.Error{Status: status, Title: http.StatusText(status), Detail: ce.Msg, Code: ce.Code}
+		e := &apitypes.Error{Status: status, Title: http.StatusText(status), Detail: ce.Msg, Code: ce.Code, Release: ce.Release}
 		if le, ok := errors.AsType[*core.LockedError](err); ok {
 			e.Request = le.Request
 		}

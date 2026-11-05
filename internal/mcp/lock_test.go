@@ -49,7 +49,8 @@ func TestLockedEnvironmentRefusesTools(t *testing.T) {
 }
 
 // toolArgs fills a tool's required arguments for shop/staging/web, with
-// the smallest values the schema accepts.
+// the smallest values the schema accepts, and a setting for tools that
+// change settings (update_service refuses a call that changes nothing).
 func toolArgs(schema any) map[string]any {
 	b, _ := json.Marshal(schema)
 	var s struct {
@@ -57,12 +58,13 @@ func toolArgs(schema any) map[string]any {
 			Type    string `json:"type"`
 			Enum    []any  `json:"enum"`
 			Minimum *int   `json:"minimum"`
+			Pattern string `json:"pattern"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
 	_ = json.Unmarshal(b, &s)
 	args := map[string]any{"project": "shop"}
-	for k, v := range map[string]any{"environment": "staging", "service": "web", "set": map[string]string{"A": "1"}} {
+	for k, v := range map[string]any{"environment": "staging", "service": "web", "set": map[string]string{"A": "1"}, "port": 8080} {
 		if _, ok := s.Properties[k]; ok {
 			args[k] = v
 		}
@@ -83,6 +85,8 @@ func toolArgs(schema any) map[string]any {
 			args[k] = map[string]any{}
 		case p.Type == "array":
 			args[k] = []any{}
+		case p.Pattern == "^/": // a path
+			args[k] = "/x"
 		default:
 			args[k] = "x"
 		}

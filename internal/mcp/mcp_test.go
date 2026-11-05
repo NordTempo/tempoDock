@@ -103,9 +103,10 @@ func newFixture(t testing.TB) *fixture {
 		}
 	}
 	for name, req := range map[string]apitypes.CreateTokenRequest{
-		"shop-agent": {Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"},
-		"admin":      {Scope: apitypes.ScopeAdmin},
-		"reader":     {Scope: apitypes.ScopeRead},
+		"shop-agent":  {Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"},
+		"admin":       {Scope: apitypes.ScopeAdmin},
+		"reader":      {Scope: apitypes.ScopeRead},
+		"shop-reader": {Scope: apitypes.ScopeRead, Project: "shop", Environment: "staging"},
 	} {
 		req.Name = name
 		tok, err := c.CreateToken(ctx, sys, req)
@@ -557,42 +558,43 @@ func TestStatelessHTTP(t *testing.T) {
 }
 
 // TestNoGoroutinesLeft checks that calls, including one that waits on the
-// event bus, leave nothing running once the client has closed its
-// connections.
+// event bus, leave nothing of the endpoint running once they are answered.
+// It looks for the endpoint's own goroutines by their stacks, so the
+// daemon's background work (deploys, checks, idle connections) can't make
+// it pass or fail.
 func TestNoGoroutinesLeft(t *testing.T) {
 	f := newFixture(t)
-	call := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_status","arguments":{"service":"web"}}}`
-	post(t, f, "shop-agent", call) // warm up: build the server, open pools
-	http.DefaultClient.CloseIdleConnections()
-	before := settledGoroutines()
-
 	for range 5 {
-		post(t, f, "shop-agent", call)
+		post(t, f, "shop-agent", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"service_status","arguments":{"service":"web"}}}`)
 	}
 	post(t, f, "shop-agent", `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"deploy_image","arguments":{"service":"web"}}}`)
-	http.DefaultClient.CloseIdleConnections()
-	waitFor(t, func() bool {
-		r, err := f.core.GetRelease(context.Background(), sys, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}, 1)
-		return err == nil && r.Status.Done()
-	})
-	if after := settledGoroutines(); after > before {
-		buf := make([]byte, 1<<16)
-		t.Errorf("goroutines: %d before, %d after\n%s", before, after, buf[:runtime.Stack(buf, true)])
+	// A handler may still be returning after its answer was read, so
+	// this waits for the endpoint's goroutines to end; a leaked one never
+	// does and fails it.
+	var left string
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if left = endpointGoroutines(); left == "" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("goroutines of the MCP endpoint still running:\n%s", left)
+		}
 	}
 }
 
-// settledGoroutines counts goroutines once their number stops falling.
-func settledGoroutines() int {
-	n := runtime.NumGoroutine()
-	for range 50 {
-		time.Sleep(20 * time.Millisecond)
-		m := runtime.NumGoroutine()
-		if m >= n {
-			return m
+// endpointGoroutines returns the stacks of goroutines running, or started
+// by, the MCP endpoint's packages (internal/mcp and internal/mcpkit, not
+// this test's).
+func endpointGoroutines() string {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	var out []string
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(g, "tempoDock/internal/mcp.") || strings.Contains(g, "tempoDock/internal/mcpkit.") {
+			out = append(out, g)
 		}
-		n = m
 	}
-	return n
+	return strings.Join(out, "\n\n")
 }
 
 func waitFor(t *testing.T, cond func() bool) {
@@ -730,5 +732,165 @@ func TestLogsFilter(t *testing.T) {
 	call(t, s, "logs", map[string]any{"service": "web", "grep": "error", "stderr": true}).decode(t, &out)
 	if len(out.Lines) != 1 || !strings.HasSuffix(out.Lines[0], " [stderr] error: db timeout") {
 		t.Errorf("logs grep error, stderr = %q", out.Lines)
+	}
+}
+
+// wait_for_release follows a release that is already deploying to its end,
+// and a deploy refused meanwhile names that release, over MCP and the API.
+func TestWaitForRelease(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	progress := make(chan string, 64)
+	s := f.connect("shop-agent", &sdk.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, r *sdk.ProgressNotificationClientRequest) {
+			select {
+			case progress <- r.Params.Message:
+			default:
+			}
+		},
+	})
+	hold := f.rt.HoldHealthChecks()
+	defer hold()
+	web := core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"}
+	if _, err := f.core.DeployImage(ctx, sys, web, apitypes.DeployImageRequest{Image: "app:2"}); err != nil {
+		t.Fatal(err)
+	}
+
+	busy := call(t, s, "deploy_image", map[string]any{"service": "web"})
+	var e struct {
+		Error struct {
+			Code    apitypes.ErrorCode
+			Hint    string
+			Release int64
+		}
+	}
+	busy.decode(t, &e)
+	if e.Error.Code != apitypes.CodeDeployInProgress || e.Error.Release != 1 || !strings.Contains(e.Error.Hint, "wait_for_release") {
+		t.Errorf("deploy_image during a deploy = %s", busy.json)
+	}
+	req, _ := http.NewRequest(http.MethodPost, f.srv.URL+"/api/v1/projects/shop/environments/staging/services/web/releases", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+f.tokens["shop-agent"])
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var problem apitypes.Error
+	err = json.NewDecoder(resp.Body).Decode(&problem)
+	_ = resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusConflict || problem.Code != apitypes.CodeDeployInProgress || problem.Release != 1 {
+		t.Errorf("API deploy during a deploy: %d %+v %v", resp.StatusCode, problem, err)
+	}
+
+	params := &sdk.CallToolParams{Name: "wait_for_release", Arguments: map[string]any{"service": "web"}}
+	params.SetProgressToken("wait-1")
+	done := make(chan *sdk.CallToolResult, 1)
+	go func() {
+		res, err := s.CallTool(ctx, params)
+		if err != nil {
+			t.Error(err)
+		}
+		done <- res
+	}()
+	// The first progress line comes once it follows the release.
+	select {
+	case <-progress:
+	case <-time.After(10 * time.Second):
+		t.Fatal("wait_for_release sent no progress while the release health checks")
+	}
+	hold()
+	var res *sdk.CallToolResult
+	select {
+	case res = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("wait_for_release didn't return after the health check passed")
+	}
+	var rel release
+	out := split(t, res)
+	out.decode(t, &rel)
+	if out.isError || rel.Number != 1 || rel.Status != "active" || !strings.HasPrefix(out.summary, "Waited: web #1 active") {
+		t.Errorf("wait_for_release = %q %+v", out.summary, rel)
+	}
+
+	// Nothing in flight: the latest release's state at once.
+	idle := call(t, s, "wait_for_release", map[string]any{"service": "web"})
+	idle.decode(t, &rel)
+	if idle.isError || rel.Number != 1 || rel.Status != "active" || !strings.HasPrefix(idle.summary, "Nothing in flight: web #1 active") {
+		t.Errorf("wait_for_release with nothing in flight = %q %+v", idle.summary, rel)
+	}
+}
+
+// A token limited to shop/staging is refused the service tools everywhere
+// else: its project's production and another project's.
+func TestEnvLimitedTokenRefused(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.core.CreateService(context.Background(), sys, core.EnvRef{Project: "shop", Environment: "production"}, apitypes.CreateServiceRequest{Name: "web", Image: "app:1"}); err != nil {
+		t.Fatal(err)
+	}
+	s := f.connect("shop-agent", nil)
+	for _, where := range []map[string]any{
+		{"environment": "production", "service": "web"},
+		{"project": "blog", "environment": "production", "service": "api"},
+	} {
+		for tool, extra := range map[string]map[string]any{
+			"create_service":   {"name": "worker", "service": nil},
+			"update_service":   {"port": 3000},
+			"add_volume":       {"name": "data", "mount_path": "/data"},
+			"list_volumes":     {},
+			"remove_domain":    {"hostname": "shop.example.com"},
+			"service_stats":    {},
+			"wait_for_release": {"wait_seconds": 0},
+		} {
+			args := map[string]any{}
+			for k, v := range where {
+				args[k] = v
+			}
+			for k, v := range extra {
+				if v == nil {
+					delete(args, k)
+				} else {
+					args[k] = v
+				}
+			}
+			if code := call(t, s, tool, args).errorCode(t); code != apitypes.CodeForbidden {
+				t.Errorf("%s %v: code %s, want forbidden", tool, args, code)
+			}
+		}
+	}
+}
+
+// update_service stages settings like set_variables stages variables, and
+// the tools that change a service need deploy scope.
+func TestUpdateService(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("shop-agent", nil)
+	up := call(t, s, "update_service", map[string]any{"service": "web", "port": 3000, "health_check_path": "/healthz"})
+	if up.isError || !strings.Contains(up.summary, "show_changes") || !strings.Contains(up.summary, "apply_changes") {
+		t.Fatalf("update_service = %q", up.summary)
+	}
+	var p apitypes.PendingChanges
+	call(t, s, "show_changes", nil).decode(t, &p)
+	staged := map[string]string{}
+	for _, sc := range p.Settings {
+		if sc.Service == "web" {
+			staged[sc.Field] = sc.New
+		}
+	}
+	if staged["port"] != "3000" || staged["health_check_path"] != "/healthz" || !slices.Contains(p.Affected, "web") {
+		t.Errorf("show_changes after update_service = %+v", p)
+	}
+	svc, err := f.core.GetService(context.Background(), sys, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"})
+	if err != nil || svc.Port != 0 {
+		t.Errorf("update_service changed the live port: %d %v", svc.Port, err)
+	}
+
+	reader := f.connect("shop-reader", nil)
+	for tool, args := range map[string]map[string]any{
+		"update_service": {"service": "web", "port": 3000},
+		"remove_domain":  {"service": "web", "hostname": "shop.example.com"},
+	} {
+		if code := call(t, reader, tool, args).errorCode(t); code != apitypes.CodeForbidden {
+			t.Errorf("%s with a read token: code %s, want forbidden", tool, code)
+		}
 	}
 }

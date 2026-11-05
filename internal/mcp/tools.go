@@ -72,7 +72,7 @@ func serviceOf(c *call, in ServiceInput) (core.ServiceRef, error) {
 }
 
 // addPlatformTools registers the tools for projects, services, releases,
-// logs, variables, domains, servers and the audit log.
+// logs, variables, domains, servers, the audit log and alerts.
 func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "whoami", "Who am I",
 		"Who you are acting as: the token's name, scope (read, deploy or admin) and the project and environment it is limited to. Call it first; other tools default project and environment to these limits.",
@@ -86,8 +86,8 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 				where = "project " + me.Project
 			}
 			can := map[apitypes.Scope]string{
-				apitypes.ScopeRead:   "read status, releases, logs, variable names and the audit log",
-				apitypes.ScopeDeploy: "read, and deploy, redeploy, roll back, promote, stop and start services, stage and apply variables, add domains",
+				apitypes.ScopeRead:   "read status, releases, logs, resource use, variable names and the audit log, and wait for releases",
+				apitypes.ScopeDeploy: "read, and deploy, redeploy, roll back, promote, stop and start services, create services, stage and apply variables, settings and volumes, add and remove domains",
 				apitypes.ScopeAdmin:  "everything, including secret values",
 			}[me.Scope]
 			return mcpkit.Reply{Summary: fmt.Sprintf("%s %q, scope %s, limited to %s: may %s.", me.Kind, me.Name, me.Scope, where, can), Data: me}, nil
@@ -433,11 +433,56 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			}
 			return mcpkit.Reply{Summary: fmt.Sprintf("%d audit events.", len(evs)), Data: evs}, nil
 		})
+
+	h.addServiceTools(s)
 }
 
-// addReleaseTools registers the tools that start releases. Each waits for
-// its releases to finish (waitReleases).
+// addReleaseTools registers the tools that start releases, and
+// wait_for_release. Each waits for its releases to finish (waitReleases).
 func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
+	mcpkit.AddTool(s, "wait_for_release", "Wait for a release",
+		"Wait for a release that is already deploying (yours after a tool's wait ran out, or anyone's) until it is active or failed, and return its final state like deploy_image does, with the logs of a failure. "+
+			"Default: the service's in-flight release; if nothing is in flight, the latest release's state is returned at once. Changes nothing.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			Number int64 `json:"number,omitempty" doc:"Release number. Default: the release in flight, if any."`
+			WaitInput
+		}) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in.ServiceInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			wait, err := in.duration()
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			var rel apitypes.Release
+			if in.Number > 0 {
+				if rel, err = h.core.GetRelease(ctx, c.Actor, ref, in.Number); err != nil {
+					return mcpkit.Reply{}, err
+				}
+			} else {
+				// Only one release of a service deploys at a time, and it
+				// is the newest.
+				rels, err := h.core.ListReleases(ctx, c.Actor, ref, 1)
+				if err != nil {
+					return mcpkit.Reply{}, err
+				}
+				if len(rels) == 0 {
+					return mcpkit.Reply{}, errf(apitypes.CodeNotFound, "%s has no releases yet; deploy it first", ref)
+				}
+				rel = rels[0]
+			}
+			action := "Waited"
+			if rel.Status.Done() {
+				action = "Nothing in flight"
+				if in.Number > 0 {
+					action = "Already done"
+				}
+			}
+			return h.waitOne(ctx, c, action, rel, wait)
+		})
+
 	mcpkit.AddTool(s, "deploy_image", "Deploy an image",
 		"Deploy a prebuilt image (e.g. ghcr.io/acme/web:3f2a1c) to a service, taking the service's staged changes with it, and wait for the result. "+
 			"The new release gets traffic only after its health check passes; if it fails, nothing changed and the previous release keeps serving (don't roll back; read the error and logs in the result). "+
