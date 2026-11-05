@@ -1,4 +1,5 @@
 import { useIsAdmin, useProjectTree } from "../../data/queries";
+import { Page, PageBar } from "../../ui/kit";
 import {
   builtIn,
   fromText,
@@ -7,9 +8,41 @@ import {
   usePolicy,
   useSavePolicy,
 } from "./dockPolicy";
-import { ErrorText, Head } from "./kit";
+import { ErrorText } from "./kit";
 import { PolicyEditor, PolicyLegend } from "./PolicyEditor";
 import { kindNames, kinds } from "./policy";
+
+/**
+ * The rules editor is the data panel's (style G, shared with tempoBase).
+ * On this console page its tokens take style A's values, so it reads as
+ * part of the console: the app's fonts, a black page, a white primary,
+ * the table in a panel.
+ */
+const styleA = [
+  "g",
+  "[--g-bg:transparent]",
+  "[--g-sans:Inter,system-ui,sans-serif]",
+  "[--g-mono:'JetBrains_Mono',ui-monospace,monospace]",
+  "[--g-raise:transparent]",
+  "[--g-edge:var(--color-edge)]",
+  "[--g-line:var(--color-line)]",
+  "[--g-grid:var(--color-soft)]",
+  "[--g-mut:var(--color-mut)]",
+  "[--g-dim:var(--color-sec)]",
+  "[--g-accent:var(--color-fg)]",
+  "[&_.g-btn]:rounded-ctl",
+  "[&_.g-btn]:text-xs",
+  "[&_.g-btn.pri]:font-semibold",
+  "[&_.g-btn.pri]:text-page",
+  "[&_.g-btn.pri:hover:not(:disabled)]:bg-sec",
+  "[&_.g-field]:rounded-ctl",
+  // The rules table in a bordered panel, like the console's other tables.
+  "[&_div:has(>.g-table)]:rounded-panel",
+  "[&_div:has(>.g-table)]:border",
+  "[&_div:has(>.g-table)]:border-line",
+  "[&_.g-table_tr:last-child>td]:border-0",
+  "[&_.g-table_:is(th,td):first-child]:pl-3.5",
+].join(" ");
 
 /** The scope one level up: environment → project → default → built-in. */
 const parentOf = (s: PolicyScope): PolicyScope | null =>
@@ -45,19 +78,14 @@ export function PolicyPage({
     .join(" ");
 
   return (
-    <div className="g flex flex-1 flex-col">
-      <Head title="Data access">
-        <span className="text-xs text-(--g-mut)">
-          Who may see and change the data in database services. Admins always
-          may.
-        </span>
-      </Head>
-      <main className="flex w-full max-w-[1100px] flex-col gap-6 px-5 py-6">
+    <>
+      <PageBar title="Data access" />
+      <Page>
         <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="g-label">Policy</span>
+          <label className="flex flex-col gap-1.5 text-xs text-mut">
+            Policy
             <select
-              className="g-field"
+              className="text-sm text-fg"
               value={scope.project ?? ""}
               onChange={(e) =>
                 onScope({ project: e.target.value || undefined })
@@ -72,10 +100,10 @@ export function PolicyPage({
             </select>
           </label>
           {project && (
-            <label className="flex flex-col gap-1.5">
-              <span className="g-label">Environment</span>
+            <label className="flex flex-col gap-1.5 text-xs text-mut">
+              Environment
               <select
-                className="g-field"
+                className="text-sm text-fg"
                 value={scope.environment ?? ""}
                 onChange={(e) =>
                   onScope({
@@ -93,59 +121,73 @@ export function PolicyPage({
               </select>
             </label>
           )}
-          <span className="pb-2 font-mono text-xs text-(--g-mut)">
-            dock db policy show {flags}
+          <span
+            className="pb-1.5 font-mono text-2xs text-faint"
+            title="The same in the CLI"
+          >
+            dock db policy show{flags && ` ${flags}`}
           </span>
         </div>
 
-        {policy.error ? (
-          <ErrorText error={policy.error} />
-        ) : !policy.data || (parentScope && !parent.data) ? (
-          <p className="text-(--g-mut)">Loading the policy</p>
-        ) : (
-          <PolicyEditor
-            key={`${scope.project ?? ""}/${scope.environment ?? ""}`}
-            policy={policy.data}
-            inherited={parentScope ? parent.data : undefined}
-            shownKinds={kind ? [kind] : kinds}
-            editable={admin}
-            save={save}
-            subjectNames={subjectNames}
-            fromText={(from) => fromText(from, scope)}
-            builtIn={builtIn}
-            cli={(rules) =>
-              [
-                "dock db policy set",
-                ...rules.map(
-                  (r) =>
-                    `${r.subject.replace("role:", "")}.${r.kind.replace("_", "-")}=${r.level}${r.sensitive === "visible" ? ",visible" : ""}`,
-                ),
-                flags,
-                "--replace",
-              ]
-                .filter(Boolean)
-                .join(" ")
-            }
-          />
-        )}
+        <div className={styleA}>
+          {policy.error ? (
+            <ErrorText error={policy.error} />
+          ) : !policy.data || (parentScope && !parent.data) ? (
+            <p className="text-mut">Loading the policy</p>
+          ) : (
+            <PolicyEditor
+              key={`${scope.project ?? ""}/${scope.environment ?? ""}`}
+              policy={policy.data}
+              inherited={parentScope ? parent.data : undefined}
+              shownKinds={kind ? [kind] : kinds}
+              editable={admin}
+              save={save}
+              subjectNames={subjectNames}
+              fromText={(from) => fromText(from, scope)}
+              builtIn={builtIn}
+              cli={(rules) =>
+                [
+                  "dock db policy set",
+                  ...rules.map(
+                    (r) =>
+                      `${r.subject.replace("role:", "")}.${r.kind.replace("_", "-")}=${r.level}${r.sensitive === "visible" ? ",visible" : ""}`,
+                  ),
+                  flags,
+                  "--replace",
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              }
+            />
+          )}
+        </div>
 
-        <section className="flex max-w-[860px] flex-col gap-2 text-(--g-mut)">
-          <p>
-            The most specific rule wins for each subject and kind of
-            environment: the environment's, then the project's, then the
-            default, then the built-in defaults. Rows not set at a scope
-            inherit.
-          </p>
+        <div className={`${styleA} flex max-w-[860px] flex-col gap-2`}>
+          <details className="text-(--g-dim)">
+            <summary className="w-fit cursor-pointer">
+              How rules resolve
+            </summary>
+            <div className="mt-2 flex flex-col gap-2 leading-relaxed">
+              <p>
+                Admins always may see and change the data in database services.
+                For everyone else the most specific rule wins, per subject and
+                kind of environment: the environment's, then the project's, then
+                the default, then the built-in defaults. Rows not set at a scope
+                inherit.
+              </p>
+              <p>
+                Tokens follow the tokens rule unless they have their own data
+                access (on the Tokens page), and never get more than a user with
+                the token's scope, or than their creator has now. On production,
+                write acts as propose for tokens: an admin approves the exact
+                SQL. Only admins approve changes, set up data access and change
+                this policy.
+              </p>
+            </div>
+          </details>
           <PolicyLegend />
-          <p>
-            Tokens follow the tokens rule unless they have their own data access
-            (on the Tokens page), and never get more than a user with the
-            token's scope, or than their creator has now. On production, write
-            acts as propose for tokens: an admin approves the exact SQL. Only
-            admins approve changes, set up data access and change this policy.
-          </p>
-        </section>
-      </main>
-    </div>
+        </div>
+      </Page>
+    </>
   );
 }

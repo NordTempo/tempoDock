@@ -216,7 +216,8 @@ export function PolicyEditor<F extends string>({
           </tbody>
         </table>
       </Scroll>
-      {editable && (
+      {/* Save and Discard show once a rule changed. */}
+      {editable && (dirty || save.error) && (
         <div className="flex flex-wrap items-center gap-2.5">
           <Btn
             primary
@@ -240,20 +241,23 @@ export function PolicyEditor<F extends string>({
   );
 }
 
-/** What the levels and sensitive settings mean. */
+/** What the levels and sensitive settings mean, behind a disclosure. */
 export function PolicyLegend() {
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5 text-(--g-mut)">
-      {levels.map((l) => (
-        <div key={l} className="contents">
-          <dt className="font-mono text-(--g-text)">{l}</dt>
-          <dd>{levelNotes[l]}</dd>
-        </div>
-      ))}
-      <dt className="font-mono text-(--g-text)">masked</dt>
-      <dd>sensitive columns are never shown</dd>
-      <dt className="font-mono text-(--g-text)">visible</dt>
-      <dd>sensitive columns show after an audited reveal</dd>
-    </dl>
+    <details className="text-(--g-dim)">
+      <summary className="w-fit cursor-pointer">What the levels mean</summary>
+      <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-0.5">
+        {levels.map((l) => (
+          <div key={l} className="contents">
+            <dt className="font-mono text-(--g-text)">{l}</dt>
+            <dd>{levelNotes[l]}</dd>
+          </div>
+        ))}
+        <dt className="font-mono text-(--g-text)">masked</dt>
+        <dd>sensitive columns are never shown</dd>
+        <dt className="font-mono text-(--g-text)">visible</dt>
+        <dd>sensitive columns show after an audited reveal</dd>
+      </dl>
+    </details>
   );
 }

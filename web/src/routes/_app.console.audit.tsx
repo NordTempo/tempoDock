@@ -4,7 +4,7 @@ import { AuditPage } from "../features/audit/AuditPage";
 import { validateAuditSearch } from "../features/audit/search";
 
 // The organization's audit log, or the platform's, in the platform
-// console. The same page as the workspace's Activity (/audit), under the
+// console. The same page as the organization's (/audit), under the
 // console's sidebar.
 export const Route = createFileRoute("/_app/console/audit")({
   validateSearch: validateAuditSearch,

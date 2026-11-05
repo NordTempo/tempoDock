@@ -76,13 +76,9 @@ function Activity() {
             </fieldset>
           </>
         }
-      >
-        <span className="text-xs text-(--g-mut)">
-          Every change and query, by people and agents
-        </span>
-      </Head>
-      <main className="px-5 pt-5 pb-10">
-        <div className="mx-auto flex max-w-[736px] flex-col">
+      />
+      <main className="px-5 pt-6 pb-10">
+        <div className="flex flex-col">
           <ErrorText error={audit.error} />
           {audit.data && events.length === 0 && (
             <p className="text-(--g-mut)">Nothing yet.</p>

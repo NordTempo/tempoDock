@@ -22,9 +22,9 @@ import { dataLimits } from "./types";
 // is only fetched when someone opens it.
 
 const outcomeGlyph: Record<DataHistoryEntry["outcome"], [string, string]> = {
-  ok: ["✓", "text-(--g-ok)"],
-  error: ["✕", "text-(--g-fail)"],
-  conflict: ["✕", "text-(--g-fail)"],
+  ok: ["●", "text-(--g-ok)"],
+  error: ["×", "text-(--g-fail)"],
+  conflict: ["×", "text-(--g-fail)"],
   timeout: ["▲", "text-(--g-warn)"],
   canceled: ["–", "text-(--g-mut)"],
 };
@@ -87,6 +87,8 @@ export default function SqlView({
   const remove = useDeleteSavedQuery();
   const cli = useCli();
   const running = result?.state === "running";
+  // The result belongs to the text that ran; once that's edited it's dimmed.
+  const stale = !!result && !running && result.sql !== sql;
   const current = saved.data?.find((q) => q.id === savedId);
 
   const start = () => {
@@ -216,13 +218,11 @@ export default function SqlView({
                 disabled={!sql.trim() || running}
                 onClick={start}
               >
-                Run <Kbd>{modKey}↵</Kbd>
+                Run <Kbd>{`${modKey}↵`}</Kbd>
               </Act>
             </>
           }
-        >
-          <span className="g-tag">read only</span>
-        </Head>
+        />
         <div className="h-[168px] shrink-0 border-b border-(--g-line)">
           <SqlEditor
             value={sql}
@@ -300,7 +300,7 @@ export default function SqlView({
                     CSV
                   </Act>
                 )}
-              <RunLine run={result} limit={options.limit} />
+              <RunLine run={result} limit={options.limit} stale={stale} />
             </>
           )}
         </div>
@@ -309,7 +309,9 @@ export default function SqlView({
         ) : (
           <>
             {result?.state === "failed" && <RunError run={result} />}
-            <div className="relative min-h-[200px] flex-1 border-t border-(--g-line)">
+            <div
+              className={`relative min-h-[200px] flex-1 border-t border-(--g-line) ${stale ? "opacity-50" : ""}`}
+            >
               {result && result.columns.length > 0 && (
                 <Grid columns={result.columns} rows={result.rows} />
               )}
@@ -373,11 +375,33 @@ function History({ onLoad }: { onLoad: (sql: string) => void }) {
   );
 }
 
-/** The last run in one line, right of the result tabs. */
-function RunLine({ run, limit }: { run: QueryRun | null; limit: number }) {
+/**
+ * The last run in one line, right of the result tabs; `stale` when the
+ * editor no longer holds the text that ran.
+ */
+function RunLine({
+  run,
+  limit,
+  stale,
+}: {
+  run: QueryRun | null;
+  limit: number;
+  stale: boolean;
+}) {
   const line = "ml-auto text-xs text-(--g-mut)";
   if (!run) {
     return <span className={line}>One statement, read only</span>;
+  }
+  if (stale) {
+    return (
+      <span
+        className={`${line} inline-flex items-center gap-1`}
+        title={run.sql}
+      >
+        <span className="text-(--g-warn)">Edited since this ran</span> ·
+        <Kbd>{`${modKey}↵`}</Kbd> runs it
+      </span>
+    );
   }
   const rows = plural(run.rows.length, "row");
   switch (run.state) {
@@ -387,7 +411,7 @@ function RunLine({ run, limit }: { run: QueryRun | null; limit: number }) {
       return <span className={line}>Canceled after {rows}</span>;
     case "done":
       return (
-        <span className={line}>
+        <span className={line} title={run.sql}>
           {run.end?.truncated && (
             <span className="text-(--g-warn)">
               Stopped at {limit.toLocaleString("en")} rows or the size cap

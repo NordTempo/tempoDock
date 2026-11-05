@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useCreateToken } from "../../data/mutations";
 import {
   useIsOperator,
@@ -29,6 +29,7 @@ import { TokenTable, tokenCap } from "./TokenTable";
 export function TokensPage() {
   const tokens = useTokens();
   const live = tokens.filter((t) => !t.revoked_at);
+  const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{
     name: string;
     secret: string;
@@ -42,8 +43,15 @@ export function TokensPage() {
         title="Tokens"
         after={
           <span className="text-xs text-faint">
-            {plural(live.length, "token")} · for agents, CI and scripts
+            {plural(live.length, "token")}
           </span>
+        }
+        actions={
+          !creating && (
+            <Button primary onClick={() => setCreating(true)}>
+              Create token
+            </Button>
+          )
         }
       />
       <Page>
@@ -82,11 +90,20 @@ export function TokensPage() {
           </section>
         )}
 
+        {creating && (
+          <CreateToken
+            onCreated={(c) => {
+              setCreating(false);
+              setCreated(c);
+            }}
+            onCancel={() => setCreating(false)}
+          />
+        )}
+
         <section aria-label="Tokens">
           <TokenTable tokens={tokens} />
         </section>
 
-        <CreateToken onCreated={setCreated} />
         {!created && (
           <section
             aria-labelledby="mcp"
@@ -198,16 +215,22 @@ const expiries = [
   { days: -1, label: "in … days" },
 ];
 
+/** The new token form, opened from the bar's Create token. */
 function CreateToken({
   onCreated,
+  onCancel,
 }: {
   onCreated: (created: {
     name: string;
     secret: string;
     project?: string;
   }) => void;
+  onCancel: () => void;
 }) {
   const create = useCreateToken();
+  // Set by a submit without a name; cleared by typing one.
+  const [unnamed, setUnnamed] = useState(false);
+  const nameId = useId();
   const operatorCaller = useIsOperator();
   const projects = useProjects();
   const tree = useProjectTree();
@@ -245,6 +268,11 @@ function CreateToken({
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!name.trim()) {
+            setUnnamed(true);
+            document.getElementById(nameId)?.focus();
+            return;
+          }
           create.mutate(
             {
               name: name.trim(),
@@ -270,11 +298,24 @@ function CreateToken({
             <span className="text-xs text-faint">shown in the audit log</span>
           </span>
           <input
+            id={nameId}
+            // biome-ignore lint/a11y/noAutofocus: opened by "Create token"
+            autoFocus
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setUnnamed(false);
+            }}
             placeholder="agent-…"
-            className="field py-[7px] font-mono"
+            aria-invalid={unnamed || undefined}
+            aria-describedby={unnamed ? `${nameId}-error` : undefined}
+            className={`field py-[7px] font-mono ${unnamed ? "border-fail" : ""}`}
           />
+          {unnamed && (
+            <span id={`${nameId}-error`} className="text-xs text-fail">
+              Name the token.
+            </span>
+          )}
         </label>
         <fieldset>
           <legend className="mb-1.5">Scope</legend>
@@ -372,13 +413,10 @@ function CreateToken({
         </div>
         <TokenDataFields value={data} onChange={setData} cap={tokenCap} />
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            className="btn pri"
-            disabled={!name.trim() || create.isPending}
-          >
+          <button type="submit" className="btn pri" disabled={create.isPending}>
             Create token
           </button>
+          <Button onClick={onCancel}>Cancel</Button>
           <span className="font-mono text-2xs text-mut">{cli}</span>
           <ErrorText error={create.error} />
         </div>

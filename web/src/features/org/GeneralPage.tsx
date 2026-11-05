@@ -1,10 +1,14 @@
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { setOrg } from "../../api/client";
-import { useIsAdmin, useSession } from "../../data/queries";
+import { queries, useIsAdmin, useSession } from "../../data/queries";
 import { CliHint } from "../../ui/CliHint";
-import { day } from "../../ui/format";
+import { day, plural } from "../../ui/format";
 import {
   Act,
   Button,
@@ -66,18 +70,17 @@ export function GeneralPage() {
                         onChange={(e) => setName(e.target.value)}
                         className="field min-w-0 flex-[1_1_220px] py-[5px]"
                       />
-                      <Act
-                        small
-                        type="submit"
-                        cli={`dock org rename ${JSON.stringify(name.trim())}`}
-                        disabled={
-                          !name.trim() ||
-                          name.trim() === org.name ||
-                          rename.isPending
-                        }
-                      >
-                        Save
-                      </Act>
+                      {name.trim() !== org.name && (
+                        <Act
+                          small
+                          primary
+                          type="submit"
+                          cli={`dock org rename ${JSON.stringify(name.trim())}`}
+                          disabled={!name.trim() || rename.isPending}
+                        >
+                          Save
+                        </Act>
+                      )}
                       <ErrorText error={rename.error} />
                     </form>
                   ) : (
@@ -89,10 +92,7 @@ export function GeneralPage() {
                 <td className="py-2.5 text-faint">Address</td>
                 <td className="py-2.5 font-mono">
                   {window.location.host}/
-                  <b className="font-medium">{org.slug}</b>{" "}
-                  <span className="font-sans text-faint">
-                    (the slug can't change yet)
-                  </span>
+                  <b className="font-medium">{org.slug}</b>
                 </td>
               </tr>
               <tr>
@@ -123,8 +123,15 @@ export function GeneralPage() {
           </table>
         </Panel>
         {admin && <LockSettings />}
-        {user && <Leave name={org.name} />}
-        {admin && <Delete name={org.name} slug={org.slug} />}
+        {(user || admin) && (
+          <section
+            aria-label="Leave or delete"
+            className="flex flex-col border-t border-fail-edge pt-1"
+          >
+            {user && <Leave name={org.name} admin={admin} />}
+            {admin && <Delete name={org.name} slug={org.slug} />}
+          </section>
+        )}
       </Page>
     </>
   );
@@ -192,14 +199,22 @@ function LockSettings() {
                     />
                     hours
                   </label>
-                  <Button
-                    small
-                    type="submit"
-                    title={`dock org locks --request-ttl ${n}h`}
-                    disabled={!valid || n === current || save.isPending}
-                  >
-                    Save
-                  </Button>
+                  {hours !== String(current) && (
+                    <Button
+                      small
+                      primary
+                      type="submit"
+                      title={`dock org locks --request-ttl ${n}h`}
+                      disabled={!valid || save.isPending}
+                    >
+                      Save
+                    </Button>
+                  )}
+                  {!valid && (
+                    <span className="text-xs text-fail">
+                      {TTL_MIN} to {TTL_MAX} hours
+                    </span>
+                  )}
                 </form>
               </td>
             </tr>
@@ -250,16 +265,56 @@ function useGone() {
   };
 }
 
-function Leave({ name }: { name: string }) {
+/** A row of the danger block: what it does, and its button. */
+function DangerRow({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-soft py-3">
+      <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-0.5">
+        <span className="font-medium">{title}</span>
+        <span className="text-mut">{note}</span>
+      </div>
+      <div className="flex flex-wrap items-center">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Leaving the organization. An org keeps at least one admin, so its only
+ * admin can't leave; the button says so instead of failing.
+ */
+function Leave({ name, admin }: { name: string; admin: boolean }) {
   const leave = useLeaveOrg();
   const gone = useGone();
   const [asking, setAsking] = useState(false);
+  const admins = useQuery({
+    ...orgQueries.members(),
+    enabled: admin,
+    select: (members) => members.filter((m) => m.role === "admin").length,
+  }).data;
+  const last = admin && admins === 1;
   return (
-    <section aria-labelledby="leave" className="flex flex-col gap-2">
-      <h2 id="leave" className="text-sm font-semibold">
-        Leave {name}
-      </h2>
-      {asking ? (
+    <DangerRow
+      title={`Leave ${name}`}
+      note="You lose access to its projects. An admin can invite you again."
+    >
+      <Act
+        small
+        cli="dock org leave"
+        disabled={last}
+        reason="You're its only admin. Make someone else admin first."
+        onClick={() => setAsking(true)}
+      >
+        Leave
+      </Act>
+      {asking && (
         <Confirm
           action={`Leave ${name}`}
           cli="dock org leave"
@@ -268,60 +323,61 @@ function Leave({ name }: { name: string }) {
           onConfirm={() => leave.mutate(undefined, { onSuccess: gone })}
           onCancel={() => setAsking(false)}
         >
-          Leave <b className="font-semibold">{name}</b>?{" "}
-          <span className="text-mut">
-            You lose access to its projects. An admin can invite you again.
-          </span>
+          You lose access to its projects right away. An admin can invite you
+          again.
         </Confirm>
-      ) : (
-        <p className="flex flex-wrap items-center gap-3 text-mut">
-          <Act small cli="dock org leave" onClick={() => setAsking(true)}>
-            Leave
-          </Act>
-          The last admin can't leave; make someone else admin first.
-        </p>
       )}
-    </section>
+    </DangerRow>
   );
 }
 
+/**
+ * Deleting the organization: only once it has no projects, archived ones
+ * included (the API refuses otherwise), and after typing its slug.
+ */
 function Delete({ name, slug }: { name: string; slug: string }) {
   const remove = useDeleteOrg();
   const gone = useGone();
   const [asking, setAsking] = useState(false);
+  const live = useQuery(queries.projects()).data;
+  const archived = useQuery(queries.archivedProjects()).data;
+  const known = live !== undefined && archived !== undefined;
+  const count = (live?.length ?? 0) + (archived?.length ?? 0);
+  const reason = !known
+    ? "Checking its projects…"
+    : count > 0
+      ? `It still has ${plural(count, "project")}${archived?.length ? ` (${archived.length} archived)` : ""}.`
+      : undefined;
   return (
-    <section aria-labelledby="delete" className="flex flex-col gap-2">
-      <h2 id="delete" className="text-sm font-semibold">
-        Delete {name}
-      </h2>
-      {asking ? (
+    <DangerRow
+      title={`Delete ${name}`}
+      note="Its members, invites, variables and tokens go. Only an organization without projects can be deleted."
+    >
+      <Act
+        small
+        danger
+        cli="dock org delete"
+        disabled={!!reason}
+        reason={reason}
+        onClick={() => setAsking(true)}
+      >
+        Delete organization
+      </Act>
+      {asking && (
         <Confirm
           danger
-          action={`Delete ${slug}`}
+          action={`Delete ${name}`}
+          typed={slug}
           cli="dock org delete"
           pending={remove.isPending}
           error={remove.error}
           onConfirm={() => remove.mutate(undefined, { onSuccess: gone })}
           onCancel={() => setAsking(false)}
         >
-          Delete <b className="font-semibold">{name}</b>?{" "}
-          <span className="text-mut">
-            Its members, invites, variables and tokens go. Its audit log stays.
-          </span>
+          Its members, invites, variables and tokens are deleted. This can't be
+          undone. Its audit log stays.
         </Confirm>
-      ) : (
-        <p className="flex flex-wrap items-center gap-3 text-mut">
-          <Act
-            small
-            danger
-            cli="dock org delete"
-            onClick={() => setAsking(true)}
-          >
-            Delete organization
-          </Act>
-          Only an organization without projects (archived ones count).
-        </p>
       )}
-    </section>
+    </DangerRow>
   );
 }

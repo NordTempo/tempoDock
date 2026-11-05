@@ -117,14 +117,13 @@ function Agents() {
             New agent <Kbd>N</Kbd>
           </Btn>
         }
-      >
-        <span className="text-xs text-(--g-mut)">
-          An agent acts as you, never with more access than you
-        </span>
-      </Head>
+      />
       <div className="flex min-h-0 flex-1 flex-wrap">
         <main className="min-w-0 flex-[999_1_460px] px-5 pt-6 pb-10">
-          <div className="mx-auto flex max-w-[680px] flex-col gap-7">
+          <div className="flex max-w-[960px] flex-col gap-7">
+            <p className="text-(--g-dim)">
+              An agent acts as you, never with more access than you.
+            </p>
             <section className="flex flex-col gap-2">
               <h2 className="text-[13px] font-semibold">MCP endpoint</h2>
               <div className="g-box">

@@ -15,7 +15,10 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
     production ? ` --confirm ${ref.environment}` : ""
   }`;
 
-/** One line: the command, a copy button, and the caller's access. */
+/**
+ * How to reach the service from your machine: the `dock connect` line and
+ * whether you may run it, then (for Postgres) the psql line, each with Copy.
+ */
 export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const production = useEnvironment(ref).environment.kind === "production";
   const info = useQuery({
@@ -36,36 +39,39 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     retry: false,
   });
   const cli = connectCli(ref, production);
+  const psql =
+    info.data?.engine === "postgres"
+      ? `psql -h 127.0.0.1 -p ${info.data.port} -U ${info.data.user} ${info.data.database}`
+      : undefined;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
-      <span className="text-faint">From your machine</span>
-      <code className="font-mono">{cli}</code>
+    <div className="grid grid-cols-[max-content_minmax(0,max-content)_max-content_1fr] items-center gap-x-3 gap-y-1.5 text-xs">
+      <span className="text-faint">Tunnel</span>
+      <code className="truncate font-mono" title={cli}>
+        {cli}
+      </code>
       <CopyButton text={cli} />
-      <span className="min-w-0 flex-[1_1_320px] whitespace-normal">
+      <span className="min-w-0 truncate">
         {info.data ? (
-          <>
-            <span className="text-ok">✓</span>{" "}
-            <span className="text-mut">
-              you may connect;{" "}
-              {info.data.engine === "postgres" ? (
-                <>
-                  then{" "}
-                  <code className="font-mono text-sec">
-                    psql -h 127.0.0.1 -p {info.data.port} -U {info.data.user}{" "}
-                    {info.data.database}
-                  </code>
-                </>
-              ) : (
-                `it reaches port ${info.data.port}`
-              )}
-            </span>
-          </>
+          <span className="text-mut">
+            <span className="text-ok">✓</span> You have access. Forwards to :
+            {info.data.port}.
+          </span>
         ) : info.error ? (
           <span className="text-warn">{info.error.message}</span>
         ) : (
-          <span className="text-faint">checking your access</span>
+          <span className="text-faint">Checking your access</span>
         )}
       </span>
+      {psql && (
+        <>
+          <span className="text-faint">Then</span>
+          <code className="truncate font-mono" title={psql}>
+            {psql}
+          </code>
+          <CopyButton text={psql} />
+          <span />
+        </>
+      )}
     </div>
   );
 }

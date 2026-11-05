@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ApiError, api, body, setOrg } from "../api/client";
 import type { components } from "../api/schema";
 import { useLogin, useLoginVerify } from "../data/mutations";
@@ -37,7 +37,71 @@ export const Route = createFileRoute("/login")({
   component: Login,
 });
 
-const field = "field px-3 py-2.5 text-md";
+const field = "field px-3 py-2.5 text-md aria-invalid:border-fail";
+
+/** A field's own message, shown under it. */
+type FieldErrors = { email?: string; password?: string };
+
+/** Checks the form before it is sent, so the server's wording never shows. */
+function check(email: string, password: string): FieldErrors {
+  const e = email.trim();
+  return {
+    email: !e
+      ? "Enter your email."
+      : !/^[^\s@]+@[^\s@]+$/.test(e)
+        ? "Enter an email address, like name@company.com."
+        : undefined,
+    password: password ? undefined : "Enter your password.",
+  };
+}
+
+/** An API message as a sentence: capital first letter, full stop. */
+const sentence = (text: string) => {
+  const t = text.trim();
+  if (!t) return t;
+  const s = t.charAt(0).toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
+};
+
+/** A failed sign-in in the words the page uses. */
+function loginMessage(error: Error) {
+  if (error instanceof ApiError && error.status === 401) {
+    return "Wrong email or password.";
+  }
+  if (error instanceof ApiError && error.status === 422) {
+    return "Check the email and password, then try again.";
+  }
+  return sentence(error.message);
+}
+
+/**
+ * Why the visitor is asked to sign in, from where they were going: an
+ * invite link, a CLI login or a protected service send them here first.
+ */
+function purpose(back: string | undefined): { title: string; note?: string } {
+  const path = back?.split("?")[0] ?? "";
+  if (path.startsWith("/invite/")) {
+    return {
+      title: "Sign in to see your invite",
+      note: "Use the email address the invite was sent to. No account yet? Ask the admin who invited you.",
+    };
+  }
+  if (path === "/cli-login") {
+    return {
+      title: "Sign in to approve a dock login",
+      note: "Then type the code your terminal shows.",
+    };
+  }
+  if (path === "/access") {
+    const host = new URLSearchParams(back?.split("?")[1]).get("host");
+    return {
+      title: host ? `Sign in to open ${host}` : "Sign in",
+      note: host ? "The service is protected by this Dock." : undefined,
+    };
+  }
+  return { title: "Sign in" };
+}
+
 
 /** What finishes a sign-in after the password (ADR 0057). */
 type SecondFactor = NonNullable<
@@ -85,6 +149,11 @@ function Login() {
   const passkeyLogin = usePasskeyLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Set by a submit the page checked first; cleared as the field changes.
+  const [invalid, setInvalid] = useState<FieldErrors>({});
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const ids = useId();
   // Signing in with SSO instead of a password; where a failed one comes
   // back to.
   const [sso, setSSO] = useState(!!error);
@@ -96,7 +165,7 @@ function Login() {
   // Why the second step ended (expired, too many wrong codes).
   const [ended, setEnded] = useState<Error | null>(null);
   // Same-origin paths only, never an absolute URL from the query.
-  const to = back?.startsWith("/") ? back : undefined;
+  const to = back?.startsWith("/") && !back.startsWith("//") ? back : undefined;
   const done = () => navigate({ href: to ?? "/" });
   // A single sign-on's answer is read once; starting over drops it.
   const fresh = () =>
@@ -107,14 +176,17 @@ function Login() {
     retry: false,
   });
   const host = window.location.host;
+  const why = purpose(back);
+  const failed = ended ?? login.error ?? passkeyLogin.error;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center px-4 pt-[16vh] pb-10">
       <main className="flex w-full max-w-[360px] flex-col gap-[22px]">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-lg font-bold">dock</span>
-          <h1 className="text-xl font-semibold">Sign in</h1>
+          <h1 className="text-xl font-semibold">{why.title}</h1>
           <span className="font-mono text-xs text-mut">{host}</span>
+          {why.note && <p className="pt-1 text-sec">{why.note}</p>}
         </div>
         {factors ? (
           <SecondStep
@@ -142,15 +214,30 @@ function Login() {
         ) : (
           <form
             className="flex flex-col gap-3.5"
+            noValidate
             onSubmit={(e) => {
               e.preventDefault();
               setEnded(null);
+              const found = check(email, password);
+              setInvalid(found);
+              if (found.email || found.password) {
+                login.reset();
+                (found.email ? emailRef : passwordRef).current?.focus();
+                return;
+              }
               login.mutate(
-                { email, password },
+                { email: email.trim(), password },
                 {
                   onSuccess: (second) => {
                     if (second) setFactors(second);
                     else done();
+                  },
+                  onError: (error) => {
+                    // A wrong password: type it again, the email stays.
+                    if (error instanceof ApiError && error.status === 401) {
+                      passwordRef.current?.select();
+                      passwordRef.current?.focus();
+                    }
                   },
                 },
               );
@@ -163,25 +250,45 @@ function Login() {
                 autoFocus
                 type="email"
                 autoComplete="username"
+                ref={emailRef}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setInvalid((v) => ({ ...v, email: undefined }));
+                }}
+                aria-invalid={!!invalid.email || undefined}
+                aria-describedby={invalid.email ? `${ids}-email` : undefined}
                 className={field}
               />
+              <FieldError id={`${ids}-email`} text={invalid.email} />
             </label>
             <label className="flex flex-col gap-1.5">
               <span>Password</span>
               <input
                 type="password"
                 autoComplete="current-password"
+                ref={passwordRef}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setInvalid((v) => ({ ...v, password: undefined }));
+                }}
+                aria-invalid={!!invalid.password || undefined}
+                aria-describedby={
+                  invalid.password ? `${ids}-password` : undefined
+                }
                 className={field}
               />
+              <FieldError id={`${ids}-password`} text={invalid.password} />
             </label>
+            {/* One line kept for the answer, so nothing moves when it shows. */}
+            <p role="alert" className="min-h-[1lh] text-fail">
+              {failed && loginMessage(failed)}
+            </p>
             <button
               type="submit"
               disabled={login.isPending || passkeyLogin.isPending}
-              className="btn pri justify-center px-3.5 py-2.5 text-md"
+              className="btn pri -mt-1.5 justify-center px-3.5 py-2.5 text-md"
             >
               Sign in <span className="font-mono text-2xs opacity-70">↵</span>
             </button>
@@ -199,7 +306,6 @@ function Login() {
                 Sign in with a passkey
               </button>
             )}
-            <ErrorText error={ended ?? login.error ?? passkeyLogin.error} />
             <button
               type="button"
               className="btn justify-center px-3.5 py-2.5 text-md"
@@ -470,5 +576,15 @@ function SSOForm({
         Use your password
       </button>
     </form>
+  );
+}
+
+/** A field's message under it, or nothing. */
+function FieldError({ id, text }: { id: string; text?: string }) {
+  if (!text) return null;
+  return (
+    <span id={id} className="text-xs text-fail">
+      {text}
+    </span>
   );
 }

@@ -28,7 +28,7 @@ const mono = "ui-monospace, 'SF Mono', Menlo, monospace";
 const theme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "#0a0a0a",
+      backgroundColor: "#000",
       color: "#d4d4d4",
       fontSize: "13px",
       height: "100%",
@@ -37,7 +37,7 @@ const theme = EditorView.theme(
     ".cm-scroller": { fontFamily: mono, lineHeight: "22px" },
     ".cm-content": { caretColor: "#f5f5f5", padding: "12px 0" },
     ".cm-gutters": {
-      backgroundColor: "#0a0a0a",
+      backgroundColor: "#000",
       color: "#525252",
       border: "none",
       paddingLeft: "12px",

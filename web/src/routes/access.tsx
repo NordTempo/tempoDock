@@ -46,7 +46,7 @@ function Access() {
   }, [url]);
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center px-4 pt-[16vh] pb-10">
       <main className="flex w-full max-w-[440px] flex-col gap-[22px]">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-lg font-bold">dock</span>

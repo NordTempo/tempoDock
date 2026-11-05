@@ -47,11 +47,13 @@ export const Route = createFileRoute(
 )({
   loader: async ({ context: { queryClient }, params }) => {
     const number = Number(params.number);
-    if (!Number.isInteger(number) || number < 1) throw notFound();
+    if (!Number.isInteger(number) || number < 1)
+      throw notFound({ routeId: "/_app/$org" });
     const overview = await queryClient.ensureQueryData(
       queries.overview(params.project),
     );
-    if (!findService(overview, params)) throw notFound();
+    if (!findService(overview, params))
+      throw notFound({ routeId: "/_app/$org" });
     const ref = servicePath(params);
     await Promise.all([
       queryClient.ensureQueryData(queries.release(ref, number)),

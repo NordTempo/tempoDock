@@ -18,7 +18,7 @@ export function SettingInput({
         <textarea
           id={id}
           rows={3}
-          className="font-mono"
+          className="field w-full max-w-[520px] font-mono text-xs"
           aria-label={id ? undefined : field.label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -41,16 +41,21 @@ export function SettingInput({
       );
     default:
       return (
-        <input
-          id={id}
-          type="number"
-          min={1}
-          max={field.kind === "days" ? 3650 : 100}
-          aria-label={id ? undefined : field.label}
-          className="w-28"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-        />
+        <span className="flex items-center gap-2">
+          <input
+            id={id}
+            type="number"
+            min={1}
+            max={field.kind === "days" ? 3650 : 100}
+            aria-label={id ? undefined : field.label}
+            className="field w-24 font-mono"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+          />
+          <span className="text-xs text-faint">
+            {field.kind === "days" ? "days" : "%"}
+          </span>
+        </span>
       );
   }
 }

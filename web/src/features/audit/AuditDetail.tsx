@@ -5,6 +5,7 @@ import type { components } from "../../api/schema";
 import type { AuditEvent } from "../../data/types";
 import { elapsed } from "../../ui/format";
 import { Actor, ErrorText } from "../../ui/kit";
+import { actionLabel } from "./AuditTable";
 
 /** "12 ms" under a second, else "4s", "1m 12s". */
 const duration = (ms: number) => (ms < 1000 ? `${ms} ms` : elapsed(ms));
@@ -52,7 +53,8 @@ export function AuditDetail({ event: e }: { event: AuditEvent }) {
         <span className="text-mut">{e.actor_kind}</span>
       </Item>
       <Item label="Action">
-        <span className="font-mono">{e.action}</span>
+        {actionLabel(e.action) !== e.action && `${actionLabel(e.action)} `}
+        <span className="font-mono text-xs text-mut">{e.action}</span>
       </Item>
       {where && (
         <Item label="Where">

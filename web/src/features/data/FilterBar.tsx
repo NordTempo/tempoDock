@@ -128,14 +128,14 @@ function FilterForm({
       {!noValue(op) && (
         <input
           aria-label="Value"
-          className="g-field h-7 w-44 font-mono text-xs"
+          className="g-field h-7 w-44 font-mono text-xs placeholder:font-sans"
           placeholder={op === "in" ? "a, b, c" : "value"}
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
       )}
-      <Btn type="submit" small>
-        Add
+      <Btn type="submit" small primary>
+        Apply
       </Btn>
       <Btn small ghost onClick={onCancel}>
         Cancel

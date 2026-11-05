@@ -3,7 +3,7 @@ import { queries } from "../data/queries";
 import { AuditPage } from "../features/audit/AuditPage";
 import { validateAuditSearch } from "../features/audit/search";
 
-// The workspace's Activity: the audit log as the caller may see it. Admins
+// The organization's audit log as the caller may see it. Admins
 // also get it in the platform console (/console/audit).
 export const Route = createFileRoute("/_app/$org/audit")({
   validateSearch: validateAuditSearch,

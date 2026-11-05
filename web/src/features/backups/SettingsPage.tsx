@@ -5,6 +5,7 @@ import {
   Button,
   CopyButton,
   ErrorText,
+  Glyph,
   Page,
   PageBar,
   Panel,
@@ -23,7 +24,8 @@ import {
 } from "./settings";
 
 // The console's Backups page: where every backup goes, how long it is
-// kept, and the control plane's own daily backup. Services' backups are on
+// kept, and the control plane's own daily backup (its database, keys and
+// config). Services' backups are on
 // their own pages.
 
 export function BackupSettingsPage() {
@@ -66,9 +68,21 @@ export function BackupSettingsPage() {
       />
       <Page>
         {!settings.off_box && (
-          <p className="rounded-panel border border-warn-edge bg-warn-bg/60 px-3.5 py-3 text-warn-text">
+          <p className="text-warn-text">
+            <span className="text-warn">
+              <Glyph char="▲" />
+            </span>{" "}
             Backups stay on the server they were made on, so losing a server
-            loses its backups. Move them to a bucket to send them off-box.
+            loses its backups.{" "}
+            {!moving && !busy && (
+              <button
+                type="button"
+                className="text-fg underline underline-offset-3"
+                onClick={() => setMoving(true)}
+              >
+                Move to a bucket
+              </button>
+            )}
           </p>
         )}
         <ErrorText error={run.error} />
@@ -98,7 +112,6 @@ function ControlPlane({ settings }: { settings: BackupSettings }) {
     <section aria-labelledby="control-plane">
       <SectionHead
         id="control-plane"
-        aside="its database, keys and config, daily"
         right={next_at && <span>next in {until(next_at)}</span>}
       >
         Control plane
@@ -206,13 +219,13 @@ function Settings({ settings }: { settings: BackupSettings }) {
     <section aria-labelledby="settings">
       <SectionHead
         id="settings"
-        aside={
+        right={
           settings.updated_by &&
           settings.updated_at &&
           `changed by ${settings.updated_by} ${since(settings.updated_at)} ago`
         }
       >
-        How long
+        Schedule
       </SectionHead>
       <form
         aria-label="Backup settings"
@@ -225,12 +238,19 @@ function Settings({ settings }: { settings: BackupSettings }) {
           {count("Keep monthly", "monthly", 240)}
           <label className="flex flex-[1_1_120px] flex-col gap-1.5">
             <span>
-              Daily at <span className="text-mut">{settings.time_zone}</span>
+              Time{" "}
+              <span className="text-mut">
+                (
+                {settings.time_zone === "Local"
+                  ? "server local"
+                  : settings.time_zone}
+                )
+              </span>
             </span>
             <select
               value={hour}
               onChange={(e) => setHour(Number(e.target.value))}
-              className="field py-[7px]"
+              className="py-[7px] text-sm"
             >
               {Array.from({ length: 24 }, (_, h) => (
                 <option key={h} value={h}>
@@ -240,19 +260,33 @@ function Settings({ settings }: { settings: BackupSettings }) {
             </select>
           </label>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            primary
-            type="submit"
-            disabled={!dirty || configure.isPending}
-          >
-            Save
-          </Button>
-          <span className="font-mono text-2xs text-faint">
-            dock backup configure
-          </span>
-          <ErrorText error={configure.error} />
-        </div>
+        {/* Only a changed form has anything to save. */}
+        {(dirty || configure.error) && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Act
+              primary
+              type="submit"
+              cli={`dock backup configure${changes.keep_daily !== undefined ? ` --keep-daily ${changes.keep_daily}` : ""}${changes.keep_weekly !== undefined ? ` --keep-weekly ${changes.keep_weekly}` : ""}${changes.keep_monthly !== undefined ? ` --keep-monthly ${changes.keep_monthly}` : ""}${changes.hour !== undefined ? ` --hour ${changes.hour}` : ""}`}
+              disabled={!dirty || configure.isPending}
+            >
+              Save
+            </Act>
+            <Button
+              onClick={() => {
+                configure.reset();
+                setKeep({
+                  daily: settings.keep_daily,
+                  weekly: settings.keep_weekly,
+                  monthly: settings.keep_monthly,
+                });
+                setHour(settings.hour);
+              }}
+            >
+              Discard
+            </Button>
+            <ErrorText error={configure.error} />
+          </div>
+        )}
       </form>
       {password && <PasswordBox password={password} first />}
     </section>

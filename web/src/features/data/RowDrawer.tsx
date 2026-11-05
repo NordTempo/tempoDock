@@ -38,7 +38,12 @@ export function RowDrawer({
       (fk) => fk.columns?.length === 1 && fk.columns[0] === column,
     );
 
-  const title = key ? Object.values(key).join(", ") : "No primary key";
+  // "orders · id 4", or "orders" and why a row without a key is plain.
+  const keyText = key
+    ? Object.entries(key)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(", ")
+    : null;
 
   return (
     <aside
@@ -53,40 +58,43 @@ export function RowDrawer({
           className="g-btn ghost sm"
           onClick={onClose}
         >
-          ✕ <span className="g-kbd">Esc</span>
+          <span className="g-kbd">Esc</span>
         </button>
       </div>
-      <h2 className="mt-1 truncate text-[16px] font-semibold" title={title}>
-        {table.name} {title}
+      <h2
+        className="mt-1 mb-3 truncate text-[15px] font-semibold"
+        title={keyText ?? undefined}
+      >
+        {table.name}
+        {keyText && (
+          <span className="font-normal text-(--g-dim)"> · {keyText}</span>
+        )}
       </h2>
-      <p className="mb-3 truncate font-mono text-xs text-(--g-mut)">
-        {key
-          ? Object.keys(key).join(", ")
-          : "Rows without one can't be referenced."}
-      </p>
+      {!key && (
+        <p className="-mt-2 mb-3 text-xs text-(--g-mut)">
+          No primary key, so nothing can reference this row.
+        </p>
+      )}
 
-      <dl className="flex flex-col">
+      <dl className="grid grid-cols-[110px_minmax(0,1fr)] gap-x-3">
         {columns.map((c, i) => {
           const cell = row[i] ?? null;
           const kind = cellKind(cell, c.type_name);
           const fk = fkFor(c.name);
           const value = cellInput(cell);
           return (
-            <div
-              key={c.name}
-              className="flex min-h-[30px] items-start justify-between gap-2.5 py-1.5"
-            >
+            <div key={c.name} className="contents">
               <dt
-                className="shrink-0 truncate text-(--g-mut)"
+                className="truncate py-1.5 text-(--g-mut)"
                 title={`${c.name} ${c.type_name}`}
               >
                 {c.name}
               </dt>
-              <dd className="min-w-0 text-right font-mono text-xs">
+              <dd className="min-w-0 py-1.5 font-mono text-xs leading-5">
                 {fk && typeof value === "string" ? (
                   <button
                     type="button"
-                    className="g-lnk text-right"
+                    className="g-lnk text-left"
                     onClick={() =>
                       onOpen(`${fk.ref_schema}.${fk.ref_table}`, [
                         { column: fk.ref_columns?.[0] ?? "", op: "eq", value },

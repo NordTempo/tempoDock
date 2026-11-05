@@ -1,8 +1,9 @@
 import { type FormEvent, useState } from "react";
-import { ago } from "../../ui/format";
+import { ago, plural } from "../../ui/format";
 import {
   Act,
   Button,
+  Confirm,
   ErrorText,
   Page,
   PageBar,
@@ -35,13 +36,13 @@ export function CloudflarePage() {
         title="Cloudflare"
         after={
           <span className="text-xs text-faint">
-            API tokens Dock runs tunnels and domains with
+            {plural(connections.length, "connection")}
           </span>
         }
         actions={
           <>
             {connections.length > 0 && <RetryFailed />}
-            {!adding && (
+            {!adding && connections.length > 0 && (
               <Button
                 onClick={() => {
                   setEditing(undefined);
@@ -56,12 +57,7 @@ export function CloudflarePage() {
       />
       <Page>
         <section aria-labelledby="connections" className="flex flex-col gap-2">
-          <SectionHead
-            id="connections"
-            aside="domains are added from their zones, through server tunnels"
-          >
-            Connections
-          </SectionHead>
+          <SectionHead id="connections">Connections</SectionHead>
           {connections.length > 0 ? (
             <Panel>
               <table>
@@ -92,9 +88,16 @@ export function CloudflarePage() {
             </Panel>
           ) : (
             !adding && (
-              <p className="py-2 text-mut">
-                No connection. Tunnels and their DNS are set up by hand.
-              </p>
+              <div className="flex flex-col items-start gap-3 py-2">
+                <p className="text-mut">
+                  No connection. With a Cloudflare API token, Dock runs each
+                  server's tunnel and adds domains from your zones; without one,
+                  tunnels and their DNS are set up by hand.
+                </p>
+                <Button primary onClick={() => setAdding(true)}>
+                  Add connection
+                </Button>
+              </div>
             )
           )}
           {adding && <TokenForm onClose={() => setAdding(false)} />}
@@ -174,7 +177,7 @@ function ConnectionRow({
       </td>
       <td className="w-full py-1.5 text-right">
         <span className="inline-flex items-center gap-3">
-          <ErrorText error={refresh.error ?? remove.error} />
+          <ErrorText error={refresh.error} />
           <Act
             small
             cli={`dock cloudflare refresh ${c.name}`}
@@ -186,30 +189,33 @@ function ConnectionRow({
           <Button small onClick={onEdit}>
             Change token
           </Button>
-          {confirming ? (
-            <>
-              <Act
-                small
-                danger
-                cli={`dock cloudflare remove ${c.name}`}
-                disabled={remove.isPending}
-                onClick={() => remove.mutate(c.name)}
-              >
-                Remove now
-              </Act>
-              <Button small onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button
-              small
-              disabled={tunnels.length > 0}
-              reason="a server's tunnel uses it"
-              onClick={() => setConfirming(true)}
+          <Button
+            small
+            danger={tunnels.length === 0}
+            disabled={tunnels.length > 0}
+            reason="a server's tunnel uses it"
+            onClick={() => setConfirming(true)}
+          >
+            Remove
+          </Button>
+          {confirming && (
+            <Confirm
+              danger
+              action={`Remove ${c.name}`}
+              cli={`dock cloudflare remove ${c.name}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(c.name, { onSuccess: () => setConfirming(false) })
+              }
+              onCancel={() => {
+                remove.reset();
+                setConfirming(false);
+              }}
             >
-              Remove
-            </Button>
+              Dock forgets this Cloudflare token. DNS records it made stay in
+              Cloudflare.
+            </Confirm>
           )}
         </span>
       </td>

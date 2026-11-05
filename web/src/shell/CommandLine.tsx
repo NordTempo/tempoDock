@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
 import { reconnectLive, useLiveStatus } from "../data/liveStatus";
+import { Dialog } from "../ui/Dialog";
 import { ErrorText } from "../ui/kit";
 import {
   type Command,
@@ -8,7 +9,13 @@ import {
   rememberCommand,
   useCommands,
 } from "./commands";
-import { isTyping, modKey, useKeydown, useLegend } from "./keys";
+import {
+  isTyping,
+  type LegendItem,
+  modKey,
+  useKeydown,
+  useLegend,
+} from "./keys";
 
 /**
  * The bottom command line: type a `dock` command or any part of a palette
@@ -65,9 +72,9 @@ export function CommandLine() {
 
   return (
     <div className="sticky bottom-0 z-20 bg-page px-5 pt-1.5 pb-3">
+      {help && <Help onClose={() => setHelp(false)} />}
       <div className="mx-auto max-w-[860px] overflow-hidden rounded-xl border border-edge bg-panel">
         <NotLive />
-        {help && <Help onClose={() => setHelp(false)} />}
         {focused && matches.length > 0 && (
           <ul
             aria-label="Matching commands"
@@ -186,35 +193,74 @@ function NotLive() {
 /** Commands the CLI has too complete to their `dock` line, others to their label. */
 const isCli = (command: Command) => command.cli.startsWith("dock");
 
+/**
+ * The ? window: this page's keys, the G sequences that switch tabs, and
+ * the keys that work everywhere, in a modal like the palette.
+ */
 function Help({ onClose }: { onClose: () => void }) {
   const legend = useLegend();
-  const global = [
-    [`${modKey.trim()}K`, "search or run anything"],
-    ["?", "show or hide these keys"],
-    ["esc", "close"],
+  const page = legend.filter((s) => !s.key.startsWith("g "));
+  const go = legend.filter((s) => s.key.startsWith("g "));
+  const anywhere = [
+    { key: `${modKey.trim()}+K`, label: "search or run anything" },
+    { key: "?", label: "show these keys" },
+    { key: "esc", label: "close" },
   ];
   return (
-    <section
-      aria-label="Keyboard shortcuts"
-      className="border-b border-line px-3.5 py-3"
+    <Dialog
+      title="Keyboard shortcuts"
+      bare
+      onClose={onClose}
+      className="m-auto max-w-[min(640px,calc(100vw-2rem))]"
     >
-      <div className="flex items-baseline gap-3 pb-2">
-        <h2 className="text-sm font-semibold">Keys</h2>
-        <button type="button" className="lnk ml-auto" onClick={onClose}>
-          Close
+      <div className="flex items-center border-b border-line px-5 py-3">
+        <h2 className="text-md font-semibold">Keyboard shortcuts</h2>
+        <button
+          type="button"
+          className="lnk ml-auto"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          <kbd>esc</kbd>
         </button>
       </div>
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
-        {[...legend.map((s) => [s.key.toUpperCase(), s.label]), ...global].map(
-          ([key, label]) => (
-            <div key={`${key} ${label}`} className="contents">
-              <dt>
-                <kbd>{key}</kbd>
-              </dt>
-              <dd className="text-mut">{label}</dd>
-            </div>
-          ),
-        )}
+      {/* Focus lands here, not on the close button. */}
+      <div
+        data-autofocus
+        tabIndex={-1}
+        className="grid gap-x-8 gap-y-5 px-5 py-4 outline-none sm:grid-cols-2"
+      >
+        <div className="flex flex-col gap-5">
+          {page.length > 0 && <Keys title="This page" items={page} />}
+          <Keys title="Anywhere" items={anywhere} />
+        </div>
+        {go.length > 0 && <Keys title="Go to" items={go} />}
+      </div>
+    </Dialog>
+  );
+}
+
+/** A titled list of keys; "g o" reads as G then O. */
+function Keys({ title, items }: { title: string; items: LegendItem[] }) {
+  return (
+    <section className="flex flex-col gap-1.5">
+      <h3 className="text-2xs font-medium text-mut">{title}</h3>
+      <dl className="grid grid-cols-[max-content_1fr] items-baseline gap-x-4 gap-y-1.5">
+        {items.map((s) => (
+          <div key={`${s.key} ${s.label}`} className="contents">
+            <dt className="flex items-center gap-1 text-2xs text-faint">
+              {(s.key.startsWith("g ") ? s.key.split(" ") : [s.key]).map(
+                (k, i) => (
+                  <span key={k} className="contents">
+                    {i > 0 && <span>then</span>}
+                    <kbd>{k.length === 1 ? k.toUpperCase() : k}</kbd>
+                  </span>
+                ),
+              )}
+            </dt>
+            <dd className="text-sec">{s.label}</dd>
+          </div>
+        ))}
       </dl>
     </section>
   );

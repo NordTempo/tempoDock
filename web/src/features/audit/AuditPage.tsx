@@ -8,17 +8,36 @@ import { type AuditSearch, MAX } from "./search";
 /** The API's default page of events. */
 const PAGE = 100;
 
+/** The action filter's groups: an API prefix and what it covers. */
 const actions = [
   ["release.", "deploys, restarts, rollbacks"],
   ["variables.", "variables"],
   ["changes.", "apply and discard"],
-  ["domain.", "domains"],
   ["service.", "services"],
-  ["token.", "tokens"],
-  ["user.", "users and logins"],
+  ["domain.", "domains"],
+  ["environment.", "environments and locks"],
+  ["request.", "access requests"],
+  ["project.", "projects"],
+  ["job.", "jobs"],
+  ["preview.", "previews"],
   ["backup.", "backups"],
+  ["snapshot.", "snapshots"],
   ["data.", "data access"],
+  ["token.", "tokens"],
+  ["org.", "organization and members"],
+  ["user.", "users and sign-ins"],
 ] as const;
+
+/** The platform log's own groups (operators, in the console). */
+const platformActions = [
+  ["server.", "servers"],
+  ["platform.", "Dock updates and address"],
+  ["registry.", "registry"],
+  ["alert.", "alerts"],
+] as const;
+
+/** Every filter control is this tall, so the row lines up. */
+const control = "h-[28px]";
 
 function toCsv(events: AuditEvent[]) {
   const cell = (v: string | undefined) =>
@@ -53,8 +72,8 @@ function download(name: string, text: string) {
 }
 
 /**
- * The audit log with its filters: the workspace's Activity (/audit) and the
- * console's Audit (/console/audit), which can show the platform's log too
+ * The audit log with its filters: the organization's (/audit) and the
+ * console's (/console/audit), which can show the platform's log too
  * (withPlatform). The route owns the URL; onSearch replaces its search
  * params.
  */
@@ -135,7 +154,10 @@ export function AuditPage({
           onSubmit={(e) => e.preventDefault()}
         >
           {withPlatform && (
-            <fieldset aria-label="Log" className="seg">
+            <fieldset
+              aria-label="Log"
+              className={`seg ${control} *:flex *:items-center`}
+            >
               {(
                 [
                   [undefined, "Organization"],
@@ -153,7 +175,10 @@ export function AuditPage({
               ))}
             </fieldset>
           )}
-          <fieldset aria-label="Actor type" className="seg">
+          <fieldset
+            aria-label="Actor type"
+            className={`seg ${control} *:flex *:items-center`}
+          >
             {(
               [
                 [undefined, "Everyone"],
@@ -175,7 +200,7 @@ export function AuditPage({
             aria-label="Actor"
             value={search.actor ?? ""}
             onChange={(e) => set({ actor: e.target.value || undefined })}
-            className="field py-[5px]"
+            className={control}
           >
             <option value="">any actor</option>
             {actors.map((a) => (
@@ -186,14 +211,16 @@ export function AuditPage({
             aria-label="Action"
             value={search.action ?? ""}
             onChange={(e) => set({ action: e.target.value || undefined })}
-            className="field py-[5px]"
+            className={control}
           >
             <option value="">any action</option>
-            {actions.map(([prefix, label]) => (
-              <option key={prefix} value={prefix}>
-                {label}
-              </option>
-            ))}
+            {[...actions, ...(search.platform ? platformActions : [])].map(
+              ([prefix, label]) => (
+                <option key={prefix} value={prefix}>
+                  {label}
+                </option>
+              ),
+            )}
           </select>
           {!search.platform && (
             <select
@@ -205,7 +232,7 @@ export function AuditPage({
                   environment: undefined,
                 })
               }
-              className="field py-[5px]"
+              className={control}
             >
               <option value="">all projects</option>
               {projects.map((p) => (
@@ -220,7 +247,7 @@ export function AuditPage({
               onChange={(e) =>
                 set({ environment: e.target.value || undefined })
               }
-              className="field py-[5px]"
+              className={control}
             >
               <option value="">all environments</option>
               {environments.map((e) => (
@@ -233,13 +260,9 @@ export function AuditPage({
             placeholder="search target"
             value={search.q ?? ""}
             onChange={(e) => set({ q: e.target.value || undefined })}
-            className="field min-w-0 flex-[1_1_180px] py-[5px]"
+            className={`field ${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] py-0 text-xs`}
           />
-          <button
-            type="button"
-            onClick={() => onSearch({})}
-            className="text-mut hover:text-fg"
-          >
+          <button type="button" onClick={() => onSearch({})} className="lnk">
             Clear
           </button>
         </form>
@@ -258,8 +281,7 @@ export function AuditPage({
         <AuditTable events={shown} />
         <div className="flex flex-wrap items-center gap-3 text-xs text-mut">
           <span>
-            <span className="text-info">◇</span> token · ○ person · the newest{" "}
-            {search.limit ?? PAGE} events
+            the newest {search.limit ?? PAGE} events
             {search.action ? " of this kind" : ""}
           </span>
           {!search.limit && events.length === PAGE && (

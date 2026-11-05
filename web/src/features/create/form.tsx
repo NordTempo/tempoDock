@@ -166,11 +166,16 @@ export function Choice<T extends string>({
 
 export const input = "field py-[5px] font-mono";
 
-/** Submit, Cancel, the error, and the CLI commands that do the same. */
+/**
+ * The dialogs' one footer: the error or why it can't submit yet on the
+ * left, Cancel and the named submit button on the right, and the CLI
+ * commands that do the same under a line.
+ */
 export function Footer({
   submit,
   pending,
   disabled,
+  reason = "Fill in the fields above first.",
   error,
   cli,
   onClose,
@@ -178,6 +183,8 @@ export function Footer({
   submit: string;
   pending: boolean;
   disabled?: boolean;
+  /** Shown while `disabled`, so a dimmed button never goes unexplained. */
+  reason?: string;
   error: Error | null | undefined;
   cli: readonly string[];
   onClose: () => void;
@@ -185,6 +192,14 @@ export function Footer({
   return (
     <>
       <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-xs">
+          {error ? (
+            <ErrorText error={error} />
+          ) : (
+            disabled && !pending && <span className="text-faint">{reason}</span>
+          )}
+        </span>
+        <Button onClick={onClose}>Cancel</Button>
         <button
           type="submit"
           className="btn pri"
@@ -192,8 +207,6 @@ export function Footer({
         >
           {submit} <kbd>↵</kbd>
         </button>
-        <Button onClick={onClose}>Cancel</Button>
-        <ErrorText error={error} />
       </div>
       <div className="mt-3 flex flex-col gap-0.5 border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
         {cli.map((line) => (

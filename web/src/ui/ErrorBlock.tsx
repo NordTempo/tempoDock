@@ -35,8 +35,11 @@ export function ErrorBlock({
   );
 }
 
-const errorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : "Something went wrong.";
+/** The error's message, starting with a capital like a sentence. */
+const errorMessage = (error: unknown) => {
+  const m = error instanceof Error ? error.message : "";
+  return m ? m[0]?.toUpperCase() + m.slice(1) : "Something went wrong.";
+};
 
 /**
  * A plain next step for an error, from its HTTP status; none when there is

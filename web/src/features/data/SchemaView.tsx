@@ -85,11 +85,11 @@ export function SchemaView({
                 const notes = [
                   pk.includes(c.name) && "primary key",
                   c.generated && "generated",
-                  c.sensitive && "sensitive",
+                  c.sensitive && !manage && "sensitive",
                   c.comment,
                 ].filter(Boolean);
                 return (
-                  <tr key={c.name}>
+                  <tr key={c.name} className="group">
                     <td className={pk.includes(c.name) ? "font-semibold" : ""}>
                       {c.name}
                     </td>
@@ -120,10 +120,17 @@ export function SchemaView({
                       {notes.join(", ")}
                     </td>
                     {manage && (
-                      <td>
+                      <td className="text-xs">
+                        <span
+                          className={
+                            c.sensitive ? "text-(--g-warn)" : "text-(--g-faint)"
+                          }
+                        >
+                          {c.sensitive ? "masked" : "no"}
+                        </span>{" "}
                         <button
                           type="button"
-                          className="g-lnk"
+                          className="g-lnk invisible group-hover:visible focus-visible:visible"
                           disabled={marks.pending}
                           onClick={() =>
                             marks.toggle(

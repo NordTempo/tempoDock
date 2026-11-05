@@ -133,7 +133,11 @@ function CliLogin() {
   const decidable = code !== null && l?.status === "pending";
 
   return (
-    <Shell>
+    <Shell
+      title={
+        decidable && l ? `Approve dock login from ${l.hostname}?` : undefined
+      }
+    >
       <label className="flex flex-col gap-1.5">
         <span>Code shown in your terminal</span>
         <input
@@ -183,13 +187,20 @@ function CliLogin() {
   );
 }
 
-function Shell({ children }: { children: ReactNode }) {
+/** The page's frame; the title names the computer once its login is found. */
+function Shell({
+  title = "Sign in the dock CLI?",
+  children,
+}: {
+  title?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
+    <div className="flex min-h-screen flex-col items-center px-4 pt-[16vh] pb-10">
       <main className="flex w-full max-w-[440px] flex-col gap-[22px]">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-lg font-bold">dock</span>
-          <h1 className="text-xl font-semibold">Sign in the dock CLI?</h1>
+          <h1 className="text-xl font-semibold break-words">{title}</h1>
           <span className="font-mono text-xs text-mut">
             {window.location.host}
           </span>

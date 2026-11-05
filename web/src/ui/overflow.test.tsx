@@ -54,6 +54,8 @@ for (const Action of [Act, DataAct]) {
     await interact(() =>
       button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })),
     );
+    // The hint waits for the pointer to rest (CliHint's hoverMs).
+    await act(() => new Promise((done) => setTimeout(done, 600)));
     const hint = document.querySelector(".cli");
     if (!hint) throw new Error("Hover must reveal the CLI hint");
     const box = hint.getBoundingClientRect();

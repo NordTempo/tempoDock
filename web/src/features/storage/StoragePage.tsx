@@ -1,8 +1,9 @@
 import { type FormEvent, useState } from "react";
-import { since } from "../../ui/format";
+import { plural, since } from "../../ui/format";
 import {
   Act,
   Button,
+  Confirm,
   ErrorText,
   Page,
   PageBar,
@@ -32,10 +33,13 @@ export function StoragePage() {
       <PageBar
         title="Storage"
         after={
-          <span className="text-xs text-faint">S3-compatible buckets</span>
+          <span className="text-xs text-faint">
+            {plural(storage.length, "connection")}
+          </span>
         }
         actions={
-          !adding && (
+          !adding &&
+          storage.length > 0 && (
             <Button
               onClick={() => {
                 setEditing(undefined);
@@ -49,12 +53,7 @@ export function StoragePage() {
       />
       <Page>
         <section aria-labelledby="connections" className="flex flex-col gap-2">
-          <SectionHead
-            id="connections"
-            aside="the registry keeps its images in one after a migration"
-          >
-            Connections
-          </SectionHead>
+          <SectionHead id="connections">Connections</SectionHead>
           {storage.length > 0 ? (
             <Panel>
               <table>
@@ -86,9 +85,16 @@ export function StoragePage() {
             </Panel>
           ) : (
             !adding && (
-              <p className="py-2 text-mut">
-                No storage yet. Images stay on the control plane's disk.
-              </p>
+              <div className="flex flex-col items-start gap-3 py-2">
+                <p className="text-mut">
+                  No storage yet. An S3-compatible bucket can hold the
+                  registry's images and the backups; until then they stay on the
+                  servers' disks.
+                </p>
+                <Button primary onClick={() => setAdding(true)}>
+                  Add storage
+                </Button>
+              </div>
             )
           )}
           {adding && <StorageForm onClose={() => setAdding(false)} />}
@@ -136,34 +142,36 @@ function StorageRow({
       </td>
       <td className="w-full py-1.5 text-right">
         <span className="inline-flex items-center gap-3">
-          <ErrorText error={remove.error} />
           <Button small onClick={onEdit}>
             Change
           </Button>
-          {confirming ? (
-            <>
-              <Act
-                small
-                danger
-                cli={`dock storage remove ${s.name}`}
-                disabled={remove.isPending}
-                onClick={() => remove.mutate(s.name)}
-              >
-                Remove now
-              </Act>
-              <Button small onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button
-              small
-              disabled={used}
-              reason="in use; move the registry's images first"
-              onClick={() => setConfirming(true)}
+          <Button
+            small
+            danger={!used}
+            disabled={used}
+            reason="in use; move the registry's images first"
+            onClick={() => setConfirming(true)}
+          >
+            Remove
+          </Button>
+          {confirming && (
+            <Confirm
+              danger
+              action={`Remove ${s.name}`}
+              cli={`dock storage remove ${s.name}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(s.name, { onSuccess: () => setConfirming(false) })
+              }
+              onCancel={() => {
+                remove.reset();
+                setConfirming(false);
+              }}
             >
-              Remove
-            </Button>
+              Dock forgets the connection to <b>{s.bucket}</b>. The bucket and
+              what is in it stay as they are.
+            </Confirm>
           )}
         </span>
       </td>

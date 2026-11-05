@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { ErrorText, Head } from "../../../src/features/data/kit";
 import {
   PolicyEditor,
@@ -21,12 +21,7 @@ function Access() {
   const save = useSavePolicy();
   return (
     <>
-      <Head title="Access">
-        <span className="text-xs text-(--g-mut)">
-          What viewers, editors and agents may do with the data. Admins always
-          may.
-        </span>
-      </Head>
+      <Head title="Access" />
       <main className="flex max-w-[960px] flex-col gap-6 px-5 py-6">
         {policy.error ? (
           <ErrorText error={policy.error} />
@@ -44,25 +39,15 @@ function Access() {
             builtIn={builtIn}
           />
         )}
-        <section className="flex max-w-[760px] flex-col gap-2 text-(--g-mut)">
+        <section className="flex max-w-[760px] flex-col gap-2 text-(--g-dim)">
           <p>
-            Rules here apply to every connection; a connection's settings can
-            override them for it. A connection where someone's level is none is
-            hidden from them.
+            These rules apply to every connection unless its settings override
+            them; admins always may do everything, and a connection is hidden
+            from anyone whose level is none. An agent gets the lower of its rule
+            and its owner's access, and on production its changes are proposals
+            an admin approves.
           </p>
           <PolicyLegend />
-          <p>
-            An agent gets the lowest of: this policy's agents rule or its own
-            limit, and what its owner may do now. On production its changes are
-            always proposals an admin approves.
-            {admin && (
-              <>
-                {" "}
-                People and their roles are on{" "}
-                <Link to="/settings/people">People</Link>.
-              </>
-            )}
-          </p>
         </section>
       </main>
     </>

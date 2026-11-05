@@ -18,6 +18,7 @@ export const useStopService = () =>
         ),
       ),
     serviceWide,
+    (ref) => `Stopped ${ref.service}`,
   );
 
 /** Starts a stopped service: a copy of its active release, health checked. */
@@ -31,4 +32,5 @@ export const useStartService = () =>
         ),
       ),
     serviceWide,
+    (ref) => `Starting ${ref.service}`,
   );

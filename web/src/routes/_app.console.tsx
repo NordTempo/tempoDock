@@ -1,5 +1,6 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { queries } from "../data/queries";
+import { Page, PageBar } from "../ui/kit";
 
 // The platform console: everything that runs Dock itself, for operators
 // only (ADR 0027). Everyone else is sent back to their projects (the API
@@ -12,4 +13,22 @@ export const Route = createFileRoute("/_app/console")({
     );
     if (!session?.operator) throw redirect({ to: "/" });
   },
+  // Router looks for the nearest route with a notFoundComponent; without
+  // one here, a console 404 would replace the whole shell with the root's.
+  notFoundComponent: ConsoleNotFound,
 });
+
+/** A console address with no page, inside the console's shell. */
+function ConsoleNotFound() {
+  return (
+    <>
+      <PageBar title="Not found" />
+      <Page gap="gap-3">
+        <p className="text-mut">Nothing in the console at this address.</p>
+        <Link to="/console" className="btn pri self-start">
+          Back to the overview
+        </Link>
+      </Page>
+    </>
+  );
+}

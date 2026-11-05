@@ -59,12 +59,8 @@ function People() {
             Invite
           </Btn>
         }
-      >
-        <span className="text-xs text-(--g-mut)">
-          One role each. Admins see every connection.
-        </span>
-      </Head>
-      <main className="flex max-w-[860px] flex-col gap-7 px-5 py-6">
+      />
+      <main className="flex max-w-[960px] flex-col gap-7 px-5 py-6">
         {inviting && (
           <InviteForm
             onMade={(link) => {

@@ -1,10 +1,12 @@
 import {
   CompactSelection,
   DataEditorCore,
+  type DrawHeaderCallback,
   type GridCell,
   GridCellKind,
   type GridColumn,
   type GridSelection,
+  getMiddleCenterBias,
   ImageWindowLoaderImpl,
   type Item,
   markerCellRenderer,
@@ -12,8 +14,14 @@ import {
   textCellRenderer,
 } from "@glideapps/glide-data-grid";
 import "@glideapps/glide-data-grid/dist/index.css";
-import { type ComponentProps, useEffect, useMemo, useState } from "react";
-import { type CellKind, cellKind, cellText } from "./cells";
+import {
+  type ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { type CellKind, cellKind, cellText, isNumericType } from "./cells";
 import type { DataCell, DataResultColumn, DataRow } from "./types";
 
 // The data grid: Glide Data Grid (MIT, canvas) with only the text cell
@@ -22,7 +30,7 @@ import type { DataCell, DataResultColumn, DataRow } from "./types";
 // chunk only.
 
 // Style G (./g.css): the canvas needs literal colors, so translucent
-// tints are pre-blended onto the panel's #0a0a0a.
+// tints are pre-blended onto the panel's #000.
 const sans =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 const mono = 'ui-monospace, "SF Mono", Menlo, monospace';
@@ -36,19 +44,19 @@ const theme: Partial<Theme> = {
   textLight: "#8a8a8a",
   textBubble: "#f5f5f5",
   bgIconHeader: "#8a8a8a",
-  fgIconHeader: "#0a0a0a",
+  fgIconHeader: "#000",
   textHeader: "#8a8a8a",
   textHeaderSelected: "#f5f5f5",
-  bgCell: "#0a0a0a",
-  bgCellMedium: "#0f0f0f",
-  bgHeader: "#0a0a0a",
-  bgHeaderHasFocus: "#141414",
-  bgHeaderHovered: "#121212",
+  bgCell: "#000",
+  bgCellMedium: "#0a0a0a",
+  bgHeader: "#000",
+  bgHeaderHasFocus: "#0f0f0f",
+  bgHeaderHovered: "#0a0a0a",
   bgBubble: "#191a1d",
   bgBubbleSelected: "#232428",
   bgSearchResult: "#2b1f0a",
-  borderColor: "#0a0a0a",
-  horizontalBorderColor: "#141414",
+  borderColor: "#000",
+  horizontalBorderColor: "#121212",
   headerBottomBorderColor: "#1b1b1b",
   drilldownBorder: "#1b1b1b",
   linkColor: "#7da2ff",
@@ -63,9 +71,10 @@ const theme: Partial<Theme> = {
   roundingRadius: 6,
 };
 
-// Ids, numbers, times and raw values in mono and quieter, as G1 shows them.
+// Ids, numbers, times and raw values in mono and quieter, as G1 shows them;
+// only NULL and masked values are dim.
 const monoCell: Partial<Theme> = { fontFamily: mono, baseFontStyle: "12px" };
-const quietMono: Partial<Theme> = { ...monoCell, textDark: "#8a8a8a" };
+const quietMono: Partial<Theme> = { ...monoCell, textDark: "#a3a3a3" };
 const kindTheme: Partial<Record<CellKind, Partial<Theme>>> = {
   null: { ...monoCell, textDark: "#525252" },
   masked: { ...monoCell, textDark: "#525252" },
@@ -117,6 +126,10 @@ const renderers = [textCellRenderer, markerCellRenderer] as NonNullable<
 
 // Required by the core editor; no image cells here, so it stays idle.
 const imageWindowLoader = new ImageWindowLoaderImpl();
+
+/** A column's header: "customer_id →", "created_at UTC ↓". */
+const headerTitle = (c: GridCol) =>
+  `${c.name}${c.type_name === "timestamptz" ? " UTC" : ""}${c.link ? " →" : ""}${c.sort ? ` ${c.sort}` : ""}`;
 
 /** Width from the header and the first rows: characters × a constant. */
 function columnWidth(
@@ -176,7 +189,7 @@ export function Grid({
   const gridColumns = useMemo<GridColumn[]>(
     () =>
       columns.map((c, i) => {
-        const title = `${c.name}${c.link ? " →" : ""}${c.sort ? ` ${c.sort}` : ""}`;
+        const title = headerTitle(c);
         return {
           id: c.name,
           title,
@@ -184,6 +197,23 @@ export function Grid({
         };
       }),
     [columns, rows],
+  );
+  // Glide left-aligns every header; numeric ones go right, over their values.
+  const drawHeader = useCallback<DrawHeaderCallback>(
+    ({ ctx, column, columnIndex, rect, theme, isSelected }, drawContent) => {
+      const type = columns[columnIndex]?.type_name;
+      if (!type || !isNumericType(type)) return drawContent();
+      ctx.fillStyle =
+        (isSelected ? theme.textHeaderSelected : theme.textHeader) ?? "";
+      ctx.textAlign = "right";
+      ctx.fillText(
+        column.title,
+        rect.x + rect.width - (theme.cellHorizontalPadding ?? 8),
+        rect.y + rect.height / 2 + getMiddleCenterBias(ctx, ctx.font),
+      );
+      ctx.textAlign = "left";
+    },
+    [columns],
   );
 
   const getCellContent = ([col, row]: Item): GridCell => {
@@ -250,6 +280,7 @@ export function Grid({
         height="100%"
         rowHeight={34}
         headerHeight={32}
+        drawHeader={drawHeader}
         rowMarkers="none"
         rowSelect="single"
         rowSelectionMode="auto"

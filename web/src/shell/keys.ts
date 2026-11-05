@@ -61,12 +61,13 @@ export const useLegend = () =>
 let sequenceUntil = 0;
 
 /**
- * Binds single-key shortcuts while mounted. They never fire while typing
- * or with Cmd, Ctrl or Alt held.
+ * Binds single-key shortcuts while mounted. They never fire while typing,
+ * with Cmd, Ctrl or Alt held, or behind an open modal (a confirmation).
  */
 export function useShortcuts(shortcuts: Shortcut[]) {
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || isTyping(event)) return;
+    if (document.querySelector("dialog:modal")) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const key = event.key.toLowerCase();
     const inSequence = Date.now() < sequenceUntil;

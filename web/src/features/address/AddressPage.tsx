@@ -31,9 +31,13 @@ export function AddressPage() {
       <Page width="max-w-[900px]" gap="gap-5">
         <Panel>
           <table>
-            <tbody>
+            {/* Labels sit level with their controls. */}
+            <tbody className="[&>tr>td]:align-middle">
               <tr>
-                <td className="w-36 py-2.5 text-faint">Public address</td>
+                {/* Level with the input, above its hint line. */}
+                <td className="w-36 pt-3 align-top! text-faint">
+                  Public address
+                </td>
                 <td className="py-1.5">
                   <HostnameForm address={address} />
                 </td>
@@ -90,9 +94,7 @@ export function AddressPage() {
             </tbody>
           </table>
         </Panel>
-        <p className="text-faint">
-          Invite links and GitHub commit statuses use the public address once
-          set.{" "}
+        <p className="text-mut">
           <span className="font-mono">dock login {address.url ?? "<url>"}</span>{" "}
           works from anywhere once it is active. Logins are rate limited per
           visitor.
@@ -102,71 +104,90 @@ export function AddressPage() {
   );
 }
 
-/** The hostname, saved with Save; Remove asks first. */
+/**
+ * The hostname, saved with Save (shown while it differs from the saved
+ * one); Remove asks first. An empty Save says what to type.
+ */
 function HostnameForm({ address }: { address: Address }) {
   const set = useSetAddress();
   const remove = useRemoveAddress();
   const [draft, setDraft] = useState(address.hostname);
   const [asking, setAsking] = useState(false);
+  const [empty, setEmpty] = useState(false);
   const hostname = draft.trim().toLowerCase();
-  if (asking) {
-    return (
-      <Confirm
-        danger
-        action={`Remove ${address.hostname}`}
-        cli="dock address remove"
-        pending={remove.isPending}
-        error={remove.error}
-        onConfirm={() =>
-          remove.mutate(undefined, {
-            onSuccess: () => {
-              setDraft("");
-              setAsking(false);
-            },
-          })
-        }
-        onCancel={() => setAsking(false)}
-      >
-        Stop serving Dock at <b className="font-semibold">{address.hostname}</b>
-        ?{" "}
-        <span className="text-mut">
-          Sessions and CLI logins there stop working. Dock stays at{" "}
-          {address.private_url}.
-        </span>
-      </Confirm>
-    );
-  }
+  const changed = hostname !== address.hostname;
   return (
     <form
-      className="flex flex-wrap items-center gap-2"
+      className="flex flex-col gap-1"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!hostname) return setEmpty(true);
         set.mutate(hostname);
       }}
     >
-      <input
-        aria-label="Public address"
-        placeholder="dock.example.com"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        spellCheck={false}
-        className="field min-w-0 flex-[1_1_240px] py-[5px] font-mono"
-      />
-      <Act
-        small
-        primary
-        type="submit"
-        cli={`dock address set ${hostname || "<hostname>"}`}
-        disabled={!hostname || hostname === address.hostname || set.isPending}
-      >
-        Save
-      </Act>
-      {address.hostname && (
-        <Button small onClick={() => setAsking(true)}>
-          Remove
-        </Button>
+      <span className="flex flex-wrap items-center gap-2">
+        <input
+          aria-label="Public address"
+          placeholder="dock.example.com"
+          value={draft}
+          onChange={(e) => {
+            setEmpty(false);
+            setDraft(e.target.value);
+          }}
+          spellCheck={false}
+          className="field min-w-0 flex-[1_1_240px] py-[5px] font-mono"
+        />
+        {(changed || !address.hostname) && (
+          <Act
+            small
+            primary
+            type="submit"
+            cli={`dock address set ${hostname || "<hostname>"}`}
+            disabled={set.isPending}
+          >
+            Save
+          </Act>
+        )}
+        {address.hostname && (
+          <Button small onClick={() => setAsking(true)}>
+            Remove
+          </Button>
+        )}
+      </span>
+      {empty ? (
+        <span role="alert" className="text-xs text-fail">
+          Type the name Dock answers at, like dock.example.com.
+        </span>
+      ) : (
+        <span className="text-xs text-mut">
+          Needed for invite links and GitHub pushes.
+        </span>
       )}
       <ErrorText error={set.error} />
+      {asking && (
+        <Confirm
+          danger
+          action={`Remove ${address.hostname}`}
+          cli="dock address remove"
+          pending={remove.isPending}
+          error={remove.error}
+          onConfirm={() =>
+            remove.mutate(undefined, {
+              onSuccess: () => {
+                setDraft("");
+                setAsking(false);
+              },
+            })
+          }
+          onCancel={() => {
+            remove.reset();
+            setAsking(false);
+          }}
+        >
+          Dock stops answering at <b>{address.hostname}</b>: sessions and CLI
+          logins there stop working. It stays at {address.private_url}.
+        </Confirm>
+      )}
     </form>
   );
 }

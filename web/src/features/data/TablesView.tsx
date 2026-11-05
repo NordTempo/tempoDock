@@ -192,7 +192,7 @@ export function TablesView({
               <span className="mr-2 hidden font-mono text-2xs text-(--g-mut) xl:inline">
                 {rowsCli}
               </span>
-              <Btn aria-expanded={adding} onClick={() => setAdding(!adding)}>
+              <Btn aria-pressed={adding} onClick={() => setAdding(!adding)}>
                 Filter <Kbd>F</Kbd>
               </Btn>
               {onEditing && table.editable && (
@@ -203,7 +203,6 @@ export function TablesView({
             </>
           }
         >
-          {!editing && <span className="g-tag">read only</span>}
           <span className="text-xs text-(--g-mut)">
             {count}
             {canCount && (

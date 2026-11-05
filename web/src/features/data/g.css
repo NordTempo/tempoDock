@@ -8,13 +8,18 @@
  */
 @layer components {
   .g {
-    --g-bg: #0a0a0a;
-    --g-side: #0f0f0f;
+    /* True black, like Dock: the sidebar and side panes are set off by a
+       1px line, not a lighter fill. */
+    --g-bg: #000;
+    --g-side: #000;
     --g-raise: rgba(255, 255, 255, 0.03);
     --g-raise-2: rgba(255, 255, 255, 0.05);
-    --g-hover: rgba(255, 255, 255, 0.04);
-    --g-sel: rgba(255, 255, 255, 0.07);
+    /* Hover stays quieter than the current item, which also turns white. */
+    --g-hover: rgba(255, 255, 255, 0.035);
+    --g-sel: rgba(255, 255, 255, 0.1);
     --g-pop: #191a1d;
+    /* One step up from the page: popovers. */
+    --g-panel: #0a0a0a;
     --g-line: rgba(255, 255, 255, 0.06);
     --g-edge: rgba(255, 255, 255, 0.08);
     --g-grid: rgba(255, 255, 255, 0.04);
@@ -105,8 +110,9 @@
     background: var(--g-raise-2);
   }
 
+  /* Disabled keeps its shape, faded; a title says why where it isn't obvious. */
   .g-btn:disabled {
-    opacity: 0.45;
+    opacity: 0.4;
   }
 
   .g-btn.pri {
@@ -225,17 +231,6 @@
   .g-head h1 {
     font-size: 14px;
     font-weight: 600;
-  }
-
-  /* "read only": a small bordered tag. */
-  .g-tag {
-    font-size: 11px;
-    line-height: 16px;
-    color: var(--g-dim);
-    border: 1px solid var(--g-edge);
-    border-radius: 6px;
-    padding: 1px 6px;
-    white-space: nowrap;
   }
 
   /* Filters and facts: a filled chip. */

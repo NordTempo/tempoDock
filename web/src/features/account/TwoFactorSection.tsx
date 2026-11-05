@@ -227,29 +227,6 @@ function FactorRow({
 }) {
   const remove = useRemoveFactor();
   const [asking, setAsking] = useState(false);
-  if (asking) {
-    return (
-      <Confirm
-        danger
-        action="Remove"
-        pending={remove.isPending}
-        error={remove.error}
-        onConfirm={() =>
-          remove.mutate(f.id, { onSuccess: () => setAsking(false) })
-        }
-        onCancel={() => {
-          remove.reset();
-          setAsking(false);
-        }}
-      >
-        Remove <b className="font-semibold">{f.name}</b>?{" "}
-        <span className="text-mut">
-          With no second factor left, your password alone signs you in and your
-          recovery codes stop working.
-        </span>
-      </Confirm>
-    );
-  }
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <span>{f.name}</span>
@@ -261,6 +238,24 @@ function FactorRow({
         <Button small onClick={() => setAsking(true)}>
           Remove
         </Button>
+      )}
+      {asking && (
+        <Confirm
+          danger
+          action={`Remove ${f.name}`}
+          pending={remove.isPending}
+          error={remove.error}
+          onConfirm={() =>
+            remove.mutate(f.id, { onSuccess: () => setAsking(false) })
+          }
+          onCancel={() => {
+            remove.reset();
+            setAsking(false);
+          }}
+        >
+          With no second factor left, your password alone signs you in and your
+          recovery codes stop working.
+        </Confirm>
       )}
     </span>
   );
@@ -278,30 +273,6 @@ function RecoveryCodes({
 }) {
   const create = useNewRecoveryCodes();
   const [asking, setAsking] = useState(false);
-  if (asking) {
-    return (
-      <Confirm
-        action="Make new codes"
-        pending={create.isPending}
-        error={create.error}
-        onConfirm={() =>
-          create.mutate(undefined, {
-            onSuccess: (codes) => {
-              setAsking(false);
-              onNew(codes);
-            },
-          })
-        }
-        onCancel={() => {
-          create.reset();
-          setAsking(false);
-        }}
-      >
-        Make new recovery codes?{" "}
-        <span className="text-mut">The ones you have stop working.</span>
-      </Confirm>
-    );
-  }
   return (
     <span className="flex flex-wrap items-center gap-3">
       <span className={left <= 2 ? "text-warn" : undefined}>
@@ -311,6 +282,28 @@ function RecoveryCodes({
         <Button small onClick={() => setAsking(true)}>
           New codes
         </Button>
+      )}
+      {asking && (
+        <Confirm
+          title="Make new recovery codes?"
+          action="Make new codes"
+          pending={create.isPending}
+          error={create.error}
+          onConfirm={() =>
+            create.mutate(undefined, {
+              onSuccess: (codes) => {
+                setAsking(false);
+                onNew(codes);
+              },
+            })
+          }
+          onCancel={() => {
+            create.reset();
+            setAsking(false);
+          }}
+        >
+          The codes you have now stop working.
+        </Confirm>
       )}
     </span>
   );

@@ -35,7 +35,9 @@ function Login() {
           first admin. Open it, or run{" "}
           <code className="text-(--g-text)">tempobase admin create-user</code>.
         </p>
-        <Link to="/setup">I have the code</Link>
+        <Link to="/setup" className="g-btn pri h-8 text-white!">
+          I have the code
+        </Link>
       </Entry>
     );
   }

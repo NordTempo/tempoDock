@@ -1,10 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Btn, ErrorText, Head } from "../../../src/features/data/kit";
-import { useChangePassword, useMe } from "../data/queries";
+import { useChangePassword, useLogout, useMe } from "../data/queries";
 import { minPassword } from "../shell/Entry";
 
-// Your account: who you are and your password.
+// Your account: who you are, your password, and signing out.
 export const Route = createFileRoute("/_app/settings/account")({
   component: Account,
 });
@@ -14,11 +14,27 @@ const roleNames = { viewer: "Viewer", editor: "Editor", admin: "Admin" };
 function Account() {
   const me = useMe();
   const change = useChangePassword();
+  const logout = useLogout();
+  const navigate = useNavigate();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   return (
     <>
-      <Head title="Account" />
+      <Head
+        title="Account"
+        actions={
+          <Btn
+            disabled={logout.isPending}
+            onClick={() =>
+              logout.mutate(undefined, {
+                onSuccess: () => navigate({ to: "/login" }),
+              })
+            }
+          >
+            Sign out
+          </Btn>
+        }
+      />
       <main className="flex max-w-[420px] flex-col gap-6 px-5 py-6">
         <dl className="grid grid-cols-[64px_minmax(0,1fr)] gap-y-1">
           <dt className="text-(--g-mut)">Name</dt>

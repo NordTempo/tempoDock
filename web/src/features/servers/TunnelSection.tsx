@@ -149,7 +149,7 @@ function Unmanaged({ server: s }: { server: Server }) {
           aria-label="Cloudflare connection"
           value={connection}
           onChange={(e) => setPicked(e.target.value)}
-          className="field py-[3px] font-mono"
+          className="font-mono"
         >
           {connections.map((c) => (
             <option key={c.name} value={c.name}>
