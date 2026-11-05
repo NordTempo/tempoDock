@@ -744,6 +744,13 @@ shows whether they are in step.
   ([Backups](#backups)).
 - A deploy running during the restart is marked `failed`; the previous
   release keeps serving. Deploy again afterwards.
+- Rolling back by hand (the old binary and `dock.db` from the backup the
+  update took) leaves the containers of releases deployed since then
+  running, unknown to the restored database: drift lists them. The
+  database hands out their release numbers again, so the next deploy of
+  such a service fails before changing anything, naming the container to
+  remove. Run `docker rm -f` on the containers drift lists, then restart
+  each service (`dock restart`).
 - To upgrade Caddy, re-run with `CADDY_VERSION=x.y.z`, then
   `sudo systemctl restart dock-caddy` (the script doesn't restart a running
   Caddy). Traffic blips briefly; `--resume` restores the routes. A
