@@ -185,6 +185,7 @@ type CliLogin struct {
 	ExpiresAt  time.Time
 	Status     string
 	UserID     *int64
+	TwoFactor  bool
 }
 
 type CloudflareConnection struct {
@@ -425,12 +426,13 @@ type LogDrain struct {
 }
 
 type Org struct {
-	ID              int64
-	Slug            string
-	Name            string
-	CreatedAt       time.Time
-	LockProduction  int64
-	RequestTtlHours int64
+	ID               int64
+	Slug             string
+	Name             string
+	CreatedAt        time.Time
+	LockProduction   int64
+	RequestTtlHours  int64
+	RequireTwoFactor bool
 }
 
 type OrgInvite struct {
@@ -462,11 +464,12 @@ type OrgVariable struct {
 }
 
 type PlatformSetting struct {
-	ID                int64
-	PublicHost        string
-	UpdatedBy         string
-	UpdatedAt         time.Time
-	RegistryStorageID *int64
+	ID                 int64
+	PublicHost         string
+	UpdatedBy          string
+	UpdatedAt          time.Time
+	RegistryStorageID  *int64
+	OperatorsTwoFactor bool
 }
 
 type Preview struct {
@@ -514,6 +517,12 @@ type ProjectPlacement struct {
 	ServerID  int64
 	Pinned    bool
 	CreatedAt time.Time
+}
+
+type RecoveryCode struct {
+	UserID int64
+	Hash   string
+	UsedAt *time.Time
 }
 
 type RegistryCredential struct {
@@ -707,11 +716,15 @@ type ServiceStat struct {
 }
 
 type Session struct {
-	ID        int64
-	UserID    int64
-	Hash      string
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	ID         int64
+	UserID     int64
+	Hash       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	Factor     string
+	Pending    bool
+	Attempts   int64
+	VerifiedAt *time.Time
 }
 
 type Site struct {
@@ -801,6 +814,7 @@ type Token struct {
 	UserID            *int64
 	OrgID             *int64
 	Operator          bool
+	TwoFactor         bool
 }
 
 type TrafficPath struct {
@@ -845,13 +859,27 @@ type UptimeStat struct {
 }
 
 type User struct {
+	ID             int64
+	Email          string
+	Name           string
+	PasswordHash   string
+	CreatedAt      time.Time
+	DisabledAt     *time.Time
+	Operator       bool
+	FactorFailures int64
+	FactorFailedAt *time.Time
+}
+
+type UserFactor struct {
 	ID           int64
-	Email        string
+	UserID       int64
+	Kind         string
 	Name         string
-	PasswordHash string
+	CredentialID []byte
+	Secret       []byte
+	LastStep     int64
 	CreatedAt    time.Time
-	DisabledAt   *time.Time
-	Operator     bool
+	LastUsedAt   *time.Time
 }
 
 type Variable struct {

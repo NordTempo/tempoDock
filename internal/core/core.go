@@ -152,6 +152,12 @@ type Core struct {
 	logDrains *drainManager
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
+	// ceremonies are the passkey challenges and authenticator app setups
+	// in flight; operators2FA is the platform's requirement of a second
+	// factor of operators (twofactor.go, passkeys.go). Second factors
+	// spend from loginLimit like passwords.
+	ceremonies   *ceremonies
+	operators2FA atomic.Bool
 
 	// data is the database panel's engine and panel the shared panel
 	// over it, with Dock as its host (data_host.go).
@@ -236,6 +242,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		loginLimit: httpkit.NewLoginLimiter(),
 		bcryptSem:  make(chan struct{}, 2),
 		cliLogins:  newCLILogins(),
+		ceremonies: newCeremonies(),
 		backups:    newBackupState(),
 		snapshots:  newSnapshotState(),
 		uptime:     newUptimeState(),
@@ -271,6 +278,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		return nil, fmt.Errorf("bind sealed values to where they are stored (ADR 0041): %w", err)
 	}
 	if err := c.registerLocalServer(ctx); err != nil {
+		return nil, err
+	}
+	if err := c.loadPlatformSecurity(ctx); err != nil {
 		return nil, err
 	}
 	if err := c.loadPublicHost(ctx); err != nil {

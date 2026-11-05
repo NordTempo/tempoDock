@@ -12,14 +12,19 @@ export const Route = createFileRoute("/_app")({
       throw redirect({ to: "/login", search: { redirect: location.href } });
     }
     // The shell shows one organization's projects; with none, there's a
-    // page saying so (and invite links work outside the shell).
+    // page saying so (and invite links work outside the shell). An org
+    // that requires a second factor the session didn't use leaves only
+    // the account page, to add one (ADR 0057).
     if (!session.org && session.kind === "user") {
-      throw redirect({ to: "/no-org" });
+      if (!session.two_factor_required) throw redirect({ to: "/no-org" });
+      if (location.pathname !== "/account") throw redirect({ to: "/account" });
     }
   },
   // The sidebar tree and palette show every project's services, and the
   // org switcher the caller's organizations.
   loader: async ({ context: { queryClient } }) => {
+    const session = await queryClient.ensureQueryData(queries.session());
+    if (session?.kind === "user" && !session.org) return;
     const [projects] = await Promise.all([
       queryClient.ensureQueryData(queries.projects()),
       queryClient.ensureQueryData(queries.servers()),

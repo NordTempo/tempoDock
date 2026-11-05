@@ -12,6 +12,8 @@ export const Route = createFileRoute("/no-org")({
     );
     if (!session) throw redirect({ to: "/login" });
     if (session.org) throw redirect({ to: "/" });
+    // Not orgless: their org needs a second factor (ADR 0057).
+    if (session.two_factor_required) throw redirect({ to: "/account" });
   },
   component: NoOrg,
 });

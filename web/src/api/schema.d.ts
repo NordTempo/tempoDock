@@ -395,9 +395,29 @@ export interface paths {
         put?: never;
         /**
          * Log in to the UI
-         * @description Sets an HttpOnly session cookie.
+         * @description Sets an HttpOnly session cookie, or, for a user with a second factor, a short-lived cookie for the pending sign-in and lists the factors to finish it with at POST /auth/login/verify.
          */
         post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish signing in with a second factor
+         * @description Finishes the sign-in POST /auth/login left pending (its cookie) with an authenticator app code or a recovery code, and sets the session cookie. A few wrong factors end the pending sign-in.
+         */
+        post: operations["login-verify"];
         delete?: never;
         options?: never;
         head?: never;
@@ -841,6 +861,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/factors/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a second factor
+         * @description Removing the last turns two-factor sign-in off.
+         */
+        delete: operations["remove-factor"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/password": {
         parameters: {
             query?: never;
@@ -855,6 +895,46 @@ export interface paths {
          * @description Users, from a UI session or a `dock login` token (API tokens have no password). Ends all your sessions and revokes your other `dock login` tokens; a session caller gets a fresh session cookie, a token caller keeps its token.
          */
         post: operations["change-password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/reauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm it's you
+         * @description A step-up for sensitive actions (answers with code reauth_required): with an authenticator app code, or the password for users without a second factor. Covers the session for 15 minutes.
+         */
+        post: operations["reauth"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create new recovery codes
+         * @description Shown once; the old ones stop working.
+         */
+        post: operations["new-recovery-codes"];
         delete?: never;
         options?: never;
         head?: never;
@@ -893,6 +973,63 @@ export interface paths {
          * @description Your `dock login` tokens and the tokens you created in the organization. Users only, any role.
          */
         get: operations["list-own-tokens"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/totp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start adding an authenticator app
+         * @description Returns a new key; POST /me/totp/confirm with a code from the app keeps it.
+         */
+        post: operations["start-totp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/totp/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add an authenticator app
+         * @description Your first second factor also returns recovery codes, once, and ends your other sessions.
+         */
+        post: operations["add-totp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your second factors */
+        get: operations["get-two-factor"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1105,6 +1242,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/org/two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Require two-factor sign-in of members
+         * @description Members whose sign-in used no second factor can't act in the organization until they add one. Unlimited admins; turning it on needs your own sign-in to have used one.
+         */
+        put: operations["set-org-two-factor"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/org/variables": {
         parameters: {
             query?: never;
@@ -1187,6 +1344,30 @@ export interface paths {
          * @description With you as its admin. Users only.
          */
         post: operations["create-org"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The platform's sign-in policy
+         * @description Operators only.
+         */
+        get: operations["get-platform-security"];
+        /**
+         * Change the platform's sign-in policy
+         * @description Operators only. Requiring two-factor sign-in of operators needs your own sign-in to have used one.
+         */
+        put: operations["set-platform-security"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4006,6 +4187,10 @@ export interface components {
             name: string;
             tunnel?: boolean;
         };
+        AddTOTPRequest: {
+            ceremony: string;
+            code: string;
+        };
         AddUptimeCheckRequest: {
             /** @description A status code, or 2xx or 3xx; default 200 */
             expect_status?: string;
@@ -5258,6 +5443,21 @@ export interface components {
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
         };
+        Factor: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "totp";
+            /** Format: date-time */
+            last_used_at?: string;
+            name: string;
+        };
+        FactorAdded: {
+            factor: components["schemas"]["Factor"];
+            recovery_codes?: string[] | null;
+        };
         Funnel: {
             name: string;
             steps: components["schemas"]["GoalStep"][] | null;
@@ -5544,6 +5744,10 @@ export interface components {
             email: string;
             password: string;
         };
+        LoginResult: {
+            me?: components["schemas"]["Me"];
+            second_factor?: ("totp" | "recovery")[] | null;
+        };
         Me: {
             email?: string;
             environment?: string;
@@ -5555,6 +5759,8 @@ export interface components {
             project?: string;
             /** @enum {string} */
             scope?: "read" | "deploy" | "admin";
+            two_factor?: string;
+            two_factor_required?: string;
         };
         MemoryPart: {
             /** Format: int64 */
@@ -5594,6 +5800,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             name: string;
+            require_two_factor: boolean;
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
             /** @example acme */
@@ -5653,6 +5860,9 @@ export interface components {
             note?: string;
             old?: string;
             service?: string;
+        };
+        PlatformSecurity: {
+            operators_two_factor: boolean;
         };
         Preview: {
             author: string;
@@ -5770,6 +5980,9 @@ export interface components {
             title: string;
             /** @description The pull request on GitHub */
             url: string;
+        };
+        RecoveryCodes: {
+            codes: string[] | null;
         };
         Registry: {
             collect_pending: boolean;
@@ -5999,6 +6212,9 @@ export interface components {
             skew_ms: number;
             /** Format: date-time */
             start: string;
+        };
+        RequireTwoFactorRequest: {
+            require: boolean;
         };
         ResetPasswordRequest: {
             /** @description New password; omit to generate one */
@@ -6891,6 +7107,11 @@ export interface components {
             updated_by: string;
             used_by: string[] | null;
         };
+        TOTPSetup: {
+            ceremony: string;
+            secret: string;
+            uri: string;
+        };
         TemplateInfo: {
             description: string;
             exports: string[] | null;
@@ -6994,6 +7215,13 @@ export interface components {
             /** Format: date-time */
             since: string;
             version: string;
+        };
+        TwoFactor: {
+            factors: components["schemas"]["Factor"][] | null;
+            /** Format: date-time */
+            reauth_until?: string;
+            /** Format: int64 */
+            recovery_codes: number;
         };
         UnlockEnvironmentRequest: {
             /**
@@ -7229,6 +7457,7 @@ export interface components {
             sessions: number;
             /** Format: int64 */
             tokens: number;
+            two_factor: boolean;
         };
         Variable: {
             key: string;
@@ -7270,6 +7499,11 @@ export interface components {
             /** @description Empty for a shared (environment-level) variable */
             service?: string;
             value: string;
+        };
+        Verification: {
+            code?: string;
+            password?: string;
+            recovery_code?: string;
         };
         Version: {
             /** @example v1 */
@@ -9358,11 +9592,92 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Me"];
+                    "application/json": components["schemas"]["LoginResult"];
                 };
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "login-verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                dock_login?: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Verification"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Gone */
+            410: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11754,6 +12069,101 @@ export interface operations {
             };
         };
     };
+    "remove-factor": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "change-password": {
         parameters: {
             query?: {
@@ -11816,6 +12226,171 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    reauth: {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Verification"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "new-recovery-codes": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryCodes"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11937,6 +12512,268 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Token"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "start-totp": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TOTPSetup"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "add-totp": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddTOTPRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FactorAdded"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-two-factor": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactor"];
                 };
             };
             /** @description Bad Request */
@@ -13332,6 +14169,105 @@ export interface operations {
             };
         };
     };
+    "set-org-two-factor": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequireTwoFactorRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Org"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-org-variables": {
         parameters: {
             query?: {
@@ -13813,6 +14749,182 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Org"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-platform-security": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSecurity"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-platform-security": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlatformSecurity"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlatformSecurity"];
                 };
             };
             /** @description Bad Request */

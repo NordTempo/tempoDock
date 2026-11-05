@@ -21,25 +21,38 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const createSession = `-- name: CreateSession :exec
-INSERT INTO sessions (user_id, hash, expires_at) VALUES (?, ?, ?)
+const createSession = `-- name: CreateSession :one
+INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at) VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id
 `
 
 type CreateSessionParams struct {
-	UserID    int64
-	Hash      string
-	ExpiresAt time.Time
+	UserID     int64
+	Hash       string
+	ExpiresAt  time.Time
+	Factor     string
+	Pending    bool
+	VerifiedAt *time.Time
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
-	_, err := q.db.ExecContext(ctx, createSession, arg.UserID, arg.Hash, arg.ExpiresAt)
-	return err
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, createSession,
+		arg.UserID,
+		arg.Hash,
+		arg.ExpiresAt,
+		arg.Factor,
+		arg.Pending,
+		arg.VerifiedAt,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createToken = `-- name: CreateToken :one
 INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, user_id, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor
 `
 
 type CreateTokenParams struct {
@@ -88,6 +101,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.UserID,
 		&i.OrgID,
 		&i.Operator,
+		&i.TwoFactor,
 	)
 	return i, err
 }
@@ -95,7 +109,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, name, password_hash, operator)
 VALUES (?, ?, ?, ?)
-RETURNING id, email, name, password_hash, created_at, disabled_at, operator
+RETURNING id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at
 `
 
 type CreateUserParams struct {
@@ -121,6 +135,8 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
 	)
 	return i, err
 }
@@ -131,6 +147,21 @@ DELETE FROM sessions WHERE expires_at < +?
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt time.Time) error {
 	_, err := q.db.ExecContext(ctx, deleteExpiredSessions, expiresAt)
+	return err
+}
+
+const deleteOtherSessions = `-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = +?1 AND id != +?2
+`
+
+type DeleteOtherSessionsParams struct {
+	UserID int64
+	Keep   int64
+}
+
+// DeleteOtherSessions ends a user's sessions except one (keep).
+func (q *Queries) DeleteOtherSessions(ctx context.Context, arg DeleteOtherSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteOtherSessions, arg.UserID, arg.Keep)
 	return err
 }
 
@@ -162,16 +193,18 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, sessions.expires_at AS session_expires_at
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at
 FROM sessions JOIN users ON users.id = sessions.user_id
 WHERE sessions.hash = +?
 `
 
 type GetSessionUserRow struct {
-	User             User
-	SessionExpiresAt time.Time
+	User    User
+	Session Session
 }
 
+// GetSessionUser is a session with its user, pending or not: callers
+// check.
 func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUserRow, error) {
 	row := q.db.QueryRowContext(ctx, getSessionUser, hash)
 	var i GetSessionUserRow
@@ -183,13 +216,23 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.User.CreatedAt,
 		&i.User.DisabledAt,
 		&i.User.Operator,
-		&i.SessionExpiresAt,
+		&i.User.FactorFailures,
+		&i.User.FactorFailedAt,
+		&i.Session.ID,
+		&i.Session.UserID,
+		&i.Session.Hash,
+		&i.Session.CreatedAt,
+		&i.Session.ExpiresAt,
+		&i.Session.Factor,
+		&i.Session.Pending,
+		&i.Session.Attempts,
+		&i.Session.VerifiedAt,
 	)
 	return i, err
 }
 
 const getToken = `-- name: GetToken :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator FROM tokens WHERE id = +?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor FROM tokens WHERE id = +?
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
@@ -214,12 +257,13 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 		&i.UserID,
 		&i.OrgID,
 		&i.Operator,
+		&i.TwoFactor,
 	)
 	return i, err
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, users.email AS user_email, users.operator AS user_operator,
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, users.email AS user_email, users.operator AS user_operator,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.hash = +?
@@ -258,6 +302,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 		&i.Token.UserID,
 		&i.Token.OrgID,
 		&i.Token.Operator,
+		&i.Token.TwoFactor,
 		&i.UserEmail,
 		&i.UserOperator,
 		&i.UserDisabledAt,
@@ -267,7 +312,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 }
 
 const getTokenByIDWithOwner = `-- name: GetTokenByIDWithOwner :one
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, users.email AS user_email, users.operator AS user_operator,
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, users.email AS user_email, users.operator AS user_operator,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.id = +?
@@ -305,6 +350,7 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 		&i.Token.UserID,
 		&i.Token.OrgID,
 		&i.Token.Operator,
+		&i.Token.TwoFactor,
 		&i.UserEmail,
 		&i.UserOperator,
 		&i.UserDisabledAt,
@@ -314,7 +360,7 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, name, password_hash, created_at, disabled_at, operator FROM users WHERE id = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at FROM users WHERE id = +?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -328,12 +374,14 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, created_at, disabled_at, operator FROM users WHERE email = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at FROM users WHERE email = +?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -347,15 +395,18 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.DisabledAt,
 		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
 	)
 	return i, err
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, org_members.role,
-    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1) AS INTEGER) AS sessions,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, org_members.role,
+    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1 AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
-        AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens
+        AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens,
+    EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
 FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +?2
 ORDER BY org_members.user_id
@@ -367,10 +418,11 @@ type ListOrgMembersParams struct {
 }
 
 type ListOrgMembersRow struct {
-	User     User
-	Role     string
-	Sessions int64
-	Tokens   int64
+	User      User
+	Role      string
+	Sessions  int64
+	Tokens    int64
+	TwoFactor bool
 }
 
 // ListOrgMembers is an org's users with their role, live sessions and
@@ -393,9 +445,12 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 			&i.User.CreatedAt,
 			&i.User.DisabledAt,
 			&i.User.Operator,
+			&i.User.FactorFailures,
+			&i.User.FactorFailedAt,
 			&i.Role,
 			&i.Sessions,
 			&i.Tokens,
+			&i.TwoFactor,
 		); err != nil {
 			return nil, err
 		}
@@ -411,9 +466,9 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 }
 
 const listOrgTokens = `-- name: ListOrgTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator FROM tokens WHERE tokens.org_id = +?1
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor FROM tokens WHERE tokens.org_id = +?1
 UNION ALL
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
 WHERE org_members.org_id = +?1 AND tokens.origin = 'cli_login'
 `
 
@@ -447,6 +502,7 @@ func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, err
 			&i.UserID,
 			&i.OrgID,
 			&i.Operator,
+			&i.TwoFactor,
 		); err != nil {
 			return nil, err
 		}
@@ -462,7 +518,7 @@ func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, err
 }
 
 const listUserTokens = `-- name: ListUserTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator FROM tokens WHERE user_id = +?1
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor FROM tokens WHERE user_id = +?1
     AND (origin = 'cli_login' OR org_id = +?2)
 ORDER BY id
 `
@@ -502,6 +558,7 @@ func (q *Queries) ListUserTokens(ctx context.Context, arg ListUserTokensParams) 
 			&i.UserID,
 			&i.OrgID,
 			&i.Operator,
+			&i.TwoFactor,
 		); err != nil {
 			return nil, err
 		}
@@ -566,7 +623,7 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 }
 
 const setUserPassword = `-- name: SetUserPassword :exec
-UPDATE users SET password_hash = ? WHERE id = +?
+UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?
 `
 
 type SetUserPasswordParams struct {
@@ -574,6 +631,7 @@ type SetUserPasswordParams struct {
 	ID           int64
 }
 
+// SetUserPassword also lifts a lock from wrong second factors (ADR 0057).
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
 	return err

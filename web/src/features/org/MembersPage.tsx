@@ -11,6 +11,7 @@ import {
   Confirm,
   CopyButton,
   ErrorText,
+  Glyph,
   Page,
   PageBar,
   Panel,
@@ -57,6 +58,8 @@ type Link = { email: string; url: string };
 
 function Members({ org }: { org: string }) {
   const members = useSuspenseQuery(orgQueries.members()).data;
+  const required = useSuspenseQuery(orgQueries.org()).data.require_two_factor;
+  const without = members.filter((u) => !u.two_factor).length;
   const invites = useSuspenseQuery(orgQueries.invites()).data;
   const me = useSession();
   const [inviting, setInviting] = useState(false);
@@ -70,6 +73,7 @@ function Members({ org }: { org: string }) {
           <span className="text-xs text-faint">
             {plural(members.length, "person", "people")}
             {invites.length > 0 && ` · ${invites.length} invited`}
+            {without > 0 && ` · ${without} without two-factor`}
           </span>
         }
         actions={
@@ -101,6 +105,9 @@ function Members({ org }: { org: string }) {
                   <tr>
                     <th>Person</th>
                     <th>Role</th>
+                    <th title="Whether they sign in with a second factor">
+                      Two-factor
+                    </th>
                     <th>Access</th>
                     <th>Since</th>
                     <th />
@@ -111,6 +118,7 @@ function Members({ org }: { org: string }) {
                     <MemberRow
                       key={u.id}
                       member={u}
+                      required={required}
                       you={me?.email === u.email}
                     />
                   ))}
@@ -298,7 +306,16 @@ const signedIn = (u: User) =>
     .filter(Boolean)
     .join(" · ");
 
-function MemberRow({ member, you }: { member: User; you: boolean }) {
+function MemberRow({
+  member,
+  required,
+  you,
+}: {
+  member: User;
+  /** The org requires a second factor (ADR 0057): those without can't act here. */
+  required: boolean;
+  you: boolean;
+}) {
   const { id, email, name, role } = member;
   const setRole = useSetMemberRole();
   const remove = useRemoveMember();
@@ -306,7 +323,7 @@ function MemberRow({ member, you }: { member: User; you: boolean }) {
   if (asking) {
     return (
       <tr>
-        <td colSpan={5} className="py-2">
+        <td colSpan={6} className="py-2">
           <Confirm
             danger
             action={`Remove ${email}`}
@@ -351,6 +368,20 @@ function MemberRow({ member, you }: { member: User; you: boolean }) {
         </CliHint>
         <ErrorText error={setRole.error} />
       </td>
+      <td className="py-2">
+        {member.two_factor ? (
+          <span className="text-ok">
+            <Glyph char="●" /> on
+          </span>
+        ) : (
+          <span
+            className={required ? "text-warn" : "text-faint"}
+            title={required ? "Can't act here until they add one" : undefined}
+          >
+            <Glyph char="○" /> off
+          </span>
+        )}
+      </td>
       <td className={`py-2 ${access ? "text-mut" : "text-faint"}`}>
         {access || "none"}
       </td>
@@ -381,6 +412,7 @@ function InviteRow({ invite }: { invite: Invite }) {
         </span>
       </td>
       <td className="py-2 text-mut">{role}</td>
+      <td />
       <td />
       <td className="py-2 text-faint">
         {invite.expired ? "expired" : `until ${day(expires_at)}`}

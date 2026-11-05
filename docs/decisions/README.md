@@ -64,6 +64,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0054](0054-scheduled-jobs.md) | Scheduled jobs (cron) | accepted |
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted |
 | [0056](0056-preview-environments.md) | Preview environments per pull request | accepted |
+| [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
 
 ## Template
 

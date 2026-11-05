@@ -13,6 +13,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Previews](previews.md) | An environment per pull request, cloned from staging, archived when it closes |
 | [Data](data.md) | Browsing, querying and changing database data; the data access policy |
 | [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service |
+| [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |
 | [API](api.md) | Auth, OpenAPI spec, event stream, errors, curl examples |
 
@@ -36,12 +37,17 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 
 | Area | Commands |
 |---|---|
-| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
+| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock me password\|two-factor`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
 | Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|export\|archive\|pin`, `dock apply FILE`, `dock import compose`, `dock environment list\|create\|clone\|previews\|move`, `dock service list\|create\|show\|update\|archive` |
 | Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart`, `dock git connect\|status\|deploy\|disconnect`, `dock github status\|app\|install\|assign\|repos` |
 | Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
 | Domains | `dock domain add\|list\|remove\|generate` |
 | Databases and backups | `dock service create NAME --template postgres\|redis`, `dock backup list\|run\|restore\|schedule\|status\|configure` |
 | Data | `dock db status\|setup\|tables\|schema\|rows\|query\|history\|saved\|changes\|apply\|policy\|sensitive` |
+<<<<<<< HEAD
 | Admin | `dock token list\|create\|update\|revoke`, `dock user list` (accounts are managed in the web UI), `dock audit`, `dock server list\|show\|update`, `dock address` |
 | On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config`, `dock admin backup\|restore`, `dock node set-control-plane` |
+=======
+| Admin | `dock token list\|create\|update\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock audit`, `dock server list\|show\|update`, `dock address`, `dock org two-factor`, `dock security` |
+| On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config`, `dock admin backup\|restore`, `dock admin reset-2fa`, `dock node set-control-plane` |
+>>>>>>> f91b4f23 (feat: two-factor sign-in with authenticator apps, recovery codes and step-ups)

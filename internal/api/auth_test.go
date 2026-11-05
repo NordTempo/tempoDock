@@ -38,10 +38,7 @@ func (f *fixture) as(cookie *http.Cookie, method, path string, body any) (result
 func (f *fixture) loginAs(email, password string) (result, *http.Cookie) {
 	f.t.Helper()
 	resp, _ := f.do("", "POST", "/api/v1/auth/login", apitypes.LoginRequest{Email: email, Password: password})
-	if cs := resp.Cookies(); len(cs) == 1 {
-		return resp, cs[0]
-	}
-	return resp, nil
+	return resp, resp.session()
 }
 
 func TestLoginIsRateLimitedAndAudited(t *testing.T) {
