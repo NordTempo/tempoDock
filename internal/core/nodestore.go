@@ -369,7 +369,7 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	c.kickDomains()
 	c.kickBackups() // overdue backups run now
 	c.followServerDrains(ctx, serverID)
-	c.kickJobs() // and overdue jobs
+	c.kickJobs()              // and overdue jobs
 	c.resumeMoves(ctx, false) // a move may have waited for it
 }
 
