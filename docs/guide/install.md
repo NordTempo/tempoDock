@@ -706,6 +706,11 @@ the control plane restarts. What happens
 
 Everything is audited as platform events (`dock audit --platform`).
 
+Coming from v0.14 or v0.23? Read
+[Upgrading from 0.14 or 0.23](../upgrading/0.14-and-0.23-to-latest.md)
+first: services that keep data in an anonymous Docker volume lose it on
+their first restart after the update.
+
 **The repository is private**, so the control plane needs a token that
 can read its releases, e.g. a fine-grained token with read access to its
 contents:
