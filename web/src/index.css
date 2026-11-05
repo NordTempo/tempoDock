@@ -136,7 +136,7 @@
   h2,
   h3 {
     letter-spacing: -0.005em;
-    word-spacing: 0.07em;
+    word-spacing: 0.12em;
   }
 
   /* Links read as text; ones inside running text are blue. */

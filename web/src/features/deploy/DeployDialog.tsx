@@ -450,13 +450,11 @@ function ImageDeploy({
   const client = useQueryClient();
   const [image, setImage] = useState(current ?? "");
   const wanted = image.trim();
-  // The newest release, when it failed with this very image: say so
-  // before the same deploy runs again.
-  const latest = useReleases(ref, 1)[0];
+  // The newest release of this very image, when it failed: say so before
+  // the same deploy runs again.
+  const lastOfImage = useReleases(ref).find((r) => r.image_ref === wanted);
   const failedBefore =
-    latest?.status === "failed" && latest.image_ref === wanted
-      ? latest
-      : undefined;
+    lastOfImage?.status === "failed" ? lastOfImage : undefined;
   const deploy = useMutation({
     mutationFn: (img: string) =>
       body(
