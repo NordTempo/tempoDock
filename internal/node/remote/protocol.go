@@ -138,7 +138,7 @@ const (
 	opEnsureNetwork = "ensure-network"
 	opRemoveNetwork = "remove-network" // protocol 3
 	opEnsureVolume  = "ensure-volume"
-	opRemoveVolume  = "remove-volume" // protocol 19
+	opRemoveVolume  = "remove-volume" // protocol 20
 	opStart         = "start"
 	opStop          = "stop"
 	opRestart       = "restart"
