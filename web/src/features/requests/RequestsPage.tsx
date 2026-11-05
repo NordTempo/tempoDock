@@ -179,6 +179,9 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
         </Row>
         {r.comment && <Row label="Comment">{r.comment}</Row>}
       </dl>
+      {r.changes && r.changes.length > 0 && (
+        <VariableDiff changes={r.changes} />
+      )}
       {r.args !== undefined && r.args !== null && (
         <pre className="overflow-auto rounded-panel border border-line bg-page px-3 py-2.5 font-mono text-2xs leading-relaxed text-sec">
           {JSON.stringify(r.args, null, 2)}
@@ -202,6 +205,40 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
       )}
       {status === "pending" && <Decide id={r.id} />}
     </div>
+  );
+}
+
+// VariableDiff is what approving a variables request would change now
+// (GetRequest's changes, admins only): each key's current value against
+// the requested one.
+function VariableDiff({
+  changes,
+}: {
+  changes: NonNullable<AccessRequest["changes"]>;
+}) {
+  return (
+    <ul className="flex flex-col gap-0.5 font-mono text-2xs leading-relaxed">
+      {changes.map((c) => (
+        <li key={`${c.service ?? ""}:${c.key}`} className="break-all">
+          <span className="text-mut">
+            {c.scope === "environment" ? "env" : c.service}
+          </span>{" "}
+          {c.key}{" "}
+          {c.action === "remove" ? (
+            <span className="text-fail line-through">{c.old}</span>
+          ) : (
+            <>
+              {c.old !== undefined && (
+                <>
+                  <span className="text-fail">{c.old}</span> →{" "}
+                </>
+              )}
+              <span className="text-ok">{c.new}</span>
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

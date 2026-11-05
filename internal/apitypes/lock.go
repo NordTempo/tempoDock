@@ -91,6 +91,10 @@ type AccessRequest struct {
 	// ChangesSince counts the environment's audited changes after the
 	// request was asked (single requests only).
 	ChangesSince *int `json:"changes_since,omitempty"`
+	// Changes is what approving a request that sets or unsets variables
+	// would change now: each key's current (live, or staged) value
+	// against the requested one. Admins only, single requests only.
+	Changes []VariableChange `json:"changes,omitempty"`
 }
 
 // DecideAccessRequest approves or rejects a request.
