@@ -165,6 +165,43 @@ func TestLogDrainDeliversLabelledLines(t *testing.T) {
 	eventually(t, "followers to stop", func() bool { return h.followed(h.containerID(web, 2)) == false })
 }
 
+// A container that starts again before its old log stream has ended
+// (the follower is still registered) is followed once that stream ends.
+func TestLogDrainFollowsQuickRestart(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "nginx:1")
+	k := newDrainReceiver(h, false)
+	h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, URL: k.srv.URL})
+	ctr := h.containerID(web, 1)
+	h.rt.AddLogs(h.ctr(web, 1), "first run")
+	eventually(t, "the first line", func() bool { return len(k.texts()) == 1 })
+
+	// The new run's start event arrives while the old follower runs.
+	c, err := h.rt.Inspect(h.ctx, ctr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.c.drainContainerEvent(h.c.local.ID, node.ContainerEvent{ContainerID: ctr, Action: "start", Labels: c.Labels, Time: time.Now()})
+
+	// The old stream ends, and the container is running again (without
+	// another event) before the old follower cleans up.
+	m := h.c.logDrains
+	m.mu.Lock()
+	h.rt.Emit(node.ContainerEvent{ContainerID: ctr, Action: "die", ExitCode: 1})
+	time.Sleep(100 * time.Millisecond)
+	c.State = node.StateRunning
+	h.rt.AddContainer(c)
+	m.mu.Unlock()
+
+	eventually(t, "the restarted container to be followed", func() bool { return h.followed(ctr) })
+	h.rt.AddLogs(h.ctr(web, 1), "second run")
+	eventually(t, "the line after the restart", func() bool { return len(k.texts()) == 2 })
+	if texts := k.texts(); !slices.Equal(texts, []string{"first run", "second run"}) {
+		t.Fatalf("received %q", texts)
+	}
+}
+
 // A release's secret values are masked in what drains get, as `dock logs`
 // masks them for those who can't reveal them: a drain has no actor.
 func TestLogDrainMasksSecrets(t *testing.T) {
