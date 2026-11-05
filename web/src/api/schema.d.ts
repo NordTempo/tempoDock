@@ -3720,6 +3720,7 @@ export interface components {
         };
         AccessRequest: {
             args?: unknown;
+            changes?: components["schemas"]["VariableChange"][] | null;
             /** Format: int64 */
             changes_since?: number;
             comment?: string;

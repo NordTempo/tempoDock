@@ -77,6 +77,15 @@
         "additionalProperties": false,
         "properties": {
           "args": {},
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/VariableChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "changes_since": {
             "format": "int64",
             "type": "integer"
