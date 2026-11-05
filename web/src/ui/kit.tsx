@@ -281,16 +281,13 @@ export function Confirm({
           )}
           <ErrorText error={error} />
         </div>
-        <div className="flex items-center gap-2 border-t border-line px-5 py-3">
+        <div className="flex flex-col gap-2.5 border-t border-line px-5 py-3">
           {cli && (
-            <code
-              title={cli}
-              className="mr-auto min-w-0 truncate font-mono text-2xs text-faint"
-            >
+            <code className="font-mono text-2xs break-all text-faint">
               {cli}
             </code>
           )}
-          <span className="ml-auto flex gap-2">
+          <span className="flex justify-end gap-2">
             <Button
               data-autofocus={typed ? undefined : true}
               onClick={onCancel}
