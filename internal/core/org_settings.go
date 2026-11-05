@@ -109,6 +109,9 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 	if err != nil {
 		return apitypes.User{}, err
 	}
+	if err := c.checkAccountLock(ctx, a, "changing roles", false); err != nil {
+		return apitypes.User{}, err
+	}
 	if !validScope(req.Role) {
 		return apitypes.User{}, invalid("role must be read, deploy or admin")
 	}
@@ -179,6 +182,9 @@ func (c *Core) keepAnAdmin(ctx context.Context, orgID, userID int64, next apityp
 // for a user signed in with that email.
 func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInviteRequest) (apitypes.CreatedInvite, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "inviting people"); err != nil {
+		return apitypes.CreatedInvite{}, err
+	}
+	if err := c.checkAccountLock(ctx, a, "inviting people", false); err != nil {
 		return apitypes.CreatedInvite{}, err
 	}
 	email := strings.TrimSpace(req.Email)

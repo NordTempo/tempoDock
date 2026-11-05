@@ -78,6 +78,12 @@ environment wait as requests too: production's deploy approval. The check is cor
 operation inside an environment passes, so new actions are covered without
 code of their own.
 
+A token can't escape the lock through accounts either: while any
+environment of an organization is locked, its tokens can't create or
+re-enable users, reset passwords, invite members, change roles or create
+admin or operator tokens. A person in the web UI does those. Revoking,
+disabling, removing members and deploy or read tokens stay open.
+
 ## Every change is reversible
 
 - Code deploys and config changes both create immutable releases.

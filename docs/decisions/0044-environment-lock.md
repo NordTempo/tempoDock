@@ -79,10 +79,14 @@ reviewing a request. Saile wasn't watching live, so the agent picked:
   token as its user, which is right for data policy. For a lock it would
   leave the most common agent setup (an agent in the owner's shell)
   unguarded. Approving one's own request is one click.
-- **Not a boundary against a hostile admin token.** An unlimited admin
-  token can still manage users and tokens. The lock guards against an
-  agent's mistakes and overreach; give agents `deploy` tokens limited to
-  the environments they work in.
+- **Tokens can't escape it through accounts.** While any environment of
+  an organization is locked, its tokens can't create or re-enable users,
+  reset passwords, invite members, change roles or create admin or
+  operator tokens (`checkAccountLock`); a person in the web UI does
+  those. Revoking, disabling, removing members and deploy or read tokens
+  stay open. The lock still guards against an agent's mistakes and
+  overreach, not every hostile admin token path: give agents `deploy`
+  tokens limited to the environments they work in.
 
 ## Consequences
 
