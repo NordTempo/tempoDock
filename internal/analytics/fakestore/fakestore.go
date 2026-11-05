@@ -159,6 +159,9 @@ func (s *Store) Handler() http.Handler {
 			res.Summary.Errors += g.Count
 		}
 		res.Series, res.Summary.Visitors = s.errorSeries(q)
+		for i := range res.Groups {
+			res.Groups[i].Series = s.groupSeries(q, res.Groups[i].Group)
+		}
 		res.Summary.Sessions = res.Summary.Visitors
 		reply(w, res)
 	}))
@@ -927,6 +930,28 @@ func id(n int64) string {
 		return ""
 	}
 	return strconv.FormatInt(n, 10)
+}
+
+// groupSeries buckets one error group's matching errors like errorSeries.
+func (s *Store) groupSeries(q analytics.ErrorsQuery, group string) []analytics.CountPoint {
+	width := int64(86_400_000)
+	if q.Bucket == analytics.BucketHour {
+		width = 3_600_000
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	counts := map[int64]int64{}
+	for _, e := range s.errs {
+		if matches(e, q.Query) && groupHex(e.Error.Group) == group {
+			counts[e.Time-e.Time%width]++
+		}
+	}
+	out := make([]analytics.CountPoint, 0, len(counts))
+	for t, c := range counts {
+		out = append(out, analytics.CountPoint{T: t, Count: c})
+	}
+	slices.SortFunc(out, func(a, b analytics.CountPoint) int { return int(a.T - b.T) })
+	return out
 }
 
 // errorSeries buckets the site's matching errors by q's bucket (days by

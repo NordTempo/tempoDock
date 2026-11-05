@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api, body } from "../../api/client";
 import {
   useAction,
@@ -27,17 +27,44 @@ import { AccessLine } from "./AccessLine";
 const AddDomainDialog = lazy(() => import("./AddDomainDialog"));
 
 /**
+ * What a notice says about a domain just added, in the words its row
+ * uses: serving, routed through Cloudflare, or the record still to create.
+ */
+function addedNotice(d: Domain, service: string) {
+  const record = d.dns_records?.[0];
+  if (d.status === "active")
+    return `Added ${d.hostname}: it serves ${service} now`;
+  if (d.dns)
+    return `Added ${d.hostname}: Dock is routing it through Cloudflare`;
+  if (d.verification)
+    return `Added ${d.hostname}: create the TXT record shown below to verify it`;
+  if (d.status === "error")
+    return `Added ${d.hostname}, but ${d.status_reason ?? "it can't be served yet"}`;
+  if (d.status === "issuing_certificate")
+    return `Added ${d.hostname}: DNS ok, issuing its certificate`;
+  return `Added ${d.hostname}: create ${record ? `${record.type} ${record.value}` : "its DNS record"} at your DNS provider`;
+}
+
+/**
  * Add form, who can open the domains, a card per domain that needs a
- * human, and every domain. A domain added here is marked in the list and
- * a notice says what happens next.
+ * human, and every domain. A domain added here is marked in the list; its
+ * notice waits for Dock's first DNS check, so it says what the row says.
  */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, domains } = useService(ref);
   const port = listenPort(service);
   const [added, setAdded] = useState<string | null>(null);
+  // A domain added here whose first DNS check hasn't come back yet.
+  const [checking, setChecking] = useState<string | null>(null);
   const waiting = domains.filter(
     (d) => domainNeedsAttention(d) || d.verification || d.status === "added",
   );
+  useEffect(() => {
+    const d = checking && domains.find((x) => x.hostname === checking);
+    if (!d || d.status === "added") return;
+    notify(addedNotice(d, ref.service), d.status === "error" ? "fail" : "ok");
+    setChecking(null);
+  }, [checking, domains, ref.service]);
 
   return (
     <>
@@ -46,15 +73,13 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         hasGenerated={domains.some((d) => d.generated)}
         onAdded={(d) => {
           setAdded(d.hostname);
-          notify(
-            d.status === "active"
-              ? `Added ${d.hostname}: it serves ${ref.service} now`
-              : d.dns
-                ? `Added ${d.hostname}: Dock is routing it through Cloudflare`
-                : d.status === "added"
-                  ? `Added ${d.hostname}: Dock is checking its DNS`
-                  : `Added ${d.hostname}: create its DNS record, shown below`,
-          );
+          if (d.status === "added" && !d.dns && !d.verification)
+            setChecking(d.hostname);
+          else
+            notify(
+              addedNotice(d, ref.service),
+              d.status === "error" ? "fail" : "ok",
+            );
         }}
       />
       <AccessLine serviceRef={ref} />

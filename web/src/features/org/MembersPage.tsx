@@ -19,12 +19,14 @@ import {
   Panel,
 } from "../../ui/kit";
 import { addressQuery } from "../address/data";
+import { Saved, useValidation } from "../create/form";
 import {
   orgQueries,
   roleNote,
   useCreateInvite,
   useOrgName,
   useRemoveMember,
+  useRenewInvite,
   useRevokeInvite,
   useSetMemberRole,
 } from "./data";
@@ -89,7 +91,7 @@ function useInviteBase(enabled: boolean) {
  */
 function LocalLinkNote({ operator }: { operator: boolean }) {
   return (
-    <p className="text-xs text-warn-text">
+    <p className="text-warn-text">
       <span className="text-warn">▲</span> This link only opens on this machine
       or its network: Dock has no public address.{" "}
       {operator ? (
@@ -198,7 +200,11 @@ function Members({ org }: { org: string }) {
                     />
                   ))}
                   {invites.map((i) => (
-                    <InviteRow key={`invite-${i.id}`} invite={i} />
+                    <InviteRow
+                      key={`invite-${i.id}`}
+                      invite={i}
+                      onLink={setLink}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -262,17 +268,15 @@ function InviteLink({
         <span className="text-ok">✓</span> Invite for{" "}
         <span className="font-mono font-medium">{link.email}</span>
       </h2>
+      {note}
       <p className="text-mut">
         Send them this link. It works once, for 7 days, and only signed in as{" "}
-        {link.email}. It isn't shown again.
+        {link.email}. It isn't shown again; New link on their row makes another.
       </p>
       <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
-        <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-          {url}
-        </code>
+        <code className="min-w-0 flex-1 font-mono break-all">{url}</code>
         <CopyButton text={url} primary />
       </div>
-      {note}
       <div>
         <Button small onClick={onDone}>
           Done
@@ -293,12 +297,23 @@ function InviteForm({
   const create = useCreateInvite();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Scope>("deploy");
+  const v = useValidation();
+  const typed = email.trim();
+  const emailError =
+    v.required(!typed, "Enter their email address.") ??
+    v.required(
+      !!typed && !/^[^\s@]+@[^\s@]+$/.test(typed),
+      "Enter an email address, like name@company.com.",
+    );
   return (
     <form
+      ref={v.form}
+      noValidate
       aria-label="Invite someone"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(/^[^\s@]+@[^\s@]+$/.test(typed))) return;
         create.mutate(
           { email: email.trim(), role },
           {
@@ -319,18 +334,29 @@ function InviteForm({
         autoFocus
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="field min-w-0 flex-[1_1_260px] py-[7px]"
+        aria-invalid={!!emailError}
+        aria-describedby={emailError ? "invite-email-error" : undefined}
+        className={`field min-w-0 flex-[1_1_260px] py-[7px] ${emailError ? "border-fail" : ""}`}
       />
       <RoleSelect value={role} onChange={setRole} label="Role" />
       <Act
         primary
         type="submit"
         cli={`dock org invite ${email.trim() || "<email>"} --role ${role}`}
-        disabled={create.isPending || !email.includes("@")}
+        disabled={create.isPending}
       >
         Invite
       </Act>
       <Button onClick={onCancel}>Cancel</Button>
+      {emailError && (
+        <span
+          id="invite-email-error"
+          role="alert"
+          className="basis-full text-xs text-fail"
+        >
+          {emailError}
+        </span>
+      )}
       <ErrorText error={create.error} />
     </form>
   );
@@ -414,10 +440,10 @@ function MemberRow({
           <Avatar name={name || email} />
           <span>
             {email}
-            {name && name !== email && (
-              <span className="text-faint"> · {name}</span>
-            )}
             {you && <span className="text-faint"> (you)</span>}
+            {name && name !== email && (
+              <span className="block text-2xs text-faint">{name}</span>
+            )}
           </span>
         </span>
       </td>
@@ -438,6 +464,11 @@ function MemberRow({
                 onChange={(r) => setRole.mutate({ id, role: r })}
               />
             </CliHint>
+            {setRole.isSuccess && (
+              <div>
+                <Saved ok />
+              </div>
+            )}
             <ErrorText error={setRole.error} />
           </>
         )}
@@ -456,7 +487,9 @@ function MemberRow({
           </span>
         )}
       </td>
-      <td className={`py-2 ${access ? "text-mut" : "text-faint"}`}>
+      <td
+        className={`min-w-[120px] py-2 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
+      >
         {access || "none"}
       </td>
       <td className="py-2 text-faint">{day(member.created_at)}</td>
@@ -491,17 +524,31 @@ function MemberRow({
   );
 }
 
-function InviteRow({ invite }: { invite: Invite }) {
+/**
+ * An open invite. New link revokes it and invites them again, for a link
+ * that was lost (it is shown only once); `onLink` shows the new one.
+ */
+function InviteRow({
+  invite,
+  onLink,
+}: {
+  invite: Invite;
+  onLink: (link: InviteLinkInfo) => void;
+}) {
   const { id, email, role, expires_at } = invite;
   const revoke = useRevokeInvite();
+  const renew = useRenewInvite();
+  const [renewing, setRenewing] = useState(false);
   return (
     <tr className="*:align-middle">
       <td className="py-2">
         <span className="flex items-center gap-2.5">
           <Avatar />
-          <span className="text-mut">{email}</span>
-          <span className="text-2xs text-warn">
-            {invite.expired ? "invite expired" : "invited"}
+          <span className="text-mut">
+            {email}
+            <span className="block text-2xs text-warn">
+              {invite.expired ? "invite expired" : "invited"}
+            </span>
           </span>
         </span>
       </td>
@@ -512,15 +559,46 @@ function InviteRow({ invite }: { invite: Invite }) {
         {invite.expired ? "expired" : `until ${day(expires_at)}`}
       </td>
       <td className="w-full py-1.5 text-right">
-        <Act
-          small
-          cli={`dock org invites revoke ${id}`}
-          disabled={revoke.isPending}
-          onClick={() => revoke.mutate(id)}
-        >
-          Revoke
-        </Act>
+        <span className="inline-flex gap-1.5">
+          <Button small onClick={() => setRenewing(true)}>
+            New link
+          </Button>
+          <Act
+            small
+            cli={`dock org invites revoke ${id}`}
+            disabled={revoke.isPending}
+            onClick={() => revoke.mutate(id)}
+          >
+            Revoke
+          </Act>
+        </span>
         <ErrorText error={revoke.error} />
+        <div className="contents text-left whitespace-normal">
+          {renewing && (
+            <Confirm
+              action="Make a new link"
+              title={`New invite link for ${email}?`}
+              cli={`dock org invite ${email} --role ${role} && dock org invites revoke ${id}`}
+              pending={renew.isPending}
+              error={renew.error}
+              onConfirm={() =>
+                renew.mutate(
+                  { id, email, role },
+                  {
+                    onSuccess: (c) => {
+                      setRenewing(false);
+                      onLink({ email: c.invite.email, code: c.code });
+                    },
+                  },
+                )
+              }
+              onCancel={() => setRenewing(false)}
+            >
+              The link sent earlier stops working. The new one is shown once,
+              for 7 days, with the same role ({role}).
+            </Confirm>
+          )}
+        </div>
       </td>
     </tr>
   );

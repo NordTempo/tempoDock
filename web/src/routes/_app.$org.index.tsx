@@ -6,7 +6,7 @@ import type { ProjectOverview } from "../data/types";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { useOrg } from "../shell/location";
-import { plural, since } from "../ui/format";
+import { ago, plural } from "../ui/format";
 import {
   Button,
   CopyButton,
@@ -120,10 +120,10 @@ function Home() {
                         {h.last.failed && (
                           <span className="text-fail">failed </span>
                         )}
-                        {since(h.last.at)} ago
+                        {ago(h.last.at)}
                       </span>
                     ) : (
-                      <span className="text-faint">·</span>
+                      <span className="text-faint">never</span>
                     )}
                   </td>
                 </tr>
@@ -249,49 +249,57 @@ function NoProjects() {
     ],
   ];
   return (
-    <Page width="max-w-[720px]" gap="gap-5">
-      <h1 className="pt-10 text-xl font-semibold">No projects yet</h1>
-      {canCreate && (
-        <p className="flex flex-wrap items-center gap-3">
-          <Button primary onClick={() => openCreate({ kind: "project" })}>
-            New project
-          </Button>
-          <span className="text-mut">
-            then add services from an image, a GitHub repository or a template.
-          </span>
-        </p>
-      )}
-      <p className="text-md text-mut">
-        {canCreate ? "Or deploy" : "Deploy"} your first app from its folder.
-        {server && (
-          <>
-            {" "}
-            It runs on <span className="font-mono text-fg">{server}</span>, the
-            server you connected.
-          </>
+    <>
+      <PageBar
+        title="Projects"
+        after={<span className="text-xs text-faint">none yet</span>}
+        actions={
+          canCreate && (
+            <Button primary onClick={() => openCreate({ kind: "project" })}>
+              New project
+            </Button>
+          )
+        }
+      />
+      <Page width="max-w-[720px]" gap="gap-5">
+        {canCreate && (
+          <p className="text-mut">
+            Create a project, then add services from an image, a GitHub
+            repository or a template.
+          </p>
         )}
-      </p>
-      <ol className="border-t border-line">
-        {steps.map(([command = "", note], i) => (
-          <li
-            key={command}
-            className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-soft py-3.5"
-          >
-            <span className="font-mono text-mut">{i + 1}</span>
-            <code className="font-mono">{command}</code>
-            <CopyButton text={command} />
-            <span />
-            <span className="col-span-2 text-mut">{note}</span>
-          </li>
-        ))}
-      </ol>
-      <p className="text-mut">
-        This page lists the project once it appears. Letting an agent do it?{" "}
-        <Link to="/$org/settings/tokens" params={{ org }}>
-          Create a deploy token
-        </Link>
-        .
-      </p>
-    </Page>
+        <p className="text-mut">
+          {canCreate ? "Or deploy" : "Deploy"} your first app from its folder.
+          {server && (
+            <>
+              {" "}
+              It runs on <span className="font-mono text-fg">{server}</span>,
+              the server you connected.
+            </>
+          )}
+        </p>
+        <ol className="border-t border-line">
+          {steps.map(([command = "", note], i) => (
+            <li
+              key={command}
+              className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-soft py-3.5"
+            >
+              <span className="font-mono text-mut">{i + 1}</span>
+              <code className="font-mono">{command}</code>
+              <CopyButton text={command} />
+              <span />
+              <span className="col-span-2 text-mut">{note}</span>
+            </li>
+          ))}
+        </ol>
+        <p className="text-mut">
+          This page lists the project once it appears. Letting an agent do it?{" "}
+          <Link to="/$org/settings/tokens" params={{ org }}>
+            Create a deploy token
+          </Link>
+          .
+        </p>
+      </Page>
+    </>
   );
 }

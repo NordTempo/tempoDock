@@ -37,19 +37,32 @@ export const shown = (
       ? country(row.value)
       : row.value);
 
-/** "+12%" against the period before, with a tone; nothing without one. */
-export function delta(now: number, before: number) {
-  if (!before) return undefined;
+/** A KPI's change: its words, whether it is good, and whether it is small. */
+export type Change = { text: string; up: boolean; quiet?: boolean };
+
+/**
+ * "+12%" against the period before, with a tone; "new" when there was
+ * nothing before, ">999%" past that, since a percentage of next to
+ * nothing says little. Those, and changes under 10%, are quiet.
+ */
+export function delta(now: number, before: number): Change | undefined {
+  if (!before) return now ? { text: "new", up: true, quiet: true } : undefined;
   const pct = Math.round(((now - before) / before) * 100);
-  return { text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%`, up: pct >= 0 };
+  if (pct > 999) return { text: ">999%", up: true, quiet: true };
+  return {
+    text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%`,
+    up: pct >= 0,
+    quiet: Math.abs(pct) < 10,
+  };
 }
 
 /** A rate's change in percentage points; a lower bounce rate is good. */
-export function points(now: number, before: number) {
+export function points(now: number, before: number): Change {
   const pts = Math.round((now - before) * 100);
   return {
     text: `${pts > 0 ? "+" : pts < 0 ? "−" : "±"}${Math.abs(pts)} pts`,
     up: pts <= 0,
+    quiet: Math.abs(pts) < 2,
   };
 }
 
@@ -68,7 +81,7 @@ export function Kpi({
 }: {
   label: string;
   value: string;
-  change?: { text: string; up: boolean };
+  change?: Change;
   /** The metric the chart shows; set only for those it can show. */
   on?: boolean;
   onClick?: () => void;
@@ -82,7 +95,7 @@ export function Kpi({
         {value}
         {change && (
           <small
-            className={`ml-1.5 text-xs font-normal ${change.up ? "text-ok" : "text-fail"}`}
+            className={`ml-1.5 text-xs font-normal ${change.quiet ? "text-mut" : change.up ? "text-ok" : "text-fail"}`}
           >
             {change.text}
           </small>

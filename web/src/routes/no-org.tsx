@@ -10,7 +10,9 @@ export const Route = createFileRoute("/no-org")({
     const session = await context.queryClient.ensureQueryData(
       queries.session(),
     );
-    if (!session) throw redirect({ to: "/login" });
+    if (!session) {
+      throw redirect({ to: "/login", search: { redirect: "/no-org" } });
+    }
     if (session.org) throw redirect({ to: "/" });
     // Not orgless: their org needs a second factor (ADR 0057) or single
     // sign-on (ADR 0058).

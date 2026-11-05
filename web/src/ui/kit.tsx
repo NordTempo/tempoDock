@@ -258,10 +258,20 @@ export function Confirm({
           if (ready) onConfirm();
         }}
       >
-        <div className="flex flex-col gap-2 px-5 pt-4 pb-4">
+        <div className="flex items-center justify-between border-b border-line px-5 py-3">
           <h2 className="text-md font-semibold text-fg">
             {title ?? `${action}?`}
           </h2>
+          <button
+            type="button"
+            aria-label="esc, close"
+            className="rounded-ctl p-0.5 text-faint hover:text-fg"
+            onClick={onCancel}
+          >
+            <kbd>esc</kbd>
+          </button>
+        </div>
+        <div className="flex flex-col gap-2 px-5 pt-4 pb-4">
           <div className="text-[13px] leading-relaxed text-sec [&_b]:font-semibold [&_b]:text-fg">
             {children}
           </div>

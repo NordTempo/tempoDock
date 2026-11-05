@@ -36,6 +36,15 @@ const styleA = [
   "[&_.g-btn.pri]:text-page",
   "[&_.g-btn.pri:hover:not(:disabled)]:bg-sec",
   "[&_.g-field]:rounded-ctl",
+  // The level selects look like the app's selects: its chevron (g.css's
+  // background shorthand drops it).
+  "[--chevron:url(data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20width=%2710%27%20height=%2710%27%20viewBox=%270%200%2010%2010%27%20fill=%27none%27%20stroke=%27%23a1a1aa%27%20stroke-width=%271.4%27%3E%3Cpath%20d=%27M2.5%204l2.5%202.5L7.5%204%27/%3E%3C/svg%3E)]",
+  "[&_select.g-field]:appearance-none",
+  "[&_select.g-field]:pr-[26px]",
+  "[&_select.g-field]:bg-(image:--chevron)",
+  "[&_select.g-field]:bg-no-repeat",
+  "[&_select.g-field]:bg-position-[right_8px_center]",
+  "[&_select.g-field:disabled]:bg-none",
   // The rules table in a bordered panel, like the console's other tables.
   "[&_div:has(>.g-table)]:rounded-panel",
   "[&_div:has(>.g-table)]:border",
@@ -130,6 +139,11 @@ export function PolicyPage({
         </div>
 
         <div className={styleA}>
+          <p className="mb-2 text-xs text-mut">
+            Set here is this scope's rule; inherit takes the one above.
+            Effective is what applies; masked means sensitive columns' values
+            are hidden.
+          </p>
           {policy.error ? (
             <ErrorText error={policy.error} />
           ) : !policy.data || (parentScope && !parent.data) ? (

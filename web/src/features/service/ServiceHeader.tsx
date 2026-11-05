@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useState } from "react";
-import { useArchiveService, useRollback } from "../../data/mutations";
+import { useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -40,6 +40,7 @@ import {
 } from "../../ui/status";
 import { openDeploy } from "../deploy/start";
 import { EnvServer } from "../servers/parts";
+import { ArchiveConfirm } from "./ArchiveConfirm";
 import { useRestartService, useStartService, useStopService } from "./data";
 import { RollbackConfirm } from "./ReleasesTable";
 import {
@@ -68,7 +69,7 @@ export function ServiceBar({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Link
           to="/$org/$project"
           params={{ org, project: ref.project }}
-          className="hover:text-fg"
+          className="inline-flex min-h-[24px] items-center hover:text-fg"
         >
           {ref.project}
         </Link>
@@ -222,7 +223,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <a
           key="a"
           href={`https://${domain.hostname}`}
-          className="font-mono text-info hover:underline"
+          className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
         >
           {domain.hostname}
         </a>
@@ -432,10 +433,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
  * left out; one line says why the others wait.
  */
 function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
-  const navigate = useNavigate();
   const isAdmin = useIsAdmin();
-  const archive = useArchiveService();
   const onDeploy = () => openDeploy(ref);
   const { service, deploying, latest_release: latest } = useService(ref);
   const production = useEnvironment(ref).environment.kind === "production";
@@ -595,30 +593,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         again. Volumes and releases are kept.
       </Confirm>
     ) : confirming === "archive" ? (
-      <Confirm
-        title={`Archive ${ref.service}?`}
-        action={`Archive ${ref.service}`}
-        cli={`dock service archive ${ref.service} -e ${ref.environment} -p ${ref.project}`}
-        danger
-        pending={archive.isPending}
-        error={archive.error}
-        onConfirm={() =>
-          archive.mutate(ref, {
-            onSuccess: () =>
-              navigate({
-                to: "/$org/$project",
-                params: { org, project: ref.project },
-              }),
-          })
-        }
-        onCancel={() => {
-          archive.reset();
-          close();
-        }}
-      >
-        Stops its container and removes its routes in {ref.environment}. Volumes
-        and history are kept.
-      </Confirm>
+      <ArchiveConfirm serviceRef={ref} onCancel={close} />
     ) : confirming === "rollback" && target ? (
       <RollbackConfirm
         serviceRef={ref}
@@ -693,25 +668,15 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           label="More actions"
           right
           button={
-            <span className="btn px-2">
-              <svg
-                aria-hidden
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="currentColor"
-              >
-                <circle cx="3" cy="7" r="1.3" />
-                <circle cx="7" cy="7" r="1.3" />
-                <circle cx="11" cy="7" r="1.3" />
-              </svg>
+            <span className="btn" title="More actions">
+              More
             </span>
           }
         >
           {(close) => (
             <button
               type="button"
-              className={`${menuItem} text-fail hover:text-fail`}
+              className={menuItem}
               title={`dock service archive ${ref.service} -e ${ref.environment}`}
               onClick={() => {
                 close();

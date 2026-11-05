@@ -4,7 +4,7 @@ import {
   notFound,
   useNavigate,
 } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useServiceLogs } from "../data/live";
 import { useDeploy } from "../data/mutations";
 import {
@@ -85,6 +85,7 @@ function ReleasePage() {
   const servingRelease = useReleases(ref).find((x) => x.status === "active");
   const failed = release.status === "failed";
   const r = `r${release.number}`;
+  const fix = failed ? likelyFix(release, ref.service) : undefined;
   // What it replaced (or would have): the release before it that served.
   const previous = releases.find(
     (x) =>
@@ -216,9 +217,20 @@ function ReleasePage() {
               </Prop>
             )}
           </dl>
+          {fix && <p className="text-md leading-normal">{fix.text}</p>}
           <div className="mt-1 flex flex-wrap items-start gap-2.5">
+            {fix && (
+              <Link
+                to="/$org/$project/$environment/$service/build"
+                params={{ org, ...ref }}
+                search={{ edit: fix.edit }}
+                className="btn pri"
+              >
+                {fix.label}
+              </Link>
+            )}
             <Act
-              primary
+              primary={!fix}
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
@@ -308,7 +320,6 @@ function ReleasePage() {
             {failed ? "What failed" : "Steps"}
           </SectionHead>
           <StepTable steps={deploySteps(release, serving, service.stateful)} />
-          {failed && <NextStep release={release} />}
         </section>
 
         <LastLines release={release} />
@@ -430,48 +441,43 @@ function Changes({ from, to }: { from: Release; to: Release }) {
 }
 
 /**
- * The likely fix for a failed release, under its steps: a refused port
- * opens the port setting, a failing health check its path.
+ * The likely fix for a failed release: a refused port points at the port
+ * setting, a failing health check at its path. The release page makes it
+ * the primary button, with one line saying why.
  */
-function NextStep({ release }: { release: Release }) {
-  const org = useOrg();
-  const ref = servicePath(Route.useParams());
+function likelyFix(
+  release: Release,
+  service: string,
+):
+  | { edit: "port" | "health_check_path"; label: string; text: ReactNode }
+  | undefined {
   const port = refusedPort(release);
-  const path = release.config.health_check_path;
-  const build = (edit: "port" | "health_check_path", label: string) => (
-    <Link
-      to="/$org/$project/$environment/$service/build"
-      params={{ org, ...ref }}
-      search={{ edit }}
-      className="btn sm"
-    >
-      {label}
-    </Link>
-  );
   if (port !== undefined) {
-    return (
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span>
-          {ref.service} didn't answer on{" "}
-          <span className="font-mono">:{port}</span>. If the app listens on
-          another port, change it in Build &amp; run, then deploy again.
-        </span>
-        {build("port", `Change port (now ${release.config.port})`)}
-      </p>
-    );
+    return {
+      edit: "port",
+      label: `Change port (now ${release.config.port})`,
+      text: (
+        <>
+          {service} didn't answer on <span className="font-mono">:{port}</span>.
+          If the app listens on another port, change it, then deploy again.
+        </>
+      ),
+    };
   }
+  const path = release.config.health_check_path;
   if (path && /^health check/i.test(release.error ?? "")) {
-    return (
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span>
+    return {
+      edit: "health_check_path",
+      label: "Change health check path",
+      text: (
+        <>
           <span className="font-mono">GET {path}</span> didn't answer with a
-          success. Check the app's logs below, or the path in Build &amp; run.
-        </span>
-        {build("health_check_path", "Change health check path")}
-      </p>
-    );
+          success. Check the app's last lines below, or change the path.
+        </>
+      ),
+    };
   }
-  return null;
+  return undefined;
 }
 
 /** The release's last container lines; for a failed one, why it stopped. */

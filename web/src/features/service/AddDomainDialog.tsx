@@ -80,7 +80,8 @@ export default function AddDomainDialog({
             <span>
               Your own hostname
               <span className="block text-mut">
-                You create its DNS record; the domain's row shows which.
+                You point its DNS here; until it resolves, its row shows the
+                record.
               </span>
             </span>
             {!fromCloudflare && (

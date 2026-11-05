@@ -9,7 +9,6 @@ import { useLiveService } from "../features/stats/live";
 import { LiveNote, RangeSwitch, Stat } from "../features/stats/parts";
 import {
   type Point,
-  rangeLabel,
   rangeMs,
   ranges,
   validateRange,
@@ -50,7 +49,6 @@ function ResourcesTab() {
       <section aria-labelledby="history">
         <SectionHead
           id="history"
-          aside={`${rangeLabel[range]}, across releases`}
           right={
             <RangeSwitch
               value={range}
@@ -64,7 +62,7 @@ function ResourcesTab() {
             />
           }
         >
-          History
+          History across releases
         </SectionHead>
         <History serviceRef={ref} range={range} service={service} />
       </section>

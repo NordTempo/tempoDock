@@ -2,9 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useDeploy } from "../../data/mutations";
-import { queries, useEnvironment } from "../../data/queries";
+import {
+  canDeploy,
+  queries,
+  useEnvironment,
+  useProjectOverview,
+  useSession,
+} from "../../data/queries";
 import type { EnvRef, Service, TemplateInfo } from "../../data/types";
 import { useOrg } from "../../shell/location";
+import { Dialog } from "../../ui/Dialog";
 import { Button, CopyButton, ErrorText } from "../../ui/kit";
 import {
   autofocus,
@@ -17,6 +24,7 @@ import {
   invalid,
   nameProblem,
   toName,
+  useValidation,
 } from "./form";
 import {
   type GitConnected,
@@ -78,15 +86,50 @@ type Done =
  * right after it is created ("Create only" skips that). Opens the
  * service, except where the answer has something to keep: a database's
  * variable reference, a webhook's secret. Submitting with fields missing
- * marks them instead of doing nothing.
+ * marks them instead of doing nothing (useValidation). The environment
+ * starts as the one it was opened from and can be changed in the form.
  */
 export function NewService({
-  env,
+  env: opened,
   source: initial = "image",
   onClose,
 }: {
   env: EnvRef;
   source?: ServiceSource;
+  onClose: () => void;
+}) {
+  const [environment, setEnvironment] = useState(opened.environment);
+  const env = { project: opened.project, environment };
+  const session = useSession();
+  const choices = useProjectOverview(env.project)
+    .environments.map((e) => e.environment.name)
+    .filter((name) => canDeploy(session, { ...env, environment: name }));
+  const title = `New service in ${env.project} ${environment}`;
+  return (
+    <Dialog title={title} onClose={onClose} wide>
+      <ServiceForm
+        env={env}
+        choices={choices}
+        onEnvironment={setEnvironment}
+        initial={initial}
+        onClose={onClose}
+      />
+    </Dialog>
+  );
+}
+
+function ServiceForm({
+  env,
+  choices,
+  onEnvironment,
+  initial,
+  onClose,
+}: {
+  env: EnvRef;
+  /** The environments the caller may add a service to. */
+  choices: readonly string[];
+  onEnvironment: (environment: string) => void;
+  initial: ServiceSource;
   onClose: () => void;
 }) {
   const org = useOrg();
@@ -96,8 +139,7 @@ export function NewService({
   const connect = useConnectGit();
   const deploy = useDeploy();
   const navigate = useNavigate();
-  // Set by a submit with something missing: the empty fields say so.
-  const [attempted, setAttempted] = useState(false);
+  const v = useValidation();
 
   const [source, setSource] = useState<ServiceSource>(initial);
   const [typed, setTyped] = useState<string | null>(null);
@@ -127,16 +169,16 @@ export function NewService({
       "service",
       name,
       services.map((s) => s.service.name),
-    ) ?? (attempted && !name ? "Enter a name, like web." : undefined);
-  const imageError =
-    attempted && source === "image" && !image.trim()
-      ? "Enter the image to run, with its tag."
-      : undefined;
+    ) ?? v.required(!name, "Enter a name, like web.");
+  const imageError = v.required(
+    source === "image" && !image.trim(),
+    "Enter the image to run, with its tag.",
+  );
   const repoValid = /^[\w.-]+\/[\w.-]+$/.test(repo.trim());
-  const repoError =
-    attempted && source === "github" && !repoValid
-      ? "Enter the repository as owner/repo."
-      : undefined;
+  const repoError = v.required(
+    source === "github" && !repoValid,
+    "Enter the repository as owner/repo.",
+  );
   const portError =
     !database && portN === undefined
       ? "A whole number up to 65535; empty means 8080."
@@ -211,10 +253,7 @@ export function NewService({
   }
 
   async function submit(deployIt: boolean) {
-    if (blocked) {
-      setAttempted(true);
-      return;
-    }
+    if (!v.check(!blocked)) return;
     const service = await create.mutateAsync({ env, name, ...settings });
     if (database) {
       const exported = info?.exports[0];
@@ -256,6 +295,7 @@ export function NewService({
 
   return (
     <form
+      ref={v.form}
       aria-label="New service"
       onSubmit={(e) => {
         e.preventDefault();
@@ -264,6 +304,24 @@ export function NewService({
       }}
     >
       <Fields>
+        {choices.length > 1 && (
+          <Field label="Environment">
+            <select
+              value={env.environment}
+              onChange={(e) => {
+                onEnvironment(e.target.value);
+                create.reset();
+              }}
+              className="w-fit font-mono"
+            >
+              {choices.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="Name" error={nameError}>
           <input
             ref={autofocus}
@@ -474,11 +532,7 @@ export function NewService({
               : "Create service"
         }
         pending={create.isPending || connect.isPending || deploy.isPending}
-        problem={
-          attempted && missing.length > 0
-            ? `Add ${missing.join(" and ")} first.`
-            : undefined
-        }
+        problem={v.problem(missing, blocked)}
         error={templates.error ?? create.error ?? deploy.error}
         cli={
           source === "image"

@@ -5,20 +5,28 @@ import { useCanDeploy, useService } from "../../data/queries";
 import type { Release, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
-import { Actor, actorKind, Confirm, Panel, StateText } from "../../ui/kit";
+import {
+  Actor,
+  actorKind,
+  Button,
+  Confirm,
+  Panel,
+  StateText,
+} from "../../ui/kit";
 import { releaseState, releaseWhat } from "../../ui/status";
 import {
   copiedConfig,
   errorSummary,
   imageLabel,
   releaseDiff,
+  rollbackLosses,
   shortImage,
 } from "./releases";
 
 /**
  * Release history: one line per release (what, short image, who, when),
- * a failure's cause under it in full, and a quiet Roll back text action
- * on every superseded row (left out while a deploy runs).
+ * a failure's cause under it in full, Details on a failed row and a small
+ * Roll back button on every superseded row (left out while a deploy runs).
  */
 export function ReleasesTable({
   serviceRef: ref,
@@ -54,7 +62,7 @@ export function ReleasesTable({
             <col />
             <col className="w-[100px]" />
             <col className="w-[44px]" />
-            <col className="w-[84px]" />
+            <col className="w-[96px]" />
           </colgroup>
           <thead>
             <tr>
@@ -72,7 +80,11 @@ export function ReleasesTable({
               return (
                 <tr key={r.id} className="group">
                   <td className="font-mono">
-                    <Link {...page(r)} className="hover:underline">
+                    {/* A 24px target without making the row taller. */}
+                    <Link
+                      {...page(r)}
+                      className="-my-[4px] inline-flex min-h-[24px] min-w-[24px] items-center hover:underline"
+                    >
                       r{r.number}
                     </Link>
                   </td>
@@ -108,22 +120,22 @@ export function ReleasesTable({
                     <Actor name={r.created_by} kind={actorKind(r.created_by)} />
                   </td>
                   <td className="text-faint">{since(r.created_at)}</td>
-                  <td className="py-1 text-right">
+                  {/* Lined up with the first text line of the row. */}
+                  <td className="py-[6px] text-right">
                     {r.status === "failed" && (
-                      <Link {...page(r)} className="lnk">
+                      <Link {...page(r)} className="btn sm">
                         Details
                       </Link>
                     )}
                     {r.status === "superseded" && mayDeploy && !deploying && (
-                      <button
-                        type="button"
-                        className="lnk"
+                      <Button
+                        small
                         title={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
                         aria-label={`Roll back to r${r.number}`}
                         onClick={() => setConfirming(r.number)}
                       >
                         Roll back
-                      </button>
+                      </Button>
                     )}
                   </td>
                 </tr>
@@ -148,8 +160,9 @@ export function ReleasesTable({
 /**
  * Asks before rolling back: which service, from which release to which,
  * what changes against the serving release, and whether the service is
- * briefly unreachable. The header, the releases table and a release's
- * page all use it.
+ * briefly unreachable. Changes that lose data or features (a volume no
+ * longer mounted, variables removed) get a warning line each and a red
+ * button. The header, the releases table and a release's page use it.
  */
 export function RollbackConfirm({
   serviceRef: ref,
@@ -169,10 +182,12 @@ export function RollbackConfirm({
   const stateful = useService(ref).service.stateful;
   const from = serving ? `r${serving.number}` : undefined;
   const changes = serving ? releaseDiff(serving, target) : [];
+  const losses = serving ? rollbackLosses(serving, target) : [];
   return (
     <Confirm
       title={`Roll back ${ref.service} to r${target.number}?`}
       action={`Roll back to r${target.number}`}
+      danger={losses.length > 0}
       cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
       pending={blocked || rollback.isPending}
       error={rollback.error}
@@ -200,6 +215,11 @@ export function RollbackConfirm({
           )}
         </p>
       )}
+      {losses.map((text) => (
+        <p key={text} className="mt-2 text-warn-text">
+          ▲ {text}
+        </p>
+      ))}
       {serving && (
         <div className="mt-3 flex flex-col gap-0.5 text-xs">
           <span className="text-mut">Changes from {from}</span>

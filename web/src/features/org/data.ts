@@ -221,6 +221,30 @@ export const useRevokeInvite = () =>
     () => [orgKeys.invites, ["audit"]],
   );
 
+/**
+ * A new link for an open invite: invites the same person with the same
+ * role again, then revokes the old invite (in that order, so a refused or
+ * abandoned create leaves the old link working). Dock keeps only a hash of
+ * an invite's code, so a link that was lost can't be shown again.
+ */
+export const useRenewInvite = () =>
+  useAction(
+    async (invite: { id: number; email: string; role: Scope }) => {
+      const created = await body(
+        api.POST("/api/v1/org/invites", {
+          body: { email: invite.email, role: invite.role },
+        }),
+      );
+      await done(
+        api.DELETE("/api/v1/org/invites/{id}", {
+          params: { path: { id: invite.id } },
+        }),
+      );
+      return created;
+    },
+    () => [orgKeys.invites, ["audit"]],
+  );
+
 /** Accepts an invite; the caller's orgs then include it. */
 export function useAcceptInvite() {
   const queryClient = useQueryClient();

@@ -11,6 +11,7 @@ import {
   SectionHead,
   StateText,
 } from "../../ui/kit";
+import { useValidation } from "../create/form";
 import {
   type Cloudflare,
   useAddCloudflare,
@@ -239,9 +240,16 @@ function TokenForm({
   const [token, setToken] = useState("");
   const [account, setAccount] = useState("");
   const pending = add.isPending || update.isPending;
+  const v = useValidation();
+  const nameError = v.required(
+    !connection && !name.trim(),
+    "Name the connection, like home.",
+  );
+  const tokenError = v.required(!token.trim(), "Paste the API token.");
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (!v.check((!!connection || !!name.trim()) && !!token.trim())) return;
     const acct = account.trim();
     if (!connection) {
       add.mutate(
@@ -268,6 +276,7 @@ function TokenForm({
     : `printf %s "$TOKEN" | dock cloudflare add ${name.trim() || "<name>"} --token-stdin${account.trim() ? ` --account-id ${account.trim()}` : ""}`;
   return (
     <form
+      ref={v.form}
       aria-label={
         connection ? `New token for ${connection.name}` : "Add connection"
       }
@@ -285,8 +294,14 @@ function TokenForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="home"
-              className="field py-[7px] font-mono"
+              aria-invalid={!!nameError}
+              className={`field py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
             />
+            {nameError && (
+              <span role="alert" className="text-xs text-fail">
+                {nameError}
+              </span>
+            )}
           </label>
         )}
         <label className="flex flex-[3_1_320px] flex-col gap-1.5">
@@ -296,8 +311,14 @@ function TokenForm({
             value={token}
             onChange={(e) => setToken(e.target.value)}
             autoComplete="new-password"
-            className="field py-[7px] font-mono"
+            aria-invalid={!!tokenError}
+            className={`field py-[7px] font-mono ${tokenError ? "border-fail" : ""}`}
           />
+          {tokenError && (
+            <span role="alert" className="text-xs text-fail">
+              {tokenError}
+            </span>
+          )}
         </label>
         <label className="flex flex-[1_1_200px] flex-col gap-1.5">
           <span>
@@ -320,12 +341,7 @@ function TokenForm({
       </p>
       <ErrorText error={add.error ?? update.error} />
       <div className="flex items-center gap-2.5">
-        <Act
-          primary
-          type="submit"
-          cli={cli}
-          disabled={pending || !token.trim()}
-        >
+        <Act primary type="submit" cli={cli} disabled={pending}>
           {pending
             ? "Checking the token…"
             : connection
@@ -333,6 +349,12 @@ function TokenForm({
               : "Add connection"}
         </Act>
         <Button onClick={onClose}>Cancel</Button>
+        <span className="text-xs text-fail">
+          {v.problem([
+            !connection && !name.trim() && "a name",
+            !token.trim() && "a token",
+          ])}
+        </span>
       </div>
     </form>
   );

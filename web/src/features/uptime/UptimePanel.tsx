@@ -67,7 +67,6 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <section aria-labelledby="uptime-checks" className="flex flex-col gap-3">
         <SectionHead
           id="uptime-checks"
-          aside="GET from another server; two failures in a row raise an alert"
           right={
             unchecked.length > 0 && (
               <CheckDomains
@@ -77,7 +76,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             )
           }
         >
-          From outside
+          Checks from another server
         </SectionHead>
         {domains.length === 0 ? (
           <p className="text-mut">
@@ -116,12 +115,16 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                     serviceRef={ref}
                     check={c}
                     fresh={c.id === added}
-                    domains={domains.map((d) => d.hostname)}
                   />
                 ))}
               </tbody>
             </table>
           </Panel>
+        )}
+        {checks.length > 0 && (
+          <p className="text-xs text-mut">
+            Two failed probes in a row raise an alert.
+          </p>
         )}
       </section>
       <Inside serviceRef={ref} />
@@ -184,34 +187,44 @@ function Strip({ series }: { series: UptimeCheck["series"] }) {
 }
 
 /**
- * A URL with its path in full: the scheme and host faint (cut first when
- * space runs out), or left out when the host is one of the service's
- * domains and the path alone tells checks apart.
+ * A URL as host and path: the host faint (cut first when space runs out),
+ * the path in full. The scheme is left out unless it isn't https.
  */
-function CheckUrl({ url, domains }: { url: string; domains: string[] }) {
+function CheckUrl({ url }: { url: string }) {
   const u = new URL(url);
   const path = `${u.pathname}${u.search}`;
-  const own = domains.length === 1 && domains[0] === u.hostname;
   return (
-    <span className="inline-flex max-w-[360px] min-w-0 font-mono">
-      {!own && <span className="min-w-0 truncate text-mut">{u.origin}</span>}
+    <span className="inline-flex max-w-[400px] min-w-0 font-mono">
+      <span className="min-w-0 truncate text-faint">
+        {u.protocol === "https:" ? u.host : u.origin}
+      </span>
       <span className="shrink-0">{path}</span>
     </span>
   );
+}
+
+/** A URL compared loosely: no trailing slash on the path, a lower-case host. */
+function sameUrl(a: string, b: string) {
+  const norm = (raw: string) => {
+    try {
+      const u = new URL(raw);
+      return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+    } catch {
+      return raw.trim();
+    }
+  };
+  return norm(a) === norm(b);
 }
 
 function CheckRow({
   serviceRef: ref,
   check: c,
   fresh,
-  domains,
 }: {
   serviceRef: ServiceRef;
   check: UptimeCheck;
   /** Just added here: marked, and says when the first probe runs. */
   fresh: boolean;
-  /** The service's hostnames. */
-  domains: string[];
 }) {
   const remove = useRemoveUptimeCheck(ref);
   const [confirming, setConfirming] = useState(false);
@@ -223,7 +236,7 @@ function CheckRow({
         className="whitespace-nowrap"
         title={`${c.url}, expects ${c.expect_status}`}
       >
-        <CheckUrl url={c.url} domains={domains} />
+        <CheckUrl url={c.url} />
         {c.auto && (
           <span
             className="text-faint"
@@ -318,12 +331,7 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const health = status.health;
   return (
     <section aria-labelledby="uptime-inside" className="flex flex-col">
-      <SectionHead
-        id="uptime-inside"
-        aside="Dock's health check of the container, on its server"
-      >
-        From inside
-      </SectionHead>
+      <SectionHead id="uptime-inside">Health check on its server</SectionHead>
       {interval === -1 ? (
         <p className="text-mut">
           The ongoing health check is off; set an interval on Build &amp; run.
@@ -365,8 +373,9 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 }
 
 /**
- * The add form. A check that repeats an existing one (same URL, status
- * and interval) is refused here with a note; a new one gets a notice.
+ * The add form. While the URL typed is one an existing check probes (any
+ * status or interval), it says so before adding, and an exact repeat (same
+ * URL, status and interval) can't be added. A new one gets a notice.
  */
 function AddCheck({
   serviceRef: ref,
@@ -380,7 +389,6 @@ function AddCheck({
   onAdded: (id: number) => void;
 }) {
   const add = useAddUptimeCheck(ref);
-  const [repeat, setRepeat] = useState(false);
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("200");
   const [intervalS, setIntervalS] = useState(60);
@@ -391,20 +399,20 @@ function AddCheck({
     interval_seconds: intervalS,
     timeout_seconds: timeoutS,
   };
+  const existing =
+    req.url === "" ? [] : checks.filter((c) => sameUrl(c.url, req.url));
+  const repeat = existing.some(
+    (c) =>
+      c.expect_status === req.expect_status &&
+      c.interval_seconds === req.interval_seconds,
+  );
   return (
     <form
       aria-label="Add an uptime check"
-      className="flex flex-wrap items-center gap-2.5"
+      className="flex flex-col gap-1.5"
       onSubmit={(e) => {
         e.preventDefault();
-        const same = checks.some(
-          (c) =>
-            c.url === req.url &&
-            c.expect_status === req.expect_status &&
-            c.interval_seconds === req.interval_seconds,
-        );
-        setRepeat(same);
-        if (same) return;
+        if (repeat) return;
         add.mutate(req, {
           onSuccess: (check) => {
             setUrl("");
@@ -416,74 +424,86 @@ function AddCheck({
         });
       }}
     >
-      <input
-        aria-label="URL"
-        value={url}
-        onChange={(e) => {
-          setUrl(e.target.value);
-          setRepeat(false);
-        }}
-        placeholder={`https://${host}/`}
-        className="field w-[320px] py-[7px] font-mono"
-      />
-      <label className="flex items-center gap-1.5 text-mut">
-        expects
+      <span className="flex flex-wrap items-center gap-2.5">
         <input
-          aria-label="Expected status"
-          value={status}
-          onChange={(e) => setStatus(e.target.value.trim())}
-          list="uptime-statuses"
-          className="field w-[64px] py-[7px] font-mono"
+          aria-label="URL"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder={`https://${host}/`}
+          className="field w-[320px] py-[7px] font-mono"
         />
-        <datalist id="uptime-statuses">
-          <option value="200" />
-          <option value="2xx" />
-          <option value="3xx" />
-        </datalist>
-      </label>
-      <label className="flex items-center gap-1.5 text-mut">
-        every
-        <select
-          aria-label="Interval"
-          value={intervalS}
-          onChange={(e) => setIntervalS(Number(e.target.value))}
-          className="field py-[7px]"
+        <label className="flex items-center gap-1.5 text-mut">
+          expects
+          <input
+            aria-label="Expected status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value.trim())}
+            list="uptime-statuses"
+            className="field w-[64px] py-[7px] font-mono"
+          />
+          <datalist id="uptime-statuses">
+            <option value="200" />
+            <option value="2xx" />
+            <option value="3xx" />
+          </datalist>
+        </label>
+        <label className="flex items-center gap-1.5 text-mut">
+          every
+          <select
+            aria-label="Interval"
+            value={intervalS}
+            onChange={(e) => setIntervalS(Number(e.target.value))}
+            className="field py-[7px]"
+          >
+            {intervals.map(([s, label]) => (
+              <option key={s} value={s}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-mut">
+          timeout
+          <input
+            aria-label="Timeout in seconds"
+            type="number"
+            min={1}
+            max={30}
+            value={timeoutS}
+            onChange={(e) => setTimeoutS(Number(e.target.value))}
+            className="field w-[56px] py-[7px] font-mono"
+          />
+          s
+        </label>
+        <Act
+          primary={existing.length === 0}
+          type="submit"
+          cli={addCli(ref, req)}
+          disabled={req.url === "" || repeat || add.isPending}
+          reason={
+            req.url === ""
+              ? "type a URL first"
+              : repeat
+                ? "this exact check exists"
+                : undefined
+          }
         >
-          {intervals.map(([s, label]) => (
-            <option key={s} value={s}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex items-center gap-1.5 text-mut">
-        timeout
-        <input
-          aria-label="Timeout in seconds"
-          type="number"
-          min={1}
-          max={30}
-          value={timeoutS}
-          onChange={(e) => setTimeoutS(Number(e.target.value))}
-          className="field w-[56px] py-[7px] font-mono"
-        />
-        s
-      </label>
-      <Act
-        primary
-        type="submit"
-        cli={addCli(ref, req)}
-        disabled={req.url === "" || add.isPending}
-        reason={req.url === "" ? "type a URL first" : undefined}
-      >
-        Add check
-      </Act>
-      {repeat && (
-        <span role="alert" className="text-warn-text">
-          Already checked: {req.url} every {every(intervalS)}.
+          {existing.length > 0 ? "Add a second check" : "Add check"}
+        </Act>
+        <ErrorText error={add.error} />
+      </span>
+      {existing.length > 0 && (
+        <span role="status" className="text-warn-text">
+          ▲ Already checked:{" "}
+          {existing
+            .map(
+              (c) =>
+                `every ${every(c.interval_seconds)}, expects ${c.expect_status}${c.auto ? " (added by Dock for the domain)" : ""}`,
+            )
+            .join("; ")}
+          . Remove that check first to change its interval.
         </span>
       )}
-      <ErrorText error={add.error} />
     </form>
   );
 }

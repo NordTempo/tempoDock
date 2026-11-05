@@ -12,6 +12,7 @@ import { signedOut } from "../../data/mutations";
 import { keys, queries, useSession } from "../../data/queries";
 import { day } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
+import { useValidation } from "../create/form";
 import { orgQueries, roleNote, useAcceptInvite, useInviteSignUp } from "./data";
 
 type InviteInfo = components["schemas"]["InviteInfo"];
@@ -179,16 +180,21 @@ function CreateAccount({
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const short = password.length > 0 && password.length < MIN_PASSWORD;
-  const ready =
-    name.trim() !== "" && password.length >= MIN_PASSWORD && !signUp.isPending;
+  const v = useValidation();
+  const nameError = v.required(!name.trim(), "Enter your name.");
+  const passwordError =
+    (short ? `Use at least ${MIN_PASSWORD} characters.` : undefined) ??
+    v.required(!password, "Choose a password.");
+  const ready = name.trim() !== "" && password.length >= MIN_PASSWORD;
   const exists =
     signUp.error instanceof ApiError && signUp.error.status === 409;
   return (
     <form
+      ref={v.form}
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!ready) return;
+        if (signUp.isPending || !v.check(ready)) return;
         signUp.mutate(
           { code, name: name.trim(), password },
           {
@@ -211,24 +217,31 @@ function CreateAccount({
         onChange={(e) => setName(e.target.value)}
         maxLength={64}
         autoComplete="name"
+        error={nameError}
       />
       <Field
         label="Password"
-        note={
-          <span className={short ? "text-warn" : undefined}>
-            at least {MIN_PASSWORD} characters
-          </span>
-        }
+        note={`at least ${MIN_PASSWORD} characters`}
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         autoComplete="new-password"
+        error={passwordError}
       />
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" className="btn pri" disabled={!ready}>
+        <button type="submit" className="btn pri" disabled={signUp.isPending}>
           Create account and join
         </button>
-        <ErrorText error={signUp.error} />
+        {signUp.error ? (
+          <ErrorText error={signUp.error} />
+        ) : (
+          <span className="text-xs text-fail">
+            {v.problem(
+              [!name.trim() && "your name", !password && "a password"],
+              short,
+            )}
+          </span>
+        )}
         {exists && (
           <Link to="/login" search={{ redirect: back }}>
             Sign in
@@ -239,19 +252,36 @@ function CreateAccount({
   );
 }
 
-/** A labelled input of the account form, with a note beside the label. */
+/**
+ * A labelled input of the account form, with a note beside the label and
+ * what is wrong with it under it (useValidation).
+ */
 function Field({
   label,
   note,
+  error,
   className = "",
   ...input
-}: { label: string; note?: ReactNode } & ComponentProps<"input">) {
+}: {
+  label: string;
+  note?: ReactNode;
+  error?: string;
+} & ComponentProps<"input">) {
   return (
     <label className="flex flex-col gap-1.5">
       <span className="text-xs text-mut">
         {label} {note && <span className="text-faint">{note}</span>}
       </span>
-      <input {...input} className={`field py-[7px] ${className}`} />
+      <input
+        {...input}
+        aria-invalid={!!error}
+        className={`field py-[7px] ${error ? "border-fail" : ""} ${className}`}
+      />
+      {error && (
+        <span role="alert" className="text-xs text-fail">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

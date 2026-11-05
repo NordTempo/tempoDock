@@ -11,8 +11,10 @@ import {
   Footer,
   Group,
   input,
+  invalid,
   nameProblem,
   toName,
+  useValidation,
 } from "./form";
 import { useCreateProject } from "./mutations";
 
@@ -37,19 +39,23 @@ export function NewProject({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [start, setStart] = useState<(typeof starts)[number][0]>("empty");
+  const v = useValidation();
   const problem = nameProblem(
     "project",
     name,
     projects.map((p) => p.name),
   );
+  const nameError = problem ?? v.required(!name, "Enter a name, like my-app.");
   return (
     <Dialog title="New project" onClose={onClose} wide={start === "compose"}>
       <form
+        ref={v.form}
         aria-label="New project"
         onSubmit={(e) => {
           e.preventDefault();
           // From Compose has its own Preview and Create buttons.
           if (start !== "empty") return;
+          if (!v.check(!!name && !problem)) return;
           create.mutate(name, {
             onSuccess: async (p) => {
               await navigate({
@@ -64,12 +70,11 @@ export function NewProject({ onClose }: { onClose: () => void }) {
         <Fields>
           <Field
             label="Name"
+            error={nameError}
             note={
-              problem ? (
-                <span className="text-fail">{problem}</span>
-              ) : start === "empty" ? (
-                "Starts with a production environment."
-              ) : undefined
+              start === "empty"
+                ? "Starts with a production environment."
+                : undefined
             }
           >
             <input
@@ -79,7 +84,8 @@ export function NewProject({ onClose }: { onClose: () => void }) {
               placeholder="my-app"
               spellCheck={false}
               autoComplete="off"
-              className={input}
+              aria-invalid={!!nameError}
+              className={`${input} ${invalid(nameError)}`}
             />
           </Field>
           <Group label="Start">
@@ -96,7 +102,7 @@ export function NewProject({ onClose }: { onClose: () => void }) {
           <Footer
             submit="Create project"
             pending={create.isPending}
-            disabled={!name || !!problem}
+            problem={v.problem([!name && "a name"], !!problem)}
             error={create.error}
             cli={[`dock project create ${name || "<name>"}`]}
             onClose={onClose}

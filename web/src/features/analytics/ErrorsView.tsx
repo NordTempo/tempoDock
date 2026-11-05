@@ -17,6 +17,7 @@ import {
   siteErrorsQuery,
 } from "./data";
 import {
+  type Change,
   charted,
   chartMarkers,
   count,
@@ -201,7 +202,7 @@ export function ErrorsView({
 function Summary({ data }: { data: SiteErrors }) {
   const s = data.summary;
   const p = data.previous;
-  const worse = (c?: { text: string; up: boolean }) => c && { ...c, up: !c.up };
+  const worse = (c?: Change) => c && { ...c, up: !c.up };
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-6 gap-y-3 tabular-nums">
       <Kpi

@@ -125,7 +125,10 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** Says a restore into a new service runs, and how to start using it. */
+/**
+ * Where a restore puts the data and what to do next, true while it runs
+ * and after: the new service, and the reference to point at once it runs.
+ */
 export function RestoringInto({
   serviceRef: ref,
   service,
@@ -138,21 +141,21 @@ export function RestoringInto({
   const org = useOrg();
   return (
     <p>
-      Restoring into{" "}
+      The data goes into{" "}
       <Link
         to="/$org/$project/$environment/$service"
         params={{ org, ...ref, service }}
         className="font-mono"
       >
         {service}
-      </Link>{" "}
-      in the background. Nothing uses it until references point at{" "}
+      </Link>
+      , a new service. Once it shows running, point references at{" "}
       <code className="font-mono">
         {"${{"}
         {service}.{exportOf(kind)}
         {"}}"}
-      </code>
-      .
+      </code>{" "}
+      and redeploy them. Until then nothing uses it.
     </p>
   );
 }

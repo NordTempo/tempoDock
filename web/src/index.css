@@ -220,6 +220,13 @@
     accent-color: var(--color-fg);
   }
 
+  /* Radios are 16px with a margin: a 24px target. */
+  input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    margin: 4px;
+  }
+
   /* Darker than any typed value, so an example never reads as filled in. */
   ::placeholder {
     color: #5f5f68;
@@ -349,6 +356,25 @@
   .btn.danger:hover:not(:disabled) {
     background: var(--color-fail-bg);
     border-color: var(--color-fail);
+  }
+
+  /*
+   * The data panel inside Dock (style G in A's shell): Dock's font and
+   * white primary buttons, so it reads as the same app. tempoBase keeps G.
+   */
+  .dock-g .g {
+    --g-sans: var(--font-sans);
+  }
+
+  .dock-g .g-btn.pri {
+    background: var(--color-fg);
+    border-color: var(--color-fg);
+    color: #000;
+  }
+
+  .dock-g .g-btn.pri:hover:not(:disabled) {
+    background: #d4d4d8;
+    border-color: #d4d4d8;
   }
 
   /* The confirm button of a destructive change: filled red. */
@@ -502,7 +528,11 @@
   }
 
   .seg > * {
+    /* 24px tall: a full target (WCAG 2.5.8). */
     padding: 3px 9px;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
     color: var(--color-mut);
     text-decoration: none;
   }

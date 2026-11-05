@@ -105,11 +105,11 @@ export function deploySteps(
       name: "Start",
       state: state(1),
       ms: span(buildEnd, started?.time),
+      // The container's name (dock_p1_e1_s1_r8) only in its title.
       detail: container ? (
-        <span className="text-mut">
-          <span className="font-mono">{container}</span>
-          {old &&
-            (stateful ? `, after stopping ${old}` : ` running next to ${old}`)}
+        <span className="text-mut" title={container}>
+          Container started
+          {old && (stateful ? ` after stopping ${old}` : ` next to ${old}`)}
         </span>
       ) : (
         <span className="text-mut">Start the container</span>

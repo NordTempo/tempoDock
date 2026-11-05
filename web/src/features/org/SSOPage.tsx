@@ -16,6 +16,7 @@ import {
   SectionHead,
   TitleRow,
 } from "../../ui/kit";
+import { Saved } from "../create/form";
 import {
   orgQueries,
   useCreateSSOProvider,
@@ -501,17 +502,20 @@ function SSOOnly({
         Require single sign-on
       </SectionHead>
       <span className="flex flex-col gap-1.5">
-        <CliHint
-          cli={`dock org sso-only ${on ? "off" : "on"}`}
-          className="act self-start"
-        >
-          <Check
-            label="Members act here only after signing in with SSO"
-            checked={on}
-            disabled={set.isPending || !!blocked}
-            onChange={(sso_only) => set.mutate(sso_only)}
-          />
-        </CliHint>
+        <span className="flex flex-wrap items-center gap-2">
+          <CliHint
+            cli={`dock org sso-only ${on ? "off" : "on"}`}
+            className="act self-start"
+          >
+            <Check
+              label="Members act here only after signing in with SSO"
+              checked={on}
+              disabled={set.isPending || !!blocked}
+              onChange={(sso_only) => set.mutate(sso_only)}
+            />
+          </CliHint>
+          <Saved ok={set.isSuccess} />
+        </span>
         <span className="text-xs text-mut">
           Sessions that signed in another way stay signed in but can't act in
           this organization until they sign in with SSO. API tokens are not

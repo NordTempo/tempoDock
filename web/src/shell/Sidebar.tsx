@@ -205,6 +205,7 @@ function OrgBadge({ org }: { org: Org }) {
   for (const c of org.slug) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return (
     <span
+      aria-hidden
       className={`grid size-5 flex-none place-items-center rounded-[5px] text-2xs font-semibold text-side ${badgeColours[h % badgeColours.length]}`}
     >
       {(org.name || org.slug).charAt(0).toUpperCase()}

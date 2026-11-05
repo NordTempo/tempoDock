@@ -2,7 +2,12 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useApplyChanges } from "../../data/mutations";
 import { useProblems } from "../../data/problems";
-import { serviceRef, useChanges, useIsOperator } from "../../data/queries";
+import {
+  serviceRef,
+  useChanges,
+  useIsOperator,
+  useProjectOverview,
+} from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
@@ -21,15 +26,36 @@ import {
 import { AlertLink, alertLabel, alertText } from "../alerts/source";
 import { errorSummary } from "../service/releases";
 import { affectedServices, nextRelease } from "../variables/apply";
+import { useHiddenFailures } from "./failed";
 
 const actionClass = "btn sm no-underline";
+
+/**
+ * The project's problems, plus failed deploys a rollback or restart
+ * hides (failed.ts), next to the other failed deploys.
+ */
+function useAllProblems(project: string): Problem[] {
+  const problems = useProblems(project);
+  const services = useProjectOverview(project).environments.flatMap(
+    (e) => e.services,
+  );
+  const hidden = useHiddenFailures(services);
+  if (hidden.size === 0) return problems;
+  const extra = services.flatMap((service): Problem[] => {
+    const release = hidden.get(service.service.id);
+    return release ? [{ kind: "deploy_failed", service, release }] : [];
+  });
+  // Crashes stay first; failed deploys come right after them.
+  const at = problems.findLastIndex((p) => p.kind === "crashed") + 1;
+  return [...problems.slice(0, at), ...extra, ...problems.slice(at)];
+}
 
 /**
  * The overview's numbered "needs a human" list, worst first. Keys 1 to 9
  * open (or focus) a problem's action.
  */
 export function Problems({ project }: { project: string }) {
-  const problems = useProblems(project);
+  const problems = useAllProblems(project);
   useShortcuts(
     problems.slice(0, 9).map((_, i) => ({
       key: String(i + 1),

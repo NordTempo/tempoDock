@@ -75,7 +75,7 @@ export const useDeploy = () =>
         ),
       ),
     serviceWide,
-    (ref, r) => [`Deploying ${ref.service} as r${r.number}`, "info"],
+    (ref, r) => [`Deploy of ${ref.service} started as r${r.number}`, "info"],
   );
 
 export const useRollback = () =>
@@ -89,7 +89,7 @@ export const useRollback = () =>
       ),
     ({ ref }) => serviceWide(ref),
     ({ ref, to }, r) => [
-      `Rolling back ${ref.service} to r${to}: r${r.number} is deploying`,
+      `Rollback of ${ref.service} to r${to} started as r${r.number}`,
       "info",
     ],
   );

@@ -16,6 +16,9 @@ const compact = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
+/** A link at least 24px tall (WCAG 2.5.8), on the line's text. */
+const target = "inline-flex min-h-[24px] items-center";
+
 const stateWord = { up: "Up", down: "Down", unknown: "Not probed yet" };
 const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-mut" };
 
@@ -41,7 +44,7 @@ function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
   if (!uptime) return null;
   return (
-    <p className="flex flex-wrap gap-x-1.5">
+    <p className="flex flex-wrap items-center gap-x-1.5">
       <span className="text-faint">Uptime</span>
       <span className={stateClass[uptime.state]}>
         {stateWord[uptime.state]}
@@ -62,6 +65,7 @@ function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <Link
         to="/$org/$project/$environment/$service/uptime"
         params={{ org, ...ref }}
+        className={target}
       >
         Uptime →
       </Link>
@@ -84,11 +88,12 @@ function VisitorsLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }).data;
   if (!found) return null;
   return (
-    <p className="flex flex-wrap gap-x-1.5">
+    <p className="flex flex-wrap items-center gap-x-1.5">
       <span className="text-faint">Analytics</span>
       <Link
         to="/$org/analytics/$project/$site"
         params={{ org, project: ref.project, site: found.site.name }}
+        className={target}
       >
         {found.last_24h
           ? `${compact.format(found.last_24h.visitors)} visitors in 24 h`

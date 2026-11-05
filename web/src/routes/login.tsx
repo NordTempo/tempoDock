@@ -76,10 +76,12 @@ function loginMessage(error: Error) {
 
 /**
  * Why the visitor is asked to sign in, from where they were going: an
- * invite link, a CLI login or a protected service send them here first.
+ * invite link, a CLI login, a protected service, an access request or any
+ * other page send them here first.
  */
 function purpose(back: string | undefined): { title: string; note?: string } {
   const path = back?.split("?")[0] ?? "";
+  const query = new URLSearchParams(back?.split("?")[1]);
   if (path.startsWith("/invite/")) {
     return {
       title: "Sign in to see your invite",
@@ -93,11 +95,29 @@ function purpose(back: string | undefined): { title: string; note?: string } {
     };
   }
   if (path === "/access") {
-    const host = new URLSearchParams(back?.split("?")[1]).get("host");
+    const host = query.get("host");
     return {
-      title: host ? `Sign in to open ${host}` : "Sign in",
-      note: host ? "The service is protected by this Dock." : undefined,
+      title: host ? `Sign in to open ${host}` : "Sign in to open a service",
+      note: "The service is protected by this Dock: only its members get in.",
     };
+  }
+  if (/^\/[^/]+\/requests$/.test(path)) {
+    const id = query.get("id");
+    return {
+      title: id
+        ? `Sign in to review request #${id}`
+        : "Sign in to review access requests",
+      note: "Admins of the organization approve or reject them.",
+    };
+  }
+  if (path === "/no-org") {
+    return {
+      title: "Sign in to Dock",
+      note: "Then Dock opens your organization, or says how to join one.",
+    };
+  }
+  if (path && path !== "/") {
+    return { title: "Sign in", note: `Then Dock opens ${path}.` };
   }
   return { title: "Sign in" };
 }
@@ -280,6 +300,7 @@ function Login() {
               />
               <FieldError id={`${ids}-password`} text={invalid.password} />
             </label>
+            <Forgot />
             {/* One line kept for the answer, so nothing moves when it shows. */}
             <p role="alert" className="min-h-[1lh] text-fail">
               {failed && loginMessage(failed)}
@@ -506,6 +527,8 @@ function SSOForm({
   const start = useStartSSO();
   const [choices, setChoices] = useState<SSOChoice[]>([]);
   const leaving = start.isPending || (start.isSuccess && start.data === null);
+  // Set by a submit without a usable email; cleared as it is typed.
+  const [invalid, setInvalid] = useState<string>();
   // The session lands in the organization it signed in through.
   const go = (req: { email: string } | SSOChoice) => {
     setOrg("org" in req ? req.org : undefined);
@@ -519,8 +542,15 @@ function SSOForm({
   return (
     <form
       className="flex flex-col gap-3.5"
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
+        const problem = check(email, "-").email;
+        setInvalid(problem);
+        if (problem) {
+          e.currentTarget.querySelector("input")?.focus();
+          return;
+        }
         go({ email: email.trim() });
       }}
     >
@@ -535,9 +565,12 @@ function SSOForm({
           onChange={(e) => {
             onEmail(e.target.value);
             setChoices([]);
+            setInvalid(undefined);
           }}
+          aria-invalid={!!invalid || undefined}
           className={field}
         />
+        <FieldError id="sso-email" text={invalid} />
       </label>
       {choices.length > 0 ? (
         <fieldset className="flex flex-col gap-1.5">
@@ -558,7 +591,7 @@ function SSOForm({
       ) : (
         <button
           type="submit"
-          disabled={leaving || !email.includes("@")}
+          disabled={leaving}
           className="btn pri justify-center px-3.5 py-2.5 text-md"
         >
           Continue with SSO{" "}
@@ -575,6 +608,33 @@ function SSOForm({
         Use your password
       </button>
     </form>
+  );
+}
+
+/**
+ * "Forgot password?" under the password: Dock sends no email, so it says
+ * who can reset one.
+ */
+function Forgot() {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button
+        type="button"
+        aria-expanded={false}
+        className="-mt-1.5 min-h-[24px] self-start text-xs text-mut hover:text-fg hover:underline"
+        onClick={() => setOpen(true)}
+      >
+        Forgot password?
+      </button>
+    );
+  }
+  return (
+    <p className="-mt-1.5 text-xs text-sec">
+      Dock doesn't send reset emails. Ask an operator to reset it on the
+      console's Users page, or with{" "}
+      <code className="font-mono">dock user reset-password &lt;email&gt;</code>.
+    </p>
   );
 }
 

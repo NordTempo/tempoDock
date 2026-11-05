@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button, ErrorText } from "../../ui/kit";
 
-// Shared parts of the create dialogs: a label column, name rules as core
-// has them, and a footer with the CLI equivalent.
+// Shared parts of forms: a label column, name rules as core has them, the
+// one validation pattern, a footer with the CLI equivalent, and the
+// "Saved" mark for settings that save on change.
 
 /** core's nameRe: DNS-safe, since service names are private hostnames. */
 const nameRe = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -113,6 +114,74 @@ export function Field({
         )
       )}
     </>
+  );
+}
+
+/** "a name", "a name and an image", "a, b and c". */
+const list = (items: readonly string[]) =>
+  items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+
+/**
+ * The one validation pattern for every form: the submit button stays
+ * enabled, and a submit with something missing or wrong marks the fields
+ * instead (a red outline and a message under each, through Field's
+ * `error` and the control's `aria-invalid`), focuses the first marked
+ * control, and the footer names what is missing.
+ *
+ *   const v = useValidation();
+ *   const nameError = nameProblem(...) ?? v.required(!name, "Enter a name.");
+ *   <form ref={v.form} onSubmit={(e) => { e.preventDefault(); if (v.check(!blocked)) save(); }}>
+ *   <Footer problem={v.problem(["a name"], !!nameError)} />
+ *
+ * Wrong values show as typed; missing ones only after a submit.
+ */
+export function useValidation() {
+  // Failed submits so far; each one focuses the first marked field again.
+  const [tries, setTries] = useState(0);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (tries === 0) return;
+    form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [tries]);
+  const tried = tries > 0;
+  return {
+    form,
+    tried,
+    /** A missing field's message, once a submit was tried. */
+    required: (empty: boolean, message: string) =>
+      tried && empty ? message : undefined,
+    /** Lets a submit go on when `ok`; otherwise marks the form. */
+    check: (ok: boolean) => {
+      if (!ok) setTries((t) => t + 1);
+      return ok;
+    },
+    /**
+     * The footer's line after a failed submit: what is still missing
+     * (falsy entries are skipped), or a hint to fix the marked fields.
+     */
+    problem: (missing: readonly (string | false)[], wrong = false) => {
+      if (!tried) return undefined;
+      const need = missing.filter((m) => typeof m === "string");
+      if (need.length > 0) return `Add ${list(need)} first.`;
+      return wrong ? "Fix the marked fields first." : undefined;
+    },
+  };
+}
+
+/**
+ * "✓ Saved" beside a setting that saves on change (a checkbox, a select),
+ * once its save went through; it goes when the next save starts. `ok` is
+ * the mutation's isSuccess for this control. Errors show where the
+ * control shows them.
+ */
+export function Saved({ ok }: { ok: boolean }) {
+  if (!ok) return null;
+  return (
+    <span role="status" className="text-xs text-ok">
+      <span aria-hidden>✓</span> Saved
+    </span>
   );
 }
 

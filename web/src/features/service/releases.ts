@@ -166,6 +166,43 @@ export function releaseDiff(from: Release, to: Release): ReleaseChange[] {
 }
 
 /**
+ * What rolling back from `from` to `to` takes away that the app may rely
+ * on, one plain sentence each: volumes no longer mounted (or mounted
+ * elsewhere) and variables removed. The rollback confirm shows them in
+ * warning colour and turns its button red.
+ */
+export function rollbackLosses(from: Release, to: Release): string[] {
+  const out: string[] = [];
+  const target = new Map(
+    (to.config.mounts ?? []).map((m) => [m.volume, m.path]),
+  );
+  for (const m of from.config.mounts ?? []) {
+    const path = target.get(m.volume);
+    if (path === undefined) {
+      out.push(
+        `${m.volume} is no longer mounted at ${m.path}: the app won't see the files on it. They stay on the volume.`,
+      );
+    } else if (path !== m.path) {
+      out.push(
+        `${m.volume} moves from ${m.path} to ${path}: the app won't find its files at ${m.path}.`,
+      );
+    }
+  }
+  const after = new Set(to.config.variable_keys ?? []);
+  const removed = (from.config.variable_keys ?? []).filter(
+    (k) => !after.has(k),
+  );
+  if (removed.length === 1) {
+    out.push(`${removed[0]} is removed: the app won't get this variable.`);
+  } else if (removed.length > 1) {
+    out.push(
+      `${removed.join(", ")} are removed: the app won't get these variables.`,
+    );
+  }
+  return out;
+}
+
+/**
  * The port a failed release's error says refused connections ("connection
  * refused on :3000"), when that is why it failed: the app likely listens
  * on another port.

@@ -7,8 +7,10 @@ import {
   Fields,
   Footer,
   input,
+  invalid,
   nameProblem,
   toName,
+  useValidation,
 } from "./form";
 import { useCreateOrg } from "./mutations";
 
@@ -22,16 +24,20 @@ export function NewOrg({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
+  const v = useValidation();
   const problem = nameProblem(
     "org",
     slug,
     orgs.map((o) => o.slug),
   );
+  const slugError = problem ?? v.required(!slug, "Enter a slug, like acme.");
   return (
     <form
+      ref={v.form}
       aria-label="New organization"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(!!slug && !problem)) return;
         create.mutate(
           { slug, ...(name.trim() && { name: name.trim() }) },
           {
@@ -46,13 +52,8 @@ export function NewOrg({ onClose }: { onClose: () => void }) {
       <Fields>
         <Field
           label="Slug"
-          note={
-            problem ? (
-              <span className="text-fail">{problem}</span>
-            ) : (
-              `Its address: ${window.location.host}/${slug || "acme"}`
-            )
-          }
+          error={slugError}
+          note={`Its address: ${window.location.host}/${slug || "acme"}`}
         >
           <input
             ref={autofocus}
@@ -61,7 +62,8 @@ export function NewOrg({ onClose }: { onClose: () => void }) {
             placeholder="acme"
             spellCheck={false}
             autoComplete="off"
-            className={input}
+            aria-invalid={!!slugError}
+            className={`${input} ${invalid(slugError)}`}
           />
         </Field>
         <Field label="Name" note="Optional; the slug if empty.">
@@ -77,7 +79,7 @@ export function NewOrg({ onClose }: { onClose: () => void }) {
       <Footer
         submit="Create organization"
         pending={create.isPending}
-        disabled={!slug || !!problem}
+        problem={v.problem([!slug && "a slug"], !!problem)}
         error={create.error}
         cli={[
           `dock org create ${slug || "<slug>"}${name.trim() ? ` --name ${JSON.stringify(name.trim())}` : ""}`,

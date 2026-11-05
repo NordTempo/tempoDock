@@ -140,24 +140,23 @@ function TokenRow({
           )}
         </td>
         <td className="w-full py-1.5 text-right">
-          <span className="inline-flex items-center gap-4">
+          <span className="inline-flex items-center gap-1.5">
             <Link
               to={operator ? "/console/audit" : "/$org/audit"}
               params={{ org }}
               search={{ actor: token.name }}
-              className="lnk"
+              className="btn sm no-underline"
             >
               Activity
             </Link>
             {admin && !dead && (
-              <button
-                type="button"
-                className="lnk"
+              <Button
+                small
                 aria-expanded={editingData}
                 onClick={() => setEditingData((e) => !e)}
               >
                 Data access
-              </button>
+              </Button>
             )}
             {!token.revoked_at && (
               <Button small onClick={() => setConfirming(true)}>
