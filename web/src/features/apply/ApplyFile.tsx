@@ -140,7 +140,7 @@ export default function ApplyFile({
                       {plural(p.count, "change")} staged
                     </span>
                     <Link
-                      to="/$org/$project/$environment"
+                      to="/$org/$project/settings/variables/$environment"
                       params={{ org, project, environment: p.environment }}
                       className="lnk"
                       onClick={onClose}

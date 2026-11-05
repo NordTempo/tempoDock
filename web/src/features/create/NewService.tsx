@@ -506,19 +506,19 @@ function Created({
       <div className="flex flex-col gap-3">
         <p>
           Created <span className="font-mono">{service.name}</span>, but
-          connecting the repository failed. Fix it and connect again in its
-          settings.
+          connecting the repository failed. Fix it and connect again on its
+          Build & run tab.
         </p>
         <ErrorText error={done.error} />
         <div className="flex gap-2">
           <Link
-            to="/$org/$project/$environment/$service/settings"
+            to="/$org/$project/$environment/$service/build"
             params={{ org, ...ref }}
             className="btn pri"
             ref={autofocus}
             onClick={onClose}
           >
-            Open settings
+            Open Build & run
           </Link>
           <Button onClick={onClose}>Close</Button>
         </div>

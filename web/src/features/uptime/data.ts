@@ -45,6 +45,18 @@ export const useAddUptimeCheck = (ref: ServiceRef) =>
     () => [uptimeKey(ref), keys.overview(ref.project)],
   );
 
+/** Checks every verified domain without a check (ADR 0059). */
+export const useCheckDomains = (ref: ServiceRef) =>
+  useAction(
+    () =>
+      list(
+        api.POST(`${path}/domains` as const, {
+          params: { path: servicePath(ref) },
+        }),
+      ),
+    () => [uptimeKey(ref), keys.overview(ref.project)],
+  );
+
 export const useRemoveUptimeCheck = (ref: ServiceRef) =>
   useAction(
     (id: number) =>

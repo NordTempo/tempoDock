@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { Fragment, useMemo, useState } from "react";
+import { useOrg } from "../../shell/location";
 import { ErrorBlock } from "../../ui/ErrorBlock";
 import { ago, clock, day } from "../../ui/format";
 import { Panel } from "../../ui/kit";
@@ -358,7 +359,7 @@ function Detail({
   const { data, error, refetch } = useQuery(
     siteErrorQuery(project, site, group, range, filters),
   );
-  const params = useParams({ strict: false });
+  const org = useOrg();
   const markerPoints = useMemo(() => chartMarkers(markers), [markers]);
   if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
@@ -426,15 +427,9 @@ function Detail({
                 <td className="text-right">
                   {o.replay ? (
                     <Link
-                      to="/$org/$project/$environment/$service/analytics/replays/$replay"
-                      params={{
-                        org: params.org ?? "",
-                        project,
-                        environment: params.environment ?? "",
-                        service: params.service ?? "",
-                        replay: o.replay,
-                      }}
-                      search={{ site, at: Date.parse(o.at) }}
+                      to="/$org/analytics/$project/$site/replays/$replay"
+                      params={{ org, project, site, replay: o.replay }}
+                      search={{ at: Date.parse(o.at) }}
                     >
                       replay ›
                     </Link>

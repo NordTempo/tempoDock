@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -83,6 +84,10 @@ type Options struct {
 	// verification (ADR 0042); nil uses the system resolver. Tests answer
 	// from a map.
 	LookupTXT func(ctx context.Context, name string) ([]string, error)
+	// LookupIP resolves a hostname, to tell whether a new domain is
+	// public before Dock adds an uptime check for it (ADR 0059); nil
+	// uses the system resolver.
+	LookupIP func(ctx context.Context, host string) ([]netip.Addr, error)
 }
 
 // Core is the control plane.
@@ -122,6 +127,8 @@ type Core struct {
 	checks   map[int64]domainCheck
 	// lookupTXT is Options.LookupTXT, or the system resolver's.
 	lookupTXT func(ctx context.Context, name string) ([]string, error)
+	// lookupIP is Options.LookupIP, or the system resolver's.
+	lookupIP func(ctx context.Context, host string) ([]netip.Addr, error)
 
 	// routesMu serialises render-and-apply, so a slow render can't
 	// overwrite a newer routing table.
@@ -238,6 +245,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		domainKick: make(chan struct{}, 1),
 		checks:     map[int64]domainCheck{},
 		lookupTXT:  o.LookupTXT,
+		lookupIP:   o.LookupIP,
 		status:     map[int64]apitypes.ServiceStatus{},
 		removing:   map[string]bool{},
 		health:     newHealthWatch(),
@@ -265,6 +273,11 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	}
 	if c.lookupTXT == nil {
 		c.lookupTXT = net.DefaultResolver.LookupTXT
+	}
+	if c.lookupIP == nil {
+		c.lookupIP = func(ctx context.Context, host string) ([]netip.Addr, error) {
+			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		}
 	}
 	c.panel = newDataPanel(c)
 	if o.CutoverDrain > 0 {

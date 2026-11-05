@@ -321,6 +321,9 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		c.log.Error("apply routes after adding domain", "domain", host, "err", err)
 	}
 	c.kickDomains()
+	if d.VerifiedAt != nil && redirect == "" {
+		c.autoUptimeChecks(ctx, ss, host)
+	}
 	rows, err := c.store.ListDomainsByService(ctx, ss.svc.ID)
 	if err != nil {
 		return out, err

@@ -1,0 +1,72 @@
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { envPath, queries, useProjectOverview } from "../data/queries";
+import { logDrainQueries } from "../features/logdrains/data";
+import { LogDrains } from "../features/logdrains/LogDrains";
+import { VariablesEditor } from "../features/variables/VariablesEditor";
+import { useOrg } from "../shell/location";
+
+// An environment's shared variables, one environment at a time, with its
+// log drains under them (ADR 0059; they were the environment's page,
+// /<org>/<project>/<environment>, which redirects here).
+export const Route = createFileRoute(
+  "/_app/$org/$project/settings/variables/$environment",
+)({
+  loader: async ({ context: { queryClient }, params }) => {
+    const overview = await queryClient.ensureQueryData(
+      queries.overview(params.project),
+    );
+    if (
+      !overview.environments.some(
+        (e) => e.environment.name === params.environment,
+      )
+    ) {
+      throw notFound();
+    }
+    await Promise.all([
+      queryClient.ensureQueryData(queries.variables(params, null)),
+      queryClient.ensureQueryData(queries.changes(params)),
+      queryClient.ensureQueryData(logDrainQueries.list(envPath(params))),
+    ]);
+  },
+  component: SharedVariables,
+});
+
+function SharedVariables() {
+  const org = useOrg();
+  const params = Route.useParams();
+  const { environments } = useProjectOverview(params.project);
+  const env = envPath(params);
+  return (
+    <>
+      {environments.length > 1 && (
+        <nav
+          aria-label="Environment"
+          className="flex flex-wrap items-center gap-1.5 px-4 pt-4 sm:px-7"
+        >
+          {environments.map((e) => (
+            <Link
+              key={e.environment.id}
+              to="/$org/$project/settings/variables/$environment"
+              params={{
+                org,
+                project: params.project,
+                environment: e.environment.name,
+              }}
+              className="btn"
+              activeProps={{ className: "bg-sel text-fg" }}
+            >
+              {e.environment.name}
+              {e.pending_changes > 0 && <span className="text-warn"> ▲</span>}
+            </Link>
+          ))}
+        </nav>
+      )}
+      <VariablesEditor
+        key={params.environment}
+        env={env}
+        service={null}
+        footer={<LogDrains env={env} />}
+      />
+    </>
+  );
+}

@@ -876,6 +876,7 @@ type UptimeCheck struct {
 	TimeoutMs    int64
 	CreatedAt    time.Time
 	CreatedBy    string
+	Auto         bool
 }
 
 type UptimeStat struct {

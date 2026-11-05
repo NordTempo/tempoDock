@@ -26,7 +26,20 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/logs",
     key: "g l",
   },
-  // One-off commands (ADR 0048). G C, "command": G R is Releases.
+  // Services with a domain only: their site's browser errors for now
+  // (ADR 0059), next to Logs and Traffic, the other places problems show.
+  {
+    label: "Errors",
+    to: "/$org/$project/$environment/$service/errors",
+    key: "g e",
+  },
+  // Services with a domain only: what their domains served (ADR 0033).
+  {
+    label: "Traffic",
+    to: "/$org/$project/$environment/$service/traffic",
+    key: "g t",
+  },
+  // One-off commands (ADR 0048). G C, "command": G R is the releases.
   {
     label: "Run",
     to: "/$org/$project/$environment/$service/run",
@@ -38,35 +51,17 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/jobs",
     key: "g j",
   },
-  // CPU and memory. G M, from its old name Metrics: G R is Releases.
+  // CPU and memory. G M, from its old name Metrics: G R is the releases.
   {
     label: "Resources",
     to: "/$org/$project/$environment/$service/resources",
     key: "g m",
-  },
-  // Services with a domain only: what their domains served (ADR 0033).
-  {
-    label: "Traffic",
-    to: "/$org/$project/$environment/$service/traffic",
-    key: "g t",
-  },
-  // Services with a domain only: Dock Analytics' dashboard (ADR 0037).
-  // G Y, "analytics": G A is Audit.
-  {
-    label: "Analytics",
-    to: "/$org/$project/$environment/$service/analytics",
-    key: "g y",
   },
   // Services with a domain or uptime checks: their checks (ADR 0055).
   {
     label: "Uptime",
     to: "/$org/$project/$environment/$service/uptime",
     key: "g u",
-  },
-  {
-    label: "Releases",
-    to: "/$org/$project/$environment/$service/releases",
-    key: "g r",
   },
   {
     label: "Domains",
@@ -78,9 +73,11 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/variables",
     key: "g v",
   },
+  // Source, builder, commands, health check, resources, replicas and
+  // server: what was Settings (ADR 0059), so G S still.
   {
-    label: "Settings",
-    to: "/$org/$project/$environment/$service/settings",
+    label: "Build & run",
+    to: "/$org/$project/$environment/$service/build",
     key: "g s",
   },
   {
@@ -92,7 +89,7 @@ export const serviceTabs = [
 
 export type ServiceTab = (typeof serviceTabs)[number];
 
-/** The tabs this service has: Data, Backups, Traffic, Analytics and Uptime only where they apply. */
+/** The tabs this service has: Data, Backups, Errors, Traffic and Uptime only where they apply. */
 export const tabsFor = (
   view: Pick<ServiceView, "service" | "domains"> &
     Partial<Pick<ServiceView, "uptime">>,
@@ -103,8 +100,8 @@ export const tabsFor = (
         return isDatabase(view.service);
       case "Backups":
         return view.service.stateful;
+      case "Errors":
       case "Traffic":
-      case "Analytics":
         return view.domains.length > 0;
       case "Uptime":
         return view.domains.length > 0 || !!view.uptime;

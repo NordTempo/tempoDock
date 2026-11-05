@@ -1,6 +1,10 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { useRestart, useRollback } from "../../data/mutations";
+import {
+  useArchiveService,
+  useRestart,
+  useRollback,
+} from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -9,6 +13,7 @@ import {
   useChanges,
   useDeployBlock,
   useEnvironment,
+  useIsAdmin,
   useReleases,
   useService,
 } from "../../data/queries";
@@ -22,6 +27,8 @@ import {
   Confirm,
   ErrorText,
   Glyph,
+  Menu,
+  menuItem,
   PageBar,
   StateText,
 } from "../../ui/kit";
@@ -96,13 +103,38 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const changes = useChanges(ref);
   const navigate = useNavigate();
   const shown = tabsFor(view);
-  useShortcuts(
-    shown.map((tab) => ({
+  useShortcuts([
+    ...shown.map((tab) => ({
       key: tab.key,
       label: tab.label.toLowerCase(),
       run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
-  );
+    // The release history on the Overview, and the service's site in the
+    // Analytics area (the old tab's address redirects there), ADR 0059.
+    {
+      key: "g r",
+      label: "releases",
+      run: () =>
+        navigate({
+          to: "/$org/$project/$environment/$service",
+          params: { org, ...ref },
+          hash: "releases",
+        }),
+    },
+    ...(view.domains.length > 0
+      ? [
+          {
+            key: "g y",
+            label: "analytics",
+            run: () =>
+              navigate({
+                to: "/$org/$project/$environment/$service/analytics",
+                params: { org, ...ref },
+              }),
+          },
+        ]
+      : []),
+  ]);
   const mine = (c: { service?: string }) =>
     !c.service || c.service === ref.service;
   const marks: Partial<Record<ServiceTab["label"], boolean>> = {
@@ -111,7 +143,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       changes.domains.some((d) => d.service === ref.service),
     Uptime: view.uptime?.state === "down",
     Variables: changes.variables.some(mine),
-    Settings:
+    "Build & run":
       changes.settings.some(mine) ||
       changes.volumes.some((v) => v.service === ref.service),
   };
@@ -362,9 +394,14 @@ export function StatusSentence({ view }: { view: ServiceView }) {
 
 /**
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
- * equivalents. Stop and roll back ask first.
+ * equivalents, and a menu with the rarer actions (Archive, for admins).
+ * Stop, roll back and archive ask first.
  */
 function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const isAdmin = useIsAdmin();
+  const archive = useArchiveService();
   const onDeploy = () => openDeploy(ref);
   const { service, deploying } = useService(ref);
   const releases = useReleases(ref);
@@ -374,9 +411,9 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const stop = useStopService();
   const start = useStartService();
   const target = rollbackTarget(releases);
-  const [confirming, setConfirming] = useState<"rollback" | "stop" | null>(
-    null,
-  );
+  const [confirming, setConfirming] = useState<
+    "rollback" | "stop" | "archive" | null
+  >(null);
   const stopped = !!service.stopped_at;
   // An unreachable server blocks every action that starts a release.
   const blocked = useDeployBlock(ref);
@@ -448,6 +485,34 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         }}
       >
         Its domains answer 503 until it starts again.
+      </Confirm>
+    );
+  }
+
+  if (confirming === "archive") {
+    return (
+      <Confirm
+        action={`Archive ${ref.service}`}
+        cli={`dock service archive ${ref.service} -e ${ref.environment} -p ${ref.project}`}
+        danger
+        pending={archive.isPending}
+        error={archive.error}
+        onConfirm={() =>
+          archive.mutate(ref, {
+            onSuccess: () =>
+              navigate({
+                to: "/$org/$project",
+                params: { org, project: ref.project },
+              }),
+          })
+        }
+        onCancel={() => {
+          archive.reset();
+          setConfirming(null);
+        }}
+      >
+        Stops its container and removes its routes in {ref.environment}. Volumes
+        and history are kept.
       </Confirm>
     );
   }
@@ -540,6 +605,27 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       >
         Deploy <kbd>D</kbd>
       </Act>
+      {isAdmin && (
+        <Menu
+          label="More actions"
+          right
+          button={<span className="btn">⋯</span>}
+        >
+          {(close) => (
+            <button
+              type="button"
+              className={`${menuItem} text-fail hover:text-fail`}
+              title={`dock service archive ${ref.service} -e ${ref.environment}`}
+              onClick={() => {
+                close();
+                setConfirming("archive");
+              }}
+            >
+              Archive {ref.service}…
+            </button>
+          )}
+        </Menu>
+      )}
       <span className="self-center text-xs">
         {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
         <ErrorText error={restart.error ?? rollback.error ?? start.error} />

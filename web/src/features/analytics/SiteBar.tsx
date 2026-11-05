@@ -1,7 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
-import type { ServiceRef } from "../../data/types";
 import { Button } from "../../ui/kit";
 import { RangeSwitch } from "../stats/parts";
 import {
@@ -9,32 +7,21 @@ import {
   type Site,
   type SiteStats,
   type StatsRange,
-  searchOf,
   siteStatsQuery,
   statsRanges,
 } from "./data";
 import { shown } from "./parts";
 
-// The bar above every analytics view (ADR 0037): the site, its settings,
-// the range and filters they share, and the views as sub-tabs (mock A).
+// The bar above every analytics view (ADR 0037): the site (a choice of
+// sites on a service's Errors tab), its settings, the range and the
+// filters they share.
 
 const SiteSettingsDialog = lazy(() => import("./SiteSettingsDialog"));
 
-/** The views of a site, as sub-tabs: their route's last segment. */
-export const views = [
-  ["Overview", "/$org/$project/$environment/$service/analytics"],
-  ["Errors", "/$org/$project/$environment/$service/analytics/errors"],
-  ["Vitals", "/$org/$project/$environment/$service/analytics/vitals"],
-  ["Replays", "/$org/$project/$environment/$service/analytics/replays"],
-  ["Funnels", "/$org/$project/$environment/$service/analytics/funnels"],
-] as const;
-export type View = (typeof views)[number][1];
-
 export function SiteBar({
-  serviceRef: ref,
-  sites,
+  project,
+  sites = [],
   site,
-  view,
   range,
   filters,
   labels,
@@ -42,17 +29,19 @@ export function SiteBar({
   onRenamed,
   onRange,
   onFilters,
+  named = true,
 }: {
-  serviceRef: ServiceRef;
-  /** The sites to choose from: those the service serves. */
-  sites: Site[];
+  project: string;
+  /** Show the site's name (or the choice of sites); a site page has it in its header. */
+  named?: boolean;
+  /** The sites to choose from, when there are others. */
+  sites?: Site[];
   site: Site;
-  view: View;
   range: StatsRange;
   filters: Filter[];
   /** Labels of filtered values (services, releases) from rows clicked. */
   labels: Record<string, string>;
-  onSite: (name: string) => void;
+  onSite?: (name: string) => void;
   /** The site was renamed: keep showing it, filters and all. */
   onRenamed: (name: string) => void;
   onRange: (range: StatsRange) => void;
@@ -63,25 +52,18 @@ export function SiteBar({
   // are loaded.
   const queryClient = useQueryClient();
   const stats = queryClient.getQueryData<SiteStats>(
-    siteStatsQuery(ref.project, site.name, range, filters).queryKey,
+    siteStatsQuery(project, site.name, range, filters).queryKey,
   );
   const hostnames = site.hostnames ?? [];
   const services = new Set(hostnames.map((h) => h.service).filter(Boolean));
-  const { org = "" } = useParams({ strict: false });
-  const params = {
-    org,
-    project: ref.project,
-    environment: ref.environment,
-    service: ref.service,
-  };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        {sites.length > 1 ? (
+        {!named ? null : sites.length > 1 ? (
           <select
             aria-label="Site"
             value={site.name}
-            onChange={(e) => onSite(e.target.value)}
+            onChange={(e) => onSite?.(e.target.value)}
           >
             {sites.map((s) => (
               <option key={s.name} value={s.name}>
@@ -112,23 +94,6 @@ export function SiteBar({
           <RangeSwitch value={range} options={statsRanges} onChange={onRange} />
         </span>
       </div>
-      <nav
-        aria-label="Analytics"
-        className="flex gap-4 border-b border-line text-sm"
-      >
-        {views.map(([label, to]) => (
-          <Link
-            key={to}
-            to={to}
-            params={params}
-            search={searchOf(site.name, range, filters)}
-            aria-current={to === view ? "page" : undefined}
-            className={`-mb-px border-b-2 pb-1.5 ${to === view ? "border-fg text-fg" : "border-transparent text-mut"}`}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
       {filters.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {filters.map((f) => (
@@ -164,7 +129,7 @@ export function SiteBar({
       {settings && (
         <Suspense fallback={null}>
           <SiteSettingsDialog
-            project={ref.project}
+            project={project}
             site={site}
             onRenamed={onRenamed}
             onClose={() => setSettings(false)}

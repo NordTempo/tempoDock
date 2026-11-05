@@ -112,6 +112,16 @@ export function useCommands({
         run: () => openCreate({ kind: "environment", project }),
       });
     }
+    add({
+      id: `settings:${project}`,
+      group: "Go to",
+      label: `${project} settings`,
+      strong: project,
+      cli: inProject ? "S" : "",
+      weight: inProject ? 1 : 0,
+      run: () =>
+        navigate({ to: "/$org/$project/settings", params: { org, project } }),
+    });
     if (environments.length > 1) {
       add({
         id: `compare:${project}`,
@@ -197,7 +207,7 @@ export function useCommands({
         weight: (inProject ? 1 : 0) + (inEnv ? 1 : 0),
         run: () =>
           navigate({
-            to: "/$org/$project/$environment",
+            to: "/$org/$project/settings/variables/$environment",
             params: { org, project, environment },
           }),
       });
@@ -334,7 +344,7 @@ export function useCommands({
           ["Cloudflare", "/console/cloudflare", "dock cloudflare"],
           ["Address", "/console/address", "dock address"],
           ["Updates", "/console/updates", "dock update"],
-          ["Analytics", "/console/analytics", "dock analytics"],
+          ["Analytics store", "/console/analytics", "dock analytics"],
         ] as const)
       : []),
     ["Account", "/account", "dock whoami"],
@@ -362,6 +372,7 @@ export function useCommands({
           ],
         ] as const)
       : []),
+    ["Analytics", "/$org/analytics", "dock analytics sites"],
     ["Organization variables", "/$org/settings/variables", "dock org env list"],
     ["Organization settings", "/$org/settings/general", "dock org list"],
     ...(operator

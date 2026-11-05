@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
+import { useOrg } from "../../shell/location";
 import { ErrorBlock } from "../../ui/ErrorBlock";
 import { clock, day } from "../../ui/format";
 import { Panel } from "../../ui/kit";
@@ -79,7 +80,7 @@ export function ReplaysView({
       errorsOnly,
     ),
   );
-  const params = useParams({ strict: false });
+  const org = useOrg();
   if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!data) return <p className="text-mut">Loading…</p>;
   const replays = data.replays ?? [];
@@ -158,16 +159,9 @@ export function ReplaysView({
               <tr key={r.id}>
                 <td className="text-xs">
                   <Link
-                    to="/$org/$project/$environment/$service/analytics/replays/$replay"
-                    params={{
-                      org: params.org ?? "",
-                      project,
-                      environment: params.environment ?? "",
-                      service: params.service ?? "",
-                      replay: r.id,
-                    }}
+                    to="/$org/analytics/$project/$site/replays/$replay"
+                    params={{ org, project, site: site.name, replay: r.id }}
                     search={{
-                      site: site.name,
                       ...(range !== "30d" && { range }),
                       ...(errorsOnly && { errors: true }),
                       ...(device && { device }),

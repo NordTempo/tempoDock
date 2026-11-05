@@ -366,3 +366,96 @@ func TestUptimeNeedsAVerifiedDomain(t *testing.T) {
 		t.Fatalf("checks after the domain went = %+v, %v", checks, err)
 	}
 }
+
+// waitUptimeChecks waits until a service has n uptime checks, reading
+// them again after each of its events (an added check is audited).
+func (h *harness) waitUptimeChecks(ref ServiceRef, n int) {
+	h.t.Helper()
+	sub := h.c.bus.subscribe(func(e busEvent) bool { return e.ev.Service == ref.Service })
+	defer sub.close()
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+	for {
+		checks, err := h.c.ListUptimeChecks(h.ctx, testSystem, ref)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		if len(checks) == n {
+			return
+		}
+		select {
+		case <-sub.ch:
+		case <-timeout.C:
+			h.t.Fatalf("%s has %d uptime checks, want %d", ref.Service, len(checks), n)
+		}
+	}
+}
+
+// Verified domains get uptime checks of their own once the service runs
+// (ADR 0059): not before its first release, not for a domain on a
+// private address, not again after a user removes one; they go with
+// their domain, and CheckDomains catches up the rest.
+func TestAutoUptimeChecks(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 3000})
+	h.dns.setIP("shop.example.com", "203.0.113.10")
+	h.dns.setIP("new.example.com", "203.0.113.11")
+	h.dns.setIP("lan.example.com", "192.168.1.5")
+	urls := func() []string {
+		t.Helper()
+		checks, err := h.c.ListUptimeChecks(h.ctx, testSystem, web)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range checks {
+			if !c.Auto {
+				t.Errorf("%s isn't marked auto", c.URL)
+			}
+			out = append(out, c.URL)
+		}
+		return out
+	}
+	add := func(host string) {
+		t.Helper()
+		if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: host}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	add("shop.example.com")
+	if got := urls(); len(got) != 0 {
+		t.Fatalf("checks before the first release = %v", got)
+	}
+	h.deploy(web, "nginx:1")
+	// The first release reads as live a moment before its checks exist.
+	h.waitUptimeChecks(web, 1)
+	if got := urls(); !slices.Equal(got, []string{"https://shop.example.com/"}) {
+		t.Fatalf("checks after the first release = %v", got)
+	}
+	add("lan.example.com")
+	add("new.example.com")
+	if got := urls(); !slices.Equal(got, []string{"https://shop.example.com/", "https://new.example.com/"}) {
+		t.Fatalf("checks after adding domains = %v", got)
+	}
+
+	checks, _ := h.c.ListUptimeChecks(h.ctx, testSystem, web)
+	if err := h.c.RemoveUptimeCheck(h.ctx, testSystem, web, checks[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "nginx:2")
+	if err := h.c.RemoveDomain(h.ctx, testSystem, web, "new.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if got := urls(); len(got) != 0 {
+		t.Fatalf("checks after removing one and its domain = %v", got)
+	}
+
+	all, err := h.c.CheckDomains(h.ctx, testSystem, web)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("CheckDomains = %+v, %v", all, err)
+	}
+	if again, err := h.c.CheckDomains(h.ctx, testSystem, web); err != nil || len(again) != 2 {
+		t.Fatalf("CheckDomains again = %d checks, %v", len(again), err)
+	}
+}

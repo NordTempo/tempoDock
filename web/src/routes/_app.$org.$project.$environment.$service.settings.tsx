@@ -1,13 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { servicePath } from "../data/queries";
-import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
+// The service's old Settings tab, Build & run now (ADR 0059).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/settings",
 )({
-  component: SettingsTab,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/build",
+      params,
+      replace: true,
+    });
+  },
 });
-
-function SettingsTab() {
-  return <SettingsPanel serviceRef={servicePath(Route.useParams())} />;
-}

@@ -3,6 +3,7 @@ import { Replayer } from "@rrweb/replay";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useOrg } from "../../shell/location";
 import { day } from "../../ui/format";
 import { Button } from "../../ui/kit";
 import {
@@ -23,13 +24,6 @@ import { replayFilters } from "./ReplaysView";
 
 type Item = NonNullable<ReplayDetail["timeline"]>[number];
 
-/** The service a replay is watched under: its route's params. */
-type ServiceParams = {
-  org: string;
-  project: string;
-  environment: string;
-  service: string;
-};
 type Tab = "all" | "error" | "event";
 
 /** m:ss of a duration in milliseconds. */
@@ -44,7 +38,6 @@ export function ReplayPlayer({
   project,
   site,
   replay: id,
-  serviceLink,
   at,
   atTime,
   list = {},
@@ -52,8 +45,6 @@ export function ReplayPlayer({
   project: string;
   site: string;
   replay: string;
-  /** Where the breadcrumb leads back to: the service's Analytics tab. */
-  serviceLink: { to: string; params: ServiceParams };
   /** Where to start, in seconds (a shared link). */
   at?: number;
   /** Or a moment to start a few seconds before (Unix ms): an error's. */
@@ -66,6 +57,7 @@ export function ReplayPlayer({
     device?: string;
   };
 }) {
+  const org = useOrg();
   const { data: replay, error } = useQuery(replayQuery(project, site, id));
   const [events, setEvents] = useState<RecordedEvent[]>();
   const [loadError, setLoadError] = useState<string>();
@@ -82,18 +74,9 @@ export function ReplayPlayer({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Link
-          to={serviceLink.to}
-          params={serviceLink.params}
-          search={{ site }}
-          className="text-mut"
-        >
-          Analytics
-        </Link>
-        <span className="text-faint">›</span>
-        <Link
-          to="/$org/$project/$environment/$service/analytics/replays"
-          params={serviceLink.params}
-          search={{ site, ...list }}
+          to="/$org/analytics/$project/$site/replays"
+          params={{ org, project, site }}
+          search={list}
           className="text-mut"
         >
           Replays
@@ -108,13 +91,7 @@ export function ReplayPlayer({
           </span>
         )}
         {replay && (
-          <Walk
-            project={project}
-            site={site}
-            current={replay.id}
-            list={list}
-            params={serviceLink.params}
-          />
+          <Walk project={project} site={site} current={replay.id} list={list} />
         )}
       </div>
       {(error || loadError) && (
@@ -138,14 +115,13 @@ function Walk({
   site,
   current,
   list,
-  params,
 }: {
   project: string;
   site: string;
   current: string;
   list: { range?: StatsRange; f?: string[]; errors?: boolean; device?: string };
-  params: ServiceParams;
 }) {
+  const org = useOrg();
   const filters = (list.f ?? []).flatMap((f) => parseFilter(f) ?? []);
   const { data } = useQuery(
     siteReplaysQuery(
@@ -161,17 +137,9 @@ function Walk({
   const link = (id: string | undefined, label: string) =>
     id ? (
       <Link
-        to="/$org/$project/$environment/$service/analytics/replays/$replay"
-        params={{
-          ...(params as {
-            org: string;
-            project: string;
-            environment: string;
-            service: string;
-          }),
-          replay: id,
-        }}
-        search={{ site, ...list }}
+        to="/$org/analytics/$project/$site/replays/$replay"
+        params={{ org, project, site, replay: id }}
+        search={list}
       >
         {label}
       </Link>

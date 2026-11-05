@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { useService } from "../../data/queries";
+import { listenPort, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { ago, clock, day, elapsed } from "../../ui/format";
 import { Act, Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
@@ -10,11 +10,13 @@ import {
   type UptimeCheck,
   uptimeChecks,
   useAddUptimeCheck,
+  useCheckDomains,
   useRemoveUptimeCheck,
 } from "./data";
 
 // A service's uptime checks (ADR 0055): the add form, one row per check
-// with its state, last day's strip and percentages, then the latest
+// with its state, last day's strip and percentages, then Dock's own health
+// check of the container (the view from inside, ADR 0059) and the latest
 // incidents. Live state comes from uptime events (data.ts).
 
 const intervals = [
@@ -37,6 +39,11 @@ const stateWord = { up: "Up", down: "Down", unknown: "Unknown" };
 export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { domains } = useService(ref);
   const checks = useSuspenseQuery(uptimeChecks(ref)).data;
+  // Verified domains that serve the service and have no check yet.
+  const checked = new Set(checks.map((c) => new URL(c.url).hostname));
+  const unchecked = domains.filter(
+    (d) => d.verified && !d.redirect_to && !checked.has(d.hostname),
+  );
   const incidents = checks
     .flatMap((c) => c.incidents.map((i) => ({ ...i, url: c.url })))
     .sort((a, b) => b.opened_at.localeCompare(a.opened_at))
@@ -47,8 +54,16 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <SectionHead
           id="uptime-checks"
           aside="GET from another server; two failures in a row raise an alert"
+          right={
+            unchecked.length > 0 && (
+              <CheckDomains
+                serviceRef={ref}
+                hosts={unchecked.map((d) => d.hostname)}
+              />
+            )
+          }
         >
-          Uptime
+          From outside
         </SectionHead>
         {domains.length === 0 ? (
           <p className="text-mut">
@@ -83,6 +98,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           </Panel>
         )}
       </section>
+      <Inside serviceRef={ref} />
       {incidents.length > 0 && (
         <section aria-labelledby="uptime-incidents">
           <SectionHead id="uptime-incidents">Last incidents</SectionHead>
@@ -155,10 +171,21 @@ function CheckRow({
     <tr>
       <td className={stateClass[c.state]}>{stateWord[c.state]}</td>
       <td
-        className="max-w-[240px] truncate font-mono"
+        className="whitespace-nowrap"
         title={`${c.url}, expects ${c.expect_status}`}
       >
-        {c.url}
+        <span className="inline-block max-w-[240px] truncate align-bottom font-mono">
+          {c.url}
+        </span>
+        {c.auto && (
+          <span
+            className="text-faint"
+            title="Added by Dock for a verified domain; goes with the domain"
+          >
+            {" "}
+            auto
+          </span>
+        )}
       </td>
       <td>
         <Strip series={c.series} />
@@ -198,6 +225,93 @@ function CheckRow({
         <ErrorText error={remove.error} />
       </td>
     </tr>
+  );
+}
+
+/** One click for the verified domains without a check. */
+function CheckDomains({
+  serviceRef: ref,
+  hosts,
+}: {
+  serviceRef: ServiceRef;
+  hosts: string[];
+}) {
+  const check = useCheckDomains(ref);
+  return (
+    <span className="flex items-center gap-2 text-xs">
+      <span className="text-faint">
+        {hosts.length === 1
+          ? `${hosts[0]} has no check`
+          : `${hosts.length} domains have no check`}
+      </span>
+      <Act
+        small
+        cli={`dock uptime domains -s ${ref.service} -e ${ref.environment}`}
+        disabled={check.isPending}
+        onClick={() => check.mutate()}
+      >
+        Check all domains
+      </Act>
+      <ErrorText error={check.error} />
+    </span>
+  );
+}
+
+/**
+ * Dock's own health check of the container on its server: the view from
+ * inside, next to the probes from outside. From the service's status, no
+ * prober of its own.
+ */
+function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const { service } = useService(ref);
+  const { status } = service;
+  const interval = service.health_check_interval_seconds;
+  const health = status.health;
+  return (
+    <section aria-labelledby="uptime-inside" className="flex flex-col">
+      <SectionHead
+        id="uptime-inside"
+        aside="Dock's health check of the container, on its server"
+      >
+        From inside
+      </SectionHead>
+      {interval === -1 ? (
+        <p className="text-mut">
+          The ongoing health check is off; set an interval on Build &amp; run.
+        </p>
+      ) : (
+        <p className="flex flex-wrap gap-x-3">
+          <span
+            className={
+              health === "healthy"
+                ? "text-ok"
+                : health === "unhealthy"
+                  ? "text-fail"
+                  : "text-mut"
+            }
+          >
+            {health === "healthy"
+              ? "Healthy"
+              : health === "unhealthy"
+                ? "Unhealthy"
+                : health === "starting"
+                  ? "Starting"
+                  : "Not running"}
+          </span>
+          <span className="font-mono">
+            {service.health_check_path
+              ? `GET :${listenPort(service)}${service.health_check_path}`
+              : `TCP :${listenPort(service)}`}{" "}
+            every {interval || 30} s
+          </span>
+          <span className="text-mut">
+            {status.health_restarts
+              ? `restarted ${status.health_restarts} ${status.health_restarts === 1 ? "time" : "times"} for failing checks`
+              : "no restarts for failing checks"}
+          </span>
+        </p>
+      )}
+    </section>
   );
 }
 

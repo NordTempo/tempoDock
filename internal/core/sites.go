@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -210,6 +213,65 @@ func (c *Core) ListSites(ctx context.Context, a Actor, project string) ([]apityp
 		envs[r.EnvironmentID] = r.EnvironmentName
 	}
 	return c.toSites(ctx, sites, envs)
+}
+
+// orgSitesMax caps the Analytics area's list, and orgSitesQueries the
+// store queries for its numbers running at once.
+const (
+	orgSitesMax     = 200
+	orgSitesQueries = 4
+)
+
+// ListOrgSites returns the organization's live sites the actor may read,
+// by project, each with its last 24 hours' visitors and page views: the
+// Analytics area's list. Four SQLite queries however many sites, and one
+// small store query per site, at most four at once.
+func (c *Core) ListOrgSites(ctx context.Context, a Actor) ([]apitypes.OrgSite, error) {
+	if err := a.require(apitypes.ScopeRead, "listing sites"); err != nil {
+		return nil, err
+	}
+	rows, err := c.store.ListOrgSites(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	var sites []store.Site
+	var projects []string
+	envs := map[int64]string{}
+	for _, r := range rows {
+		env := store.Environment{ID: r.Site.EnvironmentID, Name: r.EnvironmentName, ProjectID: r.Project.ID}
+		if a.checkEnv(apitypes.ScopeRead, "listing sites", r.Project, env) != nil || len(sites) == orgSitesMax {
+			continue
+		}
+		sites = append(sites, r.Site)
+		projects = append(projects, r.Project.Name)
+		envs[env.ID] = env.Name
+	}
+	list, err := c.toSites(ctx, sites, envs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]apitypes.OrgSite, len(list))
+	for i := range list {
+		out[i] = apitypes.OrgSite{Project: projects[i], Site: list[i]}
+	}
+	cl, _ := c.analyticsClient()
+	if cl == nil {
+		return out, nil
+	}
+	to := now().UnixMilli()
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(orgSitesQueries)
+	for i, s := range sites {
+		g.Go(func() error {
+			o, err := cl.Overview(gctx, analytics.Query{Site: s.ID, From: to - 24*time.Hour.Milliseconds(), To: to})
+			if err == nil {
+				out[i].Last24h = ptr(toOverview(o))
+			}
+			return nil // a store that can't answer leaves the numbers out
+		})
+	}
+	_ = g.Wait()
+	return out, nil
 }
 
 // GetSite returns one site.

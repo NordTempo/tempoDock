@@ -75,7 +75,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st, dns: &fakeDNS{}}
-	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, LookupTXT: h.dns.lookupTXT}
+	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, LookupTXT: h.dns.lookupTXT, LookupIP: h.dns.lookupIP}
 	h.c = h.start()
 	t.Cleanup(func() {
 		h.c.Close()

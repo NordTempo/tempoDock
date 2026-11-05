@@ -158,6 +158,9 @@ function AppNav() {
       <ProjectTree />
       <ArchivedProjects />
       <div className="min-h-6 flex-1" />
+      <NavLink to="/$org/analytics" icon="bars">
+        Analytics
+      </NavLink>
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>

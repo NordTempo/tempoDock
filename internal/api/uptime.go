@@ -33,6 +33,14 @@ func registerUptime(s *Server, a huma.API) {
 		return reply(s.core.AddUptimeCheck(ctx, actor, in.ref(), in.Body))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "check-domains", Method: http.MethodPost, Path: servicePathT + "/uptime-checks/domains",
+		Summary:     "Check every domain",
+		Description: "Adds an uptime check of https://<domain>/ for each of the service's verified domains that has none, marked auto (ADR 0059), and returns the service's checks. Scope: admin.",
+		Tags:        tags,
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[[]apitypes.UptimeCheck], error) {
+		return reply(s.core.CheckDomains(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "remove-uptime-check", Method: http.MethodDelete, Path: servicePathT + "/uptime-checks/{id}",
 		Summary: "Remove an uptime check", Description: "With its history; its open alert resolves. Scope: admin.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,

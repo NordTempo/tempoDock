@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"net"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -53,6 +54,29 @@ func TestDomainURLAndLastCheck(t *testing.T) {
 type fakeDNS struct {
 	mu  sync.Mutex
 	txt map[string][]string
+	// ip answers LookupIP; a name without addresses is NXDOMAIN, so a
+	// test gets auto uptime checks (ADR 0059) only by giving one.
+	ip map[string][]netip.Addr
+}
+
+// setIP gives name the address addr.
+func (f *fakeDNS) setIP(name, addr string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ip == nil {
+		f.ip = map[string][]netip.Addr{}
+	}
+	f.ip[name] = []netip.Addr{netip.MustParseAddr(addr)}
+}
+
+// lookupIP is Options.LookupIP.
+func (f *fakeDNS) lookupIP(_ context.Context, name string) ([]netip.Addr, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if ip, ok := f.ip[name]; ok {
+		return ip, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: name, IsNotFound: true}
 }
 
 // set gives name one TXT record holding value.

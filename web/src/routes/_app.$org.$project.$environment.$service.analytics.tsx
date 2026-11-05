@@ -1,49 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { servicePath, useCanDeploy } from "../data/queries";
-import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
-import { Dashboard } from "../features/analytics/Dashboard";
-import { applyChange, parseFilter } from "../features/analytics/data";
-import { analyticsSearch, sitesQuery } from "../features/analytics/loaders";
+import { siteRedirect } from "../features/analytics/loaders";
 
-// A service's Analytics tab (ADR 0037): its site's dashboard.
-// /shop/production/web/analytics?site=shop.example.com&range=7d&f=country:is:NO
+// The service's old Analytics tab: its site's page in the Analytics area
+// now (ADR 0059).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/analytics",
 )({
-  validateSearch: analyticsSearch,
-  loader: ({ context: { queryClient }, params }) =>
-    queryClient.ensureQueryData(sitesQuery(params.project)),
-  component: Tab,
+  beforeLoad: ({ context: { queryClient }, params, search }) =>
+    siteRedirect(queryClient, params, search, ""),
 });
-
-function Tab() {
-  const ref = servicePath(Route.useParams());
-  const search = Route.useSearch();
-  const navigate = Route.useNavigate();
-  const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
-  const range = search.range ?? "30d";
-  const canEdit = useCanDeploy(ref);
-  return (
-    <AnalyticsTab
-      serviceRef={ref}
-      view="/$org/$project/$environment/$service/analytics"
-      site={search.site}
-      range={range}
-      filters={filters}
-      onChange={(change) =>
-        navigate({ search: (s) => applyChange(s, change), replace: true })
-      }
-    >
-      {(site, onPick) => (
-        <Dashboard
-          project={ref.project}
-          site={site}
-          range={range}
-          filters={filters}
-          onPick={onPick}
-          canEdit={canEdit}
-        />
-      )}
-    </AnalyticsTab>
-  );
-}

@@ -667,6 +667,9 @@ function invalidateForAnalytics(
     predicate: ({ queryKey: [, , p, s] }) =>
       p === project && (site === undefined || s === site),
   });
+  // The organization's list (orgSitesQuery) names every project's sites.
+  if (site === undefined)
+    queryClient.invalidateQueries({ queryKey: ["analytics", "org-sites"] });
   // The first hostname turns analytics on.
   if (action === "analytics.enable")
     queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });

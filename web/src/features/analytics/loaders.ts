@@ -1,4 +1,5 @@
-import { queryOptions } from "@tanstack/react-query";
+import { type QueryClient, queryOptions } from "@tanstack/react-query";
+import { redirect } from "@tanstack/react-router";
 import { api, body, list } from "../../api/client";
 
 // What analytics routes need before their views load: their search
@@ -40,6 +41,17 @@ export const sitesQuery = (project: string) =>
       ),
   });
 
+/**
+ * The organization's sites with their last 24 hours: the Analytics area's
+ * list, and the service Overview's visitors line.
+ */
+export const orgSitesQuery = () =>
+  queryOptions({
+    queryKey: orgSitesKey,
+    queryFn: () => list(api.GET("/api/v1/sites")),
+  });
+export const orgSitesKey = ["analytics", "org-sites"] as const;
+
 export const analyticsStatusQuery = () =>
   queryOptions({
     queryKey: ["analytics", "status"],
@@ -78,3 +90,47 @@ export const analyticsSearch = (
 /** The vitals a view charts. */
 export const vitals = ["lcp", "inp", "cls", "fcp", "ttfb"] as const;
 export type Vital = (typeof vitals)[number];
+
+/**
+ * Redirects an old service analytics URL (…/web/analytics/vitals?site=…)
+ * to its site's page in the Analytics area (ADR 0059): the site in its
+ * search, or the first the service's hostnames count for; the area's list
+ * without one. rest is the view below the site: "", "vitals", "funnels",
+ * "replays" or "replays/<id>".
+ */
+export async function siteRedirect(
+  queryClient: QueryClient,
+  ref: { org: string; project: string; environment: string; service: string },
+  search: Record<string, unknown>,
+  rest: string,
+): Promise<never> {
+  const sites = await queryClient.ensureQueryData(sitesQuery(ref.project));
+  const { site: picked, ...kept } = search;
+  const site =
+    sites.find((s) => s.name === picked) ??
+    sites.find(
+      (s) =>
+        !s.archived &&
+        s.environment === ref.environment &&
+        (s.hostnames ?? []).some((h) => h.service === ref.service),
+    );
+  if (!site)
+    throw redirect({ to: "/$org/analytics", params: { org: ref.org } });
+  const params = { org: ref.org, project: ref.project, site: site.name };
+  const [view, replay] = rest.split("/");
+  if (view === "replays" && replay)
+    throw redirect({
+      to: "/$org/analytics/$project/$site/replays/$replay",
+      params: { ...params, replay },
+      search: kept,
+    });
+  const to =
+    view === "vitals"
+      ? "/$org/analytics/$project/$site/vitals"
+      : view === "funnels"
+        ? "/$org/analytics/$project/$site/funnels"
+        : view === "replays"
+          ? "/$org/analytics/$project/$site/replays"
+          : "/$org/analytics/$project/$site";
+  throw redirect({ to, params, search: kept });
+}
