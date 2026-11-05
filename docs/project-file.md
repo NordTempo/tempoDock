@@ -61,6 +61,9 @@ project = "shop"
 | `volumes` | service | `{ name, mount_path }` |
 | `domains` | service | `{ hostname }`, `{ hostname, redirect_to }` or `{ generated = true }` (any generated domain of the service matches) |
 | `git` | service | `{ repository, branch, directory, statuses }`; compared, connected with `dock git connect` |
+| `stopped` | service | `true` for a service stopped on purpose. Compared, but stopping and starting act at once: the plan names `dock service stop` / `start` |
+| `log_drains` | environment | `{ name, kind, target }`: where its logs go, without the URL's credentials. Compared; a missing drain is added with `dock logs drain add`, since its URL holds the secret |
+| `registry_credentials` | top | Private registry hosts the project's images pull from with an organization credential. Only the host: the plan says which the organization lacks, and an admin adds them with `dock registry login` |
 
 Parsing is strict: an unknown key, a key in both `variables` and
 `values`, or `depends_on` naming a service that isn't there is an error

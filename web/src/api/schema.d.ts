@@ -4860,6 +4860,7 @@ export interface components {
         };
         EnvironmentExport: {
             kind: string;
+            log_drains?: components["schemas"]["LogDrainExport"][] | null;
             name: string;
             services?: components["schemas"]["ServiceExport"][] | null;
             shared_values?: {
@@ -5209,6 +5210,11 @@ export interface components {
             /** @example tcp://logs.example.com:514 */
             target: string;
         };
+        LogDrainExport: {
+            kind: string;
+            name: string;
+            target: string;
+        };
         LogDrainStatus: {
             /**
              * Format: int64
@@ -5334,7 +5340,7 @@ export interface components {
             action: "add" | "update" | "remove";
             environment?: string;
             /** @enum {string} */
-            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database";
+            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database" | "log_drain" | "registry_credential";
             name?: string;
             new?: string;
             note?: string;
@@ -5355,6 +5361,7 @@ export interface components {
         ProjectExport: {
             environments: components["schemas"]["EnvironmentExport"][] | null;
             project: string;
+            registry_credentials?: string[] | null;
             /**
              * Format: int64
              * @description Manifest format version
@@ -5974,6 +5981,7 @@ export interface components {
             /** Format: int64 */
             pre_deploy_timeout_seconds?: number;
             start_command?: string;
+            stopped?: boolean;
             template?: string;
             values?: {
                 [key: string]: string;
