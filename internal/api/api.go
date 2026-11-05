@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -124,7 +125,45 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerSiteLive(s, a)
 	registerConnect(s, a, mux)
 	registerRuns(s, a, mux)
+	shareErrorResponses(a.OpenAPI())
 	return a
+}
+
+// shareErrorResponses points every operation's error responses at one
+// *huma.Response per status code. Huma builds a fresh response, content
+// map and schema ref for each code of each operation (~2,000 in all) and
+// keeps them for the life of the daemon; sharing frees them. Only a
+// response deeply equal to the shared one is replaced, so the OpenAPI
+// document stays byte-identical. Runs once, after every operation is
+// registered, so nothing mutates a shared response afterwards.
+func shareErrorResponses(o *huma.OpenAPI) {
+	ct := (&apitypes.Error{}).ContentType("application/json")
+	ref := o.Components.Schemas.Schema(reflect.TypeFor[apitypes.Error](), true, "Error")
+	shared := map[string]*huma.Response{}
+	for _, item := range o.Paths {
+		for _, op := range []*huma.Operation{item.Get, item.Put, item.Post, item.Delete, item.Options, item.Head, item.Patch, item.Trace} {
+			if op == nil {
+				continue
+			}
+			for code, r := range op.Responses {
+				want, ok := shared[code]
+				if !ok {
+					n, err := strconv.Atoi(code)
+					if err != nil || n < 400 {
+						continue
+					}
+					want = &huma.Response{
+						Description: http.StatusText(n),
+						Content:     map[string]*huma.MediaType{ct: {Schema: ref}},
+					}
+					shared[code] = want
+				}
+				if r != want && reflect.DeepEqual(r, want) {
+					op.Responses[code] = want
+				}
+			}
+		}
+	}
 }
 
 func init() {
