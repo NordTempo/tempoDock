@@ -168,8 +168,10 @@ func (c *Core) proveDomain(ctx context.Context, ss svcScope, d *store.Domain) (s
 	a := System.InOrg(ss.project.OrgID)
 	c.audit(ctx, a, "domain.verify", &ss.project, &ss.env, ss.String(), "verified domain "+d.Hostname+" with its TXT record")
 	c.tellLosers(ctx, d.Hostname, lost)
-	// Its analytics come along now that it is the org's (AddDomain).
+	// Its analytics come along now that it is the org's (AddDomain), and
+	// it gets an uptime check (ADR 0059).
 	if d.RedirectTo == "" {
+		c.autoUptimeChecks(ctx, ss, d.Hostname)
 		if moved, err := c.siteDomainAdded(ctx, a, ss, d.Hostname, ""); err != nil {
 			c.log.Error("analytics: carry a site over to a domain", "domain", d.Hostname, "err", err)
 		} else if moved {

@@ -449,6 +449,12 @@ func (d *deployment) cutover(ctx context.Context) error {
 		d.event(ctx, fmt.Sprintf("Traffic switched to release %d", d.rel.Number))
 	}
 	c.adoptHealth(ctx, d.ss, d.rel.ContainerID)
+	if d.old == nil {
+		// Its first live release: verified domains get uptime checks
+		// now that something answers them (ADR 0059), before the release
+		// reads as live so whoever waits for it sees them.
+		c.autoUptimeChecks(ctx, d.ss, "")
+	}
 	d.event(ctx, fmt.Sprintf("Release %d is live", d.rel.Number))
 	d.publish(ctx)
 	if d.old != nil {

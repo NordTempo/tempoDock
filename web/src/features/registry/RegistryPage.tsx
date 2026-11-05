@@ -154,7 +154,8 @@ export function RegistryPage() {
                           </span>
                         ) : (
                           <Link
-                            to="/$org/$project/$environment/$service/releases"
+                            to="/$org/$project/$environment/$service"
+                            hash="releases"
                             params={{
                               org,
                               project: s.project,

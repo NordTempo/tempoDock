@@ -1,41 +1,40 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { servicePath, useCanDeploy } from "../data/queries";
-import { AnalyticsTab } from "../features/analytics/AnalyticsTab";
+import { servicePath } from "../data/queries";
 import { applyChange, parseFilter } from "../features/analytics/data";
-import { FunnelsView } from "../features/analytics/FunnelsView";
+import { ErrorsView } from "../features/analytics/ErrorsView";
 import {
   type AnalyticsSearch,
   analyticsSearch,
   sitesQuery,
 } from "../features/analytics/loaders";
+import { ServiceSite } from "../features/analytics/ServiceSite";
 
-// A site's funnels (ADR 0037): …/web/analytics/funnels?site=…&funnel=Checkout,
-// funnel the one shown (the first if none).
-type Search = AnalyticsSearch & { funnel?: string };
+// A service's Errors tab (ADR 0059): for now the browser errors Dock
+// Analytics collects on its site's pages (ADR 0037).
+// …/web/errors?site=…&range=7d&g=<group>, g the group opened under its row.
+type Search = AnalyticsSearch & { g?: string };
 
 export const Route = createFileRoute(
-  "/_app/$org/$project/$environment/$service/analytics_/funnels",
+  "/_app/$org/$project/$environment/$service/errors",
 )({
   validateSearch: (s: Record<string, unknown>): Search => ({
     ...analyticsSearch(s),
-    ...(typeof s.funnel === "string" && s.funnel && { funnel: s.funnel }),
+    ...(typeof s.g === "string" && /^[0-9a-f]{16}$/.test(s.g) && { g: s.g }),
   }),
   loader: ({ context: { queryClient }, params }) =>
     queryClient.ensureQueryData(sitesQuery(params.project)),
-  component: Funnels,
+  component: Errors,
 });
 
-function Funnels() {
+function Errors() {
   const ref = servicePath(Route.useParams());
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
   const range = search.range ?? "30d";
-  const canEdit = useCanDeploy(ref);
   return (
-    <AnalyticsTab
+    <ServiceSite
       serviceRef={ref}
-      view="/$org/$project/$environment/$service/analytics/funnels"
       site={search.site}
       range={range}
       filters={filters}
@@ -44,18 +43,17 @@ function Funnels() {
       }
     >
       {(site) => (
-        <FunnelsView
+        <ErrorsView
           project={ref.project}
           site={site.name}
           range={range}
           filters={filters}
-          selected={search.funnel}
-          onSelect={(funnel) =>
-            navigate({ search: (s) => ({ ...s, funnel }), replace: true })
+          open={search.g}
+          onOpen={(g) =>
+            navigate({ search: (s) => ({ ...s, g }), replace: true })
           }
-          canEdit={canEdit}
         />
       )}
-    </AnalyticsTab>
+    </ServiceSite>
   );
 }

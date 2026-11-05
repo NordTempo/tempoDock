@@ -113,8 +113,9 @@ Docker rotated it (30 MB per container) is gone.
 
 A log drain sends the output of every service in an environment somewhere
 else as the services write it ([ADR 0046](../decisions/0046-log-history-and-drains.md)).
-Admins add them with `dock logs drain add` or under **Log drains** on the
-environment's page (its variables page):
+Admins add them with `dock logs drain add` or under **Log drains** in the
+project's **Settings**, **Variables**, under the environment's shared
+variables:
 
 ```sh
 dock logs drain add http https://logs.example.com/ingest --header X-Api-Key=...
@@ -263,7 +264,7 @@ dock apply
 ```
 
 or in `dock.toml` (`deploy.pre_deploy_command`, `deploy.pre_deploy_timeout`,
-`deploy.pre_deploy_snapshot`), or in the UI under the service's settings.
+`deploy.pre_deploy_snapshot`), or in the UI on the service's **Build & run** tab.
 
 Once the image is built or pulled, Dock runs the command with `sh -c` in a
 one-off container of the **new** image, on the release's server: same

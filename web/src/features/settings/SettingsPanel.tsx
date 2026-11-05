@@ -1,12 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import {
   staging,
   useAction,
-  useArchiveService,
   useDiscardChanges,
   useStageSettings,
 } from "../../data/mutations";
@@ -17,13 +15,11 @@ import {
   servicePath,
   useChanges,
   useEnvironment,
-  useIsAdmin,
   useService,
   useSession,
   useVolumes,
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
-import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
@@ -173,8 +169,6 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <SourceSection serviceRef={ref} />
 
       <DatabaseSettings serviceRef={ref} service={service} />
-
-      <Archive serviceRef={ref} />
     </>
   );
 }
@@ -569,52 +563,6 @@ function DatabaseSettings({
         <span className="font-mono">{cli}</span>
         <ErrorText error={save.error} />
       </p>
-    </section>
-  );
-}
-
-function Archive({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
-  const isAdmin = useIsAdmin();
-  const archive = useArchiveService();
-  const navigate = useNavigate();
-  const [confirming, setConfirming] = useState(false);
-  if (!isAdmin) return null;
-  return (
-    <section aria-labelledby="archive" className="flex flex-col">
-      <SectionHead id="archive">Archive {ref.service}</SectionHead>
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-mut">
-          Stops its container and removes its routes in {ref.environment}.
-          Volumes and history are kept.
-        </span>
-        {confirming ? (
-          <>
-            <Act
-              danger
-              cli={`dock service archive ${ref.service} -e ${ref.environment} -p ${ref.project}`}
-              disabled={archive.isPending}
-              onClick={() =>
-                archive.mutate(ref, {
-                  onSuccess: () =>
-                    navigate({
-                      to: "/$org/$project",
-                      params: { org, project: ref.project },
-                    }),
-                })
-              }
-            >
-              Archive {ref.service} now
-            </Act>
-            <Button onClick={() => setConfirming(false)}>Cancel</Button>
-          </>
-        ) : (
-          <Button danger onClick={() => setConfirming(true)}>
-            Archive
-          </Button>
-        )}
-        <ErrorText error={archive.error} />
-      </div>
     </section>
   );
 }

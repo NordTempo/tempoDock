@@ -9,7 +9,6 @@ import {
   useVariables,
 } from "../../data/queries";
 import type { EnvRef, Variable } from "../../data/types";
-import { EnvSwitch } from "../../shell/context";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
@@ -19,7 +18,6 @@ import {
   Check,
   ErrorText,
   Glyph,
-  PageBar,
   SectionHead,
 } from "../../ui/kit";
 import { serviceState } from "../../ui/status";
@@ -42,24 +40,20 @@ const idOf = (v: { key: string; scope: string; service?: string }) =>
  * (the environment's shared lines, or what one service sees at runtime),
  * edit lines in place, paste a .env, and apply staged lines together.
  * Values stay masked until an admin reveals them. footer goes under
- * them: the environment's other settings (log drains).
+ * them: the environment's other settings (log drains). It sits under
+ * another page's header: the project's settings for the shared lines, a
+ * service's for its Variables tab (ADR 0059); the scope list switches
+ * between them.
  */
 export function VariablesEditor({
   env,
   service,
   footer,
-  inService = false,
 }: {
   env: EnvRef;
   /** The service whose runtime view to show; null for shared lines only. */
   service: string | null;
   footer?: ReactNode;
-  /**
-   * Shown as a service's Variables tab: under the service's own header,
-   * so no bar of its own, and the scope list switches between services'
-   * tabs.
-   */
-  inService?: boolean;
 }) {
   const org = useOrg();
   const all = useVariables(env, null);
@@ -115,154 +109,124 @@ export function VariablesEditor({
     </>
   );
   return (
-    <>
-      {!inService && (
-        <PageBar
-          parent={
-            <Link
-              to="/$org/$project"
-              params={{ org, project: env.project }}
-              className="hover:text-fg"
-            >
-              {env.project}
-            </Link>
-          }
-          title="Variables"
-          after={
-            <EnvSwitch project={env.project} environment={env.environment} />
-          }
-          actions={actions}
-        />
-      )}
-      <div className="flex flex-1 flex-col md:flex-row">
-        <nav
-          aria-label="Applies to"
-          className="flex flex-col gap-0.5 border-b border-line px-2.5 pt-4 pb-3 md:w-[220px] md:flex-none md:border-r md:border-b-0"
+    <div className="flex flex-1 flex-col md:flex-row">
+      <nav
+        aria-label="Applies to"
+        className="flex flex-col gap-0.5 border-b border-line px-2.5 pt-4 pb-3 md:w-[220px] md:flex-none md:border-r md:border-b-0"
+      >
+        <div className="px-2 pb-1.5 text-2xs text-faint">Applies to</div>
+        <Link
+          to="/$org/$project/settings/variables/$environment"
+          params={{ org, ...env }}
+          activeOptions={{ exact: true }}
+          className="nav-row"
         >
-          <div className="px-2 pb-1.5 text-2xs text-faint">Applies to</div>
-          <Link
-            to="/$org/$project/$environment"
-            params={{ org, ...env }}
-            search={{}}
-            activeOptions={{ exact: true }}
-            className="nav-row"
-          >
-            <span className="flex-1">Shared · every service</span>
-            <span className="text-2xs text-faint">{sharedCount}</span>
-          </Link>
-          {services.map((s) => {
-            const state = serviceState(s);
-            const name = s.service.name;
-            const ownCount = all.filter(
-              (v) => v.scope === "service" && v.service === name,
-            ).length;
-            const link = inService
-              ? ({
-                  to: "/$org/$project/$environment/$service/variables",
-                  params: { org, ...env, service: name },
-                } as const)
-              : ({
-                  to: "/$org/$project/$environment",
-                  params: { org, ...env },
-                  search: { service: name },
-                } as const);
-            return (
-              <Link
-                key={s.service.id}
-                {...link}
-                activeOptions={{ exact: true }}
-                className="nav-row"
-              >
-                {state.tone === "fail" && state.glyph && (
-                  <span className="text-fail">
-                    <Glyph char={state.glyph} />
-                  </span>
-                )}
-                <span className="flex-1 truncate">{name}</span>
-                <span className="text-2xs text-faint">
-                  {ownCount} + {sharedCount} shared
+          <span className="flex-1">Shared · every service</span>
+          <span className="text-2xs text-faint">{sharedCount}</span>
+        </Link>
+        {services.map((s) => {
+          const state = serviceState(s);
+          const name = s.service.name;
+          const ownCount = all.filter(
+            (v) => v.scope === "service" && v.service === name,
+          ).length;
+          return (
+            <Link
+              key={s.service.id}
+              to="/$org/$project/$environment/$service/variables"
+              params={{ org, ...env, service: name }}
+              activeOptions={{ exact: true }}
+              className="nav-row"
+            >
+              {state.tone === "fail" && state.glyph && (
+                <span className="text-fail">
+                  <Glyph char={state.glyph} />
                 </span>
-              </Link>
-            );
-          })}
-          <p className="px-2 pt-3 text-2xs leading-relaxed text-faint">
-            Grey lines come from Shared. A line in a service with the same name
-            wins.
-          </p>
-        </nav>
+              )}
+              <span className="flex-1 truncate">{name}</span>
+              <span className="text-2xs text-faint">
+                {ownCount} + {sharedCount} shared
+              </span>
+            </Link>
+          );
+        })}
+        <p className="px-2 pt-3 text-2xs leading-relaxed text-faint">
+          Grey lines come from Shared. A line in a service with the same name
+          wins.
+        </p>
+      </nav>
 
-        <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-4 pt-5 pb-10 sm:px-6">
-          <SectionHead
-            id="vars"
-            aside={revealAll ? "values shown" : "values hidden"}
-            right={inService && actions}
-          >
-            {service
-              ? `${service} sees at runtime`
-              : `Shared with every service in ${env.environment}`}
-          </SectionHead>
+      <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-4 pt-5 pb-10 sm:px-6">
+        <SectionHead
+          id="vars"
+          aside={revealAll ? "values shown" : "values hidden"}
+          right={actions}
+        >
+          {service
+            ? `${service} sees at runtime`
+            : `Shared with every service in ${env.environment}`}
+        </SectionHead>
 
-          {pasting && (
-            <PasteEnv
+        {pasting && (
+          <PasteEnv
+            env={env}
+            service={service}
+            onDone={() => setPasting(false)}
+          />
+        )}
+        <ErrorText error={revealed.error ?? revealedChanges.error} />
+
+        <section
+          aria-labelledby="vars"
+          className="-mt-2.5 overflow-x-auto rounded-panel border border-line font-mono text-xs"
+        >
+          <div className="min-w-[640px]">
+            {rows.map((v, i) => (
+              <Line
+                key={idOf(v)}
+                n={i + 1}
+                env={env}
+                variable={v}
+                inherited={!!service && v.scope === "environment"}
+                overridden={
+                  !!service && v.scope === "environment" && ownKeys.has(v.key)
+                }
+                values={shown(v) ? values.get(idOf(v)) : undefined}
+                all={revealed.data ?? []}
+                canReveal={isAdmin && !shown(v)}
+                onReveal={() =>
+                  setRevealedIds(new Set([...revealedIds, idOf(v)]))
+                }
+              />
+            ))}
+            <NewLine
+              n={rows.length + 1}
               env={env}
               service={service}
-              onDone={() => setPasting(false)}
+              inputRef={newLine}
             />
-          )}
-          <ErrorText error={revealed.error ?? revealedChanges.error} />
+          </div>
+        </section>
+        <p className="-mt-1 text-2xs text-faint">
+          <span className="text-ok">+</span> added ·{" "}
+          <span className="text-warn">~</span> changed ·{" "}
+          <span className="text-fail">−</span> removed ·{" "}
+          <span className="font-mono text-info">
+            {"$"}
+            {"{{ }}"}
+          </span>{" "}
+          points at another service, → resolved
+        </p>
 
-          <section
-            aria-labelledby="vars"
-            className="-mt-2.5 overflow-x-auto rounded-panel border border-line font-mono text-xs"
-          >
-            <div className="min-w-[640px]">
-              {rows.map((v, i) => (
-                <Line
-                  key={idOf(v)}
-                  n={i + 1}
-                  env={env}
-                  variable={v}
-                  inherited={!!service && v.scope === "environment"}
-                  overridden={
-                    !!service && v.scope === "environment" && ownKeys.has(v.key)
-                  }
-                  values={shown(v) ? values.get(idOf(v)) : undefined}
-                  all={revealed.data ?? []}
-                  canReveal={isAdmin && !shown(v)}
-                  onReveal={() =>
-                    setRevealedIds(new Set([...revealedIds, idOf(v)]))
-                  }
-                />
-              ))}
-              <NewLine
-                n={rows.length + 1}
-                env={env}
-                service={service}
-                inputRef={newLine}
-              />
-            </div>
-          </section>
-          <p className="-mt-1 text-2xs text-faint">
-            <span className="text-ok">+</span> added ·{" "}
-            <span className="text-warn">~</span> changed ·{" "}
-            <span className="text-fail">−</span> removed ·{" "}
-            <span className="font-mono text-info">
-              {"$"}
-              {"{{ }}"}
-            </span>{" "}
-            points at another service, → resolved
-          </p>
-
-          <ApplyBox
-            env={env}
-            reveal={revealAll}
-            variables={all}
-            service={service}
-          />
-          {footer}
-        </div>
+        <ApplyBox
+          env={env}
+          reveal={revealAll}
+          variables={all}
+          service={service}
+        />
+        {footer}
       </div>
-    </>
+    </div>
   );
 }
 

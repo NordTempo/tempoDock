@@ -63,6 +63,16 @@ type Site struct {
 	PublicURLs []string `json:"public_urls,omitempty"`
 }
 
+// OrgSite is a site in the organization's list (the Analytics area),
+// with its project and its last 24 hours.
+type OrgSite struct {
+	Project string `json:"project"`
+	Site    Site   `json:"site"`
+	// Last24h is its visitors and page views over the last 24 hours;
+	// absent while the analytics store can't be reached.
+	Last24h *AnalyticsOverview `json:"last_24h,omitempty"`
+}
+
 // SiteHostname is one of a site's hostnames and the service it serves
 // (empty while no service has a domain for it).
 type SiteHostname struct {

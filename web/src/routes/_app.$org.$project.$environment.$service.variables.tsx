@@ -23,7 +23,6 @@ function ServiceVariables() {
       key={`${params.environment}/${params.service}`}
       env={envPath(params)}
       service={params.service}
-      inService
     />
   );
 }

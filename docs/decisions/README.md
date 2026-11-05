@@ -66,6 +66,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0056](0056-preview-environments.md) | Preview environments per pull request | accepted |
 | [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
 | [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | accepted |
+| [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings, auto uptime checks | accepted |
 
 ## Template
 

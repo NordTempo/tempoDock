@@ -225,7 +225,7 @@ function Cloned({
       <p>
         Cloned {result.from} into{" "}
         <Link
-          to="/$org/$project/$environment"
+          to="/$org/$project/settings/variables/$environment"
           params={{ org, project, environment: e.name }}
           className="font-mono"
           onClick={onClose}

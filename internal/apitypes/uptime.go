@@ -40,6 +40,9 @@ type UptimeCheck struct {
 	TimeoutSeconds  int       `json:"timeout_seconds"`
 	CreatedAt       time.Time `json:"created_at"`
 	CreatedBy       string    `json:"created_by"`
+	// Auto: Dock added it for a verified domain (ADR 0059). It goes when
+	// the domain does; a user may remove it like any other.
+	Auto bool `json:"auto"`
 	// State is unknown until the first probes after the daemon started.
 	State UptimeState `json:"state" enum:"up,down,unknown"`
 	// Server probes it now: another server than the service's when one

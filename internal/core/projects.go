@@ -50,16 +50,21 @@ func validName(kind, name string) error {
 	if !nameRe.MatchString(name) {
 		return invalid("%s name %q must be 1-32 lowercase letters, digits or dashes, not starting or ending with a dash", kind, name)
 	}
+	if kind == "environment" && slices.Contains(reservedEnvironmentNames, name) {
+		return invalid("%q is the address of a project's page in the web UI; pick another environment name", name)
+	}
 	return nil
 }
 
 // The web UI's paths (web/src/routes, public/ and assets/) that names must
 // not shadow. An org's page is /<org> and a project's /<org>/<project>,
-// so an org can't be named like a top-level page, nor a project like a
-// page of an org.
+// so an org can't be named like a top-level page, a project like a page
+// of an org, nor an environment (/<org>/<project>/<environment>) like a
+// page of a project.
 var (
-	reservedOrgSlugs     = []string{"access", "account", "api", "assets", "cli-login", "console", "fonts", "invite", "login", "no-org"}
-	reservedProjectNames = []string{"audit", "settings", "tokens"}
+	reservedOrgSlugs         = []string{"access", "account", "api", "assets", "cli-login", "console", "fonts", "invite", "login", "no-org"}
+	reservedProjectNames     = []string{"analytics", "audit", "requests", "settings", "tokens"}
+	reservedEnvironmentNames = []string{"compare", "settings"}
 )
 
 // loadProject loads a project of one org by name.

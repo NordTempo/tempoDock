@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 // newUptimeCmd is `dock uptime`: a service's uptime checks (ADR 0055).
 func newUptimeCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "uptime", Short: "Check a service's URLs from another server"})
-	cmd.AddCommand(newUptimeListCmd(g), newUptimeAddCmd(g), newUptimeRemoveCmd(g))
+	cmd.AddCommand(newUptimeListCmd(g), newUptimeAddCmd(g), newUptimeDomainsCmd(g), newUptimeRemoveCmd(g))
 	return cmd
 }
 
@@ -44,7 +45,11 @@ over 24 hours, 7 and 30 days, the last probe and the server that probes.`,
 				}
 				tb := g.io.Table("id", "url", "state", "24h", "7d", "30d", "last probe", "from", "every")
 				for _, c := range checks {
-					tb.Row(strconv.FormatInt(c.ID, 10), c.URL, string(c.State), pct(c.Uptime24h), pct(c.Uptime7d), pct(c.Uptime30d),
+					url := c.URL
+					if c.Auto {
+						url += " (auto)"
+					}
+					tb.Row(strconv.FormatInt(c.ID, 10), url, string(c.State), pct(c.Uptime24h), pct(c.Uptime7d), pct(c.Uptime30d),
 						lastProbe(c.LastProbe), c.Server, (time.Duration(c.IntervalSeconds) * time.Second).String())
 				}
 				if err := tb.Flush(); err != nil {
@@ -135,6 +140,36 @@ of the service's domains. Project admins only; at most 10 per service.`,
 	cmd.Flags().StringVar(&status, "status", "200", "the status that means up: a code, 2xx or 3xx")
 	cmd.Flags().DurationVar(&interval, "interval", time.Minute, "how often to probe, 30s to 1h")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "how long a probe may take, 1s to 30s and below the interval")
+	return cmd
+}
+
+// newUptimeDomainsCmd adds a check of each verified domain that has none
+// (ADR 0059): what Dock does by itself for domains verified from now on.
+func newUptimeDomainsCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "domains",
+		Short: "Check every verified domain that has no uptime check",
+		Long: `Add an uptime check of https://<domain>/ for each of the service's verified
+domains that has none. Dock adds these by itself when a domain is verified
+and removes them with the domain; this catches up domains from before.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			checks, err := send[[]apitypes.UptimeCheck](cmd.Context(), s, http.MethodPost, t.servicePath()+"/uptime-checks/domains", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(checks, func() error {
+				g.io.Successf("%s has %s; `dock uptime list` shows them", t, plural(len(checks), "uptime check"))
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
 	return cmd
 }
 

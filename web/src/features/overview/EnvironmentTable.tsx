@@ -75,7 +75,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
           <>
             {staged > 0 && (
               <Link
-                to="/$org/$project/$environment"
+                to="/$org/$project/settings/variables/$environment"
                 params={{ org, ...ref }}
                 className="text-warn hover:text-warn-text"
               >
@@ -83,14 +83,14 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
               </Link>
             )}
             <Link
-              to="/$org/$project/$environment"
+              to="/$org/$project/settings/variables/$environment"
               params={{ org, ...ref }}
               className={links}
             >
               Variables
             </Link>
             <Link
-              to="/$org/$project/$environment"
+              to="/$org/$project/settings/variables/$environment"
               params={{ org, ...ref }}
               hash="log-drains"
               className={links}

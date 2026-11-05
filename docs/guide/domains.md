@@ -144,8 +144,21 @@ minute or two, even when the container still runs ([ADR
 dock uptime add https://shop.example.com/health          # GET every minute, expects 200
 dock uptime add https://shop.example.com/ --status 3xx --interval 5m --timeout 5s
 dock uptime list                                         # state, 24h/7d/30d uptime, last probe
+dock uptime domains                                      # a check of every verified domain without one
 dock uptime remove 3
 ```
+
+Dock adds a check by itself ([ADR 0059](../decisions/0059-analytics-area-and-slimmer-service-page.md)):
+`GET https://<domain>/` every minute, expecting 200, marked `auto`, when a
+domain that serves the service (not a redirect) is verified, or at the
+service's first live release for domains verified before it. A domain
+whose DNS names only private or tailnet addresses gets none, since no
+probe could reach it. Removing the domain removes its check; you can
+remove an auto check like any other (Dock doesn't add it again) or replace
+it with your own. Uptime checks aren't part of `dock.toml`, so `dock apply`
+and `dock project export` leave them alone. For domains verified before
+this, the Uptime tab's **Check all domains** (or `dock uptime domains`)
+adds the missing checks.
 
 - A probe is one `GET`, redirects not followed. Up means the expected
   status (a code, or `2xx`/`3xx` for any of the class) within the timeout.
@@ -166,7 +179,9 @@ dock uptime remove 3
   at once and 2 per organization, and skips a probe rather than queue it.
 - Project admins add and remove checks; everyone who can read the service
   sees them: the service's Uptime tab (checks, a 24-hour strip, uptime
-  over 24 hours, 7 and 30 days, the last incidents) and `dock status`.
+  over 24 hours, 7 and 30 days, the last incidents, and next to them
+  Dock's own health check of the container, the view from inside), the
+  service's Overview (up or down and the last incident) and `dock status`.
 
 History is kept per minute for a day and per hour for 30 days.
 

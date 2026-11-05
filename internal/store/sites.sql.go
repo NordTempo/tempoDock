@@ -432,6 +432,61 @@ func (q *Queries) ListLiveSites(ctx context.Context) ([]ListLiveSitesRow, error)
 	return items, nil
 }
 
+const listOrgSites = `-- name: ListOrgSites :many
+SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at, sites.public_slug, projects.id, projects.org_id, projects.name, projects.created_at, projects.archived_at, environments.name AS environment_name FROM sites
+JOIN environments ON environments.id = sites.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE projects.org_id = +? AND projects.archived_at IS NULL AND sites.archived_at IS NULL
+ORDER BY projects.name, sites.name, sites.id
+`
+
+type ListOrgSitesRow struct {
+	Site            Site
+	Project         Project
+	EnvironmentName string
+}
+
+// ListOrgSites returns an organization's live sites in live projects, by
+// project and name, with their project and environment's name: the
+// Analytics area's list.
+func (q *Queries) ListOrgSites(ctx context.Context, orgID int64) ([]ListOrgSitesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgSites, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgSitesRow
+	for rows.Next() {
+		var i ListOrgSitesRow
+		if err := rows.Scan(
+			&i.Site.ID,
+			&i.Site.EnvironmentID,
+			&i.Site.Name,
+			&i.Site.Settings,
+			&i.Site.ArchivedAt,
+			&i.Site.CreatedBy,
+			&i.Site.CreatedAt,
+			&i.Site.PublicSlug,
+			&i.Project.ID,
+			&i.Project.OrgID,
+			&i.Project.Name,
+			&i.Project.CreatedAt,
+			&i.Project.ArchivedAt,
+			&i.EnvironmentName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjectSites = `-- name: ListProjectSites :many
 SELECT sites.id, sites.environment_id, sites.name, sites.settings, sites.archived_at, sites.created_by, sites.created_at, sites.public_slug, environments.name AS environment_name FROM sites
 JOIN environments ON environments.id = sites.environment_id

@@ -1,8 +1,8 @@
 -- Uptime checks (ADR 0055).
 
 -- name: CreateUptimeCheck :one
-INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetUptimeCheck :one

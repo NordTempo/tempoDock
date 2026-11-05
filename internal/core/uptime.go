@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -138,28 +139,11 @@ func (c *Core) AddUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, req 
 	if params.Url, err = checkURL(req.URL, ss, domains); err != nil {
 		return apitypes.UptimeCheck{}, err
 	}
-	var row store.UptimeCheck
-	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		existing, err := q.ListServiceUptimeChecks(ctx, ss.svc.ID)
-		if err != nil {
-			return err
-		}
-		if n, err := q.CountOrgUptimeChecks(ctx, a.OrgID); err != nil {
-			return err
-		} else if n >= uptimeOrgMaxChecks {
-			return conflict("this organization has %d uptime checks already, the most it may have; remove one with `dock uptime remove`", uptimeOrgMaxChecks)
-		}
-		if len(existing) >= uptimeMaxChecks {
-			return conflict("service %s has %d uptime checks already, the most it may have; remove one with `dock uptime remove`", ss, uptimeMaxChecks)
-		}
-		row, err = q.CreateUptimeCheck(ctx, params)
-		return err
-	})
+	rows, err := c.insertUptimeChecks(ctx, a, ss, []store.CreateUptimeCheckParams{params}, false)
 	if err != nil {
 		return apitypes.UptimeCheck{}, err
 	}
-	c.audit(ctx, a, "uptime.add", &ss.project, &ss.env, ss.String(), "added uptime check "+strconv.FormatInt(row.ID, 10)+" of "+row.Url)
-	c.kickUptime()
+	row := rows[0]
 	servers, err := c.store.ListServers(ctx)
 	if err != nil {
 		return apitypes.UptimeCheck{}, err
@@ -167,6 +151,141 @@ func (c *Core) AddUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, req 
 	out := c.toUptimeCheck(row, ss.env.ServerID, servers, a.Operator)
 	out.Series = uptimeSeries(nil, time.Now())
 	return out, nil
+}
+
+// insertUptimeChecks adds checks to a service within its and its
+// organization's caps, audits each and kicks the scheduler. With skip a
+// check past a cap is left out; without, it is refused.
+func (c *Core) insertUptimeChecks(ctx context.Context, a Actor, ss svcScope, params []store.CreateUptimeCheckParams, skip bool) ([]store.UptimeCheck, error) {
+	var rows []store.UptimeCheck
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		existing, err := q.ListServiceUptimeChecks(ctx, ss.svc.ID)
+		if err != nil {
+			return err
+		}
+		n, err := q.CountOrgUptimeChecks(ctx, ss.project.OrgID)
+		if err != nil {
+			return err
+		}
+		have := len(existing)
+		for _, p := range params {
+			switch {
+			case n >= uptimeOrgMaxChecks && skip, have >= uptimeMaxChecks && skip:
+				return nil
+			case n >= uptimeOrgMaxChecks:
+				return conflict("this organization has %d uptime checks already, the most it may have; remove one with `dock uptime remove`", uptimeOrgMaxChecks)
+			case have >= uptimeMaxChecks:
+				return conflict("service %s has %d uptime checks already, the most it may have; remove one with `dock uptime remove`", ss, uptimeMaxChecks)
+			}
+			row, err := q.CreateUptimeCheck(ctx, p)
+			if err != nil {
+				return err
+			}
+			rows = append(rows, row)
+			n, have = n+1, have+1
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		c.audit(ctx, a, "uptime.add", &ss.project, &ss.env, ss.String(), "added uptime check "+strconv.FormatInt(r.ID, 10)+" of "+r.Url)
+	}
+	if len(rows) > 0 {
+		c.kickUptime()
+	}
+	return rows, nil
+}
+
+// domainChecks are the auto checks (ADR 0059) of the service's verified
+// domains, those that don't redirect, on hosts it has no check of yet:
+// GET https://<host>/ with the default settings.
+func domainChecks(ss svcScope, domains []store.Domain, existing []store.UptimeCheck, by string) []store.CreateUptimeCheckParams {
+	checked := map[string]bool{}
+	for _, r := range existing {
+		if u, err := url.Parse(r.Url); err == nil {
+			checked[u.Hostname()] = true
+		}
+	}
+	var out []store.CreateUptimeCheckParams
+	for _, d := range domains {
+		if d.VerifiedAt == nil || d.RedirectTo != "" || checked[d.Hostname] {
+			continue
+		}
+		checked[d.Hostname] = true
+		out = append(out, store.CreateUptimeCheckParams{
+			ServiceID: ss.svc.ID, Url: "https://" + d.Hostname + "/", ExpectStatus: 200,
+			IntervalS: int64(uptimeDefaultInterval / time.Second), TimeoutMs: uptimeDefaultTimeout.Milliseconds(),
+			CreatedAt: now(), CreatedBy: by, Auto: true,
+		})
+	}
+	return out
+}
+
+// CheckDomains adds an auto check (ADR 0059) for each of a service's
+// verified domains without a check, the Uptime tab's "Check all
+// domains", and returns the service's checks. Project admins only.
+func (c *Core) CheckDomains(ctx context.Context, a Actor, ref ServiceRef) ([]apitypes.UptimeCheck, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeAdmin, "adding uptime checks")
+	if err != nil {
+		return nil, err
+	}
+	if ss.svc.ArchivedAt != nil {
+		return nil, invalid("service %s is archived; uptime checks are for live services", ss)
+	}
+	domains, err := c.store.ListDomainsByService(ctx, ss.svc.ID)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := c.store.ListServiceUptimeChecks(ctx, ss.svc.ID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.insertUptimeChecks(ctx, a, ss, domainChecks(ss, domains, existing, a.Name), false); err != nil {
+		return nil, err
+	}
+	return c.ListUptimeChecks(ctx, a, ref)
+}
+
+// autoUptimeChecks adds Dock's own checks (ADR 0059) of a live service's
+// verified domains (only host, unless empty) that have none: when a
+// domain is verified and when the service's first release goes live.
+// A domain whose DNS names no public address is left out, since a probe
+// couldn't reach it (a LAN or tailnet install). Best effort: caps skip,
+// failures are logged.
+func (c *Core) autoUptimeChecks(ctx context.Context, ss svcScope, host string) {
+	if ss.svc.ArchivedAt != nil || ss.svc.StoppedAt != nil {
+		return
+	}
+	if _, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err != nil {
+		return // not deployed yet: its first release adds them
+	}
+	domains, err := c.store.ListDomainsByService(ctx, ss.svc.ID)
+	if err == nil && host != "" {
+		domains = slices.DeleteFunc(domains, func(d store.Domain) bool { return d.Hostname != host })
+	}
+	var existing []store.UptimeCheck
+	if err == nil {
+		existing, err = c.store.ListServiceUptimeChecks(ctx, ss.svc.ID)
+	}
+	if err != nil {
+		c.log.Warn("uptime: add checks of domains", "service", ss.String(), "err", err)
+		return
+	}
+	params := slices.DeleteFunc(domainChecks(ss, domains, existing, System.Name), func(p store.CreateUptimeCheckParams) bool {
+		u, _ := url.Parse(p.Url)
+		lctx, cancel := context.WithTimeout(ctx, verifyLookupTimeout)
+		defer cancel()
+		addrs, err := c.lookupIP(lctx, u.Hostname())
+		return err != nil || !slices.ContainsFunc(addrs, httpkit.IsPublicAddr)
+	})
+	if len(params) == 0 {
+		return
+	}
+	if _, err := c.insertUptimeChecks(ctx, System.InOrg(ss.project.OrgID), ss, params, true); err != nil {
+		c.log.Warn("uptime: add checks of domains", "service", ss.String(), "err", err)
+	}
 }
 
 // parseExpectStatus turns "200", "2xx" or "3xx" ("" is 200) into
@@ -323,7 +442,7 @@ func (c *Core) toUptimeCheck(r store.UptimeCheck, envServer int64, servers []sto
 	out := apitypes.UptimeCheck{
 		ID: r.ID, URL: r.Url, ExpectStatus: expectStatusString(r.ExpectStatus),
 		IntervalSeconds: int(r.IntervalS), TimeoutSeconds: int(r.TimeoutMs / 1000),
-		CreatedAt: r.CreatedAt, CreatedBy: r.CreatedBy, State: apitypes.UptimeUnknown,
+		CreatedAt: r.CreatedAt, CreatedBy: r.CreatedBy, Auto: r.Auto, State: apitypes.UptimeUnknown,
 		Incidents: []apitypes.UptimeIncident{},
 	}
 	out.Server = c.serverLabel(c.uptimeProber(servers, r.ID, envServer).Name, operator)

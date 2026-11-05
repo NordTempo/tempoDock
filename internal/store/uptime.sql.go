@@ -53,9 +53,9 @@ func (q *Queries) CountOrgUptimeChecks(ctx context.Context, orgID int64) (int64,
 
 const createUptimeCheck = `-- name: CreateUptimeCheck :one
 
-INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by
+INSERT INTO uptime_checks (service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto
 `
 
 type CreateUptimeCheckParams struct {
@@ -66,6 +66,7 @@ type CreateUptimeCheckParams struct {
 	TimeoutMs    int64
 	CreatedAt    time.Time
 	CreatedBy    string
+	Auto         bool
 }
 
 // Uptime checks (ADR 0055).
@@ -78,6 +79,7 @@ func (q *Queries) CreateUptimeCheck(ctx context.Context, arg CreateUptimeCheckPa
 		arg.TimeoutMs,
 		arg.CreatedAt,
 		arg.CreatedBy,
+		arg.Auto,
 	)
 	var i UptimeCheck
 	err := row.Scan(
@@ -89,6 +91,7 @@ func (q *Queries) CreateUptimeCheck(ctx context.Context, arg CreateUptimeCheckPa
 		&i.TimeoutMs,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Auto,
 	)
 	return i, err
 }
@@ -104,7 +107,7 @@ func (q *Queries) DeleteUptimeCheck(ctx context.Context, id int64) error {
 }
 
 const getUptimeCheck = `-- name: GetUptimeCheck :one
-SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by FROM uptime_checks WHERE id = +?
+SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE id = +?
 `
 
 func (q *Queries) GetUptimeCheck(ctx context.Context, id int64) (UptimeCheck, error) {
@@ -119,12 +122,13 @@ func (q *Queries) GetUptimeCheck(ctx context.Context, id int64) (UptimeCheck, er
 		&i.TimeoutMs,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Auto,
 	)
 	return i, err
 }
 
 const listServiceUptimeChecks = `-- name: ListServiceUptimeChecks :many
-SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by FROM uptime_checks WHERE service_id = +? ORDER BY id
+SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE service_id = +? ORDER BY id
 `
 
 func (q *Queries) ListServiceUptimeChecks(ctx context.Context, serviceID int64) ([]UptimeCheck, error) {
@@ -145,6 +149,7 @@ func (q *Queries) ListServiceUptimeChecks(ctx context.Context, serviceID int64) 
 			&i.TimeoutMs,
 			&i.CreatedAt,
 			&i.CreatedBy,
+			&i.Auto,
 		); err != nil {
 			return nil, err
 		}

@@ -23,6 +23,17 @@ func IsSelfAddr(ip netip.Addr) bool {
 	return ip.IsLoopback() || ip.IsUnspecified()
 }
 
+// cgnat is 100.64.0.0/10: carrier-grade NAT and tailnets.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
+// IsPublicAddr reports whether ip is a public unicast address: not this
+// server's loopback, link-local, multicast or metadata, private (RFC
+// 1918, ULA), CGNAT or tailnet. Uptime probes dial only these (ADR 0055).
+func IsPublicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return !IsSelfAddr(ip) && !IsInternalAddr(ip) && !ip.IsPrivate() && !cgnat.Contains(ip) && ip.IsGlobalUnicast()
+}
+
 // IsInternalAddr reports whether ip is link-local, multicast or a cloud
 // metadata address (169.254.169.254 is link-local): never a destination
 // for a request a user configured.

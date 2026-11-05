@@ -169,7 +169,8 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           time={time}
           action={
             <Link
-              to="/$org/$project/$environment/$service/releases"
+              to="/$org/$project/$environment/$service"
+              hash="releases"
               params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
@@ -364,7 +365,7 @@ function StagedRow({
       where={env.environment.name}
       action={
         <Link
-          to="/$org/$project/$environment"
+          to="/$org/$project/settings/variables/$environment"
           params={{ org, ...ref }}
           className={actionClass}
           data-problem={n}

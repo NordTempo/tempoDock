@@ -28,8 +28,8 @@ check(
 check(
   labels(db).includes("Data") &&
     labels(db).includes("Backups") &&
-    labels(db).includes("Analytics"),
-  "a database with a domain has Data, Backups and Analytics",
+    labels(db).includes("Errors"),
+  "a database with a domain has Data, Backups and Errors",
 );
 check(
   tabsFor(app).every((t) => t.to.startsWith("/$org/")),

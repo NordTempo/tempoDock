@@ -193,3 +193,13 @@ SELECT CAST(EXISTS (
     JOIN services ON services.id = domains.service_id
     WHERE site_hostnames.site_id = +? AND services.archived_at IS NULL AND services.stopped_at IS NULL
 ) AS BOOLEAN) AS serving;
+
+-- ListOrgSites returns an organization's live sites in live projects, by
+-- project and name, with their project and environment's name: the
+-- Analytics area's list.
+-- name: ListOrgSites :many
+SELECT sqlc.embed(sites), sqlc.embed(projects), environments.name AS environment_name FROM sites
+JOIN environments ON environments.id = sites.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE projects.org_id = +? AND projects.archived_at IS NULL AND sites.archived_at IS NULL
+ORDER BY projects.name, sites.name, sites.id;

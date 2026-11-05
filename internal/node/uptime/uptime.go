@@ -58,9 +58,6 @@ func New(allowLoopback bool) *Prober {
 	}}
 }
 
-// cgnat is 100.64.0.0/10: carrier-grade NAT and tailnets.
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
-
 // refused says why a probe may not connect to ip:port, or "". Probes
 // reach public sites as a visitor would, so only public unicast
 // addresses on 80 and 443 are dialed: never this server's loopback,
@@ -75,8 +72,7 @@ func refused(ip netip.Addr, port uint16, allowLoopback bool) string {
 	switch {
 	case allowLoopback && ip.IsLoopback():
 		return ""
-	case httpkit.IsSelfAddr(ip), httpkit.IsInternalAddr(ip),
-		ip.IsPrivate(), cgnat.Contains(ip), !ip.IsGlobalUnicast():
+	case !httpkit.IsPublicAddr(ip):
 		return "the domain resolves to an address that isn't public"
 	case port != 80 && port != 443:
 		return "only ports 80 and 443 are probed"

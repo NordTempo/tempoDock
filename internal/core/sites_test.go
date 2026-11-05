@@ -160,6 +160,15 @@ func TestSiteStats(t *testing.T) {
 		st, err = h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", StatsQuery{Range: "24h"})
 		return err == nil && st.StoreOnline && st.Overview.Visitors == 2 && st.Overview.Pageviews == 2 && st.Bucket == "hour"
 	})
+	// The organization's list carries the same 24 hours; another org's
+	// actor sees none of it.
+	if list, err := h.c.ListOrgSites(h.ctx, testSystem); err != nil || len(list) != 1 || list[0].Project != "shop" ||
+		list[0].Site.Name != "shop.example.com" || list[0].Last24h == nil || list[0].Last24h.Visitors != 2 {
+		t.Errorf("org sites = %+v, %v", list, err)
+	}
+	if list, err := h.c.ListOrgSites(h.ctx, Actor{Name: "other-org", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 2}); err != nil || len(list) != 0 {
+		t.Errorf("another org's sites = %+v, %v", list, err)
+	}
 	// Services and releases are labelled; their values stay what filters take.
 	if rows := st.Breakdowns["service"]; len(rows) != 1 || rows[0].Label != "web" || rows[0].Value != fmt.Sprint(svcID) {
 		t.Errorf("service breakdown = %+v", rows)

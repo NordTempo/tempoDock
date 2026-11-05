@@ -1,6 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
+  queries,
   servicePath,
   useRelease,
   useReleases,
@@ -15,13 +17,16 @@ import {
   ServiceFacts,
   StatusSentence,
 } from "../features/service/ServiceHeader";
+import { Signals } from "../features/service/Signals";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useOrg } from "../shell/location";
 import { elapsed } from "../ui/format";
-import { Actor, actorKind, SectionHead } from "../ui/kit";
+import { Act, Actor, actorKind, ErrorText, SectionHead } from "../ui/kit";
 
-// A service at a glance (A2): status, facts, the deploy in flight and
-// recent releases, with live logs beside them.
+// A service at a glance (A2): status, facts, uptime and visitors, the
+// deploy in flight and the release history (ADR 0059: the Releases tab
+// was folded in; G R and …/releases come here, #releases), with live
+// logs beside them.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/",
 )({
@@ -29,10 +34,8 @@ export const Route = createFileRoute(
 });
 
 function ServiceOverview() {
-  const org = useOrg();
   const ref = servicePath(Route.useParams());
   const service = useService(ref);
-  const releases = useReleases(ref);
   const [filter, setFilter] = useState(noFilter);
   const current = service.deploying;
 
@@ -41,6 +44,7 @@ function ServiceOverview() {
       <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-4 pt-6 pb-10 sm:px-7">
         <StatusSentence view={service} />
         <ServiceFacts serviceRef={ref} />
+        <Signals serviceRef={ref} />
         {/* `dock connect` reaches a set port, or a database's own. */}
         {(service.service.port > 0 || !!service.service.template) && (
           <ConnectHint serviceRef={ref} />
@@ -52,28 +56,7 @@ function ServiceOverview() {
             number={current.number}
           />
         )}
-        <section aria-labelledby="releases">
-          <SectionHead
-            id="releases"
-            right={
-              releases.length > 5 && (
-                <Link
-                  to="/$org/$project/$environment/$service/releases"
-                  params={{ org, ...ref }}
-                >
-                  All {releases[0]?.number}
-                </Link>
-              )
-            }
-          >
-            Releases
-          </SectionHead>
-          <ReleasesTable
-            serviceRef={ref}
-            releases={releases.slice(0, 5)}
-            deploying={!!current}
-          />
-        </section>
+        <ReleaseHistory serviceRef={ref} deploying={!!current} />
       </div>
       <section
         aria-labelledby="logs"
@@ -92,6 +75,55 @@ function ServiceOverview() {
         />
       </section>
     </div>
+  );
+}
+
+/** The most releases the API returns at once (`dock release list -n`). */
+const MAX = 100;
+
+/**
+ * The release history with rollback and diff: the newest 10, the 20 the
+ * service's release query holds on request, then up to 100.
+ */
+function ReleaseHistory({
+  serviceRef: ref,
+  deploying,
+}: {
+  serviceRef: ServiceRef;
+  deploying: boolean;
+}) {
+  const newest = useReleases(ref);
+  const [shown, setShown] = useState(10);
+  const all = useQuery({ ...queries.releases(ref, MAX), enabled: shown > 20 });
+  const releases = (all.data ?? newest).slice(0, shown);
+  const more = shown < newest.length || (!all.data && newest.length === 20);
+  return (
+    <section aria-labelledby="releases">
+      <SectionHead
+        id="releases"
+        aside={newest[0] && `${newest[0].number} in all`}
+      >
+        Releases
+      </SectionHead>
+      <ReleasesTable
+        serviceRef={ref}
+        releases={releases}
+        deploying={deploying}
+      />
+      {more && (
+        <div className="mt-2 flex items-center gap-3">
+          <Act
+            small
+            cli={`dock release list -n ${MAX} -s ${ref.service} -e ${ref.environment}`}
+            disabled={all.isFetching}
+            onClick={() => setShown(shown < 20 ? 20 : MAX)}
+          >
+            {shown < 20 ? "Show more" : `Show up to ${MAX}`}
+          </Act>
+          <ErrorText error={all.error} />
+        </div>
+      )}
+    </section>
   );
 }
 
