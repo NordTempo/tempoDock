@@ -136,8 +136,8 @@ func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) 
 	endJob := func() {}
 	if spec.job != nil {
 		if endJob, err = c.holdJob(*spec.job); err != nil {
-		return nil, err
-	}
+			return nil, err
+		}
 	}
 	endRun, err := c.holdRun(ss, volumes)
 	if err != nil {
@@ -360,10 +360,10 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 		c.publishRun(r.ss, r.rel, r.row, r.job.Name)
 		c.jobEnded(r.ss, *r.job, r.row)
 	} else {
-	if err := c.store.TrimServiceRuns(ctx, store.TrimServiceRunsParams{ServiceID: r.ss.svc.ID, Keep: keepRuns}); err != nil {
-		c.log.Error("trim run history", "service", r.ss.String(), "err", err)
-	}
-	c.audit(ctx, r.actor, "service.run", &r.ss.project, &r.ss.env, r.ss.String(), runSummary(r.row))
+		if err := c.store.TrimServiceRuns(ctx, store.TrimServiceRunsParams{ServiceID: r.ss.svc.ID, Keep: keepRuns}); err != nil {
+			c.log.Error("trim run history", "service", r.ss.String(), "err", err)
+		}
+		c.audit(ctx, r.actor, "service.run", &r.ss.project, &r.ss.env, r.ss.String(), runSummary(r.row))
 		c.publishRun(r.ss, r.rel, r.row, "")
 	}
 	out := c.toRun(r.ss, r.rel, r.row)
