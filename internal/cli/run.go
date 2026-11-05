@@ -37,9 +37,9 @@ const exitInterrupted exitStatus = 130
 
 // runOptions are `dock run`'s flags besides the target.
 type runOptions struct {
-	stdin, tty, detach bool
-	timeout            time.Duration
-	volumes            string
+	stdin, tty, detach, noSnapshot bool
+	timeout                        time.Duration
+	volumes                        string
 }
 
 // newRunCmd is `dock run [service] -- <command...>`.
@@ -65,8 +65,10 @@ shell each, so ` + "`psql -c 'select 1'`" + ` means what it says.
 a terminal when stdin is one; -it is a console. Ctrl-C (unless -it, where
 it goes to the command) stops the command. A stateful service's volumes
 are mounted read-only; --volumes write mounts them read-write next to the
-running service, only for apps whose storage takes a second writer.
-Databases' volumes are never mounted.
+running service, only for apps whose storage takes a second writer, and
+first takes a snapshot of them (` + "`dock volume snapshot list`" + `); a failed
+snapshot refuses the run, and --no-snapshot skips it. Databases' volumes
+are never mounted.
 
 --detach runs it in the background instead and prints the run right away;
 ` + "`dock runs show <id>`" + ` follows it. In a locked environment a run files an access
@@ -122,6 +124,7 @@ every run is in the audit log (service.run) and in ` + "`dock runs`" + `.`,
 	cmd.Flags().BoolVarP(&o.detach, "detach", "d", false, "run it in the background and return at once (no -i or -t)")
 	cmd.Flags().DurationVar(&o.timeout, "timeout", 0, "stop the command after this long, at most 24h (default 1h)")
 	cmd.Flags().StringVar(&o.volumes, "volumes", "", "a stateful service's volumes: none, read or write (default read)")
+	cmd.Flags().BoolVar(&o.noSnapshot, "no-snapshot", false, "with --volumes write, skip the snapshot of the volumes taken before the run")
 	return cmd
 }
 
@@ -129,13 +132,16 @@ every run is in the audit log (service.run) and in ` + "`dock runs`" + `.`,
 // and prints the run, running.
 func (g *globals) startRun(ctx context.Context, s *session, t target, command string, o runOptions) error {
 	r, err := send[apitypes.CommandRun](ctx, s, http.MethodPost, t.servicePath()+"/runs", apitypes.RunCommandRequest{
-		Command: command, TimeoutSeconds: timeoutSeconds(o.timeout), Volumes: apitypes.RunVolumes(o.volumes),
+		Command: command, TimeoutSeconds: timeoutSeconds(o.timeout), Volumes: apitypes.RunVolumes(o.volumes), NoSnapshot: o.noSnapshot,
 	})
 	if err != nil {
 		return err
 	}
 	return g.io.Print(r, func() error {
 		g.io.Successf("Started run %d in release %d of %s/%s/%s", r.ID, r.Release, r.Project, r.Environment, r.Service)
+		if r.Snapshot != 0 {
+			g.io.Detail(fmt.Sprintf("Snapshot %d of %s was taken first; `dock volume snapshot restore %d %s` puts it back.", r.Snapshot, r.Service, r.Snapshot, target{r.Project, r.Environment, r.Service}.flags()))
+		}
 		g.io.Detail(fmt.Sprintf("Follow it with `dock runs show %d %s`.", r.ID, target{r.Project, r.Environment, r.Service}.flags()))
 		return nil
 	})
@@ -176,6 +182,9 @@ func (g *globals) streamRun(ctx context.Context, s *session, t target, command s
 	}
 	if o.volumes != "" {
 		q.Set("volumes", o.volumes)
+	}
+	if o.noSnapshot {
+		q.Set("no_snapshot", "true")
 	}
 	if tty {
 		if cols, rows, err := term.GetSize(fd); err == nil {
@@ -363,9 +372,12 @@ deploy scope, as output can show the service's variables.`,
 // printRun is `dock runs show`'s human output: the run's fields, then its
 // output as it was.
 func printRun(g *globals, r apitypes.CommandRun) error {
-	how := ""
+	how, snapshot := "", ""
 	if r.TTY {
 		how = "terminal"
+	}
+	if r.Snapshot != 0 {
+		snapshot = itoa(r.Snapshot)
 	}
 	if err := g.io.Fields(
 		"run", fmt.Sprintf("%d of %s/%s/%s", r.ID, r.Project, r.Environment, r.Service),
@@ -375,6 +387,7 @@ func printRun(g *globals, r apitypes.CommandRun) error {
 		"command", r.Command,
 		"release", itoa(r.Release),
 		"volumes", string(r.Volumes),
+		"snapshot", snapshot,
 		"timeout", (time.Duration(r.TimeoutSeconds) * time.Second).String(),
 		"session", how,
 		"started", ago(r.StartedAt)+" by "+r.CreatedBy,

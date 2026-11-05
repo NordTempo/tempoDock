@@ -262,8 +262,8 @@ dock service update --pre-deploy-command "npx prisma migrate deploy" --pre-deplo
 dock apply
 ```
 
-or in `dock.toml` (`deploy.pre_deploy_command`, `deploy.pre_deploy_timeout`),
-or in the UI under the service's settings.
+or in `dock.toml` (`deploy.pre_deploy_command`, `deploy.pre_deploy_timeout`,
+`deploy.pre_deploy_snapshot`), or in the UI under the service's settings.
 
 Once the image is built or pulled, Dock runs the command with `sh -c` in a
 one-off container of the **new** image, on the release's server: same
@@ -273,6 +273,15 @@ mounts no volumes. Nothing has been started or stopped yet, stateful
 services included, so the old release keeps serving while it runs. The
 output goes to the release's build log (`dock logs --build`, the release
 page in the UI).
+
+With `--pre-deploy-snapshot` (off by default), every deployed stateful
+service in the environment is [snapshotted](databases.md#snapshots) first,
+the release's own included: a quick copy on the server to put back if the
+migration goes wrong. Each snapshot is a line in the release's events
+("Snapshot 12 of db taken before the pre-deploy command"). A failed
+snapshot fails the release before the command runs, so nothing has
+changed; fix the cause (usually disk) or turn the setting off with
+`--pre-deploy-snapshot=false`.
 
 - Exit 0: the deploy continues (start, health check, cutover).
 - Any other exit code, or the timeout (default 10 minutes, at most 1
@@ -337,7 +346,7 @@ exits with the command's exit code.
 | | |
 |---|---|
 | Who | Scope `deploy` on the environment. A locked environment refuses tokens like any change (ADR 0044) |
-| Volumes | A database's volume is never mounted (connect over the network). Another stateful service's volumes are read-only unless `--volumes write`, which mounts them next to the running service: only for storage that takes a second writer. One writer per service at a time |
+| Volumes | A database's volume is never mounted (connect over the network). Another stateful service's volumes are read-only unless `--volumes write`, which mounts them next to the running service: only for storage that takes a second writer. One writer per service at a time. A writer first takes a [snapshot](databases.md#snapshots) of the volumes (the run shows its ID); a failed snapshot refuses the run, and `--no-snapshot` skips it |
 | Limits | `--timeout`, default 1 hour, at most 24 hours; 4 runs per service at once |
 | Record | Audited as `service.run` with the command and exit code. The service's last 50 runs keep their status and the last 16 KB of output, except terminal sessions, which keep no output |
 

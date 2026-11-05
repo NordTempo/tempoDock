@@ -29,6 +29,9 @@ const (
 	// runAuditCommand caps the command an audit summary quotes; the run
 	// keeps all of it.
 	runAuditCommand = 300
+	// runSnapshotNote caps the command the note of the snapshot taken
+	// before a run quotes.
+	runSnapshotNote = 100
 )
 
 // runState counts the runs in flight per service (by ID), and the ones
@@ -65,12 +68,17 @@ type runSpec struct {
 	tty     bool
 	trigger apitypes.RunTrigger
 	job     *store.ServiceJob
+	// noSnapshot skips the snapshot before a command that writes the
+	// volumes (--no-snapshot); a job's runs never take one.
+	noSnapshot bool
 }
 
 // OpenRun checks that the actor may run req's command in the service
 // (scope deploy on its environment), checks the command, the volumes and
 // the service's limit of concurrent runs, and records the run as running.
-// tty marks a terminal session, whose output isn't kept.
+// A run mounting the volumes for writing first waits for a snapshot of
+// them (ADR 0047) unless req.NoSnapshot; a failed snapshot refuses the
+// run. tty marks a terminal session, whose output isn't kept.
 func (c *Core) OpenRun(ctx context.Context, a Actor, ref ServiceRef, req apitypes.RunCommandRequest, tty bool) (*Run, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "running a command")
 	if err != nil {
@@ -84,7 +92,7 @@ func (c *Core) OpenRun(ctx context.Context, a Actor, ref ServiceRef, req apitype
 	if err != nil {
 		return nil, err
 	}
-	return c.openRun(ctx, a, ss, runSpec{command: cmd, timeout: timeout, volumes: req.Volumes, tty: tty, trigger: apitypes.TriggerCommand})
+	return c.openRun(ctx, a, ss, runSpec{command: cmd, timeout: timeout, volumes: req.Volumes, tty: tty, trigger: apitypes.TriggerCommand, noSnapshot: req.NoSnapshot})
 }
 
 // checkCommand checks a command to run and returns it trimmed.
@@ -149,9 +157,17 @@ func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) 
 		return nil, err
 	}
 	release := func() { endRun(); endJob() }
+	var snapshot *int64
+	if spec.job == nil && volumes == apitypes.VolumesWrite && !spec.noSnapshot {
+		if snapshot, err = c.snapshotBeforeRun(ctx, a, ss, spec.command); err != nil {
+			release()
+			return nil, err
+		}
+	}
 	params := store.InsertServiceRunParams{
 		ServiceID: ss.svc.ID, ReleaseID: &rel.ID, Trigger: string(spec.trigger), Command: spec.command, Tty: spec.tty,
 		Volumes: string(volumes), TimeoutSeconds: int64(spec.timeout), Actor: a.Name, ActorKind: a.Kind, StartedAt: now(),
+		SnapshotID: snapshot,
 	}
 	if spec.job != nil {
 		params.JobID = &spec.job.ID
@@ -192,6 +208,25 @@ func (r *Run) jobName() string {
 		return ""
 	}
 	return r.job.Name
+}
+
+// snapshotBeforeRun snapshots the service's volumes before a run that
+// mounts them for writing and returns the snapshot's ID. Its write slot
+// (holdRun) is held, so no other run writes meanwhile. A failure is the
+// run's error, saying --no-snapshot skips it.
+func (c *Core) snapshotBeforeRun(ctx context.Context, a Actor, ss svcScope, cmd string) (*int64, error) {
+	snap, err := c.SnapshotBefore(ctx, a, ss, apitypes.SnapshotBeforeRun, "before `dock run`: "+cleanLine(cmd, runSnapshotNote))
+	if err != nil {
+		code := CodeOf(err)
+		if code == apitypes.CodeInternal {
+			code = apitypes.CodeConflict
+		}
+		return nil, errf(code, "the snapshot of %s's volumes before the run failed, so the command didn't run: %v; fix that, or run it without a snapshot (--no-snapshot)", ss.svc.Name, err)
+	}
+	if snap == nil {
+		return nil, nil
+	}
+	return &snap.ID, nil
 }
 
 // runVolumes decides how a run gets the service's volumes. A database
@@ -470,7 +505,7 @@ func (c *Core) ListRuns(ctx context.Context, a Actor, ref ServiceRef) ([]apitype
 		out = append(out, c.toRun(ss, store.Release{Number: row.ReleaseNumber}, store.ServiceRun{
 			ID: row.ID, ServiceID: row.ServiceID, ReleaseID: row.ReleaseID, Trigger: row.Trigger, Command: row.Command, Tty: row.Tty,
 			Volumes: row.Volumes, TimeoutSeconds: row.TimeoutSeconds, Status: row.Status, ExitCode: row.ExitCode, Error: row.Error,
-			Actor: row.Actor, ActorKind: row.ActorKind, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
+			Actor: row.Actor, ActorKind: row.ActorKind, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, SnapshotID: row.SnapshotID,
 		}))
 	}
 	return out, nil
@@ -520,6 +555,7 @@ func (c *Core) toRun(ss svcScope, rel store.Release, row store.ServiceRun) apity
 		Trigger: apitypes.RunTrigger(row.Trigger), Command: row.Command, Release: rel.Number, TTY: row.Tty,
 		Volumes: apitypes.RunVolumes(row.Volumes), TimeoutSeconds: int(row.TimeoutSeconds), Status: apitypes.RunStatus(row.Status),
 		Error: row.Error, Output: row.Output, CreatedBy: row.Actor, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
+		Snapshot: deref(row.SnapshotID),
 	}
 	if row.ExitCode != nil {
 		out.ExitCode = ptr(int(*row.ExitCode))

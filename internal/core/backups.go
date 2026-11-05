@@ -45,6 +45,9 @@ type backupState struct {
 	mu sync.Mutex
 	// running holds the services with a backup or restore in flight.
 	running map[int64]bool
+	// freed is closed (and replaced) whenever a service's claim is
+	// released, waking claimServiceWait.
+	freed chan struct{}
 	// restic holds the servers whose restic volume was filled since the
 	// daemon started.
 	restic map[int64]bool
@@ -68,7 +71,7 @@ func (c *Core) backupsMoving() bool {
 }
 
 func newBackupState() backupState {
-	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, restic: map[int64]bool{}}
+	return backupState{kick: make(chan struct{}, 1), running: map[int64]bool{}, freed: make(chan struct{}), restic: map[int64]bool{}}
 }
 
 // kickBackups wakes the backup scheduler; it never blocks.
@@ -91,9 +94,33 @@ func (c *Core) claimService(serviceID int64) bool {
 	return true
 }
 
+// claimServiceWait claims a service like claimService, waiting for the
+// claim holding it to be released until ctx ends (false). Releases wake
+// it; nothing polls.
+func (c *Core) claimServiceWait(ctx context.Context, serviceID int64) bool {
+	for {
+		c.backups.mu.Lock()
+		if !c.backups.running[serviceID] && !c.backups.moving() {
+			c.backups.running[serviceID] = true
+			c.backups.mu.Unlock()
+			return true
+		}
+		freed := c.backups.freed
+		c.backups.mu.Unlock()
+		select {
+		case <-freed:
+		case <-ctx.Done():
+			return false
+		}
+	}
+}
+
+// releaseService ends a claim, waking claimServiceWait.
 func (c *Core) releaseService(serviceID int64) {
 	c.backups.mu.Lock()
 	delete(c.backups.running, serviceID)
+	close(c.backups.freed)
+	c.backups.freed = make(chan struct{})
 	c.backups.mu.Unlock()
 }
 

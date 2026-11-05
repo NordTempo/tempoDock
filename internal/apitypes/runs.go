@@ -72,6 +72,7 @@ type RunCommandRequest struct {
 	Command        string     `json:"command" minLength:"1" maxLength:"16384" doc:"Run with /bin/sh -c in the service's active image, its variables and its environment's private network"`
 	TimeoutSeconds int        `json:"timeout_seconds,omitempty" minimum:"0" maximum:"86400" doc:"Stopped after this long. Default 3600"`
 	Volumes        RunVolumes `json:"volumes,omitempty" enum:"none,read,write" doc:"The service's volumes: read-only by default on a stateful service, none on a database template (never mounted) or a stateless service. write mounts them read-write next to the running service: only for apps whose storage takes a second writer"`
+	NoSnapshot     bool       `json:"no_snapshot,omitempty" doc:"With volumes write on a stateful service, skip the snapshot taken before the run"`
 }
 
 // CommandRun is one run of a command.
@@ -96,7 +97,10 @@ type CommandRun struct {
 	Error    string `json:"error,omitempty"`
 	// Output is the tail of its output (at most MaxRunOutputBytes); never
 	// kept for terminal sessions, and left out of lists.
-	Output     string     `json:"output,omitempty"`
+	Output string `json:"output,omitempty"`
+	// Snapshot is the ID of the snapshot of the service's volumes taken
+	// before the run (one mounting them for writing); 0 when none was.
+	Snapshot   int64      `json:"snapshot,omitempty"`
 	CreatedBy  string     `json:"created_by"`
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`

@@ -643,6 +643,7 @@ type Service struct {
 	Staged                         string
 	StoppedAt                      *time.Time
 	StoppedBy                      string
+	PreDeploySnapshot              bool
 }
 
 type ServiceAccess struct {
@@ -692,6 +693,7 @@ type ServiceRun struct {
 	StartedAt      time.Time
 	FinishedAt     *time.Time
 	JobID          *int64
+	SnapshotID     *int64
 }
 
 type ServiceStat struct {

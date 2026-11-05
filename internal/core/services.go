@@ -25,6 +25,7 @@ func settingsOf(s store.Service) apitypes.ServiceSettings {
 		HealthCheckRetries:             int(s.HealthCheckRetries),
 		HealthCheckStartPeriodSeconds:  int(s.HealthCheckStartPeriodSeconds),
 		PreDeployCommand:               s.PreDeployCommand, PreDeployTimeoutSeconds: int(s.PreDeployTimeoutSeconds),
+		PreDeploySnapshot: s.PreDeploySnapshot,
 	}
 }
 
@@ -157,6 +158,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		HealthCheckRetries:             req.HealthCheckRetries,
 		HealthCheckStartPeriodSeconds:  req.HealthCheckStartPeriodSeconds,
 		PreDeployCommand:               req.PreDeployCommand, PreDeployTimeoutSeconds: req.PreDeployTimeoutSeconds,
+		PreDeploySnapshot: req.PreDeploySnapshot,
 	}
 	if err := validateSettings(set, c.registryHost()); err != nil {
 		return apitypes.Service{}, err
@@ -171,6 +173,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		HealthCheckRetries:             int64(set.HealthCheckRetries),
 		HealthCheckStartPeriodSeconds:  int64(set.HealthCheckStartPeriodSeconds),
 		PreDeployCommand:               set.PreDeployCommand, PreDeployTimeoutSeconds: int64(set.PreDeployTimeoutSeconds),
+		PreDeploySnapshot: set.PreDeploySnapshot,
 	})
 	if store.IsUnique(err) {
 		return apitypes.Service{}, conflict("service %q already exists in %s", req.Name, es)
@@ -214,6 +217,7 @@ func (c *Core) UpdateService(ctx context.Context, a Actor, ref ServiceRef, req a
 	patch(&next.HealthCheckStartPeriodSeconds, req.HealthCheckStartPeriodSeconds)
 	patch(&next.PreDeployCommand, req.PreDeployCommand)
 	patch(&next.PreDeployTimeoutSeconds, req.PreDeployTimeoutSeconds)
+	patch(&next.PreDeploySnapshot, req.PreDeploySnapshot)
 	if err := validateSettings(next, c.registryHost()); err != nil {
 		return apitypes.ChangeResult{}, err
 	}

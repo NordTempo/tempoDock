@@ -144,6 +144,13 @@ service restores **in place**: it stops, its current data is snapshotted
 first (the *safety snapshot*, which undoes the restore), the snapshot is
 copied in, and it starts again. Deploys wait meanwhile.
 
+Two actions take one by themselves, and stop if it fails:
+
+| Before | When | Skip it |
+|---|---|---|
+| A pre-deploy command | the service's `pre_deploy_snapshot` is on (off by default): every deployed stateful service in the environment, since a migration may touch any of them | `dock service update --pre-deploy-snapshot=false` |
+| `dock run` | it mounts the service's volumes with `--volumes write` | `dock run --no-snapshot` |
+
 Snapshots count against the server's disk: a snapshot that would leave
 less than a tenth of the disk free is refused. Change retention with
 `[backup] snapshot_keep` and `snapshot_days` in `config.toml`.

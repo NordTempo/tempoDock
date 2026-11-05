@@ -318,6 +318,8 @@ func revertSetting(next *apitypes.ServiceSettings, live apitypes.ServiceSettings
 		next.PreDeployCommand = live.PreDeployCommand
 	case "pre_deploy_timeout_seconds":
 		next.PreDeployTimeoutSeconds = live.PreDeployTimeoutSeconds
+	case "pre_deploy_snapshot":
+		next.PreDeploySnapshot = live.PreDeploySnapshot
 	}
 }
 
@@ -827,6 +829,7 @@ func settingChanges(service string, old, next apitypes.ServiceSettings) []apityp
 		{"health_check_start_period_seconds", strconv.Itoa(old.HealthCheckStartPeriodSeconds), strconv.Itoa(next.HealthCheckStartPeriodSeconds)},
 		{"pre_deploy_command", old.PreDeployCommand, next.PreDeployCommand},
 		{"pre_deploy_timeout_seconds", strconv.Itoa(old.PreDeployTimeoutSeconds), strconv.Itoa(next.PreDeployTimeoutSeconds)},
+		{"pre_deploy_snapshot", strconv.FormatBool(old.PreDeploySnapshot), strconv.FormatBool(next.PreDeploySnapshot)},
 	}
 	var out []apitypes.SettingChange
 	for _, f := range fields {

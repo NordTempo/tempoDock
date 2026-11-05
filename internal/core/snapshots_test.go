@@ -416,3 +416,32 @@ func TestSnapshotBeforeIsSynchronous(t *testing.T) {
 		t.Errorf("stateless: %+v, %v", s, err)
 	}
 }
+
+// SnapshotBefore waits for a backup, snapshot or restore holding the
+// service instead of failing the action it guards.
+func TestSnapshotBeforeWaitsForTheService(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	app := h.volumeService("app")
+	ss, _ := h.c.serviceFor(h.ctx, testSystem, app, apitypes.ScopeRead, "testing")
+	h.untilFree(func() error {
+		if !h.c.claimService(ss.svc.ID) {
+			return conflict("busy")
+		}
+		return nil
+	})
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.c.SnapshotBefore(h.ctx, testSystem, ss, apitypes.SnapshotBeforeRun, "")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("returned while the service was held: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	h.c.releaseService(ss.svc.ID)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

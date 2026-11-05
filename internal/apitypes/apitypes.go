@@ -323,6 +323,10 @@ type ServiceSettings struct {
 	// release and the previous one keeps serving.
 	PreDeployCommand        string `json:"pre_deploy_command" doc:"Runs with the new image before it gets traffic, e.g. migrations; empty runs nothing"`
 	PreDeployTimeoutSeconds int    `json:"pre_deploy_timeout_seconds" doc:"How long the pre-deploy command may run. 0 means 600 (10 minutes)"`
+	// PreDeploySnapshot snapshots every stateful service in the
+	// environment before the pre-deploy command runs (ADR 0047); a failed
+	// snapshot fails the release before the command runs.
+	PreDeploySnapshot bool `json:"pre_deploy_snapshot" doc:"Snapshot the environment's stateful services before the pre-deploy command runs; a failed snapshot fails the release"`
 }
 
 // Service is a container built from source or an image.
@@ -395,6 +399,7 @@ type CreateServiceRequest struct {
 	HealthCheckStartPeriodSeconds  int    `json:"health_check_start_period_seconds,omitempty" minimum:"0" maximum:"3600"`
 	PreDeployCommand               string `json:"pre_deploy_command,omitempty"`
 	PreDeployTimeoutSeconds        int    `json:"pre_deploy_timeout_seconds,omitempty" minimum:"0" maximum:"3600"`
+	PreDeploySnapshot              bool   `json:"pre_deploy_snapshot,omitempty"`
 }
 
 // UpdateServiceRequest stages settings changes. Only fields that are set
@@ -412,6 +417,7 @@ type UpdateServiceRequest struct {
 	CPUs                      *float64 `json:"cpus,omitempty" minimum:"0"`
 	PreDeployCommand          *string  `json:"pre_deploy_command,omitempty" doc:"Empty string removes it"`
 	PreDeployTimeoutSeconds   *int     `json:"pre_deploy_timeout_seconds,omitempty" minimum:"0" maximum:"3600"`
+	PreDeploySnapshot         *bool    `json:"pre_deploy_snapshot,omitempty"`
 	Apply                     bool     `json:"apply,omitempty" doc:"Also apply all staged changes in the environment"`
 
 	HealthCheckIntervalSeconds     *int `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
@@ -495,11 +501,14 @@ type ReleaseConfig struct {
 	HealthCheckPath string `json:"health_check_path"`
 	// PreDeployCommand is what ran (or would run) before the release got
 	// traffic; empty if none.
-	PreDeployCommand string        `json:"pre_deploy_command,omitempty"`
-	MemoryMB         int           `json:"memory_mb"`
-	CPUs             float64       `json:"cpus"`
-	VariableKeys     []string      `json:"variable_keys"`
-	Mounts           []VolumeMount `json:"mounts"`
+	PreDeployCommand string `json:"pre_deploy_command,omitempty"`
+	// PreDeploySnapshot says the environment's stateful services were (or
+	// would be) snapshotted before the pre-deploy command.
+	PreDeploySnapshot bool          `json:"pre_deploy_snapshot,omitempty"`
+	MemoryMB          int           `json:"memory_mb"`
+	CPUs              float64       `json:"cpus"`
+	VariableKeys      []string      `json:"variable_keys"`
+	Mounts            []VolumeMount `json:"mounts"`
 	// FromRepoFile lists the settings dock.toml set (they win over the
 	// service's settings and show as locked).
 	FromRepoFile []string `json:"from_repo_file"`

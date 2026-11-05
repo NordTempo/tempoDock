@@ -36,12 +36,19 @@ func runsPreDeploy(src apitypes.ReleaseSource) bool {
 // release's server: the new image, its resolved variables and resources,
 // the environment's private network (so it reaches the database), no
 // volumes. It runs before anything is started or stopped, so a failure
-// leaves the previous release serving. The output goes to the build log;
-// a non-zero exit, a timeout or a job that can't run fails the release.
+// leaves the previous release serving. With pre_deploy_snapshot on, the
+// environment's stateful services are snapshotted first. The output goes
+// to the build log; a failed snapshot, a non-zero exit, a timeout or a
+// job that can't run fails the release.
 func (d *deployment) preDeploy(ctx context.Context) error {
 	cmd := d.cfg.PreDeploy
 	if cmd == "" || !runsPreDeploy(apitypes.ReleaseSource(d.rel.Source)) {
 		return nil
+	}
+	if d.cfg.PreDeploySnapshot {
+		if err := d.snapshotBeforePreDeploy(ctx); err != nil {
+			return err
+		}
 	}
 	timeout := defaultPreDeployTimeout
 	if d.cfg.PreDeployTimeout > 0 {
@@ -72,6 +79,58 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 		return step(apitypes.CodeDeployFailed, "pre-deploy command exited with code %d after %s; the previous release keeps serving (output in the build log)", res.ExitCode, took)
 	}
 	d.event(ctx, fmt.Sprintf("Pre-deploy command finished in %s", took))
+	return nil
+}
+
+// snapshotBeforePreDeploy snapshots every deployed stateful service in
+// the release's environment (ADR 0047), since the command may change any
+// of them. The release's own service is one too: its previous release
+// still runs (a stateful service stops it only after the command). A
+// service never deployed has no data yet and is skipped. Each snapshot
+// is a release event and a build log line. The first that fails fails
+// the release before the command runs, so nothing has changed yet.
+func (d *deployment) snapshotBeforePreDeploy(ctx context.Context) error {
+	c := d.c
+	vols, err := c.store.ListEnvironmentVolumes(ctx, d.ss.env.ID)
+	if err != nil {
+		return err
+	}
+	stateful := map[int64]bool{}
+	for _, v := range vols {
+		stateful[v.ServiceID] = stateful[v.ServiceID] || !v.Pending
+	}
+	if len(stateful) == 0 {
+		return nil
+	}
+	actives, err := c.store.ListEnvironmentActiveReleases(ctx, d.ss.env.ID)
+	if err != nil {
+		return err
+	}
+	deployed := map[int64]bool{}
+	for _, r := range actives {
+		deployed[r.ServiceID] = true
+	}
+	svcs, err := c.store.ListServices(ctx, d.ss.env.ID)
+	if err != nil {
+		return err
+	}
+	for _, s := range svcs {
+		if !stateful[s.ID] || !deployed[s.ID] || s.ArchivedAt != nil {
+			continue
+		}
+		note := fmt.Sprintf("before %s release %d's pre-deploy command", d.ss.svc.Name, d.rel.Number)
+		snap, err := c.SnapshotBefore(ctx, System, svcScope{d.ss.envScope, s}, apitypes.SnapshotBeforeDeploy, note)
+		if err != nil {
+			return step(apitypes.CodeDeployFailed, "snapshot of %s before the pre-deploy command failed, so the command didn't run and the previous release keeps serving: %w; "+
+				"fix that and deploy again, or turn pre_deploy_snapshot off (`dock service update %s --pre-deploy-snapshot=false`) to deploy without snapshots", s.Name, err, d.ss.svc.Name)
+		}
+		if snap == nil {
+			continue
+		}
+		msg := fmt.Sprintf("Snapshot %d of %s taken before the pre-deploy command", snap.ID, s.Name)
+		d.event(ctx, msg)
+		_, _ = fmt.Fprintf(d.log, "%s\n", msg)
+	}
 	return nil
 }
 

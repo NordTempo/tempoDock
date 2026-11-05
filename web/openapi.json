@@ -1800,6 +1800,10 @@
           "service": {
             "type": "string"
           },
+          "snapshot": {
+            "format": "int64",
+            "type": "integer"
+          },
           "started_at": {
             "format": "date-time",
             "type": "string"
@@ -2480,6 +2484,9 @@
           },
           "pre_deploy_command": {
             "type": "string"
+          },
+          "pre_deploy_snapshot": {
+            "type": "boolean"
           },
           "pre_deploy_timeout_seconds": {
             "format": "int64",
@@ -6968,6 +6975,9 @@
           "pre_deploy_command": {
             "type": "string"
           },
+          "pre_deploy_snapshot": {
+            "type": "boolean"
+          },
           "published": {
             "description": "Port is published for routing",
             "type": "boolean"
@@ -7455,6 +7465,10 @@
             "maxLength": 16384,
             "minLength": 1,
             "type": "string"
+          },
+          "no_snapshot": {
+            "description": "With volumes write on a stateful service, skip the snapshot taken before the run",
+            "type": "boolean"
           },
           "timeout_seconds": {
             "description": "Stopped after this long. Default 3600",
@@ -8207,6 +8221,10 @@
             "description": "Runs with the new image before it gets traffic, e.g. migrations; empty runs nothing",
             "type": "string"
           },
+          "pre_deploy_snapshot": {
+            "description": "Snapshot the environment's stateful services before the pre-deploy command runs; a failed snapshot fails the release",
+            "type": "boolean"
+          },
           "pre_deploy_timeout_seconds": {
             "description": "How long the pre-deploy command may run. 0 means 600 (10 minutes)",
             "format": "int64",
@@ -8276,6 +8294,7 @@
           "health_check_start_period_seconds",
           "pre_deploy_command",
           "pre_deploy_timeout_seconds",
+          "pre_deploy_snapshot",
           "effective_memory_mb",
           "effective_cpus",
           "memory_from_default",
@@ -8408,6 +8427,9 @@
           },
           "pre_deploy_command": {
             "type": "string"
+          },
+          "pre_deploy_snapshot": {
+            "type": "boolean"
           },
           "pre_deploy_timeout_seconds": {
             "format": "int64",
@@ -10865,6 +10887,9 @@
           "pre_deploy_command": {
             "description": "Empty string removes it",
             "type": "string"
+          },
+          "pre_deploy_snapshot": {
+            "type": "boolean"
           },
           "pre_deploy_timeout_seconds": {
             "format": "int64",

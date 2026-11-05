@@ -128,6 +128,8 @@ type serviceView struct {
 	// start_service or a deploy runs it again.
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
 	StoppedBy string     `json:"stopped_by,omitempty"`
+	// PreDeploySnapshot snapshots stateful services before that command.
+	PreDeploySnapshot bool `json:"pre_deploy_snapshot,omitempty"`
 }
 
 func viewService(s apitypes.Service) serviceView {
@@ -137,6 +139,7 @@ func viewService(s apitypes.Service) serviceView {
 		ExitCode: s.Status.ExitCode, MemoryMB: s.EffectiveMemoryMB, Stateful: s.Stateful, Database: s.DataEngine,
 		PendingChanges: s.PendingChanges, Archived: s.ArchivedAt != nil, PreDeployCommand: s.PreDeployCommand,
 		StoppedAt: s.StoppedAt, StoppedBy: s.StoppedBy,
+		PreDeploySnapshot: s.PreDeploySnapshot,
 	}
 }
 

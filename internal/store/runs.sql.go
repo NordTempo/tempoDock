@@ -36,7 +36,7 @@ func (q *Queries) FinishServiceRun(ctx context.Context, arg FinishServiceRunPara
 }
 
 const getServiceRun = `-- name: GetServiceRun :one
-SELECT id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id FROM service_runs WHERE id = +? AND service_id = +?
+SELECT id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id, snapshot_id FROM service_runs WHERE id = +? AND service_id = +?
 `
 
 type GetServiceRunParams struct {
@@ -68,14 +68,15 @@ func (q *Queries) GetServiceRun(ctx context.Context, arg GetServiceRunParams) (S
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.JobID,
+		&i.SnapshotID,
 	)
 	return i, err
 }
 
 const insertServiceRun = `-- name: InsertServiceRun :one
-INSERT INTO service_runs (service_id, release_id, job_id, trigger, command, tty, volumes, timeout_seconds, status, actor, actor_kind, user_id, token_id, started_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)
-RETURNING id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id
+INSERT INTO service_runs (service_id, release_id, job_id, trigger, command, tty, volumes, timeout_seconds, status, actor, actor_kind, user_id, token_id, started_at, snapshot_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
+RETURNING id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id, snapshot_id
 `
 
 type InsertServiceRunParams struct {
@@ -92,6 +93,7 @@ type InsertServiceRunParams struct {
 	UserID         *int64
 	TokenID        *int64
 	StartedAt      time.Time
+	SnapshotID     *int64
 }
 
 func (q *Queries) InsertServiceRun(ctx context.Context, arg InsertServiceRunParams) (ServiceRun, error) {
@@ -109,6 +111,7 @@ func (q *Queries) InsertServiceRun(ctx context.Context, arg InsertServiceRunPara
 		arg.UserID,
 		arg.TokenID,
 		arg.StartedAt,
+		arg.SnapshotID,
 	)
 	var i ServiceRun
 	err := row.Scan(
@@ -131,6 +134,7 @@ func (q *Queries) InsertServiceRun(ctx context.Context, arg InsertServiceRunPara
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.JobID,
+		&i.SnapshotID,
 	)
 	return i, err
 }
@@ -138,7 +142,7 @@ func (q *Queries) InsertServiceRun(ctx context.Context, arg InsertServiceRunPara
 const insertSkippedRun = `-- name: InsertSkippedRun :one
 INSERT INTO service_runs (service_id, release_id, job_id, trigger, command, volumes, timeout_seconds, status, error, actor, actor_kind, started_at, finished_at)
 VALUES (?, ?, ?, ?, ?, 'none', ?, 'skipped', ?, ?, ?, ?, ?)
-RETURNING id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id
+RETURNING id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id, snapshot_id
 `
 
 type InsertSkippedRunParams struct {
@@ -191,12 +195,13 @@ func (q *Queries) InsertSkippedRun(ctx context.Context, arg InsertSkippedRunPara
 		&i.StartedAt,
 		&i.FinishedAt,
 		&i.JobID,
+		&i.SnapshotID,
 	)
 	return i, err
 }
 
 const listRunningServiceRuns = `-- name: ListRunningServiceRuns :many
-SELECT id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id FROM service_runs WHERE status = 'running'
+SELECT id, service_id, release_id, "trigger", command, tty, volumes, timeout_seconds, status, exit_code, error, output, actor, actor_kind, user_id, token_id, started_at, finished_at, job_id, snapshot_id FROM service_runs WHERE status = 'running'
 `
 
 // Runs still marked running: at start, the ones a restart cut short.
@@ -229,6 +234,7 @@ func (q *Queries) ListRunningServiceRuns(ctx context.Context) ([]ServiceRun, err
 			&i.StartedAt,
 			&i.FinishedAt,
 			&i.JobID,
+			&i.SnapshotID,
 		); err != nil {
 			return nil, err
 		}
@@ -245,7 +251,7 @@ func (q *Queries) ListRunningServiceRuns(ctx context.Context) ([]ServiceRun, err
 
 const listServiceRuns = `-- name: ListServiceRuns :many
 SELECT r.id, r.service_id, r.release_id, r.trigger, r.command, r.tty, r.volumes, r.timeout_seconds, r.status,
-       r.exit_code, r.error, r.actor, r.actor_kind, r.started_at, r.finished_at, COALESCE(rel.number, 0) AS release_number
+       r.exit_code, r.error, r.actor, r.actor_kind, r.started_at, r.finished_at, r.snapshot_id, COALESCE(rel.number, 0) AS release_number
 FROM service_runs r LEFT JOIN releases rel ON rel.id = r.release_id
 WHERE r.service_id = +? AND r.job_id IS NULL ORDER BY r.id DESC LIMIT +?
 `
@@ -271,6 +277,7 @@ type ListServiceRunsRow struct {
 	ActorKind      string
 	StartedAt      time.Time
 	FinishedAt     *time.Time
+	SnapshotID     *int64
 	ReleaseNumber  int64
 }
 
@@ -302,6 +309,7 @@ func (q *Queries) ListServiceRuns(ctx context.Context, arg ListServiceRunsParams
 			&i.ActorKind,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.SnapshotID,
 			&i.ReleaseNumber,
 		); err != nil {
 			return nil, err

@@ -3,8 +3,8 @@ INSERT INTO services (environment_id, name, image, port, health_check_path, heal
                       start_command, dockerfile_path, build_command, memory_mb, cpus,
                       health_check_interval_seconds, health_check_probe_timeout_seconds,
                       health_check_retries, health_check_start_period_seconds,
-                      pre_deploy_command, pre_deploy_timeout_seconds)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                      pre_deploy_command, pre_deploy_timeout_seconds, pre_deploy_snapshot)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetService :one
@@ -22,7 +22,7 @@ UPDATE services SET
     start_command = ?, dockerfile_path = ?, build_command = ?, memory_mb = ?, cpus = ?,
     health_check_interval_seconds = ?, health_check_probe_timeout_seconds = ?,
     health_check_retries = ?, health_check_start_period_seconds = ?,
-    pre_deploy_command = ?, pre_deploy_timeout_seconds = ?
+    pre_deploy_command = ?, pre_deploy_timeout_seconds = ?, pre_deploy_snapshot = ?
 WHERE id = +?
 RETURNING *;
 

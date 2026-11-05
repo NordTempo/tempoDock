@@ -777,17 +777,21 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "set_pre_deploy_command", "Stage the pre-deploy command",
 		"Stage a service's pre-deploy command: it runs with each new release's image, variables and private network before the release gets traffic, typically database migrations "+
 			"(e.g. \"npx prisma migrate deploy\"). A non-zero exit fails the release and the previous one keeps serving. An empty command removes it. "+
+			"With snapshot, the environment's stateful services are snapshotted before it runs (a failed snapshot fails the release). "+
 			"Nothing goes live until apply_changes or the service's next deploy; dock.toml's deploy.pre_deploy_command wins over it.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Command        string `json:"command" doc:"Run with sh -c. Empty removes the pre-deploy command."`
 			TimeoutSeconds *int   `json:"timeout_seconds,omitempty" doc:"How long it may run, up to 3600. 0 means the default, 600."`
+			Snapshot       *bool  `json:"snapshot,omitempty" doc:"Snapshot the environment's stateful services before it runs (pre_deploy_snapshot). Left out: unchanged."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{PreDeployCommand: &in.Command, PreDeployTimeoutSeconds: in.TimeoutSeconds})
+			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{
+				PreDeployCommand: &in.Command, PreDeployTimeoutSeconds: in.TimeoutSeconds, PreDeploySnapshot: in.Snapshot,
+			})
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
