@@ -309,6 +309,7 @@ type Environment struct {
 	LockedBy   string
 	LockReason string
 	OpenUntil  *time.Time
+	ArchivedAt *time.Time
 }
 
 type GitConnection struct {
@@ -438,6 +439,37 @@ type PlatformSetting struct {
 	UpdatedBy         string
 	UpdatedAt         time.Time
 	RegistryStorageID *int64
+}
+
+type Preview struct {
+	ID                int64
+	ProjectID         int64
+	EnvironmentID     int64
+	BaseEnvironmentID int64
+	Repo              string
+	Number            int64
+	Title             string
+	Author            string
+	HtmlUrl           string
+	HeadBranch        string
+	HeadSha           string
+	Fork              bool
+	PrUpdatedAt       time.Time
+	CommentID         int64
+	LastEvent         string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	ClosedAt          *time.Time
+}
+
+type PreviewSetting struct {
+	ProjectID         int64
+	BaseEnvironmentID int64
+	MaxPreviews       int64
+	CopyVariables     string
+	AllowForks        bool
+	UpdatedBy         string
+	UpdatedAt         time.Time
 }
 
 type Project struct {

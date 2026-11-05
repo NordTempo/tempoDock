@@ -334,11 +334,12 @@ func (c *Core) GitHubManifest(state, origin string) (string, []byte, error) {
 	m := githubManifest{
 		Name:        appName(c.hooksHost()),
 		URL:         base,
-		Description: "Deploys pushes with Tempo Dock.",
+		Description: "Deploys pushes and previews pull requests with Tempo Dock.",
 		RedirectURL: base + GitHubAppCallbackPath,
 		SetupURL:    base + GitHubInstallCallbackPath, SetupOnUpdate: true,
-		DefaultPermissions: map[string]string{"contents": "read", "metadata": "read", "statuses": "write"},
-		DefaultEvents:      []string{"push"},
+		// Pull requests: write lets previews comment (ADR 0056).
+		DefaultPermissions: map[string]string{"contents": "read", "metadata": "read", "statuses": "write", "pull_requests": "write"},
+		DefaultEvents:      []string{"push", "pull_request"},
 	}
 	m.HookAttributes.URL, m.HookAttributes.Active = hook, true
 	b, err := json.Marshal(m)

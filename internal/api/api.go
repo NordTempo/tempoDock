@@ -101,6 +101,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerProjects(s, a)
 	registerLocks(s, a)
 	registerRequests(s, a)
+	registerPreviews(s, a)
 	registerServices(s, a)
 	registerReleases(s, a)
 	registerDomains(s, a)

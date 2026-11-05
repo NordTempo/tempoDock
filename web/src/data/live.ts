@@ -198,6 +198,8 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         release.status === "failed"
       )
         queryClient.invalidateQueries({ queryKey: keys.git(ref) });
+      // A preview's status sums up its services' releases.
+      invalidatePreviews(queryClient, ref);
       return;
     }
     case "release_event": {
@@ -236,6 +238,8 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
         const rest = s.domains.filter((d) => d.hostname !== domain.hostname);
         return { ...s, domains: removed ? rest : [...rest, domain] };
       });
+      // A preview's addresses are its services' domains.
+      invalidatePreviews(queryClient, ref);
       return;
     }
     case "audit":
@@ -536,6 +540,20 @@ function applyUsage(queryClient: QueryClient, event: LiveEvent) {
 }
 
 /**
+ * Refetches a project's previews (while shown) when an event is about a
+ * preview environment, as the cached overview knows it.
+ */
+function invalidatePreviews(queryClient: QueryClient, ref: ServiceRef) {
+  const preview = queryClient
+    .getQueryData<ProjectOverview>(keys.overview(ref.project))
+    ?.environments.some(
+      (e) => e.environment.name === ref.environment && e.environment.preview,
+    );
+  if (preview)
+    queryClient.invalidateQueries({ queryKey: keys.previews(ref.project) });
+}
+
+/**
  * Every mutation is audited, so audit events also say what someone else (or
  * the CLI) just changed.
  */
@@ -576,9 +594,14 @@ function invalidateForAudit(
   // A domain added or removed may carry a site along or leave it.
   if (kind === "domain" && audit.project)
     invalidate(["analytics", "sites", audit.project]);
-  // Servers count what is placed on them.
-  if (kind === "server" || kind === "environment") invalidate(keys.servers);
+  // Servers count what is placed on them; previews are environments.
+  if (kind === "server" || kind === "environment" || kind === "preview")
+    invalidate(keys.servers);
   if (!audit.project) return;
+  // A preview opened, moved to a new commit or closed (its environment
+  // appears or leaves with the overview below), or the settings changed.
+  if (kind === "preview" || kind === "previews")
+    invalidate(keys.previews(audit.project));
   // Release progress patches the overview (applyRelease), but starting a
   // release takes the service's staged changes and may set its image, and
   // a promotion may add services: the overview refetches, once per action.

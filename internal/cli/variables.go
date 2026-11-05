@@ -25,11 +25,11 @@ func newEnvCmd(g *globals) *cobra.Command {
 or (for a service's own variables) with its next ` + "`dock deploy`" + `.
 
 Values may reference other variables: ${{shared.KEY}} or ${{service.KEY}}.
-(` + "`dock environment`" + ` manages environments; ` + "`dock env clone`" + `, ` + "`lock`" + ` and ` + "`unlock`" + ` are
+(` + "`dock environment`" + ` manages environments; ` + "`dock env clone`" + `, ` + "`lock`" + `, ` + "`unlock`" + ` and ` + "`previews`" + ` are
 ` + "`dock environment`" + `'s.)`,
 	})
 	cmd.AddCommand(newEnvListCmd(g), newEnvSetCmd(g), newEnvUnsetCmd(g), newEnvImportCmd(g), newEnvironmentCloneCmd(g),
-		newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g))
+		newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g))
 	return cmd
 }
 

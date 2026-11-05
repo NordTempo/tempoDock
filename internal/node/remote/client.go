@@ -162,6 +162,20 @@ func (c *Client) EnsureVolume(ctx context.Context, name string, labels node.Labe
 	return err
 }
 
+// removeVolumeProtocol is the first node protocol that has remove-volume
+// (ADR 0056).
+const removeVolumeProtocol = 20
+
+// RemoveVolume implements node.Containers. An older node doesn't have the
+// operation: its volumes stay.
+func (c *Client) RemoveVolume(ctx context.Context, name string, labels node.Labels) error {
+	if err := c.needProtocol(ctx, removeVolumeProtocol, "remove volumes"); err != nil {
+		return err
+	}
+	_, err := unaryCall[empty](ctx, c, opRemoveVolume, resourceRequest{Name: name, Labels: toWireLabels(labels)})
+	return err
+}
+
 // Start implements node.Containers.
 func (c *Client) Start(ctx context.Context, spec node.ContainerSpec) (node.Container, error) {
 	r, err := unaryCall[containerResult](ctx, c, opStart, startRequest{Spec: toWireSpec(spec)})

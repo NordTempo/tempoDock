@@ -166,6 +166,12 @@ func TestCalls(t *testing.T) {
 	if err := h.client.RemoveNetwork(ctx, "env-1", node.Labels{Project: "1", Environment: "2"}); !errors.Is(err, node.ErrNotFound) {
 		t.Fatalf("removing a removed network = %v, want ErrNotFound", err)
 	}
+	if err := h.client.RemoveVolume(ctx, "data", node.Labels{Service: "4"}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing another service's volume = %v, want ErrNotFound", err)
+	}
+	if err := h.client.RemoveVolume(ctx, "data", node.Labels{Service: "3"}); err != nil || !slices.Contains(h.rt.Ops(), "remove volume data") {
+		t.Fatalf("remove volume: %v, node ops %v", err, h.rt.Ops())
+	}
 	if _, err := h.client.PruneImages(ctx, node.PruneImagesRequest{Keep: []string{"sha256:a"}, Repos: []string{"127.0.0.1:5000/dock/p"}}); err != nil ||
 		!slices.Contains(h.rt.Ops(), "prune images keep=sha256:a repos=127.0.0.1:5000/dock/p") {
 		t.Fatalf("prune images: %v, node ops %v", err, h.rt.Ops())

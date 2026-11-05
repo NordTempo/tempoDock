@@ -17,22 +17,35 @@ import { Button, Panel, SectionHead, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
+import { previewsCli } from "../previews/data";
+import {
+  ClosePreview,
+  PreviewLine,
+  PullRequestLink,
+} from "../previews/PreviewParts";
 import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
 
-/** One environment on the project overview: a row per service. */
+/**
+ * One environment on the project overview: a row per service. A preview
+ * environment (ADR 0056) also shows its pull request, status and
+ * addresses, and can be closed.
+ */
 export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const org = useOrg();
   const { environment, services, pending_changes: staged } = env;
   const ref = { project: environment.project, environment: environment.name };
   const canDeploy = useCanDeploy(ref);
-  // Cloning creates an environment: deploy on the whole project.
+  // Cloning creates an environment: deploy on the whole project, which
+  // closing a preview needs too.
   const canClone = canCreateEnvironment(useSession(), ref.project);
   const admin = useIsAdmin();
   const [locking, setLocking] = useState(false);
+  const pr = environment.preview;
+  const [closing, setClosing] = useState(false);
   const newService = () => openCreate({ kind: "service", env: ref });
   const links = "text-xs text-mut hover:text-fg";
   return (
@@ -41,6 +54,11 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
         id={`env-${environment.id}`}
         aside={
           <>
+            {pr && (
+              <>
+                <PullRequestLink pr={pr} /> ·{" "}
+              </>
+            )}
             on <EnvServer name={environment.server} /> ·{" "}
             {kindLabel[environment.kind]}
           </>
@@ -108,6 +126,16 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 Lock
               </button>
             )}
+            {pr && canClone && (
+              <button
+                type="button"
+                className="text-xs text-mut hover:text-fail"
+                title={previewsCli(`close ${ref.environment}`, ref.project)}
+                onClick={() => setClosing(true)}
+              >
+                Close preview
+              </button>
+            )}
           </>
         }
       >
@@ -118,6 +146,8 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
       ) : (
         locking && <LockForm envRef={ref} onDone={() => setLocking(false)} />
       )}
+      {pr && <PreviewLine env={ref} />}
+      {closing && <ClosePreview env={ref} onDone={() => setClosing(false)} />}
       {services.length === 0 ? (
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-2 rounded-panel border border-dashed border-dash px-3.5 py-3 text-mut">
           No services yet.

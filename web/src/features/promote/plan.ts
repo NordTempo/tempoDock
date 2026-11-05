@@ -24,13 +24,18 @@ export function defaultPair(envs: EnvironmentView[]) {
   return { from, to };
 }
 
-/** Every non-production → production pair of a project, for the palette. */
+/**
+ * Every non-production → production pair of a project, for the palette.
+ * Preview environments (ADR 0056) are left out: up to 20 of them come and go.
+ */
 export const promotionPairs = (envs: EnvironmentView[]) =>
   envs
     .filter((e) => e.environment.kind === "production")
     .flatMap((to) =>
       envs
-        .filter((e) => e.environment.kind !== "production")
+        .filter(
+          (e) => e.environment.kind !== "production" && !e.environment.preview,
+        )
         .map((from) => ({ from, to })),
     );
 

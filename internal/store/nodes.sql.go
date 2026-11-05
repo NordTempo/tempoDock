@@ -16,12 +16,14 @@ WHERE host_port > 0 AND service_id IN (
     SELECT services.id FROM services
     JOIN environments ON environments.id = services.environment_id
     JOIN projects ON projects.id = environments.project_id
-    WHERE environments.server_id = +?1 AND projects.archived_at IS NOT NULL)
+    WHERE environments.server_id = +?1
+      AND (projects.archived_at IS NOT NULL OR environments.archived_at IS NOT NULL))
 `
 
-// Frees the host ports of archived projects' releases on a server being
-// removed (before MoveArchivedEnvironments): their containers, if any are
-// left, are on that server, not where the environments move.
+// Frees the host ports of archived projects' (and archived environments')
+// releases on a server being removed (before MoveArchivedEnvironments):
+// their containers, if any are left, are on that server, not where the
+// environments move.
 func (q *Queries) ClearArchivedHostPorts(ctx context.Context, serverID int64) error {
 	_, err := q.db.ExecContext(ctx, clearArchivedHostPorts, serverID)
 	return err
@@ -507,8 +509,8 @@ func (q *Queries) ListRegistryServices(ctx context.Context, keep int64) ([]ListR
 
 const moveArchivedEnvironments = `-- name: MoveArchivedEnvironments :exec
 UPDATE environments SET server_id = ?1
-WHERE server_id = +?2 AND EXISTS (
-    SELECT 1 FROM projects WHERE projects.id = environments.project_id AND projects.archived_at IS NOT NULL)
+WHERE server_id = +?2 AND (archived_at IS NOT NULL OR EXISTS (
+    SELECT 1 FROM projects WHERE projects.id = environments.project_id AND projects.archived_at IS NOT NULL))
 `
 
 type MoveArchivedEnvironmentsParams struct {
@@ -516,9 +518,10 @@ type MoveArchivedEnvironmentsParams struct {
 	ServerID      int64
 }
 
-// Moves archived projects' environments off a server being removed, to
-// the control plane's own server: nothing of theirs runs anywhere, and an
-// environment always names a server.
+// Moves archived projects' environments, and archived environments
+// (closed previews), off a server being removed, to the control plane's
+// own server: nothing of theirs runs anywhere, and an environment always
+// names a server.
 func (q *Queries) MoveArchivedEnvironments(ctx context.Context, arg MoveArchivedEnvironmentsParams) error {
 	_, err := q.db.ExecContext(ctx, moveArchivedEnvironments, arg.LocalServerID, arg.ServerID)
 	return err

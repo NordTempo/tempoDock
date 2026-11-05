@@ -93,7 +93,7 @@ A body that stops without an `end` frame means the connection was lost.
 
 | `node.Runtime` method | Shape | Notes |
 |---|---|---|
-| `HasImage`, `EnsureNetwork`, `EnsureVolume`, `Start`, `Stop`, `Remove`, `Inspect`, `List`, `ApplyRoutes`, `CheckDomain` | unary | |
+| `HasImage`, `EnsureNetwork`, `EnsureVolume`, `RemoveVolume` (protocol 20, ADR 0056), `Start`, `Stop`, `Remove`, `Inspect`, `List`, `ApplyRoutes`, `CheckDomain` | unary | |
 | `HealthCheck` | unary, long | Runs on the node, where the port is bound to loopback. Blocks up to `hc.Timeout`. |
 | `Pull` | logs, then result | Docker's pull progress as `log` frames. |
 | `Build` | upload + logs, then result | Full duplex: output streams back while the context is still uploading. |

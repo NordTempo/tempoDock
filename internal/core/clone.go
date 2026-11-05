@@ -66,6 +66,7 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 	out.SourceKind = apitypes.EnvironmentKind(src.env.Kind)
 	cross := out.SourceKind != kind
 	copyLiterals := rank(a.Scope) >= rank(apitypes.ScopeAdmin) && (!cross || req.CopyValues)
+	rules := cloneRules{literal: func(apitypes.VariableRef) bool { return copyLiterals }}
 
 	var dst envScope
 	var left clonedLeft
@@ -75,7 +76,7 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 			return err
 		}
 		dst = envScope{p, e}
-		left, err = c.cloneInto(ctx, q, src, dst, copyLiterals, cross, &out)
+		left, err = c.cloneInto(ctx, q, src, dst, rules, cross, &out)
 		return err
 	})
 	if store.IsUnique(err) {
@@ -126,9 +127,9 @@ func (l clonedLeft) describe() []string {
 
 // cloneInto copies src's live services, volumes and variables into the
 // new environment dst, within the clone's transaction, filling in out.
-// copyLiterals copies literal values too; cross says dst is of the other
-// kind, so those are listed in out.CopiedAcrossKinds.
-func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScope, copyLiterals, cross bool, out *apitypes.CloneResult) (clonedLeft, error) {
+// rules say which values are copied; cross says dst is of the other
+// kind, so copied literals are listed in out.CopiedAcrossKinds.
+func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScope, rules cloneRules, cross bool, out *apitypes.CloneResult) (clonedLeft, error) {
 	var left clonedLeft
 	svcs, err := q.ListServices(ctx, src.env.ID)
 	if err != nil {
@@ -186,7 +187,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			ns.Template, ns.Database, ns.DatabaseUrlVariable = s.Template, s.Database, s.DatabaseUrlVariable
 		}
 		cl := clone{svc: ns}
-		if t, ok := templateOf(ns); ok && !copyLiterals {
+		if t, ok := templateOf(ns); ok {
 			cl.gen = t.vars(ns.Name, newPassword())
 		}
 		clones[s.ID] = cl
@@ -223,7 +224,7 @@ func (c *Core) cloneInto(ctx context.Context, q *store.Queries, src, dst envScop
 			continue // never live: only staged
 		}
 		name := apitypes.VariableRef{Service: cl.svc.Name, Key: v.Key}
-		value, how, err := c.clonedValue(v, variableAAD(dst.env.ID, serviceID, v.Key), cl.gen, copyLiterals)
+		value, how, err := c.clonedValue(v, variableAAD(dst.env.ID, serviceID, v.Key), cl.gen, rules.literal(name), rules.orgRefsLiteral)
 		if err != nil {
 			return left, err
 		}
@@ -272,18 +273,19 @@ const (
 
 // clonedValue is the value a variable gets in a clone, sealed for where
 // the clone stores it (to): the source's, when it is nothing but
-// references or copyLiterals is set; otherwise the template's new value
+// references (unless orgRefsLiteral and one names an org variable) or
+// copyLiteral is set; otherwise the template's new value
 // for key (gen), if it has one. A copied value is sealed again: the box
 // binds each value to its row.
-func (c *Core) clonedValue(src store.Variable, to secrets.AAD, gen map[string]string, copyLiterals bool) ([]byte, cloneHow, error) {
+func (c *Core) clonedValue(src store.Variable, to secrets.AAD, gen map[string]string, copyLiteral, orgRefsLiteral bool) ([]byte, cloneHow, error) {
 	plain, err := c.openValue(src.Value, variableAAD(src.EnvironmentID, src.ServiceID, src.Key), src.Key)
 	if err != nil {
 		return nil, cloneSkip, err
 	}
 	value, how := *plain, cloneCopied
 	switch v, generated := gen[src.Key]; {
-	case onlyReferences(value):
-	case copyLiterals:
+	case onlyReferences(value) && (!orgRefsLiteral || !refersToOrg(value)):
+	case copyLiteral:
 		how = cloneLiteral
 	case generated:
 		value, how = v, cloneGenerated
@@ -292,6 +294,27 @@ func (c *Core) clonedValue(src store.Variable, to secrets.AAD, gen map[string]st
 	}
 	b, err := c.box.Seal([]byte(value), to)
 	return b, how, err
+}
+
+// cloneRules say which of the source's variable values a clone copies.
+type cloneRules struct {
+	// literal says whose literal values are copied: everyone's or no
+	// one's for CloneEnvironment, the listed ones for a preview.
+	literal func(apitypes.VariableRef) bool
+	// orgRefsLiteral treats a reference to an org variable
+	// (${{org.KEY}}) as a literal value: it reads a secret the org holds,
+	// which a preview gets only when listed (ADR 0056).
+	orgRefsLiteral bool
+}
+
+// refersToOrg reports whether a value references an org variable.
+func refersToOrg(v string) bool {
+	for _, m := range refRe.FindAllStringSubmatch(v, -1) {
+		if m[1] == orgScope {
+			return true
+		}
+	}
+	return false
 }
 
 // onlyReferences reports whether a value is one or more ${{...}}

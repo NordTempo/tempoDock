@@ -509,6 +509,26 @@ func (r *Runtime) EnsureVolume(_ context.Context, name string, labels node.Label
 	return nil
 }
 
+// RemoveVolume implements node.Containers, recorded as "remove volume
+// <name>". Like Docker, it refuses while any container, running or not,
+// mounts the volume.
+func (r *Runtime) RemoveVolume(_ context.Context, name string, labels node.Labels) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	have, ok := r.volumes[name]
+	if !ok || !have.Matches(labels) {
+		return fmt.Errorf("volume %s: %w", name, node.ErrNotFound)
+	}
+	for id, spec := range r.specs {
+		if slices.ContainsFunc(spec.Mounts, func(m node.Mount) bool { return m.Volume == name }) {
+			return fmt.Errorf("volume %s is in use by container %s", name, r.containers[id].Name)
+		}
+	}
+	r.op("remove volume %s", name)
+	delete(r.volumes, name)
+	return nil
+}
+
 // Networks returns the names of networks created so far, sorted.
 func (r *Runtime) Networks() []string {
 	r.mu.Lock()

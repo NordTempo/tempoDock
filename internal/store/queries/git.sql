@@ -6,8 +6,12 @@ SELECT * FROM git_connections WHERE hook_id = +?;
 
 -- name: GetAppGitConnections :many
 -- The App connections of one repository, which an App push delivery is
--- routed to.
-SELECT * FROM git_connections WHERE repo_id = +? AND installation_id = +?;
+-- routed to. Preview environments' connections are left out: only their
+-- pull request's events deploy them (ADR 0056).
+SELECT * FROM git_connections
+WHERE repo_id = +? AND installation_id = +?
+  AND NOT EXISTS (SELECT 1 FROM services JOIN previews ON previews.environment_id = services.environment_id
+                  WHERE services.id = git_connections.service_id);
 
 -- name: CreateGitConnection :one
 INSERT INTO git_connections (service_id, hook_id, repo, branch, dir, secret, token, post_status, installation_id, repo_id, created_by)

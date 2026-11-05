@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import type { components } from "../api/schema";
 import {
   useIsOperator,
   useProjectOverview,
@@ -15,6 +16,8 @@ import { useOrg } from "./location";
 // What a PageBar shows next to the title inside a project: the environment
 // switch and the servers in view.
 
+type PullRequest = components["schemas"]["PullRequestRef"];
+
 const worst: Tone[] = ["fail", "warn", "prog", "ok", "mut"];
 
 /** The colour of an environment's dot: its worst service. */
@@ -23,10 +26,22 @@ function envTone(services: ServiceView[]): Tone {
   return worst.find((t) => tones.has(t)) ?? "mut";
 }
 
+/** "PR #12": marks a preview environment (ADR 0056) in lists. */
+export function PrMark({ preview }: { preview: PullRequest | undefined }) {
+  if (!preview) return null;
+  return (
+    <span className="font-mono text-2xs text-info" title={preview.title}>
+      PR #{preview.number}
+    </span>
+  );
+}
+
 /**
  * "● production ▾": the environment in view, and a menu of the others. On
  * a service page it lists the environments that have the same service and
  * keeps you on it; elsewhere it goes to each environment's variables.
+ * Preview environments come last, marked with their pull request; on one,
+ * its pull request is linked next to the switch.
  */
 export function EnvSwitch({
   project,
@@ -45,6 +60,7 @@ export function EnvSwitch({
       e.environment.name !== environment &&
       (!service || e.services.some((s) => s.service.name === service)),
   );
+  const pr = here?.environment.preview;
   const pill = (
     <span className="flex items-center gap-[7px] rounded-full border border-edge bg-panel px-[9px] py-1 text-xs hover:border-dash">
       <span className={toneText[envTone(here?.services ?? [])]}>
@@ -57,59 +73,82 @@ export function EnvSwitch({
       )}
     </span>
   );
-  if (others.length === 0) return pill;
+  const pull = pr && (
+    <a
+      href={pr.url}
+      target="_blank"
+      rel="noreferrer"
+      title={`${pr.repo}#${pr.number}: ${pr.title} by ${pr.author}`}
+      className="max-w-[40ch] truncate text-xs text-mut hover:text-fg"
+    >
+      <span className="font-mono text-info">PR #{pr.number}</span> {pr.title}
+    </a>
+  );
+  const control =
+    others.length === 0 ? (
+      pill
+    ) : (
+      <Menu label={`Environment: ${environment}`} button={pill}>
+        {(close) =>
+          others.map((e) => {
+            const twin = e.services.find((s) => s.service.name === service);
+            const dot = (
+              <span
+                className={
+                  toneText[twin ? serviceState(twin).tone : envTone(e.services)]
+                }
+              >
+                <span className="dot" />
+              </span>
+            );
+            return service && twin ? (
+              <Link
+                key={e.environment.id}
+                to="/$org/$project/$environment/$service"
+                params={{
+                  org,
+                  project,
+                  environment: e.environment.name,
+                  service,
+                }}
+                onClick={close}
+                className={menuItem}
+              >
+                {dot}
+                <span className="flex-1">
+                  {e.environment.name} <LockMark lock={e.environment.lock} />
+                </span>
+                <PrMark preview={e.environment.preview} />
+                <span className="font-mono text-2xs text-faint">
+                  {twin.service.active_release
+                    ? `r${twin.service.active_release}`
+                    : "none"}
+                </span>
+              </Link>
+            ) : (
+              <Link
+                key={e.environment.id}
+                to="/$org/$project/$environment"
+                params={{ org, project, environment: e.environment.name }}
+                onClick={close}
+                className={menuItem}
+              >
+                {dot}
+                <span className="flex-1">
+                  {e.environment.name} <LockMark lock={e.environment.lock} />
+                </span>
+                <PrMark preview={e.environment.preview} />
+              </Link>
+            );
+          })
+        }
+      </Menu>
+    );
   return (
-    <Menu label={`Environment: ${environment}`} button={pill}>
-      {(close) =>
-        others.map((e) => {
-          const twin = e.services.find((s) => s.service.name === service);
-          const dot = (
-            <span
-              className={
-                toneText[twin ? serviceState(twin).tone : envTone(e.services)]
-              }
-            >
-              <span className="dot" />
-            </span>
-          );
-          return service && twin ? (
-            <Link
-              key={e.environment.id}
-              to="/$org/$project/$environment/$service"
-              params={{
-                org,
-                project,
-                environment: e.environment.name,
-                service,
-              }}
-              onClick={close}
-              className={menuItem}
-            >
-              {dot}
-              <span className="flex-1">
-                {e.environment.name} <LockMark lock={e.environment.lock} />
-              </span>
-              <span className="font-mono text-2xs text-faint">
-                {twin.service.active_release
-                  ? `r${twin.service.active_release}`
-                  : "none"}
-              </span>
-            </Link>
-          ) : (
-            <Link
-              key={e.environment.id}
-              to="/$org/$project/$environment"
-              params={{ org, project, environment: e.environment.name }}
-              onClick={close}
-              className={menuItem}
-            >
-              {dot}
-              {e.environment.name} <LockMark lock={e.environment.lock} />
-            </Link>
-          );
-        })
-      }
-    </Menu>
+    <>
+      {control}
+      {pull}
+    </>
   );
 }
 

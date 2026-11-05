@@ -119,7 +119,10 @@ func (q *Queries) DeleteGitConnection(ctx context.Context, serviceID int64) erro
 }
 
 const getAppGitConnections = `-- name: GetAppGitConnections :many
-SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved FROM git_connections WHERE repo_id = +? AND installation_id = +?
+SELECT id, service_id, hook_id, repo, branch, dir, secret, token, post_status, pending_sha, pending_message, pending_author, pending_by, pending_force, last_event, last_event_at, created_by, created_at, installation_id, repo_id, pending_approved FROM git_connections
+WHERE repo_id = +? AND installation_id = +?
+  AND NOT EXISTS (SELECT 1 FROM services JOIN previews ON previews.environment_id = services.environment_id
+                  WHERE services.id = git_connections.service_id)
 `
 
 type GetAppGitConnectionsParams struct {
@@ -128,7 +131,8 @@ type GetAppGitConnectionsParams struct {
 }
 
 // The App connections of one repository, which an App push delivery is
-// routed to.
+// routed to. Preview environments' connections are left out: only their
+// pull request's events deploy them (ADR 0056).
 func (q *Queries) GetAppGitConnections(ctx context.Context, arg GetAppGitConnectionsParams) ([]GitConnection, error) {
 	rows, err := q.db.QueryContext(ctx, getAppGitConnections, arg.RepoID, arg.InstallationID)
 	if err != nil {

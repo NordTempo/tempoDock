@@ -387,6 +387,27 @@ func (r *Runtime) EnsureVolume(ctx context.Context, name string, labels node.Lab
 	return nil
 }
 
+// RemoveVolume implements node.Containers. It never forces: a volume a
+// container still uses stays, and Docker's refusal is returned.
+func (r *Runtime) RemoveVolume(ctx context.Context, name string, labels node.Labels) error {
+	res, err := r.cli.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	switch {
+	case cerrdefs.IsNotFound(err):
+		return notFound("volume", name)
+	case err != nil:
+		return fmt.Errorf("inspect volume %s: %w", name, err)
+	case !isManaged(res.Volume.Labels) || !node.LabelsFrom(res.Volume.Labels).Matches(labels):
+		return notFound("volume", name)
+	}
+	if _, err := r.cli.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return notFound("volume", name)
+		}
+		return fmt.Errorf("remove volume %s: %w", name, err)
+	}
+	return nil
+}
+
 // Start creates and starts a container from spec. The network and volumes
 // must already exist and be managed (see EnsureNetwork and EnsureVolume).
 func (r *Runtime) Start(ctx context.Context, spec node.ContainerSpec) (node.Container, error) {

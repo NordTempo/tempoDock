@@ -86,6 +86,7 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 		close(p.done)
 	}
 	c.gitDeployDone(ss, d.rel, err)
+	c.previewReleaseDone(ss)
 }
 
 func (d *deployment) run(ctx context.Context) error {

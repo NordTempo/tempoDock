@@ -74,6 +74,11 @@ export const keys = {
   /** Covers every server's detail too. */
   servers: ["servers"],
   server: (name: string) => ["servers", name],
+  /**
+   * Preview settings and open previews (ADR 0056); live.ts refetches them
+   * on preview audits and on releases and domains of preview environments.
+   */
+  previews: (project: string) => ["project", project, "previews"],
   /** Under the project, so audit events about it refetch them. */
   placements: (project: string) => ["project", project, "placements"],
   // Statistics stay outside the project and server trees: events there
@@ -141,15 +146,20 @@ export const isDatabase = (s: Service) =>
   !!s.data_engine || (!!s.database && s.database !== "none");
 
 /**
- * Sets archived services apart from live ones and turns the API's null
- * lists into arrays.
+ * Sets archived services apart from live ones, puts preview environments
+ * (ADR 0056) after the regular ones and turns the API's null lists into
+ * arrays.
  */
 function toOverview(
   o: components["schemas"]["ProjectOverview"],
 ): ProjectOverview {
+  const envs = o.environments ?? [];
   return {
     project: o.project,
-    environments: (o.environments ?? []).map((env) => {
+    environments: [
+      ...envs.filter((e) => !e.environment.preview),
+      ...envs.filter((e) => e.environment.preview),
+    ].map((env) => {
       const all = (env.services ?? []).map((s) => ({
         ...s,
         domains: s.domains ?? [],

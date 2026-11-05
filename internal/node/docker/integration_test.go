@@ -765,6 +765,50 @@ func TestPruneImages(t *testing.T) {
 	}
 }
 
+// RemoveVolume removes a managed volume with matching labels and nothing
+// else: a volume of another environment stays, and so does one a container
+// still uses (it is never forced).
+func TestRemoveVolume(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	vol := e.name("vol")
+	labels := node.Labels{ControlPlane: e.prefix, Project: "p1", Environment: "e1", Service: "s1"}
+	if err := e.EnsureVolume(ctx, vol, labels); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RemoveVolume(ctx, vol, node.Labels{ControlPlane: e.prefix, Project: "p1", Environment: "e2"}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing as another environment: %v", err)
+	}
+	c := e.start(node.ContainerSpec{Name: e.name("user"), Image: shellImage, Cmd: "sleep 60", Mounts: []node.Mount{{Volume: vol, Path: "/data"}}})
+	if err := e.RemoveVolume(ctx, vol, labels); err == nil || errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing a volume in use: %v", err)
+	}
+	if _, err := e.cli.VolumeInspect(ctx, vol, client.VolumeInspectOptions{}); err != nil {
+		t.Fatalf("volume was removed: %v", err)
+	}
+	if err := e.Stop(ctx, c.ID, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Remove(ctx, c.ID, node.RemoveOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RemoveVolume(ctx, vol, node.Labels{ControlPlane: e.prefix, Environment: "e1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.VolumeInspect(ctx, vol, client.VolumeInspectOptions{}); !cerrdefs.IsNotFound(err) {
+		t.Fatalf("volume still there: %v", err)
+	}
+	if err := e.RemoveVolume(ctx, vol, labels); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing again: %v", err)
+	}
+	if _, err := e.cli.VolumeCreate(ctx, client.VolumeCreateOptions{Name: vol}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RemoveVolume(ctx, vol, node.Labels{}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("removing an unmanaged volume: %v", err)
+	}
+}
+
 // RemoveNetwork removes an environment's network (Docker frees its subnet,
 // and freeSubnet only skips subnets of networks that exist); a network of
 // another environment, or one the platform doesn't manage, is not found.
