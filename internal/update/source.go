@@ -32,6 +32,27 @@ type Release struct {
 	Prerelease  bool
 }
 
+// SourceError is a release source failing. Plain says what went wrong
+// and what to do, for people: no URLs or status codes (the console
+// already names the source). Detail is the technical part, for the log
+// and for whoever digs. Error() is both.
+type SourceError struct {
+	Plain  string
+	Detail string
+}
+
+func (e *SourceError) Error() string {
+	if e.Detail == "" {
+		return e.Plain
+	}
+	return e.Plain + " (" + e.Detail + ")"
+}
+
+// sourceErr is a SourceError.
+func sourceErr(detail, format string, args ...any) error {
+	return &SourceError{Plain: fmt.Sprintf(format, args...), Detail: detail}
+}
+
 // Source is where releases come from: GitHub, or a directory.
 type Source interface {
 	// Releases lists the published releases, newest first.
@@ -172,7 +193,7 @@ func (g *GitHub) getJSON(ctx context.Context, path string, v any) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReleaseList)).Decode(v); err != nil {
-		return fmt.Errorf("read %s's releases: %w", g, err)
+		return sourceErr(fmt.Sprintf("read %s: %v", path, err), "GitHub's answer couldn't be read; try again in a few minutes")
 	}
 	return nil
 }
@@ -189,7 +210,7 @@ func (g *GitHub) do(ctx context.Context, url, accept string) (*http.Response, er
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	token, err := g.token()
 	if err != nil {
-		return nil, err
+		return nil, sourceErr(err.Error(), "the GitHub token in %s can't be read; check that the file is readable by the dock service", g.TokenFile)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -199,24 +220,30 @@ func (g *GitHub) do(ctx context.Context, url, accept string) (*http.Response, er
 		client = http.DefaultClient
 	}
 	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("can't reach %s: %w", g, err)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return nil, sourceErr(err.Error(), "GitHub didn't answer in time; check this server's network, then try again")
+	case err != nil:
+		return nil, sourceErr(err.Error(), "GitHub can't be reached from this server; check its network and DNS, then try again")
 	}
 	if resp.StatusCode == http.StatusOK {
 		return resp, nil
 	}
 	_ = resp.Body.Close()
+	detail := fmt.Sprintf("GET %s answered %s", url, resp.Status)
 	switch {
 	case resp.StatusCode == http.StatusNotFound && token == "":
-		return nil, fmt.Errorf("%s answered 404: the repository is private (or gone); put a token that can read its releases in %s", g, g.TokenFile)
+		return nil, sourceErr(detail, "the repository is private or doesn't exist; put a token that can read its releases in %s", g.TokenFile)
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("%s answered 404: the release or repository doesn't exist, or the token in %s can't read it", g, g.TokenFile)
+		return nil, sourceErr(detail, "the repository or release doesn't exist, or the token in %s can't read it; check [updates] source and the token", g.TokenFile)
 	case resp.StatusCode == http.StatusUnauthorized:
-		return nil, fmt.Errorf("%s refused the token in %s (401); replace it", g, g.TokenFile)
+		return nil, sourceErr(detail, "GitHub refused the token in %s; replace it with one that can read the repository's releases", g.TokenFile)
 	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
-		return nil, fmt.Errorf("%s answered %d: probably GitHub's rate limit; try again later, or put a token in %s", g, resp.StatusCode, g.TokenFile)
+		return nil, sourceErr(detail, "GitHub's rate limit was reached; try again in an hour, or put a token in %s", g.TokenFile)
+	case resp.StatusCode >= 500:
+		return nil, sourceErr(detail, "GitHub had a problem answering; try again in a few minutes")
 	}
-	return nil, fmt.Errorf("%s answered %s", g, resp.Status)
+	return nil, sourceErr(detail, "GitHub refused the request (%s); check [updates] source in the config", resp.Status)
 }
 
 // token reads TokenFile; a missing file is no token.
@@ -245,7 +272,7 @@ func (d DirSource) String() string { return d.Path }
 func (d DirSource) Releases(context.Context) ([]Release, error) {
 	entries, err := os.ReadDir(d.Path)
 	if err != nil {
-		return nil, fmt.Errorf("read releases in %s: %w", d.Path, err)
+		return nil, sourceErr(err.Error(), "the release directory %s can't be read; check [updates] source in the config and that the directory exists", d.Path)
 	}
 	var out []Release
 	for _, e := range entries {

@@ -19,6 +19,7 @@ import {
   PageBar,
   Panel,
 } from "../../ui/kit";
+import { Saved, useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteOrg,
@@ -40,6 +41,8 @@ export function GeneralPage() {
   const user = useSession()?.kind === "user";
   const rename = useRenameOrg();
   const [name, setName] = useState(org.name);
+  const v = useValidation();
+  const nameError = v.required(!name.trim(), "Enter a name.");
   return (
     <>
       <PageBar
@@ -58,17 +61,19 @@ export function GeneralPage() {
                 <td className="py-1.5">
                   {admin ? (
                     <form
+                      ref={v.form}
                       className="flex flex-wrap items-center gap-2"
                       onSubmit={(e) => {
                         e.preventDefault();
-                        rename.mutate(name.trim());
+                        if (v.check(!!name.trim())) rename.mutate(name.trim());
                       }}
                     >
                       <input
                         aria-label="Name"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="field min-w-0 flex-[1_1_220px] py-[5px]"
+                        aria-invalid={!!nameError}
+                        className={`field min-w-0 flex-[1_1_220px] py-[5px] ${nameError ? "border-fail" : ""}`}
                       />
                       {name.trim() !== org.name && (
                         <Act
@@ -76,11 +81,19 @@ export function GeneralPage() {
                           primary
                           type="submit"
                           cli={`dock org rename ${JSON.stringify(name.trim())}`}
-                          disabled={!name.trim() || rename.isPending}
+                          disabled={rename.isPending}
                         >
                           Save
                         </Act>
                       )}
+                      {nameError && (
+                        <span role="alert" className="text-xs text-fail">
+                          {nameError}
+                        </span>
+                      )}
+                      <Saved
+                        ok={rename.isSuccess && name.trim() === org.name}
+                      />
                       <ErrorText error={rename.error} />
                     </form>
                   ) : (
@@ -163,15 +176,23 @@ function LockSettings() {
             <tr>
               <td className="w-32 py-2.5 text-faint">New production</td>
               <td className="py-2.5">
-                <Check
-                  label="Lock new production environments"
-                  title={`dock org locks --lock-production ${settings.lock_production ? "off" : "on"}`}
-                  checked={settings.lock_production}
-                  disabled={save.isPending}
-                  onChange={(lock_production) =>
-                    save.mutate({ lock_production })
-                  }
-                />
+                <span className="flex flex-wrap items-center gap-2">
+                  <Check
+                    label="Lock new production environments"
+                    title={`dock org locks --lock-production ${settings.lock_production ? "off" : "on"}`}
+                    checked={settings.lock_production}
+                    disabled={save.isPending}
+                    onChange={(lock_production) =>
+                      save.mutate({ lock_production })
+                    }
+                  />
+                  <Saved
+                    ok={
+                      save.isSuccess &&
+                      save.variables?.request_ttl_hours === undefined
+                    }
+                  />
+                </span>
               </td>
             </tr>
             <tr>
@@ -181,6 +202,7 @@ function LockSettings() {
                   className="flex flex-wrap items-center gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
+                    if (!valid) return;
                     save.mutate({
                       lock_production: settings.lock_production,
                       request_ttl_hours: n,
@@ -195,7 +217,8 @@ function LockSettings() {
                       max={TTL_MAX}
                       value={hours}
                       onChange={(e) => setHours(e.target.value)}
-                      className="field w-20 py-[5px] font-mono"
+                      aria-invalid={!valid}
+                      className={`field w-20 py-[5px] font-mono ${valid ? "" : "border-fail"}`}
                     />
                     hours
                   </label>
@@ -205,7 +228,7 @@ function LockSettings() {
                       primary
                       type="submit"
                       title={`dock org locks --request-ttl ${n}h`}
-                      disabled={!valid || save.isPending}
+                      disabled={save.isPending}
                     >
                       Save
                     </Button>
@@ -215,6 +238,13 @@ function LockSettings() {
                       {TTL_MIN} to {TTL_MAX} hours
                     </span>
                   )}
+                  <Saved
+                    ok={
+                      save.isSuccess &&
+                      save.variables?.request_ttl_hours !== undefined &&
+                      hours === String(current)
+                    }
+                  />
                 </form>
               </td>
             </tr>
@@ -237,14 +267,20 @@ function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
   }
   return (
     <span className="flex flex-col gap-1 whitespace-normal">
-      <CliHint cli={`dock org two-factor ${on ? "off" : "on"}`} className="act">
-        <Check
-          label="Require two-factor sign-in"
-          checked={on}
-          disabled={set.isPending}
-          onChange={(require) => set.mutate(require)}
-        />
-      </CliHint>
+      <span className="flex flex-wrap items-center gap-2">
+        <CliHint
+          cli={`dock org two-factor ${on ? "off" : "on"}`}
+          className="act"
+        >
+          <Check
+            label="Require two-factor sign-in"
+            checked={on}
+            disabled={set.isPending}
+            onChange={(require) => set.mutate(require)}
+          />
+        </CliHint>
+        <Saved ok={set.isSuccess} />
+      </span>
       <span className="text-xs text-mut">
         Members who signed in without a second factor can't act here until they
         add one. API tokens are not affected.
@@ -355,7 +391,6 @@ function Delete({ name, slug }: { name: string; slug: string }) {
     >
       <Act
         small
-        danger
         cli="dock org delete"
         disabled={!!reason}
         reason={reason}

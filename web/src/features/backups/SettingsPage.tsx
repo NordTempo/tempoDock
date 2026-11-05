@@ -287,6 +287,9 @@ function Settings({ settings }: { settings: BackupSettings }) {
             <ErrorText error={configure.error} />
           </div>
         )}
+        {!dirty && configure.isSuccess && (
+          <span className="text-xs text-ok">Saved</span>
+        )}
       </form>
       {password && <PasswordBox password={password} first />}
     </section>

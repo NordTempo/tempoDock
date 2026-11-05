@@ -13,6 +13,7 @@ import {
   platformSecurityQuery,
   useSetPlatformSecurity,
 } from "../features/console/security";
+import { Saved, useValidation } from "../features/create/form";
 import { roleNote } from "../features/org/data";
 import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
@@ -136,14 +137,17 @@ function Users() {
             <p className="text-2xs text-faint">
               Your own account can't be disabled, deleted or reset here. Change
               your password on{" "}
-              <Link to="/account" className="text-info hover:underline">
+              <Link
+                to="/account"
+                className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
+              >
                 your account
               </Link>
               . Tokens for agents, CI and scripts are in{" "}
               <Link
                 to="/$org/settings/tokens"
                 params={{ org }}
-                className="text-info hover:underline"
+                className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
               >
                 the organization's settings
               </Link>
@@ -169,17 +173,20 @@ function OperatorsTwoFactor() {
   const set = useSetPlatformSecurity();
   return (
     <div className="flex flex-col gap-1 border-t border-line pt-4">
-      <CliHint
-        cli={`dock security operators-two-factor ${on ? "off" : "on"}`}
-        className="act"
-      >
-        <Check
-          label="Require two-factor for operators"
-          checked={on}
-          disabled={set.isPending}
-          onChange={(require) => set.mutate(require)}
-        />
-      </CliHint>
+      <span className="flex flex-wrap items-center gap-2">
+        <CliHint
+          cli={`dock security operators-two-factor ${on ? "off" : "on"}`}
+          className="act"
+        >
+          <Check
+            label="Require two-factor for operators"
+            checked={on}
+            disabled={set.isPending}
+            onChange={(require) => set.mutate(require)}
+          />
+        </CliHint>
+        <Saved ok={set.isSuccess} />
+      </span>
       <span className="text-xs text-mut">
         Without one, operators keep their organizations but not the console.
       </span>
@@ -368,7 +375,9 @@ const UserRow = memo(function UserRow({
       </td>
       <td className="py-2.5">
         {u.role}
-        {u.operator && <span className="text-warn"> · operator</span>}
+        {u.operator && (
+          <span className="block text-2xs text-warn">operator</span>
+        )}
       </td>
       <td className="py-2.5">
         {disabled && u.disabled_at ? (
@@ -390,20 +399,21 @@ const UserRow = memo(function UserRow({
           </span>
         )}
       </td>
-      <td className={`py-2.5 ${access ? "text-mut" : "text-faint"}`}>
+      <td
+        className={`min-w-[84px] py-2.5 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
+      >
         {access || "none"}
       </td>
       <td className="py-2.5 text-faint">{day(u.created_at)}</td>
       <td className="w-full py-1.5 text-right">
         {!you && (
-          // Text buttons, so three fit beside the role guide; each title is
-          // its CLI equivalent, and each confirm shows it too.
-          <span className="inline-flex gap-3">
+          // Small bordered buttons, like Members; each shows its CLI
+          // equivalent, and each confirm too.
+          <span className="inline-flex gap-1.5">
             {disabled ? (
-              <button
-                type="button"
-                className="lnk"
-                title={`dock user enable ${u.email}`}
+              <Act
+                small
+                cli={`dock user enable ${u.email}`}
                 disabled={setDisabled.isPending}
                 onClick={() =>
                   setDisabled.mutate(
@@ -413,33 +423,30 @@ const UserRow = memo(function UserRow({
                 }
               >
                 Enable
-              </button>
+              </Act>
             ) : (
-              <button
-                type="button"
-                className="lnk"
-                title={`dock user disable ${u.email}`}
+              <Act
+                small
+                cli={`dock user disable ${u.email}`}
                 onClick={() => setAsking("disable")}
               >
                 Disable
-              </button>
+              </Act>
             )}
-            <button
-              type="button"
-              className="lnk"
-              title={`dock user reset-password ${u.email}`}
+            <Act
+              small
+              cli={`dock user reset-password ${u.email}`}
               onClick={() => setAsking("reset")}
             >
               Reset password
-            </button>
-            <button
-              type="button"
-              className="lnk text-fail"
-              title={`dock user delete ${u.email}`}
+            </Act>
+            <Act
+              small
+              cli={`dock user delete ${u.email}`}
               onClick={() => setAsking("delete")}
             >
               Delete
-            </button>
+            </Act>
           </span>
         )}
         {!asking && <ErrorText error={setDisabled.error} />}
@@ -461,14 +468,33 @@ function AddUser({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Scope>("deploy");
   const [operator, setOperator] = useState(false);
+  const v = useValidation();
+  const emailOk = /^[^\s@]+@[^\s@]+$/.test(email.trim());
+  const errors = {
+    email:
+      v.required(!email.trim(), "Enter their email address.") ??
+      v.required(!emailOk, "Enter an email address, like name@company.com."),
+    name: v.required(!name.trim(), "Enter their name."),
+    password:
+      (password && password.length < 12
+        ? "Use at least 12 characters."
+        : undefined) ?? v.required(!password, "Enter a first password."),
+  };
+  const field = (error: string | undefined) =>
+    `field py-[7px] text-sm text-fg ${error ? "border-fail" : ""}`;
   const label = "flex flex-col gap-1.5 text-xs text-mut";
   return (
     <form
+      ref={v.form}
+      noValidate
       aria-label="Add a user"
       className="flex flex-col gap-3 border-b border-line pb-5"
       onKeyDown={(e) => e.key === "Escape" && onClose()}
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(emailOk && !!name.trim() && password.length >= 12)) {
+          return;
+        }
         create.mutate(
           { email: email.trim(), name: name.trim(), password, role, operator },
           {
@@ -480,7 +506,7 @@ function AddUser({ onClose }: { onClose: () => void }) {
         );
       }}
     >
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <label className={`${label} min-w-0 flex-[2_1_220px]`}>
           Email
           <input
@@ -490,8 +516,10 @@ function AddUser({ onClose }: { onClose: () => void }) {
             autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="field py-[7px] text-sm text-fg"
+            aria-invalid={!!errors.email}
+            className={field(errors.email)}
           />
+          {errors.email && <span className="text-fail">{errors.email}</span>}
         </label>
         <label className={`${label} min-w-0 flex-[1_1_150px]`}>
           Name
@@ -499,8 +527,10 @@ function AddUser({ onClose }: { onClose: () => void }) {
             placeholder="Ada Lovelace"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="field py-[7px] text-sm text-fg"
+            aria-invalid={!!errors.name}
+            className={field(errors.name)}
           />
+          {errors.name && <span className="text-fail">{errors.name}</span>}
         </label>
         <label className={`${label} min-w-0 flex-[1_1_180px]`}>
           Password, 12+ characters
@@ -509,8 +539,12 @@ function AddUser({ onClose }: { onClose: () => void }) {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="field py-[7px] text-sm text-fg"
+            aria-invalid={!!errors.password}
+            className={field(errors.password)}
           />
+          {errors.password && (
+            <span className="text-fail">{errors.password}</span>
+          )}
         </label>
         <label className={label}>
           Role
@@ -542,7 +576,20 @@ function AddUser({ onClose }: { onClose: () => void }) {
           Add user
         </Act>
         <Button onClick={onClose}>Cancel</Button>
-        <ErrorText error={create.error} />
+        {create.error ? (
+          <ErrorText error={create.error} />
+        ) : (
+          <span className="text-xs text-fail">
+            {v.problem(
+              [
+                !email.trim() && "an email",
+                !name.trim() && "a name",
+                !password && "a password",
+              ],
+              true,
+            )}
+          </span>
+        )}
       </div>
     </form>
   );

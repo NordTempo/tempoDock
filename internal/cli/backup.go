@@ -29,7 +29,7 @@ Until they are moved to a bucket (dock backup move) backups stay on each
 server, not off-box. Restores create a new service; the live one is never
 touched.`,
 	})
-	cmd.AddCommand(newBackupListCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
+	cmd.AddCommand(newBackupListCmd(g), newBackupLogCmd(g), newBackupRunCmd(g), newBackupRestoreCmd(g),
 		newBackupScheduleCmd(g), newBackupStatusCmd(g), newBackupConfigureCmd(g), newBackupMoveCmd(g))
 	return cmd
 }
@@ -53,6 +53,44 @@ func newBackupListCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(b, func() error { return printBackups(g, b) })
+		},
+	}
+	f.add(cmd, needService)
+	return cmd
+}
+
+// newBackupLogCmd prints what a backup or restore run's job printed.
+func newBackupLogCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "log <id> -s <service>",
+		Short: "Show a backup or restore run's log",
+		Long: `Print what a backup or restore run's job printed: its last 16 KB, with the
+repository's and database's secrets masked. The ids are in ` + "`dock backup list`" + `;
+the service's newest 20 runs keep their log. Needs deploy access.`,
+		Example: `  dock backup log 42 -s db`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return usageError(fmt.Sprintf("%q isn't a run id", args[0]), "Use an id from `dock backup list`.")
+			}
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			l, err := get[apitypes.BackupLog](cmd.Context(), s, t.servicePath()+"/backups/"+args[0]+"/log")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(l, func() error {
+				if l.Output == "" {
+					g.io.Detail(fmt.Sprintf("Run %d kept no log: its job never ran, or it is older than the service's newest 20 runs.", id))
+					return nil
+				}
+				_, err := io.WriteString(g.io.Out, strings.TrimRight(l.Output, "\n")+"\n")
+				return err
+			})
 		},
 	}
 	f.add(cmd, needService)

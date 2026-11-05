@@ -186,6 +186,23 @@ func (q *Queries) GetBackupBySnapshot(ctx context.Context, arg GetBackupBySnapsh
 	return i, err
 }
 
+const getBackupLog = `-- name: GetBackupLog :one
+SELECT output FROM backup_logs WHERE backup_id = +? AND service_id = +?
+`
+
+type GetBackupLogParams struct {
+	BackupID  int64
+	ServiceID int64
+}
+
+// A run's output; the service guards IDs from other services.
+func (q *Queries) GetBackupLog(ctx context.Context, arg GetBackupLogParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getBackupLog, arg.BackupID, arg.ServiceID)
+	var output string
+	err := row.Scan(&output)
+	return output, err
+}
+
 const getBackupSchedule = `-- name: GetBackupSchedule :one
 SELECT service_id, enabled, hour FROM backup_schedules WHERE service_id = +?
 `
@@ -648,6 +665,24 @@ func (q *Queries) RelabelBackupRepository(ctx context.Context, arg RelabelBackup
 	return err
 }
 
+const saveBackupLog = `-- name: SaveBackupLog :exec
+INSERT INTO backup_logs (backup_id, service_id, output) VALUES (?, ?, ?)
+ON CONFLICT (backup_id) DO UPDATE SET output = excluded.output
+`
+
+type SaveBackupLogParams struct {
+	BackupID  int64
+	ServiceID int64
+	Output    string
+}
+
+// Keeps a finished run's output (the run's service: a restore's is the
+// service restored from).
+func (q *Queries) SaveBackupLog(ctx context.Context, arg SaveBackupLogParams) error {
+	_, err := q.db.ExecContext(ctx, saveBackupLog, arg.BackupID, arg.ServiceID, arg.Output)
+	return err
+}
+
 const setServiceTemplate = `-- name: SetServiceTemplate :exec
 UPDATE services SET template = ? WHERE id = +?
 `
@@ -659,6 +694,26 @@ type SetServiceTemplateParams struct {
 
 func (q *Queries) SetServiceTemplate(ctx context.Context, arg SetServiceTemplateParams) error {
 	_, err := q.db.ExecContext(ctx, setServiceTemplate, arg.Template, arg.ID)
+	return err
+}
+
+const trimBackupLogs = `-- name: TrimBackupLogs :exec
+DELETE FROM backup_logs
+WHERE backup_logs.service_id = +?1 AND backup_logs.backup_id < (
+    SELECT l.backup_id FROM backup_logs l WHERE l.service_id = +?1
+    ORDER BY l.backup_id DESC LIMIT 1 OFFSET CAST(?2 AS INTEGER) - 1
+)
+`
+
+type TrimBackupLogsParams struct {
+	ServiceID int64
+	Keep      int64
+}
+
+// Deletes the output of a service's runs older than its newest `keep`
+// logs.
+func (q *Queries) TrimBackupLogs(ctx context.Context, arg TrimBackupLogsParams) error {
+	_, err := q.db.ExecContext(ctx, trimBackupLogs, arg.ServiceID, arg.Keep)
 	return err
 }
 

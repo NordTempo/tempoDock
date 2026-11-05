@@ -1,4 +1,4 @@
-import type { Release, ReleaseSummary } from "../../data/types";
+import type { Release, ReleaseSummary, Service } from "../../data/types";
 import { shortId } from "../../ui/status";
 
 /** The release a one-click rollback goes back to: the newest replaced one. */
@@ -58,4 +58,156 @@ export function imageLabel(r: Pick<ReleaseSummary, "image_ref" | "image_id">) {
     return r.image_ref.replace(/^docker\.io\/(library\/)?/, "");
   }
   return r.image_id ? shortId(r.image_id) : "";
+}
+
+/** An image reference without Docker Hub's implied prefix, for comparing. */
+const bare = (ref: string) => ref.replace(/^docker\.io\/(library\/)?/, "");
+
+/**
+ * The image setting next to what serves. The setting is what the next
+ * image deploy (Deploy, `dock deploy` without --image) runs; config
+ * changes and rollbacks keep the serving image. They differ after a
+ * failed deploy of a new tag, or a rollback. `failed` is the newest
+ * release that tried the setting's image, when it failed.
+ */
+export function imageSetting(service: Service, releases: Release[]) {
+  const serving = releases.find((r) => r.status === "active");
+  const next = service.image ? bare(service.image) : "";
+  const now = serving ? imageLabel(serving) : "";
+  const lastTry = next
+    ? releases.find((r) => bare(r.image_ref) === next)
+    : undefined;
+  return {
+    serving,
+    /** The image that serves now, as imageLabel shows it. */
+    now,
+    /** The image setting, without docker.io/. */
+    next,
+    /** The setting differs from what serves. */
+    differs: !!next && !!serving && next !== now,
+    failed: lastTry?.status === "failed" ? lastTry : undefined,
+  };
+}
+
+/** One difference between two releases, in words: "port 3000 → 8080". */
+export type ReleaseChange = {
+  what:
+    | "image"
+    | "added"
+    | "removed"
+    | "port"
+    | "start command"
+    | "health check"
+    | "limits"
+    | "volumes";
+  text: string;
+};
+
+/**
+ * What differs between release `from` and release `to`: the image,
+ * variables added and removed (by name; values are sealed), the port,
+ * the start command, the health check path, the limits and the volumes
+ * mounted. Empty when they match.
+ */
+export function releaseDiff(from: Release, to: Release): ReleaseChange[] {
+  const before = new Set(from.config.variable_keys ?? []);
+  const after = new Set(to.config.variable_keys ?? []);
+  const added = [...after].filter((k) => !before.has(k));
+  const removed = [...before].filter((k) => !after.has(k));
+  const mounts = (r: Release) =>
+    (r.config.mounts ?? []).map((m) => `${m.volume} at ${m.path}`).join(", ");
+  const out: ReleaseChange[] = [];
+  if (from.image_id !== to.image_id) {
+    const a = imageLabel(from);
+    const b = imageLabel(to);
+    out.push({
+      what: "image",
+      text: `image ${a} → ${b}${a === b ? " (new digest)" : ""}`,
+    });
+  }
+  if (added.length) out.push({ what: "added", text: added.join(", ") });
+  if (removed.length) out.push({ what: "removed", text: removed.join(", ") });
+  if (from.config.port !== to.config.port) {
+    out.push({
+      what: "port",
+      text: `port ${from.config.port} → ${to.config.port}`,
+    });
+  }
+  if (from.config.start_command !== to.config.start_command) {
+    out.push({
+      what: "start command",
+      text: `start command ${from.config.start_command || "image default"} → ${to.config.start_command || "image default"}`,
+    });
+  }
+  if (from.config.health_check_path !== to.config.health_check_path) {
+    out.push({
+      what: "health check",
+      text: `health check ${from.config.health_check_path || "TCP"} → ${to.config.health_check_path || "TCP"}`,
+    });
+  }
+  if (
+    from.config.cpus !== to.config.cpus ||
+    from.config.memory_mb !== to.config.memory_mb
+  ) {
+    const limits = (r: Release) =>
+      `${r.config.cpus || "no"} CPU, ${r.config.memory_mb ? `${r.config.memory_mb}M` : "no memory limit"}`;
+    out.push({
+      what: "limits",
+      text: `limits ${limits(from)} → ${limits(to)}`,
+    });
+  }
+  if (mounts(from) !== mounts(to)) {
+    out.push({
+      what: "volumes",
+      text: `volumes ${mounts(from) || "none"} → ${mounts(to) || "none"}`,
+    });
+  }
+  return out;
+}
+
+/**
+ * What rolling back from `from` to `to` takes away that the app may rely
+ * on, one plain sentence each: volumes no longer mounted (or mounted
+ * elsewhere) and variables removed. The rollback confirm shows them in
+ * warning colour and turns its button red.
+ */
+export function rollbackLosses(from: Release, to: Release): string[] {
+  const out: string[] = [];
+  const target = new Map(
+    (to.config.mounts ?? []).map((m) => [m.volume, m.path]),
+  );
+  for (const m of from.config.mounts ?? []) {
+    const path = target.get(m.volume);
+    if (path === undefined) {
+      out.push(
+        `${m.volume} is no longer mounted at ${m.path}: the app won't see the files on it. They stay on the volume.`,
+      );
+    } else if (path !== m.path) {
+      out.push(
+        `${m.volume} moves from ${m.path} to ${path}: the app won't find its files at ${m.path}.`,
+      );
+    }
+  }
+  const after = new Set(to.config.variable_keys ?? []);
+  const removed = (from.config.variable_keys ?? []).filter(
+    (k) => !after.has(k),
+  );
+  if (removed.length === 1) {
+    out.push(`${removed[0]} is removed: the app won't get this variable.`);
+  } else if (removed.length > 1) {
+    out.push(
+      `${removed.join(", ")} are removed: the app won't get these variables.`,
+    );
+  }
+  return out;
+}
+
+/**
+ * The port a failed release's error says refused connections ("connection
+ * refused on :3000"), when that is why it failed: the app likely listens
+ * on another port.
+ */
+export function refusedPort(r: Pick<ReleaseSummary, "error">) {
+  const port = /connection refused on :(\d+)/.exec(r.error ?? "")?.[1];
+  return port ? Number(port) : undefined;
 }

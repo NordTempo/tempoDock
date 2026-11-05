@@ -33,7 +33,8 @@ function DataTab() {
     [project, environment, service],
   );
   return (
-    <div className="flex flex-col gap-3">
+    // dock-g: the panel's style G, in Dock's font and buttons (index.css).
+    <div className="dock-g flex flex-col gap-3">
       <ConnectHint serviceRef={{ project, environment, service }} />
       <DataSourceContext value={source}>
         <DataPanel

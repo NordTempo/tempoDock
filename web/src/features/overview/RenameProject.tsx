@@ -14,7 +14,9 @@ import {
   Fields,
   Footer,
   input,
+  invalid,
   nameProblem,
+  useValidation,
 } from "../create/form";
 
 /** The explicit project rename action. Its form loads only when opened. */
@@ -46,32 +48,40 @@ export default function RenameProject({
     },
     () => [], // followProjectRename moves the affected cache trees.
   );
+  const v = useValidation();
   const problem = nameProblem(
     "project",
     name,
     projects.filter((p) => p.id !== project.id).map((p) => p.name),
   );
+  const same = name === project.name;
+  const nameError =
+    problem ??
+    v.required(!name, "Enter the new name.") ??
+    v.required(same, "Type a name different from the current one.");
   return (
     <Dialog title="Rename project" onClose={onClose}>
       <form
+        ref={v.form}
         aria-label="Rename project"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!name || problem || name === project.name || rename.isPending) {
+          if (rename.isPending || !v.check(!!name && !problem && !same)) {
             return;
           }
           rename.mutate(name, { onSuccess: onClose });
         }}
       >
         <Fields>
-          <Field label="Name" note={problem}>
+          <Field label="Name" error={nameError}>
             <input
               ref={autofocus}
               value={name}
               onChange={(event) => setName(event.target.value)}
               spellCheck={false}
               autoComplete="off"
-              className={input}
+              aria-invalid={!!nameError}
+              className={`${input} ${invalid(nameError)}`}
               disabled={rename.isPending}
             />
           </Field>
@@ -86,7 +96,7 @@ export default function RenameProject({
         <Footer
           submit="Rename project"
           pending={rename.isPending}
-          disabled={!name || !!problem || name === project.name}
+          problem={v.problem([!name && "a name"], !!problem || same)}
           error={rename.error}
           cli={[`dock project rename ${project.name} ${name || "<name>"}`]}
           onClose={onClose}

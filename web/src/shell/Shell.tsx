@@ -53,6 +53,26 @@ function OrgShell() {
   );
 }
 
+/**
+ * A page still loading, inside the shell: the sidebar and command line
+ * stay, the page gets an empty header bar and a few still placeholder
+ * rows (no shimmer). The org and console routes use it, so a slow page
+ * never blanks the navigation.
+ */
+export function RoutePending() {
+  return (
+    <div aria-busy="true" className="flex flex-1 flex-col">
+      <div className="h-[52px] border-b border-line" />
+      <div className="flex w-full max-w-[1100px] flex-col gap-2.5 px-4 pt-6 sm:px-7">
+        <span className="sr-only">Loading</span>
+        <div className="h-4 w-40 rounded-ctl bg-panel" />
+        <div className="h-[120px] rounded-panel border border-line" />
+        <div className="h-[80px] rounded-panel border border-line" />
+      </div>
+    </div>
+  );
+}
+
 /** The console's reminder that changes here reach every project. */
 function ConsoleBar() {
   return (

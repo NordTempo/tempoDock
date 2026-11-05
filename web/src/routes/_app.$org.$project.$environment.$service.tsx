@@ -59,18 +59,16 @@ function ServiceLayout() {
   );
   return (
     <>
-      <ServiceBar serviceRef={ref} />
-      <ServiceTabs serviceRef={ref} />
+      {/* Header and tabs stick together, so the tabs never slide under it. */}
+      <div className="sticky top-0 z-10 bg-page">
+        <ServiceBar serviceRef={ref} />
+        <ServiceTabs serviceRef={ref} />
+      </div>
+      {/* Every tab uses the same full width, so the edges don't jump between tabs. */}
       {ownLayout ? (
         <Outlet />
       ) : (
-        <Page
-          width={
-            tab === "/_app/$org/$project/$environment/$service/data"
-              ? "max-w-none"
-              : undefined
-          }
-        >
+        <Page width="max-w-none">
           <Outlet />
         </Page>
       )}

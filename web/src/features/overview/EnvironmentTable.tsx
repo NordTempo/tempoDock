@@ -11,10 +11,14 @@ import {
   useIsOperator,
   useSession,
 } from "../../data/queries";
-import type { EnvironmentView, ServiceView } from "../../data/types";
+import type {
+  EnvironmentView,
+  ReleaseSummary,
+  ServiceView,
+} from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { plural } from "../../ui/format";
-import { Button, Panel, SectionHead, StateText } from "../../ui/kit";
+import { ago, plural } from "../../ui/format";
+import { Act, Button, Panel, SectionHead, StateText } from "../../ui/kit";
 import { kindLabel, serviceState } from "../../ui/status";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
@@ -30,6 +34,7 @@ import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
+import { useHiddenFailures } from "./failed";
 
 const MovePanel = lazy(() => import("../move/MovePanel"));
 
@@ -55,11 +60,19 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   // anyone opens a running move's progress from its strip.
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);
-  const links = "text-xs text-mut hover:text-fg";
+  const hidden = useHiddenFailures(services);
+  // Small bordered buttons: what the environment can do, at a glance.
+  const act = "btn sm no-underline";
+  const head = `env-head-${environment.id}`;
   return (
-    <section aria-labelledby={`env-${environment.id}`}>
+    // The environment's anchor: /org/project/environment lands here.
+    <section
+      id={`env-${environment.name}`}
+      aria-labelledby={head}
+      className="scroll-mt-[64px]"
+    >
       <SectionHead
-        id={`env-${environment.id}`}
+        id={head}
         aside={
           <>
             {pr && (
@@ -72,12 +85,12 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
           </>
         }
         right={
-          <>
+          <span className="-my-1 flex flex-wrap items-center gap-1.5">
             {staged > 0 && (
               <Link
                 to="/$org/$project/settings/variables/$environment"
                 params={{ org, ...ref }}
-                className="text-warn hover:text-warn-text"
+                className={`${act} text-warn hover:text-warn-text`}
               >
                 ▲ {plural(staged, "staged change")}
               </Link>
@@ -85,7 +98,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             <Link
               to="/$org/$project/settings/variables/$environment"
               params={{ org, ...ref }}
-              className={links}
+              className={act}
             >
               Variables
             </Link>
@@ -93,25 +106,23 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
               to="/$org/$project/settings/variables/$environment"
               params={{ org, ...ref }}
               hash="log-drains"
-              className={links}
+              className={act}
             >
               Log drains
             </Link>
             {canDeploy && (
-              <button
-                type="button"
-                className={links}
-                title={`dock service create -e ${ref.environment}`}
+              <Act
+                small
+                cli={`dock service create <name> -e ${ref.environment} -p ${ref.project}`}
                 onClick={newService}
               >
                 New service
-              </button>
+              </Act>
             )}
             {canClone && (
-              <button
-                type="button"
-                className={links}
-                title={`dock environment clone ${ref.environment} <name>`}
+              <Act
+                small
+                cli={`dock environment clone ${ref.environment} <name> -p ${ref.project}`}
                 onClick={() =>
                   openCreate({
                     kind: "environment",
@@ -121,41 +132,42 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 }
               >
                 Clone
-              </button>
+              </Act>
             )}
             {admin && !environment.lock && (
-              <button
-                type="button"
-                className={links}
-                title={`dock environment lock ${ref.environment}`}
+              <Act
+                small
+                cli={`dock environment lock ${ref.environment} -p ${ref.project}`}
                 aria-expanded={locking}
                 onClick={() => setLocking(!locking)}
               >
                 Lock
-              </button>
+              </Act>
             )}
             {pr && canClone && (
-              <button
-                type="button"
-                className="text-xs text-mut hover:text-fail"
-                title={previewsCli(`close ${ref.environment}`, ref.project)}
+              <Act
+                small
+                cli={previewsCli(`close ${ref.environment}`, ref.project)}
                 onClick={() => setClosing(true)}
               >
                 Close preview
-              </button>
+              </Act>
             )}
             {operator && (
-              <button
-                type="button"
-                className={moveOpen ? "text-xs text-fg" : links}
-                title={`dock env move ${ref.environment} --to <server>`}
-                aria-expanded={moveOpen}
-                onClick={() => setMoveOpen(!moveOpen)}
-              >
-                Move
-              </button>
+              // Apart from the others: it moves every service.
+              <span className="ml-1.5 flex items-center border-l border-line pl-3">
+                <Act
+                  small
+                  cli={`dock env move ${ref.environment} --to <server> -p ${ref.project}`}
+                  aria-expanded={moveOpen}
+                  className={moveOpen ? "bg-hover text-fg" : ""}
+                  onClick={() => setMoveOpen(!moveOpen)}
+                >
+                  Move
+                </Act>
+              </span>
             )}
-          </>
+          </span>
         }
       >
         {environment.name}
@@ -223,7 +235,11 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             </thead>
             <tbody>
               {services.map((s) => (
-                <ServiceRow key={s.service.id} view={s} />
+                <ServiceRow
+                  key={s.service.id}
+                  view={s}
+                  hidden={hidden.get(s.service.id)}
+                />
               ))}
             </tbody>
           </table>
@@ -234,7 +250,18 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   );
 }
 
-const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
+/**
+ * One service: its status, release, domains, usage and volumes. `hidden`
+ * is a failed deploy a later rollback or restart hides (failed.ts),
+ * shown under the status until a newer deploy succeeds.
+ */
+const ServiceRow = memo(function ServiceRow({
+  view,
+  hidden,
+}: {
+  view: ServiceView;
+  hidden?: ReleaseSummary;
+}) {
   const org = useOrg();
   const {
     service,
@@ -295,6 +322,17 @@ const ServiceRow = memo(function ServiceRow({ view }: { view: ServiceView }) {
           </>
         ) : (
           <StateText state={serviceState(view)} />
+        )}
+        {hidden && (
+          <div className="text-2xs">
+            <Link
+              to="/$org/$project/$environment/$service/releases/$number"
+              params={{ org, ...ref, number: String(hidden.number) }}
+              className="text-fail hover:underline"
+            >
+              ✕ r{hidden.number} failed {ago(hidden.created_at)}
+            </Link>
+          </div>
         )}
         {service.staged === "archive" && (
           <div className="text-2xs text-mut">archive staged</div>

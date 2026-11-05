@@ -75,7 +75,7 @@ func registerOrgSettings(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "create-invite", Method: http.MethodPost, Path: orgPath + "/invites",
 		Summary: "Invite someone", Tags: tags, DefaultStatus: http.StatusCreated,
-		Description: "The link's code is returned once. It works once, for 7 days, and only for a user signed in with the email. Scope: admin, unlimited.",
+		Description: "The link's code is returned once. It works once, for 7 days, and only for the email: a user signed in with it, or someone creating its account from the link. Scope: admin, unlimited.",
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.CreateInviteRequest }) (*out[apitypes.CreatedInvite], error) {
 		return reply(s.core.CreateInvite(ctx, actor, in.Body))
 	})
@@ -87,13 +87,29 @@ func registerOrgSettings(s *Server, a huma.API) {
 	}) (*struct{}, error) {
 		return nil, s.core.RevokeInvite(ctx, actor, in.ID)
 	})
-	authed(s, a, huma.Operation{
+	public(a, huma.Operation{
 		OperationID: "get-invite", Method: http.MethodGet, Path: Prefix + "/invites/{code}",
-		Summary: "Look at an invite", Description: "For the signed-in user who opened its link.", Tags: tags,
-	}, func(ctx context.Context, actor core.Actor, in *struct {
-		Code string `path:"code"`
-	}) (*out[apitypes.InviteInfo], error) {
-		return reply(s.core.Invite(ctx, actor, in.Code))
+		Summary: "Look at an invite", Tags: tags,
+		Description: "For whoever holds its link, signed in or not (ADR 0060): the organization, the role, the email invited, who invited and until when. A code that is unknown, used, revoked or expired is 404. Rate limited per client IP like logins.",
+		Errors:      []int{http.StatusNotFound, http.StatusTooManyRequests},
+	}, func(ctx context.Context, in *inviteInput) (*out[apitypes.InviteInfo], error) {
+		info, err := s.core.Invite(ctx, in.Code, in.client.ip)
+		if err != nil {
+			return nil, s.problem(err)
+		}
+		return reply(info, nil)
+	})
+	public(a, huma.Operation{
+		OperationID: "invite-signup", Method: http.MethodPost, Path: Prefix + "/invites/{code}/signup",
+		Summary: "Create an account from an invite", Tags: tags,
+		Description: "For someone invited without an account (ADR 0060): creates the account for the invite's email with this name and password (at least 12 characters), accepts the invite and signs in, setting the session cookie as a login does. Refused (409) when the email has an account (sign in and accept instead) and (403) when the organization requires its single sign-on. Rate limited like logins.",
+		Errors:      []int{http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound, http.StatusConflict, http.StatusTooManyRequests},
+	}, func(ctx context.Context, in *inviteSignUpInput) (*loginOutput, error) {
+		res, err := s.core.SignUpWithInvite(ctx, in.Code, in.Body, in.client.ip)
+		if err != nil {
+			return nil, s.problem(err)
+		}
+		return in.client.signedIn(res), nil
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "accept-invite", Method: http.MethodPost, Path: Prefix + "/invites/{code}/accept",
@@ -169,4 +185,30 @@ func registerOrgSettings(s *Server, a huma.API) {
 	}) (*struct{}, error) {
 		return nil, s.core.DeleteRegistryCredential(ctx, actor, in.Host)
 	})
+}
+
+// inviteInput is an invite link's code, and how the request arrived (for
+// rate limits).
+type inviteInput struct {
+	Code   string `path:"code"`
+	client client
+}
+
+// Resolve records how the request arrived.
+func (in *inviteInput) Resolve(ctx huma.Context) []error {
+	in.client = clientOf(ctx)
+	return nil
+}
+
+// inviteSignUpInput creates an account from an invite link.
+type inviteSignUpInput struct {
+	Code   string `path:"code"`
+	Body   apitypes.InviteSignUpRequest
+	client client
+}
+
+// Resolve records how the request arrived.
+func (in *inviteSignUpInput) Resolve(ctx huma.Context) []error {
+	in.client = clientOf(ctx)
+	return nil
 }

@@ -22,7 +22,11 @@ import { openDeploy } from "../features/deploy/start";
 import { shortSha, useGitDeploy } from "../features/git/api";
 import { LogRow } from "../features/service/LogsPane";
 import { RollbackConfirm } from "../features/service/ReleasesTable";
-import { imageLabel } from "../features/service/releases";
+import {
+  imageLabel,
+  refusedPort,
+  releaseDiff,
+} from "../features/service/releases";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useShortcuts } from "../shell/keys";
 import { useOrg } from "../shell/location";
@@ -81,6 +85,7 @@ function ReleasePage() {
   const servingRelease = useReleases(ref).find((x) => x.status === "active");
   const failed = release.status === "failed";
   const r = `r${release.number}`;
+  const fix = failed ? likelyFix(release, ref.service) : undefined;
   // What it replaced (or would have): the release before it that served.
   const previous = releases.find(
     (x) =>
@@ -88,6 +93,8 @@ function ReleasePage() {
       (x.status === "active" || x.status === "superseded"),
   );
 
+  const older = releases.find((x) => x.number < release.number);
+  const newer = [...releases].reverse().find((x) => x.number > release.number);
   const buildLog = { release: release.number, build: true };
   const toService = () =>
     navigate({
@@ -133,6 +140,36 @@ function ReleasePage() {
         }
         title={<span className="font-mono">r{release.number}</span>}
         after={<span className="text-xs text-faint">{ref.environment}</span>}
+        actions={
+          // The neighbours and the way back, so the page is never a dead end.
+          <span className="flex items-center gap-3 text-xs">
+            {older && (
+              <Link
+                to="/$org/$project/$environment/$service/releases/$number"
+                params={{ org, ...ref, number: String(older.number) }}
+                className="text-mut hover:text-fg"
+              >
+                ← r{older.number}
+              </Link>
+            )}
+            {newer && (
+              <Link
+                to="/$org/$project/$environment/$service/releases/$number"
+                params={{ org, ...ref, number: String(newer.number) }}
+                className="text-mut hover:text-fg"
+              >
+                r{newer.number} →
+              </Link>
+            )}
+            <Link
+              to="/$org/$project/$environment/$service"
+              params={{ org, ...ref }}
+              className="btn sm"
+            >
+              All releases of {ref.service}
+            </Link>
+          </span>
+        }
       />
       <Page width="max-w-[1040px]" gap="gap-[26px]">
         <section aria-labelledby="release" className="flex flex-col gap-3.5">
@@ -180,9 +217,20 @@ function ReleasePage() {
               </Prop>
             )}
           </dl>
+          {fix && <p className="text-md leading-normal">{fix.text}</p>}
           <div className="mt-1 flex flex-wrap items-start gap-2.5">
+            {fix && (
+              <Link
+                to="/$org/$project/$environment/$service/build"
+                params={{ org, ...ref }}
+                search={{ edit: fix.edit }}
+                className="btn pri"
+              >
+                {fix.label}
+              </Link>
+            )}
             <Act
-              primary
+              primary={!fix}
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
@@ -222,6 +270,17 @@ function ReleasePage() {
               }
             >
               Variables of {ref.service}
+            </Act>
+            <Act
+              cli={`dock service show ${ref.service} -e ${ref.environment}`}
+              onClick={() =>
+                navigate({
+                  to: "/$org/$project/$environment/$service/build",
+                  params: { org, ...ref },
+                })
+              }
+            >
+              Build &amp; run settings
             </Act>
             {release.status === "superseded" && mayDeploy && !rollingBack && (
               <Act
@@ -360,51 +419,65 @@ function Title({ release }: { release: Release }) {
   }
 }
 
-/** Image and variable names that differ between two releases. */
+/** What differs between two releases, on one line. */
 function Changes({ from, to }: { from: Release; to: Release }) {
-  const before = new Set(from.config.variable_keys ?? []);
-  const after = new Set(to.config.variable_keys ?? []);
-  const added = [...after].filter((k) => !before.has(k));
-  const removed = [...before].filter((k) => !after.has(k));
-  const parts: ReactNode[] = [];
-  if (from.image_id !== to.image_id) {
-    parts.push(
-      <span key="image">
-        image <span className="font-mono text-mut">{imageLabel(from)}</span> →{" "}
-        <span className="font-mono">{imageLabel(to)}</span>
-        {imageLabel(from) === imageLabel(to) && " (new digest)"}
-      </span>,
+  const changes = releaseDiff(from, to);
+  if (changes.length === 0)
+    return (
+      <span className="text-mut">same image, settings and variable names</span>
     );
+  return changes.map((c, i) => (
+    <span key={c.what}>
+      {i > 0 && " · "}
+      {c.what === "added" || c.what === "removed" ? (
+        <>
+          {c.what} <span className="font-mono">{c.text}</span>
+        </>
+      ) : (
+        c.text
+      )}
+    </span>
+  ));
+}
+
+/**
+ * The likely fix for a failed release: a refused port points at the port
+ * setting, a failing health check at its path. The release page makes it
+ * the primary button, with one line saying why.
+ */
+function likelyFix(
+  release: Release,
+  service: string,
+):
+  | { edit: "port" | "health_check_path"; label: string; text: ReactNode }
+  | undefined {
+  const port = refusedPort(release);
+  if (port !== undefined) {
+    return {
+      edit: "port",
+      label: `Change port (now ${release.config.port})`,
+      text: (
+        <>
+          {service} didn't answer on <span className="font-mono">:{port}</span>.
+          If the app listens on another port, change it, then deploy again.
+        </>
+      ),
+    };
   }
-  if (added.length)
-    parts.push(
-      <span key="add">
-        added <span className="font-mono">{added.join(", ")}</span>
-      </span>,
-    );
-  if (removed.length)
-    parts.push(
-      <span key="rm">
-        removed <span className="font-mono">{removed.join(", ")}</span>
-      </span>,
-    );
-  if (from.config.port !== to.config.port)
-    parts.push(
-      <span key="port">
-        port {from.config.port} → {to.config.port}
-      </span>,
-    );
-  if (from.config.health_check_path !== to.config.health_check_path) {
-    parts.push(
-      <span key="hc">
-        health check {from.config.health_check_path || "TCP"} →{" "}
-        {to.config.health_check_path || "TCP"}
-      </span>,
-    );
+  const path = release.config.health_check_path;
+  if (path && /^health check/i.test(release.error ?? "")) {
+    return {
+      edit: "health_check_path",
+      label: "Change health check path",
+      text: (
+        <>
+          <span className="font-mono">GET {path}</span> didn't answer with a
+          success. Check the app's last lines below, or change the path.
+        </>
+      ),
+    };
   }
-  if (parts.length === 0)
-    return <span className="text-mut">same image and variable names</span>;
-  return parts.flatMap((part, i) => (i ? [" · ", part] : [part]));
+  return undefined;
 }
 
 /** The release's last container lines; for a failed one, why it stopped. */

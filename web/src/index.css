@@ -154,10 +154,17 @@
     color: var(--color-info);
   }
 
+  /* Links inside running text are underlined, not told apart by colour alone. */
+  p a,
+  .prose a {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+  }
+
   p a:hover,
   .prose a:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    text-decoration-color: currentColor;
   }
 
   button {
@@ -211,6 +218,13 @@
   input[type="checkbox"],
   input[type="radio"] {
     accent-color: var(--color-fg);
+  }
+
+  /* Radios are 16px with a margin: a 24px target. */
+  input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    margin: 4px;
   }
 
   /* Darker than any typed value, so an example never reads as filled in. */
@@ -344,6 +358,25 @@
     border-color: var(--color-fail);
   }
 
+  /*
+   * The data panel inside Dock (style G in A's shell): Dock's font and
+   * white primary buttons, so it reads as the same app. tempoBase keeps G.
+   */
+  .dock-g .g {
+    --g-sans: var(--font-sans);
+  }
+
+  .dock-g .g-btn.pri {
+    background: var(--color-fg);
+    border-color: var(--color-fg);
+    color: #000;
+  }
+
+  .dock-g .g-btn.pri:hover:not(:disabled) {
+    background: #d4d4d8;
+    border-color: #d4d4d8;
+  }
+
   /* The confirm button of a destructive change: filled red. */
   .btn.danger.solid {
     background: var(--color-fail);
@@ -363,8 +396,11 @@
     color: var(--color-faint);
   }
 
-  /* A text button that reads like a quiet link. */
+  /* A text button that reads like a quiet link; still a 24px target. */
   .lnk {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
     color: var(--color-mut);
     font-size: 12px;
   }
@@ -492,7 +528,11 @@
   }
 
   .seg > * {
+    /* 24px tall: a full target (WCAG 2.5.8). */
     padding: 3px 9px;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
     color: var(--color-mut);
     text-decoration: none;
   }
@@ -518,15 +558,16 @@
     text-decoration: none;
   }
 
+  /* Hover lifts the text only; the current tab alone gets the chip. */
   .tabs > a:hover {
     color: var(--color-fg);
-    background: var(--color-hover);
   }
 
   .tabs > a[aria-current="page"] {
     color: var(--color-fg);
     font-weight: 500;
     background: var(--color-chip);
+    box-shadow: inset 0 -2px 0 var(--color-fg);
   }
 
   /* Side navigation rows (sidebar, settings, variables scopes). */
@@ -545,11 +586,13 @@
     color: var(--color-fg);
   }
 
+  /* The current row: a stronger fill and a left bar, so it never reads as hover. */
   .nav-row[aria-current="page"],
   .nav-row[aria-current="true"] {
-    background: var(--color-sel);
+    background: var(--color-chip);
     color: var(--color-fg);
     font-weight: 500;
+    box-shadow: inset 2px 0 0 var(--color-fg);
   }
 
   /* A deploy step: glyph, name, duration, detail. */

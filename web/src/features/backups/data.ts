@@ -5,9 +5,10 @@ import { useAction } from "../../data/mutations";
 import { keys, servicePath } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 
-// A stateful service's volume snapshots (ADR 0045). The key sits under the
-// service, so snapshot.* audit events (which name the project and
-// environment) refetch it through data/live.ts; nothing polls.
+// A stateful service's volume snapshots (ADR 0045), and its backup runs'
+// logs. The keys sit under the service, so snapshot.* audit events (which
+// name the project and environment) refetch them through data/live.ts;
+// nothing polls.
 
 type Schemas = components["schemas"];
 export type Snapshot = Schemas["Snapshot"];
@@ -86,3 +87,21 @@ export const useDeleteSnapshot = () =>
       ),
     touches,
   );
+
+/**
+ * What a backup or restore run's job printed (`dock backup log`): read
+ * when View log opens. A finished run's log doesn't change, so it is
+ * fetched once.
+ */
+export const backupLogQuery = (ref: ServiceRef, id: number) =>
+  queryOptions({
+    queryKey: [...keys.backups(ref), id, "log"],
+    queryFn: () =>
+      body(
+        api.GET(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/{id}/log",
+          { params: { path: { ...servicePath(ref), id } } },
+        ),
+      ),
+    staleTime: Number.POSITIVE_INFINITY,
+  });

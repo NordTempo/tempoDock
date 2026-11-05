@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import {
@@ -8,6 +9,7 @@ import {
 import { useBackups, useCanDeploy, useIsOperator } from "../../data/queries";
 import type { BackupRun, ServiceBackups, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
+import { Dialog } from "../../ui/Dialog";
 import { ago, clock, day, size, until } from "../../ui/format";
 import {
   Act,
@@ -21,11 +23,12 @@ import {
 } from "../../ui/kit";
 import type { State } from "../../ui/status";
 import { backupHow, exportOf, hourLabel } from "./backups";
+import { backupLogQuery } from "./data";
 
 /**
  * A stateful service's backups (ADR 0019): how and where they go, the
- * daily schedule, Run now, and the latest runs with Restore as new for
- * template databases.
+ * daily schedule, Run now, and the latest runs, newest first, with View
+ * log and, for template databases, Restore as new.
  */
 export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const backups = useBackups(ref);
@@ -103,13 +106,29 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         serviceRef={ref}
         backups={backups}
         canRestore={canDeploy && !running}
+        canDeploy={canDeploy}
         onRestored={setRestored}
       />
+      {backups.restorable && backups.runs.length > 0 && (
+        <p className="text-mut">
+          A restore goes into a new service: check it, then point references at{" "}
+          <code className="font-mono">
+            {"${{"}
+            {ref.service}-restored.{exportOf(backups.kind)}
+            {"}}"}
+          </code>{" "}
+          and redeploy. To replace {ref.service}'s own data, restore a volume
+          snapshot in place below.
+        </p>
+      )}
     </section>
   );
 }
 
-/** Says a restore into a new service runs, and how to start using it. */
+/**
+ * Where a restore puts the data and what to do next, true while it runs
+ * and after: the new service, and the reference to point at once it runs.
+ */
 export function RestoringInto({
   serviceRef: ref,
   service,
@@ -122,21 +141,21 @@ export function RestoringInto({
   const org = useOrg();
   return (
     <p>
-      Restoring into{" "}
+      The data goes into{" "}
       <Link
         to="/$org/$project/$environment/$service"
         params={{ org, ...ref, service }}
         className="font-mono"
       >
         {service}
-      </Link>{" "}
-      in the background. Nothing uses it until references point at{" "}
+      </Link>
+      , a new service. Once it shows running, point references at{" "}
       <code className="font-mono">
         {"${{"}
         {service}.{exportOf(kind)}
         {"}}"}
-      </code>
-      .
+      </code>{" "}
+      and redeploy them. Until then nothing uses it.
     </p>
   );
 }
@@ -218,20 +237,26 @@ const runStates: Record<BackupRun["status"], State> = {
   failed: { tone: "fail", glyph: "✕", label: "failed" },
 };
 
-/** The latest backups and restores, newest first. */
+/** The latest backups and restores, newest first by start. */
 function Runs({
   serviceRef: ref,
   backups,
   canRestore,
+  canDeploy,
   onRestored,
 }: {
   serviceRef: ServiceRef;
   backups: ServiceBackups;
   canRestore: boolean;
+  canDeploy: boolean;
   onRestored: (service: string) => void;
 }) {
   const [restoring, setRestoring] = useState<number | null>(null);
-  if (backups.runs.length === 0) {
+  const [log, setLog] = useState<BackupRun | null>(null);
+  const runs = backups.runs.toSorted(
+    (a, b) => Date.parse(b.started_at) - Date.parse(a.started_at),
+  );
+  if (runs.length === 0) {
     return <p className="py-2 text-mut">No backups yet.</p>;
   }
   return (
@@ -250,11 +275,12 @@ function Runs({
           </tr>
         </thead>
         <tbody>
-          {backups.runs.map((r) => (
+          {runs.map((r) => (
             <RunRow
               key={r.id}
               serviceRef={ref}
               run={r}
+              onLog={canDeploy ? () => setLog(r) : undefined}
               restorable={
                 backups.restorable &&
                 r.operation === "backup" &&
@@ -273,7 +299,52 @@ function Runs({
           ))}
         </tbody>
       </table>
+      {log && (
+        <RunLog serviceRef={ref} run={log} onClose={() => setLog(null)} />
+      )}
     </Panel>
+  );
+}
+
+/** What a run's job printed, in a window (`dock backup log`). */
+function RunLog({
+  serviceRef: ref,
+  run,
+  onClose,
+}: {
+  serviceRef: ServiceRef;
+  run: BackupRun;
+  onClose: () => void;
+}) {
+  const log = useQuery(backupLogQuery(ref, run.id));
+  const what = run.operation === "restore" ? "Restore" : "Backup";
+  return (
+    <Dialog
+      title={`${what} ${run.id}, ${day(run.started_at)} ${clock(run.started_at)}`}
+      onClose={onClose}
+      wide
+    >
+      <div className="flex flex-col gap-3">
+        {run.error && <p className="text-fail">{run.error}</p>}
+        {log.isPending ? (
+          <p className="text-mut">Loading the log.</p>
+        ) : log.error ? (
+          <ErrorText error={log.error} />
+        ) : log.data.output ? (
+          <pre className="max-h-[60vh] overflow-auto rounded-ctl border border-line bg-side p-3 font-mono text-xs whitespace-pre-wrap">
+            {log.data.output}
+          </pre>
+        ) : (
+          <p className="text-mut">
+            No log was kept for this run: its job never ran, or it is older than
+            the newest 20 runs.
+          </p>
+        )}
+        <span className="font-mono text-2xs text-mut">
+          dock backup log {run.id} -s {ref.service} -e {ref.environment}
+        </span>
+      </div>
+    </Dialog>
   );
 }
 
@@ -283,6 +354,7 @@ const none = <span className="text-faint">-</span>;
 function RunRow({
   serviceRef: ref,
   run: r,
+  onLog,
   restorable,
   canRestore,
   open,
@@ -291,6 +363,8 @@ function RunRow({
 }: {
   serviceRef: ServiceRef;
   run: BackupRun;
+  /** Opens the run's log; unset without deploy access. */
+  onLog?: () => void;
   restorable: boolean;
   canRestore: boolean;
   open: boolean;
@@ -347,23 +421,41 @@ function RunRow({
         )}
         {r.pruned && <span className="text-mut">removed by retention </span>}
         {r.error && <span className="text-fail">{r.error}</span>}
-        {!(restore && r.restored_to) && !r.pruned && !r.error && none}
+        {restorable && r.not_restorable && (
+          <span className="text-mut">
+            Can't restore here: {r.not_restorable}
+          </span>
+        )}
+        {!(restore && r.restored_to) &&
+          !r.pruned &&
+          !r.error &&
+          !(restorable && r.not_restorable) &&
+          none}
       </td>
       <td>
-        {restorable && (
-          <Button
-            small
-            disabled={!canRestore}
-            reason={
-              canRestore
-                ? undefined
-                : "needs deploy access, and nothing running"
-            }
-            onClick={() => onOpen(true)}
-          >
-            Restore as new
-          </Button>
-        )}
+        <span className="flex items-center justify-end gap-1.5">
+          {onLog && r.status !== "running" && (
+            <Button small onClick={onLog}>
+              View log
+            </Button>
+          )}
+          {restorable && (
+            <Button
+              small
+              disabled={!canRestore || !!r.not_restorable}
+              reason={
+                r.not_restorable
+                  ? "see detail"
+                  : canRestore
+                    ? undefined
+                    : "needs deploy access, and nothing running"
+              }
+              onClick={() => onOpen(true)}
+            >
+              Restore as new
+            </Button>
+          )}
+        </span>
         {open && r.snapshot && (
           <RestoreConfirm
             serviceRef={ref}

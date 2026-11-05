@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { useSession } from "../../data/queries";
+import { findService, queries, useSession } from "../../data/queries";
 import type { AccessRequest } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago, plural, until } from "../../ui/format";
@@ -301,7 +301,7 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
         </details>
       )}
       {status === "pending" ? (
-        <Decide request={r} />
+        <Decide request={r} service={service} />
       ) : (
         <p className="flex flex-wrap gap-4">
           {service ? (
@@ -374,14 +374,25 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /**
- * Approve and run, or Reject, with an optional comment. Only admins in a
- * UI session decide; tokens never can, so there is no CLI equivalent.
+ * Reject, or Approve and run (the primary, on the right like every
+ * confirm), with an optional comment. When the pre-check says the run
+ * would fail, Approve is disabled with the reason, and the service to fix
+ * is a link away. Only admins in a UI session decide; tokens never can,
+ * so there is no CLI equivalent.
  */
-function Decide({ request: r }: { request: AccessRequest }) {
+function Decide({
+  request: r,
+  service,
+}: {
+  request: AccessRequest;
+  service: string | undefined;
+}) {
   const id = r.id;
   const session = useSession();
+  const org = useOrg();
   const decide = useDecideRequest();
   const [comment, setComment] = useState("");
+  const doomed = useWillFail(r, service);
   if (session?.kind !== "user" || session.scope !== "admin") {
     return (
       <p className="text-faint">
@@ -401,28 +412,83 @@ function Decide({ request: r }: { request: AccessRequest }) {
         onChange={(e) => setComment(e.target.value)}
         className="field resize-none"
       />
+      {doomed && (
+        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-warn-text">
+          <span>
+            <span className="text-warn">▲</span> Would fail: {doomed.reason}
+          </span>
+          {doomed.service ? (
+            <Link
+              to="/$org/$project/$environment/$service"
+              params={{
+                org,
+                project: r.project,
+                environment: r.environment,
+                service: doomed.service,
+              }}
+              className="btn sm no-underline"
+            >
+              Open {doomed.service}
+            </Link>
+          ) : (
+            <Link
+              to="/$org/$project/$environment"
+              params={{ org, project: r.project, environment: r.environment }}
+              className="btn sm no-underline"
+            >
+              Open {r.environment}
+            </Link>
+          )}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-xs text-mut">
+          Runs this once as {r.requested_by}. The lock stays on.
+        </span>
+        <Button small disabled={decide.isPending} onClick={() => run(false)}>
+          Reject
+        </Button>
         <Button
           small
           primary
-          disabled={decide.isPending}
+          disabled={decide.isPending || !!doomed}
+          reason={doomed ? "Fix the cause first, or reject." : undefined}
           onClick={() => run(true)}
         >
           Approve and run
         </Button>
-        <Button
-          small
-          danger
-          disabled={decide.isPending}
-          onClick={() => run(false)}
-        >
-          Reject
-        </Button>
-        <span className="text-xs text-mut">
-          Runs this once as {r.requested_by}. The lock stays on.
-        </span>
       </div>
       <ErrorText error={decide.error} />
     </div>
   );
+}
+
+/**
+ * Why approving a request would fail, checked against the project's live
+ * state before anyone approves: the service it names is gone, or a
+ * restart of a service with no release. `service` is set when the
+ * service exists (the place to fix it). Undefined when nothing says so
+ * (the run itself still checks everything).
+ */
+function useWillFail(r: AccessRequest, service: string | undefined) {
+  const overview = useQuery({
+    ...queries.overview(r.project),
+    enabled: !!service,
+  }).data;
+  if (!service || !overview) return undefined;
+  const found = findService(overview, {
+    project: r.project,
+    environment: r.environment,
+    service,
+  });
+  if (!found) {
+    return { reason: `${service} no longer exists in ${r.environment}.` };
+  }
+  if (r.operation === "restart" && !found.service.active_release) {
+    return {
+      reason: `${service} has no release to restart. Deploy it first.`,
+      service,
+    };
+  }
+  return undefined;
 }

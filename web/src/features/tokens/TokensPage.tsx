@@ -17,6 +17,7 @@ import {
   PageBar,
   SectionHead,
 } from "../../ui/kit";
+import { useValidation } from "../create/form";
 import { TokenDataFields, tokenDataFlags } from "../data/TokenData";
 import type { DataTokenAccess } from "../data/types";
 import { useOrgName } from "../org/data";
@@ -152,7 +153,11 @@ function McpConfig({ secret }: { secret?: string }) {
       <span className="flex items-center gap-2 text-xs text-mut">
         {label} <CopyButton text={text} />
       </span>
-      <pre className="overflow-x-auto rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs">
+      <pre
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: it scrolls sideways, so the keyboard must reach it (WCAG scrollable region)
+        tabIndex={0}
+        className="overflow-x-auto rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs"
+      >
         {text}
       </pre>
     </div>
@@ -228,8 +233,7 @@ function CreateToken({
   onCancel: () => void;
 }) {
   const create = useCreateToken();
-  // Set by a submit without a name; cleared by typing one.
-  const [unnamed, setUnnamed] = useState(false);
+  const v = useValidation();
   const nameId = useId();
   const operatorCaller = useIsOperator();
   const projects = useProjects();
@@ -242,6 +246,11 @@ function CreateToken({
   // Any number of days when "in … days" is picked (days -1).
   const [customDays, setCustomDays] = useState("14");
   const expires = days < 0 ? Math.max(0, Math.floor(Number(customDays))) : days;
+  const nameError = v.required(!name.trim(), "Name the token, like agent-ci.");
+  const daysError = v.required(
+    days < 0 && !(expires >= 1),
+    "Enter a whole number of days, 1 or more.",
+  );
   const [data, setData] = useState<DataTokenAccess>(null);
   // Operator tokens are unlimited admin tokens (ADR 0027).
   const [operatorToken, setOperatorToken] = useState(false);
@@ -265,14 +274,11 @@ function CreateToken({
     <section aria-labelledby="create" className="flex max-w-[760px] flex-col">
       <SectionHead id="create">Create a token</SectionHead>
       <form
+        ref={v.form}
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!name.trim()) {
-            setUnnamed(true);
-            document.getElementById(nameId)?.focus();
-            return;
-          }
+          if (!v.check(!!name.trim() && (days >= 0 || expires >= 1))) return;
           create.mutate(
             {
               name: name.trim(),
@@ -302,18 +308,19 @@ function CreateToken({
             // biome-ignore lint/a11y/noAutofocus: opened by "Create token"
             autoFocus
             value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setUnnamed(false);
-            }}
+            onChange={(e) => setName(e.target.value)}
             placeholder="agent-…"
-            aria-invalid={unnamed || undefined}
-            aria-describedby={unnamed ? `${nameId}-error` : undefined}
-            className={`field py-[7px] font-mono ${unnamed ? "border-fail" : ""}`}
+            aria-invalid={!!nameError}
+            aria-describedby={nameError ? `${nameId}-error` : undefined}
+            className={`field py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
           />
-          {unnamed && (
-            <span id={`${nameId}-error`} className="text-xs text-fail">
-              Name the token.
+          {nameError && (
+            <span
+              id={`${nameId}-error`}
+              role="alert"
+              className="text-xs text-fail"
+            >
+              {nameError}
             </span>
           )}
         </label>
@@ -406,20 +413,39 @@ function CreateToken({
                 aria-label="Expires in days"
                 value={customDays}
                 onChange={(e) => setCustomDays(e.target.value)}
-                className="field py-[5px] font-mono"
+                aria-invalid={!!daysError}
+                className={`field py-[5px] font-mono ${daysError ? "border-fail" : ""}`}
               />
+            )}
+            {daysError && (
+              <span role="alert" className="text-xs text-fail">
+                {daysError}
+              </span>
             )}
           </label>
         </div>
         <TokenDataFields value={data} onChange={setData} cap={tokenCap} />
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 text-xs">
+            {create.error ? (
+              <ErrorText error={create.error} />
+            ) : (
+              <span className="text-fail">
+                {v.problem(
+                  [!name.trim() && "a name"],
+                  days < 0 && !(expires >= 1),
+                )}
+              </span>
+            )}
+          </span>
+          <Button onClick={onCancel}>Cancel</Button>
           <button type="submit" className="btn pri" disabled={create.isPending}>
             Create token
           </button>
-          <Button onClick={onCancel}>Cancel</Button>
-          <span className="font-mono text-2xs text-mut">{cli}</span>
-          <ErrorText error={create.error} />
         </div>
+        <code className="border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
+          {cli}
+        </code>
       </form>
     </section>
   );

@@ -2,6 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { envPath, queries, useProjectOverview } from "../data/queries";
 import { logDrainQueries } from "../features/logdrains/data";
 import { LogDrains } from "../features/logdrains/LogDrains";
+import { LockStrip } from "../features/overview/EnvironmentLock";
 import { VariablesEditor } from "../features/variables/VariablesEditor";
 import { useOrg } from "../shell/location";
 
@@ -36,6 +37,9 @@ function SharedVariables() {
   const params = Route.useParams();
   const { environments } = useProjectOverview(params.project);
   const env = envPath(params);
+  const lock = environments.find(
+    (e) => e.environment.name === params.environment,
+  )?.environment.lock;
   return (
     <>
       {environments.length > 1 && (
@@ -60,6 +64,11 @@ function SharedVariables() {
             </Link>
           ))}
         </nav>
+      )}
+      {lock && (
+        <div className="px-4 pt-4 sm:px-7">
+          <LockStrip envRef={env} lock={lock} />
+        </div>
       )}
       <VariablesEditor
         key={params.environment}

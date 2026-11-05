@@ -9,6 +9,7 @@ package fakestore
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -157,6 +158,11 @@ func (s *Store) Handler() http.Handler {
 		for _, g := range groups {
 			res.Summary.Errors += g.Count
 		}
+		res.Series, res.Summary.Visitors = s.errorSeries(q)
+		for i := range res.Groups {
+			res.Groups[i].Series = s.groupSeries(q, res.Groups[i].Group)
+		}
+		res.Summary.Sessions = res.Summary.Visitors
 		reply(w, res)
 	}))
 	mux.HandleFunc("POST "+analytics.ErrorPath, s.auth(func(w http.ResponseWriter, r *http.Request) {
@@ -507,6 +513,7 @@ func (s *Store) errorGroups(q analytics.Query) []analytics.ErrorGroup {
 	defer s.mu.Unlock()
 	out := []analytics.ErrorGroup{}
 	at := map[uint64]int{}
+	seen := map[int]map[uint64]bool{}
 	for _, e := range s.errs {
 		if e.Site != q.Site {
 			continue
@@ -521,7 +528,16 @@ func (s *Store) errorGroups(q analytics.Query) []analytics.ErrorGroup {
 		g.Type, g.Message, g.Frame, g.LastSeen = e.Error.Type, e.Name, e.Error.Frame, max(g.LastSeen, e.Time)
 		if matches(e, q) {
 			g.Count++
+			if seen[i] == nil {
+				seen[i] = map[uint64]bool{}
+			}
+			seen[i][e.Visitor] = true
 		}
+	}
+	// The fake counts each visitor who met an error as one session too.
+	for i := range out {
+		out[i].Visitors = int64(len(seen[i]))
+		out[i].Sessions = out[i].Visitors
 	}
 	out = slices.DeleteFunc(out, func(g analytics.ErrorGroup) bool { return g.Count == 0 })
 	slices.SortStableFunc(out, func(a, b analytics.ErrorGroup) int { return int(b.Count - a.Count) })
@@ -542,29 +558,105 @@ func (s *Store) recentErrors(q analytics.ErrorQuery) []analytics.ErrorOccurrence
 	return out
 }
 
-// vitalsOf counts the site's page loads with vitals in range, with the
-// LCP's 75th percentile (nearest rank); the fake leaves the rest unknown.
+// vitalsOf summarises the site's page loads with vitals in range: every
+// vital's 75th percentile (nearest rank) with good and poor counts, the
+// same per value of each asked dimension, and the asked metric's series.
 func (s *Store) vitalsOf(q analytics.VitalsQuery) analytics.VitalsResult {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := analytics.VitalsResult{Breakdowns: map[analytics.Dimension][]analytics.VitalsRow{}, Series: []analytics.VitalPoint{}}
-	var lcp []float64
+	var loads []analytics.Event
 	for _, e := range s.vitals {
-		if !matches(e, q.Query) {
+		if matches(e, q.Query) {
+			loads = append(loads, e)
+		}
+	}
+	out.All = vitalsRow("", loads)
+	for _, d := range q.Dimensions {
+		groups := map[string][]analytics.Event{}
+		for _, e := range loads {
+			if v, ok := value(e, d); ok {
+				groups[v] = append(groups[v], e)
+			}
+		}
+		rows := make([]analytics.VitalsRow, 0, len(groups))
+		for v, es := range groups {
+			rows = append(rows, vitalsRow(v, es))
+		}
+		if len(rows) == 0 {
 			continue
 		}
-		out.All.Loads++
-		if e.Vitals.LCP >= 0 {
-			lcp = append(lcp, e.Vitals.LCP)
+		slices.SortFunc(rows, func(a, b analytics.VitalsRow) int { return int(b.Loads - a.Loads) })
+		out.Breakdowns[d] = rows
+	}
+	metric := cmp.Or(q.Metric, analytics.VitalLCP)
+	width := int64(86_400_000)
+	if q.Bucket == analytics.BucketHour {
+		width = 3_600_000
+	}
+	byBucket := map[int64][]float64{}
+	for _, e := range loads {
+		if v := vitalValue(e.Vitals, metric); v >= 0 {
+			byBucket[e.Time-e.Time%width] = append(byBucket[e.Time-e.Time%width], v)
 		}
 	}
-	unknown := analytics.VitalStat{P75: -1}
-	out.All.LCP, out.All.INP, out.All.CLS, out.All.FCP, out.All.TTFB = unknown, unknown, unknown, unknown, unknown
-	if len(lcp) > 0 {
-		slices.Sort(lcp)
-		out.All.LCP = analytics.VitalStat{P75: lcp[(len(lcp)*3+3)/4-1], Samples: int64(len(lcp))}
+	for t, vs := range byBucket {
+		out.Series = append(out.Series, analytics.VitalPoint{T: t, P75: p75(vs), Samples: int64(len(vs))})
 	}
+	slices.SortFunc(out.Series, func(a, b analytics.VitalPoint) int { return int(a.T - b.T) })
 	return out
+}
+
+// vitalLimits are each vital's good and poor thresholds (Core Web Vitals).
+var vitalLimits = map[analytics.Vital][2]float64{
+	analytics.VitalLCP: {2500, 4000}, analytics.VitalINP: {200, 500}, analytics.VitalCLS: {0.1, 0.25}, analytics.VitalFCP: {1800, 3000}, analytics.VitalTTFB: {800, 1800},
+}
+
+// vitalValue is one vital of a page load, -1 when not measured.
+func vitalValue(v *analytics.Vitals, m analytics.Vital) float64 {
+	switch m {
+	case analytics.VitalINP:
+		return v.INP
+	case analytics.VitalCLS:
+		return v.CLS
+	case analytics.VitalFCP:
+		return v.FCP
+	case analytics.VitalTTFB:
+		return v.TTFB
+	}
+	return v.LCP
+}
+
+// vitalsRow is every vital over some page loads.
+func vitalsRow(value string, loads []analytics.Event) analytics.VitalsRow {
+	stat := func(m analytics.Vital) analytics.VitalStat {
+		var vs []float64
+		st := analytics.VitalStat{P75: -1}
+		for _, e := range loads {
+			v := vitalValue(e.Vitals, m)
+			if v < 0 {
+				continue
+			}
+			vs = append(vs, v)
+			if v <= vitalLimits[m][0] {
+				st.Good++
+			} else if v > vitalLimits[m][1] {
+				st.Poor++
+			}
+		}
+		if len(vs) > 0 {
+			st.P75, st.Samples = p75(vs), int64(len(vs))
+		}
+		return st
+	}
+	return analytics.VitalsRow{Value: value, Loads: int64(len(loads)), LCP: stat(analytics.VitalLCP), INP: stat(analytics.VitalINP), CLS: stat(analytics.VitalCLS), FCP: stat(analytics.VitalFCP), TTFB: stat(analytics.VitalTTFB)}
+}
+
+// p75 is the 75th percentile by nearest rank.
+func p75(vs []float64) float64 {
+	vs = slices.Clone(vs)
+	slices.Sort(vs)
+	return vs[(len(vs)*3+3)/4-1]
 }
 
 // overview counts the site's events in range that pass the filters:
@@ -586,7 +678,50 @@ func (s *Store) overview(q analytics.Query) analytics.Overview {
 		}
 	}
 	o.Visitors = int64(len(visitors))
+	o.Sessions, o.BounceRate, o.Duration = sessionsOf(s.events, q)
 	return o
+}
+
+// sessionGap ends a visitor's session after this long without an event,
+// as the real store does.
+const sessionGap = 30 * 60 * 1000
+
+// sessionsOf splits the matching events into sessions (one visitor's
+// events with no gap over sessionGap), returning how many there are, the
+// share with at most one page view and the average length in ms.
+func sessionsOf(events []analytics.Event, q analytics.Query) (n int64, bounce float64, avg int64) {
+	byVisitor := map[uint64][]analytics.Event{}
+	for _, e := range events {
+		if matches(e, q) {
+			byVisitor[e.Visitor] = append(byVisitor[e.Visitor], e)
+		}
+	}
+	var bounced, total int64
+	for _, es := range byVisitor {
+		slices.SortFunc(es, func(a, b analytics.Event) int { return int(a.Time - b.Time) })
+		start, views := es[0].Time, 0
+		end := func(last int64) {
+			n++
+			total += last - start
+			if views <= 1 {
+				bounced++
+			}
+		}
+		for i, e := range es {
+			if i > 0 && e.Time-es[i-1].Time > sessionGap {
+				end(es[i-1].Time)
+				start, views = e.Time, 0
+			}
+			if e.Kind == analytics.KindPageview {
+				views++
+			}
+		}
+		end(es[len(es)-1].Time)
+	}
+	if n > 0 {
+		bounce, avg = float64(bounced)/float64(n), total/n
+	}
+	return n, bounce, avg
 }
 
 // series buckets the matching events by UTC hour or day (minutes for
@@ -795,4 +930,52 @@ func id(n int64) string {
 		return ""
 	}
 	return strconv.FormatInt(n, 10)
+}
+
+// groupSeries buckets one error group's matching errors like errorSeries.
+func (s *Store) groupSeries(q analytics.ErrorsQuery, group string) []analytics.CountPoint {
+	width := int64(86_400_000)
+	if q.Bucket == analytics.BucketHour {
+		width = 3_600_000
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	counts := map[int64]int64{}
+	for _, e := range s.errs {
+		if matches(e, q.Query) && groupHex(e.Error.Group) == group {
+			counts[e.Time-e.Time%width]++
+		}
+	}
+	out := make([]analytics.CountPoint, 0, len(counts))
+	for t, c := range counts {
+		out = append(out, analytics.CountPoint{T: t, Count: c})
+	}
+	slices.SortFunc(out, func(a, b analytics.CountPoint) int { return int(a.T - b.T) })
+	return out
+}
+
+// errorSeries buckets the site's matching errors by q's bucket (days by
+// default) and counts the visitors who met one.
+func (s *Store) errorSeries(q analytics.ErrorsQuery) ([]analytics.CountPoint, int64) {
+	width := int64(86_400_000)
+	if q.Bucket == analytics.BucketHour {
+		width = 3_600_000
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	counts := map[int64]int64{}
+	visitors := map[uint64]bool{}
+	for _, e := range s.errs {
+		if !matches(e, q.Query) {
+			continue
+		}
+		counts[e.Time-e.Time%width]++
+		visitors[e.Visitor] = true
+	}
+	out := make([]analytics.CountPoint, 0, len(counts))
+	for t, c := range counts {
+		out = append(out, analytics.CountPoint{T: t, Count: c})
+	}
+	slices.SortFunc(out, func(a, b analytics.CountPoint) int { return int(a.T - b.T) })
+	return out, int64(len(visitors))
 }

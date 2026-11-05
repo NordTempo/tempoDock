@@ -47,9 +47,8 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	if err != nil {
 		return apitypes.RestoreResult{}, err
 	}
-	if set.Repository != from.Repository {
-		return apitypes.RestoreResult{}, invalid("snapshot %s is in %s, but backups now go to %s; configure that repository again to restore it",
-			snap, repoLabel(from.Repository), repoLabel(set.Repository))
+	if why := notRestorableHere(from.Repository, set.Repository); why != "" {
+		return apitypes.RestoreResult{}, invalid("backup %s can't be restored here: %s", from.SnapshotID[:min(8, len(from.SnapshotID))], why)
 	}
 	name := req.As
 	if name == "" {
@@ -109,6 +108,8 @@ type restore struct {
 	t        dbTemplate
 	snapshot string
 	row      store.Backup
+	// log is what the restore job printed (jobLog), kept by finish.
+	log string
 }
 
 // deployed continues a Postgres restore once the new service's first
@@ -175,7 +176,7 @@ func (r *restore) fillVolume(ctx context.Context, a Actor) {
 
 // run runs the restore job for the new service on its server, in the
 // template's image (jobImage): target is how it reaches the new database
-// (Postgres), mounts its volume (Redis).
+// (Postgres), mounts its volume (Redis). Its log is kept in r.log.
 func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mounts []node.Mount) error {
 	c := r.c
 	rt, err := c.runtimeFor(to.env.ServerID)
@@ -199,7 +200,8 @@ func (r *restore) run(ctx context.Context, to svcScope, target backup.Source, mo
 		Image: jobImage(to), Labels: c.labels(to, 0), Env: backup.RestoreEnv(r.snapshot, target, repo), Script: script,
 		Network: networkName(to.envScope), Mounts: mounts,
 	}
-	_, err = c.runResticJob(ctx, to.env.ServerID, rt, repo, spec)
+	out, err := c.runResticJob(ctx, to.env.ServerID, rt, repo, spec)
+	r.log = jobLog(spec.Env, out)
 	return err
 }
 
@@ -210,6 +212,7 @@ func (r *restore) finish(ctx context.Context, err error) {
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
 	}
+	c.keepBackupLog(ctx, r.from.svc.ID, r.row.ID, r.log)
 	// The row is written last, as in runBackup.
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), SnapshotID: r.snapshot, FinishedAt: ptr(now()), ID: r.row.ID}
 	if err != nil {

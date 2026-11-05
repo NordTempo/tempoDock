@@ -61,12 +61,24 @@ type BackupRun struct {
 	OffBox     bool   `json:"off_box"`
 	// Pruned snapshots were removed by retention and can't be restored.
 	Pruned bool `json:"pruned,omitempty"`
+	// NotRestorable says why a succeeded backup of a template database
+	// can't be restored now, and what to do; empty when it can.
+	NotRestorable string `json:"not_restorable,omitempty"`
 	// RestoredTo is the service a restore created.
 	RestoredTo string     `json:"restored_to,omitempty"`
 	Error      string     `json:"error,omitempty"`
 	CreatedBy  string     `json:"created_by"`
 	StartedAt  time.Time  `json:"started_at"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// BackupLog is what a backup or restore run's job printed: its last 16
+// KB (MaxRunOutputBytes), with the repository's and database's secrets
+// masked. Empty when nothing was kept (the job never ran, or the run is
+// older than the service's newest logs).
+type BackupLog struct {
+	ID     int64  `json:"id"`
+	Output string `json:"output"`
 }
 
 // BackupSchedule is when a service is backed up.

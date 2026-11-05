@@ -34,7 +34,7 @@ import {
   useGitDeploy,
   useGitSource,
 } from "../git/api";
-import { errorSummary } from "../service/releases";
+import { errorSummary, imageSetting, shortImage } from "../service/releases";
 import { type PackStats, pack } from "./pack";
 import {
   archiveType,
@@ -116,7 +116,6 @@ export default function DeployDialog({
           {mode === "image" && (
             <ImageDeploy
               serviceRef={ref}
-              current={view.service.image}
               busy={busy}
               onStarted={setRelease}
               onClose={onClose}
@@ -433,28 +432,49 @@ function Progress({ phase }: { phase: Phase }) {
   }
 }
 
-/** Deploys an image, by default the service's image setting again. */
+/**
+ * Deploys an image, by default the service's image setting again; the
+ * serving image instead when the setting's image failed last time, with
+ * the other one a click away. A known-failed image is never the primary.
+ */
 function ImageDeploy({
   serviceRef: ref,
-  current,
   busy,
   onStarted,
   onClose,
 }: {
   serviceRef: ServiceRef;
-  current: string | undefined;
   busy: string | undefined;
   onStarted: (release: number) => void;
   onClose: () => void;
 }) {
   const client = useQueryClient();
-  const [image, setImage] = useState(current ?? "");
+  const { service } = useService(ref);
+  const releases = useReleases(ref);
+  const setting = imageSetting(service, releases);
+  const current = service.image;
+  const servingImage = setting.serving?.image_ref ?? "";
+  const [image, setImage] = useState(
+    setting.differs && setting.failed ? servingImage : current,
+  );
   const wanted = image.trim();
   // The newest release of this very image, when it failed: say so before
   // the same deploy runs again.
-  const lastOfImage = useReleases(ref).find((r) => r.image_ref === wanted);
+  const lastOfImage = releases.find((r) => r.image_ref === wanted);
   const failedBefore =
     lastOfImage?.status === "failed" ? lastOfImage : undefined;
+  // The image setting and the serving image, when they differ: one click.
+  const choices = setting.differs
+    ? [
+        { ref: servingImage, label: `serving as r${setting.serving?.number}` },
+        {
+          ref: current,
+          label: setting.failed
+            ? `failed as r${setting.failed.number}`
+            : "next deploy",
+        },
+      ]
+    : [];
   const deploy = useMutation({
     mutationFn: (img: string) =>
       body(
@@ -485,6 +505,21 @@ function ImageDeploy({
           className="field w-full font-mono text-xs"
         />
       </label>
+      {choices.length > 0 && (
+        <p className="flex flex-wrap items-center gap-2 text-xs">
+          {choices.map((c) => (
+            <Button
+              key={c.ref}
+              small
+              aria-pressed={wanted === c.ref}
+              onClick={() => setImage(c.ref)}
+            >
+              <span className="font-mono">{shortImage(c.ref)}</span>{" "}
+              <span className="text-mut">{c.label}</span>
+            </Button>
+          ))}
+        </p>
+      )}
       {failedBefore && (
         <p className="text-xs text-warn-text">
           r{failedBefore.number} {failurePhrase(failedBefore)} with this image
@@ -506,17 +541,20 @@ function ImageDeploy({
       <div className="flex flex-wrap items-start gap-2">
         <span className="min-w-0 flex-1 self-center text-xs">
           {busy && <span className="text-fail">{busy}. </span>}
+          {!wanted && !busy && (
+            <span className="text-faint">Type an image first</span>
+          )}
           <ErrorText error={deploy.error} />
         </span>
         <Button onClick={onClose}>Cancel</Button>
         <Act
-          primary
+          primary={!failedBefore}
           type="submit"
           cli={`dock deploy --image ${wanted || "<image>"} -s ${ref.service} -e ${ref.environment}`}
           disabled={!wanted || !!busy || deploy.isPending}
           title={busy}
         >
-          Deploy image
+          {failedBefore ? "Deploy failed image again" : "Deploy image"}
         </Act>
       </div>
     </form>

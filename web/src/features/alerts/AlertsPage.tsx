@@ -16,6 +16,7 @@ import {
   SectionHead,
 } from "../../ui/kit";
 import { toneText } from "../../ui/status";
+import { useValidation } from "../create/form";
 import {
   type Alert,
   type AlertChannel,
@@ -29,6 +30,7 @@ import {
   useResolveAlert,
   useTestAlertChannel,
 } from "./data";
+import { AlertLink, alertText } from "./source";
 
 // The Alerts page: open alerts (worst first), recent history, and the
 // channels alerts are sent to. Admins only; the route says so to others.
@@ -163,23 +165,25 @@ function AlertRow({
 }) {
   const resolve = useResolveAlert();
   const tone = a.resolved_at ? "text-mut" : toneText[severityTone[a.severity]];
+  const { text, cli } = alertText(a);
   return (
     <tr>
       <td className={`py-2 whitespace-nowrap ${tone}`}>
         <Glyph char={a.severity === "critical" ? "✕" : "▲"} /> {a.severity}
       </td>
-      <td className="py-2">
+      <td className="w-full min-w-[240px] py-2 whitespace-normal">
         {a.title}
-        {a.message && <span className="block text-mut">{a.message}</span>}
+        {text && <span className="block text-mut">{text}</span>}
       </td>
       <td className="py-2 font-mono">{where(a)}</td>
       <td className="py-2 whitespace-nowrap text-mut">
         {a.resolved_at ? `${since(a.resolved_at)} ago` : since(a.opened_at)}
       </td>
-      <td className="w-full py-1.5 text-right">
-        {resolvable && (
-          <span className="inline-flex items-center gap-3">
-            <ErrorText error={resolve.error} />
+      <td className="py-1.5 text-right">
+        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+          <ErrorText error={resolve.error} />
+          <AlertLink alert={a} className="btn sm no-underline" title={cli} />
+          {resolvable && (
             <Act
               small
               cli={`dock alerts resolve ${a.id}`}
@@ -189,8 +193,8 @@ function AlertRow({
             >
               Resolve
             </Act>
-          </span>
-        )}
+          )}
+        </span>
       </td>
     </tr>
   );
@@ -297,7 +301,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
           >
             Send test
           </Act>
-          <Button small danger onClick={() => setConfirming(true)}>
+          <Button small onClick={() => setConfirming(true)}>
             Remove
           </Button>
           {confirming && (
@@ -337,6 +341,8 @@ const kinds: Array<{ kind: Kind; note: string }> = [
 function AddChannel({ onClose }: { onClose: () => void }) {
   const create = useCreateAlertChannel();
   const [name, setName] = useState("");
+  const v = useValidation();
+  const nameError = v.required(!name.trim(), "Name the channel, like ops.");
   const [kind, setKind] = useState<Kind>("slack");
   const [url, setUrl] = useState("");
   // A webhook's own signing secret; one is generated when left empty.
@@ -401,11 +407,13 @@ function AddChannel({ onClose }: { onClose: () => void }) {
     .join(" ");
   return (
     <form
+      ref={v.form}
       aria-label="Add channel"
       className="flex max-w-[760px] flex-col gap-3.5 border-t border-line pt-3.5"
       onKeyDown={(e) => e.key === "Escape" && onClose()}
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(!!name.trim())) return;
         const input: NewAlertChannel = {
           name: name.trim(),
           kind,
@@ -445,8 +453,14 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="ops"
-            className="field py-[7px] font-mono"
+            aria-invalid={!!nameError}
+            className={`field py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
           />
+          {nameError && (
+            <span role="alert" className="text-xs text-fail">
+              {nameError}
+            </span>
+          )}
         </label>
         <label className="flex flex-[1_1_180px] flex-col gap-1.5">
           <span>Sends</span>
@@ -548,15 +562,13 @@ function AddChannel({ onClose }: { onClose: () => void }) {
         </label>
       )}
       <div className="flex flex-wrap items-center gap-2.5">
-        <Act
-          primary
-          type="submit"
-          cli={cli}
-          disabled={create.isPending || !name.trim()}
-        >
+        <Act primary type="submit" cli={cli} disabled={create.isPending}>
           Add channel
         </Act>
         <Button onClick={onClose}>Cancel</Button>
+        <span className="text-xs text-fail">
+          {v.problem([!name.trim() && "a name"])}
+        </span>
         <ErrorText error={create.error} />
       </div>
     </form>

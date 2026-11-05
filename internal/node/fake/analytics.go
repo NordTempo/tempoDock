@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/analytics/fakestore"
@@ -30,6 +31,8 @@ type fakeAnalytics struct {
 	failSet   error
 	// failEnsure makes EnsureAnalyticsStore fail.
 	failEnsure error
+	// demo appends DOCK_FAKE_SPOOL's lines once, on the first tail.
+	demo sync.Once
 }
 
 // fakeSpool is one in-memory spool.
@@ -148,6 +151,9 @@ func (r *Runtime) AnalyticsSiteRules() map[int64]node.SiteRules {
 // batching: what is there goes at once.
 func (r *Runtime) TailSpool(ctx context.Context, which node.Spool, after uint64) (<-chan node.SpoolBatch, error) {
 	a := &r.analytics
+	if which == node.SpoolEvents {
+		a.demo.Do(r.appendDemoSpool)
+	}
 	a.mu.Lock()
 	sp := a.spool(which)
 	a.mu.Unlock()
@@ -258,4 +264,27 @@ func (r *Runtime) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
 	}
 	var d net.Dialer
 	return d.DialContext(ctx, "tcp", ln.Addr().String())
+}
+
+// appendDemoSpool appends the events in the file DOCK_FAKE_SPOOL names
+// (JSON lines, as the ingest writes them) to the events spool, so a
+// `make dev` daemon's analytics pages have visits, errors and vitals to
+// show. Read once, when the collector first tails the spool; a missing
+// file adds nothing.
+func (r *Runtime) appendDemoSpool() {
+	path := os.Getenv("DOCK_FAKE_SPOOL")
+	if path == "" {
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var lines [][]byte
+	for line := range bytes.SplitSeq(bytes.TrimSpace(b), []byte{'\n'}) {
+		if len(line) > 0 {
+			lines = append(lines, line)
+		}
+	}
+	r.AppendSpool(lines...)
 }

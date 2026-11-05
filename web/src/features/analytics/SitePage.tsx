@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { createContext, useContext, useState } from "react";
 import { canDeploy, useSession } from "../../data/queries";
@@ -8,13 +8,16 @@ import {
   type AnalyticsChange,
   type AnalyticsRow,
   applyChange,
+  errorDimensions,
   type Filter,
   parseFilter,
   type Site,
   type StatsRange,
+  siteErrorsQuery,
   sitesQuery,
 } from "./data";
 import type { AnalyticsSearch } from "./loaders";
+import { count } from "./parts";
 import { SiteBar } from "./SiteBar";
 
 // A site's page in the Analytics area (ADR 0059, layout C): its name and
@@ -25,6 +28,7 @@ import { SiteBar } from "./SiteBar";
 /** A site's views, down the side menu. */
 const views = [
   ["Overview", "/$org/analytics/$project/$site"],
+  ["Errors", "/$org/analytics/$project/$site/errors"],
   ["Vitals", "/$org/analytics/$project/$site/vitals"],
   ["Funnels", "/$org/analytics/$project/$site/funnels"],
   ["Replays", "/$org/analytics/$project/$site/replays"],
@@ -40,6 +44,8 @@ type SiteView = {
   onChange: (change: AnalyticsChange) => void;
   /** Filters by a clicked value, keeping its label for the filter's chip. */
   onPick: (dimension: string, row: AnalyticsRow) => void;
+  /** Opens the site's settings (session replay, retention, the name). */
+  openSettings: () => void;
 };
 
 const SiteContext = createContext<SiteView | null>(null);
@@ -68,6 +74,7 @@ export function SitePage({
     select: (all) => all.find((s) => s.name === name),
   }).data;
   const [labels, setLabels] = useState<Record<string, string>>({});
+  const [settings, setSettings] = useState(false);
   if (!site) {
     return (
       <Page>
@@ -94,6 +101,7 @@ export function SitePage({
     filters,
     canEdit: canDeploy(session, { project, environment: site.environment }),
     onChange,
+    openSettings: () => setSettings(true),
     onPick: (dimension, row) => {
       if (row.label)
         setLabels((l) => ({
@@ -140,9 +148,17 @@ export function SitePage({
                 exact: to === views[0][1],
                 includeSearch: false,
               }}
-              className="rounded-ctl px-2 py-1 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
+              className="flex min-h-[28px] items-center gap-2 rounded-ctl px-2 py-1 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
             >
-              {label}
+              <span className="flex-1">{label}</span>
+              {label === "Errors" && (
+                <ErrorCount
+                  project={project}
+                  site={site.name}
+                  range={range}
+                  filters={filters}
+                />
+              )}
             </Link>
           ))}
         </nav>
@@ -181,6 +197,8 @@ export function SitePage({
             }
             onRange={(r) => onChange({ range: r })}
             onFilters={(f) => onChange({ filters: f })}
+            settingsOpen={settings}
+            onSettings={setSettings}
           />
           <SiteContext.Provider value={view}>
             <Outlet />
@@ -188,5 +206,34 @@ export function SitePage({
         </Page>
       </div>
     </>
+  );
+}
+
+/**
+ * How many errors the site had in the range, beside its Errors view;
+ * the same query the view reads, so opening it costs nothing more.
+ */
+function ErrorCount({
+  project,
+  site,
+  range,
+  filters,
+}: {
+  project: string;
+  site: string;
+  range: StatsRange;
+  filters: Filter[];
+}) {
+  const usable = filters.filter((f) =>
+    (errorDimensions as readonly string[]).includes(f.dimension),
+  );
+  const errors = useQuery(siteErrorsQuery(project, site, range, usable)).data
+    ?.summary.errors;
+  if (!errors) return null;
+  return (
+    <span className="text-2xs text-fail tabular-nums">
+      {count(errors)}
+      <span className="sr-only"> errors</span>
+    </span>
   );
 }

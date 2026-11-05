@@ -194,7 +194,7 @@ export function LogsPane({
                 release: e.target.value ? Number(e.target.value) : null,
               })
             }
-            className="field py-0.5 font-mono text-2xs"
+            className="field min-h-[24px] py-0.5 font-mono text-2xs"
           >
             <option value="">
               {liveNumber ? `Live (release ${liveNumber})` : "Live"}
@@ -228,7 +228,7 @@ export function LogsPane({
               onChange={(e) =>
                 onFilter({ ...filter, tail: Number(e.target.value) })
               }
-              className="field py-0.5 text-xs"
+              className="field min-h-[24px] py-0.5 text-xs"
             >
               {tails.map((n) => (
                 <option key={n} value={n}>
@@ -241,7 +241,7 @@ export function LogsPane({
               title="dock logs --since"
               value={filter.since}
               onChange={(e) => onFilter({ ...filter, since: e.target.value })}
-              className="field py-0.5 text-xs"
+              className="field min-h-[24px] py-0.5 text-xs"
             >
               {sinces.map((s) => (
                 <option key={s} value={s}>

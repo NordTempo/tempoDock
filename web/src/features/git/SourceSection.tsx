@@ -81,9 +81,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const conn = source.data?.connection;
   return (
     <section aria-labelledby="source" className="flex flex-col">
-      <SectionHead id="source" aside="deploy on every push to a GitHub branch">
-        Source
-      </SectionHead>
+      <SectionHead id="source">Source</SectionHead>
       {source.error ? (
         <ErrorText error={source.error} />
       ) : !source.data ? null : !conn || editing ? (
@@ -386,7 +384,8 @@ function ConnectForm({
               setBranchTyped(true);
             },
             "main",
-          )}
+          )}{" "}
+          <span className="text-mut">every push deploys</span>
         </Item>
         <Item label="Directory">
           {input("Directory", dir, setDir, "repository root")}{" "}

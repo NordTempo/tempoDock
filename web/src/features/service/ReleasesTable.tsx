@@ -14,12 +14,19 @@ import {
   StateText,
 } from "../../ui/kit";
 import { releaseState, releaseWhat } from "../../ui/status";
-import { copiedConfig, errorSummary, imageLabel, shortImage } from "./releases";
+import {
+  copiedConfig,
+  errorSummary,
+  imageLabel,
+  releaseDiff,
+  rollbackLosses,
+  shortImage,
+} from "./releases";
 
 /**
  * Release history: one line per release (what, short image, who, when),
- * a failure's cause under it, and Roll back on a superseded row, shown on
- * hover or focus so eight identical buttons don't fill the column.
+ * a failure's cause under it in full, Details on a failed row and a small
+ * Roll back button on every superseded row (left out while a deploy runs).
  */
 export function ReleasesTable({
   serviceRef: ref,
@@ -55,7 +62,7 @@ export function ReleasesTable({
             <col />
             <col className="w-[100px]" />
             <col className="w-[44px]" />
-            <col className="w-[84px]" />
+            <col className="w-[96px]" />
           </colgroup>
           <thead>
             <tr>
@@ -73,7 +80,11 @@ export function ReleasesTable({
               return (
                 <tr key={r.id} className="group">
                   <td className="font-mono">
-                    <Link {...page(r)} className="hover:underline">
+                    {/* A 24px target without making the row taller. */}
+                    <Link
+                      {...page(r)}
+                      className="-my-[4px] inline-flex min-h-[24px] min-w-[24px] items-center hover:underline"
+                    >
                       r{r.number}
                     </Link>
                   </td>
@@ -96,8 +107,9 @@ export function ReleasesTable({
                       </span>
                     </span>
                     {r.status === "failed" && r.error && (
+                      // The cause wraps: its end ("on :3000") is the useful part.
                       <div
-                        className="truncate text-xs text-fail"
+                        className="text-xs break-words whitespace-normal text-fail"
                         title={r.error}
                       >
                         {errorSummary(r)}
@@ -108,24 +120,18 @@ export function ReleasesTable({
                     <Actor name={r.created_by} kind={actorKind(r.created_by)} />
                   </td>
                   <td className="text-faint">{since(r.created_at)}</td>
-                  <td className="py-1 text-right">
+                  {/* Lined up with the first text line of the row. */}
+                  <td className="py-[6px] text-right">
                     {r.status === "failed" && (
-                      <Link {...page(r)} className="lnk">
+                      <Link {...page(r)} className="btn sm">
                         Details
                       </Link>
                     )}
-                    {r.status === "superseded" && mayDeploy && (
+                    {r.status === "superseded" && mayDeploy && !deploying && (
                       <Button
                         small
-                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-pressed:opacity-100"
-                        disabled={deploying}
-                        title={
-                          deploying
-                            ? "Wait for the current deploy"
-                            : `Roll back to r${r.number}`
-                        }
+                        title={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
                         aria-label={`Roll back to r${r.number}`}
-                        aria-pressed={confirming === r.number}
                         onClick={() => setConfirming(r.number)}
                       >
                         Roll back
@@ -153,8 +159,10 @@ export function ReleasesTable({
 
 /**
  * Asks before rolling back: which service, from which release to which,
- * what the new release copies and what happens to the serving one. The
- * header, the releases table and a release's page all use it.
+ * what changes against the serving release, and whether the service is
+ * briefly unreachable. Changes that lose data or features (a volume no
+ * longer mounted, variables removed) get a warning line each and a red
+ * button. The header, the releases table and a release's page use it.
  */
 export function RollbackConfirm({
   serviceRef: ref,
@@ -173,10 +181,13 @@ export function RollbackConfirm({
   const rollback = useRollback();
   const stateful = useService(ref).service.stateful;
   const from = serving ? `r${serving.number}` : undefined;
+  const changes = serving ? releaseDiff(serving, target) : [];
+  const losses = serving ? rollbackLosses(serving, target) : [];
   return (
     <Confirm
       title={`Roll back ${ref.service} to r${target.number}?`}
       action={`Roll back to r${target.number}`}
+      danger={losses.length > 0}
       cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
       pending={blocked || rollback.isPending}
       error={rollback.error}
@@ -190,13 +201,57 @@ export function RollbackConfirm({
     >
       <p>
         A new release of <b>{ref.service}</b> in {ref.environment} with r
-        {target.number}'s image and config.{" "}
-        {from &&
-          (stateful
-            ? `${from} stops first, then it starts (the volume allows one writer).`
-            : `${from} keeps serving until it passes its health check.`)}
+        {target.number}'s image and config.
       </p>
-      <p className="mt-2 font-mono text-xs text-mut">{copiedConfig(target)}</p>
+      {from && (
+        <p className="mt-2">
+          {stateful ? (
+            <b>
+              {ref.service} is down for a few seconds while {from} stops and the
+              new release starts: a volume allows one writer.
+            </b>
+          ) : (
+            `${from} keeps serving until the new release passes its health check, so ${ref.service} stays reachable.`
+          )}
+        </p>
+      )}
+      {losses.map((text) => (
+        <p key={text} className="mt-2 text-warn-text">
+          ▲ {text}
+        </p>
+      ))}
+      {serving && (
+        <div className="mt-3 flex flex-col gap-0.5 text-xs">
+          <span className="text-mut">Changes from {from}</span>
+          {changes.length === 0 ? (
+            <span className="text-mut">
+              Same image, settings and variable names; variable values return to
+              r{target.number}'s.
+            </span>
+          ) : (
+            changes.map((c) => (
+              <span key={c.what} className="font-mono break-all">
+                {c.what === "added" ? (
+                  <>
+                    <span className="text-ok">+ back</span> {c.text}
+                  </>
+                ) : c.what === "removed" ? (
+                  <>
+                    <span className="text-fail">− removed</span> {c.text}
+                  </>
+                ) : (
+                  <>
+                    <span className="text-warn">~</span> {c.text}
+                  </>
+                )}
+              </span>
+            ))
+          )}
+        </div>
+      )}
+      <p className="mt-2 font-mono text-2xs text-faint">
+        {copiedConfig(target)}
+      </p>
     </Confirm>
   );
 }

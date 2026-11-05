@@ -47,15 +47,22 @@ export function deploySteps(
   const switched = at(r, / is live$/);
   const failed = r.status === "failed";
 
-  // Which step the release is on, or failed on.
+  // Which step the release is on, or failed on: the stored failure
+  // (code, else the error's own words) decides over progress events, so
+  // this page and the deploy window name the same cause.
   let current = Math.max(0, stepOrder.indexOf(r.status) - 1);
   if (failed) {
+    const error = r.error ?? "";
     current =
-      r.error_code === "build_failed" || !started
+      r.error_code === "build_failed" || /^(build|pull)/i.test(error)
         ? 0
-        : r.error_code === "health_check_failed" || !healthy
+        : r.error_code === "health_check_failed" || /^health check/i.test(error)
           ? 2
-          : 3;
+          : !started
+            ? 0
+            : !healthy
+              ? 2
+              : 3;
   }
   if (r.status === "active" || r.status === "superseded") current = 4;
   const state = (i: number): StepState =>
@@ -98,11 +105,11 @@ export function deploySteps(
       name: "Start",
       state: state(1),
       ms: span(buildEnd, started?.time),
+      // The container's name (dock_p1_e1_s1_r8) only in its title.
       detail: container ? (
-        <span className="text-mut">
-          <span className="font-mono">{container}</span>
-          {old &&
-            (stateful ? `, after stopping ${old}` : ` running next to ${old}`)}
+        <span className="text-mut" title={container}>
+          Container started
+          {old && (stateful ? ` after stopping ${old}` : ` next to ${old}`)}
         </span>
       ) : (
         <span className="text-mut">Start the container</span>

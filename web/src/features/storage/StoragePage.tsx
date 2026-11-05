@@ -147,7 +147,6 @@ function StorageRow({
           </Button>
           <Button
             small
-            danger={!used}
             disabled={used}
             reason="in use; move the registry's images first"
             onClick={() => setConfirming(true)}

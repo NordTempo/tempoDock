@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
 import { plural, since } from "../../ui/format";
 import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
+import { useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteRegistryCredential,
@@ -154,12 +155,18 @@ function CredentialForm({
 }) {
   const set = useSetRegistryCredential();
   const [secret, setSecret] = useState("");
+  const v = useValidation();
+  // Each empty field, marked once a submit was tried.
+  const mark = (empty: boolean) =>
+    v.required(empty, "missing") ? "border-fail" : "";
   return (
     <form
+      ref={v.form}
       aria-label="Add registry credentials"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(!!host.trim() && !!username && !!secret)) return;
         set.mutate(
           { host: host.trim(), username, password: secret },
           {
@@ -178,7 +185,8 @@ function CredentialForm({
         value={host}
         onChange={(e) => onHost(e.target.value)}
         spellCheck={false}
-        className="field w-48 py-[7px] font-mono"
+        aria-invalid={!!mark(!host.trim())}
+        className={`field w-48 py-[7px] font-mono ${mark(!host.trim())}`}
       />
       <input
         aria-label="Username"
@@ -187,7 +195,8 @@ function CredentialForm({
         onChange={(e) => onUsername(e.target.value)}
         spellCheck={false}
         autoComplete="off"
-        className="field w-40 py-[7px] font-mono"
+        aria-invalid={!!mark(!username)}
+        className={`field w-40 py-[7px] font-mono ${mark(!username)}`}
       />
       <input
         ref={password}
@@ -197,15 +206,23 @@ function CredentialForm({
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
         autoComplete="new-password"
-        className="field min-w-0 flex-[1_1_180px] py-[7px] font-mono"
+        aria-invalid={!!mark(!secret)}
+        className={`field min-w-0 flex-[1_1_180px] py-[7px] font-mono ${mark(!secret)}`}
       />
       <Act
         type="submit"
         cli={`dock registry login ${host.trim() || "HOST"} -u ${username || "NAME"} --password-stdin`}
-        disabled={!host.trim() || !username || !secret || set.isPending}
+        disabled={set.isPending}
       >
         Save
       </Act>
+      <span role="alert" className="text-xs text-fail">
+        {v.problem([
+          !host.trim() && "a host",
+          !username && "a username",
+          !secret && "a password or token",
+        ])}
+      </span>
       <ErrorText error={set.error} />
     </form>
   );

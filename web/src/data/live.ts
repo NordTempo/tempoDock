@@ -858,7 +858,7 @@ function useLineStream<T>(
       const base = s.url === from ? s : fresh(from);
       return {
         ...base,
-        lines: [...lines.reverse(), ...base.lines].slice(0, LOG_CAP),
+        lines: [...lines.toReversed(), ...base.lines].slice(0, LOG_CAP),
       };
     });
   };

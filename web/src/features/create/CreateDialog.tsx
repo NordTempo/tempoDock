@@ -40,18 +40,13 @@ export default function CreateDialog({
         </Dialog>
       );
     case "service":
+      // Its own dialog: the title follows the environment picked in it.
       return (
-        <Dialog
-          title={`New service in ${request.env.project} ${request.env.environment}`}
+        <NewService
+          env={request.env}
+          source={request.source}
           onClose={onClose}
-          wide
-        >
-          <NewService
-            env={request.env}
-            source={request.source}
-            onClose={onClose}
-          />
-        </Dialog>
+        />
       );
   }
 }

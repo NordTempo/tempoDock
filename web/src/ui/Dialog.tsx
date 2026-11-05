@@ -57,7 +57,7 @@ export function Dialog({
             <h2 className="text-md font-semibold">{title}</h2>
             <button
               type="button"
-              aria-label="Close"
+              aria-label="esc, close"
               className="rounded-ctl p-0.5 text-faint hover:text-fg"
               onClick={onClose}
             >

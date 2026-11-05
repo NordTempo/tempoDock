@@ -16,6 +16,7 @@ import (
 	"io"
 	"maps"
 	"net"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -580,6 +581,7 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 	}
 	r.containers[id] = c
 	r.specs[id] = spec
+	r.logs[id] = append(r.logs[id], demoLogs()...)
 	out := *c
 	if !exit {
 		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "start"})
@@ -1239,4 +1241,36 @@ func (r *Runtime) ContainerStats(_ context.Context, ids []string) ([]node.Contai
 		out = append(out, s)
 	}
 	return out, nil
+}
+
+// demoLogLines is DOCK_FAKE_LOGS's content, read once.
+var demoLogLines = sync.OnceValue(func() []string {
+	path := os.Getenv("DOCK_FAKE_LOGS")
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
+})
+
+// demoLogs is the output a `make dev` daemon gives every container it
+// starts when DOCK_FAKE_LOGS names a file: its lines, a few seconds apart
+// and ending now, on stdout, or stderr for lines that start with "E ".
+// Without it containers start silent, as in tests.
+func demoLogs() []node.LogLine {
+	lines := demoLogLines()
+	out := make([]node.LogLine, 0, len(lines))
+	now := time.Now()
+	for i, l := range lines {
+		stream := "stdout"
+		if rest, ok := strings.CutPrefix(l, "E "); ok {
+			stream, l = "stderr", rest
+		}
+		at := now.Add(-time.Duration(len(lines)-i) * 7 * time.Second)
+		out = append(out, node.LogLine{Time: at, Stream: stream, Text: l})
+	}
+	return out
 }

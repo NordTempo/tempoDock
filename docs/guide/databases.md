@@ -53,6 +53,9 @@ dock backup schedule -s worker --off
 
 The service's **Backups** tab shows the same, with Run now and Restore. A
 failed backup is a problem on the project page until the next one succeeds.
+**View log** on a run (or `dock backup log <id> -s db`) shows what its job
+printed: the last 16 KB, with the repository's and database's secrets
+masked, for a service's newest 20 runs, to anyone with deploy access.
 
 ### Where backups go
 
@@ -105,6 +108,11 @@ dock env set -s api DATABASE_URL='${{db-old.DATABASE_URL}}' --deploy
 ```
 
 and archive the old one when you no longer need it.
+
+Restores read only the repository backups go to now. A backup whose
+snapshot is in another one (its storage connection's endpoint or bucket
+changed, say) says so on the Backups tab, Restore is off for it, and it is
+restored by hand like the backups below.
 
 Backups of other volumes are restored by hand for now: with the repository
 password, `restic -r <repository> restore <snapshot> --target <dir>`

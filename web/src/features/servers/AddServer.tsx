@@ -6,6 +6,7 @@ import { useKeydown } from "../../shell/keys";
 import { until } from "../../ui/format";
 import { Button, Check, CopyButton, ErrorText, StateText } from "../../ui/kit";
 import { serverState } from "../../ui/status";
+import { useValidation } from "../create/form";
 
 const blank: NewServer = {
   name: "",
@@ -40,14 +41,25 @@ export function AddServer({ onClose }: { onClose: () => void }) {
     if (event.key === "Escape" && !add.data) onClose();
   });
 
+  const v = useValidation();
+  const nameOk = /^[a-z0-9][a-z0-9-]*$/.test(form.name);
+  const nameError =
+    v.required(!form.name, "Name the server, like homelab.") ??
+    v.required(
+      !!form.name && !nameOk,
+      "Use lowercase letters, digits and dashes.",
+    );
+
   if (add.data) return <Added added={add.data} onDone={onClose} />;
   return (
     <form
+      ref={v.form}
+      noValidate
       aria-label="Add a server"
       className="flex flex-col gap-2 border-y border-line py-3"
       onSubmit={(e) => {
         e.preventDefault();
-        add.mutate(form);
+        if (v.check(nameOk)) add.mutate(form);
       }}
     >
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -63,7 +75,8 @@ export function AddServer({ onClose }: { onClose: () => void }) {
             spellCheck={false}
             value={form.name}
             onChange={(e) => set({ name: e.target.value.trim() })}
-            className="field w-44 font-mono"
+            aria-invalid={!!nameError}
+            className={`field w-44 font-mono ${nameError ? "border-fail" : ""}`}
           />
         </label>
         <span className="inline-flex flex-wrap items-center gap-x-3">
@@ -85,12 +98,7 @@ export function AddServer({ onClose }: { onClose: () => void }) {
           onChange={(on) => set({ builder: on })}
         />
         <span className="flex gap-2">
-          <Button
-            primary
-            small
-            type="submit"
-            disabled={!form.name || add.isPending}
-          >
+          <Button primary small type="submit" disabled={add.isPending}>
             Add server
           </Button>
           <Button small onClick={onClose}>
@@ -98,6 +106,11 @@ export function AddServer({ onClose }: { onClose: () => void }) {
           </Button>
         </span>
       </div>
+      {nameError && (
+        <span role="alert" className="text-xs text-fail">
+          {nameError}
+        </span>
+      )}
       <code className="font-mono text-2xs text-mut">{cliOf(form)}</code>
       <ErrorText error={add.error} />
     </form>

@@ -1,8 +1,18 @@
-import { queryOptions, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
-import { keys, revealed, revealRequest, useOrgs } from "../../data/queries";
+import {
+  currentMe,
+  keys,
+  revealed,
+  revealRequest,
+  useOrgs,
+} from "../../data/queries";
 import type { OrgLockSettings, Scope } from "../../data/types";
 import { useOrg } from "../../shell/location";
 
@@ -82,11 +92,16 @@ export const orgQueries = {
       queryKey: orgKeys.ssoProviders,
       queryFn: () => list(api.GET("/api/v1/org/sso-providers")),
     }),
+  /**
+   * The open invite a link names, signed in or out (ADR 0060). A dead
+   * link is a 404 that won't come back, so it isn't retried.
+   */
   invite: (code: string) =>
     queryOptions({
       queryKey: ["invite", code],
       queryFn: () =>
         body(api.GET("/api/v1/invites/{code}", { params: { path: { code } } })),
+      retry: false,
     }),
 };
 
@@ -206,6 +221,30 @@ export const useRevokeInvite = () =>
     () => [orgKeys.invites, ["audit"]],
   );
 
+/**
+ * A new link for an open invite: invites the same person with the same
+ * role again, then revokes the old invite (in that order, so a refused or
+ * abandoned create leaves the old link working). Dock keeps only a hash of
+ * an invite's code, so a link that was lost can't be shown again.
+ */
+export const useRenewInvite = () =>
+  useAction(
+    async (invite: { id: number; email: string; role: Scope }) => {
+      const created = await body(
+        api.POST("/api/v1/org/invites", {
+          body: { email: invite.email, role: invite.role },
+        }),
+      );
+      await done(
+        api.DELETE("/api/v1/org/invites/{id}", {
+          params: { path: { id: invite.id } },
+        }),
+      );
+      return created;
+    },
+    () => [orgKeys.invites, ["audit"]],
+  );
+
 /** Accepts an invite; the caller's orgs then include it. */
 export function useAcceptInvite() {
   const queryClient = useQueryClient();
@@ -221,6 +260,30 @@ export function useAcceptInvite() {
       return [keys.orgs];
     },
   );
+}
+
+/**
+ * Creates the account an invite names (its email, with this name and
+ * password), accepts the invite and signs in (ADR 0060). Resolves once the
+ * new session is in the cache, acting in the org just joined.
+ */
+export function useInviteSignUp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      code,
+      ...req
+    }: { code: string } & components["schemas"]["InviteSignUpRequest"]) => {
+      await body(
+        api.POST("/api/v1/invites/{code}/signup", {
+          params: { path: { code } },
+          body: req,
+        }),
+      );
+      queryClient.removeQueries({ queryKey: ["invite"] });
+      queryClient.setQueryData(keys.session, await currentMe());
+    },
+  });
 }
 
 export const useSetOrgVariable = () =>

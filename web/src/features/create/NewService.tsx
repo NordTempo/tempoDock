@@ -1,9 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { queries, useEnvironment } from "../../data/queries";
+import { useDeploy } from "../../data/mutations";
+import {
+  canDeploy,
+  queries,
+  useEnvironment,
+  useProjectOverview,
+  useSession,
+} from "../../data/queries";
 import type { EnvRef, Service, TemplateInfo } from "../../data/types";
 import { useOrg } from "../../shell/location";
+import { Dialog } from "../../ui/Dialog";
 import { Button, CopyButton, ErrorText } from "../../ui/kit";
 import {
   autofocus,
@@ -13,8 +21,10 @@ import {
   Footer,
   Group,
   input,
+  invalid,
   nameProblem,
   toName,
+  useValidation,
 } from "./form";
 import {
   type GitConnected,
@@ -72,12 +82,15 @@ type Done =
 /**
  * `dock service create` with every flag: from an image, from source (built
  * on deploy), from a GitHub repository (created, then connected like
- * `dock git connect`), or a database from a template. Opens the service,
- * except where the answer has something to keep: a database's variable
- * reference, a webhook's secret.
+ * `dock git connect`), or a database from a template. An image deploys
+ * right after it is created ("Create only" skips that). Opens the
+ * service, except where the answer has something to keep: a database's
+ * variable reference, a webhook's secret. Submitting with fields missing
+ * marks them instead of doing nothing (useValidation). The environment
+ * starts as the one it was opened from and can be changed in the form.
  */
 export function NewService({
-  env,
+  env: opened,
   source: initial = "image",
   onClose,
 }: {
@@ -85,12 +98,48 @@ export function NewService({
   source?: ServiceSource;
   onClose: () => void;
 }) {
+  const [environment, setEnvironment] = useState(opened.environment);
+  const env = { project: opened.project, environment };
+  const session = useSession();
+  const choices = useProjectOverview(env.project)
+    .environments.map((e) => e.environment.name)
+    .filter((name) => canDeploy(session, { ...env, environment: name }));
+  const title = `New service in ${env.project} ${environment}`;
+  return (
+    <Dialog title={title} onClose={onClose} wide>
+      <ServiceForm
+        env={env}
+        choices={choices}
+        onEnvironment={setEnvironment}
+        initial={initial}
+        onClose={onClose}
+      />
+    </Dialog>
+  );
+}
+
+function ServiceForm({
+  env,
+  choices,
+  onEnvironment,
+  initial,
+  onClose,
+}: {
+  env: EnvRef;
+  /** The environments the caller may add a service to. */
+  choices: readonly string[];
+  onEnvironment: (environment: string) => void;
+  initial: ServiceSource;
+  onClose: () => void;
+}) {
   const org = useOrg();
   const { services } = useEnvironment(env);
   const templates = useQuery(queries.templates());
   const create = useCreateService();
   const connect = useConnectGit();
+  const deploy = useDeploy();
   const navigate = useNavigate();
+  const v = useValidation();
 
   const [source, setSource] = useState<ServiceSource>(initial);
   const [typed, setTyped] = useState<string | null>(null);
@@ -114,25 +163,48 @@ export function NewService({
   const timeout = whole(adv.healthTimeout);
   const memory = whole(adv.memory);
   const cpus = adv.cpus === "" ? 0 : Number(adv.cpus);
-  const problem =
+  // Wrong as typed, under their fields.
+  const nameError =
     nameProblem(
       "service",
       name,
       services.map((s) => s.service.name),
-    ) ??
-    (!database && portN === undefined
-      ? "Port is a whole number up to 65535; leave it empty for 8080."
-      : undefined) ??
+    ) ?? v.required(!name, "Enter a name, like web.");
+  const imageError = v.required(
+    source === "image" && !image.trim(),
+    "Enter the image to run, with its tag.",
+  );
+  const repoValid = /^[\w.-]+\/[\w.-]+$/.test(repo.trim());
+  const repoError = v.required(
+    source === "github" && !repoValid,
+    "Enter the repository as owner/repo.",
+  );
+  const portError =
+    !database && portN === undefined
+      ? "A whole number up to 65535; empty means 8080."
+      : undefined;
+  const problem =
     (adv.healthPath && !adv.healthPath.startsWith("/")
       ? "The health check path starts with /, like /healthz."
       : undefined) ??
     (timeout === undefined || memory === undefined || !(cpus >= 0)
       ? "Timeout, CPUs and memory are positive numbers; leave them empty for no limit."
       : undefined);
-  const missing =
-    !name ||
-    (source === "image" && !image.trim()) ||
-    (source === "github" && !/^[\w.-]+\/[\w.-]+$/.test(repo.trim())) ||
+  // What a submit still needs, named for the footer.
+  const missing = [
+    !name && "a name",
+    source === "image" && !image.trim() && "an image",
+    source === "github" && !repoValid && "a repository",
+  ].filter((m) => typeof m === "string");
+  const blocked =
+    missing.length > 0 ||
+    !!nameProblem(
+      "service",
+      name,
+      services.map((s) => s.service.name),
+    ) ||
+    !!portError ||
+    !!problem ||
     (database && !info);
 
   if (done) {
@@ -180,7 +252,8 @@ export function NewService({
     );
   }
 
-  async function submit() {
+  async function submit(deployIt: boolean) {
+    if (!v.check(!blocked)) return;
     const service = await create.mutateAsync({ env, name, ...settings });
     if (database) {
       const exported = info?.exports[0];
@@ -205,6 +278,10 @@ export function NewService({
         setDone({ kind: "unconnected", service, error });
       }
     } else {
+      // An image deploys straight away; the service page follows it.
+      if (deployIt && source === "image") {
+        await deploy.mutateAsync({ ...env, service: service.name });
+      }
       await navigate({
         to: "/$org/$project/$environment/$service",
         params: { org, ...env, service: service.name },
@@ -218,15 +295,34 @@ export function NewService({
 
   return (
     <form
+      ref={v.form}
       aria-label="New service"
       onSubmit={(e) => {
         e.preventDefault();
         // Failures show from the mutations' state.
-        submit().catch(() => {});
+        submit(true).catch(() => {});
       }}
     >
       <Fields>
-        <Field label="Name">
+        {choices.length > 1 && (
+          <Field label="Environment">
+            <select
+              value={env.environment}
+              onChange={(e) => {
+                onEnvironment(e.target.value);
+                create.reset();
+              }}
+              className="w-fit font-mono"
+            >
+              {choices.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        <Field label="Name" error={nameError}>
           <input
             ref={autofocus}
             value={name}
@@ -234,7 +330,8 @@ export function NewService({
             placeholder={database ? template : "web"}
             spellCheck={false}
             autoComplete="off"
-            className={input}
+            aria-invalid={!!nameError}
+            className={`${input} ${invalid(nameError)}`}
           />
         </Field>
         <Group label="Source">
@@ -254,11 +351,13 @@ export function NewService({
           <Field
             label="Image"
             note="Deploys pull it again, so a moving tag stays up to date."
+            error={imageError}
           >
             <Text
               value={image}
               onChange={setImage}
               placeholder="ghcr.io/acme/api:1.4"
+              error={imageError}
             />
           </Field>
         )}
@@ -274,8 +373,13 @@ export function NewService({
         )}
         {source === "github" && (
           <>
-            <Field label="Repository">
-              <Text value={repo} onChange={setRepo} placeholder="owner/repo" />
+            <Field label="Repository" error={repoError}>
+              <Text
+                value={repo}
+                onChange={setRepo}
+                placeholder="owner/repo"
+                error={repoError}
+              />
             </Field>
             <Field label="Branch" note="Every push to it deploys.">
               <Text value={branch} onChange={setBranch} placeholder="main" />
@@ -322,13 +426,18 @@ export function NewService({
           </Group>
         )}
         {!database && (
-          <Field label="Port">
+          <Field
+            label="Port"
+            note="Optional: the port the app listens on, 8080 if empty."
+            error={portError}
+          >
             <Text
               value={port}
               onChange={setPort}
               placeholder="8080"
               inputMode="numeric"
               width="w-24"
+              error={portError}
             />
           </Field>
         )}
@@ -415,11 +524,34 @@ export function NewService({
 
       {problem && <p className="mt-3 text-fail">{problem}</p>}
       <Footer
-        submit={database ? "Create database" : "Create service"}
-        pending={create.isPending || connect.isPending}
-        disabled={missing || !!problem}
-        error={templates.error ?? create.error}
-        cli={cli}
+        submit={
+          database
+            ? "Create database"
+            : source === "image"
+              ? "Create and deploy"
+              : "Create service"
+        }
+        pending={create.isPending || connect.isPending || deploy.isPending}
+        problem={v.problem(missing, blocked)}
+        error={templates.error ?? create.error ?? deploy.error}
+        cli={
+          source === "image"
+            ? [
+                ...cli,
+                `dock deploy --image ${image.trim() ? arg(image.trim()) : "<image>"} -s ${name || "<name>"} ${where}`,
+              ]
+            : cli
+        }
+        alt={
+          source === "image" && (
+            <Button
+              disabled={create.isPending || deploy.isPending}
+              onClick={() => submit(false).catch(() => {})}
+            >
+              Create only
+            </Button>
+          )
+        }
         onClose={onClose}
       />
     </form>
@@ -434,6 +566,7 @@ function Text({
   inputMode,
   width = "w-full",
   label,
+  error,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -442,6 +575,8 @@ function Text({
   width?: string;
   /** For fields that share a row and so a label. */
   label?: string;
+  /** Marks the field as wrong; its Field says why. */
+  error?: string;
 }) {
   return (
     <input
@@ -452,7 +587,8 @@ function Text({
       inputMode={inputMode}
       spellCheck={false}
       autoComplete="off"
-      className={`${input} ${width}`}
+      aria-invalid={!!error}
+      className={`${input} ${width} ${invalid(error)}`}
     />
   );
 }

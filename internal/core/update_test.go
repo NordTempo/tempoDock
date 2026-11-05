@@ -120,6 +120,15 @@ func TestUpdateStatus(t *testing.T) {
 	if _, err := p.c.UpdateStatus(p.ctx, testSystem, true); err != nil || src.checks != 2 {
 		t.Errorf("refresh: %d checks, %v", src.checks, err)
 	}
+	// A failed check says what went wrong and what to do in one sentence;
+	// the technical detail is apart.
+	missing := filepath.Join(t.TempDir(), "gone")
+	src.Source = update.DirSource{Path: missing}
+	st, err = p.c.UpdateStatus(p.ctx, testSystem, true)
+	if err != nil || !strings.HasPrefix(st.CheckError, "Couldn't check for releases: the release directory "+missing+" can't be read;") ||
+		strings.Count(st.CheckError, missing) != 1 || !strings.Contains(st.CheckDetail, "no such file") {
+		t.Errorf("failed check: %q, detail %q, %v", st.CheckError, st.CheckDetail, err)
+	}
 }
 
 // The control plane stages the release for itself and its nodes, asks the

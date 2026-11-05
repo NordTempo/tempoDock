@@ -4,6 +4,7 @@ import type { components } from "../../api/schema";
 import { useIsAdmin, useRevealedQuery } from "../../data/queries";
 import { since } from "../../ui/format";
 import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
+import { useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteOrgVariable,
@@ -280,12 +281,16 @@ function AddVariable({ onAdded }: { onAdded: (name: string) => void }) {
   const set = useSetOrgVariable();
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
+  const v = useValidation();
+  const nameError = v.required(!name, "Enter a name, like API_KEY.");
   return (
     <form
+      ref={v.form}
       aria-label="Add a variable"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(!!name)) return;
         set.mutate(
           { key: name, value },
           {
@@ -304,7 +309,8 @@ function AddVariable({ onAdded }: { onAdded: (name: string) => void }) {
         value={name}
         onChange={(e) => setName(e.target.value.toUpperCase())}
         spellCheck={false}
-        className="field w-48 py-[7px] font-mono"
+        aria-invalid={!!nameError}
+        className={`field w-48 py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
       />
       <input
         aria-label="Value"
@@ -317,10 +323,15 @@ function AddVariable({ onAdded }: { onAdded: (name: string) => void }) {
       <Act
         type="submit"
         cli={`dock org env set ${name || "NAME"}=…`}
-        disabled={!name || set.isPending}
+        disabled={set.isPending}
       >
         Add
       </Act>
+      {nameError && (
+        <span role="alert" className="text-xs text-fail">
+          {nameError}
+        </span>
+      )}
       <ErrorText error={set.error} />
     </form>
   );

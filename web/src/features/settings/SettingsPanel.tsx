@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
@@ -15,15 +16,20 @@ import {
   servicePath,
   useChanges,
   useEnvironment,
+  useIsAdmin,
+  useReleases,
   useService,
   useSession,
   useVolumes,
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
+import { ArchiveConfirm } from "../service/ArchiveConfirm";
+import { imageSetting } from "../service/releases";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
   editPlaceholder,
@@ -40,9 +46,16 @@ type KeyedChange = SettingChange & { key: SettingKey };
 
 /**
  * Service settings, each editable in place. Edits are staged like
- * variables and go live together through the apply box.
+ * variables and go live together through the apply box, which stays in
+ * view while anything is staged. `edit` opens one setting's editor.
  */
-export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function SettingsPanel({
+  serviceRef: ref,
+  edit,
+}: {
+  serviceRef: ServiceRef;
+  edit?: TextSettingKey;
+}) {
   const { service } = useService(ref);
   const { environment } = useEnvironment(ref);
   const volumes = useVolumes(ref);
@@ -61,13 +74,16 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       settingKey={key}
       value={service[key]}
       change={change(key)}
+      open={edit === key}
     />
   );
 
   return (
     <>
       <dl className="props max-w-[860px]">
-        <Item label="Image">{field("image")}</Item>
+        <Item label="Image">
+          <ImageValue serviceRef={ref} field={field("image")} />
+        </Item>
         <Item label="Port">
           {field("port")}
           <span className="font-mono text-mut">
@@ -160,16 +176,54 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-mut">from {environment.name}</span>
         </Item>
       </dl>
-      <p className="text-xs text-mut">
-        Dotted values are editable. Edits are staged until you apply them.
-      </p>
-
-      <ApplyBox env={envPath(ref)} reveal={false} service={ref.service} />
+      <ApplyBox
+        env={envPath(ref)}
+        reveal={false}
+        service={ref.service}
+        sticky
+      />
 
       <SourceSection serviceRef={ref} />
 
       <DatabaseSettings serviceRef={ref} service={service} />
+
+      <ArchiveService serviceRef={ref} />
     </>
+  );
+}
+
+/**
+ * The end of Build & run, set apart in red: archiving the service, behind
+ * the same confirm as the header's More menu. Admins only, like the API.
+ */
+function ArchiveService({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const [asking, setAsking] = useState(false);
+  if (!useIsAdmin()) return null;
+  return (
+    <section
+      aria-labelledby="archive"
+      className="flex max-w-[860px] flex-wrap items-center gap-x-4 gap-y-2 rounded-panel border border-fail-edge px-3.5 py-3"
+    >
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h2 id="archive" className="text-sm font-semibold">
+          Archive {ref.service}
+        </h2>
+        <span className="text-xs text-mut">
+          Stops it and frees its domains in {ref.environment}. Volumes,
+          variables and releases are kept.
+        </span>
+      </span>
+      <Act
+        danger
+        cli={`dock service archive ${ref.service} -e ${ref.environment}`}
+        onClick={() => setAsking(true)}
+      >
+        Archive {ref.service}
+      </Act>
+      {asking && (
+        <ArchiveConfirm serviceRef={ref} onCancel={() => setAsking(false)} />
+      )}
+    </section>
   );
 }
 
@@ -351,24 +405,111 @@ function Shown({ text }: { text: string }) {
 }
 
 /**
- * A setting value, dotted-underlined: click to edit. Staged values show
- * old → new.
+ * The image row: the image setting, and when it isn't what serves (a
+ * failed deploy of a new tag, a rollback), the serving image above it,
+ * so it is plain which one Apply keeps and which one Deploy runs.
+ */
+function ImageValue({
+  serviceRef: ref,
+  field,
+}: {
+  serviceRef: ServiceRef;
+  field: ReactNode;
+}) {
+  const org = useOrg();
+  const { service } = useService(ref);
+  const image = imageSetting(service, useReleases(ref));
+  const failed = image.failed && (
+    <Link
+      to="/$org/$project/$environment/$service/releases/$number"
+      params={{ org, ...ref, number: String(image.failed.number) }}
+      className="text-fail underline decoration-fail-edge underline-offset-2 hover:decoration-current"
+    >
+      failed as r{image.failed.number}
+    </Link>
+  );
+  if (!image.differs) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-2">
+        {field}
+        {failed}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-col gap-1">
+      <span className="font-mono break-all">
+        {image.now}{" "}
+        <span className="font-sans text-ok">
+          serving as r{image.serving?.number}
+        </span>
+      </span>
+      <span className="inline-flex flex-wrap items-center gap-x-2">
+        <span className="text-mut">next deploy</span>
+        {field}
+        {failed}
+      </span>
+      <span className="text-xs text-mut">
+        Deploy runs the next deploy image. Applying staged changes keeps the
+        serving one.
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A value that edits in place, drawn like the inputs of Source below it
+ * with a pencil, so it reads as editable at a glance.
+ */
+const editableBox =
+  "inline-flex min-h-[24px] items-center gap-1.5 rounded-ctl border px-1.5 text-left font-mono break-all hover:border-dash hover:bg-hover";
+
+/** The pencil inside an editable value. */
+function Pencil() {
+  return (
+    <svg
+      aria-hidden
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="flex-none text-faint"
+    >
+      <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />
+    </svg>
+  );
+}
+
+/**
+ * A setting value in a field with a pencil: click to edit, then Stage (or
+ * Enter) stages it and Cancel (or Esc) leaves it. Staged values show
+ * old → new until Apply in the staged-changes bar makes them live.
+ * `open` starts in the editor.
  */
 function Editable({
   serviceRef: ref,
   settingKey: key,
   value,
   change,
+  open,
 }: {
   serviceRef: ServiceRef;
   settingKey: TextSettingKey;
   value: string | number;
   change: KeyedChange | undefined;
+  open?: boolean;
 }) {
   const stage = useStageSettings();
   const discard = useDiscardChanges();
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(() =>
+    open ? editText(key, change ? change.new : value) : null,
+  );
   const [error, setError] = useState<Error | null>(null);
+  const label = settingLabel[key];
 
   const submit = (raw: string) => {
     const patch = parseSetting(key, raw);
@@ -376,26 +517,47 @@ function Editable({
     setError(null);
     stage.mutate({ ref, patch }, { onSuccess: () => setDraft(null) });
   };
+  const cancel = () => {
+    setError(null);
+    stage.reset();
+    setDraft(null);
+  };
 
   if (draft !== null) {
     return (
-      <span className="inline-flex items-baseline gap-2">
-        <input
-          // biome-ignore lint/a11y/noAutofocus: opened by clicking the value
-          autoFocus
-          value={draft}
-          aria-label={settingLabel[key]}
-          placeholder={editPlaceholder(key)}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submit(draft);
-            if (e.key === "Escape") setDraft(null);
-          }}
-          onBlur={() => setDraft(null)}
-          className="field w-56 py-0.5 font-mono text-xs"
-        />
+      <form
+        aria-label={`Edit ${label}`}
+        className="inline-flex max-w-full flex-col gap-1 align-top"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit(draft);
+        }}
+        onKeyDown={(e) => e.key === "Escape" && cancel()}
+      >
+        <span className="inline-flex max-w-full flex-wrap items-center gap-2">
+          <input
+            // biome-ignore lint/a11y/noAutofocus: opened by clicking the value
+            autoFocus
+            value={draft}
+            aria-label={label}
+            placeholder={editPlaceholder(key)}
+            onChange={(e) => setDraft(e.target.value)}
+            // As wide as the value, so a long command isn't cut while typed.
+            style={{ width: `${Math.max(draft.length, 18) + 3}ch` }}
+            className="field min-h-[24px] max-w-full py-0.5 font-mono text-xs"
+          />
+          <Button small primary type="submit" disabled={stage.isPending}>
+            Stage
+          </Button>
+          <Button small onClick={cancel}>
+            Cancel
+          </Button>
+        </span>
+        <span className="text-xs text-mut">
+          A staged change goes live when you press Apply in the bar.
+        </span>
         <ErrorText error={error ?? stage.error} />
-      </span>
+      </form>
     );
   }
 
@@ -403,41 +565,49 @@ function Editable({
     <span className="inline-flex items-baseline gap-2">
       <button
         type="button"
-        title={`Edit ${settingLabel[key]}`}
+        title={`Edit ${label}`}
+        aria-label={`Edit ${label}: ${formatSetting(key, change ? change.new : value).replace(" (default)", " default")}`}
         onClick={() => {
           setError(null);
           setDraft(editText(key, change ? change.new : value));
         }}
-        className={`-mx-1 cursor-text rounded-[4px] px-1 text-left font-mono break-all underline decoration-dash decoration-dotted underline-offset-4 hover:bg-hover hover:decoration-mut ${change ? "bg-stage-bg" : ""}`}
+        className={`${editableBox} cursor-text ${change ? "border-warn-edge bg-stage-bg" : "border-edge bg-panel"}`}
       >
-        {change ? (
-          <>
-            <span className="text-warn">~</span>{" "}
-            <span className="text-mut line-through">
-              {formatSetting(key, change.old)}
-            </span>{" "}
-            {formatSetting(key, change.new)}
-          </>
-        ) : (
-          <Shown text={formatSetting(key, value)} />
-        )}
+        {/* One inline box, so the spaces between its parts survive. */}
+        <span>
+          {change ? (
+            <>
+              <span className="text-warn">~</span>{" "}
+              <span className="text-mut line-through">
+                {formatSetting(key, change.old)}
+              </span>{" "}
+              {formatSetting(key, change.new)}
+            </>
+          ) : (
+            <Shown text={formatSetting(key, value)} />
+          )}
+        </span>
+        <Pencil />
       </button>
       {change && (
-        <button
-          type="button"
-          className="lnk"
-          disabled={discard.isPending}
-          onClick={() =>
-            discard.mutate({
-              env: envPath(ref),
-              selection: { settings: [{ service: ref.service, field: key }] },
-            })
-          }
-        >
-          Discard
-        </button>
+        <>
+          <span className="text-xs text-warn">staged</span>
+          <button
+            type="button"
+            className="lnk"
+            disabled={discard.isPending}
+            onClick={() =>
+              discard.mutate({
+                env: envPath(ref),
+                selection: { settings: [{ service: ref.service, field: key }] },
+              })
+            }
+          >
+            Discard
+          </button>
+        </>
       )}
-      <ErrorText error={error ?? stage.error ?? discard.error} />
+      <ErrorText error={error ?? discard.error} />
     </span>
   );
 }
@@ -504,9 +674,7 @@ function DatabaseSettings({
 
   return (
     <section aria-labelledby="database" className="flex flex-col">
-      <SectionHead id="database" aside="applies at once, no release">
-        Database
-      </SectionHead>
+      <SectionHead id="database">Database</SectionHead>
       <dl className="props max-w-[860px]">
         <Item label="Detection">
           <span className="inline-flex flex-wrap items-baseline gap-3">
@@ -551,28 +719,37 @@ function DatabaseSettings({
                 if (e.key === "Escape") setDraft(null);
               }}
               onBlur={() => setDraft(null)}
-              className="field w-56 py-0.5 font-mono text-xs"
+              className="field min-h-[24px] w-56 py-0.5 font-mono text-xs"
             />
-          ) : (
+          ) : canEdit ? (
             <button
               type="button"
               title="Edit the database URL variable"
-              disabled={!canEdit}
               onClick={() => setDraft(urlVariable)}
-              className="font-mono enabled:hover:underline"
+              className={`${editableBox} cursor-text border-edge bg-panel`}
             >
               {urlVariable || (
                 <span className="text-mut">
                   default: DATABASE_URL, then POSTGRES_*
                 </span>
               )}
+              <Pencil />
             </button>
+          ) : (
+            <span className="font-mono">
+              {urlVariable || (
+                <span className="font-sans text-mut">
+                  default: DATABASE_URL, then POSTGRES_*
+                </span>
+              )}
+            </span>
           )}
         </Item>
       </dl>
       <p className="flex flex-wrap gap-x-4 text-xs text-mut">
         <span>
-          The Data tab reads credentials from the active release's variables.
+          These apply at once, with no release. The Data tab reads credentials
+          from the active release's variables.
         </span>
         <span className="font-mono">{cli}</span>
         <ErrorText error={save.error} />

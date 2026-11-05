@@ -15,8 +15,10 @@ import {
   Footer,
   Group,
   input,
+  invalid,
   nameProblem,
   toName,
+  useValidation,
 } from "./form";
 import { useCreateEnvironment } from "./mutations";
 
@@ -68,11 +70,13 @@ export function NewEnvironment({
   const source = environments.find((e) => e.name === from);
   const cloning = start === "clone" && !!source;
   const cross = cloning && source.kind !== effective;
+  const v = useValidation();
   const problem = nameProblem(
     "environment",
     name,
     environments.map((e) => e.name),
   );
+  const nameError = problem ?? v.required(!name, "Enter a name, like staging.");
 
   if (clone.data) {
     return <Cloned project={project} result={clone.data} onClose={onClose} />;
@@ -87,9 +91,11 @@ export function NewEnvironment({
 
   return (
     <form
+      ref={v.form}
       aria-label="New environment"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(!!name && !problem)) return;
         if (cloning) {
           clone.mutate({
             env: { project, environment: from },
@@ -115,10 +121,7 @@ export function NewEnvironment({
       }}
     >
       <Fields>
-        <Field
-          label="Name"
-          note={problem && <span className="text-fail">{problem}</span>}
-        >
+        <Field label="Name" error={nameError}>
           <input
             ref={autofocus}
             value={name}
@@ -126,7 +129,8 @@ export function NewEnvironment({
             placeholder="staging"
             spellCheck={false}
             autoComplete="off"
-            className={input}
+            aria-invalid={!!nameError}
+            className={`${input} ${invalid(nameError)}`}
           />
         </Field>
         <Group label="Kind">
@@ -156,7 +160,7 @@ export function NewEnvironment({
                 aria-label="Environment to clone"
                 value={from}
                 onChange={(e) => setFrom(e.target.value)}
-                className="field py-[3px] font-mono"
+                className="font-mono"
               >
                 {environments.map((e) => (
                   <option key={e.id} value={e.name}>
@@ -193,7 +197,7 @@ export function NewEnvironment({
       <Footer
         submit={cloning ? `Clone ${from}` : "Create environment"}
         pending={pending}
-        disabled={!name || !!problem}
+        problem={v.problem([!name && "a name"], !!problem)}
         error={create.error ?? clone.error}
         cli={[cli]}
         onClose={onClose}

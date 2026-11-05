@@ -17,6 +17,7 @@ import {
   siteErrorsQuery,
 } from "./data";
 import {
+  type Change,
   charted,
   chartMarkers,
   count,
@@ -130,7 +131,7 @@ export function ErrorsView({
               key={label}
               type="button"
               aria-pressed={(label === "New") === onlyNew}
-              className={`rounded-ctl px-1.5 ${(label === "New") === onlyNew ? "bg-sel text-fg" : "text-mut"}`}
+              className={`min-h-[24px] rounded-ctl px-2 ${(label === "New") === onlyNew ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => setOnlyNew(label === "New")}
             >
               {label}
@@ -201,9 +202,9 @@ export function ErrorsView({
 function Summary({ data }: { data: SiteErrors }) {
   const s = data.summary;
   const p = data.previous;
-  const worse = (c?: { text: string; up: boolean }) => c && { ...c, up: !c.up };
+  const worse = (c?: Change) => c && { ...c, up: !c.up };
   return (
-    <dl className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-6 gap-y-3 tabular-nums">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-6 gap-y-3 tabular-nums">
       <Kpi
         label="Errors"
         value={count(s.errors)}
@@ -224,17 +225,17 @@ function Summary({ data }: { data: SiteErrors }) {
         change={worse(delta(s.visitors, p.visitors))}
       />
       <div className="border-b-2 border-transparent pb-1">
-        <dt className="text-xs text-mut">Groups</dt>
-        <dd className="text-lg font-semibold">
+        <span className="block text-xs text-mut">Groups</span>
+        <span className="block text-lg font-semibold">
           {count(s.groups)}
           {s.new_groups > 0 && (
             <small className="ml-1.5 text-xs font-normal text-warn-text">
               {s.new_groups} new
             </small>
           )}
-        </dd>
+        </span>
       </div>
-    </dl>
+    </div>
   );
 }
 
@@ -254,7 +255,10 @@ function Row({
 }) {
   const isNew = Date.parse(g.first_seen) >= data.from;
   return (
-    <tr className="cursor-pointer" onClick={onToggle}>
+    <tr
+      className={`cursor-pointer hover:bg-hover ${open ? "bg-hover" : ""}`}
+      onClick={onToggle}
+    >
       <td className="max-w-0">
         <button
           type="button"
@@ -274,8 +278,13 @@ function Row({
               </span>
             )}
           </span>
-          <span className="block truncate pl-4 font-mono text-xs text-faint">
-            {g.frame || "no stack"}
+          <span className="flex min-h-[24px] items-center gap-3 pl-4 text-xs">
+            <span className="min-w-0 truncate font-mono text-faint">
+              {g.frame || "no stack"}
+            </span>
+            <span className="shrink-0 text-info">
+              {open ? "Hide details" : "Details and stack"}
+            </span>
           </span>
         </button>
       </td>

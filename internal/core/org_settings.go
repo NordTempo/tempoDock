@@ -182,7 +182,8 @@ func (c *Core) keepAnAdmin(ctx context.Context, orgID, userID int64, next apityp
 
 // CreateInvite invites an email address into the org with a role. The
 // link's code is returned once; it works once, for InviteTTL, and only
-// for a user signed in with that email.
+// for that email: a user signed in with it, or someone creating the
+// account for it from the link (SignUpWithInvite, ADR 0060).
 func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInviteRequest) (apitypes.CreatedInvite, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "inviting people"); err != nil {
 		return apitypes.CreatedInvite{}, err
@@ -254,25 +255,48 @@ func (c *Core) RevokeInvite(ctx context.Context, a Actor, id int64) error {
 	return nil
 }
 
-// Invite shows an invite to the user who opened its link.
-func (c *Core) Invite(ctx context.Context, a Actor, code string) (apitypes.InviteInfo, error) {
-	row, err := c.invite(ctx, a, code)
+// Invite shows an open invite to whoever holds its link, signed in or
+// not (ADR 0060): the code is a single-use secret bound to one email, so
+// holding it is what lets one see the org, the role, the email and who
+// invited. Lookups are rate limited per client IP like logins; a code
+// that is unknown, used, revoked or expired is not found.
+func (c *Core) Invite(ctx context.Context, code, clientIP string) (apitypes.InviteInfo, error) {
+	if !c.loginLimit.AllowIP(clientIP, now()) {
+		return apitypes.InviteInfo{}, errf(apitypes.CodeRateLimited, "too many attempts; wait a minute and try again")
+	}
+	row, err := c.openInvite(ctx, code)
 	if err != nil {
 		return apitypes.InviteInfo{}, err
 	}
 	inv := row.OrgInvite
-	status := "open"
-	switch {
-	case inv.AcceptedAt != nil:
-		status = "accepted"
-	case inv.RevokedAt != nil:
-		status = "revoked"
-	case now().After(inv.ExpiresAt):
-		status = "expired"
-	}
 	return apitypes.InviteInfo{
-		Org: row.Org.Slug, OrgName: row.Org.Name, Email: inv.Email, Role: apitypes.Scope(inv.Role), ExpiresAt: inv.ExpiresAt, Status: status,
+		Org: row.Org.Slug, OrgName: row.Org.Name, Email: inv.Email, Role: apitypes.Scope(inv.Role),
+		InvitedBy: inv.CreatedBy, ExpiresAt: inv.ExpiresAt,
 	}, nil
+}
+
+// openInvite loads an invite by its code if it can still be accepted.
+// Unknown, used, revoked and expired codes are all not found, each with
+// what to do.
+func (c *Core) openInvite(ctx context.Context, code string) (store.GetInviteByHashRow, error) {
+	errUnknown := notFound("this invite link doesn't work; check that the whole link was copied, or ask the admin who invited you for a new one")
+	if !strings.HasPrefix(code, invitePrefix) {
+		return store.GetInviteByHashRow{}, errUnknown
+	}
+	row, err := c.store.GetInviteByHash(ctx, hashSecret(code))
+	if store.IsNotFound(err) {
+		return row, errUnknown
+	}
+	if err != nil {
+		return row, err
+	}
+	switch inv := row.OrgInvite; {
+	case inv.AcceptedAt != nil || inv.RevokedAt != nil:
+		return row, notFound("this invite was used or revoked; ask an admin of %s for a new one", row.Org.Name)
+	case now().After(inv.ExpiresAt):
+		return row, notFound("this invite expired; ask an admin of %s for a new one", row.Org.Name)
+	}
+	return row, nil
 }
 
 // AcceptInvite makes the calling user a member with the invite's role,
@@ -319,7 +343,7 @@ func joinTx(ctx context.Context, q *store.Queries, org store.Org, inv *store.Org
 	return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: org.ID, UserID: userID, Role: role})
 }
 
-// invite loads an invite by its code, for a signed-in user.
+// invite loads an invite by its code, for a signed-in user accepting it.
 func (c *Core) invite(ctx context.Context, a Actor, code string) (store.GetInviteByHashRow, error) {
 	if a.UserID == 0 || a.Email == "" {
 		return store.GetInviteByHashRow{}, errf(apitypes.CodeForbidden, "invites are accepted by people; sign in as the person invited")

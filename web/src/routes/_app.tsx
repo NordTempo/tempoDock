@@ -24,8 +24,10 @@ export const Route = createFileRoute("/_app")({
       if (location.pathname !== "/account") throw redirect({ to: "/account" });
     }
   },
-  // The sidebar tree and palette show every project's services, and the
-  // org switcher the caller's organizations.
+  // The sidebar lists the projects and the org switcher the caller's
+  // organizations. Every project's services (the sidebar tree, the
+  // palette) load in the background: a slow or failing project fills in
+  // or fails on its own page, without holding up the shell.
   loader: async ({ context: { queryClient } }) => {
     const session = await queryClient.ensureQueryData(queries.session());
     if (session?.kind === "user" && !session.org) return;
@@ -34,12 +36,9 @@ export const Route = createFileRoute("/_app")({
       queryClient.ensureQueryData(queries.servers()),
       queryClient.ensureQueryData(queries.orgs()),
     ]);
-    // One project failing to load fails its own page, not the shell.
-    await Promise.allSettled(
-      projects.map((p) =>
-        queryClient.ensureQueryData(queries.overview(p.name)),
-      ),
-    );
+    for (const p of projects) {
+      void queryClient.prefetchQuery(queries.overview(p.name));
+    }
   },
   component: Shell,
   // A slow first load shows the frame, not a blank page.

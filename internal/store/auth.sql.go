@@ -641,6 +641,33 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 	return err
 }
 
+const setUserName = `-- name: SetUserName :one
+UPDATE users SET name = ? WHERE id = +? RETURNING id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at
+`
+
+type SetUserNameParams struct {
+	Name string
+	ID   int64
+}
+
+// Changes a user's display name (PATCH /me).
+func (q *Queries) SetUserName(ctx context.Context, arg SetUserNameParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, setUserName, arg.Name, arg.ID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.Operator,
+		&i.FactorFailures,
+		&i.FactorFailedAt,
+	)
+	return i, err
+}
+
 const setUserPassword = `-- name: SetUserPassword :exec
 UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?
 `

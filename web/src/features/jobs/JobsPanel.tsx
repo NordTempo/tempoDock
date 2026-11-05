@@ -110,7 +110,7 @@ export function JobsPanel({
   );
 }
 
-/** "15:00" today, "Nov 5 03:00" on another day, in the viewer's time. */
+/** "15:00" today, "Nov 5 03:00" on another day, in the viewer's time (last runs). */
 const when = (iso: string) =>
   new Date(iso).toDateString() === new Date().toDateString()
     ? clock(iso)
@@ -202,16 +202,29 @@ function JobsTable({
                       {j.schedule} · {j.timezone}
                     </span>
                   </td>
-                  <td className="font-mono" title={next}>
-                    {j.enabled ? (next ? when(next) : "") : "off"}
+                  <td
+                    className="font-mono"
+                    title={
+                      next && `${when(next)} in your time (${localZone()})`
+                    }
+                  >
+                    {j.enabled
+                      ? next
+                        ? `${zoned(new Date(next), j.timezone)} ${j.timezone}`
+                        : ""
+                      : "off"}
                   </td>
                   <td>
                     {last && (
                       <>
                         <StateText state={runStates[last.status]} />{" "}
-                        <span className="font-mono text-faint">
+                        {/* How long ago, so no timezone to read; the time in its title. */}
+                        <span
+                          className="font-mono text-faint"
+                          title={`${when(last.started_at)} in your time`}
+                        >
                           {last.exit_code ? `exit ${last.exit_code} · ` : ""}
-                          {when(last.started_at)}
+                          {ago(last.started_at)}
                         </span>
                       </>
                     )}
@@ -286,9 +299,9 @@ function JobDetail({
             ? "from dock.toml"
             : `set by ${job.created_by} · ${day(job.updated_at)}`}
         </span>
-        {job.source === "api" && canDeploy && !confirming && (
+        {job.source === "api" && canDeploy && (
           <span className="ml-auto">
-            <Act small danger cli={cli} onClick={() => setConfirming(true)}>
+            <Act small cli={cli} onClick={() => setConfirming(true)}>
               Remove
             </Act>
           </span>
@@ -342,17 +355,31 @@ function duration(seconds: number) {
   return `${h ? `${h}h` : ""}${m ? `${m}m` : ""}${s || seconds === 0 ? `${s}s` : ""}`;
 }
 
-/** A preview time in the job's timezone: "Thu Nov 5 03:00". */
-function zoned(at: Date, tz: string) {
-  return at.toLocaleString("en", {
-    timeZone: tz,
-    weekday: "short",
+/**
+ * A time in a job's timezone, without the zone: "Nov 6 03:00", or with
+ * `weekday` "Fri Nov 6 03:00". The jobs table and the editor's preview
+ * both use it, with the zone named next to it.
+ */
+function zoned(at: Date, tz: string, weekday = false) {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: knownZone(tz) ? tz : "UTC",
+    ...(weekday && { weekday: "short" }),
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  });
+  }).formatToParts(at);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+  return [
+    weekday && part("weekday"),
+    part("month"),
+    part("day"),
+    `${part("hour")}:${part("minute")}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 const DEFAULT_TIMEOUT = 3600;
@@ -510,7 +537,7 @@ function Editor({
             <>
               {preview.words && <span>{preview.words}</span>}
               <span className="font-mono text-faint">
-                {preview.times.map((t) => zoned(t, tz)).join(" · ")}
+                {preview.times.map((t) => zoned(t, tz, true)).join(" · ")} {tz}
               </span>
             </>
           ))}
@@ -583,6 +610,17 @@ function Editor({
               type="submit"
               cli={cli}
               disabled={!valid || !changed || set.isPending}
+              reason={
+                !name || nameError
+                  ? "name the job first"
+                  : !trimmed
+                    ? "type a command first"
+                    : !preview || "error" in preview
+                      ? "fix the schedule first"
+                      : !changed
+                        ? "nothing changed yet"
+                        : undefined
+              }
             >
               {job ? "Save" : "Add job"}
             </Act>

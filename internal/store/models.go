@@ -132,6 +132,12 @@ type Backup struct {
 	FinishedAt *time.Time
 }
 
+type BackupLog struct {
+	BackupID  int64
+	ServiceID int64
+	Output    string
+}
+
 type BackupSchedule struct {
 	ServiceID int64
 	Enabled   bool

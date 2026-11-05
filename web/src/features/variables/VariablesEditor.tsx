@@ -65,13 +65,18 @@ export function VariablesEditor({
   );
   const [pasting, setPasting] = useState(false);
   const newLine = useRef<HTMLInputElement>(null);
+  // The add line is the list's last: bring it into view, then type.
+  const focusNewLine = () => {
+    newLine.current?.scrollIntoView({ block: "nearest" });
+    newLine.current?.focus();
+  };
   const reveal = revealAll || revealedIds.size > 0;
   const revealed = useRevealedVariables(env, null, reveal);
   const revealedChanges = useRevealedChanges(env, reveal);
 
   useShortcuts([
     { key: "p", label: "paste .env", run: () => setPasting(true) },
-    { key: "n", label: "add variable", run: () => newLine.current?.focus() },
+    { key: "n", label: "add variable", run: () => focusNewLine() },
   ]);
 
   const shared = all.filter((v) => v.scope === "environment");
@@ -103,7 +108,7 @@ export function VariablesEditor({
       <Button onClick={() => setPasting(!pasting)}>
         Paste .env <kbd>P</kbd>
       </Button>
-      <Button onClick={() => newLine.current?.focus()}>
+      <Button onClick={focusNewLine}>
         Add variable <kbd>N</kbd>
       </Button>
     </>
@@ -157,11 +162,7 @@ export function VariablesEditor({
       </nav>
 
       <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-4 pt-5 pb-10 sm:px-6">
-        <SectionHead
-          id="vars"
-          aside={revealAll ? "values shown" : "values hidden"}
-          right={actions}
-        >
+        <SectionHead id="vars" right={actions}>
           {service
             ? `${service} sees at runtime`
             : `Shared with every service in ${env.environment}`}
@@ -451,7 +452,7 @@ function NewLine({
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-w-0 bg-transparent outline-none"
+        className="col-span-2 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-info focus:bg-panel"
       />
       <span className="font-sans text-2xs text-faint">
         <ErrorText error={stage.error} /> ↵ add

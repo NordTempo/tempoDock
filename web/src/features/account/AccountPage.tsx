@@ -5,15 +5,18 @@ import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useOrgs, useSession } from "../../data/queries";
 import { useOrg } from "../../shell/location";
-import { ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
+import { Act, ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
+import { useValidation } from "../create/form";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
 import { TokenTable } from "../tokens/TokenTable";
+import { useUpdateName } from "./data";
 import { TwoFactorSection } from "./TwoFactorSection";
 
-// The signed-in person's own account (`dock whoami`, `dock token list
-// --mine`, `dock me password`, `dock me two-factor`): who they are, their role,
-// their tokens, two-factor sign-in and changing their password.
+// The signed-in person's own account (`dock whoami`, `dock me name`, `dock
+// token list --mine`, `dock me password`, `dock me two-factor`): who they
+// are, their name, role and tokens, two-factor sign-in and changing their
+// password.
 
 /** The API's minimum for a new password. */
 const MIN_PASSWORD = 12;
@@ -40,10 +43,16 @@ export function AccountPage() {
           <span className="font-mono text-2xs text-mut">dock whoami</span>
         }
       />
-      <Page width="max-w-[760px]">
+      <Page>
         <dl className="props">
           <dt>Name</dt>
-          <dd>{me.name}</dd>
+          <dd>
+            {me.kind === "user" ? (
+              <NameField name={me.display_name ?? ""} />
+            ) : (
+              me.name
+            )}
+          </dd>
           {me.email && (
             <>
               <dt>Email</dt>
@@ -127,6 +136,52 @@ export function AccountPage() {
 }
 
 /**
+ * The caller's display name as a field: Save sends it once it differs,
+ * and says Saved until it is edited again.
+ */
+function NameField({ name }: { name: string }) {
+  const update = useUpdateName();
+  const [value, setValue] = useState(name);
+  const next = value.trim();
+  const changed = next !== name;
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed && next) update.mutate(next);
+      }}
+    >
+      <input
+        aria-label="Name"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          update.reset();
+        }}
+        maxLength={64}
+        autoComplete="name"
+        className="field w-[260px] py-[5px]"
+      />
+      <Act
+        small
+        type="submit"
+        cli={`dock me name "${next || "<name>"}"`}
+        disabled={!changed || !next || update.isPending}
+      >
+        Save
+      </Act>
+      {update.isSuccess && !changed && (
+        <span className="text-ok">
+          <span aria-hidden>✓</span> Saved
+        </span>
+      )}
+      <ErrorText error={update.error} />
+    </form>
+  );
+}
+
+/**
  * The caller's `dock login` tokens and those they created, which they may
  * revoke with any role. Admins create tokens in the organization's settings.
  */
@@ -158,13 +213,17 @@ function ChangePassword() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
+  const v = useValidation();
   const short = next.length > 0 && next.length < MIN_PASSWORD;
   const mismatch = again.length > 0 && again !== next;
-  const ready =
-    !!current &&
-    next.length >= MIN_PASSWORD &&
-    again === next &&
-    !change.isPending;
+  const currentError = v.required(!current, "Enter your current password.");
+  const nextError =
+    (short ? `Use at least ${MIN_PASSWORD} characters.` : undefined) ??
+    v.required(!next, "Enter a new password.");
+  const againError =
+    (mismatch ? "Doesn't match the new password." : undefined) ??
+    v.required(!again && !!next, "Type the new password again.");
+  const ready = !!current && next.length >= MIN_PASSWORD && again === next;
   // Typing again clears the last answer.
   const edit = (set: (value: string) => void) => (value: string) => {
     set(value);
@@ -177,10 +236,11 @@ function ChangePassword() {
         Change password
       </SectionHead>
       <form
+        ref={v.form}
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!ready) return;
+          if (change.isPending || !v.check(ready)) return;
           change.mutate(
             { current_password: current, new_password: next },
             {
@@ -197,28 +257,37 @@ function ChangePassword() {
           label="Current password"
           autoComplete="current-password"
           value={current}
+          error={currentError}
           onChange={edit(setCurrent)}
         />
         <Password
           label="New password"
-          note={
-            <span className={short ? "text-warn" : undefined}>
-              at least {MIN_PASSWORD} characters
-            </span>
-          }
+          note={`at least ${MIN_PASSWORD} characters`}
           value={next}
+          error={nextError}
           onChange={edit(setNext)}
         />
         <Password
           label="New password again"
-          note={mismatch && <span className="text-warn">doesn't match</span>}
           value={again}
+          error={againError}
           onChange={edit(setAgain)}
         />
         <div className="flex flex-wrap items-center gap-3">
-          <button type="submit" className="btn pri" disabled={!ready}>
+          <button type="submit" className="btn pri" disabled={change.isPending}>
             Change password
           </button>
+          {!change.isSuccess && (
+            <span className="text-xs text-fail">
+              {v.problem(
+                [
+                  !current && "your current password",
+                  !next && "a new password",
+                ],
+                short || mismatch || (!!next && !again),
+              )}
+            </span>
+          )}
           {change.isSuccess && (
             <span>
               <span className="text-ok">✓</span> Changed. Your other sessions
@@ -234,17 +303,22 @@ function ChangePassword() {
   );
 }
 
-/** A password input with its label and a note after the label. */
+/**
+ * A password input with its label, a note after the label, and what is
+ * wrong with it under it (useValidation).
+ */
 function Password({
   label,
   note,
   value,
+  error,
   onChange,
   autoComplete = "new-password",
 }: {
   label: string;
   note?: ReactNode;
   value: string;
+  error?: string;
   onChange: (value: string) => void;
   autoComplete?: string;
 }) {
@@ -257,9 +331,15 @@ function Password({
         type="password"
         autoComplete={autoComplete}
         value={value}
+        aria-invalid={!!error}
         onChange={(e) => onChange(e.target.value)}
-        className="field py-[7px]"
+        className={`field py-[7px] ${error ? "border-fail" : ""}`}
       />
+      {error && (
+        <span role="alert" className="text-xs text-fail">
+          {error}
+        </span>
+      )}
     </label>
   );
 }

@@ -168,8 +168,10 @@ func TestGitHubSource(t *testing.T) {
 
 	// No token: a 404 says where one goes.
 	g.Repo = "o/private"
-	if _, err := g.Releases(context.Background()); err == nil || !strings.Contains(err.Error(), token) {
-		t.Fatalf("err = %v, want a hint naming %s", err, token)
+	_, err := g.Releases(context.Background())
+	se, ok := errors.AsType[*SourceError](err)
+	if !ok || !strings.Contains(se.Plain, token) || strings.Contains(se.Plain, "http") || !strings.Contains(se.Detail, "404") {
+		t.Fatalf("err = %#v, want a plain hint naming %s and the 404 apart", err, token)
 	}
 	g.Repo = "o/r"
 	if err := os.WriteFile(token, []byte("secret\n"), 0o600); err != nil {

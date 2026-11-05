@@ -432,10 +432,16 @@ function RunLine({
 function RunError({ run }: { run: QueryRun }) {
   const e = run.error;
   return (
-    <div className="border-t border-(--g-line) px-5 py-2.5 font-mono text-xs">
+    <div className="border-t border-(--g-line) px-5 py-2.5 text-xs">
       <p className="text-(--g-fail)">
-        {e?.message}
-        {e?.sqlstate && <span className="text-(--g-mut)"> {e.sqlstate}</span>}
+        <span className="font-semibold">The query failed: </span>
+        {sentence(e?.message ?? "")}
+        {e?.sqlstate && (
+          <span className="font-mono text-(--g-mut)">
+            {" "}
+            SQLSTATE {e.sqlstate}
+          </span>
+        )}
         {e?.position ? (
           <span className="text-(--g-mut)">
             {" "}
@@ -453,4 +459,12 @@ function RunError({ run }: { run: QueryRun }) {
       {e?.hint && <p className="text-(--g-mut)">Hint: {e.hint}</p>}
     </div>
   );
+}
+
+/** A driver message as a sentence: a capital first, a full stop last. */
+function sentence(text: string) {
+  const t = text.trim();
+  if (!t) return t;
+  const s = t[0]?.toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
 }

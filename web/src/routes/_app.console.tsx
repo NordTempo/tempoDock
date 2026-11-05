@@ -1,5 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { queries } from "../data/queries";
+import { RoutePending } from "../shell/Shell";
 import { Page, PageBar } from "../ui/kit";
 
 // The platform console: everything that runs Dock itself, for operators
@@ -16,6 +17,8 @@ export const Route = createFileRoute("/_app/console")({
   // Router looks for the nearest route with a notFoundComponent; without
   // one here, a console 404 would replace the whole shell with the root's.
   notFoundComponent: ConsoleNotFound,
+  // A slow console page loads inside the shell.
+  pendingComponent: RoutePending,
 });
 
 /** A console address with no page, inside the console's shell. */

@@ -123,14 +123,13 @@ function Problems({
       {st.check_error && (
         <p
           role="alert"
-          title={st.check_error}
+          title={st.check_detail}
           className="flex flex-wrap items-baseline gap-x-3"
         >
+          {/* The daemon's sentence says what went wrong and what to do;
+              the technical detail is in the title (and its log). */}
           <span className="text-fail">
-            <Glyph char="✕" /> Could not check for releases:{" "}
-            {/* The daemon says "<source> answered 404: <why>"; the page
-                already names the source, so keep the why (all in title). */}
-            {st.check_error.replace(/^\S+ answered \d+: /, "")}
+            <Glyph char="✕" /> {st.check_error}
           </span>
           <button type="button" className="lnk" onClick={onCheck}>
             Try again

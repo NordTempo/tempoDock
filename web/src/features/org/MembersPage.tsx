@@ -1,8 +1,8 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { components } from "../../api/schema";
-import { useIsAdmin, useSession } from "../../data/queries";
+import { useIsAdmin, useIsOperator, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
@@ -18,12 +18,15 @@ import {
   PageBar,
   Panel,
 } from "../../ui/kit";
+import { addressQuery } from "../address/data";
+import { Saved, useValidation } from "../create/form";
 import {
   orgQueries,
   roleNote,
   useCreateInvite,
   useOrgName,
   useRemoveMember,
+  useRenewInvite,
   useRevokeInvite,
   useSetMemberRole,
 } from "./data";
@@ -55,8 +58,52 @@ export function MembersPage() {
   return <Members org={org} />;
 }
 
-/** A created invite's link, shown once. */
-type InviteLinkInfo = { email: string; url: string };
+/** A created invite: whom for, and the code its link carries. */
+type InviteLinkInfo = { email: string; code: string };
+
+/** Hostnames only this machine (or its private network) can open. */
+const privateHost =
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[?::1\]?$)/;
+
+/**
+ * Where invite links point: Dock's public address when one is set, else
+ * the address this page was opened at. `local` when that is an address
+ * others likely can't open (no public address, or a private one).
+ * Operators read the public address (ADR 0029, only they may); for
+ * everyone else the page's own address decides. Loaded once inviting.
+ */
+function useInviteBase(enabled: boolean) {
+  const operator = useIsOperator();
+  const address = useQuery({
+    ...addressQuery(),
+    enabled: enabled && operator,
+  }).data;
+  const base = address?.url ?? window.location.origin;
+  const local = operator
+    ? !!address && !address.url
+    : privateHost.test(window.location.hostname);
+  return { base, local, operator };
+}
+
+/**
+ * The warning beside an invite when its link won't open for others, with
+ * the way to fix it: the console's Address page, or whom to ask.
+ */
+function LocalLinkNote({ operator }: { operator: boolean }) {
+  return (
+    <p className="text-warn-text">
+      <span className="text-warn">▲</span> This link only opens on this machine
+      or its network: Dock has no public address.{" "}
+      {operator ? (
+        <Link to="/console/address" className="text-warn-text underline">
+          Set a public address
+        </Link>
+      ) : (
+        "Ask an operator to set a public address."
+      )}
+    </p>
+  );
+}
 
 function Members({ org }: { org: string }) {
   const members = useSuspenseQuery(orgQueries.members()).data;
@@ -67,6 +114,7 @@ function Members({ org }: { org: string }) {
   const slug = useOrg();
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<InviteLinkInfo>();
+  const invite = useInviteBase(inviting || !!link);
   return (
     <>
       <PageBar
@@ -82,7 +130,7 @@ function Members({ org }: { org: string }) {
                 <Link
                   to="/$org/settings/general"
                   params={{ org: slug }}
-                  className="text-warn hover:underline"
+                  className="text-warn underline decoration-warn/50 underline-offset-[3px] hover:decoration-warn"
                   title={
                     required
                       ? "They can't act here until they add one"
@@ -106,6 +154,9 @@ function Members({ org }: { org: string }) {
       <Page gap="gap-5">
         <div className="flex flex-wrap items-start gap-8">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+            {inviting && invite.local && (
+              <LocalLinkNote operator={invite.operator} />
+            )}
             {inviting && (
               <InviteForm
                 onCreated={(created) => {
@@ -116,7 +167,14 @@ function Members({ org }: { org: string }) {
               />
             )}
             {link && (
-              <InviteLink link={link} onDone={() => setLink(undefined)} />
+              <InviteLink
+                link={link}
+                url={`${invite.base}/invite/${link.code}`}
+                note={
+                  invite.local && <LocalLinkNote operator={invite.operator} />
+                }
+                onDone={() => setLink(undefined)}
+              />
             )}
             <Panel>
               <table>
@@ -142,7 +200,11 @@ function Members({ org }: { org: string }) {
                     />
                   ))}
                   {invites.map((i) => (
-                    <InviteRow key={`invite-${i.id}`} invite={i} />
+                    <InviteRow
+                      key={`invite-${i.id}`}
+                      invite={i}
+                      onLink={setLink}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -187,9 +249,14 @@ function Roles() {
 /** The link of an invite just created, with copy; it isn't shown again. */
 function InviteLink({
   link,
+  url,
+  note,
   onDone,
 }: {
   link: InviteLinkInfo;
+  url: string;
+  /** Why the link may not open for them, when it may not. */
+  note: ReactNode;
   onDone: () => void;
 }) {
   return (
@@ -201,15 +268,14 @@ function InviteLink({
         <span className="text-ok">✓</span> Invite for{" "}
         <span className="font-mono font-medium">{link.email}</span>
       </h2>
+      {note}
       <p className="text-mut">
         Send them this link. It works once, for 7 days, and only signed in as{" "}
-        {link.email}. It isn't shown again.
+        {link.email}. It isn't shown again; New link on their row makes another.
       </p>
       <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
-        <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-          {link.url}
-        </code>
-        <CopyButton text={link.url} primary />
+        <code className="min-w-0 flex-1 font-mono break-all">{url}</code>
+        <CopyButton text={url} primary />
       </div>
       <div>
         <Button small onClick={onDone}>
@@ -231,19 +297,30 @@ function InviteForm({
   const create = useCreateInvite();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Scope>("deploy");
+  const v = useValidation();
+  const typed = email.trim();
+  const emailError =
+    v.required(!typed, "Enter their email address.") ??
+    v.required(
+      !!typed && !/^[^\s@]+@[^\s@]+$/.test(typed),
+      "Enter an email address, like name@company.com.",
+    );
   return (
     <form
+      ref={v.form}
+      noValidate
       aria-label="Invite someone"
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!v.check(/^[^\s@]+@[^\s@]+$/.test(typed))) return;
         create.mutate(
           { email: email.trim(), role },
           {
             onSuccess: (c) =>
               onCreated({
                 email: c.invite.email,
-                url: `${window.location.origin}/invite/${c.code}`,
+                code: c.code,
               }),
           },
         );
@@ -257,18 +334,29 @@ function InviteForm({
         autoFocus
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="field min-w-0 flex-[1_1_260px] py-[7px]"
+        aria-invalid={!!emailError}
+        aria-describedby={emailError ? "invite-email-error" : undefined}
+        className={`field min-w-0 flex-[1_1_260px] py-[7px] ${emailError ? "border-fail" : ""}`}
       />
       <RoleSelect value={role} onChange={setRole} label="Role" />
       <Act
         primary
         type="submit"
         cli={`dock org invite ${email.trim() || "<email>"} --role ${role}`}
-        disabled={create.isPending || !email.includes("@")}
+        disabled={create.isPending}
       >
         Invite
       </Act>
       <Button onClick={onCancel}>Cancel</Button>
+      {emailError && (
+        <span
+          id="invite-email-error"
+          role="alert"
+          className="basis-full text-xs text-fail"
+        >
+          {emailError}
+        </span>
+      )}
       <ErrorText error={create.error} />
     </form>
   );
@@ -352,10 +440,10 @@ function MemberRow({
           <Avatar name={name || email} />
           <span>
             {email}
-            {name && name !== email && (
-              <span className="text-faint"> · {name}</span>
-            )}
             {you && <span className="text-faint"> (you)</span>}
+            {name && name !== email && (
+              <span className="block text-2xs text-faint">{name}</span>
+            )}
           </span>
         </span>
       </td>
@@ -376,6 +464,11 @@ function MemberRow({
                 onChange={(r) => setRole.mutate({ id, role: r })}
               />
             </CliHint>
+            {setRole.isSuccess && (
+              <div>
+                <Saved ok />
+              </div>
+            )}
             <ErrorText error={setRole.error} />
           </>
         )}
@@ -394,7 +487,9 @@ function MemberRow({
           </span>
         )}
       </td>
-      <td className={`py-2 ${access ? "text-mut" : "text-faint"}`}>
+      <td
+        className={`min-w-[120px] py-2 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
+      >
         {access || "none"}
       </td>
       <td className="py-2 text-faint">{day(member.created_at)}</td>
@@ -429,17 +524,31 @@ function MemberRow({
   );
 }
 
-function InviteRow({ invite }: { invite: Invite }) {
+/**
+ * An open invite. New link revokes it and invites them again, for a link
+ * that was lost (it is shown only once); `onLink` shows the new one.
+ */
+function InviteRow({
+  invite,
+  onLink,
+}: {
+  invite: Invite;
+  onLink: (link: InviteLinkInfo) => void;
+}) {
   const { id, email, role, expires_at } = invite;
   const revoke = useRevokeInvite();
+  const renew = useRenewInvite();
+  const [renewing, setRenewing] = useState(false);
   return (
     <tr className="*:align-middle">
       <td className="py-2">
         <span className="flex items-center gap-2.5">
           <Avatar />
-          <span className="text-mut">{email}</span>
-          <span className="text-2xs text-warn">
-            {invite.expired ? "invite expired" : "invited"}
+          <span className="text-mut">
+            {email}
+            <span className="block text-2xs text-warn">
+              {invite.expired ? "invite expired" : "invited"}
+            </span>
           </span>
         </span>
       </td>
@@ -450,15 +559,46 @@ function InviteRow({ invite }: { invite: Invite }) {
         {invite.expired ? "expired" : `until ${day(expires_at)}`}
       </td>
       <td className="w-full py-1.5 text-right">
-        <Act
-          small
-          cli={`dock org invites revoke ${id}`}
-          disabled={revoke.isPending}
-          onClick={() => revoke.mutate(id)}
-        >
-          Revoke
-        </Act>
+        <span className="inline-flex gap-1.5">
+          <Button small onClick={() => setRenewing(true)}>
+            New link
+          </Button>
+          <Act
+            small
+            cli={`dock org invites revoke ${id}`}
+            disabled={revoke.isPending}
+            onClick={() => revoke.mutate(id)}
+          >
+            Revoke
+          </Act>
+        </span>
         <ErrorText error={revoke.error} />
+        <div className="contents text-left whitespace-normal">
+          {renewing && (
+            <Confirm
+              action="Make a new link"
+              title={`New invite link for ${email}?`}
+              cli={`dock org invite ${email} --role ${role} && dock org invites revoke ${id}`}
+              pending={renew.isPending}
+              error={renew.error}
+              onConfirm={() =>
+                renew.mutate(
+                  { id, email, role },
+                  {
+                    onSuccess: (c) => {
+                      setRenewing(false);
+                      onLink({ email: c.invite.email, code: c.code });
+                    },
+                  },
+                )
+              }
+              onCancel={() => setRenewing(false)}
+            >
+              The link sent earlier stops working. The new one is shown once,
+              for 7 days, with the same role ({role}).
+            </Confirm>
+          )}
+        </div>
       </td>
     </tr>
   );

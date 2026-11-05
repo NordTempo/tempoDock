@@ -67,7 +67,6 @@ function TrafficTab() {
       <section aria-labelledby="traffic" className="flex flex-col gap-5">
         <SectionHead
           id="traffic"
-          aside={hosts.join(", ")}
           right={
             <RangeSwitch
               value={range}
@@ -87,11 +86,8 @@ function TrafficTab() {
         <Chart traffic={traffic} to={dataUpdatedAt} />
       </section>
       <section aria-labelledby="endpoints">
-        <SectionHead
-          id="endpoints"
-          aside={`top ${traffic.paths.length || 20}, IDs as :id`}
-        >
-          Endpoints
+        <SectionHead id="endpoints">
+          Top {traffic.paths.length || 20} endpoints
         </SectionHead>
         <Endpoints traffic={traffic} />
       </section>

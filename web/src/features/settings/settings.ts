@@ -31,6 +31,10 @@ export const settingLabel: Record<SettingKey, string> = {
 export const isSettingKey = (field: string): field is SettingKey =>
   field in settingLabel;
 
+/** A setting edited as text, e.g. from a link that opens its editor. */
+export const isTextSettingKey = (field: string): field is TextSettingKey =>
+  isSettingKey(field) && field !== "pre_deploy_snapshot";
+
 const numeric = new Set<TextSettingKey>([
   "port",
   "health_check_timeout_seconds",

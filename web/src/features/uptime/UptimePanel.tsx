@@ -3,7 +3,15 @@ import { useState } from "react";
 import { listenPort, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { ago, clock, day, elapsed } from "../../ui/format";
-import { Act, Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  Confirm,
+  ErrorText,
+  Panel,
+  SectionHead,
+} from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import {
   addCli,
   type NewUptimeCheck,
@@ -27,6 +35,10 @@ const intervals = [
   [3600, "1h"],
 ] as const;
 
+/** An interval as the form offers it: "1m", else seconds. */
+const every = (seconds: number) =>
+  intervals.find(([s]) => s === seconds)?.[1] ?? `${seconds}s`;
+
 /** 100% only for a perfect record; else at most 99.99%, as the CLI. */
 function percent(p: number | undefined) {
   if (p === undefined) return "–";
@@ -39,6 +51,8 @@ const stateWord = { up: "Up", down: "Down", unknown: "Unknown" };
 export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { domains } = useService(ref);
   const checks = useSuspenseQuery(uptimeChecks(ref)).data;
+  // The check added here, marked in the list until the page changes.
+  const [added, setAdded] = useState<number | null>(null);
   // Verified domains that serve the service and have no check yet.
   const checked = new Set(checks.map((c) => new URL(c.url).hostname));
   const unchecked = domains.filter(
@@ -53,7 +67,6 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <section aria-labelledby="uptime-checks" className="flex flex-col gap-3">
         <SectionHead
           id="uptime-checks"
-          aside="GET from another server; two failures in a row raise an alert"
           right={
             unchecked.length > 0 && (
               <CheckDomains
@@ -63,7 +76,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             )
           }
         >
-          From outside
+          Checks from another server
         </SectionHead>
         {domains.length === 0 ? (
           <p className="text-mut">
@@ -71,7 +84,12 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             first.
           </p>
         ) : (
-          <AddCheck serviceRef={ref} host={domains[0]?.hostname ?? ""} />
+          <AddCheck
+            serviceRef={ref}
+            host={domains[0]?.hostname ?? ""}
+            checks={checks}
+            onAdded={setAdded}
+          />
         )}
         {checks.length > 0 && (
           <Panel>
@@ -80,6 +98,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 <tr>
                   <th>State</th>
                   <th>URL</th>
+                  <th>Every</th>
                   <th>Last 24 hours</th>
                   <th className="text-right">24h</th>
                   <th className="text-right">7d</th>
@@ -91,11 +110,21 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               </thead>
               <tbody>
                 {checks.map((c) => (
-                  <CheckRow key={c.id} serviceRef={ref} check={c} />
+                  <CheckRow
+                    key={c.id}
+                    serviceRef={ref}
+                    check={c}
+                    fresh={c.id === added}
+                  />
                 ))}
               </tbody>
             </table>
           </Panel>
+        )}
+        {checks.length > 0 && (
+          <p className="text-xs text-mut">
+            Two failed probes in a row raise an alert.
+          </p>
         )}
       </section>
       <Inside serviceRef={ref} />
@@ -157,26 +186,57 @@ function Strip({ series }: { series: UptimeCheck["series"] }) {
   );
 }
 
+/**
+ * A URL as host and path: the host faint (cut first when space runs out),
+ * the path in full. The scheme is left out unless it isn't https.
+ */
+function CheckUrl({ url }: { url: string }) {
+  const u = new URL(url);
+  const path = `${u.pathname}${u.search}`;
+  return (
+    <span className="inline-flex max-w-[400px] min-w-0 font-mono">
+      <span className="min-w-0 truncate text-faint">
+        {u.protocol === "https:" ? u.host : u.origin}
+      </span>
+      <span className="shrink-0">{path}</span>
+    </span>
+  );
+}
+
+/** A URL compared loosely: no trailing slash on the path, a lower-case host. */
+function sameUrl(a: string, b: string) {
+  const norm = (raw: string) => {
+    try {
+      const u = new URL(raw);
+      return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}${u.search}`;
+    } catch {
+      return raw.trim();
+    }
+  };
+  return norm(a) === norm(b);
+}
+
 function CheckRow({
   serviceRef: ref,
   check: c,
+  fresh,
 }: {
   serviceRef: ServiceRef;
   check: UptimeCheck;
+  /** Just added here: marked, and says when the first probe runs. */
+  fresh: boolean;
 }) {
   const remove = useRemoveUptimeCheck(ref);
   const [confirming, setConfirming] = useState(false);
   const p = c.last_probe;
   return (
-    <tr>
+    <tr className={fresh ? "[&>td]:bg-sel" : ""}>
       <td className={stateClass[c.state]}>{stateWord[c.state]}</td>
       <td
         className="whitespace-nowrap"
         title={`${c.url}, expects ${c.expect_status}`}
       >
-        <span className="inline-block max-w-[240px] truncate align-bottom font-mono">
-          {c.url}
-        </span>
+        <CheckUrl url={c.url} />
         {c.auto && (
           <span
             className="text-faint"
@@ -187,6 +247,7 @@ function CheckRow({
           </span>
         )}
       </td>
+      <td className="font-mono text-mut">{every(c.interval_seconds)}</td>
       <td>
         <Strip series={c.series} />
       </td>
@@ -198,31 +259,32 @@ function CheckRow({
       >
         {p
           ? `${p.up ? `${p.status} in ${p.latency_ms} ms` : p.error} · ${ago(p.at)}`
-          : "not yet"}
+          : `first probe within ${every(c.interval_seconds)}`}
       </td>
       <td className="text-mut">{c.server}</td>
       <td className="w-px py-1 whitespace-nowrap">
-        {confirming ? (
-          <span className="flex items-center gap-2">
-            <Act
-              small
-              danger
-              cli={`dock uptime remove ${c.id} -s ${ref.service} -e ${ref.environment}`}
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(c.id)}
-            >
-              Remove
-            </Act>
-            <Button small onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </span>
-        ) : (
-          <Button small onClick={() => setConfirming(true)}>
-            Remove
-          </Button>
+        <Button small onClick={() => setConfirming(true)}>
+          Remove
+        </Button>
+        {confirming && (
+          <Confirm
+            danger
+            action="Remove check"
+            title={`Remove the check of ${c.url}?`}
+            cli={`dock uptime remove ${c.id} -s ${ref.service} -e ${ref.environment}`}
+            pending={remove.isPending}
+            error={remove.error}
+            onConfirm={() =>
+              remove.mutate(c.id, { onSuccess: () => setConfirming(false) })
+            }
+            onCancel={() => {
+              remove.reset();
+              setConfirming(false);
+            }}
+          >
+            Dock stops probing it, and its history goes with it.
+          </Confirm>
         )}
-        <ErrorText error={remove.error} />
       </td>
     </tr>
   );
@@ -269,12 +331,7 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const health = status.health;
   return (
     <section aria-labelledby="uptime-inside" className="flex flex-col">
-      <SectionHead
-        id="uptime-inside"
-        aside="Dock's health check of the container, on its server"
-      >
-        From inside
-      </SectionHead>
+      <SectionHead id="uptime-inside">Health check on its server</SectionHead>
       {interval === -1 ? (
         <p className="text-mut">
           The ongoing health check is off; set an interval on Build &amp; run.
@@ -315,12 +372,21 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
+/**
+ * The add form. While the URL typed is one an existing check probes (any
+ * status or interval), it says so before adding, and an exact repeat (same
+ * URL, status and interval) can't be added. A new one gets a notice.
+ */
 function AddCheck({
   serviceRef: ref,
   host,
+  checks,
+  onAdded,
 }: {
   serviceRef: ServiceRef;
   host: string;
+  checks: UptimeCheck[];
+  onAdded: (id: number) => void;
 }) {
   const add = useAddUptimeCheck(ref);
   const [url, setUrl] = useState("");
@@ -333,74 +399,111 @@ function AddCheck({
     interval_seconds: intervalS,
     timeout_seconds: timeoutS,
   };
+  const existing =
+    req.url === "" ? [] : checks.filter((c) => sameUrl(c.url, req.url));
+  const repeat = existing.some(
+    (c) =>
+      c.expect_status === req.expect_status &&
+      c.interval_seconds === req.interval_seconds,
+  );
   return (
     <form
       aria-label="Add an uptime check"
-      className="flex flex-wrap items-center gap-2.5"
+      className="flex flex-col gap-1.5"
       onSubmit={(e) => {
         e.preventDefault();
-        add.mutate(req, { onSuccess: () => setUrl("") });
+        if (repeat) return;
+        add.mutate(req, {
+          onSuccess: (check) => {
+            setUrl("");
+            onAdded(check.id);
+            notify(
+              `Added a check of ${req.url}, every ${every(intervalS)}. The first probe runs within ${every(intervalS)}.`,
+            );
+          },
+        });
       }}
     >
-      <input
-        aria-label="URL"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        placeholder={`https://${host}/`}
-        className="field w-[320px] py-[7px] font-mono"
-      />
-      <label className="flex items-center gap-1.5 text-mut">
-        expects
+      <span className="flex flex-wrap items-center gap-2.5">
         <input
-          aria-label="Expected status"
-          value={status}
-          onChange={(e) => setStatus(e.target.value.trim())}
-          list="uptime-statuses"
-          className="field w-[64px] py-[7px] font-mono"
+          aria-label="URL"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder={`https://${host}/`}
+          className="field w-[320px] py-[7px] font-mono"
         />
-        <datalist id="uptime-statuses">
-          <option value="200" />
-          <option value="2xx" />
-          <option value="3xx" />
-        </datalist>
-      </label>
-      <label className="flex items-center gap-1.5 text-mut">
-        every
-        <select
-          aria-label="Interval"
-          value={intervalS}
-          onChange={(e) => setIntervalS(Number(e.target.value))}
-          className="field py-[7px]"
+        <label className="flex items-center gap-1.5 text-mut">
+          expects
+          <input
+            aria-label="Expected status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value.trim())}
+            list="uptime-statuses"
+            className="field w-[64px] py-[7px] font-mono"
+          />
+          <datalist id="uptime-statuses">
+            <option value="200" />
+            <option value="2xx" />
+            <option value="3xx" />
+          </datalist>
+        </label>
+        <label className="flex items-center gap-1.5 text-mut">
+          every
+          <select
+            aria-label="Interval"
+            value={intervalS}
+            onChange={(e) => setIntervalS(Number(e.target.value))}
+            className="field py-[7px]"
+          >
+            {intervals.map(([s, label]) => (
+              <option key={s} value={s}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5 text-mut">
+          timeout
+          <input
+            aria-label="Timeout in seconds"
+            type="number"
+            min={1}
+            max={30}
+            value={timeoutS}
+            onChange={(e) => setTimeoutS(Number(e.target.value))}
+            className="field w-[56px] py-[7px] font-mono"
+          />
+          s
+        </label>
+        <Act
+          primary={existing.length === 0}
+          type="submit"
+          cli={addCli(ref, req)}
+          disabled={req.url === "" || repeat || add.isPending}
+          reason={
+            req.url === ""
+              ? "type a URL first"
+              : repeat
+                ? "this exact check exists"
+                : undefined
+          }
         >
-          {intervals.map(([s, label]) => (
-            <option key={s} value={s}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex items-center gap-1.5 text-mut">
-        timeout
-        <input
-          aria-label="Timeout in seconds"
-          type="number"
-          min={1}
-          max={30}
-          value={timeoutS}
-          onChange={(e) => setTimeoutS(Number(e.target.value))}
-          className="field w-[56px] py-[7px] font-mono"
-        />
-        s
-      </label>
-      <Act
-        primary
-        type="submit"
-        cli={addCli(ref, req)}
-        disabled={req.url === "" || add.isPending}
-      >
-        Add check
-      </Act>
-      <ErrorText error={add.error} />
+          {existing.length > 0 ? "Add a second check" : "Add check"}
+        </Act>
+        <ErrorText error={add.error} />
+      </span>
+      {existing.length > 0 && (
+        <span role="status" className="text-warn-text">
+          ▲ Already checked:{" "}
+          {existing
+            .map(
+              (c) =>
+                `every ${every(c.interval_seconds)}, expects ${c.expect_status}${c.auto ? " (added by Dock for the domain)" : ""}`,
+            )
+            .join("; ")}
+          . Remove that check first to change its interval.
+        </span>
+      )}
     </form>
   );
 }

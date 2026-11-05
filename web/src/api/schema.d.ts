@@ -893,7 +893,7 @@ export interface paths {
         };
         /**
          * Look at an invite
-         * @description For the signed-in user who opened its link.
+         * @description For whoever holds its link, signed in or not (ADR 0060): the organization, the role, the email invited, who invited and until when. A code that is unknown, used, revoked or expired is 404. Rate limited per client IP like logins.
          */
         get: operations["get-invite"];
         put?: never;
@@ -924,6 +924,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invites/{code}/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an account from an invite
+         * @description For someone invited without an account (ADR 0060): creates the account for the invite's email with this name and password (at least 12 characters), accepts the invite and signs in, setting the session cookie as a login does. Refused (409) when the email has an account (sign in and accept instead) and (403) when the organization requires its single sign-on. Rate limited like logins.
+         */
+        post: operations["invite-signup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -938,7 +958,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change your name
+         * @description Your display name, 1 to 64 characters (trimmed). Users, from a UI session or a `dock login` token; API tokens have no account. Answers with who you are now.
+         */
+        patch: operations["update-me"];
         trace?: never;
     };
     "/api/v1/me/factors/{id}": {
@@ -1221,7 +1245,7 @@ export interface paths {
         put?: never;
         /**
          * Invite someone
-         * @description The link's code is returned once. It works once, for 7 days, and only for a user signed in with the email. Scope: admin, unlimited.
+         * @description The link's code is returned once. It works once, for 7 days, and only for the email: a user signed in with it, or someone creating its account from the link. Scope: admin, unlimited.
          */
         post: operations["create-invite"];
         delete?: never;
@@ -2144,6 +2168,26 @@ export interface paths {
          * @description Turn daily backups on or off, or set their hour. Backups are the platform's: operators only (with read on the service).
          */
         put: operations["update-backup-schedule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/backups/{id}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a backup's log
+         * @description What a backup or restore run's job printed: its last 16 KB, with the repository's and database's secrets masked. Kept for the service's newest 20 runs; empty when none was kept. Scope: deploy, as a database's output can show its data.
+         */
+        get: operations["get-backup-log"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -4635,6 +4679,11 @@ export interface components {
             summary: string;
             target: string;
         };
+        BackupLog: {
+            /** Format: int64 */
+            id: number;
+            output: string;
+        };
         BackupMove: {
             error?: string;
             /** Format: date-time */
@@ -4675,6 +4724,7 @@ export interface components {
             id: number;
             /** @enum {string} */
             kind: "postgres" | "redis" | "volume";
+            not_restorable?: string;
             off_box: boolean;
             /** @enum {string} */
             operation: "backup" | "restore";
@@ -5908,13 +5958,16 @@ export interface components {
             email: string;
             /** Format: date-time */
             expires_at: string;
+            invited_by: string;
             /** @description The org's slug */
             org: string;
             org_name: string;
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
-            /** @enum {string} */
-            status: "open" | "accepted" | "revoked" | "expired";
+        };
+        InviteSignUpRequest: {
+            name: string;
+            password: string;
         };
         Job: {
             command: string;
@@ -6013,6 +6066,7 @@ export interface components {
             second_factor?: ("passkey" | "totp" | "recovery")[] | null;
         };
         Me: {
+            display_name?: string;
             email?: string;
             environment?: string;
             /** @enum {string} */
@@ -7567,6 +7621,9 @@ export interface components {
             database?: "" | "postgres" | "none";
             database_url_variable?: string;
         };
+        UpdateMeRequest: {
+            name: string;
+        };
         UpdateOrgRequest: {
             name: string;
         };
@@ -7670,6 +7727,7 @@ export interface components {
         };
         UpdateStatus: {
             available: boolean;
+            check_detail?: string;
             check_error?: string;
             /** Format: date-time */
             checked_at?: string;
@@ -12401,10 +12459,7 @@ export interface operations {
     };
     "get-invite": {
         parameters: {
-            query?: {
-                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
-                org?: string;
-            };
+            query?: never;
             header?: never;
             path: {
                 code: string;
@@ -12422,33 +12477,6 @@ export interface operations {
                     "application/json": components["schemas"]["InviteInfo"];
                 };
             };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -12458,8 +12486,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Conflict */
-            409: {
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12467,8 +12495,8 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
-            /** @description Unprocessable Entity */
-            422: {
+            /** @description Too Many Requests */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12575,6 +12603,96 @@ export interface operations {
             };
         };
     };
+    "invite-signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteSignUpRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     me: {
         parameters: {
             query?: {
@@ -12634,6 +12752,78 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-me": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -20159,6 +20349,103 @@ export interface operations {
             };
             /** @description Locked */
             423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-backup-log": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupLog"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

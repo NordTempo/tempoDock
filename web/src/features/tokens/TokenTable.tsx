@@ -34,7 +34,9 @@ export function TokenTable({
               <th>Scope</th>
               <th>Limited to</th>
               {!mine && <th>Created by</th>}
-              <th>Data</th>
+              <th title="What the token may do in the Data panel">
+                Data access
+              </th>
               <th>Last used</th>
               <th>Expires</th>
               <th />
@@ -121,7 +123,7 @@ function TokenRow({
           </td>
         )}
         <td className={`py-2 ${token.data ? "" : "text-mut"}`}>
-          {tokenDataText(token.data)}
+          {token.data ? tokenDataText(token.data) : "follows policy"}
         </td>
         <td className={`py-2 ${token.last_used_at ? "" : "text-mut"}`}>
           {token.last_used_at ? ago(token.last_used_at) : "never"}
@@ -138,24 +140,23 @@ function TokenRow({
           )}
         </td>
         <td className="w-full py-1.5 text-right">
-          <span className="inline-flex items-center gap-4">
+          <span className="inline-flex items-center gap-1.5">
             <Link
               to={operator ? "/console/audit" : "/$org/audit"}
               params={{ org }}
               search={{ actor: token.name }}
-              className="lnk"
+              className="btn sm no-underline"
             >
               Activity
             </Link>
             {admin && !dead && (
-              <button
-                type="button"
-                className="lnk"
+              <Button
+                small
                 aria-expanded={editingData}
                 onClick={() => setEditingData((e) => !e)}
               >
                 Data access
-              </button>
+              </Button>
             )}
             {!token.revoked_at && (
               <Button small onClick={() => setConfirming(true)}>
@@ -214,4 +215,4 @@ function TokenRow({
 
 /** What caps a token's own data access in Dock. */
 export const tokenCap =
-  "never more than a user with its scope, or than its creator has. On production, write acts as propose.";
+  "never more than a user with its scope, or than its creator has. On production, its writes wait for an admin's approval.";

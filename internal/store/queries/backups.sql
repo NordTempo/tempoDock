@@ -139,3 +139,22 @@ WHERE repository = +? AND operation = 'backup' AND status = 'succeeded' AND prun
 -- name: PruneBackupSnapshot :exec
 -- Marks the backups of a snapshot gone: a move found it in no repository.
 UPDATE backups SET pruned = 1 WHERE repository = +? AND snapshot_id = +?;
+
+-- name: SaveBackupLog :exec
+-- Keeps a finished run's output (the run's service: a restore's is the
+-- service restored from).
+INSERT INTO backup_logs (backup_id, service_id, output) VALUES (?, ?, ?)
+ON CONFLICT (backup_id) DO UPDATE SET output = excluded.output;
+
+-- name: GetBackupLog :one
+-- A run's output; the service guards IDs from other services.
+SELECT output FROM backup_logs WHERE backup_id = +? AND service_id = +?;
+
+-- name: TrimBackupLogs :exec
+-- Deletes the output of a service's runs older than its newest `keep`
+-- logs.
+DELETE FROM backup_logs
+WHERE backup_logs.service_id = +sqlc.arg(service_id) AND backup_logs.backup_id < (
+    SELECT l.backup_id FROM backup_logs l WHERE l.service_id = +sqlc.arg(service_id)
+    ORDER BY l.backup_id DESC LIMIT 1 OFFSET CAST(sqlc.arg(keep) AS INTEGER) - 1
+);

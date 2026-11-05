@@ -88,6 +88,10 @@ WHERE user_id = +sqlc.arg(user_id) AND origin = 'cli_login' AND revoked_at IS NU
 -- name: SetUserDisabled :exec
 UPDATE users SET disabled_at = ? WHERE id = +?;
 
+-- name: SetUserName :one
+-- Changes a user's display name (PATCH /me).
+UPDATE users SET name = ? WHERE id = +? RETURNING *;
+
 -- SetUserPassword also lifts a lock from wrong second factors (ADR 0057).
 -- name: SetUserPassword :exec
 UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?;

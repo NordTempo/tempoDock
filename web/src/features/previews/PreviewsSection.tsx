@@ -31,7 +31,6 @@ export function PreviewsSection({ project }: { project: string }) {
     <section aria-labelledby="previews" className="flex flex-col">
       <SectionHead
         id="previews"
-        aside="an environment per pull request"
         right={
           admin &&
           s?.enabled &&
@@ -139,9 +138,10 @@ export function PreviewsSection({ project }: { project: string }) {
         </>
       )}
       <p className="mt-2 text-xs text-mut">
-        Pull requests into the branch the base's services deploy get an
-        environment pr-&lt;number&gt;. Literal values are not copied unless
-        listed.
+        Each pull request to the branch the base environment deploys from gets
+        its own environment, pr-&lt;number&gt;. References and database
+        credentials are set in it; other values are copied only if you list
+        them.
       </p>
     </section>
   );

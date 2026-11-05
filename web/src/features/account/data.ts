@@ -1,14 +1,14 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { createPasskey } from "../../api/webauthn";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 
-// Two-factor sign-in on the account page (ADR 0057): the caller's
-// factors, adding passkeys, setting up an authenticator app, recovery
-// codes. Also read by the step-up dialog, which asks for a factor when
-// there is one.
+// The account page's own data: the caller's display name, and two-factor
+// sign-in (ADR 0057): the caller's factors, adding passkeys, setting up an
+// authenticator app, recovery codes. Two-factor is also read by the
+// step-up dialog, which asks for a factor when there is one.
 
 export type TwoFactor = components["schemas"]["TwoFactor"];
 export type Factor = components["schemas"]["Factor"];
@@ -74,3 +74,19 @@ export const useNewRecoveryCodes = () =>
     async () => (await body(api.POST("/api/v1/me/recovery-codes"))).codes ?? [],
     () => [twoFactorKey],
   );
+
+/**
+ * Changes the caller's display name (`dock me name`); the answer is who
+ * they are now, put straight into the session.
+ */
+export function useUpdateName() {
+  const queryClient = useQueryClient();
+  return useAction(
+    async (name: string) => {
+      const me = await body(api.PATCH("/api/v1/me", { body: { name } }));
+      queryClient.setQueryData(keys.session, me);
+      return me;
+    },
+    () => [["audit"]],
+  );
+}

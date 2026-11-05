@@ -219,7 +219,7 @@ func printUpdateStatus(g *globals, st apitypes.UpdateStatus, notes bool) error {
 		return err
 	}
 	if st.CheckError != "" {
-		g.io.Warnf("Could not check for releases: %s", st.CheckError)
+		g.io.Warnf("%s", st.CheckError)
 	}
 	if l := st.Last; l != nil && l.Error != "" {
 		g.io.Warnf("The last update %s: %s", strings.ReplaceAll(l.Status, "_", " "), l.Error)

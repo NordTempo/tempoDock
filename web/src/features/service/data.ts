@@ -34,3 +34,25 @@ export const useStartService = () =>
     serviceWide,
     (ref) => `Starting ${ref.service}`,
   );
+
+/**
+ * Restarts the service: a new release with the active one's image and
+ * config. The notice says it started; the header says when it serves.
+ */
+export const useRestartService = () =>
+  useAction(
+    ({ ref }: { ref: ServiceRef; stateful: boolean }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/restart",
+          { params: { path: servicePath(ref) } },
+        ),
+      ),
+    ({ ref }) => serviceWide(ref),
+    ({ ref, stateful }, r) => [
+      stateful
+        ? `Restarting ${ref.service}: it stops, then r${r.number} starts`
+        : `Restarting ${ref.service}: r${r.number} starts and takes over`,
+      "info",
+    ],
+  );

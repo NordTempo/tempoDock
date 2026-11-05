@@ -208,6 +208,8 @@ export function failurePhrase(r: { error_code?: string }) {
       return "failed its health check";
     case "build_failed":
       return "failed to build";
+    case "deploy_failed":
+      return "failed to start";
     default:
       return "failed";
   }
