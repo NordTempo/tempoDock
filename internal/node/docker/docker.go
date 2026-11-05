@@ -105,23 +105,31 @@ func (e notFoundError) Is(target error) bool {
 // registry round trips (1.5-2 s) of every redeploy. Tags are always pulled,
 // since they may have moved. A token in opts authenticates the pull (see
 // RegistryAuth).
+//
+// Servers are shared by orgs, so an image on the server may be another
+// org's private one: only a platform registry pull (a Token, which core
+// minted after checking the caller may pull, pullAllowed) reuses it as it
+// is. Any other digest ref is first looked up at its registry with the
+// caller's own credentials (one manifest request), so the registry decides
+// whether the caller may have it.
 func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	if logs == nil {
 		logs = io.Discard
 	}
-	if strings.Contains(ref, "@sha256:") {
-		if img, err := r.cli.ImageInspect(ctx, ref); err == nil {
-			_, _ = fmt.Fprintln(logs, "Image is already on the server")
-			return img.ID, nil
-		}
-	}
 	var pull client.ImagePullOptions
+	platform := false
 	if len(opts) > 0 {
 		switch o := opts[0]; {
 		case o.Token != "":
-			pull.RegistryAuth = RegistryAuth(o.Token)
+			pull.RegistryAuth, platform = RegistryAuth(o.Token), true
 		case o.Username != "":
 			pull.RegistryAuth = PasswordAuth(ref, o.Username, o.Password)
+		}
+	}
+	if strings.Contains(ref, "@sha256:") {
+		if img, err := r.cli.ImageInspect(ctx, ref); err == nil && (platform || r.mayPull(ctx, ref, pull.RegistryAuth)) {
+			_, _ = fmt.Fprintln(logs, "Image is already on the server")
+			return img.ID, nil
 		}
 	}
 	resp, err := r.cli.ImagePull(ctx, ref, pull)
@@ -148,6 +156,12 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 		return "", fmt.Errorf("inspect pulled image %s: %w", ref, err)
 	}
 	return img.ID, nil
+}
+
+// mayPull reports whether the registry gives ref's manifest to auth.
+func (r *Runtime) mayPull(ctx context.Context, ref, auth string) bool {
+	_, err := r.cli.DistributionInspect(ctx, ref, client.DistributionInspectOptions{EncodedRegistryAuth: auth})
+	return err == nil
 }
 
 // pullLine renders a pull progress message as a log line. Byte-level

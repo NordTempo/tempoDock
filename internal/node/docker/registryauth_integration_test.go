@@ -57,6 +57,20 @@ func TestPullFromPrivateRegistry(t *testing.T) {
 	if err != nil || !strings.HasPrefix(id, "sha256:") {
 		t.Fatalf("pull with credentials = %q, %v", id, err)
 	}
+
+	// The image is now on the server under its digest. Another org, with no
+	// credential, naming that digest still has to get past the registry.
+	img, err := e.cli.ImageInspect(ctx, ref)
+	if err != nil || len(img.RepoDigests) == 0 {
+		t.Fatalf("pulled image's digests: %v, %v", img.RepoDigests, err)
+	}
+	pinned := img.RepoDigests[0]
+	if _, err := e.Pull(ctx, pinned, nil); err == nil {
+		t.Fatalf("anonymous pull of %s used the image another credential pulled", pinned)
+	}
+	if got, err := e.Pull(ctx, pinned, nil, node.PullOptions{Username: "bot", Password: "s3cret"}); err != nil || got != id {
+		t.Fatalf("pull of %s with credentials = %q, %v; want the image already here", pinned, got, err)
+	}
 }
 
 // startPrivateRegistry runs Dock's registry image with htpasswd auth for
