@@ -44,7 +44,7 @@ func (c *Core) PlanProject(ctx context.Context, a Actor, project string, req api
 				return plan, err
 			}
 		}
-		ep, err := c.planEnv(fe, le, f.values, req.Prune)
+		ep, err := c.planEnv(a, fe, le, f.values, req.Prune)
 		if err != nil {
 			return plan, err
 		}
@@ -95,7 +95,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 			if err != nil {
 				return err
 			}
-			if ep, err = c.planEnv(fe, le, f.values, req.Prune); err != nil {
+			if ep, err = c.planEnv(a, fe, le, f.values, req.Prune); err != nil {
 				return err
 			}
 			if created {
@@ -272,7 +272,7 @@ func (c *Core) lockedPlan(ctx context.Context, a Actor, p store.Project, e store
 	if err != nil {
 		return err
 	}
-	ep, err := c.planEnv(fe, le, values, prune)
+	ep, err := c.planEnv(a, fe, le, values, prune)
 	if err != nil {
 		return err
 	}
@@ -439,6 +439,10 @@ type envPlan struct {
 	changes, kept, manual []apitypes.PlanChange
 	// staged counts the changes staging makes (for the audit entry).
 	staged int
+	// blind plans a value sent for a live variable as an update without
+	// comparing them, so a plan can't confirm a guessed secret for an
+	// actor that may not reveal secrets.
+	blind bool
 
 	create    []apitypes.ServiceExport
 	settings  map[string]*apitypes.ServiceSettings // nil: clear staged settings
@@ -477,9 +481,9 @@ func addPlan(p *apitypes.ApplyPlan, ep envPlan) {
 }
 
 // planEnv compares a file environment with its live state (le nil: it
-// doesn't exist yet). values are the values sent with the file.
-func (c *Core) planEnv(fe apitypes.EnvironmentExport, le *liveEnv, values map[varKey]string, prune bool) (envPlan, error) {
-	ep := envPlan{settings: map[string]*apitypes.ServiceSettings{}}
+// doesn't exist yet) for a. values are the values sent with the file.
+func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, values map[varKey]string, prune bool) (envPlan, error) {
+	ep := envPlan{settings: map[string]*apitypes.ServiceSettings{}, blind: !a.revealsSecrets()}
 	env := fe.Name
 	if err := validName("environment", env); err != nil {
 		return ep, err
@@ -671,7 +675,7 @@ func (ep *envPlan) planVars(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 		switch {
 		case !ok:
 			stage(k, values[k], apitypes.ChangeAdd, "")
-		case v != values[k]:
+		case ep.blind || v != values[k]:
 			stage(k, values[k], apitypes.ChangeUpdate, "")
 		case staged[k] != "":
 			stage(k, values[k], apitypes.ChangeUpdate, "drops a staged change: the file matches the live value")
@@ -686,7 +690,7 @@ func (ep *envPlan) planVars(line func(*[]apitypes.PlanChange, apitypes.PlanChang
 		switch {
 		case sent && !live:
 			stage(k, g, apitypes.ChangeAdd, "value sent with the file")
-		case sent && v != g:
+		case sent && (ep.blind || v != g):
 			stage(k, g, apitypes.ChangeUpdate, "value sent with the file")
 		case live && staged[k] == "unset":
 			line(&ep.changes, ch(apitypes.ChangeUpdate, k, "drops its staged removal"))
