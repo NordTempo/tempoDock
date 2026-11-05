@@ -44,7 +44,8 @@ function ResourcesTab() {
     <>
       <section aria-label="Now" className="flex flex-col gap-2">
         <Now service={service} />
-        <LiveNote state={live} />
+        {/* Live only next to live numbers; without a sample, Now says why. */}
+        {(service.usage || live !== "live") && <LiveNote state={live} />}
       </section>
       <section aria-labelledby="history">
         <SectionHead
@@ -71,13 +72,19 @@ function ResourcesTab() {
   );
 }
 
+/**
+ * The latest sample against the limits. Without one, why: nothing runs,
+ * or the first sample of a running container is still to come.
+ */
 function Now({ service: s }: { service: Service }) {
   const u = s.usage;
   if (!u) {
     return (
       <p className="text-mut">
-        No running container, so no live numbers. Limits:{" "}
-        <MemoryUsage service={s} />, <CpuUsage service={s} />.
+        {s.status.state === "running"
+          ? "Waiting for the first sample."
+          : "No running container, so no live numbers."}{" "}
+        Limits: <MemoryUsage service={s} />, <CpuUsage service={s} />.
       </p>
     );
   }

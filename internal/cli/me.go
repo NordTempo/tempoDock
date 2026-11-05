@@ -18,8 +18,35 @@ func newMeCmd(g *globals) *cobra.Command {
 		Use:   "me",
 		Short: "Your own account",
 	})
-	cmd.AddCommand(newMePasswordCmd(g), newMeTwoFactorCmd(g))
+	cmd.AddCommand(newMeNameCmd(g), newMePasswordCmd(g), newMeTwoFactorCmd(g))
 	return cmd
+}
+
+// newMeNameCmd changes the caller's display name (PATCH /me).
+func newMeNameCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "name <name>",
+		Short: "Change your display name",
+		Long: `Change the name your account shows: 1 to 64 characters, trimmed. Works
+with the token from a browser ` + "`dock login`" + `, which acts for you; API
+tokens have no account.`,
+		Example: `  dock me name "Ada Lovelace"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			me, err := send[apitypes.Me](cmd.Context(), s, http.MethodPatch, apiPrefix+"/me", apitypes.UpdateMeRequest{Name: args[0]})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(me, func() error {
+				g.io.Successf("Your name is %s now", me.DisplayName)
+				return nil
+			})
+		},
+	}
 }
 
 // maxPasswordInput bounds what --password-stdin reads.

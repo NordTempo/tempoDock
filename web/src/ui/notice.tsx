@@ -7,7 +7,9 @@ import { useSyncExternalStore } from "react";
  * purpose: no enter or exit animation. Each notice holds one timeout until
  * it goes; nothing runs while none is shown.
  */
-type Notice = { id: number; text: string; tone: "ok" | "fail" };
+/** ok: done; info: started and still running; fail: didn't work. */
+export type NoticeTone = "ok" | "info" | "fail";
+type Notice = { id: number; text: string; tone: NoticeTone };
 
 let notices: Notice[] = [];
 let next = 1;
@@ -20,7 +22,7 @@ const emit = () => {
 const showMs = 4000;
 
 /** Shows text as a notice; at most three at once, the newest last. */
-export function notify(text: string, tone: Notice["tone"] = "ok") {
+export function notify(text: string, tone: NoticeTone = "ok") {
   const id = next++;
   notices = [...notices.slice(-2), { id, text, tone }];
   emit();
@@ -31,6 +33,13 @@ function dismiss(id: number) {
   notices = notices.filter((n) => n.id !== id);
   emit();
 }
+
+/** Each tone's mark: a check when done, an arrow while it runs, a cross when it failed. */
+const glyph: Record<NoticeTone, [string, string]> = {
+  ok: ["✓", "text-ok"],
+  info: ["→", "text-info"],
+  fail: ["✕", "text-fail"],
+};
 
 /** The notices, for the shell to render once. */
 export function Notices() {
@@ -54,11 +63,8 @@ export function Notices() {
           onClick={() => dismiss(n.id)}
           className="pointer-events-auto flex items-center gap-2 rounded-ctl border border-edge bg-panel px-3 py-2 text-[13px] text-fg shadow-lg shadow-black/60"
         >
-          <span
-            aria-hidden
-            className={n.tone === "ok" ? "text-ok" : "text-fail"}
-          >
-            {n.tone === "ok" ? "✓" : "✕"}
+          <span aria-hidden className={glyph[n.tone][1]}>
+            {glyph[n.tone][0]}
           </span>
           {n.text}
         </button>

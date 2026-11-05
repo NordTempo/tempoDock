@@ -38,6 +38,10 @@ export function ErrorBlock({
 /** The error's message, starting with a capital like a sentence. */
 const errorMessage = (error: unknown) => {
   const m = error instanceof Error ? error.message : "";
+  // SQLite's busy error is Dock's own database being busy, not the user's.
+  if (/database is locked/i.test(m)) {
+    return "Dock's database was busy and the request timed out.";
+  }
   return m ? m[0]?.toUpperCase() + m.slice(1) : "Something went wrong.";
 };
 

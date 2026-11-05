@@ -19,6 +19,7 @@ import {
   SectionHead,
   StateText,
 } from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import { domainState } from "../../ui/status";
 import { AccessLine } from "./AccessLine";
 
@@ -27,13 +28,15 @@ const AddDomainDialog = lazy(() => import("./AddDomainDialog"));
 
 /**
  * Add form, who can open the domains, a card per domain that needs a
- * human, and every domain.
+ * human, and every domain. A domain added here is marked in the list and
+ * a notice says what happens next.
  */
 export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, domains } = useService(ref);
   const port = listenPort(service);
+  const [added, setAdded] = useState<string | null>(null);
   const waiting = domains.filter(
-    (d) => domainNeedsAttention(d) || d.verification,
+    (d) => domainNeedsAttention(d) || d.verification || d.status === "added",
   );
 
   return (
@@ -41,6 +44,18 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <AddDomain
         serviceRef={ref}
         hasGenerated={domains.some((d) => d.generated)}
+        onAdded={(d) => {
+          setAdded(d.hostname);
+          notify(
+            d.status === "active"
+              ? `Added ${d.hostname}: it serves ${ref.service} now`
+              : d.dns
+                ? `Added ${d.hostname}: Dock is routing it through Cloudflare`
+                : d.status === "added"
+                  ? `Added ${d.hostname}: Dock is checking its DNS`
+                  : `Added ${d.hostname}: create its DNS record, shown below`,
+          );
+        }}
       />
       <AccessLine serviceRef={ref} />
       {waiting.map((d) => (
@@ -75,6 +90,7 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                     serviceRef={ref}
                     domain={d}
                     port={port}
+                    fresh={d.hostname === added}
                   />
                 ))}
               </tbody>
@@ -89,9 +105,11 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 function AddDomain({
   serviceRef: ref,
   hasGenerated,
+  onAdded,
 }: {
   serviceRef: ServiceRef;
   hasGenerated: boolean;
+  onAdded: (domain: Domain) => void;
 }) {
   const generate = useGenerateDomain();
   const [open, setOpen] = useState(false);
@@ -113,7 +131,11 @@ function AddDomain({
       <ErrorText error={generate.error} />
       {open && (
         <Suspense fallback={null}>
-          <AddDomainDialog serviceRef={ref} onClose={() => setOpen(false)} />
+          <AddDomainDialog
+            serviceRef={ref}
+            onClose={() => setOpen(false)}
+            onAdded={onAdded}
+          />
         </Suspense>
       )}
     </div>
@@ -344,19 +366,49 @@ function detail(d: Domain) {
   }
 }
 
+/**
+ * The records to create for a domain that doesn't resolve here yet, each
+ * with its value to copy: "A store.example.com → 203.0.113.7".
+ */
+function RecordsToCreate({ domain: d }: { domain: Domain }) {
+  const records = d.dns_records ?? [];
+  return (
+    <span className="flex flex-col gap-1 text-fg">
+      {records.map((r, i) => (
+        <span key={`${r.type} ${r.value}`} className="flex items-center gap-2">
+          <span className="text-mut">{i === 0 ? "Create" : "or"}</span>
+          <span className="font-mono">
+            {r.type} {r.name} → {r.value}
+          </span>
+          <CopyButton text={r.value} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** A domain's row; `fresh` marks one just added here. */
 function DomainRow({
   serviceRef: ref,
   domain: d,
   port,
+  fresh,
 }: {
   serviceRef: ServiceRef;
   domain: Domain;
   port: number;
+  fresh: boolean;
 }) {
   const remove = useRemoveDomain();
   const [confirming, setConfirming] = useState(false);
+  // Until it resolves here, the row says which record makes it work.
+  const needsRecord =
+    !d.dns &&
+    !d.verification &&
+    (d.status === "added" || d.status === "waiting_for_dns") &&
+    (d.dns_records?.length ?? 0) > 0;
   return (
-    <tr>
+    <tr className={fresh ? "[&>td]:bg-sel" : ""}>
       <td className="font-mono">
         <a
           href={d.url}
@@ -373,13 +425,21 @@ function DomainRow({
       <td
         className={`w-full whitespace-normal ${d.status === "error" ? "text-fail" : "text-mut"}`}
       >
-        {detail(d)}
-        {d.redirect_to ? ` · redirects to ${d.redirect_to}` : ` · to :${port}`}
-        <span className="text-faint">{lastCheck(d)}</span>
+        {needsRecord ? (
+          <RecordsToCreate domain={d} />
+        ) : (
+          <>
+            {detail(d)}
+            {d.redirect_to
+              ? ` · redirects to ${d.redirect_to}`
+              : ` · to :${port}`}
+            <span className="text-faint">{lastCheck(d)}</span>
+          </>
+        )}
       </td>
-      <td className="text-mut">{since(d.created_at)}</td>
+      <td className="text-mut">{fresh ? "just added" : since(d.created_at)}</td>
       <td className="py-1">
-        <Button small danger onClick={() => setConfirming(true)}>
+        <Button small onClick={() => setConfirming(true)}>
           Remove
         </Button>
         {confirming && (

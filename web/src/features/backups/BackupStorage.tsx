@@ -69,7 +69,9 @@ export function BackupStorage({
                     </td>
                     <td className="py-2 font-mono">
                       {r.server || (
-                        <span className="font-sans text-mut">bucket</span>
+                        <span className="font-sans text-mut">
+                          {r.repository === "local" ? "each server" : "bucket"}
+                        </span>
                       )}
                     </td>
                     <td className="py-2 text-right font-mono">{r.snapshots}</td>
@@ -83,9 +85,7 @@ export function BackupStorage({
                         </span>
                       ) : r.current ? (
                         <span className="text-mut">new backups go here</span>
-                      ) : (
-                        <span className="text-faint">·</span>
-                      )}
+                      ) : null}
                     </td>
                     <td />
                   </tr>

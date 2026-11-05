@@ -47,15 +47,22 @@ export function deploySteps(
   const switched = at(r, / is live$/);
   const failed = r.status === "failed";
 
-  // Which step the release is on, or failed on.
+  // Which step the release is on, or failed on: the stored failure
+  // (code, else the error's own words) decides over progress events, so
+  // this page and the deploy window name the same cause.
   let current = Math.max(0, stepOrder.indexOf(r.status) - 1);
   if (failed) {
+    const error = r.error ?? "";
     current =
-      r.error_code === "build_failed" || !started
+      r.error_code === "build_failed" || /^(build|pull)/i.test(error)
         ? 0
-        : r.error_code === "health_check_failed" || !healthy
+        : r.error_code === "health_check_failed" || /^health check/i.test(error)
           ? 2
-          : 3;
+          : !started
+            ? 0
+            : !healthy
+              ? 2
+              : 3;
   }
   if (r.status === "active" || r.status === "superseded") current = 4;
   const state = (i: number): StepState =>

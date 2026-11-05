@@ -1,8 +1,18 @@
-import { queryOptions, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
-import { keys, revealed, revealRequest, useOrgs } from "../../data/queries";
+import {
+  currentMe,
+  keys,
+  revealed,
+  revealRequest,
+  useOrgs,
+} from "../../data/queries";
 import type { OrgLockSettings, Scope } from "../../data/types";
 import { useOrg } from "../../shell/location";
 
@@ -82,11 +92,16 @@ export const orgQueries = {
       queryKey: orgKeys.ssoProviders,
       queryFn: () => list(api.GET("/api/v1/org/sso-providers")),
     }),
+  /**
+   * The open invite a link names, signed in or out (ADR 0060). A dead
+   * link is a 404 that won't come back, so it isn't retried.
+   */
   invite: (code: string) =>
     queryOptions({
       queryKey: ["invite", code],
       queryFn: () =>
         body(api.GET("/api/v1/invites/{code}", { params: { path: { code } } })),
+      retry: false,
     }),
 };
 
@@ -221,6 +236,30 @@ export function useAcceptInvite() {
       return [keys.orgs];
     },
   );
+}
+
+/**
+ * Creates the account an invite names (its email, with this name and
+ * password), accepts the invite and signs in (ADR 0060). Resolves once the
+ * new session is in the cache, acting in the org just joined.
+ */
+export function useInviteSignUp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      code,
+      ...req
+    }: { code: string } & components["schemas"]["InviteSignUpRequest"]) => {
+      await body(
+        api.POST("/api/v1/invites/{code}/signup", {
+          params: { path: { code } },
+          body: req,
+        }),
+      );
+      queryClient.removeQueries({ queryKey: ["invite"] });
+      queryClient.setQueryData(keys.session, await currentMe());
+    },
+  });
 }
 
 export const useSetOrgVariable = () =>

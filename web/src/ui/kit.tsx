@@ -201,7 +201,8 @@ export function Check({
     >
       <input
         type="checkbox"
-        className="accent-fg"
+        // A 16px box with margin: a 24px target (WCAG 2.5.8).
+        className="m-[4px] size-[16px] accent-fg"
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}

@@ -29,6 +29,7 @@ import {
   useResolveAlert,
   useTestAlertChannel,
 } from "./data";
+import { AlertLink, alertText } from "./source";
 
 // The Alerts page: open alerts (worst first), recent history, and the
 // channels alerts are sent to. Admins only; the route says so to others.
@@ -163,23 +164,25 @@ function AlertRow({
 }) {
   const resolve = useResolveAlert();
   const tone = a.resolved_at ? "text-mut" : toneText[severityTone[a.severity]];
+  const { text, cli } = alertText(a);
   return (
     <tr>
       <td className={`py-2 whitespace-nowrap ${tone}`}>
         <Glyph char={a.severity === "critical" ? "✕" : "▲"} /> {a.severity}
       </td>
-      <td className="py-2">
+      <td className="w-full py-2">
         {a.title}
-        {a.message && <span className="block text-mut">{a.message}</span>}
+        {text && <span className="block text-mut">{text}</span>}
       </td>
       <td className="py-2 font-mono">{where(a)}</td>
       <td className="py-2 whitespace-nowrap text-mut">
         {a.resolved_at ? `${since(a.resolved_at)} ago` : since(a.opened_at)}
       </td>
-      <td className="w-full py-1.5 text-right">
-        {resolvable && (
-          <span className="inline-flex items-center gap-3">
-            <ErrorText error={resolve.error} />
+      <td className="py-1.5 text-right">
+        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+          <ErrorText error={resolve.error} />
+          <AlertLink alert={a} className="btn sm no-underline" title={cli} />
+          {resolvable && (
             <Act
               small
               cli={`dock alerts resolve ${a.id}`}
@@ -189,8 +192,8 @@ function AlertRow({
             >
               Resolve
             </Act>
-          </span>
-        )}
+          )}
+        </span>
       </td>
     </tr>
   );
@@ -297,7 +300,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
           >
             Send test
           </Act>
-          <Button small danger onClick={() => setConfirming(true)}>
+          <Button small onClick={() => setConfirming(true)}>
             Remove
           </Button>
           {confirming && (

@@ -147,7 +147,7 @@ export default function PreviewsForm({
           />
           <span className="text-xs text-mut">
             One per line, as service.KEY or shared.KEY. References and database
-            credentials are always set; other literal values only when listed.
+            credentials are always set; other values only when listed here.
           </span>
         </dd>
         <dt>Forks</dt>

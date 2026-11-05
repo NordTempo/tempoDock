@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAddDomain } from "../../data/mutations";
-import type { ServiceRef } from "../../data/types";
+import type { Domain, ServiceRef } from "../../data/types";
 import { Dialog } from "../../ui/Dialog";
 import { Act, Button, Check, ErrorText } from "../../ui/kit";
 import { useCloudflareZones } from "../cloudflare/data";
@@ -8,14 +8,16 @@ import { useCloudflareZones } from "../cloudflare/data";
 /**
  * Adds a hostname: your own (you create its DNS record), or from a zone
  * connected to Dock, which Dock routes through the server's Cloudflare
- * tunnel (ADR 0036).
+ * tunnel (ADR 0036). onAdded gets the new domain once it is added.
  */
 export default function AddDomainDialog({
   serviceRef: ref,
   onClose,
+  onAdded,
 }: {
   serviceRef: ServiceRef;
   onClose: () => void;
+  onAdded: (domain: Domain) => void;
 }) {
   const add = useAddDomain();
   const zonesQuery = useCloudflareZones();
@@ -58,7 +60,12 @@ export default function AddDomainDialog({
               ...(fromCloudflare && { cloudflare: true }),
               ...(newSite && !target && { analytics: "new" as const }),
             },
-            { onSuccess: onClose },
+            {
+              onSuccess: (added) => {
+                onAdded(added.domain);
+                onClose();
+              },
+            },
           );
         }}
       >
@@ -73,7 +80,7 @@ export default function AddDomainDialog({
             <span>
               Your own hostname
               <span className="block text-mut">
-                You create its DNS record; Dock shows which.
+                You create its DNS record; the domain's row shows which.
               </span>
             </span>
             {!fromCloudflare && (
@@ -165,6 +172,11 @@ export default function AddDomainDialog({
         )}
         <ErrorText error={add.error} />
         <div className="flex items-center justify-end gap-2.5">
+          {!host && (
+            <span className="mr-auto text-xs text-faint">
+              {fromCloudflare ? "Pick a zone first" : "Type a hostname first"}
+            </span>
+          )}
           <Button onClick={onClose}>Cancel</Button>
           <Act
             primary

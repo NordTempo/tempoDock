@@ -160,7 +160,7 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Act
 
 // userActor is a user in no org yet; actIn picks one.
 func userActor(u store.User) Actor {
-	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Operator: u.Operator}
+	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Operator: u.Operator, DisplayName: u.Name}
 }
 
 // actIn puts a user's actor (a session or a `dock login` token) in the org
@@ -319,8 +319,8 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if !c.loginLimit.Allow(a.Email, clientIP, now()) {
 		return "", time.Time{}, errf(apitypes.CodeRateLimited, "too many password attempts; wait a minute and try again")
 	}
-	if len(req.NewPassword) < 12 {
-		return "", time.Time{}, invalid("password must be at least 12 characters")
+	if err := checkNewPassword(req.NewPassword); err != nil {
+		return "", time.Time{}, err
 	}
 	u, err := c.checkPassword(ctx, a.Email, req.CurrentPassword)
 	if CodeOf(err) == apitypes.CodeUnauthorized {
@@ -353,6 +353,27 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.password", nil, nil, u.Email, "changed own password; other sessions ended"+revokedNote(revoked))
 	return secret, expires, nil
+}
+
+// UpdateMe changes the calling user's own display name (1 to 64
+// characters, trimmed), from a UI session or a `dock login` token, which
+// acts for them; API tokens have no account to change. The answer is who
+// the caller is now.
+func (c *Core) UpdateMe(ctx context.Context, a Actor, req apitypes.UpdateMeRequest) (apitypes.Me, error) {
+	if a.UserID == 0 {
+		return apitypes.Me{}, invalid("only users have a name to change; API tokens can't. Change yours on the Account page, or with `dock me name` after `dock login`")
+	}
+	name, err := displayName(req.Name)
+	if err != nil {
+		return apitypes.Me{}, err
+	}
+	u, err := c.store.SetUserName(ctx, store.SetUserNameParams{Name: name, ID: a.UserID})
+	if err != nil {
+		return apitypes.Me{}, err
+	}
+	c.audit(ctx, a.platform(), "user.name", nil, nil, u.Email, fmt.Sprintf("changed own name to %q", name))
+	a.DisplayName = u.Name
+	return a.Me(), nil
 }
 
 // SetUserDisabled disables a user, ending their sessions and revoking
@@ -732,8 +753,8 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, o
 	if !strings.Contains(req.Email, "@") {
 		return store.User{}, invalid("email %q is not valid", req.Email)
 	}
-	if len(req.Password) < 12 {
-		return store.User{}, invalid("password must be at least 12 characters")
+	if err := checkNewPassword(req.Password); err != nil {
+		return store.User{}, err
 	}
 	if !validScope(req.Role) {
 		return store.User{}, invalid("role must be read, deploy or admin")

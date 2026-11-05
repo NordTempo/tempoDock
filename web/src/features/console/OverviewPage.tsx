@@ -25,6 +25,7 @@ import {
   versionBehind,
 } from "../../ui/status";
 import { useOpenAlerts } from "../alerts/data";
+import { AlertLink } from "../alerts/source";
 import { AuditTable } from "../audit/AuditTable";
 import { useBackupSettings } from "../backups/settings";
 import { useRegistry } from "../registry/data";
@@ -66,7 +67,7 @@ export function ConsoleOverview() {
           </SectionHead>
           <ServerTable servers={servers} />
         </section>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] gap-x-8 gap-y-7">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(380px,1fr))] gap-x-8 gap-y-7 *:min-w-0">
           <OpenAlerts />
           <section aria-labelledby="activity">
             <SectionHead
@@ -431,23 +432,27 @@ function OpenAlerts() {
       {alerts.length === 0 ? (
         <p className="py-2 text-mut">None open.</p>
       ) : (
-        <table>
-          <tbody>
-            {alerts.map((a) => (
-              <tr key={a.id}>
-                <td
-                  className={`py-1.5 whitespace-nowrap ${toneText[a.severity === "critical" ? "fail" : "warn"]}`}
-                >
-                  {a.severity}
-                </td>
-                <td className="w-full py-1.5">{a.title}</td>
-                <td className="py-1.5 whitespace-nowrap text-mut">
-                  {since(a.opened_at)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ul>
+          {alerts.map((a) => (
+            <li
+              key={a.id}
+              className="grid grid-cols-[64px_minmax(0,1fr)_auto_40px] items-center gap-x-3 border-b border-soft py-1"
+            >
+              <span
+                className={
+                  toneText[a.severity === "critical" ? "fail" : "warn"]
+                }
+              >
+                {a.severity}
+              </span>
+              <span className="truncate" title={a.title}>
+                {a.title}
+              </span>
+              <AlertLink alert={a} className="lnk" />
+              <span className="text-right text-mut">{since(a.opened_at)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );

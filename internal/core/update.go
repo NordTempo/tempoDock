@@ -113,12 +113,26 @@ func (c *Core) checkReleases(ctx context.Context, refresh bool) {
 	if err != nil && ctx.Err() != nil {
 		return // the caller went away; the next one checks
 	}
+	if err != nil {
+		c.log.Warn("check for releases", "source", u.src.String(), "err", err)
+	}
 	u.mu.Lock()
 	u.checkedAt, u.checkErr = time.Now(), err
 	if err == nil {
 		u.releases = rs
 	}
 	u.mu.Unlock()
+}
+
+// checkWords splits a failed release check into one sentence for people
+// ("Couldn't check for releases: ..., what to do.") and its technical
+// detail (update.SourceError); other errors are their own detail.
+func checkWords(err error) (plain, detail string) {
+	why, detail := "something went wrong; see the detail and try again", err.Error()
+	if se, ok := errors.AsType[*update.SourceError](err); ok {
+		why, detail = se.Plain, se.Detail
+	}
+	return "Couldn't check for releases: " + why + ".", detail
 }
 
 // updateStatus assembles the status from memory and one server query.
@@ -139,7 +153,7 @@ func (c *Core) updateStatus(ctx context.Context, withReleases bool) (apitypes.Up
 		out.CheckedAt = &at
 	}
 	if u.checkErr != nil {
-		out.CheckError = u.checkErr.Error()
+		out.CheckError, out.CheckDetail = checkWords(u.checkErr)
 	}
 	pre := update.IsRelease(version.Version) && strings.Contains(version.Version, "-")
 	for _, r := range u.releases {
@@ -240,8 +254,11 @@ func (c *Core) StartUpdate(ctx context.Context, a Actor, req apitypes.StartUpdat
 		if err != nil {
 			return st, err
 		}
+		if st.Latest == "" && st.CheckError != "" {
+			return st, invalid("no release to update to. %s", st.CheckError)
+		}
 		if st.Latest == "" {
-			return st, invalid("no release to update to: %s", cmp.Or(st.CheckError, "the source lists none"))
+			return st, invalid("no release to update to: the source lists none")
 		}
 		target = st.Latest
 	}

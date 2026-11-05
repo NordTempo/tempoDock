@@ -154,10 +154,17 @@
     color: var(--color-info);
   }
 
+  /* Links inside running text are underlined, not told apart by colour alone. */
+  p a,
+  .prose a {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+  }
+
   p a:hover,
   .prose a:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    text-decoration-color: currentColor;
   }
 
   button {
@@ -363,8 +370,11 @@
     color: var(--color-faint);
   }
 
-  /* A text button that reads like a quiet link. */
+  /* A text button that reads like a quiet link; still a 24px target. */
   .lnk {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
     color: var(--color-mut);
     font-size: 12px;
   }
@@ -518,15 +528,16 @@
     text-decoration: none;
   }
 
+  /* Hover lifts the text only; the current tab alone gets the chip. */
   .tabs > a:hover {
     color: var(--color-fg);
-    background: var(--color-hover);
   }
 
   .tabs > a[aria-current="page"] {
     color: var(--color-fg);
     font-weight: 500;
     background: var(--color-chip);
+    box-shadow: inset 0 -2px 0 var(--color-fg);
   }
 
   /* Side navigation rows (sidebar, settings, variables scopes). */
@@ -545,11 +556,13 @@
     color: var(--color-fg);
   }
 
+  /* The current row: a stronger fill and a left bar, so it never reads as hover. */
   .nav-row[aria-current="page"],
   .nav-row[aria-current="true"] {
-    background: var(--color-sel);
+    background: var(--color-chip);
     color: var(--color-fg);
     font-weight: 500;
+    box-shadow: inset 2px 0 0 var(--color-fg);
   }
 
   /* A deploy step: glyph, name, duration, detail. */

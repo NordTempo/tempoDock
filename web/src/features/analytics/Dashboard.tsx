@@ -118,7 +118,7 @@ function Main({
   const panel = { project, site, stats, range, filters, onPick };
   return (
     <>
-      <dl className="grid grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-x-4 gap-y-3 tabular-nums">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-x-4 gap-y-3 tabular-nums">
         <Kpi
           label="Visitors"
           value={count(o.visitors)}
@@ -157,7 +157,7 @@ function Main({
           value={count(o.events)}
           change={delta(o.events, p.events)}
         />
-      </dl>
+      </div>
       <Chart stats={stats} metric={metric} />
       <div className="grid gap-x-6 gap-y-6 lg:grid-cols-2">
         <Breakdown
@@ -169,13 +169,6 @@ function Main({
             ["Exit", "exit_page"],
           ]}
         />
-        <GoalsPanel
-          project={project}
-          site={site}
-          range={range}
-          filters={filters}
-          canEdit={canEdit}
-        />
         <Breakdown
           {...panel}
           title="Sources"
@@ -184,6 +177,13 @@ function Main({
             ["Channels", "channel"],
             ["Campaigns", "utm_campaign"],
           ]}
+        />
+        <GoalsPanel
+          project={project}
+          site={site}
+          range={range}
+          filters={filters}
+          canEdit={canEdit}
         />
         <Breakdown
           {...panel}

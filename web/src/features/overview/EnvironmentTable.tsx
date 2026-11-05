@@ -55,7 +55,9 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   // anyone opens a running move's progress from its strip.
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);
-  const links = "text-xs text-mut hover:text-fg";
+  // Text actions with a 24px target and a hover fill, like sidebar rows.
+  const links =
+    "inline-flex min-h-[24px] items-center rounded-ctl px-2 text-xs text-sec no-underline hover:bg-hover hover:text-fg";
   return (
     <section aria-labelledby={`env-${environment.id}`}>
       <SectionHead
@@ -72,12 +74,12 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
           </>
         }
         right={
-          <>
+          <span className="-my-1 flex flex-wrap items-center gap-0.5">
             {staged > 0 && (
               <Link
                 to="/$org/$project/settings/variables/$environment"
                 params={{ org, ...ref }}
-                className="text-warn hover:text-warn-text"
+                className={`${links} text-warn hover:text-warn-text`}
               >
                 ▲ {plural(staged, "staged change")}
               </Link>
@@ -137,7 +139,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             {pr && canClone && (
               <button
                 type="button"
-                className="text-xs text-mut hover:text-fail"
+                className={`${links} hover:text-fail`}
                 title={previewsCli(`close ${ref.environment}`, ref.project)}
                 onClick={() => setClosing(true)}
               >
@@ -147,7 +149,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             {operator && (
               <button
                 type="button"
-                className={moveOpen ? "text-xs text-fg" : links}
+                className={`${links} ml-3 ${moveOpen ? "bg-hover text-fg" : ""}`}
                 title={`dock env move ${ref.environment} --to <server>`}
                 aria-expanded={moveOpen}
                 onClick={() => setMoveOpen(!moveOpen)}
@@ -155,7 +157,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 Move
               </button>
             )}
-          </>
+          </span>
         }
       >
         {environment.name}

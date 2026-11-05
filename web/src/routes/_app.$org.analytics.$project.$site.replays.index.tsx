@@ -23,7 +23,7 @@ export const Route = createFileRoute(
 });
 
 function Replays() {
-  const { project, site, range, filters } = useSiteView();
+  const { project, site, range, filters, openSettings } = useSiteView();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
@@ -43,6 +43,7 @@ function Replays() {
       onDevice={(device) =>
         navigate({ search: (s) => ({ ...s, device }), replace: true })
       }
+      onSettings={openSettings}
     />
   );
 }

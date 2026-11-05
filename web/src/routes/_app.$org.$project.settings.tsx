@@ -1,4 +1,9 @@
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useParams,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import { queries, useProjectOverview } from "../data/queries";
 import { rememberProject, useOrg } from "../shell/location";
@@ -17,20 +22,41 @@ function ProjectSettings() {
   const org = useOrg();
   const { project } = Route.useParams();
   const { environments } = useProjectOverview(project);
+  // On an environment's variables, the header names the environment.
+  const { environment } = useParams({ strict: false });
   useEffect(() => rememberProject(project), [project]);
+  const projectLink = (
+    <Link
+      to="/$org/$project"
+      params={{ org, project }}
+      className="hover:text-fg"
+    >
+      {project}
+    </Link>
+  );
   return (
     <>
       <PageBar
         parent={
-          <Link
-            to="/$org/$project"
-            params={{ org, project }}
-            className="hover:text-fg"
-          >
-            {project}
-          </Link>
+          environment ? (
+            <>
+              {projectLink}
+              <span aria-hidden className="px-1.5 text-faint">
+                /
+              </span>
+              <Link
+                to="/$org/$project/settings"
+                params={{ org, project }}
+                className="hover:text-fg"
+              >
+                Settings
+              </Link>
+            </>
+          ) : (
+            projectLink
+          )
         }
-        title="Settings"
+        title={environment ? `${environment} variables` : "Settings"}
       />
       <nav
         aria-label="Project settings"

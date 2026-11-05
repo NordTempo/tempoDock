@@ -78,29 +78,47 @@ export function Fields({ children }: { children: ReactNode }) {
   );
 }
 
-/** One labelled control in Fields; `note` goes under it. */
+/**
+ * One labelled control in Fields; `note` goes under it, and `error` (what
+ * to fix, once the person tried to submit or typed something wrong) in
+ * its place, in red. The control marks itself with `invalid`.
+ */
 export function Field({
   label,
   children,
   note,
+  error,
 }: {
   label: string;
   children: ReactNode;
   note?: ReactNode;
+  error?: string;
 }) {
   return (
     <>
       {/* biome-ignore lint/a11y/noLabelWithoutControl: the control is a child */}
       <label className="contents">
-        <span className="text-xs text-faint">{label}</span>
+        <span className={`text-xs ${error ? "text-fail" : "text-faint"}`}>
+          {label}
+        </span>
         {children}
       </label>
-      {note && (
-        <span className="col-start-2 -mt-1 text-xs text-mut">{note}</span>
+      {error ? (
+        <span role="alert" className="col-start-2 -mt-1 text-xs text-fail">
+          {error}
+        </span>
+      ) : (
+        note && (
+          <span className="col-start-2 -mt-1 text-xs text-mut">{note}</span>
+        )
       )}
     </>
   );
 }
+
+/** A control's classes when its field has an error. */
+export const invalid = (error: string | undefined) =>
+  error ? "border-fail" : "";
 
 /**
  * A label and controls that are not a single input (radios, checks); a
@@ -176,8 +194,10 @@ export function Footer({
   pending,
   disabled,
   reason = "Fill in the fields above first.",
+  problem,
   error,
   cli,
+  alt,
   onClose,
 }: {
   submit: string;
@@ -185,8 +205,15 @@ export function Footer({
   disabled?: boolean;
   /** Shown while `disabled`, so a dimmed button never goes unexplained. */
   reason?: string;
+  /**
+   * What stopped a submit, in red ("Add a name and an image"), for forms
+   * that keep the button enabled and mark the fields instead.
+   */
+  problem?: string;
   error: Error | null | undefined;
   cli: readonly string[];
+  /** A second way to submit, before the named one ("Create only"). */
+  alt?: ReactNode;
   onClose: () => void;
 }) {
   return (
@@ -195,11 +222,14 @@ export function Footer({
         <span className="min-w-0 flex-1 text-xs">
           {error ? (
             <ErrorText error={error} />
+          ) : problem ? (
+            <span className="text-fail">{problem}</span>
           ) : (
             disabled && !pending && <span className="text-faint">{reason}</span>
           )}
         </span>
         <Button onClick={onClose}>Cancel</Button>
+        {alt}
         <button
           type="submit"
           className="btn pri"

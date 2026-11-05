@@ -15,11 +15,12 @@ import {
   useIsAdmin,
   useIsOperator,
   useOrgs,
+  useProjects,
   useProjectTree,
   useServers,
   useSession,
 } from "../data/queries";
-import type { Org, ServiceView } from "../data/types";
+import type { Environment, Org, ServiceView } from "../data/types";
 import { useOpenAlertsIfAdmin } from "../features/alerts/data";
 import {
   canCreateEnvironment,
@@ -174,6 +175,14 @@ function AppNav() {
           Tokens
         </NavLink>
       )}
+      {admin && (
+        <NavLink to="/$org/settings/members" icon="users">
+          Members
+        </NavLink>
+      )}
+      <NavLink to="/$org/settings" icon="sliders">
+        Organization settings
+      </NavLink>
       <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
       <Me />
       {operator && (
@@ -213,10 +222,11 @@ function OrgSwitcher() {
   const slug = useOrg();
   const navigate = useNavigate();
   const current = orgs.find((o) => o.slug === slug) ?? orgs[0];
+  const admin = useIsAdmin();
   return (
     <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-2">
       <Menu
-        label="Organization"
+        label={`Organization: ${current?.name ?? "none"}`}
         className="min-w-0 flex-1"
         button={
           <span className="flex min-w-0 flex-1 items-center gap-2 rounded-ctl p-1.5 hover:bg-panel">
@@ -263,6 +273,16 @@ function OrgSwitcher() {
             >
               <Icon name="plus" className="text-mut" /> New organization
             </button>
+            {current && admin && (
+              <Link
+                to="/$org/settings/members"
+                params={{ org: current.slug }}
+                className={menuItem}
+                onClick={close}
+              >
+                <Icon name="users" className="text-mut" /> Members
+              </Link>
+            )}
             {current && (
               <Link
                 to="/$org/settings"
@@ -359,13 +379,18 @@ function OpenAlertCount() {
 }
 
 /**
- * Projects, each with the services of one environment: the one in view,
- * else production. The current project is open; others open on demand.
- * "New project" sits under the last one for those who may create one.
+ * Projects, each with the services of one environment: the one picked in
+ * the environment menu under it, else the one in view, else production.
+ * The current project is open; others open on demand. A project whose
+ * services haven't loaded (or failed to) still gets its row. "New
+ * project" sits under the last one for those who may create one.
  */
 function ProjectTree() {
   const org = useOrg();
-  const tree = useProjectTree();
+  const projects = useProjects();
+  const overviews = new Map(
+    useProjectTree().map((o) => [o.project.name, o.environments]),
+  );
   const here = useCurrentContext();
   const session = useSession();
   const newProject = canCreateProject(session) && (
@@ -385,7 +410,9 @@ function ProjectTree() {
   const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(new Map());
   const setFold = (name: string, expanded: boolean) =>
     setFolds((prev) => new Map(prev).set(name, expanded));
-  if (tree.length === 0) {
+  // The environment picked in a project's menu, by project.
+  const [picked, setPicked] = useState<ReadonlyMap<string, string>>(new Map());
+  if (projects.length === 0) {
     return (
       <>
         <p className="px-2.5 py-1 text-xs text-faint">No projects yet</p>
@@ -395,17 +422,19 @@ function ProjectTree() {
   }
   return (
     <ul className="flex flex-col gap-0.5">
-      {tree.map(({ project, environments }) => {
+      {projects.map((project) => {
+        const environments = overviews.get(project.name);
         const current = project.name === here.project;
         const expanded = folds.get(project.name) ?? current;
+        const choice = picked.get(project.name);
         const env =
+          environments?.find((e) => e.environment.name === choice) ||
           (current &&
-            environments.find(
+            environments?.find(
               (e) => e.environment.name === here.environment,
             )) ||
-          environments.find((e) => e.environment.kind === "production") ||
-          environments[0];
-        const all = environments.flatMap((e) => e.services);
+          environments?.find((e) => e.environment.kind === "production") ||
+          environments?.[0];
         return (
           <li key={project.id}>
             <div
@@ -416,7 +445,7 @@ function ProjectTree() {
                 aria-expanded={expanded}
                 aria-label={`${expanded ? "Hide" : "Show"} the services of ${project.name}`}
                 onClick={() => setFold(project.name, !expanded)}
-                className="grid h-7 w-6 flex-none place-items-center rounded-ctl text-mut hover:text-fg"
+                className="grid h-[28px] w-[24px] flex-none place-items-center rounded-ctl text-mut hover:text-fg"
               >
                 <Icon
                   name={expanded ? "chevronDown" : "chevronRight"}
@@ -432,19 +461,36 @@ function ProjectTree() {
                 className={`flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 ${current ? "font-medium text-fg" : "text-sec"}`}
               >
                 <span className="flex-1 truncate">{project.name}</span>
-                <ProjectNote services={all} />
+                {environments && (
+                  <ProjectNote
+                    services={environments.flatMap((e) => e.services)}
+                  />
+                )}
               </Link>
               <NewInProject
                 project={project.name}
                 environment={env?.environment.name}
               />
             </div>
-            {expanded && env && (
+            {expanded && !environments && (
+              <p className="py-1 pl-[30px] text-2xs text-faint">
+                Services not loaded
+              </p>
+            )}
+            {expanded && env && environments && (
               <ul className="flex flex-col gap-px pb-1">
                 {(environments.length > 1 || env.environment.lock) && (
-                  <li className="truncate pt-0.5 pb-0.5 pl-[30px] text-2xs text-faint">
-                    {env.environment.name}{" "}
-                    <LockMark lock={env.environment.lock} />
+                  <li className="pl-[24px]">
+                    <EnvironmentMenu
+                      project={project.name}
+                      shown={env.environment}
+                      environments={environments.map((e) => e.environment)}
+                      onPick={(name) =>
+                        setPicked((prev) =>
+                          new Map(prev).set(project.name, name),
+                        )
+                      }
+                    />
                   </li>
                 )}
                 {env.services.map((s) => (
@@ -464,6 +510,70 @@ function ProjectTree() {
       })}
       {newProject && <li>{newProject}</li>}
     </ul>
+  );
+}
+
+/**
+ * The environment under a project in the tree, as a small menu: the
+ * project's other environments (picking one shows its services here)
+ * and Compare.
+ */
+function EnvironmentMenu({
+  project,
+  shown,
+  environments,
+  onPick,
+}: {
+  project: string;
+  shown: Environment;
+  environments: Environment[];
+  onPick: (name: string) => void;
+}) {
+  const org = useOrg();
+  const label = (
+    <span className="flex min-h-[24px] items-center gap-1 px-1.5 text-2xs text-mut hover:text-fg">
+      {shown.name} <LockMark lock={shown.lock} />
+      {environments.length > 1 && <Icon name="chevronDown" size={10} />}
+    </span>
+  );
+  if (environments.length < 2) return label;
+  return (
+    <Menu
+      label={`Environment shown for ${project}: ${shown.name}`}
+      button={label}
+    >
+      {(close) => (
+        <>
+          {environments.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              className={menuItem}
+              aria-current={e.name === shown.name ? "true" : undefined}
+              onClick={() => {
+                close();
+                onPick(e.name);
+              }}
+            >
+              <span className="flex-1">{e.name}</span>
+              <LockMark lock={e.lock} />
+              <span className="w-3 text-fg">
+                {e.name === shown.name ? "✓" : ""}
+              </span>
+            </button>
+          ))}
+          <div className="my-1 border-t border-line" />
+          <Link
+            to="/$org/$project/compare"
+            params={{ org, project }}
+            className={menuItem}
+            onClick={close}
+          >
+            Compare environments
+          </Link>
+        </>
+      )}
+    </Menu>
   );
 }
 
@@ -554,7 +664,7 @@ function NewInProject({
       right
       className="flex-none"
       button={
-        <span className="grid h-7 w-6 place-items-center text-faint group-focus-within:opacity-100 group-hover:opacity-100 hover:text-fg in-aria-expanded:opacity-100 lg:opacity-0">
+        <span className="grid h-[28px] w-[24px] place-items-center text-faint group-focus-within:opacity-100 group-hover:opacity-100 hover:text-fg in-aria-expanded:opacity-100 lg:opacity-0">
           <Icon name="plus" size={12} />
         </span>
       }

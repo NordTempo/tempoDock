@@ -18,6 +18,7 @@ import {
   type Tone,
   toneText,
 } from "../../ui/status";
+import { AlertLink, alertLabel, alertText } from "../alerts/source";
 import { errorSummary } from "../service/releases";
 import { affectedServices, nextRelease } from "../variables/apply";
 
@@ -284,26 +285,29 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
     case "alert": {
       const a = p.alert;
       const critical = a.severity === "critical";
+      const { text, cli } = alertText(a);
       return (
         <Row
           n={key}
           tone={critical ? "fail" : "warn"}
           glyph={critical ? "✕" : "▲"}
-          title={a.kind === "disk" ? "Disk filling up" : "Alert"}
+          title={alertLabel(a)}
           where={
             a.environment && a.service
               ? `${a.environment}/${a.service}`
-              : (a.server ?? "")
+              : (a.environment ?? a.server ?? "")
           }
           time={since(a.opened_at)}
           action={
-            <Link to="/console/alerts" className={actionClass} data-problem={n}>
-              Alerts
-            </Link>
+            <AlertLink
+              alert={a}
+              className={actionClass}
+              title={cli}
+              data-problem={n}
+            />
           }
         >
-          {a.title}.
-          {a.message && <span className="text-mut"> {a.message}</span>}
+          {a.title}.{text && <span className="text-mut"> {text}</span>}
         </Row>
       );
     }

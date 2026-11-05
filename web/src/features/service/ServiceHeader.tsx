@@ -1,10 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
-import {
-  useArchiveService,
-  useRestart,
-  useRollback,
-} from "../../data/mutations";
+import { type ReactNode, useEffect, useState } from "react";
+import { useArchiveService, useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -32,6 +28,7 @@ import {
   PageBar,
   StateText,
 } from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import {
   failurePhrase,
   healthRestarts,
@@ -43,11 +40,12 @@ import {
 } from "../../ui/status";
 import { openDeploy } from "../deploy/start";
 import { EnvServer } from "../servers/parts";
-import { useStartService, useStopService } from "./data";
+import { useRestartService, useStartService, useStopService } from "./data";
 import { RollbackConfirm } from "./ReleasesTable";
 import {
   errorSummary,
   imageLabel,
+  imageSetting,
   rollbackTarget,
   shortImage,
 } from "./releases";
@@ -183,10 +181,10 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service } = view;
   const domain =
     view.domains.find((d) => d.status === "active") ?? view.domains[0];
+  const image = imageSetting(service, useReleases(ref));
   const running = view.active_release
     ? imageLabel(view.active_release)
     : service.image;
-  const next = service.image?.replace(/^docker\.io\/(library\/)?/, "");
   const facts: [string, ReactNode][] = [
     [
       "Image",
@@ -196,9 +194,24 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <span className="truncate" title={running}>
           {running ? shortImage(running) : "built from source"}
         </span>
-        {next && next !== running && (
-          <span className="break-all text-warn-text" title={next}>
-            next: {shortImage(next)}
+        {image.differs && (
+          <span className="font-sans break-all text-mut" title={image.next}>
+            next deploy{" "}
+            <span className="font-mono text-warn-text">
+              {shortImage(image.next)}
+            </span>
+            {image.failed && (
+              <>
+                {" "}
+                <Link
+                  to="/$org/$project/$environment/$service/releases/$number"
+                  params={{ org, ...ref, number: String(image.failed.number) }}
+                  className="text-fail underline decoration-fail-edge underline-offset-2 hover:decoration-current"
+                >
+                  failed as r{image.failed.number}
+                </Link>
+              </>
+            )}
           </span>
         )}
       </span>,
@@ -247,7 +260,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     ],
   ];
   return (
-    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line @xl:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line @4xl:grid-cols-4">
       {facts.map(([term, value]) => (
         <div key={term} className="flex flex-col gap-1 bg-page px-3.5 py-3">
           <dt className="text-2xs text-faint">{term}</dt>
@@ -414,7 +427,9 @@ export function StatusSentence({ view }: { view: ServiceView }) {
 /**
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
  * equivalents, and a menu with the rarer actions (Archive, for admins).
- * Stop, roll back and archive ask first.
+ * Stop, roll back and archive ask first, and restart does in production.
+ * Buttons that can't apply (Roll back with nothing to go back to) are
+ * left out; one line says why the others wait.
  */
 function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
@@ -422,16 +437,19 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const isAdmin = useIsAdmin();
   const archive = useArchiveService();
   const onDeploy = () => openDeploy(ref);
-  const { service, deploying } = useService(ref);
+  const { service, deploying, latest_release: latest } = useService(ref);
+  const production = useEnvironment(ref).environment.kind === "production";
   const releases = useReleases(ref);
   const mayDeploy = useCanDeploy(ref);
-  const restart = useRestart();
+  const restart = useRestartService();
+  // The release a restart started, until it serves or fails.
+  const [restarting, setRestarting] = useState<number | null>(null);
   const rollback = useRollback();
   const stop = useStopService();
   const start = useStartService();
   const target = rollbackTarget(releases);
   const [confirming, setConfirming] = useState<
-    "rollback" | "stop" | "archive" | null
+    "rollback" | "stop" | "archive" | "restart" | null
   >(null);
   const stopped = !!service.stopped_at;
   // An unreachable server blocks every action that starts a release.
@@ -439,6 +457,30 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const busy =
     blocked ?? (deploying ? `r${deploying.number} is deploying` : undefined);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
+  const doRestart = () =>
+    restart.mutate(
+      { ref, stateful: service.stateful },
+      {
+        onSuccess: (r) => {
+          setRestarting(r.number);
+          setConfirming(null);
+        },
+      },
+    );
+  const askRestart = () =>
+    production ? setConfirming("restart") : doRestart();
+
+  // Once the restart's release serves (or fails), say so.
+  useEffect(() => {
+    if (restarting === null) return;
+    if (service.active_release === restarting) {
+      notify(`${ref.service} restarted, r${restarting} serving`);
+      setRestarting(null);
+    } else if (latest?.number === restarting && latest.status === "failed") {
+      notify(`r${restarting} ${failurePhrase(latest)}`, "fail");
+      setRestarting(null);
+    }
+  }, [restarting, service.active_release, latest, ref.service]);
 
   // A GitHub deploy queues behind a running one; the window says what applies.
   const canDeploy = mayDeploy && !blocked;
@@ -456,31 +498,46 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       disabled: !canDeploy,
       run: onDeploy,
     },
-    {
-      key: "r",
-      label: "restart",
-      disabled: !canRestart,
-      run: () => restart.mutate(ref),
-    },
-    {
-      key: "b",
-      label: "roll back",
-      disabled: !canRollback,
-      run: () => setConfirming("rollback"),
-    },
-    stopped
-      ? {
-          key: "s",
-          label: "start",
-          disabled: !canStart,
-          run: () => start.mutate(ref),
-        }
-      : {
-          key: "s",
-          label: "stop",
-          disabled: !canStop,
-          run: () => setConfirming("stop"),
-        },
+    // Keys only for the buttons shown.
+    ...(!stopped && service.active_release
+      ? [
+          {
+            key: "r",
+            label: "restart",
+            disabled: !canRestart,
+            run: askRestart,
+          },
+        ]
+      : []),
+    ...(target
+      ? [
+          {
+            key: "b",
+            label: "roll back",
+            disabled: !canRollback,
+            run: () => setConfirming("rollback"),
+          },
+        ]
+      : []),
+    ...(stopped
+      ? [
+          {
+            key: "s",
+            label: "start",
+            disabled: !canStart,
+            run: () => start.mutate(ref),
+          },
+        ]
+      : service.active_release
+        ? [
+            {
+              key: "s",
+              label: "stop",
+              disabled: !canStop,
+              run: () => setConfirming("stop"),
+            },
+          ]
+        : []),
   ];
   useShortcuts(mayDeploy ? shortcuts : []);
 
@@ -490,7 +547,37 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const close = () => setConfirming(null);
   // The question in a modal over the page; the buttons stay where they are.
   const asking =
-    confirming === "stop" ? (
+    confirming === "restart" ? (
+      <Confirm
+        title={`Restart ${ref.service} in ${ref.environment}?`}
+        action={`Restart ${ref.service}`}
+        cli={`dock restart ${flags}`}
+        pending={!canRestart}
+        error={restart.error}
+        onConfirm={doRestart}
+        onCancel={() => {
+          restart.reset();
+          close();
+        }}
+      >
+        {service.stateful ? (
+          <>
+            A new release with r{service.active_release}'s image and config.{" "}
+            <b>
+              {ref.service} is down for a few seconds while r
+              {service.active_release} stops
+            </b>
+            : a volume allows one writer.
+          </>
+        ) : (
+          <>
+            A new release with r{service.active_release}'s image and config
+            starts next to r{service.active_release} and takes over once it
+            passes its health check. {ref.service} stays reachable.
+          </>
+        )}
+      </Confirm>
+    ) : confirming === "stop" ? (
       <Confirm
         title={`Stop ${ref.service} in ${ref.environment}?`}
         action={`Stop ${ref.service}`}
@@ -555,44 +642,38 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           Start <kbd>S</kbd>
         </Act>
       ) : (
+        service.active_release && (
+          <Act
+            cli={`dock service stop ${ref.service} -e ${ref.environment}`}
+            disabled={!canStop}
+            title={busy ?? "Remove its container; domains answer 503"}
+            onClick={() => setConfirming("stop")}
+          >
+            Stop <kbd>S</kbd>
+          </Act>
+        )
+      )}
+      {/* A stopped service starts instead; nothing deployed has nothing to restart. */}
+      {!stopped && service.active_release && (
         <Act
-          cli={`dock service stop ${ref.service} -e ${ref.environment}`}
-          disabled={!canStop}
-          title={
-            busy ??
-            (service.active_release
-              ? "Remove its container; domains answer 503"
-              : "Nothing runs to stop")
-          }
-          onClick={() => setConfirming("stop")}
+          cli={`dock restart ${flags}`}
+          disabled={!canRestart}
+          title={busy ?? "Start a copy of the active release"}
+          onClick={askRestart}
         >
-          Stop <kbd>S</kbd>
+          Restart <kbd>R</kbd>
         </Act>
       )}
-      <Act
-        cli={`dock restart ${flags}`}
-        disabled={!canRestart}
-        title={
-          busy ??
-          (stopped ? "Stopped: start it" : "Start a copy of the active release")
-        }
-        onClick={() => restart.mutate(ref)}
-      >
-        Restart <kbd>R</kbd>
-      </Act>
-      <Act
-        cli={`dock rollback ${target?.number ?? ""} ${flags}`.replace(
-          "  ",
-          " ",
-        )}
-        disabled={!canRollback}
-        title={
-          busy ?? (target ? undefined : "No earlier release to roll back to")
-        }
-        onClick={() => setConfirming("rollback")}
-      >
-        {target ? `Roll back to r${target.number}` : "Roll back"} <kbd>B</kbd>
-      </Act>
+      {target && (
+        <Act
+          cli={`dock rollback ${target.number} ${flags}`}
+          disabled={!canRollback}
+          title={busy}
+          onClick={() => setConfirming("rollback")}
+        >
+          Roll back to r{target.number} <kbd>B</kbd>
+        </Act>
+      )}
       <Act
         primary
         cli={`dock deploy [dir | --image ${service.image || "<image>"}] ${flags}`}
@@ -643,8 +724,16 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </Menu>
       )}
       <span className="self-center text-xs">
-        {blocked && <span className="text-fail">Disabled: {blocked}.</span>}{" "}
-        <ErrorText error={restart.error ?? start.error} />
+        {blocked ? (
+          <span className="text-fail">Disabled: {blocked}.</span>
+        ) : (
+          deploying && (
+            <span className="text-faint">
+              Waiting for r{deploying.number} to finish
+            </span>
+          )
+        )}{" "}
+        <ErrorText error={confirming ? null : (restart.error ?? start.error)} />
       </span>
     </div>
   );

@@ -18,6 +18,8 @@ type Actor struct {
 	Email   string
 	UserID  int64
 	TokenID int64
+	// DisplayName is a signed-in user's own name (Me); empty for tokens.
+	DisplayName string
 	// OrgID is the org the actor acts in; 0 for the system (every org) and
 	// for a user who hasn't chosen one of several (orgs counts them).
 	OrgID   int64
@@ -105,7 +107,7 @@ func (a Actor) platform() Actor {
 // Me describes the actor for the API.
 func (a Actor) Me() apitypes.Me {
 	return apitypes.Me{
-		Kind: a.Kind, Name: a.Name, Email: a.Email, Scope: a.Scope, Org: a.OrgSlug, Operator: a.Operator,
+		Kind: a.Kind, Name: a.Name, Email: a.Email, DisplayName: a.DisplayName, Scope: a.Scope, Org: a.OrgSlug, Operator: a.Operator,
 		Project: a.ProjectName, Environment: a.EnvironmentName,
 		TwoFactor: a.Factor, TwoFactorRequired: a.twoFactorRequired(),
 		SSO: a.SSOOrg, SSORequired: a.ssoRequired(),

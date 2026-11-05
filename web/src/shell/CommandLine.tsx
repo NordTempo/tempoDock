@@ -21,7 +21,9 @@ import {
  * The bottom command line: type a `dock` command or any part of a palette
  * label ("logs api", "members"), Tab completes the best match, Enter runs
  * it. `?` shows the keys.
- * When idle it lists the current page's shortcuts.
+ * When idle it lists the current page's shortcuts. It sticks to the
+ * bottom of the window, set off by a line, and sits after the page's
+ * last row once scrolled to the end.
  */
 export function CommandLine() {
   const input = useRef<HTMLInputElement>(null);
@@ -71,7 +73,7 @@ export function CommandLine() {
     .map((s) => `${s.key.toUpperCase()} ${s.label}`);
 
   return (
-    <div className="sticky bottom-0 z-20 bg-page px-5 pt-1.5 pb-3">
+    <div className="sticky bottom-0 z-20 border-t border-line bg-page px-5 pt-2 pb-3">
       {help && <Help onClose={() => setHelp(false)} />}
       <div className="mx-auto max-w-[860px] overflow-hidden rounded-xl border border-edge bg-panel">
         <NotLive />

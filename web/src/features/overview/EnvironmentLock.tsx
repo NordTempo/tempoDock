@@ -127,7 +127,8 @@ export function LockStrip({
           </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
-            {lock.reason && <> · {lock.reason}</>}
+            {lock.reason && <> · {lock.reason}</>} · tokens can't change it
+            until it's unlocked
           </span>
         </>
       ) : (
@@ -151,7 +152,7 @@ export function LockStrip({
           (lockHolds(lock) ? (
             <>
               <Menu
-                label={`Open ${env} for a while`}
+                label={`Open for… (${env})`}
                 right
                 button={<span className={`btn sm ${warnBtn}`}>Open for…</span>}
               >

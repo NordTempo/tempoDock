@@ -214,6 +214,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "user.delete": ["delete user", "deleted user"],
   "user.disable": ["disable user", "disabled user"],
   "user.enable": ["enable user", "enabled user"],
+  "user.name": ["change name", "changed the name of"],
   "user.login": ["sign in", "signed in as"],
   "user.login_failed": ["failed sign-in", "failed to sign in as"],
   "user.password": ["change password", "changed the password of"],

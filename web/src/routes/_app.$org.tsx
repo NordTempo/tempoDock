@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { currentOrg, setOrg } from "../api/client";
 import { queries } from "../data/queries";
+import { RoutePending } from "../shell/Shell";
 import { NotFound } from "../ui/RouteStates";
 
 // Everything in one organization (/$org/...): the API calls act in the
@@ -19,4 +20,6 @@ export const Route = createFileRoute("/_app/$org")({
   },
   // Pages under an org that don't exist render inside the shell.
   notFoundComponent: NotFound,
+  // A slow page loads inside the shell, which stays usable meanwhile.
+  pendingComponent: RoutePending,
 });

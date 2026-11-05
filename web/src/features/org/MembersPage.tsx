@@ -1,8 +1,8 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { components } from "../../api/schema";
-import { useIsAdmin, useSession } from "../../data/queries";
+import { useIsAdmin, useIsOperator, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
@@ -18,6 +18,7 @@ import {
   PageBar,
   Panel,
 } from "../../ui/kit";
+import { addressQuery } from "../address/data";
 import {
   orgQueries,
   roleNote,
@@ -55,8 +56,52 @@ export function MembersPage() {
   return <Members org={org} />;
 }
 
-/** A created invite's link, shown once. */
-type InviteLinkInfo = { email: string; url: string };
+/** A created invite: whom for, and the code its link carries. */
+type InviteLinkInfo = { email: string; code: string };
+
+/** Hostnames only this machine (or its private network) can open. */
+const privateHost =
+  /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[?::1\]?$)/;
+
+/**
+ * Where invite links point: Dock's public address when one is set, else
+ * the address this page was opened at. `local` when that is an address
+ * others likely can't open (no public address, or a private one).
+ * Operators read the public address (ADR 0029, only they may); for
+ * everyone else the page's own address decides. Loaded once inviting.
+ */
+function useInviteBase(enabled: boolean) {
+  const operator = useIsOperator();
+  const address = useQuery({
+    ...addressQuery(),
+    enabled: enabled && operator,
+  }).data;
+  const base = address?.url ?? window.location.origin;
+  const local = operator
+    ? !!address && !address.url
+    : privateHost.test(window.location.hostname);
+  return { base, local, operator };
+}
+
+/**
+ * The warning beside an invite when its link won't open for others, with
+ * the way to fix it: the console's Address page, or whom to ask.
+ */
+function LocalLinkNote({ operator }: { operator: boolean }) {
+  return (
+    <p className="text-xs text-warn-text">
+      <span className="text-warn">▲</span> This link only opens on this machine
+      or its network: Dock has no public address.{" "}
+      {operator ? (
+        <Link to="/console/address" className="text-warn-text underline">
+          Set a public address
+        </Link>
+      ) : (
+        "Ask an operator to set a public address."
+      )}
+    </p>
+  );
+}
 
 function Members({ org }: { org: string }) {
   const members = useSuspenseQuery(orgQueries.members()).data;
@@ -67,6 +112,7 @@ function Members({ org }: { org: string }) {
   const slug = useOrg();
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<InviteLinkInfo>();
+  const invite = useInviteBase(inviting || !!link);
   return (
     <>
       <PageBar
@@ -82,7 +128,7 @@ function Members({ org }: { org: string }) {
                 <Link
                   to="/$org/settings/general"
                   params={{ org: slug }}
-                  className="text-warn hover:underline"
+                  className="text-warn underline decoration-warn/50 underline-offset-[3px] hover:decoration-warn"
                   title={
                     required
                       ? "They can't act here until they add one"
@@ -106,6 +152,9 @@ function Members({ org }: { org: string }) {
       <Page gap="gap-5">
         <div className="flex flex-wrap items-start gap-8">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+            {inviting && invite.local && (
+              <LocalLinkNote operator={invite.operator} />
+            )}
             {inviting && (
               <InviteForm
                 onCreated={(created) => {
@@ -116,7 +165,14 @@ function Members({ org }: { org: string }) {
               />
             )}
             {link && (
-              <InviteLink link={link} onDone={() => setLink(undefined)} />
+              <InviteLink
+                link={link}
+                url={`${invite.base}/invite/${link.code}`}
+                note={
+                  invite.local && <LocalLinkNote operator={invite.operator} />
+                }
+                onDone={() => setLink(undefined)}
+              />
             )}
             <Panel>
               <table>
@@ -187,9 +243,14 @@ function Roles() {
 /** The link of an invite just created, with copy; it isn't shown again. */
 function InviteLink({
   link,
+  url,
+  note,
   onDone,
 }: {
   link: InviteLinkInfo;
+  url: string;
+  /** Why the link may not open for them, when it may not. */
+  note: ReactNode;
   onDone: () => void;
 }) {
   return (
@@ -207,10 +268,11 @@ function InviteLink({
       </p>
       <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
         <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
-          {link.url}
+          {url}
         </code>
-        <CopyButton text={link.url} primary />
+        <CopyButton text={url} primary />
       </div>
+      {note}
       <div>
         <Button small onClick={onDone}>
           Done
@@ -243,7 +305,7 @@ function InviteForm({
             onSuccess: (c) =>
               onCreated({
                 email: c.invite.email,
-                url: `${window.location.origin}/invite/${c.code}`,
+                code: c.code,
               }),
           },
         );

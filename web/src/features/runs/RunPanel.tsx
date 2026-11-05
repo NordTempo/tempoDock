@@ -156,7 +156,7 @@ function RunForm({
           type="submit"
           cli={cli}
           disabled={!!reason || !trimmed || run.isPending}
-          reason={reason}
+          reason={reason ?? (trimmed ? undefined : "type a command first")}
         >
           Run
         </Act>
@@ -210,7 +210,7 @@ function RunForm({
             </span>
           </>
         )}
-        {reason && <span className="text-mut">{reason}.</span>}
+
         <ErrorText error={run.error} />
       </div>
     </form>

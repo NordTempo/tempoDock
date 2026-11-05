@@ -21,7 +21,7 @@ func TestInvites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info, err := h.c.Invite(h.ctx, bob, inv.Code); err != nil || info.Status != "open" || info.Org != "test" || info.Role != apitypes.ScopeDeploy {
+	if info, err := h.c.Invite(h.ctx, inv.Code, "192.0.2.1"); err != nil || info.Org != "test" || info.Role != apitypes.ScopeDeploy || info.InvitedBy != "ada@x" {
 		t.Fatalf("invite = %+v, %v", info, err)
 	}
 	if _, err := h.c.AcceptInvite(h.ctx, carol, inv.Code); CodeOf(err) != apitypes.CodeForbidden {

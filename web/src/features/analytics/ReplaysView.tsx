@@ -58,6 +58,7 @@ export function ReplaysView({
   device,
   onErrorsOnly,
   onDevice,
+  onSettings,
 }: {
   project: string;
   site: Site;
@@ -67,6 +68,8 @@ export function ReplaysView({
   device?: string;
   onErrorsOnly: (on: boolean) => void;
   onDevice: (d: string | undefined) => void;
+  /** Opens the site's settings, where session replay is turned on. */
+  onSettings?: () => void;
 }) {
   const skipped = filters.filter(
     (f) => !(replayDimensions as readonly string[]).includes(f.dimension),
@@ -95,9 +98,14 @@ export function ReplaysView({
         </p>
       )}
       {!data.recording && (
-        <p className="text-warn-text">
-          This site doesn't record visits. Turn on session replay in its
-          settings; inputs are always masked.
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-warn-text">
+          Session replay is off for this site. Inputs are always masked when
+          it's on.
+          {onSettings && (
+            <button type="button" className="btn sm" onClick={onSettings}>
+              Turn on in settings
+            </button>
+          )}
         </p>
       )}
       {!data.store_online && (

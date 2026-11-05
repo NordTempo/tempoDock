@@ -33,7 +33,6 @@ export function LogDrains({ env }: { env: EnvRef }) {
     <section aria-labelledby="log-drains-head" id="log-drains" className="mt-4">
       <SectionHead
         id="log-drains-head"
-        aside="where every service's output is sent"
         right={
           isAdmin &&
           !adding && (

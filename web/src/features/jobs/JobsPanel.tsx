@@ -286,9 +286,9 @@ function JobDetail({
             ? "from dock.toml"
             : `set by ${job.created_by} · ${day(job.updated_at)}`}
         </span>
-        {job.source === "api" && canDeploy && !confirming && (
+        {job.source === "api" && canDeploy && (
           <span className="ml-auto">
-            <Act small danger cli={cli} onClick={() => setConfirming(true)}>
+            <Act small cli={cli} onClick={() => setConfirming(true)}>
               Remove
             </Act>
           </span>
@@ -583,6 +583,17 @@ function Editor({
               type="submit"
               cli={cli}
               disabled={!valid || !changed || set.isPending}
+              reason={
+                !name || nameError
+                  ? "name the job first"
+                  : !trimmed
+                    ? "type a command first"
+                    : !preview || "error" in preview
+                      ? "fix the schedule first"
+                      : !changed
+                        ? "nothing changed yet"
+                        : undefined
+              }
             >
               {job ? "Save" : "Add job"}
             </Act>

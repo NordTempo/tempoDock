@@ -30,6 +30,8 @@ export function SiteBar({
   onRange,
   onFilters,
   named = true,
+  settingsOpen,
+  onSettings,
 }: {
   project: string;
   /** Show the site's name (or the choice of sites); a site page has it in its header. */
@@ -46,8 +48,13 @@ export function SiteBar({
   onRenamed: (name: string) => void;
   onRange: (range: StatsRange) => void;
   onFilters: (filters: Filter[]) => void;
+  /** The settings dialog, when the page opens it too (a site page does). */
+  settingsOpen?: boolean;
+  onSettings?: (open: boolean) => void;
 }) {
-  const [settings, setSettings] = useState(false);
+  const [ownSettings, setOwnSettings] = useState(false);
+  const settings = settingsOpen ?? ownSettings;
+  const setSettings = onSettings ?? setOwnSettings;
   // A filter from the URL finds its label in the dashboard's rows, if they
   // are loaded.
   const queryClient = useQueryClient();

@@ -191,7 +191,6 @@ function ConnectionRow({
           </Button>
           <Button
             small
-            danger={tunnels.length === 0}
             disabled={tunnels.length > 0}
             reason="a server's tunnel uses it"
             onClick={() => setConfirming(true)}

@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
@@ -15,15 +16,18 @@ import {
   servicePath,
   useChanges,
   useEnvironment,
+  useReleases,
   useService,
   useSession,
   useVolumes,
 } from "../../data/queries";
 import type { Service, ServiceRef, SettingChange } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
+import { imageSetting } from "../service/releases";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
   editPlaceholder,
@@ -40,9 +44,16 @@ type KeyedChange = SettingChange & { key: SettingKey };
 
 /**
  * Service settings, each editable in place. Edits are staged like
- * variables and go live together through the apply box.
+ * variables and go live together through the apply box, which stays in
+ * view while anything is staged. `edit` opens one setting's editor.
  */
-export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+export function SettingsPanel({
+  serviceRef: ref,
+  edit,
+}: {
+  serviceRef: ServiceRef;
+  edit?: TextSettingKey;
+}) {
   const { service } = useService(ref);
   const { environment } = useEnvironment(ref);
   const volumes = useVolumes(ref);
@@ -61,13 +72,16 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       settingKey={key}
       value={service[key]}
       change={change(key)}
+      open={edit === key}
     />
   );
 
   return (
     <>
       <dl className="props max-w-[860px]">
-        <Item label="Image">{field("image")}</Item>
+        <Item label="Image">
+          <ImageValue serviceRef={ref} field={field("image")} />
+        </Item>
         <Item label="Port">
           {field("port")}
           <span className="font-mono text-mut">
@@ -160,11 +174,12 @@ export function SettingsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-mut">from {environment.name}</span>
         </Item>
       </dl>
-      <p className="text-xs text-mut">
-        Dotted values are editable. Edits are staged until you apply them.
-      </p>
-
-      <ApplyBox env={envPath(ref)} reveal={false} service={ref.service} />
+      <ApplyBox
+        env={envPath(ref)}
+        reveal={false}
+        service={ref.service}
+        sticky
+      />
 
       <SourceSection serviceRef={ref} />
 
@@ -351,23 +366,84 @@ function Shown({ text }: { text: string }) {
 }
 
 /**
- * A setting value, dotted-underlined: click to edit. Staged values show
- * old → new.
+ * The image row: the image setting, and when it isn't what serves (a
+ * failed deploy of a new tag, a rollback), the serving image above it,
+ * so it is plain which one Apply keeps and which one Deploy runs.
+ */
+function ImageValue({
+  serviceRef: ref,
+  field,
+}: {
+  serviceRef: ServiceRef;
+  field: ReactNode;
+}) {
+  const org = useOrg();
+  const { service } = useService(ref);
+  const image = imageSetting(service, useReleases(ref));
+  const failed = image.failed && (
+    <Link
+      to="/$org/$project/$environment/$service/releases/$number"
+      params={{ org, ...ref, number: String(image.failed.number) }}
+      className="text-fail underline decoration-fail-edge underline-offset-2 hover:decoration-current"
+    >
+      failed as r{image.failed.number}
+    </Link>
+  );
+  if (!image.differs) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-2">
+        {field}
+        {failed}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-col gap-1">
+      <span className="font-mono break-all">
+        {image.now}{" "}
+        <span className="font-sans text-ok">
+          serving as r{image.serving?.number}
+        </span>
+      </span>
+      <span className="inline-flex flex-wrap items-center gap-x-2">
+        <span className="text-mut">next deploy</span>
+        {field}
+        {failed}
+      </span>
+      <span className="text-xs text-mut">
+        Deploy runs the next deploy image. Applying staged changes keeps the
+        serving one.
+      </span>
+    </span>
+  );
+}
+
+/** A value that edits in place: a quiet box, like the inputs below it. */
+const editableBox =
+  "inline-flex min-h-[24px] items-center rounded-[4px] border px-1.5 text-left font-mono break-all hover:border-dash hover:bg-hover";
+
+/**
+ * A setting value in a quiet box: click to edit, Enter stages, Esc
+ * cancels. Staged values show old → new. `open` starts in the editor.
  */
 function Editable({
   serviceRef: ref,
   settingKey: key,
   value,
   change,
+  open,
 }: {
   serviceRef: ServiceRef;
   settingKey: TextSettingKey;
   value: string | number;
   change: KeyedChange | undefined;
+  open?: boolean;
 }) {
   const stage = useStageSettings();
   const discard = useDiscardChanges();
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(() =>
+    open ? editText(key, change ? change.new : value) : null,
+  );
   const [error, setError] = useState<Error | null>(null);
 
   const submit = (raw: string) => {
@@ -379,7 +455,7 @@ function Editable({
 
   if (draft !== null) {
     return (
-      <span className="inline-flex items-baseline gap-2">
+      <span className="inline-flex max-w-full flex-wrap items-center gap-2">
         <input
           // biome-ignore lint/a11y/noAutofocus: opened by clicking the value
           autoFocus
@@ -392,8 +468,13 @@ function Editable({
             if (e.key === "Escape") setDraft(null);
           }}
           onBlur={() => setDraft(null)}
-          className="field w-56 py-0.5 font-mono text-xs"
+          // As wide as the value, so a long command isn't cut while typed.
+          style={{ width: `${Math.max(draft.length, 18) + 3}ch` }}
+          className="field min-h-[24px] max-w-full py-0.5 font-mono text-xs"
         />
+        <span className="text-2xs whitespace-nowrap text-faint">
+          <kbd>↵</kbd> stages · <kbd>Esc</kbd> cancels
+        </span>
         <ErrorText error={error ?? stage.error} />
       </span>
     );
@@ -408,19 +489,22 @@ function Editable({
           setError(null);
           setDraft(editText(key, change ? change.new : value));
         }}
-        className={`-mx-1 cursor-text rounded-[4px] px-1 text-left font-mono break-all underline decoration-dash decoration-dotted underline-offset-4 hover:bg-hover hover:decoration-mut ${change ? "bg-stage-bg" : ""}`}
+        className={`${editableBox} cursor-text ${change ? "border-warn-edge bg-stage-bg" : "border-line bg-panel"}`}
       >
-        {change ? (
-          <>
-            <span className="text-warn">~</span>{" "}
-            <span className="text-mut line-through">
-              {formatSetting(key, change.old)}
-            </span>{" "}
-            {formatSetting(key, change.new)}
-          </>
-        ) : (
-          <Shown text={formatSetting(key, value)} />
-        )}
+        {/* One inline box, so the spaces between its parts survive. */}
+        <span>
+          {change ? (
+            <>
+              <span className="text-warn">~</span>{" "}
+              <span className="text-mut line-through">
+                {formatSetting(key, change.old)}
+              </span>{" "}
+              {formatSetting(key, change.new)}
+            </>
+          ) : (
+            <Shown text={formatSetting(key, value)} />
+          )}
+        </span>
       </button>
       {change && (
         <button
@@ -551,15 +635,14 @@ function DatabaseSettings({
                 if (e.key === "Escape") setDraft(null);
               }}
               onBlur={() => setDraft(null)}
-              className="field w-56 py-0.5 font-mono text-xs"
+              className="field min-h-[24px] w-56 py-0.5 font-mono text-xs"
             />
-          ) : (
+          ) : canEdit ? (
             <button
               type="button"
               title="Edit the database URL variable"
-              disabled={!canEdit}
               onClick={() => setDraft(urlVariable)}
-              className="font-mono enabled:hover:underline"
+              className={`${editableBox} cursor-text border-line bg-panel`}
             >
               {urlVariable || (
                 <span className="text-mut">
@@ -567,6 +650,14 @@ function DatabaseSettings({
                 </span>
               )}
             </button>
+          ) : (
+            <span className="font-mono">
+              {urlVariable || (
+                <span className="font-sans text-mut">
+                  default: DATABASE_URL, then POSTGRES_*
+                </span>
+              )}
+            </span>
           )}
         </Item>
       </dl>

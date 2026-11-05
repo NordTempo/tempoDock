@@ -294,7 +294,6 @@ function Actions({ server: s }: { server: Server }) {
       )}
       {hasKey && (
         <Act
-          danger
           cli={`dock server revoke ${s.name}`}
           onClick={() => setAsk("revoke")}
         >
@@ -302,7 +301,6 @@ function Actions({ server: s }: { server: Server }) {
         </Act>
       )}
       <Act
-        danger
         cli={`dock server remove ${s.name}`}
         disabled={!!placed}
         reason={placed ? `Remove needs an empty server: ${placed}.` : undefined}

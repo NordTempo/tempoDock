@@ -34,7 +34,9 @@ export function TokenTable({
               <th>Scope</th>
               <th>Limited to</th>
               {!mine && <th>Created by</th>}
-              <th>Data</th>
+              <th title="What the token may do in the Data panel">
+                Data access
+              </th>
               <th>Last used</th>
               <th>Expires</th>
               <th />
@@ -121,7 +123,7 @@ function TokenRow({
           </td>
         )}
         <td className={`py-2 ${token.data ? "" : "text-mut"}`}>
-          {tokenDataText(token.data)}
+          {token.data ? tokenDataText(token.data) : "follows policy"}
         </td>
         <td className={`py-2 ${token.last_used_at ? "" : "text-mut"}`}>
           {token.last_used_at ? ago(token.last_used_at) : "never"}
@@ -214,4 +216,4 @@ function TokenRow({
 
 /** What caps a token's own data access in Dock. */
 export const tokenCap =
-  "never more than a user with its scope, or than its creator has. On production, write acts as propose.";
+  "never more than a user with its scope, or than its creator has. On production, its writes wait for an admin's approval.";

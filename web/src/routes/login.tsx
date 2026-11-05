@@ -83,7 +83,7 @@ function purpose(back: string | undefined): { title: string; note?: string } {
   if (path.startsWith("/invite/")) {
     return {
       title: "Sign in to see your invite",
-      note: "Use the email address the invite was sent to. No account yet? Ask the admin who invited you.",
+      note: "Use the email address the invite was sent to. No account yet? Go back to the invite link and create one there.",
     };
   }
   if (path === "/cli-login") {

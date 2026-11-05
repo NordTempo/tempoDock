@@ -136,14 +136,17 @@ function Users() {
             <p className="text-2xs text-faint">
               Your own account can't be disabled, deleted or reset here. Change
               your password on{" "}
-              <Link to="/account" className="text-info hover:underline">
+              <Link
+                to="/account"
+                className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
+              >
                 your account
               </Link>
               . Tokens for agents, CI and scripts are in{" "}
               <Link
                 to="/$org/settings/tokens"
                 params={{ org }}
-                className="text-info hover:underline"
+                className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
               >
                 the organization's settings
               </Link>
@@ -396,8 +399,9 @@ const UserRow = memo(function UserRow({
       <td className="py-2.5 text-faint">{day(u.created_at)}</td>
       <td className="w-full py-1.5 text-right">
         {!you && (
-          // Text buttons, so three fit beside the role guide; each title is
-          // its CLI equivalent, and each confirm shows it too.
+          // Text actions (the row style for several actions), so three fit
+          // beside the role guide; each title is its CLI equivalent, and
+          // each confirm shows it too.
           <span className="inline-flex gap-3">
             {disabled ? (
               <button
@@ -434,7 +438,7 @@ const UserRow = memo(function UserRow({
             </button>
             <button
               type="button"
-              className="lnk text-fail"
+              className="lnk"
               title={`dock user delete ${u.email}`}
               onClick={() => setAsking("delete")}
             >

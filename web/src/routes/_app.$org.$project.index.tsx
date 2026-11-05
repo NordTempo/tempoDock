@@ -81,11 +81,22 @@ function LiveOverview() {
       : navigate({ to: "/$org/$project/settings", params: { org, project } });
   const canNewEnv = canCreateEnvironment(session, project);
   // Deploy rights may be limited to one environment; any one will do.
-  const mayDeploy =
-    services.length > 0 &&
-    environments.some((e) =>
-      canDeploy(session, { project, environment: e.environment.name }),
-    );
+  const deployable = environments.filter((e) =>
+    canDeploy(session, { project, environment: e.environment.name }),
+  );
+  const mayDeploy = services.length > 0 && deployable.length > 0;
+  // A new service goes to production, or the first environment the
+  // caller may deploy to; the dialog lets them pick another.
+  const target =
+    deployable.find((e) => e.environment.kind === "production") ??
+    deployable[0];
+  const newService = target
+    ? () =>
+        openCreate({
+          kind: "service",
+          env: { project, environment: target.environment.name },
+        })
+    : undefined;
   const newEnvironment = () => openCreate({ kind: "environment", project });
 
   useEffect(() => rememberProject(project), [project]);
@@ -106,8 +117,11 @@ function LiveOverview() {
         ]
       : []),
     { key: "s", label: "settings", run: openSettings },
+    ...(newService
+      ? [{ key: "n", label: "new service", run: newService }]
+      : []),
     ...(mayDeploy
-      ? [{ key: "d", label: "deploy", run: () => openPalette("deploy ") }]
+      ? [{ key: "d", label: "redeploy", run: () => openPalette("deploy ") }]
       : []),
     ...(watch
       ? [
@@ -160,10 +174,14 @@ function LiveOverview() {
               Settings{staged && <span className="text-warn"> ▲</span>}{" "}
               <kbd>S</kbd>
             </Button>
-            {mayDeploy && (
-              <Button primary onClick={() => openPalette("deploy ")}>
-                Deploy a service <kbd>D</kbd>
-              </Button>
+            {newService && (
+              <Act
+                primary
+                cli={`dock service create <name> -p ${project} -e ${target?.environment.name}`}
+                onClick={newService}
+              >
+                New service <kbd>N</kbd>
+              </Act>
             )}
           </>
         }

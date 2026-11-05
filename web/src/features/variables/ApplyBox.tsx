@@ -15,6 +15,7 @@ import type {
 import { modKey, useKeydown } from "../../shell/keys";
 import { plural } from "../../ui/format";
 import { Act, ErrorText } from "../../ui/kit";
+import { imageLabel, shortImage } from "../service/releases";
 import {
   formatSetting,
   isSettingKey,
@@ -30,13 +31,16 @@ const marks: Record<VariableChange["action"], string> = {
 
 /**
  * An environment's staged changes, what applying them does, and the
- * buttons. Applying is all or nothing, like the API. ⌘↵ applies.
+ * buttons. Applying is all or nothing, like the API. ⌘↵ applies. With
+ * `sticky` it stays in view above the command line while anything is
+ * staged, so the way to apply is never scrolled away.
  */
 export function ApplyBox({
   env,
   reveal,
   variables = [],
   service,
+  sticky,
 }: {
   env: EnvRef;
   /** Show old and new values (admin, on request). */
@@ -45,6 +49,7 @@ export function ApplyBox({
   variables?: Variable[];
   /** The service on screen: its own changes can be discarded alone. */
   service?: string | null;
+  sticky?: boolean;
 }) {
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
@@ -52,7 +57,23 @@ export function ApplyBox({
   const apply = useApplyChanges();
   const discard = useDiscardChanges();
   const busy = apply.isPending || discard.isPending;
-  const releases = affectedServices(changes, services).map(nextRelease);
+  const affected = affectedServices(changes, services);
+  const releases = affected.map(nextRelease);
+  // A config release keeps the serving image; say so where the image
+  // setting differs (after a failed deploy of a new tag, or a rollback)
+  // and the image itself isn't staged.
+  const keptImages = affected.flatMap((s) => {
+    const serving = s.active_release && imageLabel(s.active_release);
+    const setting = s.service.image.replace(/^docker\.io\/(library\/)?/, "");
+    const staged = changes.settings.some(
+      (c) => c.service === s.service.name && c.field === "image",
+    );
+    return serving && setting && serving !== setting && !staged
+      ? [
+          `${s.service.name} keeps serving ${shortImage(serving)}; ${shortImage(setting)} waits for the next deploy.`,
+        ]
+      : [];
+  });
   // Releases can't start on an unreachable server.
   const blocked = useDeployBlock(env);
   const applyBlocked = releases.length > 0 ? blocked : undefined;
@@ -215,7 +236,7 @@ export function ApplyBox({
   return (
     <section
       aria-labelledby="staged"
-      className="flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5"
+      className={`flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5 ${sticky ? "sticky bottom-[64px] z-10 shadow-lg shadow-black/60" : ""}`}
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
@@ -235,7 +256,9 @@ export function ApplyBox({
           {changes.last_failure}
         </p>
       )}
-      <div className="overflow-x-auto font-mono text-xs leading-[1.9]">
+      <div
+        className={`overflow-x-auto font-mono text-xs leading-[1.9] ${sticky ? "max-h-[30vh] overflow-y-auto" : ""}`}
+      >
         {lines.map((line) => (
           <div key={line.id} className="whitespace-nowrap">
             <span className="text-warn">{line.mark}</span>{" "}
@@ -247,6 +270,11 @@ export function ApplyBox({
           </div>
         ))}
       </div>
+      {keptImages.map((text) => (
+        <p key={text} className="text-xs text-mut">
+          {text}
+        </p>
+      ))}
       <div className="flex flex-wrap items-start gap-2">
         <Act
           primary

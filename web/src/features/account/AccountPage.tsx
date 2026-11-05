@@ -5,15 +5,17 @@ import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useOrgs, useSession } from "../../data/queries";
 import { useOrg } from "../../shell/location";
-import { ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
+import { Act, ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
 import { TokenTable } from "../tokens/TokenTable";
+import { useUpdateName } from "./data";
 import { TwoFactorSection } from "./TwoFactorSection";
 
-// The signed-in person's own account (`dock whoami`, `dock token list
-// --mine`, `dock me password`, `dock me two-factor`): who they are, their role,
-// their tokens, two-factor sign-in and changing their password.
+// The signed-in person's own account (`dock whoami`, `dock me name`, `dock
+// token list --mine`, `dock me password`, `dock me two-factor`): who they
+// are, their name, role and tokens, two-factor sign-in and changing their
+// password.
 
 /** The API's minimum for a new password. */
 const MIN_PASSWORD = 12;
@@ -43,7 +45,13 @@ export function AccountPage() {
       <Page width="max-w-[760px]">
         <dl className="props">
           <dt>Name</dt>
-          <dd>{me.name}</dd>
+          <dd>
+            {me.kind === "user" ? (
+              <NameField name={me.display_name ?? ""} />
+            ) : (
+              me.name
+            )}
+          </dd>
           {me.email && (
             <>
               <dt>Email</dt>
@@ -123,6 +131,52 @@ export function AccountPage() {
         )}
       </Page>
     </>
+  );
+}
+
+/**
+ * The caller's display name as a field: Save sends it once it differs,
+ * and says Saved until it is edited again.
+ */
+function NameField({ name }: { name: string }) {
+  const update = useUpdateName();
+  const [value, setValue] = useState(name);
+  const next = value.trim();
+  const changed = next !== name;
+  return (
+    <form
+      className="flex flex-wrap items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed && next) update.mutate(next);
+      }}
+    >
+      <input
+        aria-label="Name"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          update.reset();
+        }}
+        maxLength={64}
+        autoComplete="name"
+        className="field w-[260px] py-[5px]"
+      />
+      <Act
+        small
+        type="submit"
+        cli={`dock me name "${next || "<name>"}"`}
+        disabled={!changed || !next || update.isPending}
+      >
+        Save
+      </Act>
+      {update.isSuccess && !changed && (
+        <span className="text-ok">
+          <span aria-hidden>✓</span> Saved
+        </span>
+      )}
+      <ErrorText error={update.error} />
+    </form>
   );
 }
 

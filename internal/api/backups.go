@@ -62,6 +62,16 @@ func registerBackups(s *Server, a huma.API) {
 		return reply(s.core.ServiceBackups(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-backup-log", Method: http.MethodGet, Path: servicePathT + "/backups/{id}/log",
+		Summary: "Get a backup's log", Tags: tags,
+		Description: "What a backup or restore run's job printed: its last 16 KB, with the repository's and database's secrets masked. Kept for the service's newest 20 runs; empty when none was kept. Scope: deploy, as a database's output can show its data.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		ID int64 `path:"id"`
+	}) (*out[apitypes.BackupLog], error) {
+		return reply(s.core.BackupLog(ctx, actor, in.ref(), in.ID))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "run-backup", Method: http.MethodPost, Path: servicePathT + "/backups",
 		Summary: "Back up a service now", Tags: tags, DefaultStatus: http.StatusAccepted,
 		Description: "Starts a backup in the background and answers with it, running. Scope: deploy.",

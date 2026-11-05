@@ -73,6 +73,7 @@ import { Route as AppOrgProjectEnvironmentServiceVariablesRouteImport } from './
 import { Route as AppOrgProjectSettingsVariablesIndexRouteImport } from './routes/_app.$org.$project.settings.variables.index'
 import { Route as AppOrgProjectSettingsVariablesEnvironmentRouteImport } from './routes/_app.$org.$project.settings.variables.$environment'
 import { Route as AppOrgAnalyticsProjectSiteIndexRouteImport } from './routes/_app.$org.analytics.$project.$site.index'
+import { Route as AppOrgAnalyticsProjectSiteErrorsRouteImport } from './routes/_app.$org.analytics.$project.$site.errors'
 import { Route as AppOrgAnalyticsProjectSiteFunnelsRouteImport } from './routes/_app.$org.analytics.$project.$site.funnels'
 import { Route as AppOrgAnalyticsProjectSiteVitalsRouteImport } from './routes/_app.$org.analytics.$project.$site.vitals'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsSplatRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.$'
@@ -425,6 +426,12 @@ const AppOrgAnalyticsProjectSiteIndexRoute =
     path: '/',
     getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
   } as any)
+const AppOrgAnalyticsProjectSiteErrorsRoute =
+  AppOrgAnalyticsProjectSiteErrorsRouteImport.update({
+    id: '/errors',
+    path: '/errors',
+    getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
+  } as any)
 const AppOrgAnalyticsProjectSiteFunnelsRoute =
   AppOrgAnalyticsProjectSiteFunnelsRouteImport.update({
     id: '/funnels',
@@ -523,6 +530,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/uptime': typeof AppOrgProjectEnvironmentServiceUptimeRoute
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/$org/$project/settings/variables/$environment': typeof AppOrgProjectSettingsVariablesEnvironmentRoute
+  '/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
   '/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
@@ -589,6 +597,7 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/uptime': typeof AppOrgProjectEnvironmentServiceUptimeRoute
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/$org/$project/settings/variables/$environment': typeof AppOrgProjectSettingsVariablesEnvironmentRoute
+  '/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceIndexRoute
@@ -662,6 +671,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/uptime': typeof AppOrgProjectEnvironmentServiceUptimeRoute
   '/_app/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
   '/_app/$org/$project/settings/variables/$environment': typeof AppOrgProjectSettingsVariablesEnvironmentRoute
+  '/_app/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/_app/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   '/_app/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
   '/_app/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
@@ -735,6 +745,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/uptime'
     | '/$org/$project/$environment/$service/variables'
     | '/$org/$project/settings/variables/$environment'
+    | '/$org/analytics/$project/$site/errors'
     | '/$org/analytics/$project/$site/funnels'
     | '/$org/analytics/$project/$site/vitals'
     | '/$org/$project/$environment/$service/'
@@ -801,6 +812,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/uptime'
     | '/$org/$project/$environment/$service/variables'
     | '/$org/$project/settings/variables/$environment'
+    | '/$org/analytics/$project/$site/errors'
     | '/$org/analytics/$project/$site/funnels'
     | '/$org/analytics/$project/$site/vitals'
     | '/$org/$project/$environment/$service'
@@ -873,6 +885,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/$environment/$service/uptime'
     | '/_app/$org/$project/$environment/$service/variables'
     | '/_app/$org/$project/settings/variables/$environment'
+    | '/_app/$org/analytics/$project/$site/errors'
     | '/_app/$org/analytics/$project/$site/funnels'
     | '/_app/$org/analytics/$project/$site/vitals'
     | '/_app/$org/$project/$environment/$service/'
@@ -1343,6 +1356,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAnalyticsProjectSiteIndexRouteImport
       parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
     }
+    '/_app/$org/analytics/$project/$site/errors': {
+      id: '/_app/$org/analytics/$project/$site/errors'
+      path: '/errors'
+      fullPath: '/$org/analytics/$project/$site/errors'
+      preLoaderRoute: typeof AppOrgAnalyticsProjectSiteErrorsRouteImport
+      parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
+    }
     '/_app/$org/analytics/$project/$site/funnels': {
       id: '/_app/$org/analytics/$project/$site/funnels'
       path: '/funnels'
@@ -1476,6 +1496,7 @@ const AppOrgProjectEnvironmentServiceRouteWithChildren =
   )
 
 interface AppOrgAnalyticsProjectSiteRouteChildren {
+  AppOrgAnalyticsProjectSiteErrorsRoute: typeof AppOrgAnalyticsProjectSiteErrorsRoute
   AppOrgAnalyticsProjectSiteFunnelsRoute: typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   AppOrgAnalyticsProjectSiteVitalsRoute: typeof AppOrgAnalyticsProjectSiteVitalsRoute
   AppOrgAnalyticsProjectSiteIndexRoute: typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -1485,6 +1506,8 @@ interface AppOrgAnalyticsProjectSiteRouteChildren {
 
 const AppOrgAnalyticsProjectSiteRouteChildren: AppOrgAnalyticsProjectSiteRouteChildren =
   {
+    AppOrgAnalyticsProjectSiteErrorsRoute:
+      AppOrgAnalyticsProjectSiteErrorsRoute,
     AppOrgAnalyticsProjectSiteFunnelsRoute:
       AppOrgAnalyticsProjectSiteFunnelsRoute,
     AppOrgAnalyticsProjectSiteVitalsRoute:

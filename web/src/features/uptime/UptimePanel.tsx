@@ -3,7 +3,15 @@ import { useState } from "react";
 import { listenPort, useService } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { ago, clock, day, elapsed } from "../../ui/format";
-import { Act, Button, ErrorText, Panel, SectionHead } from "../../ui/kit";
+import {
+  Act,
+  Button,
+  Confirm,
+  ErrorText,
+  Panel,
+  SectionHead,
+} from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import {
   addCli,
   type NewUptimeCheck,
@@ -27,6 +35,10 @@ const intervals = [
   [3600, "1h"],
 ] as const;
 
+/** An interval as the form offers it: "1m", else seconds. */
+const every = (seconds: number) =>
+  intervals.find(([s]) => s === seconds)?.[1] ?? `${seconds}s`;
+
 /** 100% only for a perfect record; else at most 99.99%, as the CLI. */
 function percent(p: number | undefined) {
   if (p === undefined) return "–";
@@ -39,6 +51,8 @@ const stateWord = { up: "Up", down: "Down", unknown: "Unknown" };
 export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { domains } = useService(ref);
   const checks = useSuspenseQuery(uptimeChecks(ref)).data;
+  // The check added here, marked in the list until the page changes.
+  const [added, setAdded] = useState<number | null>(null);
   // Verified domains that serve the service and have no check yet.
   const checked = new Set(checks.map((c) => new URL(c.url).hostname));
   const unchecked = domains.filter(
@@ -71,7 +85,12 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             first.
           </p>
         ) : (
-          <AddCheck serviceRef={ref} host={domains[0]?.hostname ?? ""} />
+          <AddCheck
+            serviceRef={ref}
+            host={domains[0]?.hostname ?? ""}
+            checks={checks}
+            onAdded={setAdded}
+          />
         )}
         {checks.length > 0 && (
           <Panel>
@@ -80,6 +99,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 <tr>
                   <th>State</th>
                   <th>URL</th>
+                  <th>Every</th>
                   <th>Last 24 hours</th>
                   <th className="text-right">24h</th>
                   <th className="text-right">7d</th>
@@ -91,7 +111,13 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               </thead>
               <tbody>
                 {checks.map((c) => (
-                  <CheckRow key={c.id} serviceRef={ref} check={c} />
+                  <CheckRow
+                    key={c.id}
+                    serviceRef={ref}
+                    check={c}
+                    fresh={c.id === added}
+                    domains={domains.map((d) => d.hostname)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -157,26 +183,47 @@ function Strip({ series }: { series: UptimeCheck["series"] }) {
   );
 }
 
+/**
+ * A URL with its path in full: the scheme and host faint (cut first when
+ * space runs out), or left out when the host is one of the service's
+ * domains and the path alone tells checks apart.
+ */
+function CheckUrl({ url, domains }: { url: string; domains: string[] }) {
+  const u = new URL(url);
+  const path = `${u.pathname}${u.search}`;
+  const own = domains.length === 1 && domains[0] === u.hostname;
+  return (
+    <span className="inline-flex max-w-[360px] min-w-0 font-mono">
+      {!own && <span className="min-w-0 truncate text-mut">{u.origin}</span>}
+      <span className="shrink-0">{path}</span>
+    </span>
+  );
+}
+
 function CheckRow({
   serviceRef: ref,
   check: c,
+  fresh,
+  domains,
 }: {
   serviceRef: ServiceRef;
   check: UptimeCheck;
+  /** Just added here: marked, and says when the first probe runs. */
+  fresh: boolean;
+  /** The service's hostnames. */
+  domains: string[];
 }) {
   const remove = useRemoveUptimeCheck(ref);
   const [confirming, setConfirming] = useState(false);
   const p = c.last_probe;
   return (
-    <tr>
+    <tr className={fresh ? "[&>td]:bg-sel" : ""}>
       <td className={stateClass[c.state]}>{stateWord[c.state]}</td>
       <td
         className="whitespace-nowrap"
         title={`${c.url}, expects ${c.expect_status}`}
       >
-        <span className="inline-block max-w-[240px] truncate align-bottom font-mono">
-          {c.url}
-        </span>
+        <CheckUrl url={c.url} domains={domains} />
         {c.auto && (
           <span
             className="text-faint"
@@ -187,6 +234,7 @@ function CheckRow({
           </span>
         )}
       </td>
+      <td className="font-mono text-mut">{every(c.interval_seconds)}</td>
       <td>
         <Strip series={c.series} />
       </td>
@@ -198,31 +246,32 @@ function CheckRow({
       >
         {p
           ? `${p.up ? `${p.status} in ${p.latency_ms} ms` : p.error} · ${ago(p.at)}`
-          : "not yet"}
+          : `first probe within ${every(c.interval_seconds)}`}
       </td>
       <td className="text-mut">{c.server}</td>
       <td className="w-px py-1 whitespace-nowrap">
-        {confirming ? (
-          <span className="flex items-center gap-2">
-            <Act
-              small
-              danger
-              cli={`dock uptime remove ${c.id} -s ${ref.service} -e ${ref.environment}`}
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(c.id)}
-            >
-              Remove
-            </Act>
-            <Button small onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </span>
-        ) : (
-          <Button small onClick={() => setConfirming(true)}>
-            Remove
-          </Button>
+        <Button small onClick={() => setConfirming(true)}>
+          Remove
+        </Button>
+        {confirming && (
+          <Confirm
+            danger
+            action="Remove check"
+            title={`Remove the check of ${c.url}?`}
+            cli={`dock uptime remove ${c.id} -s ${ref.service} -e ${ref.environment}`}
+            pending={remove.isPending}
+            error={remove.error}
+            onConfirm={() =>
+              remove.mutate(c.id, { onSuccess: () => setConfirming(false) })
+            }
+            onCancel={() => {
+              remove.reset();
+              setConfirming(false);
+            }}
+          >
+            Dock stops probing it, and its history goes with it.
+          </Confirm>
         )}
-        <ErrorText error={remove.error} />
       </td>
     </tr>
   );
@@ -315,14 +364,23 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
+/**
+ * The add form. A check that repeats an existing one (same URL, status
+ * and interval) is refused here with a note; a new one gets a notice.
+ */
 function AddCheck({
   serviceRef: ref,
   host,
+  checks,
+  onAdded,
 }: {
   serviceRef: ServiceRef;
   host: string;
+  checks: UptimeCheck[];
+  onAdded: (id: number) => void;
 }) {
   const add = useAddUptimeCheck(ref);
+  const [repeat, setRepeat] = useState(false);
   const [url, setUrl] = useState("");
   const [status, setStatus] = useState("200");
   const [intervalS, setIntervalS] = useState(60);
@@ -339,13 +397,32 @@ function AddCheck({
       className="flex flex-wrap items-center gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
-        add.mutate(req, { onSuccess: () => setUrl("") });
+        const same = checks.some(
+          (c) =>
+            c.url === req.url &&
+            c.expect_status === req.expect_status &&
+            c.interval_seconds === req.interval_seconds,
+        );
+        setRepeat(same);
+        if (same) return;
+        add.mutate(req, {
+          onSuccess: (check) => {
+            setUrl("");
+            onAdded(check.id);
+            notify(
+              `Added a check of ${req.url}, every ${every(intervalS)}. The first probe runs within ${every(intervalS)}.`,
+            );
+          },
+        });
       }}
     >
       <input
         aria-label="URL"
         value={url}
-        onChange={(e) => setUrl(e.target.value)}
+        onChange={(e) => {
+          setUrl(e.target.value);
+          setRepeat(false);
+        }}
         placeholder={`https://${host}/`}
         className="field w-[320px] py-[7px] font-mono"
       />
@@ -397,9 +474,15 @@ function AddCheck({
         type="submit"
         cli={addCli(ref, req)}
         disabled={req.url === "" || add.isPending}
+        reason={req.url === "" ? "type a URL first" : undefined}
       >
         Add check
       </Act>
+      {repeat && (
+        <span role="alert" className="text-warn-text">
+          Already checked: {req.url} every {every(intervalS)}.
+        </span>
+      )}
       <ErrorText error={add.error} />
     </form>
   );

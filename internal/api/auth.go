@@ -218,6 +218,14 @@ func registerAuth(s *Server, a huma.API) {
 		return &logoutOutput{SetCookie: http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode}}, nil
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "update-me", Method: http.MethodPatch, Path: Prefix + "/me",
+		Summary: "Change your name", Tags: []string{"auth"},
+		Description: "Your display name, 1 to 64 characters (trimmed). Users, from a UI session or a `dock login` token; API tokens have no account. Answers with who you are now.",
+		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized},
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.UpdateMeRequest }) (*out[apitypes.Me], error) {
+		return reply(s.core.UpdateMe(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "me", Method: http.MethodGet, Path: Prefix + "/me",
 		Summary: "Who the caller is and what it may do", Tags: []string{"auth"},
 	}, func(_ context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.Me], error) {

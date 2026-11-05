@@ -75,8 +75,10 @@ export function Kpi({
 }) {
   const content = (
     <>
-      <dt className={`text-xs ${on ? "text-fg" : "text-mut"}`}>{label}</dt>
-      <dd className="text-lg font-semibold">
+      <span className={`block text-xs ${on ? "text-fg" : "text-mut"}`}>
+        {label}
+      </span>
+      <span className="block text-lg font-semibold">
         {value}
         {change && (
           <small
@@ -85,7 +87,7 @@ export function Kpi({
             {change.text}
           </small>
         )}
-      </dd>
+      </span>
     </>
   );
   return onClick ? (

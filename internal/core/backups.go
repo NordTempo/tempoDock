@@ -36,6 +36,10 @@ const jobMemoryMB = 768
 // serviceBackupRuns is how many runs a service's backup list shows.
 const serviceBackupRuns = 50
 
+// backupLogRuns is how many of a service's newest runs keep their output
+// for View log: at most 20 x 16 KB a service.
+const backupLogRuns = 20
+
 // backupState is the in-memory side of backups.
 type backupState struct {
 	// kick wakes the scheduler (schedule or settings changed, a server
@@ -445,9 +449,93 @@ func (c *Core) serviceBackups(ctx context.Context, ss svcScope) (apitypes.Servic
 		}
 	}
 	for _, r := range rows {
-		out.Runs = append(out.Runs, toBackupRun(r, ss.svc.Name, names))
+		run := toBackupRun(r, ss.svc.Name, names)
+		if out.Restorable && r.Operation == "backup" && r.Status == string(apitypes.BackupSucceeded) && !r.Pruned && r.SnapshotID != "" {
+			run.NotRestorable = notRestorableHere(r.Repository, set.Repository)
+		}
+		out.Runs = append(out.Runs, run)
 	}
 	return out, nil
+}
+
+// notRestorableHere says why a backup whose snapshot is in repository
+// from can't be restored while backups go to current, and what to do; ""
+// when it can. Restores open only the current repository. Repositories
+// compare by repoLabel, so a local one reads the same however recorded.
+func notRestorableHere(from, current string) string {
+	if repoLabel(from) == repoLabel(current) {
+		return ""
+	}
+	return fmt.Sprintf("its snapshot is in %s, but Dock restores only from where backups go now, %s; restore it by hand with restic and the repository password (docs/guide/databases.md#restore)",
+		repoWords(from), repoWords(current))
+}
+
+// repoWords names a repository in a sentence: the local one, or its URL.
+func repoWords(repository string) string {
+	if repoLabel(repository) == "local" {
+		return "the local repository on the service's server"
+	}
+	return repository
+}
+
+// BackupLog returns what a backup or restore run of a service printed
+// (apitypes.BackupLog). Like a one-off command's output it can hold what
+// a database printed, so it takes the scope running one does: deploy.
+func (c *Core) BackupLog(ctx context.Context, a Actor, ref ServiceRef, id int64) (apitypes.BackupLog, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "reading a backup's log")
+	if err != nil {
+		return apitypes.BackupLog{}, err
+	}
+	row, err := c.store.GetBackup(ctx, id)
+	if store.IsNotFound(err) || (err == nil && row.ServiceID != ss.svc.ID) {
+		return apitypes.BackupLog{}, notFound("%s has no backup or restore %d; `dock backup list` shows its runs", ss, id)
+	}
+	if err != nil {
+		return apitypes.BackupLog{}, err
+	}
+	out, err := c.store.GetBackupLog(ctx, store.GetBackupLogParams{BackupID: id, ServiceID: ss.svc.ID})
+	if err != nil && !store.IsNotFound(err) {
+		return apitypes.BackupLog{}, err
+	}
+	return apitypes.BackupLog{ID: id, Output: out}, nil
+}
+
+// jobLog is what a backup or restore job's output keeps for View log: the
+// repository's and database's secrets from its environment masked, then
+// its last apitypes.MaxRunOutputBytes.
+func jobLog(env map[string]string, out string) string {
+	if out == "" {
+		return ""
+	}
+	secrets := map[string]string{}
+	for _, k := range []string{"RESTIC_PASSWORD", "AWS_SECRET_ACCESS_KEY", "PGPASSWORD", "REDISCLI_AUTH"} {
+		if v := env[k]; v != "" {
+			secrets[k] = v
+		}
+	}
+	if r := newRedactor(secrets); r != nil {
+		b, _ := r.appendMasked(nil, []byte(out), true)
+		out = string(b)
+	}
+	return runTail(out)
+}
+
+// keepBackupLog keeps a finished run's log (jobLog) and drops the
+// service's logs older than its newest backupLogRuns. A failure is
+// logged: a lost log never fails the run.
+func (c *Core) keepBackupLog(ctx context.Context, serviceID, backupID int64, log string) {
+	if log == "" {
+		return
+	}
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SaveBackupLog(ctx, store.SaveBackupLogParams{BackupID: backupID, ServiceID: serviceID, Output: log}); err != nil {
+			return err
+		}
+		return q.TrimBackupLogs(ctx, store.TrimBackupLogsParams{ServiceID: serviceID, Keep: backupLogRuns})
+	})
+	if err != nil {
+		c.log.Warn("keep backup log", "backup", backupID, "err", err)
+	}
 }
 
 // toBackupRun converts a backups row; names resolves restored_to.
@@ -528,11 +616,12 @@ func (c *Core) startBackup(ctx context.Context, a Actor, ss svcScope, trigger st
 // it finished can start the next run.
 func (c *Core) runBackup(ctx context.Context, ss svcScope, row store.Backup) {
 	defer c.kickBackups() // a due backup may have waited for this one
-	res, err := c.backupJob(ctx, ss, row)
+	res, log, err := c.backupJob(ctx, ss, row)
 	c.releaseService(ss.svc.ID)
 	if ctx.Err() != nil {
 		return // shutting down: the next start marks it failed
 	}
+	c.keepBackupLog(ctx, ss.svc.ID, row.ID, log)
 	// The row is written last, so whoever sees the run finished also sees
 	// its audit event and the snapshots retention removed.
 	fin := store.FinishBackupParams{Status: string(apitypes.BackupSucceeded), FinishedAt: ptr(now()), ID: row.ID}
@@ -589,26 +678,27 @@ func humanBytes(n int64) string {
 }
 
 // backupJob runs the backup job of row on the service's server and parses
-// its output.
-func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (backup.Result, error) {
+// its output; log is what View log keeps of it (jobLog), "" when the job
+// never ran.
+func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (res backup.Result, log string, err error) {
 	rt, err := c.runtimeFor(ss.env.ServerID)
 	if err != nil {
-		return backup.Result{}, err
+		return backup.Result{}, "", err
 	}
 	set, err := c.backupSettings(ctx)
 	if err != nil {
-		return backup.Result{}, err
+		return backup.Result{}, "", err
 	}
 	if set.Repository != row.Repository {
-		return backup.Result{}, errors.New("the backup repository changed after this backup started; run it again")
+		return backup.Result{}, "", errors.New("the backup repository changed after this backup started; run it again")
 	}
 	repo, err := c.repoOf(ctx, set)
 	if err != nil {
-		return backup.Result{}, err
+		return backup.Result{}, "", err
 	}
 	kind, vols, err := c.backupKindOf(ctx, ss)
 	if err != nil {
-		return backup.Result{}, err
+		return backup.Result{}, "", err
 	}
 	src := backup.Source{Kind: kind, ServiceID: ss.svc.ID, Host: ss.svc.Name}
 	image := c.cfg.Backup.ResticImage
@@ -617,14 +707,14 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (ba
 	case apitypes.BackupPostgres:
 		conn, err := c.dbConnection(ctx, ss)
 		if err != nil {
-			return backup.Result{}, notRunningErr(ss, err)
+			return backup.Result{}, "", notRunningErr(ss, err)
 		}
 		src.Port, src.User, src.Password, src.Database = conn.port, conn.owner.User, conn.owner.Password, conn.database
 		image = jobImage(ss)
 	case apitypes.BackupRedis:
 		env, err := c.activeEnv(ctx, ss)
 		if err != nil {
-			return backup.Result{}, err
+			return backup.Result{}, "", err
 		}
 		t, _ := templateOf(ss.svc)
 		src.Port, src.Password, image = t.port, env["REDIS_PASSWORD"], jobImage(ss)
@@ -635,7 +725,7 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (ba
 	}
 	script, err := backup.BackupScript(kind)
 	if err != nil {
-		return backup.Result{}, err
+		return backup.Result{}, "", err
 	}
 	spec := node.JobSpec{
 		Name:   fmt.Sprintf("dock_p%d_e%d_s%d_backup%d", ss.project.ID, ss.env.ID, ss.svc.ID, row.ID),
@@ -645,14 +735,15 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (ba
 		Script: script, Network: networkName(ss.envScope), Mounts: mounts,
 	}
 	out, err := c.runResticJob(ctx, ss.env.ServerID, rt, repo, spec)
+	log = jobLog(spec.Env, out)
 	if err != nil {
-		return backup.Result{}, err
+		return backup.Result{}, log, err
 	}
-	res, err := backup.ParseBackup(out)
+	res, err = backup.ParseBackup(out)
 	if err != nil {
-		return res, fmt.Errorf("%w%s", err, withOutput(out))
+		return res, log, fmt.Errorf("%w%s", err, withOutput(out))
 	}
-	return res, nil
+	return res, log, nil
 }
 
 // jobOutput is what a job's error shows of its output (backup.ErrorText)

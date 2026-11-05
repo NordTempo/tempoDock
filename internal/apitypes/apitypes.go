@@ -43,9 +43,14 @@ type Health struct {
 // Me describes the caller: a logged-in user or an API token, acting in
 // one org.
 type Me struct {
-	Kind  string `json:"kind" enum:"user,token"`
+	Kind string `json:"kind" enum:"user,token"`
+	// Name is who the caller acts as in audit events: a user's email, a
+	// token's name.
 	Name  string `json:"name"`
 	Email string `json:"email,omitempty"`
+	// DisplayName is a signed-in user's own name (PATCH /me changes it);
+	// empty for tokens.
+	DisplayName string `json:"display_name,omitempty"`
 	// Org is the org the caller acts in; empty when a user with several
 	// hasn't chosen one (the `org` parameter), and then Scope is too.
 	Org   string `json:"org,omitempty"`
@@ -132,14 +137,30 @@ type CreatedInvite struct {
 	URL string `json:"url,omitempty"`
 }
 
-// InviteInfo is an invite as the person invited sees it before accepting.
+// InviteInfo is an open invite as the person invited sees it before
+// accepting, signed in or not (ADR 0060): nothing more than the link's
+// holder needs to decide.
 type InviteInfo struct {
-	Org       string    `json:"org" doc:"The org's slug"`
-	OrgName   string    `json:"org_name"`
-	Email     string    `json:"email"`
-	Role      Scope     `json:"role" enum:"read,deploy,admin"`
+	Org     string `json:"org" doc:"The org's slug"`
+	OrgName string `json:"org_name"`
+	Email   string `json:"email"`
+	Role    Scope  `json:"role" enum:"read,deploy,admin"`
+	// InvitedBy is who created the invite, as the audit log names them.
+	InvitedBy string    `json:"invited_by"`
 	ExpiresAt time.Time `json:"expires_at"`
-	Status    string    `json:"status" enum:"open,accepted,revoked,expired"`
+}
+
+// InviteSignUpRequest creates an account for an invite's email and
+// accepts the invite (ADR 0060).
+type InviteSignUpRequest struct {
+	Name     string `json:"name" maxLength:"200"`
+	Password string `json:"password" maxLength:"1024"`
+}
+
+// UpdateMeRequest changes the caller's own account.
+type UpdateMeRequest struct {
+	// Name is the display name: 1 to 64 characters, trimmed.
+	Name string `json:"name" maxLength:"200"`
 }
 
 // OrgVariable is a variable every project of the org may reference as

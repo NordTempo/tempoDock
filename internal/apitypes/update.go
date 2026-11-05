@@ -21,8 +21,11 @@ type UpdateStatus struct {
 	// their notes. Pre-releases are left out unless Version is one.
 	Releases  []UpdateRelease `json:"releases"`
 	CheckedAt *time.Time      `json:"checked_at,omitempty"`
-	// CheckError is why the check failed, saying what to do.
-	CheckError string `json:"check_error,omitempty"`
+	// CheckError is why the check failed and what to do, one sentence
+	// for people; CheckDetail is the technical detail (the URL, status
+	// or network error), also in the daemon's log.
+	CheckError  string `json:"check_error,omitempty"`
+	CheckDetail string `json:"check_detail,omitempty"`
 	// Updater: dock-update.path is installed, so the control plane can
 	// update itself. Without it the first update is by hand (install.sh).
 	Updater bool `json:"updater"`

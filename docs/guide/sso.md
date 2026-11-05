@@ -64,6 +64,9 @@ domains.
 - **A member** of the organization signs in.
 - **Someone with an invite** (`dock org invite`) joins with the invite's
   role on their first sign-in, with a new Dock account if they had none.
+  The invite link's **Create an account** makes a password account
+  instead, except in an organization that requires single sign-on
+  ([ADR 0060](../decisions/0060-invite-links-signed-out.md)).
 - **Anyone else** is refused and told to ask an admin for an invite,
   unless the provider has a just-in-time role:
   `dock org sso set google --jit-role read` (or `deploy`) lets anyone

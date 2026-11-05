@@ -7,7 +7,7 @@ import {
 import { type RegisteredRouter, useRouter } from "@tanstack/react-router";
 import { api, body, done, setOrg } from "../api/client";
 import type { components } from "../api/schema";
-import { notify } from "../ui/notice";
+import { type NoticeTone, notify } from "../ui/notice";
 import { currentMe, envPath, keys, servicePath } from "./queries";
 import type {
   DiscardSelection,
@@ -33,13 +33,22 @@ import type {
 export function useAction<Vars, Data>(
   mutationFn: (vars: Vars) => Promise<Data>,
   touches: (vars: Vars) => QueryKey[],
-  /** What to tell the person once it worked ("Restarting web"), as a notice. */
-  said?: (vars: Vars, data: Data) => string,
+  /**
+   * What to tell the person once it worked, as a notice: "Archived web",
+   * or with a tone, ["Restarting web", "info"] for work that runs on.
+   */
+  said?: (vars: Vars, data: Data) => string | [string, NoticeTone],
 ) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
-    onSuccess: said && ((data, vars) => notify(said(vars, data))),
+    onSuccess:
+      said &&
+      ((data, vars) => {
+        const s = said(vars, data);
+        if (typeof s === "string") notify(s);
+        else notify(...s);
+      }),
     onSettled: (_data, _error, vars) =>
       Promise.all(
         touches(vars).map((queryKey) =>
@@ -66,7 +75,7 @@ export const useDeploy = () =>
         ),
       ),
     serviceWide,
-    (ref, r) => `Deploying ${ref.service} as r${r.number}`,
+    (ref, r) => [`Deploying ${ref.service} as r${r.number}`, "info"],
   );
 
 export const useRollback = () =>
@@ -79,7 +88,10 @@ export const useRollback = () =>
         ),
       ),
     ({ ref }) => serviceWide(ref),
-    ({ ref, to }, r) => `Rolling back ${ref.service} to r${to} as r${r.number}`,
+    ({ ref, to }, r) => [
+      `Rolling back ${ref.service} to r${to}: r${r.number} is deploying`,
+      "info",
+    ],
   );
 
 export const useRestart = () =>
@@ -92,7 +104,10 @@ export const useRestart = () =>
         ),
       ),
     serviceWide,
-    (ref) => `Restarting ${ref.service}`,
+    (ref) => [
+      `Restarting ${ref.service}: a fresh copy starts, then takes over`,
+      "info",
+    ],
   );
 
 // Staging touches the environment (changes, variables) and the overview,

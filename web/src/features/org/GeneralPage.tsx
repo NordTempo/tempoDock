@@ -81,6 +81,9 @@ export function GeneralPage() {
                           Save
                         </Act>
                       )}
+                      {rename.isSuccess && name.trim() === org.name && (
+                        <span className="text-xs text-ok">Saved</span>
+                      )}
                       <ErrorText error={rename.error} />
                     </form>
                   ) : (
@@ -214,6 +217,9 @@ function LockSettings() {
                     <span className="text-xs text-fail">
                       {TTL_MIN} to {TTL_MAX} hours
                     </span>
+                  )}
+                  {save.isSuccess && hours === String(current) && (
+                    <span className="text-xs text-ok">Saved</span>
                   )}
                 </form>
               </td>
@@ -355,7 +361,6 @@ function Delete({ name, slug }: { name: string; slug: string }) {
     >
       <Act
         small
-        danger
         cli="dock org delete"
         disabled={!!reason}
         reason={reason}

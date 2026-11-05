@@ -152,7 +152,11 @@ function McpConfig({ secret }: { secret?: string }) {
       <span className="flex items-center gap-2 text-xs text-mut">
         {label} <CopyButton text={text} />
       </span>
-      <pre className="overflow-x-auto rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs">
+      <pre
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: it scrolls sideways, so the keyboard must reach it (WCAG scrollable region)
+        tabIndex={0}
+        className="overflow-x-auto rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs"
+      >
         {text}
       </pre>
     </div>
@@ -412,14 +416,18 @@ function CreateToken({
           </label>
         </div>
         <TokenDataFields value={data} onChange={setData} cap={tokenCap} />
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 text-xs">
+            <ErrorText error={create.error} />
+          </span>
+          <Button onClick={onCancel}>Cancel</Button>
           <button type="submit" className="btn pri" disabled={create.isPending}>
             Create token
           </button>
-          <Button onClick={onCancel}>Cancel</Button>
-          <span className="font-mono text-2xs text-mut">{cli}</span>
-          <ErrorText error={create.error} />
         </div>
+        <code className="border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
+          {cli}
+        </code>
       </form>
     </section>
   );

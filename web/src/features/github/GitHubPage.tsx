@@ -111,7 +111,7 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
           <tr>
             <td className="py-2.5 text-faint" />
             <td className="py-1.5 whitespace-normal">
-              <Button small danger onClick={() => setAsking(true)}>
+              <Button small onClick={() => setAsking(true)}>
                 Remove App
               </Button>
               {asking && (
