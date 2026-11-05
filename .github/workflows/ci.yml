@@ -199,24 +199,3 @@ jobs:
             exit 1
           fi
 
-  # TEMPORARY, removed before merge: runs release.yml's gate on its runner
-  # with its token permissions against known commits.
-  release-gate-check:
-    if: github.event_name == 'pull_request'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: useblacksmith/checkout@v1
-      - env:
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          # Passed on main (run 42088744834).
-          scripts/release/wait-for-ci.sh 4dda1a40dacdccc150b588b8bd5fbab236427872 60
-          # Failed on main (run 42094657489): must fail.
-          if scripts/release/wait-for-ci.sh 4a1d3307f97051bdd82c678a63d969fc55db1213 60; then exit 1; fi
-          # Not on main: must fail.
-          if scripts/release/wait-for-ci.sh "$HEAD_SHA" 60; then exit 1; fi
-          echo "gate behaves as expected"

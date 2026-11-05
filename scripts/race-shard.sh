@@ -29,4 +29,7 @@ if [ -z "$mine" ]; then
 	exit 0
 fi
 echo "race-shard: shard $shard runs $(wc -l <<<"$mine") of $(wc -l <<<"$names") tests"
-go test -race -timeout 30m -run "^($(paste -sd'|' <<<"$mine"))\$" "$@"
+# A shard takes under 10 minutes in CI, so a hung test fails in 15, not
+# the 30 that all of them together need.
+timeout=$((n == 1 ? 30 : 15))m
+go test -race -timeout "$timeout" -run "^($(paste -sd'|' <<<"$mine"))\$" "$@"
