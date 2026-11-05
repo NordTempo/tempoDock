@@ -674,7 +674,9 @@ func (c *Core) activeEnv(ctx context.Context, ss svcScope) (map[string]string, e
 
 // runResticJob runs spec on a server with restic and the repository
 // mounted (filling the server's restic volume first if needed). A job
-// that exits non-zero is an error with the end of its output.
+// that exits non-zero is an error with the end of its output; one that
+// couldn't reach a repository (backup.UnreachableExit) is just the job's
+// own message saying which and what to do.
 func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime, repo backup.Repo, spec node.JobSpec) (string, error) {
 	bin, err := c.ensureRestic(ctx, serverID, rt)
 	if err != nil {
@@ -700,6 +702,11 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 	res, err := rt.RunJob(ctx, spec)
 	if err != nil {
 		return res.Output, c.nodeErr(serverID, err)
+	}
+	if res.ExitCode == backup.UnreachableExit {
+		if text := jobOutput(res.Output); text != "" {
+			return res.Output, errors.New(strings.TrimPrefix(text, "dock: "))
+		}
 	}
 	if res.ExitCode != 0 {
 		return res.Output, fmt.Errorf("exit code %d%s", res.ExitCode, withOutput(res.Output))

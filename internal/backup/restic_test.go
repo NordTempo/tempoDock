@@ -1,8 +1,13 @@
 package backup
 
 import (
+	"errors"
 	"maps"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -230,5 +235,41 @@ func TestRepoEnvAddressing(t *testing.T) {
 	}
 	if env := (Repo{}).Env(); env["DOCK_RESTIC_OPTS"] != "" {
 		t.Errorf("local: %q", env["DOCK_RESTIC_OPTS"])
+	}
+}
+
+// The prelude fails a job whose repository doesn't answer with
+// UnreachableExit and a message naming the endpoint, and lets one that
+// answers (even "doesn't exist", restic's exit 10) go on to init. restic
+// is a stub; the probe's deadline is cut to a second.
+func TestPreludeReach(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stub     string
+		wantExit int
+		wantOut  string
+	}{
+		"unreachable": {stub: "sleep 30", wantExit: UnreachableExit, wantOut: "can't reach the backup storage at http://127.0.0.1:9000/bucket from a backup job"},
+		"new":         {stub: `[ "$1" = cat ] && exit 10; echo "ran $1" >&2`, wantOut: "ran init"},
+		"exists":      {stub: `[ "$1" = cat ] && exit 0; echo "ran $1" >&2`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "restic"), []byte("#!/bin/sh\n"+tc.stub+"\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			script := strings.NewReplacer(BinDir, dir, "timeout -s KILL "+reachTimeout, "timeout -s KILL 1").Replace(prelude + initRepo)
+			cmd := exec.Command("sh", "-c", script)
+			cmd.Env = append(os.Environ(), "RESTIC_REPOSITORY=s3:http://127.0.0.1:9000/bucket", "RESTIC_PASSWORD=pw")
+			out, err := cmd.CombinedOutput()
+			code := 0
+			if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+				code = ee.ExitCode()
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if code != tc.wantExit || strconv.Itoa(UnreachableExit) != unreachableExit || !strings.Contains(string(out), tc.wantOut) || (tc.wantOut == "" && len(out) > 0) {
+				t.Fatalf("exit %d, output %q; want exit %d with %q", code, out, tc.wantExit, tc.wantOut)
+			}
+		})
 	}
 }

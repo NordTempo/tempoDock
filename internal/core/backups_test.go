@@ -287,6 +287,23 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 	}
 }
 
+// A job that couldn't reach its repository fails the backup with the
+// job's own message, not an exit code.
+func TestBackupUnreachableRepository(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	const msg = "can't reach the backup storage at http://127.0.0.1:9000/b from a backup job (no answer in 60s)"
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if strings.Contains(spec.Name, "_backup") {
+			return node.JobResult{ExitCode: backup.UnreachableExit, Output: "dock: " + msg + "\n"}, nil
+		}
+		return node.JobResult{}, nil
+	})
+	if run := h.runBackup(db); run.Status != apitypes.BackupFailed || run.Error != msg {
+		t.Fatalf("run = %+v", run)
+	}
+}
+
 func TestVolumeBackupWarnsAndCantRestore(t *testing.T) {
 	h := newHarness(t)
 	app := h.service("app", apitypes.CreateServiceRequest{})

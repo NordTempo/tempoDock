@@ -163,17 +163,51 @@ type Source struct {
 	User, Password, Database string
 }
 
-// prelude opens (or creates) the repository; pipefail where the shell has
-// it. $R is restic with the repository's options (DOCK_RESTIC_OPTS: the
-// bucket addressing), unquoted on use so they split into arguments.
+// Reaching a repository: restic retries a backend that doesn't answer
+// (connection refused, no route, DNS) for a long time without a word, so
+// a job behind the app firewall pointed at a loopback or private endpoint
+// hung with no log line. Every job first reads the repository's config
+// under reachTimeout, which a reachable repository answers in a second
+// (or with "doesn't exist" for a new one); only that probe has a
+// deadline, the work after it runs as long as its data takes.
+const (
+	// reachTimeout is how long, in seconds, the first read of a
+	// repository may take.
+	reachTimeout = "60"
+	// UnreachableExit is a job's exit code when a repository didn't
+	// answer within reachTimeout; its last output line says which. The
+	// prelude spells it out (unreachableExit) to stay a constant.
+	UnreachableExit = 75
+	unreachableExit = "75"
+)
+
+// prelude sets up the shell (pipefail where it has it) and checks the
+// job's repository answers, leaving restic's exit code of reading its
+// config in $rc (0: it exists). $R is restic with the repository's
+// options (DOCK_RESTIC_OPTS: the bucket addressing), unquoted on use so
+// they split into arguments. reach REPOSITORY PASSWORD fails the job with
+// UnreachableExit when the probe is cut off: timeout's 124, or the
+// killed restic's 137 where busybox's timeout execs it in place.
 const prelude = `set -eu
 if (set -o pipefail) 2>/dev/null; then set -o pipefail; fi
 R="` + BinDir + `/restic ${DOCK_RESTIC_OPTS:-}"
+T=""
+if command -v timeout >/dev/null 2>&1; then T="timeout -s KILL ` + reachTimeout + `"; fi
+reach() {
+  rc=0
+  RESTIC_REPOSITORY="$1" RESTIC_PASSWORD="$2" $T $R cat config </dev/null >/dev/null 2>&1 || rc=$?
+  case $rc in 124|137)
+    echo "dock: can't reach the backup storage at ${1#s3:} from a backup job (no answer in ` + reachTimeout + `s). Jobs run in a container behind the app firewall: a loopback endpoint never works and a private one must be in [network] allow_private. Fix the storage endpoint and run it again." >&2
+    exit ` + unreachableExit + ` ;;
+  esac
+}
+reach "$RESTIC_REPOSITORY" "$RESTIC_PASSWORD"
 `
 
-// initRepo creates the repository if it can't be opened. A wrong password
-// or an unreachable repository then fails init with restic's own message.
-const initRepo = `$R cat config >/dev/null 2>&1 || $R init >/dev/null
+// initRepo creates the repository if its config couldn't be read (the
+// prelude's $rc). A wrong password then fails init with restic's own
+// message.
+const initRepo = `[ "$rc" = 0 ] || $R init >/dev/null
 `
 
 // retention prunes the service's snapshots and lists what is left, after
@@ -422,7 +456,9 @@ $R snapshots --json --retry-lock ` + RetryLock + ` | grep -oE '"(original|id)":"
 // creating the target with the source's chunking parameters if it doesn't
 // exist, so their data deduplicates, then lists the source (ParseMoved).
 // Snapshots already copied are skipped. It runs in the restic image.
-const CopyScript = prelude + `if ! $R cat config >/dev/null 2>&1; then
+const CopyScript = prelude + `target=$rc
+reach "$RESTIC_FROM_REPOSITORY" "$RESTIC_FROM_PASSWORD"
+if [ "$target" != 0 ]; then
   $R init --from-repo "$RESTIC_FROM_REPOSITORY" --copy-chunker-params >/dev/null
 fi
 $R copy --quiet --retry-lock ` + RetryLock + ` --from-repo "$RESTIC_FROM_REPOSITORY"
