@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +198,38 @@ func TestHeldPush(t *testing.T) {
 	}
 	if r := h.wait(web, h.waitReleases(web, 2)[0].Number); r.Commit == nil || r.Commit.SHA != shaA {
 		t.Fatalf("UI deploy: %+v", r)
+	}
+}
+
+// A held push that's rejected ends its commit's pending status as failed.
+func TestHeldPushRejectedStatus(t *testing.T) {
+	h, gh := gitHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	token, on := "github_pat_secret", true
+	k := h.connect(web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Token: &token, Status: &on})
+	h.lock("production")
+	admin := Actor{Kind: "user", OrgID: 1, Name: "saile@example.com", UserID: 1, Scope: apitypes.ScopeAdmin}
+
+	if _, err := h.push(k, pushBody("refs/heads/main", shaA, "server.js")); err != nil {
+		t.Fatal(err)
+	}
+	var rs []apitypes.AccessRequest
+	for deadline := time.Now().Add(5 * time.Second); len(rs) == 0; time.Sleep(5 * time.Millisecond) {
+		rs, _ = h.c.ListRequests(h.ctx, admin, RequestFilter{Status: apitypes.RequestPending, Limit: 10})
+		if time.Now().After(deadline) {
+			t.Fatal("no held push")
+		}
+	}
+	if _, err := h.c.DecideRequest(h.ctx, admin, rs[0].ID, false, apitypes.DecideAccessRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := "dock/shop/production/web"
+	want := []string{"aaaaaaa pending " + ctx, "aaaaaaa failure " + ctx}
+	statuses, _, _ := gh.seen()
+	for deadline := time.Now().Add(5 * time.Second); !slices.Equal(statuses, want) && time.Now().Before(deadline); time.Sleep(2 * time.Millisecond) {
+		statuses, _, _ = gh.seen()
+	}
+	if !slices.Equal(statuses, want) {
+		t.Fatalf("statuses: %q", statuses)
 	}
 }

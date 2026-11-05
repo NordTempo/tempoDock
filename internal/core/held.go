@@ -173,6 +173,34 @@ func (c *Core) holdPush(ctx context.Context, ss svcScope, conn store.GitConnecti
 	return r.ID, err
 }
 
+// endHeldPush posts a failed commit status for a held push whose request
+// ended without deploying it (rejected, expired or replaced), so GitHub
+// doesn't show it pending forever. Other requests are left alone.
+func (c *Core) endHeldPush(ctx context.Context, r store.AccessRequest, why string) {
+	if r.Via != "git" {
+		return
+	}
+	raw, err := c.box.Open(r.Args, sealedRequestArgs.AAD(r.Nonce))
+	if err != nil {
+		c.log.Error("held push status", "request", r.ID, "err", err)
+		return
+	}
+	var h heldDeploy
+	if err := json.Unmarshal(raw, &h); err != nil {
+		c.log.Error("held push status", "request", r.ID, "err", err)
+		return
+	}
+	ss, err := c.serviceFor(ctx, System.InOrg(r.OrgID), h.ref(), apitypes.ScopeDeploy, "deploying")
+	if err != nil {
+		return // the service is gone; nothing to post for
+	}
+	conn, err := c.store.GetGitConnectionByService(ctx, ss.svc.ID)
+	if err != nil || !conn.PostStatus || conn.Repo != h.Repo {
+		return
+	}
+	c.postGitStatus(ss, conn, store.Release{CommitSha: h.SHA}, "failure", "Not deployed: "+why)
+}
+
 // replayGit queues an approved push for the git worker, marked approved
 // so it deploys into the locked environment: the git Replayer.
 func (c *Core) replayGit(ctx context.Context, a Actor, _ string, raw json.RawMessage) (json.RawMessage, error) {
