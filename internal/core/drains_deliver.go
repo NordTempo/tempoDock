@@ -183,14 +183,15 @@ func newDrainManager() *drainManager {
 		follows: map[string]*drainEnv{}, last: map[string]drainResume{},
 		restart: map[string]drainRestart{},
 	}
-	m.guard.what = "logs"
+	m.guard.what, m.guard.private = "logs", true
 	m.client = newDrainClient(&m.guard)
 	return m
 }
 
 // newDrainClient is the HTTP client http and Loki drains post with. It
-// never follows redirects and never connects to addresses the guard
-// refuses (checked after DNS). It keeps one idle connection per host,
+// never follows redirects, never uses a proxy (that would connect to the
+// proxy, not the drain, past the guard) and never connects to addresses
+// the guard refuses (checked after DNS). It keeps one idle connection per host,
 // closed by the transport 90 s after the last delivery, so a busy drain
 // doesn't handshake for every batch and an idle one holds nothing.
 func newDrainClient(g *egressGuard) *http.Client {
@@ -198,7 +199,7 @@ func newDrainClient(g *egressGuard) *http.Client {
 		Timeout:       drainSendTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
+			Proxy:               nil,
 			DialContext:         (&net.Dialer{Timeout: drainSendTimeout, Control: g.control}).DialContext,
 			TLSHandshakeTimeout: drainSendTimeout,
 			MaxIdleConnsPerHost: 1,

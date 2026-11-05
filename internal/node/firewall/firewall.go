@@ -89,6 +89,22 @@ var (
 	families = []family{ipv4, ipv6}
 )
 
+// Blocked reports whether ip is one of the private destinations app
+// traffic may not reach (the LAN, the tailnet, link-local). Log drains
+// refuse the same addresses (core's egressGuard), since the control plane
+// sends to them from the host, where these rules don't apply.
+func Blocked(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	for _, f := range families {
+		for _, p := range f.blocked {
+			if p.Contains(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func prefixes(ss ...string) []netip.Prefix {
 	out := make([]netip.Prefix, len(ss))
 	for i, s := range ss {
