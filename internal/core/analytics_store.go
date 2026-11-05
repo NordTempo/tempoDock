@@ -202,8 +202,15 @@ func (c *Core) removeStrayStore(serverID int64, wait bool) {
 		} else if _, err := cl.Health(ctx); err != nil {
 			return
 		}
+		// The store may have moved onto serverID meanwhile (the wait can be
+		// long): not while a move runs, nor once one has. The read lock
+		// holds a move that starts now off the stores until this is done.
+		if !c.analytics.writing.TryRLock() {
+			return
+		}
+		defer c.analytics.writing.RUnlock()
 		c.analytics.mu.Lock()
-		busy := c.analytics.moving != nil
+		busy := c.analytics.moving != nil || c.analytics.serverID == serverID
 		c.analytics.mu.Unlock()
 		if busy {
 			return
@@ -403,6 +410,10 @@ func (c *Core) runStoreMove(a Actor, m *analyticsMove, copyData bool) {
 	} else {
 		c.setStoreErr(nil)
 		c.audit(context.WithoutCancel(ctx), a.platform(), "analytics.moved", nil, nil, m.to.Name, moved)
+		if !copyData && c.online(m.from.ID) {
+			// Back while the move ran, when its store couldn't go yet.
+			c.removeStrayStore(m.from.ID, false)
+		}
 	}
 	c.publishAnalytics()
 	c.wakeForwarders()
@@ -560,12 +571,20 @@ func (c *Core) restoreStoreBackup(ctx context.Context, cl *analytics.Client) err
 	if err != nil {
 		return fmt.Errorf("read %s: %w", infoPath, err)
 	}
-	// As a move does: end the forwarders' tails, whose read locks last
-	// as long as a tail, then wait for any write in flight.
+	// As a move does: hold the forwarders off (a forwarder that takes the
+	// new run before the lock below would tail it, holding its read lock
+	// for good) and end their tails, whose read locks last as long as a
+	// tail, then wait for any write in flight. The caller wakes them.
 	c.analytics.mu.Lock()
+	c.analytics.restoring = true
 	c.analytics.runCancel()
 	c.analytics.runCtx, c.analytics.runCancel = context.WithCancel(c.ctx)
 	c.analytics.mu.Unlock()
+	defer func() {
+		c.analytics.mu.Lock()
+		c.analytics.restoring = false
+		c.analytics.mu.Unlock()
+	}()
 	c.analytics.writing.Lock()
 	defer c.analytics.writing.Unlock()
 	h, err := c.readyStore(ctx, cl, 0)

@@ -28,6 +28,17 @@ func storeEvents(h *harness) int {
 	return 0
 }
 
+// waitStoreStarted waits until the store on server has started: the
+// start has ended and the store answers. The fake store exists part way
+// through a start, and a move is refused while one runs.
+func waitStoreStarted(t *testing.T, c *Core, server string) {
+	t.Helper()
+	eventually(t, "the store started on "+server, func() bool {
+		st, err := c.AnalyticsStatus(c.ctx, testSystem)
+		return err == nil && st.Server == server && st.StoreRunning && !st.Starting
+	})
+}
+
 func TestAnalyticsForwardsTheSpool(t *testing.T) {
 	h := newHarness(t)
 	// Events wait in the spool before analytics is even on.
@@ -177,6 +188,7 @@ func TestAnalyticsMovesWithItsData(t *testing.T) {
 		s := cp.AnalyticsStore()
 		return s != nil && len(s.Events()) == 2
 	})
+	waitStoreStarted(t, p.c, p.c.local.Name)
 
 	st, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: "homelab"})
 	if err != nil {
@@ -218,7 +230,7 @@ func TestAnalyticsMoveThatFailsStays(t *testing.T) {
 	if err := p.c.EnableAnalytics(p.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the store", func() bool { return cp.AnalyticsStore() != nil })
+	waitStoreStarted(t, p.c, p.c.local.Name)
 	lab.FailEnsureAnalyticsStore(errors.New("disk full"))
 	if _, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: "homelab"}); err != nil {
 		t.Fatal(err)
@@ -245,7 +257,7 @@ func TestAnalyticsMoveFromAnOfflineServer(t *testing.T) {
 	if _, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: "homelab"}); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the store on homelab", func() bool { return lab.AnalyticsStore() != nil })
+	waitStoreStarted(t, p.c, "homelab")
 	p.setOffline("homelab", true)
 	p.c.NodeStatus(remote.State{ServerID: p.ids["homelab"], Server: "homelab", Status: remote.StatusOffline})
 

@@ -42,8 +42,11 @@ func (p *pool) fromCloudflare(ref ServiceRef, host string) error {
 	return err
 }
 
-// record waits until the domain Dock routes as host is no longer pending
-// and returns it.
+// record waits until the domain Dock routes as host has settled and
+// returns it. Waiting for its server's tunnel hasn't: a worker pass that
+// began before the domain's tunnel was asked for can reach the domain
+// first and fail it that way, and making the tunnel retries it
+// (syncServerRecords).
 func (p *pool) record(host string) apitypes.CloudflareRecord {
 	p.t.Helper()
 	var got apitypes.CloudflareRecord
@@ -53,7 +56,9 @@ func (p *pool) record(host string) apitypes.CloudflareRecord {
 			p.t.Fatal(err)
 		}
 		for _, r := range list {
-			if r.Hostname == host && r.Status != apitypes.DNSPending && r.Status != apitypes.DNSDeleting {
+			waiting := r.Status == apitypes.DNSPending || r.Status == apitypes.DNSDeleting ||
+				r.Status == apitypes.DNSError && strings.HasPrefix(r.Reason, "waiting for server ")
+			if r.Hostname == host && !waiting {
 				got = r
 				return true
 			}
