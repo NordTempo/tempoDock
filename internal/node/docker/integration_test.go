@@ -789,7 +789,7 @@ func TestRemoveVolume(t *testing.T) {
 	if err := e.Stop(ctx, c.ID, time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.Remove(ctx, c.ID); err != nil {
+	if err := e.Remove(ctx, c.ID, node.RemoveOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.RemoveVolume(ctx, vol, node.Labels{ControlPlane: e.prefix, Environment: "e1"}); err != nil {
