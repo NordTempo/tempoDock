@@ -664,36 +664,52 @@ func (q *Queries) PruneAccessRequests(ctx context.Context, createdAt time.Time) 
 	return result.RowsAffected()
 }
 
-const replaceAccessRequest = `-- name: ReplaceAccessRequest :one
-UPDATE access_requests SET nonce = ?, args = ?, upload = ?, reason = ?, requested_by = ?, created_at = ?, expires_at = ?
+const setAccessRequestReason = `-- name: SetAccessRequestReason :exec
+UPDATE access_requests SET reason = ? WHERE id = +? AND reason = ''
+`
+
+type SetAccessRequestReasonParams struct {
+	Reason string
+	ID     int64
+}
+
+// SetAccessRequestReason gives a pending request the reason a later
+// identical call sent, when it had none.
+func (q *Queries) SetAccessRequestReason(ctx context.Context, arg SetAccessRequestReasonParams) error {
+	_, err := q.db.ExecContext(ctx, setAccessRequestReason, arg.Reason, arg.ID)
+	return err
+}
+
+const setOrgRequestTTL = `-- name: SetOrgRequestTTL :exec
+UPDATE orgs SET request_ttl_hours = ? WHERE id = +?
+`
+
+type SetOrgRequestTTLParams struct {
+	RequestTtlHours int64
+	ID              int64
+}
+
+func (q *Queries) SetOrgRequestTTL(ctx context.Context, arg SetOrgRequestTTLParams) error {
+	_, err := q.db.ExecContext(ctx, setOrgRequestTTL, arg.RequestTtlHours, arg.ID)
+	return err
+}
+
+const supersedeAccessRequest = `-- name: SupersedeAccessRequest :one
+UPDATE access_requests SET status = 'expired', finished_at = ?
 WHERE id = +? AND status = 'pending'
 RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at
 `
 
-type ReplaceAccessRequestParams struct {
-	Nonce       string
-	Args        []byte
-	Upload      string
-	Reason      string
-	RequestedBy string
-	CreatedAt   time.Time
-	ExpiresAt   time.Time
-	ID          int64
+type SupersedeAccessRequestParams struct {
+	FinishedAt *time.Time
+	ID         int64
 }
 
-// ReplaceAccessRequest gives a pending request a newer call of the same
-// kind (a newer push or upload replaces the one waiting).
-func (q *Queries) ReplaceAccessRequest(ctx context.Context, arg ReplaceAccessRequestParams) (AccessRequest, error) {
-	row := q.db.QueryRowContext(ctx, replaceAccessRequest,
-		arg.Nonce,
-		arg.Args,
-		arg.Upload,
-		arg.Reason,
-		arg.RequestedBy,
-		arg.CreatedAt,
-		arg.ExpiresAt,
-		arg.ID,
-	)
+// SupersedeAccessRequest ends a pending request a newer call of the same
+// kind replaces (a newer push or upload). The newer call is filed as a new
+// request, so an approval of this one can never run it.
+func (q *Queries) SupersedeAccessRequest(ctx context.Context, arg SupersedeAccessRequestParams) (AccessRequest, error) {
+	row := q.db.QueryRowContext(ctx, supersedeAccessRequest, arg.FinishedAt, arg.ID)
 	var i AccessRequest
 	err := row.Scan(
 		&i.ID,
@@ -723,34 +739,4 @@ func (q *Queries) ReplaceAccessRequest(ctx context.Context, arg ReplaceAccessReq
 		&i.FinishedAt,
 	)
 	return i, err
-}
-
-const setAccessRequestReason = `-- name: SetAccessRequestReason :exec
-UPDATE access_requests SET reason = ? WHERE id = +? AND reason = ''
-`
-
-type SetAccessRequestReasonParams struct {
-	Reason string
-	ID     int64
-}
-
-// SetAccessRequestReason gives a pending request the reason a later
-// identical call sent, when it had none.
-func (q *Queries) SetAccessRequestReason(ctx context.Context, arg SetAccessRequestReasonParams) error {
-	_, err := q.db.ExecContext(ctx, setAccessRequestReason, arg.Reason, arg.ID)
-	return err
-}
-
-const setOrgRequestTTL = `-- name: SetOrgRequestTTL :exec
-UPDATE orgs SET request_ttl_hours = ? WHERE id = +?
-`
-
-type SetOrgRequestTTLParams struct {
-	RequestTtlHours int64
-	ID              int64
-}
-
-func (q *Queries) SetOrgRequestTTL(ctx context.Context, arg SetOrgRequestTTLParams) error {
-	_, err := q.db.ExecContext(ctx, setOrgRequestTTL, arg.RequestTtlHours, arg.ID)
-	return err
 }
