@@ -245,11 +245,13 @@ func (q *Queries) EndOrphanedAccessRequests(ctx context.Context, now *time.Time)
 
 const expireAccessRequests = `-- name: ExpireAccessRequests :many
 UPDATE access_requests SET status = 'expired', finished_at = expires_at
-WHERE status = 'pending' AND expires_at <= +?
+WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at <= +?
 RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at
 `
 
 // ExpireAccessRequests marks pending requests past their time expired.
+// The IN term lets it seek access_requests_open by expires_at instead of
+// scanning every pending request.
 func (q *Queries) ExpireAccessRequests(ctx context.Context, expiresAt time.Time) ([]AccessRequest, error) {
 	rows, err := q.db.QueryContext(ctx, expireAccessRequests, expiresAt)
 	if err != nil {
@@ -533,7 +535,11 @@ func (q *Queries) ListHeldUploads(ctx context.Context) ([]string, error) {
 }
 
 const listOrgAccessRequests = `-- name: ListOrgAccessRequests :many
-SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at FROM access_requests WHERE org_id = +? ORDER BY id DESC LIMIT +?
+SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, projects.name AS project_name, environments.name AS environment_name
+FROM access_requests
+JOIN projects ON projects.id = access_requests.project_id
+JOIN environments ON environments.id = access_requests.environment_id
+WHERE access_requests.org_id = +? ORDER BY access_requests.id DESC LIMIT +?
 `
 
 type ListOrgAccessRequestsParams struct {
@@ -541,42 +547,51 @@ type ListOrgAccessRequestsParams struct {
 	Limit int64
 }
 
-// ListOrgAccessRequests is an org's requests, newest first (the inbox).
-func (q *Queries) ListOrgAccessRequests(ctx context.Context, arg ListOrgAccessRequestsParams) ([]AccessRequest, error) {
+type ListOrgAccessRequestsRow struct {
+	AccessRequest   AccessRequest
+	ProjectName     string
+	EnvironmentName string
+}
+
+// ListOrgAccessRequests is an org's requests, newest first (the inbox),
+// with their project's and environment's names: one query per page.
+func (q *Queries) ListOrgAccessRequests(ctx context.Context, arg ListOrgAccessRequestsParams) ([]ListOrgAccessRequestsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOrgAccessRequests, arg.OrgID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AccessRequest
+	var items []ListOrgAccessRequestsRow
 	for rows.Next() {
-		var i AccessRequest
+		var i ListOrgAccessRequestsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Nonce,
-			&i.OrgID,
-			&i.ProjectID,
-			&i.EnvironmentID,
-			&i.Status,
-			&i.Via,
-			&i.Operation,
-			&i.Title,
-			&i.Action,
-			&i.Args,
-			&i.Fingerprint,
-			&i.Reason,
-			&i.TokenID,
-			&i.RequestedBy,
-			&i.AuditMark,
-			&i.Upload,
-			&i.CreatedAt,
-			&i.ExpiresAt,
-			&i.DecidedBy,
-			&i.DecidedAt,
-			&i.Comment,
-			&i.Result,
-			&i.Error,
-			&i.FinishedAt,
+			&i.AccessRequest.ID,
+			&i.AccessRequest.Nonce,
+			&i.AccessRequest.OrgID,
+			&i.AccessRequest.ProjectID,
+			&i.AccessRequest.EnvironmentID,
+			&i.AccessRequest.Status,
+			&i.AccessRequest.Via,
+			&i.AccessRequest.Operation,
+			&i.AccessRequest.Title,
+			&i.AccessRequest.Action,
+			&i.AccessRequest.Args,
+			&i.AccessRequest.Fingerprint,
+			&i.AccessRequest.Reason,
+			&i.AccessRequest.TokenID,
+			&i.AccessRequest.RequestedBy,
+			&i.AccessRequest.AuditMark,
+			&i.AccessRequest.Upload,
+			&i.AccessRequest.CreatedAt,
+			&i.AccessRequest.ExpiresAt,
+			&i.AccessRequest.DecidedBy,
+			&i.AccessRequest.DecidedAt,
+			&i.AccessRequest.Comment,
+			&i.AccessRequest.Result,
+			&i.AccessRequest.Error,
+			&i.AccessRequest.FinishedAt,
+			&i.ProjectName,
+			&i.EnvironmentName,
 		); err != nil {
 			return nil, err
 		}
@@ -592,7 +607,11 @@ func (q *Queries) ListOrgAccessRequests(ctx context.Context, arg ListOrgAccessRe
 }
 
 const listTokenAccessRequests = `-- name: ListTokenAccessRequests :many
-SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at FROM access_requests WHERE token_id = +? ORDER BY id DESC LIMIT +?
+SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, projects.name AS project_name, environments.name AS environment_name
+FROM access_requests
+JOIN projects ON projects.id = access_requests.project_id
+JOIN environments ON environments.id = access_requests.environment_id
+WHERE access_requests.token_id = +? ORDER BY access_requests.id DESC LIMIT +?
 `
 
 type ListTokenAccessRequestsParams struct {
@@ -600,42 +619,51 @@ type ListTokenAccessRequestsParams struct {
 	Limit   int64
 }
 
-// ListTokenAccessRequests is the requests a token filed, newest first.
-func (q *Queries) ListTokenAccessRequests(ctx context.Context, arg ListTokenAccessRequestsParams) ([]AccessRequest, error) {
+type ListTokenAccessRequestsRow struct {
+	AccessRequest   AccessRequest
+	ProjectName     string
+	EnvironmentName string
+}
+
+// ListTokenAccessRequests is the requests a token filed, newest first,
+// with their project's and environment's names.
+func (q *Queries) ListTokenAccessRequests(ctx context.Context, arg ListTokenAccessRequestsParams) ([]ListTokenAccessRequestsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTokenAccessRequests, arg.TokenID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AccessRequest
+	var items []ListTokenAccessRequestsRow
 	for rows.Next() {
-		var i AccessRequest
+		var i ListTokenAccessRequestsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Nonce,
-			&i.OrgID,
-			&i.ProjectID,
-			&i.EnvironmentID,
-			&i.Status,
-			&i.Via,
-			&i.Operation,
-			&i.Title,
-			&i.Action,
-			&i.Args,
-			&i.Fingerprint,
-			&i.Reason,
-			&i.TokenID,
-			&i.RequestedBy,
-			&i.AuditMark,
-			&i.Upload,
-			&i.CreatedAt,
-			&i.ExpiresAt,
-			&i.DecidedBy,
-			&i.DecidedAt,
-			&i.Comment,
-			&i.Result,
-			&i.Error,
-			&i.FinishedAt,
+			&i.AccessRequest.ID,
+			&i.AccessRequest.Nonce,
+			&i.AccessRequest.OrgID,
+			&i.AccessRequest.ProjectID,
+			&i.AccessRequest.EnvironmentID,
+			&i.AccessRequest.Status,
+			&i.AccessRequest.Via,
+			&i.AccessRequest.Operation,
+			&i.AccessRequest.Title,
+			&i.AccessRequest.Action,
+			&i.AccessRequest.Args,
+			&i.AccessRequest.Fingerprint,
+			&i.AccessRequest.Reason,
+			&i.AccessRequest.TokenID,
+			&i.AccessRequest.RequestedBy,
+			&i.AccessRequest.AuditMark,
+			&i.AccessRequest.Upload,
+			&i.AccessRequest.CreatedAt,
+			&i.AccessRequest.ExpiresAt,
+			&i.AccessRequest.DecidedBy,
+			&i.AccessRequest.DecidedAt,
+			&i.AccessRequest.Comment,
+			&i.AccessRequest.Result,
+			&i.AccessRequest.Error,
+			&i.AccessRequest.FinishedAt,
+			&i.ProjectName,
+			&i.EnvironmentName,
 		); err != nil {
 			return nil, err
 		}

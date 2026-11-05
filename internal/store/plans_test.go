@@ -20,6 +20,21 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 	})
 }
 
+// Access requests' inbox, filing and expiry read through an index: the
+// lists join their names instead of a query per project.
+func TestAccessRequestPlansUseIndexes(t *testing.T) {
+	f := newDataFixture(t)
+	now := time.Now()
+	checkPlans(t, f.s, []planCase{
+		{"ListOrgAccessRequests", listOrgAccessRequests, []any{1, 50}},
+		{"ListTokenAccessRequests", listTokenAccessRequests, []any{1, 50}},
+		{"GetPendingAccessRequest", getPendingAccessRequest, []any{"x"}},
+		{"ExpireAccessRequests", expireAccessRequests, []any{now}},
+		{"PruneAccessRequests", pruneAccessRequests, []any{now}},
+		{"CountEnvironmentAuditSince", countEnvironmentAuditSince, []any{1, 1}},
+	})
+}
+
 // A site dashboard's deploy markers seek each service's releases by finish
 // time. With several services behind a site the rows in range are still
 // sorted, which is a few hundred at most (LIMIT 200 per range).

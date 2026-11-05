@@ -305,29 +305,38 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 		return nil, err
 	}
 	limit := int64(min(max(f.Limit, 1), 200))
-	var rows []store.AccessRequest
-	var err error
+	// Both lists join the project's and environment's names: one query.
+	type row struct {
+		r            store.AccessRequest
+		project, env string
+	}
+	var rows []row
 	switch {
 	case a.Kind == "token" && rank(a.Scope) < rank(apitypes.ScopeAdmin):
-		rows, err = c.store.ListTokenAccessRequests(ctx, store.ListTokenAccessRequestsParams{TokenID: &a.TokenID, Limit: limit})
+		got, err := c.store.ListTokenAccessRequests(ctx, store.ListTokenAccessRequestsParams{TokenID: &a.TokenID, Limit: limit})
+		if err != nil {
+			return nil, err
+		}
+		for _, g := range got {
+			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
+		}
 	case rank(a.Scope) >= rank(apitypes.ScopeAdmin):
-		rows, err = c.store.ListOrgAccessRequests(ctx, store.ListOrgAccessRequestsParams{OrgID: a.OrgID, Limit: limit})
+		got, err := c.store.ListOrgAccessRequests(ctx, store.ListOrgAccessRequestsParams{OrgID: a.OrgID, Limit: limit})
+		if err != nil {
+			return nil, err
+		}
+		for _, g := range got {
+			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
+		}
 	default:
 		return nil, errf(apitypes.CodeForbidden, "%s has scope %s; access requests are for admins", a, a.Scope)
 	}
-	if err != nil {
-		return nil, err
-	}
-	scopes, err := c.requestScopes(ctx, rows)
-	if err != nil {
-		return nil, err
-	}
 	out := []apitypes.AccessRequest{}
 	for _, r := range rows {
-		if !a.seesRequest(r) {
+		if !a.seesRequest(r.r) {
 			continue
 		}
-		v := c.toRequest(r, scopes[r.EnvironmentID], false)
+		v := c.toRequest(r.r, envScope{store.Project{Name: r.project}, store.Environment{Name: r.env}}, false)
 		if f.Status == "" || v.Status == f.Status {
 			out = append(out, v)
 		}
@@ -336,7 +345,8 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 }
 
 // requestScopes loads the projects and environments of rows: two queries
-// per distinct project, a handful per page.
+// per distinct project. Only endedRequests uses it, for the few requests
+// an expiry or restart ends; listing joins the names instead.
 func (c *Core) requestScopes(ctx context.Context, rows []store.AccessRequest) (map[int64]envScope, error) {
 	out := map[int64]envScope{}
 	projects := map[int64]bool{}
