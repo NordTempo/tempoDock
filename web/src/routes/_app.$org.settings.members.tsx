@@ -10,6 +10,7 @@ export const Route = createFileRoute("/_app/$org/settings/members")({
       await Promise.all([
         queryClient.ensureQueryData(orgQueries.members()),
         queryClient.ensureQueryData(orgQueries.invites()),
+        queryClient.ensureQueryData(orgQueries.org()),
       ]);
     }
   },

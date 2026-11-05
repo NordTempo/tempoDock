@@ -71,10 +71,11 @@ func TestBrowserLogin(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, ada, err := srv.core.Login(ctx, "ada@example.com", "a long enough password", "127.0.0.1")
+	res, err := srv.core.Login(ctx, "ada@example.com", "a long enough password", "127.0.0.1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	ada := res.Actor
 
 	code, _, stderr := browserLogin(t, srv, func(c string) error { return srv.core.DecideCLILogin(ctx, ada, c, "127.0.0.1", false) })
 	if code != int(output.ExitAuth) || !strings.Contains(stderr, "denied") {

@@ -149,6 +149,10 @@ func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
+	// Unlocking lets tokens change it: a step-up (ADR 0057).
+	if err := a.requireRecent("unlocking an environment"); err != nil {
+		return apitypes.Environment{}, err
+	}
 	if req.Minutes < 0 || req.Minutes > 7*24*60 {
 		return apitypes.Environment{}, invalid("minutes must be between 0 (unlock) and %d (a week)", 7*24*60)
 	}

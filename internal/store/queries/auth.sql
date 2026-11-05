@@ -12,11 +12,14 @@ SELECT * FROM users WHERE id = +?;
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = +?;
 
--- name: CreateSession :exec
-INSERT INTO sessions (user_id, hash, expires_at) VALUES (?, ?, ?);
+-- name: CreateSession :one
+INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at) VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id;
 
+-- GetSessionUser is a session with its user, pending or not: callers
+-- check.
 -- name: GetSessionUser :one
-SELECT sqlc.embed(users), sessions.expires_at AS session_expires_at
+SELECT sqlc.embed(users), sqlc.embed(sessions)
 FROM sessions JOIN users ON users.id = sessions.user_id
 WHERE sessions.hash = +?;
 
@@ -81,8 +84,9 @@ WHERE user_id = +sqlc.arg(user_id) AND origin = 'cli_login' AND revoked_at IS NU
 -- name: SetUserDisabled :exec
 UPDATE users SET disabled_at = ? WHERE id = +?;
 
+-- SetUserPassword also lifts a lock from wrong second factors (ADR 0057).
 -- name: SetUserPassword :exec
-UPDATE users SET password_hash = ? WHERE id = +?;
+UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = +?;
@@ -90,14 +94,19 @@ DELETE FROM users WHERE id = +?;
 -- name: DeleteUserSessions :exec
 DELETE FROM sessions WHERE user_id = +?;
 
+-- DeleteOtherSessions ends a user's sessions except one (keep).
+-- name: DeleteOtherSessions :exec
+DELETE FROM sessions WHERE user_id = +sqlc.arg(user_id) AND id != +sqlc.arg(keep);
+
 -- ListOrgMembers is an org's users with their role, live sessions and
 -- usable tokens: the tokens they created (user_id), as their account page
 -- lists them.
 -- name: ListOrgMembers :many
 SELECT sqlc.embed(users), org_members.role,
-    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +sqlc.arg(now)) AS INTEGER) AS sessions,
+    CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +sqlc.arg(now) AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
-        AND (tokens.expires_at IS NULL OR tokens.expires_at > +sqlc.arg(now))) AS INTEGER) AS tokens
+        AND (tokens.expires_at IS NULL OR tokens.expires_at > +sqlc.arg(now))) AS INTEGER) AS tokens,
+    EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
 FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +sqlc.arg(org_id)
 ORDER BY org_members.user_id;

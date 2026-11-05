@@ -34,6 +34,9 @@ func (c *Core) GetChanges(ctx context.Context, a Actor, ref EnvRef, reveal bool)
 		if err := a.require(apitypes.ScopeAdmin, "revealing secret values"); err != nil {
 			return apitypes.PendingChanges{}, err
 		}
+		if err := a.requireRecent("revealing secret values"); err != nil {
+			return apitypes.PendingChanges{}, err
+		}
 	}
 	return c.pendingChanges(ctx, c.store.Queries, es, reveal)
 }

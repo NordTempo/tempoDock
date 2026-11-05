@@ -37,6 +37,9 @@ func (c *Core) ListVariables(ctx context.Context, a Actor, ref EnvRef, service s
 		if err := a.require(apitypes.ScopeAdmin, "revealing secret values"); err != nil {
 			return nil, err
 		}
+		if err := a.requireRecent("revealing secret values"); err != nil {
+			return nil, err
+		}
 	}
 	svcs, err := c.store.ListServices(ctx, es.env.ID)
 	if err != nil {

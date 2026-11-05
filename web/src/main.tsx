@@ -10,6 +10,7 @@ import { createRoot } from "react-dom/client";
 import { isUnauthorized } from "./api/client";
 import { signedOut } from "./data/mutations";
 import { routeTree } from "./routeTree.gen";
+import { ReauthHost } from "./ui/ReauthHost";
 import { NotFound, RouteError } from "./ui/RouteStates";
 import "./index.css";
 
@@ -54,6 +55,7 @@ createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
+      <ReauthHost />
     </QueryClientProvider>
   </StrictMode>,
 );

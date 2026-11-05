@@ -108,6 +108,17 @@ type result struct {
 
 func (r result) Cookies() []*http.Cookie { return (&http.Response{Header: r.Header}).Cookies() }
 
+// session is the session cookie a sign-in set; nil for none. Login also
+// clears the pending sign-in's cookie.
+func (r result) session() *http.Cookie {
+	for _, c := range r.Cookies() {
+		if c.Name == sessionCookie && c.Value != "" {
+			return c
+		}
+	}
+	return nil
+}
+
 func (f *fixture) do(token, method, path string, body any) (result, []byte) {
 	f.t.Helper()
 	var r io.Reader
@@ -352,16 +363,15 @@ func TestLoginSessionAndEvents(t *testing.T) {
 		t.Fatalf("wrong password: %d %s", resp.StatusCode, body)
 	}
 	resp, _ = f.do("", "POST", "/api/v1/auth/login", apitypes.LoginRequest{Email: "ada@example.com", Password: "correct horse battery"})
-	cookies := resp.Cookies()
-	if resp.StatusCode != 200 || len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
-		t.Fatalf("login: %d %+v", resp.StatusCode, cookies)
+	if c := resp.session(); resp.StatusCode != 200 || c == nil || !c.HttpOnly || c.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("login: %d %+v", resp.StatusCode, resp.Cookies())
 	}
 
 	// The session cookie authenticates the event stream.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", f.srv.URL+"/api/v1/events?project=shop", nil)
-	req.AddCookie(cookies[0])
+	req.AddCookie(resp.session())
 	stream, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

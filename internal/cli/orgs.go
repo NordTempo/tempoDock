@@ -29,7 +29,7 @@ organization it was linked in.`,
 	})
 	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g), newOrgLocksCmd(g),
 		newOrgMembersCmd(g), newOrgMemberCmd(g), newOrgInviteCmd(g), newOrgInvitesCmd(g), newOrgJoinCmd(g),
-		newOrgEnvCmd(g), newOrgRenameCmd(g),
+		newOrgEnvCmd(g), newOrgRenameCmd(g), newOrgTwoFactorCmd(g),
 		newOrgGoneCmd(g, "leave", "Leave the organization; the last admin can't", "POST", "/leave",
 			"Leave %s? You lose access to its projects.", "Left %s"),
 		newOrgGoneCmd(g, "delete", "Delete an organization without projects (admin)", "DELETE", "",
@@ -57,13 +57,13 @@ func newOrgListCmd(g *globals) *cobra.Command {
 				views[i] = orgView{o, o.Slug == s.server.Org || s.server.Org == "" && len(orgs) == 1}
 			}
 			return g.io.Print(views, func() error {
-				t := g.io.Table("", "slug", "name", "role")
+				t := g.io.Table("", "slug", "name", "role", "two-factor")
 				for _, v := range views {
 					current := ""
 					if v.Current {
 						current = "*"
 					}
-					t.Row(current, v.Slug, v.Name, string(v.Role))
+					t.Row(current, v.Slug, v.Name, string(v.Role), requiredWord(v.RequireTwoFactor))
 				}
 				return t.Flush()
 			})

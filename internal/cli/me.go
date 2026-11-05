@@ -18,7 +18,7 @@ func newMeCmd(g *globals) *cobra.Command {
 		Use:   "me",
 		Short: "Your own account",
 	})
-	cmd.AddCommand(newMePasswordCmd(g))
+	cmd.AddCommand(newMePasswordCmd(g), newMeTwoFactorCmd(g))
 	return cmd
 }
 

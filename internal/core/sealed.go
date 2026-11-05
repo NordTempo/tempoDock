@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/secrets"
@@ -41,13 +43,16 @@ var (
 	sealedAppKey                       = secrets.Column{Table: "github_app", Name: "private_key"}
 	sealedAppWebhookSecret             = secrets.Column{Table: "github_app", Name: "webhook_secret"}
 	sealedDataReader, sealedDataWriter = datapanel.AccessColumns("service_id")
+	// sealedUserFactor is a second factor's key (ADR 0057): one
+	// authenticator app per user, passkeys by credential ID.
+	sealedUserFactor = secrets.Column{Table: "user_factors", Name: "secret", Key: []string{"user_id", "kind", "coalesce(hex(credential_id), '')"}}
 
 	sealedColumns = []secrets.Column{
 		sealedVariableValue, sealedVariablePending, sealedOrgVariable, sealedReleaseConfig,
 		sealedAlertChannel, sealedGitSecret, sealedGitToken, sealedAccessKey, sealedStorageKeys,
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret,
-		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret,
+		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
 	}
 )
 
@@ -68,6 +73,12 @@ func variableAAD(envID int64, serviceID *int64, key string) secrets.AAD {
 		svc = *serviceID
 	}
 	return sealedVariableValue.AAD(strconv.FormatInt(envID, 10), strconv.FormatInt(svc, 10), key)
+}
+
+// factorAAD binds a user's second factor of kind; credentialID is a
+// passkey's, nil for an authenticator app.
+func factorAAD(userID int64, kind string, credentialID []byte) secrets.AAD {
+	return sealedUserFactor.AAD(strconv.FormatInt(userID, 10), kind, strings.ToUpper(hex.EncodeToString(credentialID)))
 }
 
 // orgVariableAAD binds an org variable's value.

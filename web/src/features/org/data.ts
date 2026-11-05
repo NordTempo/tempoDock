@@ -1,7 +1,7 @@
 import { queryOptions, useQueryClient } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import { useAction } from "../../data/mutations";
-import { keys, useOrgs } from "../../data/queries";
+import { keys, revealed, revealRequest, useOrgs } from "../../data/queries";
 import type { OrgLockSettings, Scope } from "../../data/types";
 import { useOrg } from "../../shell/location";
 
@@ -54,12 +54,14 @@ export const orgQueries = {
   variables: (reveal = false) =>
     queryOptions({
       queryKey: orgKeys.variables(reveal),
-      queryFn: () =>
+      queryFn: (ctx) =>
         list(
           api.GET("/api/v1/org/variables", {
             params: { query: { reveal } },
+            ...(reveal && revealRequest(ctx)),
           }),
         ),
+      ...(reveal && revealed),
     }),
   /** Locking new production environments, and when requests expire (ADR 0044). */
   lockSettings: () =>
@@ -83,6 +85,18 @@ export const orgQueries = {
 export const useRenameOrg = () =>
   useAction(
     (name: string) => body(api.PATCH("/api/v1/org", { body: { name } })),
+    () => [orgKeys.org, keys.orgs, ["audit"]],
+  );
+
+/**
+ * Requires (or stops requiring) a second factor of every member's
+ * sign-in (ADR 0057). Turning it on needs the caller's own sign-in to
+ * have used one; members without it lose the org until they add one.
+ */
+export const useSetOrgTwoFactor = () =>
+  useAction(
+    (require: boolean) =>
+      body(api.PUT("/api/v1/org/two-factor", { body: { require } })),
     () => [orgKeys.org, keys.orgs, ["audit"]],
   );
 

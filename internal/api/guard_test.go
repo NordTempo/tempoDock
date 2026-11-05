@@ -20,10 +20,10 @@ func (f *fixture) login() *http.Cookie {
 		f.t.Fatal(err)
 	}
 	resp, body := f.do("", "POST", "/api/v1/auth/login", apitypes.LoginRequest{Email: "ada@example.com", Password: "correct horse battery"})
-	if resp.StatusCode != 200 || len(resp.Cookies()) != 1 {
+	if resp.StatusCode != 200 || resp.session() == nil {
 		f.t.Fatalf("login: %d %s", resp.StatusCode, body)
 	}
-	return resp.Cookies()[0]
+	return resp.session()
 }
 
 // A page on another origin (or another port of the same host) must not be

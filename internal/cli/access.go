@@ -317,13 +317,13 @@ func newUserCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(users, func() error {
-				t := g.io.Table("id", "email", "name", "role", "status", "sessions", "tokens", "created")
+				t := g.io.Table("id", "email", "name", "role", "status", "two-factor", "sessions", "tokens", "created")
 				for _, u := range users {
 					status := "active"
 					if u.DisabledAt != nil {
 						status = "disabled"
 					}
-					t.Row(itoa(u.ID), u.Email, u.Name, string(u.Role), status, strconv.Itoa(u.Sessions), strconv.Itoa(u.Tokens), ago(u.CreatedAt))
+					t.Row(itoa(u.ID), u.Email, u.Name, string(u.Role), status, onOff(u.TwoFactor), strconv.Itoa(u.Sessions), strconv.Itoa(u.Tokens), ago(u.CreatedAt))
 				}
 				return t.Flush()
 			})

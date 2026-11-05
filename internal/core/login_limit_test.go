@@ -13,12 +13,12 @@ func TestLoginGuesserCantLockOutTheOwner(t *testing.T) {
 	h.user("ada@example.com", apitypes.ScopeAdmin)
 	var err error
 	for range 50 {
-		_, _, _, err = h.c.Login(h.ctx, "ada@example.com", "wrong guess", "198.51.100.7")
+		_, err = h.c.Login(h.ctx, "ada@example.com", "wrong guess", "198.51.100.7")
 	}
 	if CodeOf(err) != apitypes.CodeRateLimited {
 		t.Fatalf("guesser: %v", err)
 	}
-	if _, _, _, err := h.c.Login(h.ctx, "ADA@example.com", "password-123456", "192.0.2.1"); err != nil {
+	if _, err := h.c.Login(h.ctx, "ADA@example.com", "password-123456", "192.0.2.1"); err != nil {
 		t.Fatalf("owner from their own address: %v", err)
 	}
 }

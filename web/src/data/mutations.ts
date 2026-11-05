@@ -516,14 +516,37 @@ export const usePinPlacement = () =>
     ({ project }) => [keys.placements(project), keys.servers, ["audit"]],
   );
 
+/**
+ * Signs in with a password. Resolves with the second factors that finish
+ * the sign-in (useLoginVerify) for a user who has one (ADR 0057), or
+ * null once signed in.
+ */
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
-      await body(api.POST("/api/v1/auth/login", { body: credentials }));
-      return currentMe();
+      const res = await body(
+        api.POST("/api/v1/auth/login", { body: credentials }),
+      );
+      if (res.second_factor?.length) return res.second_factor;
+      queryClient.setQueryData(keys.session, await currentMe());
+      return null;
     },
-    onSuccess: (session) => queryClient.setQueryData(keys.session, session),
+  });
+}
+
+/**
+ * Finishes a password sign-in with an authenticator app code or a
+ * recovery code; the pending sign-in's cookie rides along. A 410
+ * (expired) means it ended: enter the password again.
+ */
+export function useLoginVerify() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { code: string } | { recovery_code: string }) => {
+      await body(api.POST("/api/v1/auth/login/verify", { body: v }));
+      queryClient.setQueryData(keys.session, await currentMe());
+    },
   });
 }
 

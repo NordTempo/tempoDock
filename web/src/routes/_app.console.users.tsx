@@ -1,3 +1,4 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { memo, type ReactNode, useState } from "react";
 import {
@@ -8,11 +9,17 @@ import {
 } from "../data/mutations";
 import { queries, useSession, useUsers } from "../data/queries";
 import type { Scope, User } from "../data/types";
+import {
+  platformSecurityQuery,
+  useSetPlatformSecurity,
+} from "../features/console/security";
 import { useOrg } from "../shell/location";
+import { CliHint } from "../ui/CliHint";
 import { day, plural } from "../ui/format";
 import {
   Act,
   Button,
+  Check,
   Confirm,
   CopyButton,
   ErrorText,
@@ -28,7 +35,10 @@ import {
 // themselves here.
 export const Route = createFileRoute("/_app/console/users")({
   loader: ({ context: { queryClient } }) =>
-    queryClient.ensureQueryData(queries.users()),
+    Promise.all([
+      queryClient.ensureQueryData(queries.users()),
+      queryClient.ensureQueryData(platformSecurityQuery()),
+    ]),
   component: Users,
 });
 
@@ -56,6 +66,7 @@ function Users() {
       <Page width="max-w-[1240px]">
         <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
           <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
+            <OperatorsTwoFactor />
             <AddUser />
             {reset && (
               <section
@@ -93,6 +104,9 @@ function Users() {
                     <th>Person</th>
                     <th>Role</th>
                     <th>Status</th>
+                    <th title="Whether they sign in with a second factor">
+                      Two-factor
+                    </th>
                     <th title="Signed-in browser sessions">Sessions</th>
                     <th title="Usable tokens they created">Tokens</th>
                     <th>Added</th>
@@ -132,6 +146,37 @@ function Users() {
         </div>
       </Page>
     </>
+  );
+}
+
+/**
+ * The platform's sign-in policy (ADR 0057): whether operators run the
+ * platform only after signing in with a second factor.
+ */
+function OperatorsTwoFactor() {
+  const { operators_two_factor: on } = useSuspenseQuery(
+    platformSecurityQuery(),
+  ).data;
+  const set = useSetPlatformSecurity();
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <CliHint
+        cli={`dock security operators-two-factor ${on ? "off" : "on"}`}
+        className="act"
+      >
+        <Check
+          label="Require two-factor for operators"
+          checked={on}
+          disabled={set.isPending}
+          onChange={(require) => set.mutate(require)}
+        />
+      </CliHint>
+      <span className="text-xs text-mut">
+        Operators who signed in without one keep their organizations but not the
+        console.
+      </span>
+      <ErrorText error={set.error} />
+    </div>
   );
 }
 
@@ -311,6 +356,17 @@ const UserRow = memo(function UserRow({
             </span>
           )}
         </td>
+        <td className="py-2.5">
+          {u.two_factor ? (
+            <span className="text-ok">
+              <Glyph char="●" /> on
+            </span>
+          ) : (
+            <span className="text-faint">
+              <Glyph char="○" /> off
+            </span>
+          )}
+        </td>
         <td className={`py-2.5 font-mono ${u.sessions ? "" : "text-faint"}`}>
           {u.sessions}
         </td>
@@ -390,7 +446,7 @@ const UserRow = memo(function UserRow({
       </tr>
       {asking && (
         <tr>
-          <td colSpan={7} className="border-0 pb-3">
+          <td colSpan={8} className="border-0 pb-3">
             {confirms[asking]}
           </td>
         </tr>

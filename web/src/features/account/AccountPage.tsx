@@ -9,10 +9,11 @@ import { ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
 import { TokenTable } from "../tokens/TokenTable";
+import { TwoFactorSection } from "./TwoFactorSection";
 
 // The signed-in person's own account (`dock whoami`, `dock token list
-// --mine`, `dock me password`): who they are, their role, their tokens and
-// changing their password.
+// --mine`, `dock me password`, `dock me two-factor`): who they are, their role,
+// their tokens, two-factor sign-in and changing their password.
 
 /** The API's minimum for a new password. */
 const MIN_PASSWORD = 12;
@@ -86,6 +87,7 @@ export function AccountPage() {
         </dl>
         {me.kind === "user" ? (
           <>
+            <TwoFactorSection />
             <OwnTokens />
             <ChangePassword />
           </>

@@ -230,6 +230,24 @@ func describeMe(me apitypes.Me) string {
 	return s
 }
 
+// describeTwoFactor says whether a user's session or `dock login` token
+// counts as two-factor (ADR 0057); "" for API tokens, which act for no
+// user and have no second factor.
+func describeTwoFactor(me apitypes.Me) string {
+	switch me.TwoFactor {
+	case "":
+		if me.Email == "" {
+			return ""
+		}
+		return "no: this sign-in used no second factor"
+	case "login":
+		return "yes: approved from a two-factor sign-in"
+	case "recovery":
+		return "yes: a recovery code"
+	}
+	return "yes: " + factorKind(me.TwoFactor)
+}
+
 func newWhoamiCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
@@ -249,14 +267,21 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 				if ctxName == "" {
 					ctxName = "(" + clientconfig.EnvURL + ")"
 				}
-				return g.io.Fields(
+				if err := g.io.Fields(
 					"name", me.Name,
 					"email", me.Email,
 					"organization", me.Org,
 					"access", describeMe(me),
+					"two-factor", describeTwoFactor(me),
 					"server", s.server.Server,
 					"context", ctxName,
-				)
+				); err != nil {
+					return err
+				}
+				if me.TwoFactorRequired != "" {
+					g.io.Warnf("%s", me.TwoFactorRequired)
+				}
+				return nil
 			})
 		},
 	}
