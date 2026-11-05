@@ -90,6 +90,10 @@ func main() {
 	flag.StringVar(&o.tempobasePG, "tempobase-pg", "", "Postgres URL (owner with CREATEROLE) for tempoBase's idle connection check; skipped when empty")
 	flag.StringVar(&o.baseline, "baseline", "scripts/perf/baseline.json", "baseline for binary sizes and benchmarks")
 	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, analytics, tempobase-binary, tempobase-daemon, tempobase-ui")
+	// CI runs bench on its own (make perf-bench) and everything else with
+	// -skip bench (make perf-artifacts), so a new check joins the second
+	// job without listing it anywhere.
+	skip := flag.String("skip", "", "comma-separated checks to leave out of -checks")
 	flag.DurationVar(&o.idle, "idle", 30*time.Second, "length of each idle measurement window")
 	flag.IntVar(&o.sseClients, "sse", 20, "SSE clients connected during the second idle window")
 	flag.StringVar(&o.benchTime, "benchtime", "200ms", "go test -benchtime")
@@ -99,7 +103,9 @@ func main() {
 	flag.BoolVar(&o.softTiming, "soft-timing", false, "report timing budgets as warnings (shared CI runners)")
 	flag.BoolVar(&o.update, "update-baseline", false, "record binary size and benchmarks into -baseline instead of checking")
 	flag.Parse()
-	o.checks = strings.Split(checks, ",")
+	o.checks = slices.DeleteFunc(strings.Split(checks, ","), func(c string) bool {
+		return slices.Contains(strings.Split(*skip, ","), c)
+	})
 
 	if o.update {
 		if err := updateBaseline(o); err != nil {
