@@ -243,6 +243,28 @@ func TestSensitiveActionsNeedARecentStepUp(t *testing.T) {
 	}
 }
 
+// A session from before the upgrade (no factor, never verified) keeps
+// working; only sensitive actions ask to confirm, and the password does.
+func TestSessionsFromBeforeTwoFactorKeepWorking(t *testing.T) {
+	h := newHarness(t)
+	s := adaSession(t, h)
+	if err := h.store.VerifySession(h.ctx, store.VerifySessionParams{VerifiedAt: nil, ID: s.a.SessionID}); err != nil {
+		t.Fatal(err)
+	}
+	s = session(t, h, s.secret)
+	if _, err := h.c.ListOrgVariables(h.ctx, s.a, false); err != nil {
+		t.Fatalf("old session reads: %v", err)
+	}
+	_, err := h.c.ListOrgVariables(h.ctx, s.a, true)
+	wantCode(t, "old session reveals", err, apitypes.CodeReauthRequired)
+	if err := h.c.Reauth(h.ctx, s.a, apitypes.Verification{Password: adaPasswd}, testClient); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.ListOrgVariables(h.ctx, session(t, h, s.secret).a, true); err != nil {
+		t.Fatalf("after confirming: %v", err)
+	}
+}
+
 func TestOrgRequiresTwoFactor(t *testing.T) {
 	h := newHarness(t)
 	s := adaSession(t, h)

@@ -1,12 +1,14 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
+import { createPasskey } from "../../api/webauthn";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 
 // Two-factor sign-in on the account page (ADR 0057): the caller's
-// factors, setting up an authenticator app, recovery codes. Also read by
-// the step-up dialog, which asks for the factor when there is one.
+// factors, adding passkeys, setting up an authenticator app, recovery
+// codes. Also read by the step-up dialog, which asks for a factor when
+// there is one.
 
 export type TwoFactor = components["schemas"]["TwoFactor"];
 export type Factor = components["schemas"]["Factor"];
@@ -27,6 +29,18 @@ export const twoFactorQuery = () =>
 // Adding or removing a factor changes what the session counts as
 // (Me.two_factor, two_factor_required), and the org may open up.
 const factorsChanged = () => [twoFactorKey, keys.session, keys.orgs];
+
+/**
+ * Adds a passkey named name: a challenge, the browser creates the
+ * passkey, the daemon keeps it. The first factor also resolves with
+ * recovery codes, shown once.
+ */
+export const useAddPasskey = () =>
+  useAction(async (name: string) => {
+    const challenge = await body(api.POST("/api/v1/me/passkeys/options"));
+    const passkey = await createPasskey(challenge);
+    return body(api.POST("/api/v1/me/passkeys", { body: { name, passkey } }));
+  }, factorsChanged);
 
 /** Starts adding an authenticator app: a new key, kept once confirmed. */
 export const useStartTOTP = () =>

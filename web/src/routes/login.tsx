@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { ApiError, api, body } from "../api/client";
 import type { components } from "../api/schema";
 import { useLogin, useLoginVerify } from "../data/mutations";
-import { queries } from "../data/queries";
+import { currentMe, keys, queries } from "../data/queries";
 import { CodeInput } from "../ui/CodeInput";
 import { ErrorText } from "../ui/kit";
 
@@ -27,10 +27,39 @@ type SecondFactor = NonNullable<
   components["schemas"]["LoginResult"]["second_factor"]
 >[number];
 
+/**
+ * Asks the browser for a passkey answering the challenge purpose starts:
+ * "login" signs in with it alone, "second" finishes a password sign-in.
+ * The WebAuthn helpers load on first use, not with the page.
+ */
+async function askPasskey(purpose: "login" | "second") {
+  const [{ getPasskey }, challenge] = await Promise.all([
+    import("../api/webauthn"),
+    body(api.POST("/api/v1/auth/passkey/options", { body: { purpose } })),
+  ]);
+  return getPasskey(challenge);
+}
+
+/** Signs in with a passkey alone (no password): it is both factors. */
+function usePasskeyLogin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const passkey = await askPasskey("login");
+      await body(api.POST("/api/v1/auth/passkey", { body: passkey }));
+      queryClient.setQueryData(keys.session, await currentMe());
+    },
+  });
+}
+
+/** Whether this page can offer passkeys (https or localhost, WebAuthn). */
+const passkeys = window.isSecureContext && "PublicKeyCredential" in window;
+
 function Login() {
   const { redirect: back } = Route.useSearch();
   const navigate = useNavigate();
   const login = useLogin();
+  const passkeyLogin = usePasskeyLogin();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   // Set while the password was right and a second factor is due.
@@ -106,12 +135,26 @@ function Login() {
             </label>
             <button
               type="submit"
-              disabled={login.isPending}
+              disabled={login.isPending || passkeyLogin.isPending}
               className="btn pri justify-center px-3.5 py-2.5 text-md"
             >
               Sign in <span className="font-mono text-2xs opacity-70">↵</span>
             </button>
-            <ErrorText error={ended ?? login.error} />
+            {passkeys && (
+              <button
+                type="button"
+                disabled={login.isPending || passkeyLogin.isPending}
+                onClick={() => {
+                  setEnded(null);
+                  login.reset();
+                  passkeyLogin.mutate(undefined, { onSuccess: done });
+                }}
+                className="btn justify-center px-3.5 py-2.5 text-md"
+              >
+                Sign in with a passkey
+              </button>
+            )}
+            <ErrorText error={ended ?? login.error ?? passkeyLogin.error} />
           </form>
         )}
         <div className="flex flex-col gap-1 border-t border-line pt-4">
@@ -137,9 +180,16 @@ function Login() {
   );
 }
 
+/** How each second factor is offered when it isn't the one shown. */
+const useInstead: Record<SecondFactor, string> = {
+  passkey: "Use a passkey",
+  totp: "Use your authenticator app",
+  recovery: "Use a recovery code",
+};
+
 /**
- * The sign-in's second step: the code from the authenticator app (sent
- * as soon as six digits are in), or one of the recovery codes.
+ * The sign-in's second step: a passkey, the code from the authenticator
+ * app (sent as soon as six digits are in), or one of the recovery codes.
  */
 function SecondStep({
   email,
@@ -154,27 +204,39 @@ function SecondStep({
   onEnded: (error: Error | null) => void;
 }) {
   const verify = useLoginVerify();
+  // The browser's part of a passkey; verify sends its answer.
+  const passkey = useMutation({ mutationFn: () => askPasskey("second") });
   const [mode, setMode] = useState<SecondFactor>(
-    factors.includes("totp") ? "totp" : "recovery",
+    factors.find((f) => f !== "passkey" || passkeys) ?? "recovery",
   );
   const [code, setCode] = useState("");
   const [recovery, setRecovery] = useState("");
-  const send = (v: { code: string } | { recovery_code: string }) =>
+  // The pending sign-in expired or saw too many wrong factors.
+  const ended = (error: Error) => {
+    if (!(error instanceof ApiError && error.status === 410)) return false;
+    onEnded(error);
+    return true;
+  };
+  const send = (v: components["schemas"]["Verification"]) =>
     verify.mutate(v, {
       onSuccess: onDone,
       onError: (error) => {
-        // The pending sign-in expired or saw too many wrong codes.
-        if (error instanceof ApiError && error.status === 410) onEnded(error);
-        else setCode("");
+        if (!ended(error)) setCode("");
       },
     });
-  const other = mode === "totp" ? "recovery" : "totp";
+  const withPasskey = () =>
+    passkey.mutate(undefined, {
+      onSuccess: (answer) => send({ passkey: answer }),
+      onError: ended,
+    });
+  const pending = verify.isPending || passkey.isPending;
 
   return (
     <form
       className="flex flex-col gap-3.5"
       onSubmit={(e) => {
         e.preventDefault();
+        if (mode === "passkey") withPasskey();
         if (mode === "totp" && code.length === 6) send({ code });
         if (mode === "recovery" && recovery.trim()) {
           send({ recovery_code: recovery.trim() });
@@ -191,14 +253,14 @@ function SecondStep({
           not you?
         </button>
       </p>
-      {mode === "totp" ? (
+      {mode === "passkey" ? null : mode === "totp" ? (
         <CodeInput
           label="Code from your authenticator app"
           autoFocus
           value={code}
           onChange={setCode}
           onComplete={(c) => send({ code: c })}
-          disabled={verify.isPending}
+          disabled={pending}
           className="px-3 py-2.5 text-center text-xl"
         />
       ) : (
@@ -209,7 +271,7 @@ function SecondStep({
             autoFocus
             value={recovery}
             onChange={(e) => setRecovery(e.target.value)}
-            disabled={verify.isPending}
+            disabled={pending}
             autoComplete="off"
             spellCheck={false}
             className={`${field} font-mono`}
@@ -218,32 +280,38 @@ function SecondStep({
       )}
       <button
         type="submit"
+        // biome-ignore lint/a11y/noAutofocus: the only thing to do in this step
+        autoFocus={mode === "passkey"}
         disabled={
-          verify.isPending ||
-          (mode === "totp" ? code.length < 6 : !recovery.trim())
+          pending ||
+          (mode === "totp" && code.length < 6) ||
+          (mode === "recovery" && !recovery.trim())
         }
         className="btn pri justify-center px-3.5 py-2.5 text-md"
       >
-        Verify <span className="font-mono text-2xs opacity-70">↵</span>
+        {mode === "passkey" ? "Use a passkey" : "Verify"}{" "}
+        <span className="font-mono text-2xs opacity-70">↵</span>
       </button>
-      {factors.includes(other) && (
-        <button
-          type="button"
-          className="self-start text-info hover:underline"
-          onClick={() => {
-            verify.reset();
-            setMode(other);
-          }}
-        >
-          {other === "recovery"
-            ? "Use a recovery code"
-            : "Use your authenticator app"}
-        </button>
-      )}
+      {factors
+        .filter((f) => f !== mode && (f !== "passkey" || passkeys))
+        .map((f) => (
+          <button
+            key={f}
+            type="button"
+            className="self-start text-info hover:underline"
+            onClick={() => {
+              verify.reset();
+              passkey.reset();
+              setMode(f);
+            }}
+          >
+            {useInstead[f]}
+          </button>
+        ))}
       {mode === "recovery" && (
         <p className="text-xs text-mut">Each recovery code works once.</p>
       )}
-      <ErrorText error={verify.error} />
+      <ErrorText error={passkey.error ?? verify.error} />
     </form>
   );
 }

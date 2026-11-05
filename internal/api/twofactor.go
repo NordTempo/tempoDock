@@ -25,6 +25,38 @@ func (in *verifyInput) Resolve(ctx huma.Context) []error {
 	return nil
 }
 
+// passkeyOptionsInput starts a passkey sign-in. Origin is the page's,
+// which the passkey is bound to.
+type passkeyOptionsInput struct {
+	Pending string `cookie:"dock_login"`
+	Origin  string `header:"Origin"`
+	Body    apitypes.PasskeyOptionsRequest
+	client  client
+}
+
+// Resolve records how the request arrived.
+func (in *passkeyOptionsInput) Resolve(ctx huma.Context) []error {
+	in.client = clientOf(ctx)
+	return nil
+}
+
+// passkeyLoginInput answers a passkey sign-in challenge.
+type passkeyLoginInput struct {
+	Body   apitypes.PasskeyResponse
+	client client
+}
+
+// Resolve records how the request arrived.
+func (in *passkeyLoginInput) Resolve(ctx huma.Context) []error {
+	in.client = clientOf(ctx)
+	return nil
+}
+
+// originInput carries the page's origin, which a passkey is bound to.
+type originInput struct {
+	Origin string `header:"Origin"`
+}
+
 type reauthInput struct {
 	Body   apitypes.Verification
 	client client
@@ -40,11 +72,35 @@ func registerTwoFactor(s *Server, a huma.API) {
 	public(a, huma.Operation{
 		OperationID: "login-verify", Method: http.MethodPost, Path: Prefix + "/auth/login/verify",
 		Summary: "Finish signing in with a second factor",
-		Description: "Finishes the sign-in POST /auth/login left pending (its cookie) with an authenticator app code or a recovery code, and sets the session cookie. " +
+		Description: "Finishes the sign-in POST /auth/login left pending (its cookie) with a passkey, an authenticator app code or a recovery code, and sets the session cookie. " +
 			"A few wrong factors end the pending sign-in.",
 		Tags: []string{"auth"}, Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusGone, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *verifyInput) (*loginOutput, error) {
 		res, err := s.core.LoginSecondFactor(ctx, in.Pending, in.Body, in.client.ip)
+		if err != nil {
+			return nil, s.problem(err)
+		}
+		return in.client.signedIn(res), nil
+	})
+	public(a, huma.Operation{
+		OperationID: "passkey-options", Method: http.MethodPost, Path: Prefix + "/auth/passkey/options",
+		Summary: "Start a passkey sign-in",
+		Description: "Purpose login signs in with a passkey alone (POST /auth/passkey); second answers a pending sign-in's second factor (POST /auth/login/verify). " +
+			"Passkeys work on Dock's public address and on localhost.",
+		Tags: []string{"auth"}, Errors: []int{http.StatusBadRequest, http.StatusGone, http.StatusTooManyRequests},
+	}, func(ctx context.Context, in *passkeyOptionsInput) (*out[apitypes.PasskeyChallenge], error) {
+		res, err := s.core.PasskeyOptions(ctx, in.Body, in.Pending, in.Origin, in.client.ip)
+		if err != nil {
+			return nil, s.problem(err)
+		}
+		return &out[apitypes.PasskeyChallenge]{Body: res}, nil
+	})
+	public(a, huma.Operation{
+		OperationID: "passkey-login", Method: http.MethodPost, Path: Prefix + "/auth/passkey",
+		Summary: "Sign in with a passkey", Description: "Answers a login challenge from POST /auth/passkey/options and sets the session cookie.",
+		Tags: []string{"auth"}, Errors: []int{http.StatusUnauthorized, http.StatusGone, http.StatusTooManyRequests},
+	}, func(ctx context.Context, in *passkeyLoginInput) (*loginOutput, error) {
+		res, err := s.core.PasskeyLogin(ctx, in.Body, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
@@ -60,12 +116,30 @@ func registerTwoFactor(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "reauth", Method: http.MethodPost, Path: Prefix + "/me/reauth",
 		Summary: "Confirm it's you",
-		Description: "A step-up for sensitive actions (answers with code reauth_required): with an authenticator app code, " +
+		Description: "A step-up for sensitive actions (answers with code reauth_required): with a passkey (POST /me/reauth/options first) or an authenticator app code, " +
 			"or the password for users without a second factor. Covers the session for 15 minutes.",
 		Tags: []string{"auth"}, DefaultStatus: http.StatusNoContent,
 		Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusTooManyRequests},
 	}, func(ctx context.Context, actor core.Actor, in *reauthInput) (*struct{}, error) {
 		return nil, s.core.Reauth(ctx, actor, in.Body, in.client.ip)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "reauth-options", Method: http.MethodPost, Path: Prefix + "/me/reauth/options",
+		Summary: "Start confirming it's you with a passkey", Description: "Answer with POST /me/reauth {passkey}.", Tags: []string{"auth"},
+	}, func(ctx context.Context, actor core.Actor, in *originInput) (*out[apitypes.PasskeyChallenge], error) {
+		return reply(s.core.ReauthOptions(ctx, actor, in.Origin))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "passkey-registration", Method: http.MethodPost, Path: Prefix + "/me/passkeys/options",
+		Summary: "Start adding a passkey", Description: "Answer with POST /me/passkeys. Needs a recent sign-in or step-up.", Tags: []string{"auth"},
+	}, func(ctx context.Context, actor core.Actor, in *originInput) (*out[apitypes.PasskeyChallenge], error) {
+		return reply(s.core.PasskeyRegistration(ctx, actor, in.Origin))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "add-passkey", Method: http.MethodPost, Path: Prefix + "/me/passkeys",
+		Summary: "Add a passkey", Description: "Your first second factor also returns recovery codes, once, and ends your other sessions.", Tags: []string{"auth"},
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AddPasskeyRequest }) (*out[apitypes.FactorAdded], error) {
+		return reply(s.core.AddPasskey(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "start-totp", Method: http.MethodPost, Path: Prefix + "/me/totp",

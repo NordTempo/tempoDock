@@ -1,14 +1,34 @@
 # Two-factor sign-in
 
 A password alone shouldn't reach production. With two-factor sign-in, the
-web UI and `dock login` also ask for a code from an authenticator app on
-your phone. Organizations can require it of their members, and the
+web UI and `dock login` also ask for a passkey or a code from an
+authenticator app on your phone. Organizations can require it of their members, and the
 platform of its operators. API tokens are credentials of their own and are
 not affected. The design is [ADR 0057](../decisions/0057-two-factor-sign-in.md).
 
+## Adding a passkey
+
+A passkey lives in your password manager, your device (Touch ID, Windows
+Hello, Android) or a security key. On your account page (`/account`):
+
+1. Name it after where it lives ("MacBook", "YubiKey") and choose Add a
+   passkey.
+2. Your browser asks you to create it, usually with your fingerprint, face
+   or device PIN.
+3. If it is your first factor, Dock shows ten recovery codes, once (see
+   below).
+
+Add as many as you like, one per device or security key. With a passkey you
+can also sign in without your password (below).
+
+Passkeys are bound to the address you open Dock on, so they work on Dock's
+public address (as the console shows it, `dock address`) and on
+`localhost`, not on an IP address. A passkey added on one of them doesn't
+work on the other.
+
 ## Setting up an authenticator app
 
-Setup happens in the browser, on your account page (`/account`):
+On your account page (`/account`):
 
 1. Add an authenticator app. Dock shows a QR code, and the key as text
    for typing in.
@@ -19,13 +39,14 @@ Setup happens in the browser, on your account page (`/account`):
 4. Dock shows ten recovery codes, once. Store them somewhere safe, away
    from your phone.
 
-Adding your first factor ends your other UI sessions, which never proved
-it. One authenticator app per account.
+Adding your first factor (a passkey or an app) ends your other UI
+sessions, which never proved it. One authenticator app per account.
 
 ```
 $ dock me two-factor
-KIND               NAME   ADDED   LAST USED
-authenticator app  phone  3d ago  2h ago
+KIND               NAME               ADDED   LAST USED
+passkey            MacBook            5d ago  10m ago
+authenticator app  Authenticator app  3d ago  2h ago
 
 10 unused recovery codes
 ```
@@ -34,7 +55,8 @@ authenticator app  phone  3d ago  2h ago
 
 ## Recovery codes
 
-Ten codes of 16 characters, for when your phone is lost or out of reach:
+Ten codes of 16 characters, for when your passkeys and phone are lost or
+out of reach:
 
 - Each works once, and only to finish a sign-in, never to confirm a
   sensitive action.
@@ -44,7 +66,11 @@ Ten codes of 16 characters, for when your phone is lost or out of reach:
 ## Signing in
 
 1. Email and password, as before.
-2. A code from your authenticator app, or a recovery code.
+2. Your passkey, a code from your authenticator app, or a recovery code.
+
+Or choose Sign in with a passkey and skip the password: the passkey is
+both factors, as long as it is unlocked with your fingerprint, face or
+device PIN (Dock asks the browser for that).
 
 The second step has five minutes. Five wrong codes end the attempt and you
 start again with your password. Wrong codes count toward the same limit as
@@ -59,8 +85,8 @@ someone with your password gets that far, so change it if you see this.
 
 A browser session may do sensitive things for 15 minutes after you sign in
 or confirm. After that, the UI asks you to confirm it's you (with your
-authenticator app, or your password if you have no second factor) and then
-carries on. Sensitive means:
+passkey or authenticator app, or your password if you have no second
+factor) and then carries on. Sensitive means:
 
 - Revealing secrets: variables, organization variables, staged changes,
   connection URLs, the backup password.
@@ -77,8 +103,8 @@ check.
 
 ## `dock login`
 
-`dock login` opens the browser, where you sign in (with your code) and
-approve the CLI. Approving creates a token, so a sign-in older than 15
+`dock login` opens the browser, where you sign in (with your second
+factor) and approve the CLI. Approving creates a token, so a sign-in older than 15
 minutes confirms first.
 
 The token remembers whether the approving sign-in used a second factor,
@@ -115,7 +141,7 @@ settings) until they add one.
 You can't remove your last factor while an organization of yours or the
 platform requires one. `dock user list` shows who has two-factor sign-in on.
 
-## Lost your phone and your recovery codes
+## Lost your factors and your recovery codes
 
 Someone with shell access to the server resets it, as root or the service
 user:
