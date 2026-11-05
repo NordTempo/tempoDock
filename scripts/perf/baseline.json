@@ -226,7 +226,7 @@
       "allocs_op": 36988
     },
     "core.BenchmarkUptimeRecord": {
-      "ns_op": 10052,
+      "ns_op": 10055,
       "bytes_op": 392,
       "allocs_op": 9
     },

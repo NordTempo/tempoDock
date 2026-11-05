@@ -5,7 +5,7 @@ import { useAction } from "../../data/mutations";
 import { keys, servicePath } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 
-// A service's uptime checks (ADR 0052): URLs on its domains probed from
+// A service's uptime checks (ADR 0055): URLs on its domains probed from
 // another server. uptime.* audit events refetch the list (it is under the
 // service's key); uptime events patch a check's state in place.
 

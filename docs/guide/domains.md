@@ -138,7 +138,7 @@ See [ADR 0030](../decisions/0030-access-protection.md).
 An uptime check fetches a URL on one of the service's domains from outside
 the server that serves it, so "production is down" reaches you within a
 minute or two, even when the container still runs ([ADR
-0052](../decisions/0052-uptime-checks.md)).
+0055](../decisions/0055-uptime-checks.md)).
 
 ```sh
 dock uptime add https://shop.example.com/health          # GET every minute, expects 200

@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Uptime checks (ADR 0052): a URL on one of a service's domains, probed
+// Uptime checks (ADR 0055): a URL on one of a service's domains, probed
 // from another server.
 
 // UptimeState is what a check's latest probes say.

@@ -223,7 +223,7 @@ channel add`, not in this file; see [ADR 0020](../decisions/0020-retention-and-a
 Alerts also come from failing health checks (`unhealthy`, [ADR
 0043](../decisions/0043-ongoing-health-checks.md)) and uptime checks
 (`uptime_down`, two failed probes in a row, [ADR
-0052](../decisions/0052-uptime-checks.md)); those have no settings here.
+0055](../decisions/0055-uptime-checks.md)); those have no settings here.
 
 Changing `[buildkit]` settings recreates the `dock-buildkit` container
 before the next build. So does finding its memory cap loosened: before each

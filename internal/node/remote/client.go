@@ -814,7 +814,7 @@ func (c *Client) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
 }
 
 // ProbeProtocol is the first protocol whose nodes run uptime probes (ADR
-// 0052). Core doesn't pick older nodes to probe.
+// 0055). Core doesn't pick older nodes to probe.
 const ProbeProtocol = 19
 
 // Probe implements node.Prober. The call may take the probe's timeout,

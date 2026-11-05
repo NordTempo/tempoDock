@@ -51,7 +51,7 @@ const (
 	// AlertAccessRequest: a token asks to change a locked environment
 	// (ADR 0044); deciding or expiring the request resolves it.
 	AlertAccessRequest AlertKind = "access_request"
-	// AlertUptimeDown: an uptime check failed twice in a row (ADR 0052).
+	// AlertUptimeDown: an uptime check failed twice in a row (ADR 0055).
 	// Its next successful probe resolves it.
 	AlertUptimeDown AlertKind = "uptime_down"
 )

@@ -16,7 +16,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Uptime checks (ADR 0052). A project admin adds a URL on one of a
+// Uptime checks (ADR 0055). A project admin adds a URL on one of a
 // service's domains; the scheduler (uptime_sched.go) has another server
 // probe it every interval. Two failed probes in a row open an
 // uptime_down alert, the next success resolves it. Each probe adds to its

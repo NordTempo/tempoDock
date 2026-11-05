@@ -36,7 +36,7 @@ func (h *uptimeHeap) Pop() any {
 	return e
 }
 
-// scheduleUptime is the uptime scheduler (ADR 0052): one goroutine and
+// scheduleUptime is the uptime scheduler (ADR 0055): one goroutine and
 // one timer, armed for the next due check only while checks exist. With
 // none it waits on its kick channel, without a timer or a bus
 // subscription, so an install without checks has no wake-ups. A kick (a check added or removed, a service archived) or a

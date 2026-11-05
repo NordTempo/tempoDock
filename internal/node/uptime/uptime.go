@@ -1,4 +1,4 @@
-// Package uptime runs uptime probes (ADR 0052): one GET to a site's URL,
+// Package uptime runs uptime probes (ADR 0055): one GET to a site's URL,
 // judged by its status. node.Local uses it on the control plane's own
 // server and the remote Node on every other one.
 package uptime
@@ -69,7 +69,7 @@ var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 // and LANs that a domain's DNS could point at. This server's own public
 // address stays allowed: on 80 and 443 it is Caddy, what a visitor
 // reaches, and the control plane probes its own sites when it is the
-// only server (ADR 0052). allowLoopback (tests) admits loopback on any
+// only server (ADR 0055). allowLoopback (tests) admits loopback on any
 // port.
 func refused(ip netip.Addr, port uint16, allowLoopback bool) string {
 	switch {

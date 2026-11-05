@@ -214,7 +214,7 @@ func printServiceStatus(g *globals, so apitypes.ServiceOverview) error {
 }
 
 // uptimeSummary is a service's uptime checks as "up, 99.98% over 24h"
-// (ADR 0052), or empty without checks.
+// (ADR 0055), or empty without checks.
 func uptimeSummary(u *apitypes.ServiceUptime) string {
 	if u == nil {
 		return ""

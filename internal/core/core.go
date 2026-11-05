@@ -61,7 +61,7 @@ type Options struct {
 	// a tiny value).
 	CutoverDrain time.Duration
 	// UptimeSecond, when positive, is how long a second of an uptime
-	// check's interval lasts (ADR 0052), so tests probe every few
+	// check's interval lasts (ADR 0055), so tests probe every few
 	// milliseconds.
 	UptimeSecond time.Duration
 	// GitHubAPI overrides the GitHub REST API's base URL

@@ -1,4 +1,4 @@
-# 0052: Uptime checks from another server
+# 0055: Uptime checks from another server
 
 Status: accepted (decided by the agent)
 

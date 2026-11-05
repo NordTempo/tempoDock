@@ -1,4 +1,4 @@
--- Uptime checks (ADR 0052): a URL on one of a service's domains, probed
+-- Uptime checks (ADR 0055): a URL on one of a service's domains, probed
 -- every interval_s seconds from another server. expect_status is an exact
 -- status code, or 2 or 3 for any 2xx or 3xx code (node.ProbeRequest).
 CREATE TABLE uptime_checks (

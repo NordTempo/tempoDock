@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// newUptimeCmd is `dock uptime`: a service's uptime checks (ADR 0052).
+// newUptimeCmd is `dock uptime`: a service's uptime checks (ADR 0055).
 func newUptimeCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "uptime", Short: "Check a service's URLs from another server"})
 	cmd.AddCommand(newUptimeListCmd(g), newUptimeAddCmd(g), newUptimeRemoveCmd(g))

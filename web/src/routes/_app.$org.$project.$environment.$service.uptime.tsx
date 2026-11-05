@@ -3,7 +3,7 @@ import { servicePath } from "../data/queries";
 import { uptimeChecks } from "../features/uptime/data";
 import { UptimePanel } from "../features/uptime/UptimePanel";
 
-// A service's uptime checks (ADR 0052).
+// A service's uptime checks (ADR 0055).
 // /shop/production/web/uptime
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/uptime",

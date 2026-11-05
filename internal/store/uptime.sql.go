@@ -68,7 +68,7 @@ type CreateUptimeCheckParams struct {
 	CreatedBy    string
 }
 
-// Uptime checks (ADR 0052).
+// Uptime checks (ADR 0055).
 func (q *Queries) CreateUptimeCheck(ctx context.Context, arg CreateUptimeCheckParams) (UptimeCheck, error) {
 	row := q.db.QueryRowContext(ctx, createUptimeCheck,
 		arg.ServiceID,

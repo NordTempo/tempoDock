@@ -21,7 +21,7 @@ import (
 // the last ten into a 10-minute point and prunes old points. It then
 // publishes the samples as usage events, so clients patch what they show
 // (current numbers and open charts) instead of polling, and hands them to
-// the alert engine, retention (ADR 0020) and uptime rollups (ADR 0052).
+// the alert engine, retention (ADR 0020) and uptime rollups (ADR 0055).
 // That tick is the daemon's only always-on periodic work. While someone
 // watches a server or a service live, a second sampler runs every
 // liveInterval, and stops as soon as the last watcher leaves.

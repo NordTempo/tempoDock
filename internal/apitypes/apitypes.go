@@ -1520,7 +1520,7 @@ const (
 	// (ADR 0049), without its output (read the run for that).
 	EventRun EventType = "run"
 	// EventUptime carries an uptime check whose state changed (ADR
-	// 0052).
+	// 0055).
 	EventUptime EventType = "uptime"
 )
 

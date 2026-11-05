@@ -13,7 +13,7 @@ import {
   useRemoveUptimeCheck,
 } from "./data";
 
-// A service's uptime checks (ADR 0052): the add form, one row per check
+// A service's uptime checks (ADR 0055): the add form, one row per check
 // with its state, last day's strip and percentages, then the latest
 // incidents. Live state comes from uptime events (data.ts).
 

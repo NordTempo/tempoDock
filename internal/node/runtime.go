@@ -29,7 +29,7 @@ type Runtime interface {
 	Prober
 }
 
-// Prober runs uptime checks (ADR 0052): the control plane asks a server
+// Prober runs uptime checks (ADR 0055): the control plane asks a server
 // other than the one serving a site to fetch it.
 type Prober interface {
 	// Probe sends one GET to req.URL and says whether the answer was the

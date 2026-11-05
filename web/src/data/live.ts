@@ -287,7 +287,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       if (event.run) applyRunEvent(queryClient, event.run);
       return;
     case "uptime": {
-      // An uptime check went up or down (ADR 0052).
+      // An uptime check went up or down (ADR 0055).
       const update = event.uptime;
       if (!ref || !update) return;
       const state = applyUptimeEvent(queryClient, ref, update);

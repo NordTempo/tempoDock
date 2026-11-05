@@ -88,7 +88,8 @@ export type ServiceTab = (typeof serviceTabs)[number];
 
 /** The tabs this service has: Data, Backups, Traffic, Analytics and Uptime only where they apply. */
 export const tabsFor = (
-  view: Pick<ServiceView, "service" | "domains"> & Partial<Pick<ServiceView, "uptime">>,
+  view: Pick<ServiceView, "service" | "domains"> &
+    Partial<Pick<ServiceView, "uptime">>,
 ) =>
   serviceTabs.filter((tab) => {
     switch (tab.label) {

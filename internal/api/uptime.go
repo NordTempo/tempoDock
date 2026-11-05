@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// registerUptime registers a service's uptime checks (ADR 0052).
+// registerUptime registers a service's uptime checks (ADR 0055).
 func registerUptime(s *Server, a huma.API) {
 	tags := []string{"uptime"}
 	authed(s, a, huma.Operation{
