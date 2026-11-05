@@ -12,7 +12,7 @@ import {
   useMoveEnvironment,
 } from "./data";
 
-// An environment's server and its move (ADR 0052), opened from the
+// An environment's server and its move (ADR 0053), opened from the
 // environment's heading on the project overview: operators pick another
 // server and move it there; everyone sees the running or latest move's
 // steps, downtime, services and what is left to do. Loaded when opened.

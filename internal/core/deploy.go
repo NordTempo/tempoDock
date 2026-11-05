@@ -188,7 +188,7 @@ func (d *deployment) run(ctx context.Context) error {
 }
 
 // healthCheckOf is the check a release's new container must pass before
-// it gets traffic: a deploy's, and a moved environment's (ADR 0052).
+// it gets traffic: a deploy's, and a moved environment's (ADR 0053).
 func healthCheckOf(cfg releaseConfig) node.HealthCheck {
 	hc := node.HealthCheck{
 		Path:     cfg.HealthCheckPath,

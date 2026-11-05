@@ -882,7 +882,7 @@ func tarVolume(spec node.JobSpec, op string) (string, bool) {
 // with a Stream whose script contains "tar -cf" and mounts only that
 // volume writes it to the Stream's Stdout, and one with "tar -xf" sets
 // it from the Stream's Stdin. Enough for core's tests to follow a
-// volume's copy between servers (ADR 0052).
+// volume's copy between servers (ADR 0053).
 func (r *Runtime) SetVolumeData(volume string, data []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

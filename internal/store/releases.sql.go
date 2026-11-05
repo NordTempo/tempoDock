@@ -645,7 +645,7 @@ WHERE environment_moves.to_server_id = +?1
 // container is confirmed removed (ClearReleaseHostPort), so a container
 // that is still draining, or failed to stop, never shares it. An open
 // environment move holds the ports it reserved for the services it
-// starts there (ADR 0052).
+// starts there (ADR 0053).
 func (q *Queries) ListUsedHostPorts(ctx context.Context, serverID int64) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listUsedHostPorts, serverID)
 	if err != nil {

@@ -427,7 +427,7 @@ func (c *Core) runSnapshotJob(ctx context.Context, serverID int64, rt node.Runti
 
 // runToolJob runs spec in the restic image, a small Alpine with busybox's
 // cp, du and tar, with the job memory limit: snapshots (ADR 0047) and
-// moving volumes (ADR 0052). A job that exits non-zero is an error with
+// moving volumes (ADR 0053). A job that exits non-zero is an error with
 // the end of its output.
 func (c *Core) runToolJob(ctx context.Context, serverID int64, rt node.Runtime, spec node.JobSpec) (string, error) {
 	spec.Image = c.cfg.Backup.ResticImage

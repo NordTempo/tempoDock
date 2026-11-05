@@ -1,4 +1,4 @@
--- Moving an environment to another server (ADR 0052). A move is a state
+-- Moving an environment to another server (ADR 0053). A move is a state
 -- machine recorded step by step, so a restarted daemon finishes it: one
 -- that hadn't switched yet rolls back, one that had cleans up.
 CREATE TABLE environment_moves (

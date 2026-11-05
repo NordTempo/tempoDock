@@ -455,7 +455,7 @@ dock env move staging --status         # the running or latest move
 ```
 
 Operators move an environment when a server joins or is retired
-([ADR 0052](../decisions/0052-moving-environments.md)); the UI has the same
+([ADR 0053](../decisions/0053-moving-environments.md)); the UI has the same
 in the environment's settings. Everything is checked first: the server
 accepts the environment's kind, both servers are online, and the target
 has the memory, disk, images and Cloudflare tunnels. Then:

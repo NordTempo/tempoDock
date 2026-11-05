@@ -40,7 +40,7 @@ func TestRunJobStdin(t *testing.T) {
 }
 
 // A volume streams out of one job with busybox tar and into another, as
-// an environment move copies it (ADR 0052): owner, a 0700 root (Postgres
+// an environment move copies it (ADR 0053): owner, a 0700 root (Postgres
 // refuses anything else), a symlink and hidden files come back as they
 // were, and the target's old files are gone. Busybox tar doesn't lchown,
 // so a symlink itself comes back owned by root (what it points to keeps

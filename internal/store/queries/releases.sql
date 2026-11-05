@@ -57,7 +57,7 @@ SELECT * FROM release_events WHERE release_id = +? ORDER BY id;
 -- container is confirmed removed (ClearReleaseHostPort), so a container
 -- that is still draining, or failed to stop, never shares it. An open
 -- environment move holds the ports it reserved for the services it
--- starts there (ADR 0052).
+-- starts there (ADR 0053).
 SELECT releases.host_port FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id

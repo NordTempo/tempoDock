@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// MoveStatus is where an environment move is (ADR 0052).
+// MoveStatus is where an environment move is (ADR 0053).
 type MoveStatus string
 
 const (

@@ -17,7 +17,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Moving an environment to another server (ADR 0052). A move is a state
+// Moving an environment to another server (ADR 0053). A move is a state
 // machine in environment_moves: prepare, stop, copy, start, switch,
 // cleanup. Until the switch the environment is on its source in every
 // sense, and a failure (or a restart) rolls back; the switch is one
@@ -87,7 +87,7 @@ func (m movingService) stateful() bool { return len(m.vols) > 0 }
 // 0050), which moves stopped, its data with it.
 func (m movingService) runs() bool { return m.rel != nil && m.ss.svc.StoppedAt == nil }
 
-// MoveEnvironment moves an environment to another server (ADR 0052). It
+// MoveEnvironment moves an environment to another server (ADR 0053). It
 // checks everything first and refuses with the reason; then it answers
 // with the move, running, and works in the background: progress is
 // published as environment_move events, the end audited

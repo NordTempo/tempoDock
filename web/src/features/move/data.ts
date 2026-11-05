@@ -10,7 +10,7 @@ import { useAction } from "../../data/mutations";
 import { envPath, keys } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
 
-// An environment's move to another server (ADR 0052): the running move or
+// An environment's move to another server (ADR 0053): the running move or
 // the latest one, null when it never moved. environment_move events carry
 // the whole move and set it here (data/live.ts); nothing polls. The key
 // sits outside the environment's, so the audits of other changes in it

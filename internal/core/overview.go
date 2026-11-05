@@ -70,7 +70,7 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		domainsBySvc[d.ServiceID] = append(domainsBySvc[d.ServiceID], d)
 	}
 
-	// Running moves, for every environment at once (ADR 0052).
+	// Running moves, for every environment at once (ADR 0053).
 	moves, err := c.store.ListOpenEnvironmentMoves(ctx)
 	if err != nil {
 		return out, err

@@ -172,7 +172,7 @@ type Core struct {
 	// jobs is the job scheduler's kick and the job runs in flight
 	// (jobs.go, jobs_schedule.go).
 	jobs jobState
-	// moves holds the environment moves being driven (ADR 0052).
+	// moves holds the environment moves being driven (ADR 0053).
 	moves moveState
 
 	// uploads holds the services with a source upload streaming to disk.

@@ -1,4 +1,4 @@
-# 0052: Moving an environment to another server
+# 0053: Moving an environment to another server
 
 Status: accepted (decided by the agent, on Saile's direction, 2026-11-03).
 Amends [0015](0015-server-pools-and-placement.md).

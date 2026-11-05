@@ -51,7 +51,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const pr = environment.preview;
   const [closing, setClosing] = useState(false);
   const newService = () => openCreate({ kind: "service", env: ref });
-  // Moving to another server (ADR 0052): operators open it from here;
+  // Moving to another server (ADR 0053): operators open it from here;
   // anyone opens a running move's progress from its strip.
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);

@@ -225,7 +225,7 @@ type Environment struct {
 	// Preview is set on a preview environment (ADR 0056): the pull
 	// request it previews.
 	Preview *PullRequestRef `json:"preview,omitempty" doc:"The pull request this preview environment belongs to"`
-	// MovingTo is the server a running move is taking it to (ADR 0052),
+	// MovingTo is the server a running move is taking it to (ADR 0053),
 	// on the project overview.
 	MovingTo string `json:"moving_to,omitempty"`
 }
@@ -1532,7 +1532,7 @@ const (
 	// 0048); with Message "removed", only its name.
 	EventJob EventType = "job"
 	// EventEnvironmentMove: an environment move went a step further, or
-	// ended (ADR 0052). Move is the move.
+	// ended (ADR 0053). Move is the move.
 	EventEnvironmentMove EventType = "environment_move"
 )
 

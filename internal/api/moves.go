@@ -11,7 +11,7 @@ import (
 )
 
 // registerMoves registers moving an environment to another server and
-// reading how its move went (ADR 0052).
+// reading how its move went (ADR 0053).
 func registerMoves(s *Server, a huma.API) {
 	tags := []string{"environments"}
 	authed(s, a, huma.Operation{
