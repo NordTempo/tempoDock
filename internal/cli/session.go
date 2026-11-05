@@ -55,6 +55,13 @@ func (g *globals) connect() (*session, error) {
 		return nil, err
 	}
 	api.Org, api.Reason = r.Org, g.reason
+	if api.Remote() && !g.io.JSON { // warnings are silent with --json
+		to := r.Server + " (" + clientconfig.EnvURL + ")"
+		if r.Name != "" {
+			to = r.Name + " (" + r.Server + ")"
+		}
+		api.BeforeChange = func() { _, _ = fmt.Fprintln(g.io.Err, "→", to) }
+	}
 	return &session{api: api, cfg: cfg, server: r, link: link}, nil
 }
 

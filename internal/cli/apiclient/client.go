@@ -34,9 +34,15 @@ type Client struct {
 	// Reason, when set, says why the caller makes its changes (the
 	// Dock-Reason header); an access request a change files shows it.
 	Reason string
-	base   *url.URL
-	token  string
-	http   *http.Client
+	// BeforeChange, when set, runs once, before the first request that
+	// may change something (any method but GET and HEAD) is built. The
+	// CLI uses it to name a remote server before acting on it.
+	BeforeChange func()
+	changeOnce   sync.Once
+
+	base  *url.URL
+	token string
+	http  *http.Client
 	// upgrades is the HTTP/1.1-only client of Upgrade, made on first use.
 	upgrades     *http.Client
 	upgradesOnce sync.Once
@@ -74,9 +80,24 @@ func ParseServerURL(s string) (*url.URL, error) {
 	return u, nil
 }
 
+// Remote reports whether the server is on another machine: its host is
+// not localhost or a loopback address.
+func (c *Client) Remote() bool {
+	host := c.base.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
+}
+
 // NewRequest builds a request for path (which may include a query string),
-// relative to the server URL, with auth and User-Agent set.
+// relative to the server URL, with auth and User-Agent set. The first one
+// with a method other than GET or HEAD runs BeforeChange.
 func (c *Client) NewRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	if c.BeforeChange != nil && method != http.MethodGet && method != http.MethodHead {
+		c.changeOnce.Do(c.BeforeChange)
+	}
 	ref, err := url.Parse(path)
 	if err != nil {
 		return nil, err
