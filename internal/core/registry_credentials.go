@@ -93,6 +93,11 @@ func (c *Core) ListRegistryCredentials(ctx context.Context, a Actor) ([]apitypes
 // SetRegistryCredential adds or replaces the org's credential for a
 // registry host. Deploys pulling from the host use it from their next
 // pull; nothing is redeployed.
+//
+// Not stopped by a locked environment (ADR 0044): credentials are the
+// org's and change no environment by themselves. Only a deploy pulls
+// with them, and a deploy into a locked environment is refused (or waits
+// for approval) on its own. The same holds for DeleteRegistryCredential.
 func (c *Core) SetRegistryCredential(ctx context.Context, a Actor, host string, req apitypes.SetRegistryCredentialRequest) (apitypes.RegistryCredential, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "setting registry credentials"); err != nil {
 		return apitypes.RegistryCredential{}, err
