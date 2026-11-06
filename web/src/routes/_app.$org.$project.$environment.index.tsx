@@ -1,5 +1,6 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
-import { loadProject, ProjectView } from "../features/overview/ProjectView";
+import { loadProject } from "../features/overview/load";
+import { ProjectView } from "../features/overview/ProjectView";
 
 // An environment's page: its services, problems, lock and activity, under
 // the project. Its shared variables and log drains are in the project's

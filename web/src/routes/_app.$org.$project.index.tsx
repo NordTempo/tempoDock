@@ -2,8 +2,9 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { queries } from "../data/queries";
 import { ArchivedProject } from "../features/overview/Archived";
+import { loadProject } from "../features/overview/load";
 import { Export } from "../features/overview/ProjectSettings";
-import { loadProject, ProjectView } from "../features/overview/ProjectView";
+import { ProjectView } from "../features/overview/ProjectView";
 
 export const Route = createFileRoute("/_app/$org/$project/")({
   loader: ({ context: { queryClient }, params }) =>
