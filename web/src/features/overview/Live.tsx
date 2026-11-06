@@ -76,8 +76,12 @@ export function Activity({
     (e) =>
       !environment || e.target === prefix || e.target.startsWith(`${prefix}/`),
   );
+  // Outcomes only (live, failed, crashes): each deploy step ("Stopping
+  // release 3") is the Deploy view's business, not the activity's.
   const feed = useFeed(project).filter(
-    (item) => !environment || item.ref.environment === environment,
+    (item) =>
+      item.kind !== "progress" &&
+      (!environment || item.ref.environment === environment),
   );
   const entries = [
     ...feed.map(feedEntry),

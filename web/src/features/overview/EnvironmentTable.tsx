@@ -125,109 +125,174 @@ export function EnvironmentTable({
             <Icon name="lock" size={12} /> Lock
           </Act>
         )}
-        <Menu
-          label={`${environment.name}: more actions`}
-          right
-          className={admin && !environment.lock ? "" : "ml-auto"}
-          button={
-            <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
-              <Icon name="more" size={14} />
+        {/* On the environment's own page its actions are buttons; on the
+            project page, where environments stack, one menu each. */}
+        {scoped ? (
+          <span
+            className={`flex flex-wrap items-center gap-2 ${admin && !environment.lock ? "" : "ml-auto"}`}
+          >
+            <Link
+              to="/$org/$project/settings/variables/$environment"
+              params={{ org, ...ref }}
+              className="btn sm"
+            >
+              Shared variables
+            </Link>
+            <Link
+              to="/$org/$project/settings/log-drains"
+              params={{ org, project: ref.project }}
+              hash={`drains-${ref.environment}`}
+              className="btn sm"
+            >
+              Log drains
+            </Link>
+            {canClone && (
+              <Act
+                small
+                cli={cli(`clone ${ref.environment} <name>`)}
+                onClick={() =>
+                  openCreate({
+                    kind: "environment",
+                    project: ref.project,
+                    cloneFrom: ref.environment,
+                  })
+                }
+              >
+                Clone
+              </Act>
+            )}
+            {pr && canClone && (
+              <Act
+                small
+                danger
+                cli={previewsCli(`close ${ref.environment}`, ref.project)}
+                onClick={() => setClosing(true)}
+              >
+                Close preview
+              </Act>
+            )}
+            {operator && (
+              <Act
+                small
+                cli={cli(`move ${ref.environment} --to <server>`)}
+                aria-expanded={moveOpen}
+                onClick={() => setMoveOpen(!moveOpen)}
+              >
+                Move to another server
+              </Act>
+            )}
+            <span className="text-xs text-mut">
+              Runs on{" "}
+              <span className="font-mono text-sec">{environment.server}</span>
             </span>
-          }
-        >
-          {(close) => (
-            <>
-              <span
-                role="presentation"
-                className="px-2.5 pt-1 pb-1.5 text-2xs text-mut"
-              >
-                Runs on{" "}
-                <span className="font-mono text-sec">{environment.server}</span>
+          </span>
+        ) : (
+          <Menu
+            label={`${environment.name}: more actions`}
+            right
+            className={admin && !environment.lock ? "" : "ml-auto"}
+            button={
+              <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
+                <Icon name="more" size={14} />
               </span>
-              <Link
-                to="/$org/$project/settings/variables/$environment"
-                params={{ org, ...ref }}
-                className={menuItem}
-                role="menuitem"
-                onClick={close}
-              >
-                Shared variables
-              </Link>
-              <Link
-                to="/$org/$project/settings/log-drains"
-                params={{ org, project: ref.project }}
-                hash={`drains-${ref.environment}`}
-                className={menuItem}
-                role="menuitem"
-                onClick={close}
-              >
-                Log drains
-              </Link>
-              {canDeploy && (
-                <button
-                  type="button"
+            }
+          >
+            {(close) => (
+              <>
+                <span
+                  role="presentation"
+                  className="px-2.5 pt-1 pb-1.5 text-2xs text-mut"
+                >
+                  Runs on{" "}
+                  <span className="font-mono text-sec">
+                    {environment.server}
+                  </span>
+                </span>
+                <Link
+                  to="/$org/$project/settings/variables/$environment"
+                  params={{ org, ...ref }}
                   className={menuItem}
                   role="menuitem"
-                  title={`dock service create <name> -e ${ref.environment} -p ${ref.project}`}
-                  onClick={() => {
-                    close();
-                    newService();
-                  }}
+                  onClick={close}
                 >
-                  New service in {ref.environment}
-                </button>
-              )}
-              {canClone && (
-                <button
-                  type="button"
+                  Shared variables
+                </Link>
+                <Link
+                  to="/$org/$project/settings/log-drains"
+                  params={{ org, project: ref.project }}
+                  hash={`drains-${ref.environment}`}
                   className={menuItem}
                   role="menuitem"
-                  title={cli(`clone ${ref.environment} <name>`)}
-                  onClick={() => {
-                    close();
-                    openCreate({
-                      kind: "environment",
-                      project: ref.project,
-                      cloneFrom: ref.environment,
-                    });
-                  }}
+                  onClick={close}
                 >
-                  Clone into a new environment
-                </button>
-              )}
-              {pr && canClone && (
-                <button
-                  type="button"
-                  className={menuItem}
-                  role="menuitem"
-                  title={previewsCli(`close ${ref.environment}`, ref.project)}
-                  onClick={() => {
-                    close();
-                    setClosing(true);
-                  }}
-                >
-                  Close preview
-                </button>
-              )}
-              {operator && (
-                <button
-                  type="button"
-                  className={menuItem}
-                  role="menuitem"
-                  title={cli(`move ${ref.environment} --to <server>`)}
-                  onClick={() => {
-                    close();
-                    setMoveOpen(!moveOpen);
-                  }}
-                >
-                  {moveOpen
-                    ? "Hide the move"
-                    : `Move every service to another server`}
-                </button>
-              )}
-            </>
-          )}
-        </Menu>
+                  Log drains
+                </Link>
+                {canDeploy && (
+                  <button
+                    type="button"
+                    className={menuItem}
+                    role="menuitem"
+                    title={`dock service create <name> -e ${ref.environment} -p ${ref.project}`}
+                    onClick={() => {
+                      close();
+                      newService();
+                    }}
+                  >
+                    New service in {ref.environment}
+                  </button>
+                )}
+                {canClone && (
+                  <button
+                    type="button"
+                    className={menuItem}
+                    role="menuitem"
+                    title={cli(`clone ${ref.environment} <name>`)}
+                    onClick={() => {
+                      close();
+                      openCreate({
+                        kind: "environment",
+                        project: ref.project,
+                        cloneFrom: ref.environment,
+                      });
+                    }}
+                  >
+                    Clone into a new environment
+                  </button>
+                )}
+                {pr && canClone && (
+                  <button
+                    type="button"
+                    className={menuItem}
+                    role="menuitem"
+                    title={previewsCli(`close ${ref.environment}`, ref.project)}
+                    onClick={() => {
+                      close();
+                      setClosing(true);
+                    }}
+                  >
+                    Close preview
+                  </button>
+                )}
+                {operator && (
+                  <button
+                    type="button"
+                    className={menuItem}
+                    role="menuitem"
+                    title={cli(`move ${ref.environment} --to <server>`)}
+                    onClick={() => {
+                      close();
+                      setMoveOpen(!moveOpen);
+                    }}
+                  >
+                    {moveOpen
+                      ? "Hide the move"
+                      : `Move every service to another server`}
+                  </button>
+                )}
+              </>
+            )}
+          </Menu>
+        )}
       </div>
       {environment.lock ? (
         <LockStrip envRef={ref} lock={environment.lock} />

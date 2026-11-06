@@ -231,7 +231,9 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       // (after a rollback, or a failed deploy of a new tag).
       <span key="s" className="flex flex-col font-mono">
         <span className="break-all" title={running}>
-          {running || "built from source"}
+          {/* The full name, but a digest only as long as it needs to be. */}
+          {running?.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, "@sha256:$1…") ||
+            "built from source"}
         </span>
         {image.differs && <NextImage serviceRef={ref} image={image} />}
       </span>,
@@ -283,11 +285,11 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     [
       "Start command",
       <span key="c" className="flex flex-wrap items-center gap-x-3">
-        <span className="font-mono break-all">
-          {service.start_command || (
-            <span className="font-sans text-mut">the image's default</span>
-          )}
-        </span>
+        {service.start_command ? (
+          <LongCommand text={service.start_command} />
+        ) : (
+          <span className="text-mut">the image's default</span>
+        )}
         <Link
           to="/$org/$project/$environment/$service/build"
           params={{ org, ...ref }}
@@ -311,6 +313,30 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * A command that can run long (a database's dozens of -c options): two
+ * lines, wrapped at spaces, with Show all when there is more.
+ */
+function LongCommand({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > 140;
+  return (
+    <span className="flex min-w-0 flex-col items-start gap-1">
+      <code
+        title={text}
+        className={`font-mono break-words ${long && !all ? "line-clamp-2" : ""}`}
+      >
+        {text}
+      </code>
+      {long && (
+        <button type="button" className="lnk" onClick={() => setAll(!all)}>
+          {all ? "Show less" : "Show all"}
+        </button>
+      )}
+    </span>
   );
 }
 
