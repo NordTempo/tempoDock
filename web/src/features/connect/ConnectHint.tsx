@@ -48,7 +48,7 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       : undefined;
   const row = (label: string, line: string) => (
     <div className="flex items-center gap-3">
-      <span className="w-12 flex-none text-faint">{label}</span>
+      <span className="w-16 flex-none text-faint">{label}</span>
       <code className="min-w-0 truncate font-mono" title={line}>
         {line}
       </code>
@@ -59,7 +59,7 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     <div className="flex flex-col gap-1.5 text-xs">
       {row("Connect", cli)}
       {psql && row("Then", psql)}
-      <span className="pl-[60px]">
+      <span className="pl-[76px]">
         {info.data ? (
           <span className="text-mut">
             <span className="text-ok">✓</span> You may run it: it opens

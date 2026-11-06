@@ -254,6 +254,7 @@ function InviteLink({
   note: ReactNode;
   onDone: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   return (
     <section
       aria-labelledby="invite-link"
@@ -265,16 +266,21 @@ function InviteLink({
       </h2>
       {note}
       <p className="text-mut">
-        Send them this link. It works once, for 7 days, and only signed in as{" "}
-        {link.email}. It isn't shown again; New link on their row makes another.
+        Dock doesn't send email: copy this link and send it to them yourself. It
+        works once, for 7 days, and only signed in as {link.email}. It isn't
+        shown again; New link on their row makes another.
       </p>
-      <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
+      {/* Copying is noticed, so closing before it says what is lost. */}
+      <div
+        onClickCapture={() => setCopied(true)}
+        className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5"
+      >
         <code className="min-w-0 flex-1 font-mono break-all">{url}</code>
         <CopyButton text={url} primary />
       </div>
       <div>
         <Button small onClick={onDone}>
-          Done
+          {copied ? "Done" : "Close without copying"}
         </Button>
       </div>
     </section>

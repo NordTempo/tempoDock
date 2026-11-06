@@ -69,10 +69,12 @@ export function Problems({
   /** Only this environment's problems, and those of no environment (servers, alerts). */
   environment?: string;
 }) {
-  const problems = useAllProblems(project).filter((p) => {
-    const where = problemEnvironment(p);
-    return !environment || where === environment || where === "";
-  });
+  const problems = fold(
+    useAllProblems(project).filter((p) => {
+      const where = problemEnvironment(p);
+      return !environment || where === environment || where === "";
+    }),
+  );
   useShortcuts(
     problems.slice(0, 9).map((_, i) => ({
       key: String(i + 1),
@@ -91,11 +93,12 @@ export function Problems({
     <section aria-labelledby="problems">
       <SectionHead id="problems">{plural(n, "problem")}</SectionHead>
       <ol className="panel">
-        {problems.map((problem, i) => (
+        {problems.map(({ problem, more }, i) => (
           <ProblemRow
             key={problemKey(problem)}
             n={i + 1}
             problem={problem}
+            more={more}
             project={project}
           />
         ))}
@@ -119,9 +122,41 @@ function problemKey(p: Problem) {
   }
 }
 
-type RowProps = { n: number; problem: Problem; project: string };
+type RowProps = {
+  n: number;
+  problem: Problem;
+  /** How many more alerts like this one were folded into its row. */
+  more: number;
+  project: string;
+};
 
-function ProblemRow({ n, problem: p, project }: RowProps) {
+/**
+ * Folds alerts of one kind on one service ("New error" on web, three
+ * times) into the first one's row, which says how many more there are.
+ */
+function fold(problems: Problem[]) {
+  const rows: { problem: Problem; more: number }[] = [];
+  const seen = new Map<string, { problem: Problem; more: number }>();
+  for (const problem of problems) {
+    if (problem.kind === "alert") {
+      const a = problem.alert;
+      const id = `${alertLabel(a)}|${a.environment ?? ""}|${a.service ?? ""}`;
+      const row = seen.get(id);
+      if (row) {
+        row.more += 1;
+        continue;
+      }
+      const fresh = { problem, more: 0 };
+      seen.set(id, fresh);
+      rows.push(fresh);
+    } else {
+      rows.push({ problem, more: 0 });
+    }
+  }
+  return rows;
+}
+
+function ProblemRow({ n, problem: p, more, project }: RowProps) {
   const org = useOrg();
   const key = n <= 9 ? String(n) : undefined;
   const operator = useIsOperator();
@@ -351,6 +386,9 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           }
         >
           {a.title}.{text && <span className="text-mut"> {text}</span>}
+          {more > 0 && (
+            <span className="text-warn-text"> And {more} more like it.</span>
+          )}
         </Row>
       );
     }

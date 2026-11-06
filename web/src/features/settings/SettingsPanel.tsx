@@ -582,7 +582,9 @@ function SettingRow({
           <ErrorText error={error ?? stage.error} />
         </form>
       ) : (
-        <span className="flex items-start gap-3">
+        // Edit sits at the end of a 760px line, not the far edge of a wide
+        // window, so it stays near what it edits.
+        <span className="flex max-w-[760px] items-start gap-3">
           <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono break-all">
               {parts.map((part) => (
@@ -743,7 +745,7 @@ function DatabaseSettings({
               className="field min-h-[24px] w-56 py-0.5 font-mono text-xs"
             />
           ) : canEdit ? (
-            <span className="flex items-start gap-3">
+            <span className="flex max-w-[760px] items-start gap-3">
               <span className="min-w-0 flex-1 font-mono">
                 {urlVariable || (
                   <span className="font-sans text-mut">

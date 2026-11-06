@@ -214,8 +214,20 @@ export function RollbackConfirm({
   const from = serving ? `r${serving.number}` : undefined;
   const changes = serving ? releaseDiff(serving, target) : [];
   const losses = serving ? rollbackLosses(serving, target) : [];
+  // Failed releases between the target and the serving one: never served.
+  const failed = useReleases(ref).filter(
+    (r) =>
+      r.status === "failed" &&
+      r.number > target.number &&
+      r.number < (serving?.number ?? 0),
+  );
+  const passed = [
+    ...skipped.map((r) => `r${r.number} is the same as ${from}`),
+    ...failed.map((r) => `r${r.number} failed`),
+  ];
   return (
     <Confirm
+      danger={losses.length > 0}
       title={`Roll back ${ref.service} to r${target.number}?`}
       action={`Roll back to r${target.number}`}
       cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
@@ -229,36 +241,29 @@ export function RollbackConfirm({
         onDone();
       }}
     >
-      <p>
-        A new release of <b>{ref.service}</b> in {ref.environment} with r
-        {target.number}'s image and config.
-        {skipped.map((r) => (
-          <span key={r.number} className="text-mut">
-            {" "}
-            r{r.number} is skipped: {from} already runs its image and config.
-          </span>
-        ))}
-      </p>
-      {from && (
-        <p className="mt-2">
-          {stateful ? (
-            <b>
-              {ref.service} is down for a few seconds while {from} stops and the
-              new release starts: a volume allows one writer.
-            </b>
-          ) : (
-            `${from} keeps serving until the new release passes its health check, so ${ref.service} stays reachable.`
-          )}
+      {/* Why this release, first: the one before that differs and served. */}
+      {passed.length > 0 && (
+        <p className="mb-2 text-mut">
+          r{target.number} is the last release that served and differs from{" "}
+          {from}: {passed.join(", ")}.
         </p>
       )}
-      {losses.map((text) => (
-        <p key={text} className="mt-2 text-warn-text">
-          ▲ {text}
-        </p>
-      ))}
+      <p>
+        A new release of <b>{ref.service}</b> in {ref.environment} with r
+        {target.number}'s image and settings.{" "}
+        {from &&
+          (stateful ? (
+            <b>
+              {ref.service} is down for a few seconds while {from} stops and the
+              new one starts: only one copy can use its volume at a time.
+            </b>
+          ) : (
+            `${from} keeps serving until the new release passes its health check.`
+          ))}
+      </p>
       {serving && (
         <div className="mt-3 flex flex-col gap-0.5 text-xs">
-          <span className="text-mut">Changes from {from}</span>
+          <span className="text-mut">What changes from {from}</span>
           {changes.length === 0 ? (
             <span className="text-mut">
               Same image, settings and variable names; variable values return to
@@ -266,7 +271,7 @@ export function RollbackConfirm({
             </span>
           ) : (
             changes.map((c) => (
-              <span key={c.what} className="font-mono break-all">
+              <span key={c.what + c.text} className="font-mono break-words">
                 {c.what === "added" ? (
                   <>
                     <span className="text-ok">+ back</span> {c.text}
@@ -283,6 +288,11 @@ export function RollbackConfirm({
               </span>
             ))
           )}
+          {losses.map((text) => (
+            <span key={text} className="mt-1 text-warn-text">
+              ▲ {text}
+            </span>
+          ))}
         </div>
       )}
       <p className="mt-2 font-mono text-2xs text-faint">

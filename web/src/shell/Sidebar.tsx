@@ -207,7 +207,6 @@ function OrgSwitcher() {
   const slug = useOrg();
   const navigate = useNavigate();
   const current = orgs.find((o) => o.slug === slug) ?? orgs[0];
-  const admin = useIsAdmin();
   return (
     <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-2">
       <Menu
@@ -263,29 +262,6 @@ function OrgSwitcher() {
             >
               <Icon name="plus" className="text-mut" /> New organization
             </button>
-            {current && admin && (
-              <Link
-                to="/$org/settings/members"
-                params={{ org: current.slug }}
-                className={menuItem}
-                role="menuitem"
-                onClick={close}
-              >
-                <Icon name="users" className="text-mut" /> Members
-              </Link>
-            )}
-            {current && (
-              <Link
-                to="/$org/settings"
-                params={{ org: current.slug }}
-                className={menuItem}
-                role="menuitem"
-                onClick={close}
-              >
-                <Icon name="sliders" className="text-mut" /> Organization
-                settings
-              </Link>
-            )}
             <hr className="my-1 border-0 border-t border-line" />
             <button
               type="button"
@@ -391,6 +367,9 @@ function ProjectTree() {
   const here = useCurrentContext();
   const urlEnvironment = useUrlEnvironment();
   const switchEnvironment = useSwitchEnvironment();
+  const onEnvPage = useMatches({
+    select: (m) => m.at(-1)?.routeId === "/_app/$org/$project/$environment/",
+  });
   const session = useSession();
   const newProject = canCreateProject(session) && (
     <button
@@ -480,6 +459,7 @@ function ProjectTree() {
                   <li className="pl-[24px]">
                     <EnvironmentMenu
                       project={project.name}
+                      here={current && onEnvPage}
                       shown={env.environment}
                       environments={environments.map((e) => e.environment)}
                       onPick={(name) => {
@@ -564,11 +544,14 @@ function useSwitchEnvironment() {
  */
 function EnvironmentMenu({
   project,
+  here,
   shown,
   environments,
   onPick,
 }: {
   project: string;
+  /** On this environment's own page: drawn as the current row. */
+  here: boolean;
   shown: Environment;
   environments: Environment[];
   onPick: (name: string) => void;
@@ -583,7 +566,9 @@ function EnvironmentMenu({
   }
   // A control, not a label: a box on hover, the chevron always.
   const label = (
-    <span className="flex min-h-[24px] items-center gap-1 rounded-ctl border border-line px-1.5 text-xs text-sec hover:border-edge hover:bg-panel hover:text-fg">
+    <span
+      className={`flex min-h-[24px] items-center gap-1 rounded-ctl border px-1.5 text-xs hover:border-edge hover:bg-panel hover:text-fg ${here ? "border-edge bg-chip text-fg" : "border-line text-sec"}`}
+    >
       {shown.name} <LockMark lock={shown.lock} />
       <Icon name="chevronDown" size={12} className="text-mut" />
     </span>

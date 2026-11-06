@@ -670,13 +670,15 @@
     color: var(--color-fg);
   }
 
-  /* The current row: a stronger fill and a left bar, so it never reads as hover. */
+  /*
+   * The current row: a stronger fill and weight, no ring or bar, so it
+   * never reads as hover or as the blue keyboard focus ring.
+   */
   .nav-row[aria-current="page"],
   .nav-row[aria-current="true"] {
     background: var(--color-chip);
     color: var(--color-fg);
     font-weight: 500;
-    box-shadow: inset 2px 0 0 var(--color-fg);
   }
 
   /* A deploy step: glyph, name, duration, detail. */

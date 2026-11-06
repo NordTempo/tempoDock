@@ -445,7 +445,7 @@ function OpenAlerts() {
               >
                 {a.severity}
               </span>
-              <span className="truncate" title={a.title}>
+              <span className="min-w-0 break-words" title={a.title}>
                 {a.title}
               </span>
               <AlertLink alert={a} className="lnk" />

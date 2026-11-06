@@ -41,6 +41,7 @@ import {
   Actor,
   actorKind,
   Button,
+  Confirm,
   ErrorText,
   Glyph,
   Page,
@@ -611,8 +612,12 @@ function FixAndDeploy({
   const pending =
     stage.isPending || deployImage.isPending || gitDeploy.isPending;
 
+  // Production-affecting like any deploy: asked first, in the one Confirm.
+  const [asking, setAsking] = useState(false);
   const submit = () => {
     if (!v.check(!problem)) return;
+    if ((commit || image) && !asking) return setAsking(true);
+    setAsking(false);
     const patch = port ? { port: Number(typed) } : { health_check_path: typed };
     stage.mutate(
       { ref, patch },
@@ -660,7 +665,7 @@ function FixAndDeploy({
         </label>
         <button type="submit" className="btn pri" disabled={pending}>
           {commit || image
-            ? `Save and deploy ${what}`
+            ? `Save and deploy ${what}…`
             : "Save and choose a folder"}{" "}
           <kbd>↵</kbd>
         </button>
@@ -677,13 +682,34 @@ function FixAndDeploy({
           )}
         </span>
       </div>
-      {/* The same downtime line the Deploy window shows. */}
-      {service.stateful && service.active_release && (commit || image) && (
-        <p className="text-xs font-semibold text-warn-text">
-          {ref.service} is down for a few seconds while r
-          {service.active_release} stops and the new release starts: only one
-          copy can use its volume at a time.
-        </p>
+      {asking && (
+        <Confirm
+          title={`Deploy ${what} with ${port ? `port ${typed}` : `health check ${typed}`}?`}
+          action={`Deploy ${what}`}
+          cli={`dock service update ${ref.service} ${setFlag} -e ${ref.environment}`}
+          pending={pending}
+          onConfirm={submit}
+          onCancel={() => setAsking(false)}
+        >
+          <p>
+            Saves the {port ? "port" : "health check path"} and deploys {what}{" "}
+            to {ref.environment} again as a new release.
+          </p>
+          {service.stateful && service.active_release ? (
+            <p className="mt-2 font-semibold">
+              {ref.service} is down for a few seconds while r
+              {service.active_release} stops and the new release starts: only
+              one copy can use its volume at a time.
+            </p>
+          ) : (
+            service.active_release && (
+              <p className="mt-2 text-mut">
+                r{service.active_release} keeps serving until the new release
+                passes its health check.
+              </p>
+            )
+          )}
+        </Confirm>
       )}
       {others > 0 && (
         <p className="text-xs text-mut">

@@ -230,8 +230,8 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       // What runs now; the image setting only when the next deploy differs
       // (after a rollback, or a failed deploy of a new tag).
       <span key="s" className="flex flex-col font-mono">
-        <span className="truncate" title={running}>
-          {running ? shortImage(running) : "built from source"}
+        <span className="break-all" title={running}>
+          {running || "built from source"}
         </span>
         {image.differs && <NextImage serviceRef={ref} image={image} />}
       </span>,
@@ -783,10 +783,11 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Act
           cli={`dock rollback ${target.number} ${flags}`}
           disabled={!canRollback}
-          title={busy}
+          title={busy ?? `To r${target.number}: the dialog says why that one`}
           onClick={() => setConfirming("rollback")}
         >
-          Roll back to r{target.number} <kbd>B</kbd>
+          {/* Which release, and why, is the dialog's first line. */}
+          Roll back <kbd>B</kbd>
         </Act>
       )}
       <Act
