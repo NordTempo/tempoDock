@@ -94,7 +94,7 @@ export function SettingsPanel({
 
   return (
     <>
-      <section aria-labelledby="set-image" className="max-w-[920px]">
+      <section aria-labelledby="set-image">
         <SectionHead id="set-image">Image and build</SectionHead>
         <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
           {row(
@@ -110,7 +110,7 @@ export function SettingsPanel({
         </dl>
       </section>
 
-      <section aria-labelledby="set-run" className="max-w-[920px]">
+      <section aria-labelledby="set-run">
         <SectionHead id="set-run">Running</SectionHead>
         <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
           {row(
@@ -171,7 +171,7 @@ export function SettingsPanel({
         </dl>
       </section>
 
-      <section aria-labelledby="set-release" className="max-w-[920px]">
+      <section aria-labelledby="set-release">
         <SectionHead id="set-release">Releases</SectionHead>
         <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
           {row(
@@ -209,10 +209,10 @@ export function SettingsPanel({
                 ]
               : [{ key: "health_check_interval_seconds", word: "every" }],
           )}
-          <Item label="Switch-over" hint="How a release replaces the last.">
+          <Item label="Downtime" hint="When a new release takes over.">
             {service.stateful
-              ? "Stops the old one, then starts the new one: a volume allows one writer, so there are a few seconds of downtime."
-              : "Starts the new one beside the old, then moves traffic over: no downtime."}
+              ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
+              : "None: the new release starts beside the old one, then traffic moves over."}
           </Item>
         </dl>
       </section>

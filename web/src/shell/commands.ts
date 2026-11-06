@@ -425,6 +425,14 @@ export function useCommands({
     });
   }
   add({
+    id: "help",
+    group: "Go to",
+    label: "Help: what Dock's words mean",
+    cli: "",
+    weight: -1,
+    run: () => navigate({ to: "/$org/help", params: { org } }),
+  });
+  add({
     id: "keys",
     group: "Go to",
     label: "Keyboard shortcuts",

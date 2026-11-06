@@ -469,7 +469,7 @@ export function SectionHead({
 }) {
   return (
     <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-      <h2 id={id} className="text-sm font-semibold">
+      <h2 id={id} className="text-md font-semibold">
         {children}
       </h2>
       {aside && <span className="text-xs text-faint">{aside}</span>}
@@ -622,7 +622,7 @@ export function Menu({
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
         }
-        className="flex w-full items-center rounded-ctl"
+        className="flex min-h-6 w-full min-w-6 items-center justify-center rounded-ctl"
       >
         {button}
       </button>

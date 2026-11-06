@@ -38,7 +38,7 @@ const releaseStates: Record<ReleaseStatus, State> = {
   health_checking: { tone: "prog", glyph: "◐", label: "health checking" },
   active: { tone: "ok", glyph: "●", label: "active" },
   failed: { tone: "fail", glyph: "✕", label: "failed" },
-  superseded: { tone: "mut", label: "superseded" },
+  superseded: { tone: "mut", label: "replaced" },
 };
 
 export const releaseState = (s: ReleaseStatus) => releaseStates[s];

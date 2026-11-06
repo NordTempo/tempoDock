@@ -38,7 +38,6 @@ import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
-import { openKeyHelp } from "./KeyHelp";
 import { modKey } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
@@ -89,7 +88,8 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
         {open ? "Hide navigation" : "Navigation"}
       </button>
       <div
-        className={`${open ? "flex" : "hidden"} flex-1 flex-col gap-0.5 lg:flex`}
+        // Rows never shrink below their height: a long tree scrolls instead.
+        className={`${open ? "flex" : "hidden"} flex-1 flex-col gap-0.5 *:shrink-0 lg:flex`}
       >
         {mode === "app" ? <AppNav /> : <ConsoleNav />}
       </div>
@@ -121,6 +121,9 @@ const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
 
 function AppNav() {
   const openPalette = usePalette();
+  const onMembers = useRouterState({
+    select: (r) => r.location.pathname.endsWith("/settings/members"),
+  });
   const operator = useIsOperator();
   const admin = useIsAdmin();
   return (
@@ -156,14 +159,13 @@ function AppNav() {
       <NavLink to="/$org/settings/members" icon="users">
         Members
       </NavLink>
-      <NavLink to="/$org/settings" icon="sliders">
+      {/* Members has its own row: on its page, only that row is current. */}
+      <NavLink to="/$org/settings" icon="sliders" exact={onMembers}>
         Organization settings
       </NavLink>
-      <button type="button" className="nav-row" onClick={openKeyHelp}>
-        <Icon name="keyboard" className="text-mut" />
-        <span className="flex-1 text-left">Keyboard shortcuts</span>
-        <kbd>?</kbd>
-      </button>
+      <NavLink to="/$org/help" icon="help">
+        Help
+      </NavLink>
       <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
       <Me />
       {operator && (
@@ -336,7 +338,8 @@ function PendingRequestCount() {
   const pending = useRequestsIfAdmin().filter((r) => isPending(r)).length;
   if (pending === 0) return null;
   return (
-    <span className="text-2xs text-warn">
+    // A filled count: something waits on the reader.
+    <span className="min-w-5 rounded-[5px] bg-warn px-1.5 text-center text-2xs leading-[18px] font-semibold text-side">
       {pending}
       <span className="sr-only"> pending</span>
     </span>

@@ -139,7 +139,7 @@ function Compare() {
       onChange={(e) =>
         navigate({ search: { ...search, [key]: e.target.value } })
       }
-      className="field py-[5px]"
+      className="field py-[5px] pr-7"
     >
       {environments.map((e) => (
         <option key={e.environment.id}>{e.environment.name}</option>
@@ -307,7 +307,9 @@ function CompareTable({
               <th className="w-[24%] border-l border-line pl-4">
                 {to.environment.name} <EnvServer name={to.environment.server} />
               </th>
-              <th className="border-l border-line pl-4">Differences</th>
+              <th className="border-l border-line pl-4">
+                What promoting changes in {to.environment.name}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -402,7 +404,10 @@ function Side({
 
 type Diff = { kind: string; detail?: ReactNode };
 
-/** What differs between one service in two environments. */
+/**
+ * What differs between one service in two environments, each as the
+ * target's value now → the value promoting would give it.
+ */
 function differences(
   a: ServiceView | undefined,
   b: ServiceView | undefined,
@@ -426,7 +431,7 @@ function differences(
         (s.active_release ? imageLabel(s.active_release) : s.service.image) ??
           "",
       ) || "none";
-    diffs.push({ kind: "image", detail: `${label(a)} → ${label(b)}` });
+    diffs.push({ kind: "image", detail: `${label(b)} → ${label(a)}` });
   }
 
   const vars = (list: Variable[], s: ServiceView) =>
@@ -468,13 +473,13 @@ function differences(
   ) {
     diffs.push({
       kind: "limits",
-      detail: `${limits(a.service)} → ${limits(b.service)}`,
+      detail: `${limits(b.service)} → ${limits(a.service)}`,
     });
   }
   if (a.service.port !== b.service.port) {
     diffs.push({
       kind: "port",
-      detail: `${a.service.port || 8080} → ${b.service.port || 8080}`,
+      detail: `${b.service.port || 8080} → ${a.service.port || 8080}`,
     });
   }
   const mounts = (s: ServiceView) =>
@@ -487,7 +492,7 @@ function differences(
   if (mounts(a) !== mounts(b)) {
     diffs.push({
       kind: "volumes",
-      detail: `${mounts(a) || "none"} → ${mounts(b) || "none"}`,
+      detail: `${mounts(b) || "none"} → ${mounts(a) || "none"}`,
     });
   }
   return diffs;

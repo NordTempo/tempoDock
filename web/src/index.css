@@ -265,6 +265,31 @@
     color: #5f5f68;
   }
 
+  /*
+   * Targets are at least 24px (WCAG 2.5.8) without changing the layout:
+   * links in table cells and term lists get 4px of padding taken back by
+   * a negative margin, and a 24px minimum width; selects and summaries
+   * are 24px tall.
+   */
+  :where(td, dd, h2) a:not(.btn, .lnk, .row-main) {
+    display: inline-block;
+    min-width: 24px;
+    padding-block: 4px;
+    margin-block: -4px;
+  }
+
+  a.row-main {
+    display: inline-block;
+    min-width: 24px;
+    padding-block: 4px;
+    margin-block: -4px;
+  }
+
+  select,
+  summary {
+    min-height: 24px;
+  }
+
   kbd {
     font-family: var(--font-mono);
     font-size: 10px;
@@ -283,7 +308,7 @@
 
   th {
     font-weight: 500;
-    font-size: 11px;
+    font-size: 12px;
     text-align: left;
     color: var(--color-mut);
     padding: 8px 14px 8px 0;

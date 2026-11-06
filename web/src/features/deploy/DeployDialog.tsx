@@ -591,7 +591,7 @@ function Cutover({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     <p className="text-xs [&_b]:font-semibold [&_b]:text-fg">
       <b>
         {ref.service} is down for a few seconds while r{serving} stops and the
-        new release starts: a volume allows one writer.
+        new release starts: only one copy can use its volume at a time.
       </b>
     </p>
   ) : (

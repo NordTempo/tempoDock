@@ -91,7 +91,7 @@ export function PreviewsSection({ project }: { project: string }) {
             </div>
           )}
           {s.enabled ? (
-            <dl className="props max-w-[860px]">
+            <dl className="props">
               <Item label="Base">
                 <span className="font-mono">{s.base}</span>
               </Item>

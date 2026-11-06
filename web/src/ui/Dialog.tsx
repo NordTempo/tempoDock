@@ -58,7 +58,7 @@ export function Dialog({
             <button
               type="button"
               aria-label="esc, close"
-              className="rounded-ctl p-0.5 text-faint hover:text-fg"
+              className="grid min-h-6 min-w-8 place-items-center rounded-ctl text-faint hover:text-fg"
               onClick={onClose}
             >
               <kbd>esc</kbd>

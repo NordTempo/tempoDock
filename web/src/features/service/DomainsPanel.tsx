@@ -144,7 +144,7 @@ function AddDomain({
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <Button primary onClick={() => setOpen(true)}>
+      <Button onClick={() => setOpen(true)}>
         Add domain <kbd>N</kbd>
       </Button>
       {!hasGenerated && (

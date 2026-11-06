@@ -572,6 +572,7 @@ function FixAndDeploy({
   onDeployed: () => void;
 }) {
   const ref = servicePath(Route.useParams());
+  const { service } = useService(ref);
   const changes = useChanges(ref);
   const stage = useStageSettings();
   const deployImage = useDeployImage();
@@ -676,6 +677,14 @@ function FixAndDeploy({
           )}
         </span>
       </div>
+      {/* The same downtime line the Deploy window shows. */}
+      {service.stateful && service.active_release && (commit || image) && (
+        <p className="text-xs font-semibold text-warn-text">
+          {ref.service} is down for a few seconds while r
+          {service.active_release} stops and the new release starts: only one
+          copy can use its volume at a time.
+        </p>
+      )}
       {others > 0 && (
         <p className="text-xs text-mut">
           {ref.service}'s {others} other staged{" "}

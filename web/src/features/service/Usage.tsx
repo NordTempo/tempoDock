@@ -42,7 +42,7 @@ export function limitText(s: Limited, what: "cpu" | "memory") {
           s.memory_from_default,
         ];
   if (!value) return "no limit";
-  return `${value} ${fromDefault ? "default" : "limit"}`;
+  return fromDefault ? `${value} (default)` : value;
 }
 
 /** Share of the memory limit in use, 0 to 1, or null without a sample. */

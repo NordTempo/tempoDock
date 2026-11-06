@@ -101,14 +101,16 @@ export default function AddDomainDialog({
                   placeholder="app.example.com"
                   className={`field min-w-0 flex-[1_1_220px] py-[7px] font-mono ${invalid(hostError)}`}
                 />
-                <input
-                  aria-label="Redirect to, optional"
-                  title="Permanently redirect to this hostname instead of serving the service"
-                  value={redirect}
-                  onChange={(e) => setRedirect(e.target.value)}
-                  placeholder="redirect to, optional"
-                  className="field min-w-0 flex-[1_1_160px] py-[7px] font-mono"
-                />
+                <label className="flex min-w-0 flex-[1_1_200px] items-center gap-2 text-mut">
+                  Redirect to
+                  <input
+                    title="Permanently redirect to this hostname instead of serving the service"
+                    value={redirect}
+                    onChange={(e) => setRedirect(e.target.value)}
+                    placeholder="optional, like example.com"
+                    className="field min-w-0 flex-1 py-[7px] font-mono"
+                  />
+                </label>
                 {hostError && (
                   <span role="alert" className="basis-full text-xs text-fail">
                     {hostError}
@@ -177,8 +179,15 @@ export default function AddDomainDialog({
         </label>
         {!target && (
           <Check
-            label="Start a new analytics site if this hostname was counted before"
-            title="Otherwise its site, with its history, moves here with it"
+            label={
+              <span>
+                Start its analytics from zero{" "}
+                <span className="text-mut">
+                  (if this hostname had analytics before, its history moves here
+                  unless this is on)
+                </span>
+              </span>
+            }
             checked={newSite}
             onChange={setNewSite}
           />

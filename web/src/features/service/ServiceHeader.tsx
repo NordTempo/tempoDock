@@ -424,7 +424,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           : serving
             ? mut(
                 service.stateful
-                  ? `r${serving} was stopped first: a volume allows one writer.`
+                  ? `r${serving} was stopped first: only one copy can use its volume at a time.`
                   : `r${serving} keeps serving until cutover. If the check fails, ${r} is stopped.`,
               )
             : mut("Nothing served yet.")}
@@ -562,6 +562,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const production = useEnvironment(ref).environment.kind === "production";
   const releases = useReleases(ref);
   const mayDeploy = useCanDeploy(ref);
+  // One primary per view: while changes wait, Apply in the bar is it.
+  const waiting = useChanges(ref).count > 0;
   const restart = useRestartService();
   // The release a restart started, until it serves or fails.
   const [restarting, setRestarting] = useState<number | null>(null);
@@ -691,7 +693,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               {ref.service} is down for a few seconds while r
               {service.active_release} stops
             </b>
-            : a volume allows one writer.
+            : only one copy can use its volume at a time.
           </>
         ) : (
           <>
@@ -776,7 +778,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </Act>
       )}
       <Act
-        primary
+        primary={!waiting}
         cli={`dock deploy [dir | --image ${service.image || "<image>"}] ${flags}`}
         disabled={!canDeploy}
         title={

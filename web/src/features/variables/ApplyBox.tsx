@@ -58,6 +58,7 @@ export function ApplyBox({
   service?: string | null;
   sticky?: boolean;
 }) {
+  const org = useOrg();
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
   const { services } = useEnvironment(env);
@@ -86,7 +87,7 @@ export function ApplyBox({
   const downtimes = affected.flatMap((s) =>
     s.service.stateful && s.service.active_release && !s.service.stopped_at
       ? [
-          `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: a volume allows one writer.`,
+          `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: only one copy can use its volume at a time.`,
         ]
       : [],
   );
@@ -278,11 +279,19 @@ export function ApplyBox({
           <span className="text-warn">
             <span className="dot" />
           </span>{" "}
-          {plural(changes.count, "change")} staged
+          {plural(changes.count, "change")} waiting to apply
         </h2>
         <span className="text-xs text-mut">
           · nothing changes until you apply. Each affected service gets a new
-          release, health checked as usual.
+          release, health checked as usual.{" "}
+          <Link
+            to="/$org/help"
+            params={{ org }}
+            hash="apply"
+            className="underline underline-offset-3"
+          >
+            What's this?
+          </Link>
         </span>
       </div>
       {changes.last_failure && (

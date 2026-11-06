@@ -139,11 +139,18 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
                         className="btn sm"
                         title="Turn counting on for a domain"
                       >
-                        Turn on for {withDomain.service.name}
+                        Turn on in {withDomain.service.name}'s domains
                       </Link>
                     ) : (
-                      <span className="text-xs text-faint">
-                        Add a domain to a service first
+                      <span className="text-xs text-mut">
+                        Needs a domain first:{" "}
+                        <Link
+                          to="/$org/$project"
+                          params={{ org, project: p.name }}
+                          className="underline underline-offset-3"
+                        >
+                          open {p.name}
+                        </Link>
                       </span>
                     )}
                   </td>

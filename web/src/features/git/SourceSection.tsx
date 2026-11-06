@@ -111,7 +111,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         )
       ) : (
         <>
-          <dl className="props max-w-[860px]">
+          <dl className="props">
             <Item label="Repository">
               <a
                 href={`https://github.com/${conn.repo}/tree/${conn.branch}${conn.dir ? `/${conn.dir}` : ""}`}

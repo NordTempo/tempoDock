@@ -142,7 +142,7 @@ export function deploySteps(
         ),
     },
     {
-      name: "Cutover",
+      name: "Traffic moved",
       state: state(3),
       ms: span(healthy?.time, switched?.time),
       detail:

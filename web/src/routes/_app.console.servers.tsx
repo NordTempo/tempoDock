@@ -53,15 +53,15 @@ function Servers() {
                 <th>Server</th>
                 <th>Status</th>
                 <th>Version</th>
-                <th>Ingress</th>
-                <th>Takes</th>
+                <th>Traffic in</th>
+                <th>Runs</th>
                 <th>CPU</th>
                 <th>Memory</th>
                 <th title="Memory limits of the services placed here">
                   Reserved
                 </th>
                 <th>Disk</th>
-                <th>Placed</th>
+                <th>Hosts</th>
               </tr>
             </thead>
             <tbody>

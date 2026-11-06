@@ -455,8 +455,8 @@ function NewLine({
       { onSuccess: () => setText("") },
     );
   };
-  // Focused (Add variable, N), the row is ringed at full contrast and its
-  // Enter hint turns white, so the jump to it is plain to see.
+  // Focused (Add variable, N), the row is ringed, its Enter hint turns
+  // white and a line under it says what to type, so the jump is plain.
   return (
     <div
       className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-panel focus-within:outline-2 focus-within:outline-info`}
@@ -474,7 +474,7 @@ function NewLine({
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
+        className="col-span-2 min-h-6 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
       />
       <span className="flex items-center gap-1.5 font-sans text-2xs text-faint group-focus-within:text-fg">
         <ErrorText error={stage.error} />
@@ -487,6 +487,11 @@ function NewLine({
           Add
         </button>
         ↵
+      </span>
+      {/* Said only while the row has focus: what to type, and what happens next. */}
+      <span className="col-span-full hidden pb-1 pl-[68px] font-sans text-xs text-sec group-focus-within:block">
+        Type a name and value, like LOG_LEVEL=debug, then Enter. Several lines
+        add several. They wait for Apply below.
       </span>
     </div>
   );

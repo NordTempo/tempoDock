@@ -46,7 +46,7 @@ export function GeneralPage() {
   return (
     <>
       <OrgSettingsBar />
-      <Page width="max-w-[760px]">
+      <Page>
         <Panel>
           <table>
             <tbody>
@@ -180,7 +180,7 @@ function LockSettings() {
   const valid = Number.isInteger(n) && n >= TTL_MIN && n <= TTL_MAX;
   return (
     <section aria-labelledby="locks" className="flex flex-col gap-2">
-      <h2 id="locks" className="text-sm font-semibold">
+      <h2 id="locks" className="text-md font-semibold">
         Locked environments
       </h2>
       <Panel>

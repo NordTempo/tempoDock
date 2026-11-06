@@ -33,7 +33,7 @@ import {
   PullRequestLink,
 } from "../previews/PreviewParts";
 import { EnvServer } from "../servers/parts";
-import { imageLabel } from "../service/releases";
+import { imageLabel, shortImage } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
@@ -86,7 +86,7 @@ export function EnvironmentTable({
           down, the preview's pull request) and the rest in one menu, so
           the service table outweighs its toolbar. */}
       <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 id={head} className={scoped ? "sr-only" : "text-sm font-semibold"}>
+        <h2 id={head} className={scoped ? "sr-only" : "text-md font-semibold"}>
           {scoped ? (
             `${environment.name} services`
           ) : (
@@ -367,11 +367,11 @@ const ServiceRow = memo(function ServiceRow({
           className="truncate font-mono text-2xs text-faint"
           title={newImage || oldImage || service.image || undefined}
         >
-          {oldImage || (!deploying && service.image) || ""}
+          {shortImage(oldImage || (!deploying && service.image) || "")}
           {deploying && newImage !== oldImage && (
             <span className="text-prog">
               {oldImage && " → "}
-              {newImage}
+              {shortImage(newImage)}
             </span>
           )}
           {(oldImage || service.image || newImage) && " · "}:

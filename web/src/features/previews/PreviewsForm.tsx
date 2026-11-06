@@ -96,7 +96,7 @@ export default function PreviewsForm({
       onKeyDown={(e) => e.key === "Escape" && onDone()}
       className="flex flex-col gap-3"
     >
-      <dl className="props max-w-[860px]">
+      <dl className="props">
         <dt>
           <label htmlFor="preview-base">Base</label>
         </dt>

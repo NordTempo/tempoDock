@@ -19,7 +19,11 @@ const compact = new Intl.NumberFormat("en-US", {
 /** A link at least 24px tall (WCAG 2.5.8), on the line's text. */
 const target = "inline-flex min-h-[24px] items-center";
 
-const stateWord = { up: "Up", down: "Down", unknown: "Not probed yet" };
+const stateWord = {
+  up: "Up",
+  down: "Down",
+  unknown: "checked soon, no result yet",
+};
 const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-mut" };
 
 export function Signals({ serviceRef: ref }: { serviceRef: ServiceRef }) {

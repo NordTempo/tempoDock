@@ -87,7 +87,7 @@ export function JobsPanel({
       )}
       {selection === "new" ? (
         <section aria-label="New job" className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">New job</h2>
+          <h2 className="text-md font-semibold">New job</h2>
           <Editor
             serviceRef={ref}
             onSaved={(name) => setPicked({ job: name, run: null })}

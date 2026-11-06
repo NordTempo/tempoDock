@@ -21,6 +21,7 @@ import { Route as AppConsoleRouteImport } from './routes/_app.console'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
 import { Route as AppOrgIndexRouteImport } from './routes/_app.$org.index'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
+import { Route as AppOrgHelpRouteImport } from './routes/_app.$org.help'
 import { Route as AppOrgRequestsRouteImport } from './routes/_app.$org.requests'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
 import { Route as AppConsoleAddressRouteImport } from './routes/_app.console.address'
@@ -139,6 +140,11 @@ const AppOrgIndexRoute = AppOrgIndexRouteImport.update({
 const AppOrgAuditRoute = AppOrgAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgHelpRoute = AppOrgHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppOrgRequestsRoute = AppOrgRequestsRouteImport.update({
@@ -487,6 +493,7 @@ export interface FileRoutesByFullPath {
   '/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
   '/$org/audit': typeof AppOrgAuditRoute
+  '/$org/help': typeof AppOrgHelpRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
@@ -558,6 +565,7 @@ export interface FileRoutesByTo {
   '/invite/$code': typeof InviteCodeRoute
   '/': typeof AppIndexRoute
   '/$org/audit': typeof AppOrgAuditRoute
+  '/$org/help': typeof AppOrgHelpRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
@@ -630,6 +638,7 @@ export interface FileRoutesById {
   '/invite/$code': typeof InviteCodeRoute
   '/_app/': typeof AppIndexRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
+  '/_app/$org/help': typeof AppOrgHelpRoute
   '/_app/$org/requests': typeof AppOrgRequestsRoute
   '/_app/console/address': typeof AppConsoleAddressRoute
   '/_app/console/alerts': typeof AppConsoleAlertsRoute
@@ -705,6 +714,7 @@ export interface FileRouteTypes {
     | '/console'
     | '/invite/$code'
     | '/$org/audit'
+    | '/$org/help'
     | '/$org/requests'
     | '/console/address'
     | '/console/alerts'
@@ -776,6 +786,7 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/'
     | '/$org/audit'
+    | '/$org/help'
     | '/$org/requests'
     | '/console/address'
     | '/console/alerts'
@@ -847,6 +858,7 @@ export interface FileRouteTypes {
     | '/invite/$code'
     | '/_app/'
     | '/_app/$org/audit'
+    | '/_app/$org/help'
     | '/_app/$org/requests'
     | '/_app/console/address'
     | '/_app/console/alerts'
@@ -1003,6 +1015,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/$org/audit'
       preLoaderRoute: typeof AppOrgAuditRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/help': {
+      id: '/_app/$org/help'
+      path: '/help'
+      fullPath: '/$org/help'
+      preLoaderRoute: typeof AppOrgHelpRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/requests': {
@@ -1548,6 +1567,7 @@ const AppOrgAnalyticsProjectSiteRouteWithChildren =
 
 interface AppOrgRouteChildren {
   AppOrgAuditRoute: typeof AppOrgAuditRoute
+  AppOrgHelpRoute: typeof AppOrgHelpRoute
   AppOrgRequestsRoute: typeof AppOrgRequestsRoute
   AppOrgIndexRoute: typeof AppOrgIndexRoute
   AppOrgProjectCompareRoute: typeof AppOrgProjectCompareRoute
@@ -1569,6 +1589,7 @@ interface AppOrgRouteChildren {
 
 const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgAuditRoute: AppOrgAuditRoute,
+  AppOrgHelpRoute: AppOrgHelpRoute,
   AppOrgRequestsRoute: AppOrgRequestsRoute,
   AppOrgIndexRoute: AppOrgIndexRoute,
   AppOrgProjectCompareRoute: AppOrgProjectCompareRoute,

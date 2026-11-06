@@ -34,7 +34,7 @@ function OrgShell() {
     <PaletteProvider>
       <a
         href="#main"
-        className="sr-only z-50 rounded-ctl bg-fg px-3 py-1.5 text-side focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+        className="fixed top-2 left-2 z-50 -translate-y-16 rounded-ctl bg-fg px-3 py-1.5 text-side focus:translate-y-0"
       >
         Skip to content
       </a>
@@ -83,7 +83,10 @@ function ConsoleBar() {
       <span className="text-warn-text">
         Changes here affect every project on this Dock.
       </span>
-      <Link to="/" className="ml-auto text-warn-text underline">
+      <Link
+        to="/"
+        className="ml-auto inline-flex min-h-6 items-center text-warn-text underline"
+      >
         Back to projects
       </Link>
     </div>

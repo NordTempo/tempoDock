@@ -19,7 +19,7 @@ import {
 } from "./api";
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
-import { Act, ErrorText, Kbd } from "./kit";
+import { Act, ErrorText } from "./kit";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
@@ -166,13 +166,15 @@ export function DataPanel({
               key={t.tab}
               type="button"
               aria-pressed={view.tab === t.tab}
+              // The digit is the key; shown on hover and in the ? help, not
+              // on the tab, where it read as a count.
+              title={`${t.label} (${t.key})`}
               onClick={() => onView({ ...view, tab: t.tab })}
             >
               {t.label}
               {t.tab === "changes" && pending > 0 && (
                 <span className="text-(--g-warn)">{pending}</span>
               )}
-              <Kbd>{t.key.toUpperCase()}</Kbd>
             </button>
           ))}
         </nav>
