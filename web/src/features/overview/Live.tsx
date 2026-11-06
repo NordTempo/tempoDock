@@ -20,7 +20,11 @@ function auditEntry(e: AuditEvent, project: string): Entry {
     time: e.created_at,
     body: (
       <>
-        <Actor name={e.actor} kind={e.actor_kind} /> {pastLabel(e.action)}{" "}
+        <Actor name={e.actor} kind={e.actor_kind} />{" "}
+        {/* A failure reads as one, in the failure colour. */}
+        <span className={/fail/.test(e.action) ? "text-fail" : undefined}>
+          {pastLabel(e.action)}
+        </span>{" "}
         <span className="font-mono">{local(e.target, project)}</span>
       </>
     ),

@@ -154,7 +154,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
  */
 export function ShellPending() {
   const bar = (w: string) => (
-    <span className={`block h-[10px] rounded-[3px] bg-sel ${w}`} />
+    <span className={`block h-[10px] rounded-[3px] bg-edge ${w}`} />
   );
   return (
     <div className="flex min-h-screen" aria-busy="true">

@@ -285,27 +285,41 @@ function OrgSwitcher() {
  */
 function Me() {
   const session = useSession();
+  const logout = useLogout();
   if (!session) return null;
+  // The account, and Log out beside it, where people look for it.
   return (
-    <Link
-      to="/account"
-      title="Your account"
-      activeProps={{ "aria-current": "page" }}
-      className="nav-row gap-2.5 py-1"
-    >
-      <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold">
-        {session.name.slice(0, 1).toUpperCase()}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{session.email ?? session.name}</span>
-        <span className="block text-2xs text-faint">
-          {session.kind === "token" ? "token, " : ""}
-          {session.scope}
-          {session.project &&
-            ` on ${session.project}${session.environment ? `/${session.environment}` : ""}`}
+    <div className="flex items-center gap-1">
+      <Link
+        to="/account"
+        title="Your account"
+        activeProps={{ "aria-current": "page" }}
+        className="nav-row min-w-0 flex-1 gap-2.5 py-1"
+      >
+        <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold">
+          {session.name.slice(0, 1).toUpperCase()}
         </span>
-      </span>
-    </Link>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">
+            {session.email ?? session.name}
+          </span>
+          <span className="block text-2xs text-faint">
+            {session.kind === "token" ? "token, " : ""}
+            {session.scope}
+            {session.project &&
+              ` on ${session.project}${session.environment ? `/${session.environment}` : ""}`}
+          </span>
+        </span>
+      </Link>
+      <button
+        type="button"
+        className="lnk flex-none px-1.5"
+        disabled={logout.isPending}
+        onClick={() => logout.mutate()}
+      >
+        Log out
+      </button>
+    </div>
   );
 }
 
