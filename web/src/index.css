@@ -290,8 +290,15 @@
   }
 
   select,
-  summary {
+  summary,
+  input:not([type="checkbox"], [type="radio"], [type="range"]) {
     min-height: 24px;
+  }
+
+  /* Every button is a 24px target, text and icon buttons included. */
+  button {
+    min-height: 24px;
+    min-width: 24px;
   }
 
   kbd {
