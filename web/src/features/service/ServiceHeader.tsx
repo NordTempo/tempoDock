@@ -189,8 +189,8 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <span
                 className="ml-1.5 text-warn"
                 role="img"
-                aria-label="changes staged, not applied"
-                title="Changes staged, not applied"
+                aria-label="changes waiting to apply"
+                title="Changes waiting to apply"
               >
                 <span className="dot" />
               </span>
@@ -282,7 +282,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     // once; this is where the start command changes.
     [
       "Start command",
-      <span key="c" className="flex flex-wrap items-baseline gap-x-2">
+      <span key="c" className="flex flex-wrap items-center gap-x-3">
         <span className="font-mono break-all">
           {service.start_command || (
             <span className="font-sans text-mut">the image's default</span>
@@ -292,7 +292,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           to="/$org/$project/$environment/$service/build"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
-          className="text-info underline underline-offset-2"
+          className="btn sm"
         >
           Edit
         </Link>
@@ -400,12 +400,24 @@ export function StatusSentence({ view }: { view: ServiceView }) {
     (latest?.status === "failed" && latest.number > (serving ?? 0)
       ? latest
       : undefined);
-  const failedLine = lastFailed && serving !== lastFailed.number && (
-    <p className="text-sm text-fail">
-      ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
-      {ago(lastFailed.created_at)} · {releaseLink(lastFailed.number, "See why")}
-    </p>
-  );
+  // Red while it is the news (the latest release, or the one before the
+  // rollback that answered it); quiet once more releases came after.
+  const fresh = !!lastFailed && (serving ?? 0) <= lastFailed.number + 1;
+  const failedLine =
+    lastFailed &&
+    serving !== lastFailed.number &&
+    (fresh ? (
+      <p className="text-sm text-fail">
+        ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
+        {ago(lastFailed.created_at)} ·{" "}
+        {releaseLink(lastFailed.number, "See why")}
+      </p>
+    ) : (
+      <p className="text-xs text-mut">
+        Last failed deploy: r{lastFailed.number}, {ago(lastFailed.created_at)} ·{" "}
+        {releaseLink(lastFailed.number, "See why")}
+      </p>
+    ));
   const mono = (text: string) => (
     <b className="font-mono font-medium">{text}</b>
   );

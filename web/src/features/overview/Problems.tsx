@@ -416,7 +416,7 @@ function StagedRow({
         </Link>
       }
     >
-      {plural(changes.count, "staged change")}.{" "}
+      {plural(changes.count, "change")} waiting to apply.{" "}
       {releases.length > 0 ? (
         <>
           Applying creates{" "}
@@ -462,7 +462,7 @@ function ApplyStaged({
         disabled={apply.isPending}
         onClick={() => apply.mutate({ project, environment })}
       >
-        Apply staged changes
+        Apply changes
       </Button>
     </span>
   );

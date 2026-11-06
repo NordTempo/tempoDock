@@ -412,9 +412,20 @@
     border-color: var(--color-side);
   }
 
-  /* A primary that can't run yet keeps its shape, dimmed. */
+  /*
+   * One disabled look for every button: outlined, faint text. A primary
+   * that can't run yet looks like any other button that can't.
+   */
   .btn.pri:disabled {
-    opacity: 0.35;
+    background: transparent;
+    color: var(--color-faint);
+    border-color: var(--color-line);
+  }
+
+  .btn.pri:disabled kbd {
+    background: transparent;
+    color: var(--color-faint);
+    border-color: var(--color-line);
   }
 
   .btn.sm {

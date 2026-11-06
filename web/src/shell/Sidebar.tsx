@@ -790,7 +790,7 @@ function ServiceLink({ view }: { view: ServiceView }) {
   // Only what needs a look: a healthy service says nothing.
   const note =
     service.staged === "archive" && !view.deploying
-      ? "archive staged"
+      ? "archive waits for apply"
       : state.tone === "ok"
         ? undefined
         : view.deploying

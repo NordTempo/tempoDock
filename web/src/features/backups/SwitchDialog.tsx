@@ -130,9 +130,9 @@ export default function SwitchDialog({
         )}
         {staged > 0 && (
           <p className="text-fail">
-            {ref.environment} has {plural(staged, "staged change")}. Apply or
-            discard {staged === 1 ? "it" : "them"} first: they would go live
-            with this.
+            {ref.environment} has {plural(staged, "change")} waiting to apply.
+            Apply or discard {staged === 1 ? "it" : "them"} first: they would go
+            live with this.
           </p>
         )}
         <Footer
@@ -146,7 +146,7 @@ export default function SwitchDialog({
           disabled={staged > 0 || !plan.isSuccess || services.length === 0}
           reason={
             staged > 0
-              ? "Apply or discard the staged changes first."
+              ? "Apply or discard the changes waiting to apply first."
               : plan.error
                 ? "The services using it couldn't be listed."
                 : "Nothing to switch."

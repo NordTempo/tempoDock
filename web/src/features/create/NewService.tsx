@@ -719,7 +719,7 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
 function Copyable({ text }: { text: string }) {
   return (
     <span className="inline-flex flex-wrap items-baseline gap-2">
-      <span className="font-mono break-all">{text}</span>
+      <span className="font-mono break-words">{text}</span>
       <CopyButton text={text} />
     </span>
   );

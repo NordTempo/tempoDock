@@ -137,7 +137,7 @@ export default function ApplyFile({
                 {p.count > 0 ? (
                   <>
                     <span className="text-warn">
-                      {plural(p.count, "change")} staged
+                      {plural(p.count, "change")} waiting to apply
                     </span>
                     <Link
                       to="/$org/$project/settings/variables/$environment"
@@ -149,7 +149,7 @@ export default function ApplyFile({
                     </Link>
                   </>
                 ) : (
-                  <span className="text-mut">nothing staged</span>
+                  <span className="text-mut">nothing waiting</span>
                 )}
               </p>
             ))}

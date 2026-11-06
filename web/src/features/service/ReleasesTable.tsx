@@ -66,7 +66,7 @@ export function ReleasesTable({
             <col className="w-[68px]" />
             <col className="w-[100px]" />
             <col />
-            <col className="w-[100px]" />
+            <col className="w-[150px]" />
             <col className="w-[44px]" />
             <col className="w-[124px]" />
           </colgroup>

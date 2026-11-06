@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { api, body } from "../../api/client";
 import { servicePath, useEnvironment } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { CopyButton } from "../../ui/kit";
 
 // `dock connect` stays a CLI action (ADR 0023, 0025): it opens a port on
@@ -20,6 +22,7 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
  * whether you may run it, then (for Postgres) the psql line, each with Copy.
  */
 export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const production = useEnvironment(ref).environment.kind === "production";
   const info = useQuery({
     queryKey: ["connect", ref.project, ref.environment, ref.service],
@@ -54,13 +57,21 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
   return (
     <div className="flex flex-col gap-1.5 text-xs">
-      {row("Tunnel", cli)}
+      {row("Connect", cli)}
       {psql && row("Then", psql)}
       <span className="pl-[60px]">
         {info.data ? (
           <span className="text-mut">
-            <span className="text-ok">✓</span> You have access. Forwards to :
-            {info.data.port}.
+            <span className="text-ok">✓</span> You may run it: it opens
+            localhost:{info.data.port} on your machine, reaching the service.{" "}
+            <Link
+              to="/$org/help"
+              params={{ org }}
+              hash="connect"
+              className="underline underline-offset-3"
+            >
+              What's this?
+            </Link>
           </span>
         ) : info.error ? (
           <span className="text-warn">{info.error.message}</span>

@@ -191,7 +191,7 @@ export function releaseWhat(r: Release | ReleaseSummary) {
     case "image":
       return "deploy";
     case "config":
-      return "config change";
+      return "settings change";
     case "rollback":
       return `roll back to${from || " an earlier release"}`;
     case "restart":

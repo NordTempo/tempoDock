@@ -111,7 +111,7 @@ export function EnvironmentTable({
             params={{ org, ...ref }}
             className="text-xs text-warn hover:text-warn-text"
           >
-            ▲ {plural(staged, "staged change")}
+            ▲ {plural(staged, "change")} waiting to apply
           </Link>
         )}
         {admin && !environment.lock && (
@@ -458,7 +458,7 @@ const ServiceRow = memo(function ServiceRow({
           volumes.map((v) => (
             <span key={v.name} title={v.mount_path} className="mr-2">
               {v.name}
-              {v.pending && <span className="text-warn"> staged</span>}
+              {v.pending && <span className="text-warn"> not applied</span>}
             </span>
           ))
         ) : (

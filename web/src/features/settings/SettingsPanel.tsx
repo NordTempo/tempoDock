@@ -204,7 +204,7 @@ export function SettingsPanel({
                   { key: "health_check_retries", word: "tries" },
                   {
                     key: "health_check_start_period_seconds",
-                    word: "grace after start",
+                    word: "wait after start",
                   },
                 ]
               : [{ key: "health_check_interval_seconds", word: "every" }],
@@ -377,7 +377,7 @@ function PreDeploySnapshot({
         className="act"
       >
         <Check
-          label="snapshot first"
+          label="Snapshot volumes first"
           title="Snapshot the environment's stateful services before the command runs"
           checked={on}
           disabled={stage.isPending}

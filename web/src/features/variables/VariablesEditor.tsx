@@ -564,7 +564,7 @@ function PasteEnv({
         </Act>
         <span className="self-center">
           <Check
-            label="apply now, with everything staged"
+            label="apply now, with everything waiting to apply"
             checked={apply}
             onChange={setApply}
           />

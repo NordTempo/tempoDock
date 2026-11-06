@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useApplyChanges, useDiscardChanges } from "../../data/mutations";
 import {
   useChanges,
@@ -59,6 +60,9 @@ export function ApplyBox({
   sticky?: boolean;
 }) {
   const org = useOrg();
+  // In view at the page's foot (sticky) it is one line until opened, so it
+  // covers as little of the page as it can.
+  const [open, setOpen] = useState(!sticky);
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
   const { services } = useEnvironment(env);
@@ -138,7 +142,7 @@ export function ApplyBox({
         ))}
         {failed.map((f) => (
           <p key={f} className="text-warn">
-            ▲ Still staged: {f}
+            ▲ Still waiting to apply: {f}
           </p>
         ))}
       </div>
@@ -272,7 +276,7 @@ export function ApplyBox({
   return (
     <section
       aria-labelledby="staged"
-      className={`flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5 ${sticky ? "sticky bottom-3 z-10 shadow-lg shadow-black/60" : ""}`}
+      className={`flex flex-col rounded-panel border border-warn-edge bg-stage-bg px-4 ${open ? "gap-3 py-3.5" : "gap-2 py-2.5"} ${sticky ? "sticky bottom-3 z-10 shadow-lg shadow-black/60" : ""}`}
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
@@ -293,32 +297,45 @@ export function ApplyBox({
             What's this?
           </Link>
         </span>
+        {sticky && (
+          <button
+            type="button"
+            className="lnk ml-auto"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? "Hide the list" : `Show ${plural(changes.count, "change")}`}
+          </button>
+        )}
       </div>
-      {changes.last_failure && (
+      {open && changes.last_failure && (
         <p className="text-fail">
-          The last apply failed, so its changes are staged again:{" "}
+          The last apply failed, so its changes wait to apply again:{" "}
           {changes.last_failure}
         </p>
       )}
-      <div
-        className={`overflow-x-auto font-mono text-xs leading-[1.9] ${sticky ? "max-h-[30vh] overflow-y-auto" : ""}`}
-      >
-        {lines.map((line) => (
-          <div key={line.id} className="whitespace-nowrap">
-            <span className="text-warn">{line.mark}</span>{" "}
-            <span className="inline-block w-[9ch] text-faint">
-              {line.scope}
-            </span>
-            {line.body}
-            {line.note && <span className="text-mut"> {line.note}</span>}
-          </div>
+      {open && (
+        <div
+          className={`overflow-x-auto font-mono text-xs leading-[1.9] ${sticky ? "max-h-[30vh] overflow-y-auto" : ""}`}
+        >
+          {lines.map((line) => (
+            <div key={line.id} className="whitespace-nowrap">
+              <span className="text-warn">{line.mark}</span>{" "}
+              <span className="inline-block w-[9ch] text-faint">
+                {line.scope}
+              </span>
+              {line.body}
+              {line.note && <span className="text-mut"> {line.note}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {open &&
+        keptImages.map((text) => (
+          <p key={text} className="text-xs text-mut">
+            {text}
+          </p>
         ))}
-      </div>
-      {keptImages.map((text) => (
-        <p key={text} className="text-xs text-mut">
-          {text}
-        </p>
-      ))}
       {downtimes.map((text) => (
         <p key={text} className="text-xs text-warn-text">
           ▲ {text}

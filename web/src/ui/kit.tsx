@@ -343,7 +343,7 @@ export function DialogFoot({
       className={`-mx-5 -mb-4 flex flex-col gap-2.5 border-t border-line px-5 py-3 ${className}`}
     >
       {lines.length > 0 && (
-        <div className="flex flex-col gap-0.5 font-mono text-2xs break-all text-faint">
+        <div className="flex flex-col gap-0.5 font-mono text-2xs break-words text-faint">
           {lines.map((line) => (
             <code key={line}>{line}</code>
           ))}

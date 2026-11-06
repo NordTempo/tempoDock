@@ -107,6 +107,22 @@ function Help() {
             limited to one project or environment.
           </p>
         </Topic>
+        <Topic id="connect" title="Connecting from your machine">
+          <p>
+            <code className="font-mono">dock connect</code> opens a port on your
+            own machine that reaches a service inside its environment, like a
+            database that has no public address. It works while the command
+            runs, for people allowed to deploy there.
+          </p>
+        </Topic>
+        <Topic id="servers" title="Servers, placement and reserved memory">
+          <p>
+            Servers run environments. Placement decides which server a new
+            environment lands on; a server can take production, other
+            environments, or both. Reserved memory is what the services there
+            may use at most, added up.
+          </p>
+        </Topic>
         <Topic id="cli" title="The command line">
           <p>
             Everything here works from the{" "}

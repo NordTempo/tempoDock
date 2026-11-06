@@ -56,19 +56,35 @@ function OrgShell() {
 }
 
 /**
- * A page still loading, inside the shell: the sidebar stays, the page gets an empty header bar and a few still placeholder
- * rows (no shimmer). The org and console routes use it, so a slow page
+ * A page still loading, inside the shell: the sidebar stays, the page
+ * says Loading over a header bar and a table's frame with still rows (no
+ * shimmer). The org and console routes use it, so a slow page
  * never blanks the navigation.
  */
 export function RoutePending() {
   return (
     <div aria-busy="true" className="flex flex-1 flex-col">
-      <div className="h-[52px] border-b border-line" />
-      <div className="flex w-full max-w-[1400px] flex-col gap-2.5 px-4 pt-6 sm:px-7">
-        <span className="sr-only">Loading</span>
-        <div className="h-4 w-40 rounded-ctl bg-panel" />
-        <div className="h-[120px] rounded-panel border border-line" />
-        <div className="h-[80px] rounded-panel border border-line" />
+      <div className="flex h-[52px] items-center border-b border-line px-5">
+        <span className="h-[12px] w-40 rounded-[3px] bg-sel" />
+      </div>
+      <div className="flex w-full max-w-[1400px] flex-col gap-3 px-4 pt-6 sm:px-7">
+        <p role="status" className="text-mut">
+          Loading…
+        </p>
+        <span className="h-[12px] w-32 rounded-[3px] bg-sel" />
+        {/* A table's frame with a few still rows, like most pages. */}
+        <div className="flex flex-col rounded-panel border border-edge">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex gap-6 border-b border-line px-3.5 py-3 last:border-b-0"
+            >
+              <span className="h-[10px] w-28 rounded-[3px] bg-sel" />
+              <span className="h-[10px] w-20 rounded-[3px] bg-sel" />
+              <span className="h-[10px] w-48 rounded-[3px] bg-sel" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
