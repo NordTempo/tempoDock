@@ -51,7 +51,7 @@ export function ConsoleOverview() {
   return (
     <>
       <PageBar title="Overview" />
-      <Page width="max-w-[1240px]">
+      <Page>
         <Attention />
         <Numbers online={online} />
         <section aria-labelledby="servers">

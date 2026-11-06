@@ -300,12 +300,12 @@ function Player({
           <span className="font-mono">
             {mmss(now)} / {mmss(total)}
           </span>
-          <span className="flex gap-1">
+          <span className="seg">
             {[1, 2, 4].map((s) => (
               <button
                 key={s}
                 type="button"
-                className={`rounded-ctl px-1.5 ${speed === s ? "bg-sel text-fg" : "text-mut"}`}
+                aria-pressed={speed === s}
                 onClick={() => {
                   setSpeed(s);
                   player.current?.setConfig({ speed: s });
@@ -346,12 +346,12 @@ function Player({
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <span className="font-semibold">Timeline</span>
-            <span className="ml-auto flex gap-1 text-xs">
+            <span className="seg ml-auto">
               {(["all", "error", "event"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
-                  className={`rounded-ctl px-1.5 ${tab === t ? "bg-sel text-fg" : "text-mut"}`}
+                  aria-pressed={tab === t}
                   onClick={() => setTab(t)}
                 >
                   {t === "all" ? "All" : t === "error" ? "Errors" : "Events"}

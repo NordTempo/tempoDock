@@ -238,7 +238,7 @@ function DnsCard({
       <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1.5">
         <h2
           id={`dns-${domain.hostname}`}
-          className="font-mono text-[15px] font-medium"
+          className="font-mono text-md font-medium"
         >
           {domain.hostname}
         </h2>

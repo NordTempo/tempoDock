@@ -125,13 +125,12 @@ export function ErrorsView({
           onChange={(e) => setText(e.target.value)}
           className="field w-64 py-0.5 text-xs"
         />
-        <span className="flex gap-1">
+        <span className="seg">
           {(["All", "New"] as const).map((label) => (
             <button
               key={label}
               type="button"
               aria-pressed={(label === "New") === onlyNew}
-              className={`min-h-[24px] rounded-ctl px-2 ${(label === "New") === onlyNew ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => setOnlyNew(label === "New")}
             >
               {label}

@@ -12,7 +12,7 @@ import {
   ErrorText,
   Page,
   PageBar,
-  Scroll,
+  Panel,
 } from "../../ui/kit";
 import { isPending, requestQueries, useDecideRequest } from "./data";
 
@@ -64,14 +64,14 @@ export function RequestsPage({ selected }: { selected?: number }) {
   return (
     <>
       <PageBar title="Requests" />
-      <Page gap="gap-5">
+      <Page>
         {requests.length === 0 ? (
           <p className="text-mut">
             No access requests. Tokens ask here when a locked environment stops
             them.
           </p>
         ) : (
-          <Scroll>
+          <Panel>
             {/* Fixed widths: a decision changes a row's text, not the layout. */}
             <table className="table-fixed">
               <colgroup>
@@ -83,7 +83,7 @@ export function RequestsPage({ selected }: { selected?: number }) {
               </colgroup>
               <thead>
                 <tr>
-                  <th className="pl-2.5">Request</th>
+                  <th>Request</th>
                   <th>Who</th>
                   <th>Where</th>
                   <th>Asked</th>
@@ -102,7 +102,7 @@ export function RequestsPage({ selected }: { selected?: number }) {
                 <Detail id={id} />
               </div>
             )}
-          </Scroll>
+          </Panel>
         )}
       </Page>
     </>
@@ -122,7 +122,7 @@ function RequestRow({
   return (
     <>
       <tr className={open ? "bg-sel" : undefined}>
-        <td className="pl-2.5">
+        <td>
           <Link
             to="/$org/requests"
             params={{ org }}

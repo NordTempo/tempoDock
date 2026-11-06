@@ -258,10 +258,14 @@
     border-bottom: 1px solid var(--color-line);
   }
 
+  /*
+   * Cells line up on their first line's baseline, so mono values (times,
+   * targets, ids) and sans text sit on one line across a row.
+   */
   td {
     padding: 9px 14px 9px 0;
     white-space: nowrap;
-    vertical-align: top;
+    vertical-align: baseline;
     border-bottom: 1px solid var(--color-soft);
   }
 

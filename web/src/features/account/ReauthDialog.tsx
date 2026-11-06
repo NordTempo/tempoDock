@@ -6,7 +6,7 @@ import { getPasskey, passkeysAvailable } from "../../api/webauthn";
 import { useSession } from "../../data/queries";
 import { CodeInput } from "../../ui/CodeInput";
 import { Dialog } from "../../ui/Dialog";
-import { Button, ErrorText } from "../../ui/kit";
+import { Button, DialogFoot, ErrorText } from "../../ui/kit";
 import { here, useStartSSO } from "../sso/data";
 import { twoFactorQuery } from "./data";
 
@@ -108,7 +108,7 @@ export default function ReauthDialog({
         ) : (
           !withPasskey && (
             <label className="flex flex-col gap-1.5">
-              <span>Password</span>
+              <span className="text-xs text-faint">Password</span>
               <input
                 data-autofocus
                 type="password"
@@ -122,7 +122,8 @@ export default function ReauthDialog({
           )
         )}
         <ErrorText error={error ?? twoFactor.error} />
-        <div className="flex gap-2">
+        <DialogFoot className="mt-1">
+          <Button onClick={() => onDone(false)}>Cancel</Button>
           <Button
             primary
             type="submit"
@@ -134,8 +135,7 @@ export default function ReauthDialog({
           >
             {passkeyOnly ? "Use a passkey" : "Confirm"}
           </Button>
-          <Button onClick={() => onDone(false)}>Cancel</Button>
-        </div>
+        </DialogFoot>
       </form>
     </Dialog>
   );
@@ -164,7 +164,8 @@ function SSOAgain({ onCancel }: { onCancel: () => void }) {
           </p>
         )}
         <ErrorText error={start.error} />
-        <div className="flex gap-2">
+        <DialogFoot className="mt-1">
+          <Button onClick={onCancel}>Cancel</Button>
           <Button
             primary
             data-autofocus
@@ -175,8 +176,7 @@ function SSOAgain({ onCancel }: { onCancel: () => void }) {
           >
             Sign in with SSO
           </Button>
-          <Button onClick={onCancel}>Cancel</Button>
-        </div>
+        </DialogFoot>
       </div>
     </Dialog>
   );

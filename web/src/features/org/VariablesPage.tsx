@@ -62,7 +62,7 @@ export function VariablesPage() {
           )
         }
       />
-      <Page width="max-w-[900px]" gap="gap-5">
+      <Page>
         {changedVar?.used_by && changedVar.used_by.length > 0 && (
           <Changed
             name={changedVar.key}

@@ -126,7 +126,7 @@ function Members() {
           )
         }
       />
-      <Page gap="gap-5">
+      <Page>
         <div className="flex flex-wrap items-start gap-8">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
             {without > 0 && (

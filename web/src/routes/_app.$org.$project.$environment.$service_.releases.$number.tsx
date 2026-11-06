@@ -140,6 +140,20 @@ function ReleasePage() {
               /
             </span>
             <Link
+              to="/$org/$project/$environment"
+              params={{
+                org,
+                project: ref.project,
+                environment: ref.environment,
+              }}
+              className="hover:text-fg"
+            >
+              {ref.environment}
+            </Link>
+            <span aria-hidden className="text-faint">
+              /
+            </span>
+            <Link
               to="/$org/$project/$environment/$service"
               params={{ org, ...ref }}
               className="hover:text-fg"
@@ -149,7 +163,6 @@ function ReleasePage() {
           </span>
         }
         title={<span className="font-mono">r{release.number}</span>}
-        after={<span className="text-xs text-faint">{ref.environment}</span>}
         actions={
           // The neighbours and the way back, so the page is never a dead end.
           <span className="flex items-center gap-3 text-xs">
@@ -181,7 +194,7 @@ function ReleasePage() {
           </span>
         }
       />
-      <Page width="max-w-[1040px]" gap="gap-[26px]">
+      <Page width="max-w-[1040px]">
         <section aria-labelledby="release" className="flex flex-col gap-3.5">
           <h2 id="release" className="text-xl leading-tight font-semibold">
             <Title release={release} />
@@ -210,7 +223,7 @@ function ReleasePage() {
               )}
             </p>
           )}
-          <dl className="props max-w-[960px] grid-cols-[140px_minmax(0,1fr)]">
+          <dl className="props grid-cols-[140px_minmax(0,1fr)]">
             <Prop label="Service">
               <span className="font-mono">{ref.service}</span> in{" "}
               {ref.environment}

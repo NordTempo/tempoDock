@@ -152,13 +152,12 @@ export function VitalsView({
         <p className="text-warn-text">{data.store_error}</p>
       )}
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        <span className="flex gap-1">
+        <span className="seg">
           {devices.map(([label, d]) => (
             <button
               key={label}
               type="button"
               aria-pressed={device === d}
-              className={`rounded-ctl px-1.5 ${device === d ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => onDevice(d)}
             >
               {label}

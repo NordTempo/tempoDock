@@ -8,7 +8,14 @@ import {
 } from "../../data/queries";
 import type { Scope } from "../../data/types";
 import { Dialog } from "../../ui/Dialog";
-import { Button, Check, CopyButton, ErrorText, Page } from "../../ui/kit";
+import {
+  Button,
+  Check,
+  CopyButton,
+  DialogFoot,
+  ErrorText,
+  Page,
+} from "../../ui/kit";
 import { useValidation } from "../create/form";
 import { TokenDataFields, tokenDataFlags } from "../data/TokenData";
 import type { DataTokenAccess } from "../data/types";
@@ -294,7 +301,7 @@ function CreateToken({
         }}
       >
         <label className="flex flex-col gap-1.5">
-          <span>Name</span>
+          <span className="text-xs text-faint">Name</span>
           <input
             id={nameId}
             // biome-ignore lint/a11y/noAutofocus: opened by "Create token"
@@ -317,7 +324,7 @@ function CreateToken({
           )}
         </label>
         <fieldset>
-          <legend className="mb-1.5">Scope</legend>
+          <legend className="mb-1.5 text-xs text-faint">Scope</legend>
           <div className="flex flex-col gap-1.5">
             {scopes.map((s) => (
               <label key={s.scope} className="flex items-baseline gap-2">
@@ -356,7 +363,7 @@ function CreateToken({
         </fieldset>
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-[1_1_200px] flex-col gap-1.5">
-            <span>Limit to project</span>
+            <span className="text-xs text-faint">Limit to project</span>
             <select
               value={project}
               onChange={(e) => {
@@ -372,7 +379,7 @@ function CreateToken({
             </select>
           </label>
           <label className="flex flex-[1_1_200px] flex-col gap-1.5">
-            <span>Limit to environment</span>
+            <span className="text-xs text-faint">Limit to environment</span>
             <select
               value={environment}
               disabled={!project}
@@ -392,7 +399,7 @@ function CreateToken({
             )}
           </label>
           <label className="flex flex-[1_1_200px] flex-col gap-1.5">
-            <span>Expires</span>
+            <span className="text-xs text-faint">Expires</span>
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
@@ -423,9 +430,11 @@ function CreateToken({
           </label>
         </div>
         <TokenDataFields value={data} onChange={setData} cap={tokenCap} />
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="min-w-0 flex-1 text-xs">
-            {create.error ? (
+        <DialogFoot
+          className="mt-0"
+          cli={cli}
+          note={
+            create.error ? (
               <ErrorText error={create.error} />
             ) : (
               <span className="text-fail">
@@ -434,16 +443,14 @@ function CreateToken({
                   days < 0 && !(expires >= 1),
                 )}
               </span>
-            )}
-          </span>
+            )
+          }
+        >
           <Button onClick={onCancel}>Cancel</Button>
           <button type="submit" className="btn pri" disabled={create.isPending}>
             Create token
           </button>
-        </div>
-        <code className="border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
-          {cli}
-        </code>
+        </DialogFoot>
       </form>
     </Dialog>
   );

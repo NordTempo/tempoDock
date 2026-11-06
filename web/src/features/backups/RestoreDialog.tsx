@@ -126,6 +126,7 @@ export default function RestoreDialog({
           </p>
         )}
         <Footer
+          className="mt-1"
           submit={
             intoNew ? `Restore into ${as || "new service"}` : "Restore in place"
           }

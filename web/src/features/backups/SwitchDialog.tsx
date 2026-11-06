@@ -127,6 +127,7 @@ export default function SwitchDialog({
           </p>
         )}
         <Footer
+          className="mt-1"
           submit={
             services.length > 0
               ? `Switch ${plural(services.length, "service")}`

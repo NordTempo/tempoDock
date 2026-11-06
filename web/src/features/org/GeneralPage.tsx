@@ -46,7 +46,7 @@ export function GeneralPage() {
   return (
     <>
       <OrgSettingsBar />
-      <Page width="max-w-[760px]" gap="gap-5">
+      <Page width="max-w-[760px]">
         <Panel>
           <table>
             <tbody>

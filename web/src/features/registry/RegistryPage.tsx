@@ -70,9 +70,6 @@ export function RegistryPage() {
     <>
       <PageBar
         title="Registry"
-        after={
-          <span className="font-mono text-xs text-faint">{registry.host}</span>
-        }
         actions={
           <>
             {!moving && (
@@ -103,6 +100,9 @@ export function RegistryPage() {
           <MoveImages registry={registry} onClose={() => setMoving(false)} />
         )}
         <Facts>
+          <Fact label="Host">
+            <span className="font-mono">{registry.host}</span>
+          </Fact>
           <Fact label="Storage">
             {registry.storage === "local" ? (
               "this server's disk"

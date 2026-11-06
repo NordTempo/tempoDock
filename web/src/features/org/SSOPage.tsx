@@ -79,7 +79,7 @@ function SSO() {
           )
         }
       />
-      <Page width="max-w-[1000px]" gap="gap-5">
+      <Page>
         <dl className="props">
           <dt>Redirect URL</dt>
           <dd className="flex flex-wrap items-center gap-x-3 gap-y-1">

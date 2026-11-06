@@ -32,7 +32,7 @@ function ProjectLogDrains() {
   const { project } = Route.useParams();
   const { environments } = useProjectOverview(project);
   return (
-    <Page gap="gap-6">
+    <Page>
       <p className="text-mut">
         Drains send every service's output in an environment to another log
         store. Without one, output stays on the server, in{" "}

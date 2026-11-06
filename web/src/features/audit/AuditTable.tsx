@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import type { AuditEvent } from "../../data/types";
 import { clockSec, day } from "../../ui/format";
-import { Actor, Scroll } from "../../ui/kit";
+import { Actor, Panel, Scroll } from "../../ui/kit";
 import { AuditDetail } from "./AuditDetail";
 
 /**
@@ -326,11 +326,11 @@ export function AuditTable({
     );
   }
   return (
-    <Scroll>
+    <Panel>
       <table>
         <thead>
           <tr>
-            <th className="w-[104px] pl-2.5">Time</th>
+            <th className="w-[104px]">Time</th>
             <th>Actor</th>
             <th>Action</th>
             <th>Target</th>
@@ -350,14 +350,14 @@ export function AuditTable({
                     <th
                       colSpan={5}
                       scope="colgroup"
-                      className="pt-4 pl-2.5 text-xs font-semibold text-sec"
+                      className="pt-4 text-xs font-semibold text-sec"
                     >
                       {head}
                     </th>
                   </tr>
                 )}
                 <tr className={opened ? "bg-sel" : undefined}>
-                  <td className="pl-2.5 font-mono text-mut">
+                  <td className="font-mono text-mut">
                     <button
                       type="button"
                       aria-expanded={opened}
@@ -384,7 +384,7 @@ export function AuditTable({
                 </tr>
                 {opened && (
                   <tr>
-                    <td colSpan={5} className="pb-3 pl-2.5 whitespace-normal">
+                    <td colSpan={5} className="pb-3 whitespace-normal">
                       <AuditDetail event={e} />
                     </td>
                   </tr>
@@ -394,6 +394,6 @@ export function AuditTable({
           })}
         </tbody>
       </table>
-    </Scroll>
+    </Panel>
   );
 }

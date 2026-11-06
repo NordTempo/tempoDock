@@ -160,13 +160,12 @@ function GoalForm({
           onChange={(e) => setName(e.target.value)}
           className="field w-32 py-0.5"
         />
-        <span className="flex gap-1">
+        <span className="seg">
           {(["page", "event"] as const).map((k) => (
             <button
               key={k}
               type="button"
               aria-pressed={kind === k}
-              className={`rounded-ctl px-1.5 ${kind === k ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => setKind(k)}
             >
               {k === "page" ? "Page" : "Event"}

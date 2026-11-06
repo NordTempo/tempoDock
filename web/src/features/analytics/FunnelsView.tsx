@@ -271,13 +271,12 @@ function Editor({
           // Steps have no ID; their place is who they are.
           <li key={i} className="flex flex-wrap items-center gap-2 text-xs">
             <span className="w-14 text-mut">{i + 1}</span>
-            <span className="flex gap-1">
+            <span className="seg">
               {(["page", "event"] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
                   aria-pressed={s.kind === k}
-                  className={`rounded-ctl px-1.5 ${s.kind === k ? "bg-sel text-fg" : "text-mut"}`}
                   onClick={() => set(i, { kind: k })}
                 >
                   {k === "page" ? "Page" : "Event"}

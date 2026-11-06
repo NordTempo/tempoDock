@@ -184,6 +184,7 @@ export default function AddDomainDialog({
           />
         )}
         <Footer
+          className="mt-1"
           submit={
             add.isPending
               ? fromCloudflare

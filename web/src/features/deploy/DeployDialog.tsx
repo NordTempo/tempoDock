@@ -24,7 +24,7 @@ import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
 import { plural, size } from "../../ui/format";
-import { Act, Button, ErrorText, StateText } from "../../ui/kit";
+import { Act, Button, DialogFoot, ErrorText, StateText } from "../../ui/kit";
 import { failurePhrase, releaseState, stepPhrase } from "../../ui/status";
 import {
   commitText,
@@ -498,7 +498,7 @@ function ImageDeploy({
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
       <label className="flex flex-col gap-1">
-        <span className="text-2xs text-faint">Image</span>
+        <span className="text-xs text-faint">Image</span>
         <input
           ref={autofocus}
           value={image}
@@ -551,14 +551,19 @@ function ImageDeploy({
           <Cutover serviceRef={ref} />
         </div>
       )}
-      <div className="flex flex-wrap items-start gap-2">
-        <span className="min-w-0 flex-1 self-center text-xs">
-          {busy && <span className="text-fail">{busy}. </span>}
-          {!wanted && !busy && (
-            <span className="text-faint">Type an image first</span>
-          )}
-          <ErrorText error={deploy.error} />
-        </span>
+      <DialogFoot
+        className="mt-1"
+        cli={`dock deploy --image ${wanted || "<image>"} -s ${ref.service} -e ${ref.environment}`}
+        note={
+          <>
+            {busy && <span className="text-fail">{busy}. </span>}
+            {!wanted && !busy && (
+              <span className="text-faint">Type an image first</span>
+            )}
+            <ErrorText error={deploy.error} />
+          </>
+        }
+      >
         <Button onClick={onClose}>Cancel</Button>
         <Button
           primary={!failedBefore}
@@ -568,12 +573,7 @@ function ImageDeploy({
         >
           {failedBefore ? "Deploy failed image again" : "Deploy image"}
         </Button>
-      </div>
-      {/* The CLI line under a rule, as the other dialogs end. */}
-      <code className="border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
-        dock deploy --image {wanted || "<image>"} -s {ref.service} -e{" "}
-        {ref.environment}
-      </code>
+      </DialogFoot>
     </form>
   );
 }
@@ -642,7 +642,7 @@ function GitDeploy({
       <p className="font-mono text-xs">{targetText(conn)}</p>
       <Cutover serviceRef={ref} />
       <label className="flex flex-col gap-1">
-        <span className="text-2xs text-faint">Commit, branch or tag</span>
+        <span className="text-xs text-faint">Commit, branch or tag</span>
         <input
           ref={autofocus}
           value={gitRef}
@@ -652,20 +652,16 @@ function GitDeploy({
           className="field w-full font-mono text-xs"
         />
       </label>
-      <div className="flex flex-wrap items-start gap-2">
-        <span className="min-w-0 flex-1 self-center text-xs">
-          <ErrorText error={deploy.error} />
-        </span>
+      <DialogFoot
+        className="mt-1"
+        cli={gitDeployCli(ref, target)}
+        note={<ErrorText error={deploy.error} />}
+      >
         <Button onClick={onClose}>Cancel</Button>
-        <Act
-          primary
-          type="submit"
-          cli={gitDeployCli(ref, target)}
-          disabled={deploy.isPending}
-        >
+        <Button primary type="submit" disabled={deploy.isPending}>
           Deploy {target || conn.branch}
-        </Act>
-      </div>
+        </Button>
+      </DialogFoot>
     </form>
   );
 }

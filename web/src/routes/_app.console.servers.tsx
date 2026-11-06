@@ -52,7 +52,7 @@ function Servers() {
           </Act>
         }
       />
-      <Page width="max-w-[1400px]" gap="gap-[18px]">
+      <Page width="max-w-[1400px]">
         {adding && <AddServer onClose={() => setAdding(false)} />}
         <Kinds servers={servers} onAdd={() => setAdding(true)} />
         <Panel>

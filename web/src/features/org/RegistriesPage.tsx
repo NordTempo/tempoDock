@@ -51,7 +51,7 @@ function Registries() {
           )
         }
       />
-      <Page width="max-w-[900px]" gap="gap-5">
+      <Page>
         {creds.length === 0 ? (
           !adding && (
             <p className="text-mut">

@@ -215,7 +215,7 @@ function Compare() {
           </span>
         }
       />
-      <Page gap="gap-[18px]">
+      <Page>
         {notReady && pair && (
           <p className="text-mut">Promote is off: {notReady}.</p>
         )}

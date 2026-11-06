@@ -259,7 +259,6 @@ function NoProjects() {
     <>
       <PageBar
         title="Projects"
-        after={<span className="text-xs text-faint">none yet</span>}
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -268,7 +267,7 @@ function NoProjects() {
           )
         }
       />
-      <Page width="max-w-[720px]" gap="gap-5">
+      <Page width="max-w-[720px]">
         {canCreate && (
           <p className="text-mut">
             Create a project, then add services from an image, a GitHub

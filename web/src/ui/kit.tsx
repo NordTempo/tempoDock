@@ -264,7 +264,7 @@ export function Confirm({
   const [text, setText] = useState("");
   const ready = !pending && (!typed || text.trim() === typed);
   return (
-    <Dialog title={title ?? `${action}?`} onClose={onCancel} bare>
+    <Dialog title={title ?? `${action}?`} onClose={onCancel}>
       <form
         className="flex flex-col"
         onSubmit={(e) => {
@@ -274,20 +274,7 @@ export function Confirm({
           if (ready) onConfirm();
         }}
       >
-        <div className="flex items-center justify-between border-b border-line px-5 py-3">
-          <h2 className="text-md font-semibold text-fg">
-            {title ?? `${action}?`}
-          </h2>
-          <button
-            type="button"
-            aria-label="esc, close"
-            className="rounded-ctl p-0.5 text-faint hover:text-fg"
-            onClick={onCancel}
-          >
-            <kbd>esc</kbd>
-          </button>
-        </div>
-        <div className="flex flex-col gap-2 px-5 pt-4 pb-4">
+        <div className="flex flex-col gap-2">
           <div className="text-[13px] leading-relaxed text-sec [&_b]:font-semibold [&_b]:text-fg">
             {children}
           </div>
@@ -308,32 +295,61 @@ export function Confirm({
           )}
           <ErrorText error={error} />
         </div>
-        <div className="flex flex-col gap-2.5 border-t border-line px-5 py-3">
-          {cli && (
-            <code className="font-mono text-2xs break-all text-faint">
-              {cli}
-            </code>
-          )}
-          <span className="flex justify-end gap-2">
-            <Button
-              data-autofocus={typed ? undefined : true}
-              onClick={onCancel}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              danger={danger}
-              primary={!danger}
-              className={danger ? "solid" : ""}
-              disabled={!ready}
-            >
-              {action}
-            </Button>
-          </span>
-        </div>
+        <DialogFoot cli={cli}>
+          <Button data-autofocus={typed ? undefined : true} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            danger={danger}
+            primary={!danger}
+            className={danger ? "solid" : ""}
+            disabled={!ready}
+          >
+            {action}
+          </Button>
+        </DialogFoot>
       </form>
     </Dialog>
+  );
+}
+
+/**
+ * Every dialog's footer, edge to edge under a line: the CLI equivalent on
+ * top, then a row with `note` (why it can't go on yet, or the error) on
+ * the left and the buttons, Cancel first and the named action last, on the
+ * right. Put it last in a Dialog's body (it bleeds into the body's
+ * padding). `className` sets the space above it: 16px by default, less
+ * where the form's own gap already spaces it.
+ */
+export function DialogFoot({
+  cli,
+  note,
+  className = "mt-4",
+  children,
+}: {
+  cli?: string | readonly string[];
+  note?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  const lines = typeof cli === "string" ? [cli] : (cli ?? []);
+  return (
+    <div
+      className={`-mx-5 -mb-4 flex flex-col gap-2.5 border-t border-line px-5 py-3 ${className}`}
+    >
+      {lines.length > 0 && (
+        <div className="flex flex-col gap-0.5 font-mono text-2xs break-all text-faint">
+          {lines.map((line) => (
+            <code key={line}>{line}</code>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-xs">{note}</span>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -349,11 +365,12 @@ export function ErrorText({ error }: { error: Error | null | undefined }) {
 
 /**
  * A page's content column under its PageBar: 24px 28px padding, left
- * aligned, at most 1100px wide unless `width` says otherwise.
+ * aligned, 24px between sections, at most 1100px wide. Pages of tables
+ * keep the default width; a page that is one form uses 760px.
  */
 export function Page({
   width = "max-w-[1100px]",
-  gap = "gap-7",
+  gap = "gap-6",
   children,
 }: {
   width?: string;
@@ -518,9 +535,9 @@ export function Fact({
 }) {
   return (
     <div className="flex flex-col gap-0.5 border-soft px-3 py-2.5 not-last:border-r">
-      <dt className="text-2xs text-faint">{label}</dt>
-      <dd className="text-md font-semibold">{children}</dd>
-      {note && <dd className="text-2xs text-mut">{note}</dd>}
+      <dt className="text-xs text-mut">{label}</dt>
+      <dd className="text-lg font-semibold">{children}</dd>
+      {note && <dd className="text-xs text-mut">{note}</dd>}
     </div>
   );
 }
