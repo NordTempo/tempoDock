@@ -488,8 +488,9 @@ function NewLine({
         </button>
         ↵
       </span>
-      {/* Said only while the row has focus: what to type, and what happens next. */}
-      <span className="col-span-full hidden pb-1 pl-[68px] font-sans text-xs text-sec group-focus-within:block">
+      {/* Always there (brighter while the row has focus), so nothing moves
+          when focus leaves: a click on Apply right after typing lands. */}
+      <span className="col-span-full pb-1 pl-[68px] font-sans text-xs text-faint group-focus-within:text-sec">
         Type a name and value, like LOG_LEVEL=debug, then Enter. Several lines
         add several. They wait for Apply below.
       </span>
