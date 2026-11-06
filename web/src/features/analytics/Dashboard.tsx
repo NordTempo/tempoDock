@@ -320,7 +320,7 @@ function Breakdown({
               key={label}
               type="button"
               aria-pressed={i === tab}
-              className={`text-xs ${i === tab ? "text-fg" : "text-mut"}`}
+              className={`-my-[4px] min-h-[24px] min-w-[24px] text-xs ${i === tab ? "text-fg" : "text-mut"}`}
               onClick={() => setTab(i)}
             >
               {label}
@@ -348,7 +348,7 @@ function Breakdown({
                   />
                   <button
                     type="button"
-                    className="relative truncate text-left"
+                    className="relative -my-[3px] min-h-[24px] min-w-[24px] max-w-full truncate text-left"
                     title={`Filter by ${shown(dimension, r)}`}
                     onClick={() => onPick(dimension, r)}
                   >

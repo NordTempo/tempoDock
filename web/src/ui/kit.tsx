@@ -622,7 +622,7 @@ export function Menu({
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
         }
-        className="flex min-h-6 w-full min-w-6 items-center justify-center rounded-ctl"
+        className="flex min-h-[24px] w-full min-w-[24px] items-center justify-center rounded-ctl"
       >
         {button}
       </button>

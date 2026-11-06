@@ -474,7 +474,7 @@ function NewLine({
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-h-6 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
+        className="col-span-2 min-h-[24px] min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
       />
       <span className="flex items-center gap-1.5 font-sans text-2xs text-faint group-focus-within:text-fg">
         <ErrorText error={stage.error} />

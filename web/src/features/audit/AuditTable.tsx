@@ -362,7 +362,7 @@ export function AuditTable({
                       type="button"
                       aria-expanded={opened}
                       title={new Date(e.created_at).toLocaleString()}
-                      className="-my-1 min-h-6 hover:text-fg"
+                      className="-my-[2px] min-h-[24px] hover:text-fg"
                       onClick={() => setOpen(opened ? null : e.id)}
                     >
                       <span aria-hidden className="text-faint">

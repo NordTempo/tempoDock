@@ -100,7 +100,7 @@ export function Notices() {
             type="button"
             aria-label="Dismiss"
             onClick={() => dismiss(n.id)}
-            className="grid size-6 place-items-center rounded-ctl text-mut hover:bg-hover hover:text-fg"
+            className="grid size-[24px] place-items-center rounded-ctl text-mut hover:bg-hover hover:text-fg"
           >
             ×
           </button>

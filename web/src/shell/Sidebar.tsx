@@ -398,7 +398,7 @@ function ProjectTree() {
       onClick={() => openCreate({ kind: "project" })}
       className="flex w-full items-center rounded-ctl text-faint hover:bg-panel hover:text-sec"
     >
-      <span className="grid h-7 w-6 flex-none place-items-center">
+      <span className="grid h-[28px] w-[24px] flex-none place-items-center">
         <Icon name="plus" size={12} />
       </span>
       New project
@@ -658,7 +658,7 @@ function ArchivedProjects() {
         onClick={() => setOpen(!shown)}
         className="flex w-full items-center rounded-ctl text-faint hover:bg-panel hover:text-sec"
       >
-        <span className="grid h-7 w-6 flex-none place-items-center">
+        <span className="grid h-[28px] w-[24px] flex-none place-items-center">
           <Icon name={shown ? "chevronDown" : "chevronRight"} size={12} />
         </span>
         Archived

@@ -85,7 +85,7 @@ function ConsoleBar() {
       </span>
       <Link
         to="/"
-        className="ml-auto inline-flex min-h-6 items-center text-warn-text underline"
+        className="ml-auto inline-flex min-h-[24px] items-center text-warn-text underline"
       >
         Back to projects
       </Link>

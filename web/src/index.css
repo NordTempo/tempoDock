@@ -267,22 +267,26 @@
 
   /*
    * Targets are at least 24px (WCAG 2.5.8) without changing the layout:
-   * links in table cells and term lists get 4px of padding taken back by
-   * a negative margin, and a 24px minimum width; selects and summaries
-   * are 24px tall.
+   * a standalone link gets 4px of padding taken back by a negative margin,
+   * and a 24px minimum width. Links in running text are exempt and stay
+   * inline; links that lay themselves out (flex, grid, block) size
+   * themselves. Note: 1rem is 13px here, so Tailwind's spacing scale is
+   * 13/16 of the usual; sizes that must be 24px are written in px.
    */
-  :where(td, dd, h2) a:not(.btn, .lnk, .row-main) {
+  a:not(
+    .btn,
+    .lnk,
+    .nav-row,
+    p a,
+    .prose a,
+    [class*="flex"],
+    [class*="grid"],
+    [class*="block"]
+  ) {
     display: inline-block;
     min-width: 24px;
-    padding-block: 4px;
-    margin-block: -4px;
-  }
-
-  a.row-main {
-    display: inline-block;
-    min-width: 24px;
-    padding-block: 4px;
-    margin-block: -4px;
+    padding-block: 5px;
+    margin-block: -5px;
   }
 
   select,
@@ -462,7 +466,9 @@
   .lnk {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     min-height: 24px;
+    min-width: 24px;
     color: var(--color-mut);
     font-size: 12px;
   }
