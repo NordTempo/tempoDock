@@ -312,20 +312,23 @@ function Breakdown({
   const most = Math.max(1, ...(rows ?? []).map((r) => r.visitors));
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex flex-wrap items-baseline gap-x-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 className="text-sm font-semibold">{title}</h3>
-        {tabs.length > 1 &&
-          tabs.map(([label], i) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={i === tab}
-              className={`-my-[4px] min-h-[24px] min-w-[24px] text-xs ${i === tab ? "text-fg" : "text-mut"}`}
-              onClick={() => setTab(i)}
-            >
-              {label}
-            </button>
-          ))}
+        {/* The app's one segmented control, as everywhere else. */}
+        {tabs.length > 1 && (
+          <span className="seg">
+            {tabs.map(([label], i) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={i === tab}
+                onClick={() => setTab(i)}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       <Panel>
         <table className="tabular-nums">

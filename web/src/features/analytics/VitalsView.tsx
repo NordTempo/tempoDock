@@ -310,18 +310,20 @@ function Breakdown({
         ) : (
           <h3 className="text-sm font-semibold">{title}</h3>
         )}
-        {sortable &&
-          (["Worst", "Most loads"] as const).map((label) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={(label === "Worst") === worst}
-              className={`text-xs ${(label === "Worst") === worst ? "text-fg" : "text-mut"}`}
-              onClick={() => setWorst(label === "Worst")}
-            >
-              {label}
-            </button>
-          ))}
+        {sortable && (
+          <span className="seg">
+            {(["Worst", "Most loads"] as const).map((label) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={(label === "Worst") === worst}
+                onClick={() => setWorst(label === "Worst")}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       <Panel>
         <table className="tabular-nums">

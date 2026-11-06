@@ -569,8 +569,8 @@ function SettingRow({
             </span>
           </span>
           <span className="text-xs text-mut">
-            Saved changes go live together when you apply them in the bar below.
-            Empty means the default.
+            Saved changes go live together when you apply them in the strip at
+            the top of the page. Empty means the default.
           </span>
           <ErrorText error={error ?? stage.error} />
         </form>

@@ -664,9 +664,7 @@ function FixAndDeploy({
           />
         </label>
         <button type="submit" className="btn pri" disabled={pending}>
-          {commit || image
-            ? `Save and deploy ${what}…`
-            : "Save and choose a folder"}{" "}
+          {commit || image ? "Save and deploy" : "Save and choose a folder"}{" "}
           <kbd>↵</kbd>
         </button>
         <Button onClick={onClose}>
@@ -710,6 +708,11 @@ function FixAndDeploy({
             )
           )}
         </Confirm>
+      )}
+      {(commit || image) && (
+        <p className="text-xs text-mut">
+          Asks before it deploys {what} to {ref.environment} again.
+        </p>
       )}
       {others > 0 && (
         <p className="text-xs text-mut">

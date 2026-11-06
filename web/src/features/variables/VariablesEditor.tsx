@@ -234,12 +234,11 @@ export function VariablesEditor({
           points at another service, → resolved
         </p>
 
-        <ApplyBox
-          env={env}
-          reveal={revealAll}
-          variables={all}
-          service={service}
-        />
+        {/* A service's tab has the strip in its header; shared variables
+            (no service header) get the panel here. */}
+        {service === null && (
+          <ApplyBox env={env} reveal={revealAll} variables={all} />
+        )}
         {footer}
       </div>
     </div>

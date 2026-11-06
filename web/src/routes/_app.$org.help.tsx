@@ -72,9 +72,9 @@ function Help() {
         <Topic id="apply" title="Saved changes and Apply">
           <p>
             Variables, settings, domains and volumes you change are saved first
-            and change nothing yet. A bar under the page lists them; Apply puts
-            them live together as one new release per service, and Discard drops
-            them.
+            and change nothing yet. A strip under a service's tabs lists them;
+            Apply puts them live together as one new release per service, and
+            Discard drops them.
           </p>
         </Topic>
         <Topic id="locks" title="Locks and access requests">
