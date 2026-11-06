@@ -279,6 +279,9 @@ export function LogsPane({
       <div
         ref={box}
         role="log"
+        // Focusable, so keyboard users can scroll it with the arrow keys.
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region
+        tabIndex={0}
         aria-label={`${filter.build ? "build" : `r${release}`} logs`}
         className={`overflow-auto rounded-panel border border-line bg-side py-2.5 font-mono text-xs leading-[1.7] ${height}`}
       >
