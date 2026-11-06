@@ -567,8 +567,12 @@ export function StatusSentence({ view }: { view: ServiceView }) {
     );
   }
   return (
+    // The overview's focal point (chosen in a blind trial, 2026-11): what
+    // serves and since when, larger than everything under it.
     <div className="flex flex-col gap-1">
-      <p className="text-md leading-normal">{sentence}</p>
+      <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
+        {sentence}
+      </p>
       {failedLine}
     </div>
   );
