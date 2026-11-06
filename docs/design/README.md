@@ -68,10 +68,10 @@ variables once, not as literals in components.
 | Links, info | `#93c5fd` |
 | Sans | Inter (weights 400, 500, 600) |
 | Mono | JetBrains Mono (ids, hashes, images, logs, values) |
-| Sizes | 18px page titles, 14px section headings, 13px body, 12px meta and table heads, 11px hints |
+| Sizes | 24px page titles, 16px section headings, 14px body, 13px meta, 12.5px table heads and hints |
 | Radius | 6px controls and rows, 8 to 10px panels, 999px dots and badges |
 | Layout | sidebar 248px with the organization switcher, search, project tree and the organization's pages; main column with a 52px header bar and 24px 28px content, one width for every page (max 1400px) |
-| Root size | 13px, so Tailwind's spacing scale is 13/16 of the usual: a size that must be exact (24px targets) is written in px |
+| Root size | 14px, so Tailwind's spacing scale is 14/16 of the usual: a size that must be exact (24px targets) is written in px |
 
 ### G: data panel and tempoBase
 
@@ -146,6 +146,7 @@ for everything.
   bar at the foot of the page stays one line until opened.
 - **Settings rows.** A label with a short line under it, the values as
   text, and one Edit per row that opens a small form; Save, Cancel, Esc.
+- **Tables and lists** sit on the page under a hairline, with no box; status in tables and headers is a tinted chip; the page header is two lines, the way up over the title (chosen in blind direction trials, 2026-11).
 - **Rows that open something** show a pointer, a hover and a chevron in
   their last cell; the whole row is the target.
 - **Destructive buttons** are red outlined on pages and filled red in the

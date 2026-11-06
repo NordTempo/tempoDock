@@ -33,11 +33,11 @@
   --font-mono:
     "JetBrains Mono", "Inter", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --text-2xs: 12px;
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-base: 13px;
-  --text-md: 14px;
+  --text-2xs: 12.5px;
+  --text-xs: 13px;
+  --text-sm: 14px;
+  --text-base: 14px;
+  --text-md: 15px;
   --text-lg: 16px;
   --text-xl: 20px;
 
@@ -110,7 +110,7 @@
     color-scheme: dark;
     background: var(--color-page);
     color: var(--color-fg);
-    font: 13px / 1.45 var(--font-sans);
+    font: 14px / 1.45 var(--font-sans);
     font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     scrollbar-color: var(--color-edge) transparent;
@@ -270,8 +270,8 @@
    * a standalone link gets 4px of padding taken back by a negative margin,
    * and a 24px minimum width. Links in running text are exempt and stay
    * inline; links that lay themselves out (flex, grid, block) size
-   * themselves. Note: 1rem is 13px here, so Tailwind's spacing scale is
-   * 13/16 of the usual; sizes that must be 24px are written in px.
+   * themselves. Note: 1rem is 14px here, so Tailwind's spacing scale is
+   * 14/16 of the usual; sizes that must be 24px are written in px.
    */
   a:not(
     .btn,
@@ -319,7 +319,7 @@
 
   th {
     font-weight: 500;
-    font-size: 12px;
+    font-size: 12.5px;
     text-align: left;
     color: var(--color-mut);
     padding: 8px 14px 8px 0;

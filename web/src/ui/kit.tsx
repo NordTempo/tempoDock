@@ -439,7 +439,7 @@ export function PageBar({
           </nav>
         )}
         <div className="flex flex-wrap items-center gap-x-2.5">
-          <h1 className="text-[22px] leading-7 font-semibold tracking-[-0.01em]">
+          <h1 className="text-[24px] leading-7 font-semibold tracking-[-0.01em]">
             {title}
           </h1>
           {after}
@@ -493,7 +493,7 @@ export function SectionHead({
 }) {
   return (
     <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-      <h2 id={id} className="text-[15px] font-semibold">
+      <h2 id={id} className="text-[16px] font-semibold">
         {children}
       </h2>
       {aside && <span className="text-xs text-faint">{aside}</span>}

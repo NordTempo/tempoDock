@@ -352,7 +352,6 @@ function NextImage({
   serviceRef: ServiceRef;
   image: ReturnType<typeof imageSetting>;
 }) {
-  const org = useOrg();
   const mayDeploy = useCanDeploy(ref);
   const changes = useChanges(ref);
   const stage = useStageSettings();
@@ -364,17 +363,9 @@ function NextImage({
     <span className="font-sans break-words text-mut" title={image.next}>
       Next deploy uses{" "}
       <span className="font-mono text-sec">{shortImage(image.next)}</span>
+      {/* The failure itself is the status line's; here, only the way back. */}
       {image.failed && (
         <>
-          {" ("}
-          <Link
-            to="/$org/$project/$environment/$service/releases/$number"
-            params={{ org, ...ref, number: String(image.failed.number) }}
-            className="underline decoration-faint underline-offset-2 hover:decoration-current"
-          >
-            failed as r{image.failed.number}
-          </Link>
-          {")"}
           {mayDeploy && servingRef && !staged && (
             <>
               {" · "}
@@ -387,7 +378,7 @@ function NextImage({
                   stage.mutate({ ref, patch: { image: servingRef } })
                 }
               >
-                Use {shortImage(image.now)}
+                Use {shortImage(image.now)} instead
               </button>
             </>
           )}
