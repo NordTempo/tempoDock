@@ -183,6 +183,7 @@ function LockSettings() {
       <h2 id="locks" className="text-md font-semibold">
         Locked environments
       </h2>
+      <p className="-mt-1 text-xs text-mut">These save as you change them.</p>
       <Panel>
         <table>
           <tbody>

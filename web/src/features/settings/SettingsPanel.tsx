@@ -260,9 +260,9 @@ function AddVolume({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [apply, setApply] = useState(false);
   if (!open) {
     return (
-      <button type="button" className="lnk" onClick={() => setOpen(true)}>
-        + Add volume
-      </button>
+      <Button small onClick={() => setOpen(true)}>
+        Add volume
+      </Button>
     );
   }
   const cli = `dock volume add ${name.trim() || "<name>"} ${path.trim() || "<path>"}${apply ? " --deploy" : ""} -s ${ref.service} -e ${ref.environment}`;
