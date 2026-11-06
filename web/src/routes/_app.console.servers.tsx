@@ -52,7 +52,7 @@ function Servers() {
           </Act>
         }
       />
-      <Page width="max-w-[1400px]">
+      <Page>
         {adding && <AddServer onClose={() => setAdding(false)} />}
         <Kinds servers={servers} onAdd={() => setAdding(true)} />
         <Panel>
@@ -229,8 +229,8 @@ const Row = memo(function Row({
         <Ingress server={s} />
       </td>
       <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>{builder}</td>
-      <td className="py-2.5">{accepts}</td>
-      <td className="py-2.5">{placement}</td>
+      <td className="min-w-32 py-2.5 whitespace-normal">{accepts}</td>
+      <td className="min-w-32 py-2.5 whitespace-normal">{placement}</td>
       <td className="py-2.5 font-mono">
         {usage ? pct(usage.cpu_percent) : dash}
         {usage && (
@@ -275,11 +275,13 @@ const Row = memo(function Row({
           dash
         )}
       </td>
-      <td className="w-full py-2.5">
+      <td className="w-full py-2.5 whitespace-normal">
         {s.environments ? (
           <>
-            {s.projects} <span className="text-mut">projects ·</span>{" "}
-            {s.environments} <span className="text-mut">envs</span>
+            {s.projects} <span className="text-mut">projects</span>
+            <span className="block">
+              {s.environments} <span className="text-mut">envs</span>
+            </span>
           </>
         ) : (
           <span className="text-mut">

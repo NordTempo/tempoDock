@@ -198,7 +198,7 @@ export function Check({
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
-  /** Why it is disabled, shown beside it while it is (like Button's). */
+  /** Why it is disabled, shown on a line under it while it is. */
   reason?: string;
   title?: string;
 }) {
@@ -206,7 +206,7 @@ export function Check({
   const why = disabled ? reason : undefined;
   return (
     <label
-      className={`inline-flex items-center gap-1.5 ${disabled ? "text-faint" : "cursor-pointer"}`}
+      className={`inline-flex flex-wrap items-center gap-x-1.5 ${disabled ? "text-faint" : "cursor-pointer"}`}
       title={title}
     >
       <input
@@ -219,9 +219,13 @@ export function Check({
         onChange={(e) => onChange(e.target.checked)}
       />
       {label}
+      {/* A muted second line under the box, wrapping in narrow cells. */}
       {why && (
-        <span id={id} className="text-xs text-mut">
-          ({why})
+        <span
+          id={id}
+          className="basis-full pl-6 text-xs whitespace-normal text-mut"
+        >
+          {why}
         </span>
       )}
     </label>
@@ -413,7 +417,7 @@ export function PageBar({
             </span>
           </>
         )}
-        <h1 className="text-md font-semibold">{title}</h1>
+        <h1 className="text-lg font-semibold">{title}</h1>
       </nav>
       {after}
       {actions && (
@@ -581,7 +585,7 @@ export function Menu({
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const items = [
           ...(popup.current?.querySelectorAll<HTMLElement>(
-            '[role="menuitem"]:not(:disabled)',
+            '[role^="menuitem"]:not(:disabled)',
           ) ?? []),
         ];
         if (items.length === 0) return;

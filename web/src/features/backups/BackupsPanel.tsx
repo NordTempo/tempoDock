@@ -41,7 +41,7 @@ const LogDialog = lazy(() => import("./LogDialog"));
 /** What the tab has open: one dialog at a time. */
 type Open =
   | { what: "restore" | "log" | "delete"; point: RestorePoint }
-  | { what: "switch"; to: string };
+  | { what: "switch"; to: string; since?: string };
 
 /**
  * A stateful service's restore points (ADR 0061): how backups and
@@ -75,7 +75,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // A template database restores into a new service, from either kind.
   const intoNew = snaps.into_new;
   const points = restorePoints(backups, snaps.snapshots);
-  const records = restoreRecords(backups, snaps.restores);
+  const records = restoreRecords(backups, snaps.restores, snaps.snapshots);
   const busy =
     points.some((p) => p.state === "running") ||
     records.some((r) => r.status === "running");
@@ -196,7 +196,9 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           serviceRef={ref}
           record={records[0]}
           canSwitch={canDeploy}
-          onUse={(to) => setOpen({ what: "switch", to })}
+          onUse={(to) =>
+            setOpen({ what: "switch", to, since: records[0]?.pointAt })
+          }
         />
       )}
       {points.length === 0 ? (
@@ -269,7 +271,12 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <LogDialog serviceRef={ref} point={open.point} onClose={close} />
         )}
         {open?.what === "switch" && (
-          <SwitchDialog serviceRef={ref} to={open.to} onClose={close} />
+          <SwitchDialog
+            serviceRef={ref}
+            to={open.to}
+            since={open.since}
+            onClose={close}
+          />
         )}
       </Suspense>
       {open?.what === "delete" && open.point.kind === "snapshot" && (
@@ -293,7 +300,10 @@ function Where({ backups }: { backups: ServiceBackups }) {
       {operator && (
         <>
           {" · "}
-          <Link to="/console/backups" className="text-info hover:underline">
+          <Link
+            to="/console/backups"
+            className="text-info underline underline-offset-2"
+          >
             Add off-site storage
           </Link>
         </>
@@ -562,13 +572,13 @@ function RestoreStatus({
         <Link
           to="/$org/$project/$environment/$service"
           params={{ org, ...ref, service: target }}
-          className="btn sm"
+          className="btn sm pri"
         >
           Open {target}
         </Link>
       )}
       {r.status === "succeeded" && target && canSwitch && (
-        <Button small primary onClick={() => onUse(target)}>
+        <Button small onClick={() => onUse(target)}>
           Use {target}
         </Button>
       )}

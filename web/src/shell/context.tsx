@@ -91,9 +91,13 @@ export function EnvSwitch({
       <Menu label={`Environment: ${environment}`} button={pill}>
         {(close) => [
           // The one in view first, checked, so the menu reads as a choice.
+          // Environments are a choice of one (menuitemradio), so the menu's
+          // children are all items, as role="menu" requires.
           <div
             key="here"
-            aria-current="true"
+            role="menuitemradio"
+            aria-checked="true"
+            tabIndex={-1}
             className={`${menuItem} cursor-default text-fg hover:bg-transparent`}
           >
             <span aria-hidden className="w-[7px] text-2xs">
@@ -126,7 +130,8 @@ export function EnvSwitch({
                 }}
                 onClick={close}
                 className={menuItem}
-                role="menuitem"
+                role="menuitemradio"
+                aria-checked="false"
               >
                 {dot}
                 <span className="flex-1">
@@ -147,7 +152,8 @@ export function EnvSwitch({
                 hash={`env-${e.environment.name}`}
                 onClick={close}
                 className={menuItem}
-                role="menuitem"
+                role="menuitemradio"
+                aria-checked="false"
               >
                 {dot}
                 <span className="flex-1">

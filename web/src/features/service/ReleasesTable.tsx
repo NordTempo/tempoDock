@@ -68,7 +68,7 @@ export function ReleasesTable({
             <col />
             <col className="w-[100px]" />
             <col className="w-[44px]" />
-            <col className="w-[96px]" />
+            <col className="w-[124px]" />
           </colgroup>
           <thead>
             <tr>
@@ -107,10 +107,14 @@ export function ReleasesTable({
                       }
                     />
                   </td>
-                  <td className="truncate">
-                    <span title={image}>
+                  {/* What wraps to two lines; the title has it in full. */}
+                  <td className="whitespace-normal">
+                    <span
+                      className="line-clamp-2 break-words"
+                      title={`${releaseWhat(r)} ${image}`}
+                    >
                       {releaseWhat(r)}{" "}
-                      <span className="font-mono text-xs text-mut">
+                      <span className="font-mono text-xs whitespace-nowrap text-mut">
                         {shortImage(image)}
                       </span>
                     </span>
@@ -124,7 +128,7 @@ export function ReleasesTable({
                       </div>
                     )}
                   </td>
-                  <td className="truncate">
+                  <td className="truncate" title={r.created_by}>
                     <Actor name={r.created_by} kind={actorKind(r.created_by)} />
                   </td>
                   <td className="text-faint">{since(r.created_at)}</td>

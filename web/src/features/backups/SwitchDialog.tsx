@@ -4,7 +4,7 @@ import { useChanges } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
-import { plural } from "../../ui/format";
+import { ago, clock, day, plural } from "../../ui/format";
 import { Button, ErrorText } from "../../ui/kit";
 import { notify } from "../../ui/notice";
 import { Footer } from "../create/form";
@@ -19,11 +19,14 @@ import { useSwitchReferences } from "./data";
 export default function SwitchDialog({
   serviceRef: ref,
   to,
+  since,
   onClose,
 }: {
   /** The service switched away from. */
   serviceRef: ServiceRef;
   to: string;
+  /** When `to`'s restore point was taken, when it is a restored copy. */
+  since?: string;
   onClose: () => void;
 }) {
   const org = useOrg();
@@ -113,6 +116,12 @@ export default function SwitchDialog({
               and these services get a config release:
             </p>
             <p className="font-mono">{services.join(", ")}</p>
+            {since && (
+              <p className="text-warn-text">
+                ▲ Data written to {from} after {day(since)} {clock(since)} (
+                {ago(since)}) is not in this copy.
+              </p>
+            )}
             <p className="text-sec">
               {from} keeps running; switching back is the same action the other
               way.

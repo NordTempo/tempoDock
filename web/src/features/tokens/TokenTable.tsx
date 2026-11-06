@@ -179,7 +179,7 @@ function TokenRow({
                   {!token.revoked_at && (
                     <button
                       type="button"
-                      className={menuItem}
+                      className={`${menuItem} text-fail hover:text-fail`}
                       role="menuitem"
                       title={`dock token revoke ${token.id}`}
                       onClick={() => {

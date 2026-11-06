@@ -146,12 +146,15 @@ function RequestRow({
         >
           {ago(r.created_at)}
         </td>
-        <td>
+        <td className="truncate">
           <span className={statusText[status]}>{statusWord[status]}</span>
           {status === "pending" && (
-            <span className="text-mut">
+            <span
+              className="text-mut"
+              title={`expires ${new Date(r.expires_at).toLocaleString()}`}
+            >
               {" "}
-              · expires in {until(r.expires_at)}
+              · {until(r.expires_at)} left
             </span>
           )}
         </td>

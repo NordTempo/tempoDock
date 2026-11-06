@@ -99,8 +99,9 @@ export function ServiceBar({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 }
 
 /**
- * The service's sections under its header bar, with ▲ where something
- * waits. G then a letter switches tabs.
+ * The service's sections under its header bar, with the staged dot where
+ * changes wait to be applied and ▲ where something needs a look. G then
+ * a letter switches tabs.
  */
 export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
@@ -152,17 +153,21 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   ]);
   const mine = (c: { service?: string }) =>
     !c.service || c.service === ref.service;
-  const marks: Partial<Record<ServiceTab["label"], boolean>> = {
-    Domains:
-      view.domains.some(domainNeedsAttention) ||
-      changes.domains.some((d) => d.service === ref.service),
-    Uptime: view.uptime?.state === "down",
+  // Two marks: the staged-change dot ("1 change staged") for changes not
+  // yet applied, and ▲ for something that needs a look. Each says which.
+  const staged: Partial<Record<ServiceTab["label"], boolean>> = {
+    Domains: changes.domains.some((d) => d.service === ref.service),
     Variables: changes.variables.some(mine),
     "Build & run":
       changes.settings.some(mine) ||
       changes.volumes.some((v) => v.service === ref.service),
   };
-
+  const warnings: Partial<Record<ServiceTab["label"], string>> = {
+    ...(view.domains.some(domainNeedsAttention) && {
+      Domains: "a domain needs attention",
+    }),
+    ...(view.uptime?.state === "down" && { Uptime: "a check is down" }),
+  };
   return (
     <nav
       aria-label="Service"
@@ -177,7 +182,27 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           title={`${tab.label} (${tab.key.toUpperCase()})`}
         >
           {tab.label}
-          {marks[tab.label] && <span className="text-warn"> ▲</span>}
+          {staged[tab.label] && (
+            <span
+              className="ml-1.5 text-warn"
+              role="img"
+              aria-label="changes staged, not applied"
+              title="Changes staged, not applied"
+            >
+              <span className="dot" />
+            </span>
+          )}
+          {warnings[tab.label] && (
+            <span
+              className="text-warn"
+              role="img"
+              aria-label={warnings[tab.label]}
+              title={warnings[tab.label]}
+            >
+              {" "}
+              ▲
+            </span>
+          )}
         </Link>
       ))}
     </nav>
@@ -264,7 +289,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           to="/$org/$project/$environment/$service/build"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
-          className="text-info hover:underline"
+          className="text-info underline underline-offset-2"
         >
           Edit
         </Link>
@@ -363,19 +388,20 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   const { status } = service;
   const serving = service.active_release;
   const mut = (text: string) => <span className="text-mut">{text}</span>;
-  // A failed deploy while it is the latest attempt; once a newer release
-  // serves, the Image cell says it instead.
-  const failedNext =
-    latest?.status === "failed" && latest.number > (serving ?? 0)
+  // The failed deploy, while it matters: the overview's last_failed_deploy
+  // survives a rollback and clears once a new image or config deploys;
+  // else the latest attempt when it failed. Its own line under the
+  // headline, in the releases table's red.
+  const lastFailed =
+    view.last_failed_deploy ??
+    (latest?.status === "failed" && latest.number > (serving ?? 0)
       ? latest
-      : undefined;
-  const failedLine = failedNext && (
-    <span className="text-fail">
-      r{failedNext.number} {failurePhrase(failedNext)}{" "}
-      {ago(failedNext.created_at)}
-      {failedNext.error ? `: ${errorSummary(failedNext)}` : ""}.{" "}
-      {releaseLink(failedNext.number, "See why")}
-    </span>
+      : undefined);
+  const failedLine = lastFailed && serving !== lastFailed.number && (
+    <p className="text-sm text-fail">
+      ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
+      {ago(lastFailed.created_at)} · {releaseLink(lastFailed.number, "See why")}
+    </p>
   );
   const mono = (text: string) => (
     <b className="font-mono font-medium">{text}</b>
@@ -408,8 +434,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         {mono(service.stopped_by || "unknown")} {ago(service.stopped_at)}.{" "}
         {mut(
           `Its domains answer 503. ${serving ? `r${serving}, ` : ""}volumes and variables are kept.`,
-        )}{" "}
-        {failedLine}
+        )}
       </>
     );
   } else if (isCrashLooping(status)) {
@@ -505,12 +530,16 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         {!!status.health_restarts &&
           mut(
             `Restarted ${plural(status.health_restarts, "time")} for failing health checks.`,
-          )}{" "}
-        {failedLine}
+          )}
       </>
     );
   }
-  return <p className="text-md leading-normal">{sentence}</p>;
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-md leading-normal">{sentence}</p>
+      {failedLine}
+    </div>
+  );
 }
 
 /**

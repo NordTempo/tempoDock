@@ -93,13 +93,20 @@ export type RestoreRecord = {
   at: string;
   /** The snapshot taken first, which undoes an in-place restore. */
   safety?: number;
+  /** When the restored point was taken: later writes aren't in the copy. */
+  pointAt?: string;
 };
 
 /** The latest restores of both kinds, newest first. */
 export function restoreRecords(
   backups: ServiceBackups,
   restores: SnapshotRestore[],
+  snapshots: Snapshot[],
 ): RestoreRecord[] {
+  const backupAt = (snapshot?: string) =>
+    (backups.runs ?? []).find(
+      (r) => r.operation === "backup" && r.snapshot === snapshot,
+    )?.started_at;
   const fromBackups = (backups.runs ?? [])
     .filter((r) => r.operation === "restore")
     .map(
@@ -110,6 +117,7 @@ export function restoreRecords(
         status: r.status,
         error: r.error,
         at: r.finished_at ?? r.started_at,
+        pointAt: backupAt(r.snapshot),
       }),
     );
   const fromSnapshots = restores.map(
@@ -121,6 +129,7 @@ export function restoreRecords(
       error: r.error,
       at: r.finished_at ?? r.started_at,
       safety: r.safety,
+      pointAt: snapshots.find((x) => x.id === r.snapshot)?.started_at,
     }),
   );
   return [...fromBackups, ...fromSnapshots].sort(

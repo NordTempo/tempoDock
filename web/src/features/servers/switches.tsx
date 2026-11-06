@@ -62,11 +62,7 @@ export function useServerSwitches(server: Server) {
         label={words}
         checked={server[field]}
         disabled={update.isPending || lastProduction}
-        reason={
-          lastProduction
-            ? "the only server for production; let another take it first"
-            : undefined
-        }
+        reason={lastProduction ? "The only production server." : undefined}
         onChange={(on) => {
           if (on)
             return setAsk({
@@ -134,11 +130,7 @@ export function useServerSwitches(server: Server) {
           label="new placements"
           checked={!server.disabled_for_placement}
           disabled={update.isPending || lastPlacement}
-          reason={
-            lastPlacement
-              ? "the only server taking new projects; open another first"
-              : undefined
-          }
+          reason={lastPlacement ? "The only open server." : undefined}
           onChange={(on) => {
             if (on)
               return setAsk({

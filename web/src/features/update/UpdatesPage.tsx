@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { ago, day, plural } from "../../ui/format";
 import {
   Act,
-  Button,
   ErrorText,
   Glyph,
   Page,
@@ -95,7 +94,7 @@ export function UpdatesPage() {
           {st.checked_at && <>, releases checked {ago(st.checked_at)}</>}.
         </p>
         <ErrorText error={start.error ?? check.error} />
-        <Problems st={st} onCheck={() => check.mutate()} />
+        <Problems st={st} />
         {st.last && st.last.status !== "succeeded" && !running && (
           <LastFailed last={st.last} />
         )}
@@ -113,57 +112,41 @@ export function UpdatesPage() {
 }
 
 /**
- * The release check's error, short: what failed on one line, the fix on
- * a second. The daemon's sentence is "what; how to fix it"; the technical
- * detail stays in the title (and the log).
+ * The release check's error: what failed as one sentence, and the fix on
+ * a second line, linked to the install guide when it is the token. The
+ * daemon's text is "Couldn't check for releases: what; how to fix it."
+ * (the technical detail stays in the title and the log). The header's
+ * Check now tries again.
  */
-function CheckError({
-  error,
-  detail,
-  onCheck,
-}: {
-  error: string;
-  detail?: string;
-  onCheck: () => void;
-}) {
+function CheckError({ error, detail }: { error: string; detail?: string }) {
   const [what = error, ...rest] = error.split(/;\s*/);
-  const fix = rest.join("; ");
-  const sentence = (t: string) =>
-    `${t.charAt(0).toUpperCase()}${t.slice(1)}${/[.!?]$/.test(t) ? "" : "."}`;
+  const fix = rest.join("; ").replace(/\.$/, "");
   return (
-    <div
-      role="alert"
-      title={detail}
-      className="flex flex-col items-start gap-1"
-    >
+    <div role="alert" title={detail} className="flex flex-col gap-1">
       <p className="text-fail">
-        <Glyph char="✕" /> Can't read releases: {what.replace(/\.$/, "")}.
+        <Glyph char="✕" /> {what.replace(/\.$/, "")}.
       </p>
-      {fix && <p className="text-sec">{sentence(fix)}</p>}
-      <Button small onClick={onCheck}>
-        Try again
-      </Button>
+      {fix && (
+        <p className="text-sec">
+          {fix.charAt(0).toUpperCase()}
+          {fix.slice(1)}.{" "}
+          {/token/i.test(fix) && (
+            <a href={UPGRADING} target="_blank" rel="noreferrer">
+              How to add the token
+            </a>
+          )}
+        </p>
+      )}
     </div>
   );
 }
 
 /** Why the check or an update can't happen, and what to do. */
-function Problems({
-  st,
-  onCheck,
-}: {
-  st: UpdateStatus;
-  /** Checks for releases again. */
-  onCheck: () => void;
-}) {
+function Problems({ st }: { st: UpdateStatus }) {
   return (
     <>
       {st.check_error && (
-        <CheckError
-          error={st.check_error}
-          detail={st.check_detail}
-          onCheck={onCheck}
-        />
+        <CheckError error={st.check_error} detail={st.check_detail} />
       )}
       {!st.updater && (
         <p className="text-warn-text">

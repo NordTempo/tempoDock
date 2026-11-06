@@ -48,7 +48,7 @@ export function RunPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           to="/$org/$project/$environment/$service/build"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
-          className="text-info hover:underline"
+          className="text-info underline underline-offset-2"
         >
           Start command in Build &amp; run
         </Link>

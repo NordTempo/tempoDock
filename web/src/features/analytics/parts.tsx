@@ -42,15 +42,12 @@ export const shown = (
 /** A KPI's change: its words, whether it is good, and whether it is small. */
 export type Change = { text: string; up: boolean; quiet?: boolean };
 
-/** Before this, the previous count is too small for a change to mean much. */
-const TINY = 5;
-
 /**
- * A change against the previous period, naming it: "+12% vs previous 24h".
- * "new" when the previous value was tiny (a percentage of next to
- * nothing says little), and the difference itself ("+888 vs previous
- * 24h", through `fmt`) past +999%. Those, and changes under 10%, are
- * quiet.
+ * A change against the previous period, naming it: "+12% vs previous
+ * 24h". Nothing without a previous period (a bare "new" read as new
+ * visitors), and the difference itself ("+888 vs previous 24h", through
+ * `fmt`) past +999%, since a percentage of next to nothing says little.
+ * Those, and changes under 10%, are quiet.
  */
 export function delta(
   now: number,
@@ -58,11 +55,8 @@ export function delta(
   period = "period",
   fmt: (n: number) => string = count,
 ): Change | undefined {
+  if (!before) return undefined;
   const vs = ` vs previous ${period}`;
-  if (before < TINY && fmt === count) {
-    return now > before ? { text: "new", up: true, quiet: true } : undefined;
-  }
-  if (!before) return now ? { text: "new", up: true, quiet: true } : undefined;
   const pct = Math.round(((now - before) / before) * 100);
   if (pct > 999) {
     return { text: `+${fmt(now - before)}${vs}`, up: true, quiet: true };
@@ -104,19 +98,21 @@ export function Kpi({
   on?: boolean;
   onClick?: () => void;
 }) {
-  // The change on its own line, never wrapped, so tiles keep one height.
+  // The change on its own line, never wrapped; none without a previous period.
   const content = (
     <>
       <span className={`block truncate text-xs ${on ? "text-fg" : "text-mut"}`}>
         {label}
       </span>
       <span className="block truncate text-lg font-semibold">{value}</span>
-      <span
-        className={`block truncate text-xs ${!change || change.quiet ? "text-mut" : change.up ? "text-ok" : "text-fail"}`}
-        title={change?.text}
-      >
-        {change?.text ?? "\u00a0"}
-      </span>
+      {change && (
+        <span
+          className={`block truncate text-xs ${change.quiet ? "text-mut" : change.up ? "text-ok" : "text-fail"}`}
+          title={change.text}
+        >
+          {change.text}
+        </span>
+      )}
     </>
   );
   return onClick ? (

@@ -68,7 +68,7 @@ function Bar({ title }: { title: string }) {
             </span>
           </span>
         ))}
-        <h1 className="text-md font-semibold">{title}</h1>
+        <h1 className="text-lg font-semibold">{title}</h1>
       </nav>
     </header>
   );

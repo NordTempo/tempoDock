@@ -19,6 +19,7 @@ import { PersonCell, TwoFactorState } from "../features/org/people";
 import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
 import { day, plural } from "../ui/format";
+import { Icon } from "../ui/icons";
 import {
   Act,
   Button,
@@ -27,6 +28,8 @@ import {
   CopyButton,
   ErrorText,
   Glyph,
+  Menu,
+  menuItem,
   Page,
   PageBar,
   Panel,
@@ -410,20 +413,46 @@ const UserRow = memo(function UserRow({
                 Disable
               </Act>
             )}
-            <Act
-              small
-              cli={`dock user reset-password ${u.email}`}
-              onClick={() => setAsking("reset")}
+            {/* The rest in the row's menu, like token rows. */}
+            <Menu
+              label={`${u.name}: more actions`}
+              right
+              className="inline-flex"
+              button={
+                <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
+                  <Icon name="more" size={14} />
+                </span>
+              }
             >
-              Reset password
-            </Act>
-            <Act
-              small
-              cli={`dock user delete ${u.email}`}
-              onClick={() => setAsking("delete")}
-            >
-              Delete
-            </Act>
+              {(close) => (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItem}
+                    title={`dock user reset-password ${u.email}`}
+                    onClick={() => {
+                      close();
+                      setAsking("reset");
+                    }}
+                  >
+                    Reset password
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`${menuItem} text-fail hover:text-fail`}
+                    title={`dock user delete ${u.email}`}
+                    onClick={() => {
+                      close();
+                      setAsking("delete");
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </Menu>
           </span>
         )}
         {!asking && <ErrorText error={setDisabled.error} />}
