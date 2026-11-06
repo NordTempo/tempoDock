@@ -301,7 +301,7 @@ function JobDetail({
         </span>
         {job.source === "api" && canDeploy && (
           <span className="ml-auto">
-            <Act small cli={cli} onClick={() => setConfirming(true)}>
+            <Act danger small cli={cli} onClick={() => setConfirming(true)}>
               Remove
             </Act>
           </span>

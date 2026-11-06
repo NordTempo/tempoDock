@@ -369,11 +369,12 @@ export function ErrorText({ error }: { error: Error | null | undefined }) {
 
 /**
  * A page's content column under its PageBar: 24px 28px padding, left
- * aligned, 24px between sections, at most 1100px wide. Pages of tables
- * keep the default width; a page that is one form uses 760px.
+ * aligned, 24px between sections, at most 1400px wide. Every page of
+ * tables uses that one width, so edges line up from page to page; a page
+ * that is one form uses 760px.
  */
 export function Page({
-  width = "max-w-[1100px]",
+  width = "max-w-[1400px]",
   gap = "gap-6",
   children,
 }: {
@@ -417,7 +418,7 @@ export function PageBar({
             </span>
           </>
         )}
-        <h1 className="text-lg font-semibold">{title}</h1>
+        <h1 className="text-[18px] leading-6 font-semibold">{title}</h1>
       </nav>
       {after}
       {actions && (

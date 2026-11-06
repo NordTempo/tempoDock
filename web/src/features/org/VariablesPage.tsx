@@ -277,6 +277,7 @@ function VariableRow({
               Edit
             </Button>
             <Act
+              danger
               small
               cli={`dock org env unset ${name}`}
               disabled={uses.length > 0 || remove.isPending}

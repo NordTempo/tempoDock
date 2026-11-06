@@ -92,6 +92,7 @@ export function FunnelsView({
             <div className="flex gap-2">
               <Button onClick={() => setEditing(current)}>Edit</Button>
               <Act
+                danger
                 cli={`dock analytics funnels remove ${site} ${JSON.stringify(current.name)}`}
                 disabled={remove.isPending}
                 onClick={() =>

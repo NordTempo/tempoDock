@@ -167,9 +167,17 @@ export function VitalsView({
         <span className="text-faint">
           <span className="text-ok">●</span> good ·{" "}
           <span className="text-warn">▲</span> needs improvement ·{" "}
-          <span className="text-fail">■</span> poor · p75: 3 in 4 of{" "}
-          {count(data.all.loads)} page loads are this fast or faster ·
-          thresholds from web.dev
+          <span className="text-fail">■</span> poor · p75 is the 75th
+          percentile: 3 in 4 of {count(data.all.loads)} page loads were this
+          fast or faster ·{" "}
+          <a
+            href="https://web.dev/articles/vitals"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-3"
+          >
+            what each vital measures
+          </a>
         </span>
       </div>
       <div

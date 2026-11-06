@@ -74,17 +74,16 @@ export function GeneralPage() {
                         aria-invalid={!!nameError}
                         className={`field min-w-0 flex-[1_1_220px] py-[5px] ${nameError ? "border-fail" : ""}`}
                       />
-                      {name.trim() !== org.name && (
-                        <Act
-                          small
-                          primary
-                          type="submit"
-                          cli={`dock org rename ${JSON.stringify(name.trim())}`}
-                          disabled={rename.isPending}
-                        >
-                          Save
-                        </Act>
-                      )}
+                      {/* Always there, so the field reads as one that saves. */}
+                      <Act
+                        small
+                        primary
+                        type="submit"
+                        cli={`dock org rename ${JSON.stringify(name.trim())}`}
+                        disabled={rename.isPending || name.trim() === org.name}
+                      >
+                        Save
+                      </Act>
                       {name.trim() !== org.name && (
                         <Button
                           small
@@ -372,6 +371,7 @@ function Leave({ name, admin }: { name: string; admin: boolean }) {
       note="You lose access to its projects. An admin can invite you again."
     >
       <Act
+        danger
         small
         cli="dock org leave"
         disabled={last}
@@ -420,6 +420,7 @@ function Delete({ name, slug }: { name: string; slug: string }) {
       note="Its members, invites, variables and tokens go. Only an organization without projects can be deleted."
     >
       <Act
+        danger
         small
         cli="dock org delete"
         disabled={!!reason}

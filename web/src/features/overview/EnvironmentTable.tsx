@@ -279,6 +279,7 @@ export function EnvironmentTable({
               <col className="w-[20%]" />
               <col className="w-[16%]" />
               <col className="w-[12%]" />
+              <col className="w-8" />
             </colgroup>
             <thead>
               <tr>
@@ -288,6 +289,9 @@ export function EnvironmentTable({
                 <th>Domain</th>
                 <th>CPU · memory</th>
                 <th>Volume</th>
+                <th>
+                  <span className="sr-only">Open</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -350,12 +354,12 @@ const ServiceRow = memo(function ServiceRow({
   const newImage = deploying ? imageLabel(deploying) : "";
 
   return (
-    <tr className={deploying ? "bg-prog-bg" : "hover:bg-hover"}>
+    <tr className={`row-link ${deploying ? "bg-prog-bg" : ""}`}>
       <td className="py-2.5">
         <Link
           to="/$org/$project/$environment/$service"
           params={{ org, ...ref }}
-          className="font-medium hover:underline"
+          className="row-main font-medium hover:underline"
         >
           {service.name}
         </Link>
@@ -460,6 +464,9 @@ const ServiceRow = memo(function ServiceRow({
         ) : (
           <span className="text-faint">·</span>
         )}
+      </td>
+      <td className="row-go" aria-hidden>
+        <Icon name="chevronRight" size={14} />
       </td>
     </tr>
   );

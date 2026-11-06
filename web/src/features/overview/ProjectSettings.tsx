@@ -111,7 +111,9 @@ export function ArchiveProject({ project }: { project: string }) {
         Archiving stops every service and removes its routes. Volumes and
         history are kept.
       </span>
-      <Button onClick={() => setConfirming(true)}>Archive {project}</Button>
+      <Button danger onClick={() => setConfirming(true)}>
+        Archive {project}
+      </Button>
       {confirming && (
         <Confirm
           danger

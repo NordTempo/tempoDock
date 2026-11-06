@@ -225,6 +225,7 @@ function ProviderRow({
             Edit
           </Act>
           <Act
+            danger
             small
             cli={`dock org sso remove ${p.name}`}
             onClick={() => setMode("remove")}

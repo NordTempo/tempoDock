@@ -8,6 +8,7 @@ import {
   useRevealedVariables,
   useVariables,
 } from "../../data/queries";
+import { typedValue } from "../../data/typed";
 import type { EnvRef, Variable } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
@@ -26,6 +27,20 @@ import { parseDotenv } from "./dotenv";
 import { hasReference, maskUrlPasswords, resolve } from "./references";
 
 const MASK = "••••••••••••";
+
+/**
+ * A staged line's new value when this session typed it (data/typed.ts),
+ * so it can be checked before Apply; the rest stays masked.
+ */
+function typedOnly(env: EnvRef, v: Variable) {
+  if (v.pending !== "add" && v.pending !== "update") return undefined;
+  const value = typedValue(
+    env,
+    v.scope === "service" ? v.service : null,
+    v.key,
+  );
+  return value === undefined ? undefined : { new: value };
+}
 
 /** The CLI's flags for a service's variables, or the shared ones. */
 const scopeFlags = (env: EnvRef, service: string | null) =>
@@ -161,7 +176,7 @@ export function VariablesEditor({
         </p>
       </nav>
 
-      <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-4 pt-5 pb-10 sm:px-6">
+      <div className="flex w-full max-w-[1400px] min-w-0 flex-1 flex-col gap-4 px-4 pt-6 pb-10 sm:px-7">
         <SectionHead id="vars" right={actions}>
           {service
             ? `${service} sees at runtime`
@@ -192,7 +207,7 @@ export function VariablesEditor({
                 overridden={
                   !!service && v.scope === "environment" && ownKeys.has(v.key)
                 }
-                values={shown(v) ? values.get(idOf(v)) : undefined}
+                values={shown(v) ? values.get(idOf(v)) : typedOnly(env, v)}
                 all={revealed.data ?? []}
                 canReveal={isAdmin && !shown(v)}
                 onReveal={() =>
@@ -444,7 +459,7 @@ function NewLine({
   // Enter hint turns white, so the jump to it is plain to see.
   return (
     <div
-      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-panel focus-within:outline-2 focus-within:outline-fg`}
+      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-panel focus-within:outline-2 focus-within:outline-info`}
     >
       <span className="text-right text-faint">{n}</span>
       <span />

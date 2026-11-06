@@ -288,7 +288,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
           >
             Send test
           </Act>
-          <Button small onClick={() => setConfirming(true)}>
+          <Button danger small onClick={() => setConfirming(true)}>
             Remove
           </Button>
           {confirming && (

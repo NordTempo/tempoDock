@@ -165,6 +165,7 @@ function NameField({ name }: { name: string }) {
       />
       <Act
         small
+        primary
         type="submit"
         cli={`dock me name "${next || "<name>"}"`}
         disabled={!changed || !next || update.isPending}

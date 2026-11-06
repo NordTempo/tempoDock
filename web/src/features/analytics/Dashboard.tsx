@@ -62,7 +62,7 @@ export function Dashboard({
         <p className="text-warn-text">{stats.store_error}</p>
       )}
       {stats?.notice && <p className="text-mut">{stats.notice}</p>}
-      <div className="grid gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid gap-x-8 gap-y-6 min-[1400px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-6">
           {stats ? (
             <Main
@@ -118,8 +118,8 @@ function Main({
   const panel = { project, site, stats, range, filters, onPick };
   return (
     <>
-      {/* Six tiles in one row from a medium width; three under it. */}
-      <div className="grid grid-cols-3 gap-x-4 gap-y-3 tabular-nums md:grid-cols-6">
+      {/* Six tiles in one row on wide windows; two rows of three below 1400px. */}
+      <div className="grid grid-cols-3 gap-x-4 gap-y-3 tabular-nums min-[1400px]:grid-cols-6">
         <Kpi
           label="Visitors"
           value={count(o.visitors)}
@@ -159,6 +159,11 @@ function Main({
           change={delta(o.events, p.events, range)}
         />
       </div>
+      {p && (
+        <p className="-mt-2 text-xs text-faint">
+          Changes compare with the previous {range}.
+        </p>
+      )}
       <Chart stats={stats} metric={metric} />
       <div className="grid gap-x-6 gap-y-6 lg:grid-cols-2">
         <Breakdown

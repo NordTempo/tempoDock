@@ -89,7 +89,7 @@ export function NotFound() {
   return (
     <>
       <Bar title="Not found" />
-      <div className="flex w-full max-w-[1100px] flex-col items-start gap-2 px-4 py-8 sm:px-7">
+      <div className="flex w-full max-w-[1400px] flex-col items-start gap-2 px-4 py-8 sm:px-7">
         <p className="text-md">
           There's nothing called <b className="font-mono">{missing}</b> here.
         </p>
@@ -132,7 +132,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   return (
     <>
       <Bar title="This page didn't load" />
-      <div className="flex w-full max-w-[1100px] flex-col gap-1 px-4 py-8 sm:px-7">
+      <div className="flex w-full max-w-[1400px] flex-col gap-1 px-4 py-8 sm:px-7">
         <ErrorBlock
           error={error}
           onRetry={() => {

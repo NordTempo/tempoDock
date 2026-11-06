@@ -7,6 +7,7 @@ import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
+import { Icon } from "../ui/icons";
 import {
   Button,
   CopyButton,
@@ -66,16 +67,19 @@ function Home() {
                 <th className="text-right">Running</th>
                 <th>Environments</th>
                 <th>Last deploy</th>
+                <th>
+                  <span className="sr-only">Open</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ project, health: h }) => (
-                <tr key={project.id} className="hover:bg-hover">
+                <tr key={project.id} className="row-link">
                   <td className="w-[22%]">
                     <Link
                       to="/$org/$project"
                       params={{ org, project: project.name }}
-                      className="font-medium hover:underline"
+                      className="row-main font-medium hover:underline"
                     >
                       {project.name}
                     </Link>
@@ -126,6 +130,9 @@ function Home() {
                     ) : (
                       <span className="text-faint">never</span>
                     )}
+                  </td>
+                  <td className="row-go" aria-hidden>
+                    <Icon name="chevronRight" size={14} />
                   </td>
                 </tr>
               ))}

@@ -565,22 +565,31 @@ function RestoreStatus({
                 . Undo: restore snapshot {r.safety}.
               </span>
             ) : null}
+            {/* A copy changes nothing yet: say what still runs, and the step that switches. */}
+            {target && (
+              <span className="mt-1 block text-warn-text">
+                {ref.service} still holds the old data, and the services that
+                use it still read {ref.service}.
+                {canSwitch &&
+                  ` Use ${target} points them at the restored copy.`}
+              </span>
+            )}
           </>
         )}
       </span>
+      {r.status === "succeeded" && target && canSwitch && (
+        <Button primary small onClick={() => onUse(target)}>
+          Use {target}
+        </Button>
+      )}
       {target && (
         <Link
           to="/$org/$project/$environment/$service"
           params={{ org, ...ref, service: target }}
-          className="btn sm pri"
+          className={`btn sm ${r.status === "succeeded" && canSwitch ? "" : "pri"}`}
         >
           Open {target}
         </Link>
-      )}
-      {r.status === "succeeded" && target && canSwitch && (
-        <Button small onClick={() => onUse(target)}>
-          Use {target}
-        </Button>
       )}
       {r.status !== "running" && (
         <Button small onClick={dismiss} aria-label="Dismiss">

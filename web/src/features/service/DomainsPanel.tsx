@@ -491,7 +491,7 @@ function DomainRow({
       </td>
       <td className="text-mut">{fresh ? "just added" : since(d.created_at)}</td>
       <td className="py-1">
-        <Button small onClick={() => setConfirming(true)}>
+        <Button danger small onClick={() => setConfirming(true)}>
           Remove
         </Button>
         {confirming && (

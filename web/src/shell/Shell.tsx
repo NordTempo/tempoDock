@@ -64,7 +64,7 @@ export function RoutePending() {
   return (
     <div aria-busy="true" className="flex flex-1 flex-col">
       <div className="h-[52px] border-b border-line" />
-      <div className="flex w-full max-w-[1100px] flex-col gap-2.5 px-4 pt-6 sm:px-7">
+      <div className="flex w-full max-w-[1400px] flex-col gap-2.5 px-4 pt-6 sm:px-7">
         <span className="sr-only">Loading</span>
         <div className="h-4 w-40 rounded-ctl bg-panel" />
         <div className="h-[120px] rounded-panel border border-line" />

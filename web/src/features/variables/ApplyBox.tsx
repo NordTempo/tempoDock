@@ -7,6 +7,7 @@ import {
   useEnvironment,
   useRevealedChanges,
 } from "../../data/queries";
+import { typedValue } from "../../data/typed";
 import type {
   DiscardSelection,
   EnvRef,
@@ -76,7 +77,7 @@ export function ApplyBox({
     );
     return serving && setting && serving !== setting && !staged
       ? [
-          `${s.service.name} keeps serving ${shortImage(serving)}; ${shortImage(setting)} waits for the next deploy.`,
+          `${s.service.name}'s new release runs ${shortImage(serving)}, the image serving now.`,
         ]
       : [];
   });
@@ -216,8 +217,10 @@ export function ApplyBox({
                 <span className="text-fail">{v.old}</span> →{" "}
                 <span className="text-ok">{v.new}</span>
               </>
-            ) : c.action === "add" ? (
-              <span className="text-ok">{v?.new ?? "••••"}</span>
+            ) : c.action === "add" || c.action === "update" ? (
+              <span className="text-ok">
+                {v?.new ?? typedValue(env, c.service, c.key) ?? "••••"}
+              </span>
             ) : c.action === "remove" ? (
               <span className="text-fail line-through">{v?.old ?? "••••"}</span>
             ) : (

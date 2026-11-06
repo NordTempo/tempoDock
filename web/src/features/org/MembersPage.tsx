@@ -131,8 +131,9 @@ function Members() {
         }
       />
       <Page>
-        <div className="flex flex-wrap items-start gap-8">
-          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+        {/* The roles sit beside the table on wide windows, under it below 1400px. */}
+        <div className="grid items-start gap-8 min-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex min-w-0 flex-col gap-5">
             {without > 0 && (
               <p className="text-warn-text">
                 {plural(without, "person", "people")} without two-factor
@@ -220,7 +221,7 @@ function Roles() {
   return (
     <aside
       aria-labelledby="roles"
-      className="flex max-w-[360px] min-w-0 flex-[1_1_280px] flex-col gap-3"
+      className="flex max-w-[640px] min-w-0 flex-col gap-3"
     >
       <h2 id="roles" className="font-semibold">
         What each role can do
@@ -465,7 +466,7 @@ function MemberRow({
       <td className="py-2 text-faint">{day(member.created_at)}</td>
       <td className="w-full py-1.5 text-right">
         {!you && (
-          <Button small onClick={() => setAsking(true)}>
+          <Button danger small onClick={() => setAsking(true)}>
             Remove
           </Button>
         )}
@@ -534,6 +535,7 @@ function InviteRow({
             New link
           </Button>
           <Act
+            danger
             small
             cli={`dock org invites revoke ${id}`}
             disabled={revoke.isPending}

@@ -69,7 +69,7 @@ function Users() {
           )
         }
       />
-      <Page width="max-w-[1240px]">
+      <Page>
         <div className="flex flex-wrap items-start gap-x-8 gap-y-7">
           <div className="flex min-w-0 flex-[999_1_640px] flex-col gap-6">
             {adding && <AddUser onClose={() => setAdding(false)} />}

@@ -68,7 +68,7 @@ function ServiceLayout() {
       {ownLayout ? (
         <Outlet />
       ) : (
-        <Page width="max-w-none">
+        <Page>
           <Outlet />
         </Page>
       )}

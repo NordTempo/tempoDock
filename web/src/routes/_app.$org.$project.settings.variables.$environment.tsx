@@ -38,7 +38,7 @@ function SharedVariables() {
   )?.environment.lock;
   // Capped like the other settings tabs, scope list included.
   return (
-    <div className="flex w-full max-w-[1100px] flex-col">
+    <div className="flex w-full max-w-[1400px] flex-col">
       {environments.length > 1 && (
         <nav
           aria-label="Environment"

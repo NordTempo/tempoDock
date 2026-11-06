@@ -41,8 +41,10 @@ function ServiceOverview() {
   const current = service.deploying;
 
   return (
-    <div className="flex flex-1 flex-wrap">
-      <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-4 pt-6 pb-10 sm:px-7">
+    // Logs sit beside the overview on wide windows and under it below
+    // 1400px, so the releases table never gets squeezed.
+    <div className="grid flex-1 grid-cols-1 content-start min-[1400px]:grid-cols-[minmax(0,1.2fr)_minmax(420px,1fr)]">
+      <div className="@container flex min-w-0 flex-col gap-7 px-4 pt-6 pb-10 sm:px-7">
         <StatusSentence view={service} />
         <ServiceFacts serviceRef={ref} />
         {service.service.template && <RestoredFrom serviceRef={ref} />}
@@ -62,7 +64,7 @@ function ServiceOverview() {
       </div>
       <section
         aria-labelledby="logs"
-        className="flex min-w-0 flex-[1_1_440px] flex-col gap-2.5 border-t border-line px-4 pt-4 pb-6 min-[1000px]:border-t-0 min-[1000px]:border-l"
+        className="flex min-w-0 flex-col gap-2.5 border-t border-line px-4 pt-4 pb-6 sm:px-7 min-[1400px]:border-t-0 min-[1400px]:border-l min-[1400px]:px-4"
       >
         <h2 id="logs" className="text-sm font-semibold">
           Logs
@@ -73,7 +75,7 @@ function ServiceOverview() {
           serviceRef={ref}
           filter={filter}
           onFilter={setFilter}
-          height="h-[max(320px,calc(100vh-240px))]"
+          height="h-[420px] min-[1400px]:h-[max(320px,calc(100vh-240px))]"
         />
       </section>
     </div>

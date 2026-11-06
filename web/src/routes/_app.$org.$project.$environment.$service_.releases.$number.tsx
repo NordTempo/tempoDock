@@ -194,7 +194,7 @@ function ReleasePage() {
           </span>
         }
       />
-      <Page width="max-w-[1040px]">
+      <Page>
         <section aria-labelledby="release" className="flex flex-col gap-3.5">
           <h2 id="release" className="text-xl leading-tight font-semibold">
             <Title release={release} />

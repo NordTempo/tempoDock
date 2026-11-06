@@ -320,7 +320,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
               disabled={!dirty || configure.isPending}
               title={dirty ? undefined : "Change a count first"}
             >
-              Save <kbd>↵</kbd>
+              Save
             </Act>
             {dirty && (
               <Button onClick={discard}>

@@ -43,7 +43,8 @@ const sinces = ["", "10m", "1h", "6h", "24h"];
 /** Rendered lines are capped; the stream keeps more for filtering. */
 const VISIBLE = 500;
 
-const errorWords = /\b(error|fatal|panic|exception)\b/i;
+// Error words, or an HTTP 5xx status between spaces ("POST /api 502 31ms").
+const errorWords = /\b(error|fatal|panic|exception)\b|\s5\d\d\s/i;
 
 function matcher(query: string): (text: string) => boolean {
   const regex = /^\/(.+)\/([a-z]*)$/.exec(query);
@@ -322,12 +323,18 @@ export function LogsPane({
   );
 }
 
-/** One log line, with WARN and ERROR words colored and errors tinted. */
+/**
+ * One log line, with WARN and ERROR words colored. A line the Errors only
+ * filter keeps (stderr, or error words) gets a red rule and tint, so
+ * errors stand out without the filter.
+ */
 export const LogRow = memo(function LogRow({ line }: { line: LogLine }) {
-  const error = /\b(ERROR|FATAL|PANIC)\b/.test(line.text);
+  const error = line.stream === "stderr" || errorWords.test(line.text);
   const parts = line.text.split(/\b(WARN(?:ING)?|ERROR|FATAL|PANIC)\b/);
   return (
-    <div className={`px-3.5 whitespace-pre ${error ? "bg-fail-bg" : ""}`}>
+    <div
+      className={`border-l-2 px-3 whitespace-pre ${error ? "border-fail bg-fail-bg" : "border-transparent"}`}
+    >
       {line.time && <span className="text-faint">{clockSec(line.time)} </span>}
       {parts.map((part, i) =>
         i % 2 === 1 ? (

@@ -215,9 +215,42 @@
     cursor: not-allowed;
   }
 
-  input[type="checkbox"],
   input[type="radio"] {
     accent-color: var(--color-fg);
+  }
+
+  /*
+   * One checkbox everywhere: a dark 16px box with the control border, white
+   * with a black tick when checked, dimmed when disabled. No bright native
+   * box on black.
+   */
+  input[type="checkbox"] {
+    appearance: none;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--color-dash);
+    border-radius: 4px;
+    background: var(--color-page) center / 12px 12px no-repeat;
+    cursor: pointer;
+    transition:
+      background-color 0.1s,
+      border-color 0.1s;
+  }
+
+  input[type="checkbox"]:hover:not(:disabled) {
+    border-color: var(--color-mut);
+  }
+
+  input[type="checkbox"]:checked {
+    background-color: var(--color-fg);
+    border-color: var(--color-fg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E");
+  }
+
+  input[type="checkbox"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* Radios are 16px with a margin: a 24px target. */
@@ -621,5 +654,39 @@
     font-family: var(--font-mono);
     font-size: 11px;
     color: var(--color-faint);
+  }
+}
+
+@layer components {
+  /*
+   * A table row that opens something: its main link covers the whole row,
+   * the row shows a pointer and hover, and a chevron in its last cell says
+   * it goes somewhere. Other controls in the row stay on top and clickable.
+   */
+  tr.row-link {
+    position: relative;
+    cursor: pointer;
+  }
+
+  tr.row-link a.row-main::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  tr.row-link :is(button, a:not(.row-main), input, select, label) {
+    position: relative;
+    z-index: 1;
+  }
+
+  tr.row-link > td.row-go {
+    width: 1px;
+    padding-right: 12px;
+    color: var(--color-faint);
+    text-align: right;
+  }
+
+  tr.row-link:hover > td.row-go {
+    color: var(--color-fg);
   }
 }

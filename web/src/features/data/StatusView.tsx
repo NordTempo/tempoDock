@@ -18,7 +18,7 @@ export function StatusView({ info }: { info: DataInfo }) {
   switch (info.status) {
     case "setup_needed":
       return (
-        <State glyph="▲" tone="text-(--g-warn)" title="Not set up">
+        <State glyph="○" tone="text-(--g-dim)" title="Data access is off">
           <p className="max-w-[640px] text-(--g-dim)">
             {words.product} reads this database through its own least-privilege
             roles, {roles.reader} and {roles.writer}. Setup creates them with{" "}

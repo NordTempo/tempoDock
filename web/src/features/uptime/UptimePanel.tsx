@@ -271,7 +271,7 @@ function CheckRow({
       </td>
       <td className="text-mut">{c.server}</td>
       <td className="w-px py-1 whitespace-nowrap">
-        <Button small onClick={() => setConfirming(true)}>
+        <Button danger small onClick={() => setConfirming(true)}>
           Remove
         </Button>
         {confirming && (
@@ -554,13 +554,15 @@ function AddCheck({
       }}
     >
       <span className="flex flex-wrap items-center gap-2.5">
-        <input
-          aria-label="URL"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder={`https://${host}/`}
-          className="field w-[320px] py-[7px] font-mono"
-        />
+        <label className="flex items-center gap-1.5 text-mut">
+          URL
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder={`https://${host}/`}
+            className="field w-[320px] py-[7px] font-mono"
+          />
+        </label>
         <label className="flex items-center gap-1.5 text-mut">
           expects
           <input
@@ -605,7 +607,7 @@ function AddCheck({
           s
         </label>
         <Act
-          primary={existing.length === 0}
+          primary
           type="submit"
           cli={addCli(ref, req)}
           disabled={req.url === "" || repeat || add.isPending}
@@ -639,7 +641,6 @@ function AddCheck({
           {first && !repeat && (
             <Button
               small
-              primary
               disabled={update.isPending}
               title={`dock uptime update ${first.id} --interval ${intervalS}s --status ${status} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
@@ -660,7 +661,7 @@ function AddCheck({
                 )
               }
             >
-              Set existing to every {every(intervalS)}
+              Or change the existing one to every {every(intervalS)}
               {status !== first.expect_status ? `, expects ${status}` : ""}
             </Button>
           )}

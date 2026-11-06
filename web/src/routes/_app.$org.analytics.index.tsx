@@ -4,6 +4,7 @@ import { serviceRef, useProjects, useProjectTree } from "../data/queries";
 import { orgSitesQuery } from "../features/analytics/loaders";
 import { count } from "../features/analytics/parts";
 import { useOrg } from "../shell/location";
+import { Icon } from "../ui/icons";
 import { Page, PageBar, Panel, SectionHead } from "../ui/kit";
 
 // The Analytics area (ADR 0059, layout C): the organization's sites,
@@ -49,17 +50,20 @@ function Sites() {
                     <th className="text-right">Visitors, 24h</th>
                     <th className="text-right">Page views, 24h</th>
                     <th>Services</th>
+                    <th>
+                      <span className="sr-only">Open</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map(({ site, last_24h: day }) => (
-                    <tr key={site.name}>
+                    <tr key={site.name} className="row-link">
                       <td className="w-[45%]">
                         <Link
                           to="/$org/analytics/$project/$site"
                           params={{ org, project, site: site.name }}
                           search={{ range: "24h" }}
-                          className="font-mono text-fg hover:underline"
+                          className="row-main font-mono text-fg underline decoration-dash underline-offset-3 hover:decoration-fg"
                         >
                           {site.name}
                         </Link>{" "}
@@ -81,6 +85,9 @@ function Sites() {
                             ),
                           ),
                         ].join(", ") || "–"}
+                      </td>
+                      <td className="row-go" aria-hidden>
+                        <Icon name="chevronRight" size={14} />
                       </td>
                     </tr>
                   ))}

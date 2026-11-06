@@ -153,6 +153,9 @@ function AppNav() {
           <PendingRequestCount />
         </NavLink>
       )}
+      <NavLink to="/$org/settings/members" icon="users">
+        Members
+      </NavLink>
       <NavLink to="/$org/settings" icon="sliders">
         Organization settings
       </NavLink>
@@ -460,6 +463,7 @@ function ProjectTree() {
               <NewInProject
                 project={project.name}
                 environment={env?.environment.name}
+                current={current}
               />
             </div>
             {expanded && !environments && (
@@ -690,14 +694,18 @@ function ArchivedProjects() {
 
 /**
  * The + on a project row: a new service in the environment the tree
- * shows, or a new environment. Shown on hover or focus on wide screens.
+ * shows, or a new environment. Always shown on the current project;
+ * others show it on hover or focus on wide screens.
  */
 function NewInProject({
   project,
   environment,
+  current,
 }: {
   project: string;
   environment: string | undefined;
+  /** The project the page is in: its + always shows. */
+  current: boolean;
 }) {
   const session = useSession();
   const env = environment && { project, environment };
@@ -710,7 +718,9 @@ function NewInProject({
       right
       className="flex-none"
       button={
-        <span className="grid h-[28px] w-[24px] place-items-center text-faint group-focus-within:opacity-100 group-hover:opacity-100 hover:text-fg in-aria-expanded:opacity-100 lg:opacity-0">
+        <span
+          className={`grid h-[28px] w-[24px] place-items-center text-faint group-focus-within:opacity-100 group-hover:opacity-100 hover:text-fg in-aria-expanded:opacity-100 ${current ? "" : "lg:opacity-0"}`}
+        >
           <Icon name="plus" size={12} />
         </span>
       }

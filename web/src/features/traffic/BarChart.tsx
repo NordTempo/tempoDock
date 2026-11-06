@@ -172,7 +172,8 @@ export const BarChart = memo(function BarChart({
           </svg>
           {!bars.length && (
             <p className="absolute inset-0 grid place-items-center text-xs text-mut">
-              No requests yet. Counts arrive every minute.
+              No requests through Dock's proxy yet. Counts arrive every minute;
+              page views in Analytics come from the browser instead.
             </p>
           )}
           {bar && (

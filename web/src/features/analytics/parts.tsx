@@ -39,8 +39,17 @@ export const shown = (
       ? country(row.value)
       : row.value);
 
-/** A KPI's change: its words, whether it is good, and whether it is small. */
-export type Change = { text: string; up: boolean; quiet?: boolean };
+/**
+ * A KPI's change: its short words ("+12%"), the full sentence for its
+ * title ("+12% vs previous 24h"), whether it is good, and whether it is
+ * small. The tiles say once which period they compare with.
+ */
+export type Change = {
+  text: string;
+  long: string;
+  up: boolean;
+  quiet?: boolean;
+};
 
 /**
  * A change against the previous period, naming it: "+12% vs previous
@@ -59,20 +68,20 @@ export function delta(
   const vs = ` vs previous ${period}`;
   const pct = Math.round(((now - before) / before) * 100);
   if (pct > 999) {
-    return { text: `+${fmt(now - before)}${vs}`, up: true, quiet: true };
+    const text = `+${fmt(now - before)}`;
+    return { text, long: text + vs, up: true, quiet: true };
   }
-  return {
-    text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%${vs}`,
-    up: pct >= 0,
-    quiet: Math.abs(pct) < 10,
-  };
+  const text = `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%`;
+  return { text, long: text + vs, up: pct >= 0, quiet: Math.abs(pct) < 10 };
 }
 
 /** A rate's change in percentage points; a lower bounce rate is good. */
 export function points(now: number, before: number, period = "period"): Change {
   const pts = Math.round((now - before) * 100);
+  const text = `${pts > 0 ? "+" : pts < 0 ? "−" : "±"}${Math.abs(pts)} pts`;
   return {
-    text: `${pts > 0 ? "+" : pts < 0 ? "−" : "±"}${Math.abs(pts)} pts vs previous ${period}`,
+    text,
+    long: `${text} vs previous ${period}`,
     up: pts <= 0,
     quiet: Math.abs(pts) < 2,
   };
@@ -108,7 +117,7 @@ export function Kpi({
       {change && (
         <span
           className={`block truncate text-xs ${change.quiet ? "text-mut" : change.up ? "text-ok" : "text-fail"}`}
-          title={change.text}
+          title={change.long}
         >
           {change.text}
         </span>

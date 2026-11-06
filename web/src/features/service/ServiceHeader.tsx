@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { useRollback, useStageSettings } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
@@ -173,37 +173,40 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       aria-label="Service"
       className="tabs flex gap-0.5 overflow-x-auto border-b border-line px-4 py-2 whitespace-nowrap [scrollbar-width:thin]"
     >
-      {shown.map((tab) => (
-        <Link
-          key={tab.to}
-          to={tab.to}
-          params={{ org, ...ref }}
-          activeOptions={{ exact: true, includeSearch: false }}
-          title={`${tab.label} (${tab.key.toUpperCase()})`}
-        >
-          {tab.label}
-          {staged[tab.label] && (
-            <span
-              className="ml-1.5 text-warn"
-              role="img"
-              aria-label="changes staged, not applied"
-              title="Changes staged, not applied"
-            >
-              <span className="dot" />
-            </span>
+      {shown.map((tab, i) => (
+        <Fragment key={tab.to}>
+          {i > 0 && shown[i - 1]?.group !== tab.group && (
+            <span aria-hidden className="mx-1.5 my-1 w-px flex-none bg-edge" />
           )}
-          {warnings[tab.label] && (
-            <span
-              className="text-warn"
-              role="img"
-              aria-label={warnings[tab.label]}
-              title={warnings[tab.label]}
-            >
-              {" "}
-              ▲
-            </span>
-          )}
-        </Link>
+          <Link
+            to={tab.to}
+            params={{ org, ...ref }}
+            activeOptions={{ exact: true, includeSearch: false }}
+            title={`${tab.label} (${tab.key.toUpperCase()})`}
+          >
+            {tab.label}
+            {staged[tab.label] && (
+              <span
+                className="ml-1.5 text-warn"
+                role="img"
+                aria-label="changes staged, not applied"
+                title="Changes staged, not applied"
+              >
+                <span className="dot" />
+              </span>
+            )}
+            {warnings[tab.label] && (
+              <span
+                className="ml-1 text-warn"
+                role="img"
+                aria-label={warnings[tab.label]}
+                title={warnings[tab.label]}
+              >
+                ▲
+              </span>
+            )}
+          </Link>
+        </Fragment>
       ))}
     </nav>
   );

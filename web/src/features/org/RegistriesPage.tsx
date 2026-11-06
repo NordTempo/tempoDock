@@ -140,6 +140,7 @@ function CredentialRow({
             Replace
           </Button>
           <Act
+            danger
             small
             cli={`dock registry logout ${host}`}
             disabled={remove.isPending}
