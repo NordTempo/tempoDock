@@ -26,7 +26,7 @@ import {
 import { AlertLink, alertLabel, alertText } from "../alerts/source";
 import { errorSummary } from "../service/releases";
 import { affectedServices, nextRelease } from "../variables/apply";
-import { useHiddenFailures } from "./failed";
+import { hiddenFailures } from "./failed";
 
 const actionClass = "btn sm no-underline";
 
@@ -39,7 +39,7 @@ function useAllProblems(project: string): Problem[] {
   const services = useProjectOverview(project).environments.flatMap(
     (e) => e.services,
   );
-  const hidden = useHiddenFailures(services);
+  const hidden = hiddenFailures(services);
   if (hidden.size === 0) return problems;
   const extra = services.flatMap((service): Problem[] => {
     const release = hidden.get(service.service.id);

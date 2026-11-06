@@ -4,14 +4,23 @@ import type { Alert } from "./data";
 
 // Where an alert came from, for the rows that show it (the project's
 // problems, the console's alerts and overview): its message in plain
-// words, a link named for its destination, and the CLI command it
-// mentions, which moves to a copy control instead of the sentence.
+// words, a link named for its destination, and its CLI command for a
+// copy control. Alerts carry `command` and `target` for these; alerts
+// raised before those fields existed have neither, and only for them is
+// the title and message parsed (`legacy` below).
 
-/** A backticked `dock …` command in a message. */
+/** Raised before alerts had `command` and `target`: parse the text. */
+const legacy = (a: Alert) => a.command === undefined && !a.target;
+
+/** A backticked `dock …` command in a legacy message. */
 const command = /`(dock [^`]+)`/;
 
-/** The site and error group a site alert's command names. */
+/** The site and error group a site alert points at. */
 function siteOf(a: Alert) {
+  if (a.target?.site) {
+    return { site: a.target.site, group: a.target.error_group };
+  }
+  if (!legacy(a)) return undefined;
   const [, site, group] =
     a.message?.match(/`dock analytics errors (\S+)(?: ([0-9a-f]{16}))?`/) ??
     a.title.match(/^(?:Errors spiking|Traffic dropped) on (\S+)/) ??
@@ -20,13 +29,14 @@ function siteOf(a: Alert) {
 }
 
 /**
- * An alert's message without the CLI command in it, and the command. The
- * analytics and job alerts end on "; see `dock …`" or "`dock …` shows
- * its output."; an access request's says where to decide it, which the
- * row's link does instead.
+ * An alert's message and its CLI command. A legacy message has the
+ * command in it: the analytics and job alerts end on "; see `dock …`" or
+ * "`dock …` shows its output.", which is cut out; an access request's
+ * says where to decide it, which the row's link does instead.
  */
 export function alertText(a: Alert): { text: string; cli?: string } {
   const message = a.message ?? "";
+  if (!legacy(a)) return { text: message, cli: a.command || undefined };
   const cli = message.match(command)?.[1];
   const text = message
     .replace(/;\s*see `dock [^`]+`/, "")
@@ -91,7 +101,12 @@ export function AlertLink({
       );
     case "access_request":
       return (
-        <Link to="/$org/requests" params={{ org }} {...props}>
+        <Link
+          to="/$org/requests"
+          params={{ org }}
+          search={a.target?.request ? { id: a.target.request } : {}}
+          {...props}
+        >
           Review request
         </Link>
       );
@@ -112,7 +127,11 @@ export function AlertLink({
         </Link>
       );
     case "deploy_failed": {
-      const number = a.message?.match(/^Release (\d+) failed/)?.[1];
+      const number = a.target?.release
+        ? String(a.target.release)
+        : legacy(a)
+          ? a.message?.match(/^Release (\d+) failed/)?.[1]
+          : undefined;
       if (!svc) break;
       return number ? (
         <Link

@@ -12,6 +12,7 @@ import {
   SectionHead,
 } from "../../ui/kit";
 import { notify } from "../../ui/notice";
+import { Saved } from "../create/form";
 import {
   addCli,
   type NewUptimeCheck,
@@ -20,6 +21,7 @@ import {
   useAddUptimeCheck,
   useCheckDomains,
   useRemoveUptimeCheck,
+  useUpdateUptimeCheck,
 } from "./data";
 
 // A service's uptime checks (ADR 0055): the add form, one row per check
@@ -99,6 +101,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   <th>State</th>
                   <th>URL</th>
                   <th>Every</th>
+                  <th>Expects</th>
                   <th>Last 24 hours</th>
                   <th className="text-right">24h</th>
                   <th className="text-right">7d</th>
@@ -247,7 +250,12 @@ function CheckRow({
           </span>
         )}
       </td>
-      <td className="font-mono text-mut">{every(c.interval_seconds)}</td>
+      <td className="whitespace-nowrap">
+        <IntervalEdit serviceRef={ref} check={c} />
+      </td>
+      <td className="whitespace-nowrap">
+        <StatusEdit serviceRef={ref} check={c} />
+      </td>
       <td>
         <Strip series={c.series} />
       </td>
@@ -287,6 +295,124 @@ function CheckRow({
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * A check's interval as a select that saves on change, with Saved beside
+ * it (the app's save model for selects).
+ */
+function IntervalEdit({
+  serviceRef: ref,
+  check: c,
+}: {
+  serviceRef: ServiceRef;
+  check: UptimeCheck;
+}) {
+  const update = useUpdateUptimeCheck(ref);
+  // An interval set from the CLI that the list doesn't offer stays choosable.
+  const options: (readonly [number, string])[] = intervals.some(
+    ([s]) => s === c.interval_seconds,
+  )
+    ? [...intervals]
+    : [...intervals, [c.interval_seconds, `${c.interval_seconds}s`]];
+  return (
+    <span className="flex items-center gap-1.5">
+      <select
+        aria-label={`Interval of ${c.url}`}
+        title={`dock uptime update ${c.id} --interval <d> -s ${ref.service} -e ${ref.environment}`}
+        value={c.interval_seconds}
+        disabled={update.isPending}
+        onChange={(e) =>
+          update.mutate({ id: c.id, interval_seconds: Number(e.target.value) })
+        }
+        className="field py-[3px] font-mono"
+      >
+        {options.map(([s, label]) => (
+          <option key={s} value={s}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <Saved ok={update.isSuccess} />
+      <ErrorText error={update.error} />
+    </span>
+  );
+}
+
+/**
+ * A check's expected status, a text value: click to edit, Enter saves,
+ * Esc cancels (the app's save model for text).
+ */
+function StatusEdit({
+  serviceRef: ref,
+  check: c,
+}: {
+  serviceRef: ServiceRef;
+  check: UptimeCheck;
+}) {
+  const update = useUpdateUptimeCheck(ref);
+  const [draft, setDraft] = useState<string | null>(null);
+  const cancel = () => {
+    update.reset();
+    setDraft(null);
+  };
+  if (draft === null) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <button
+          type="button"
+          className="lnk font-mono"
+          title={`Change the status that means up: dock uptime update ${c.id} --status <code> -s ${ref.service} -e ${ref.environment}`}
+          onClick={() => setDraft(c.expect_status)}
+        >
+          {c.expect_status}
+        </button>
+        <Saved ok={update.isSuccess} />
+      </span>
+    );
+  }
+  const value = draft.trim();
+  return (
+    <form
+      aria-label={`Expected status of ${c.url}`}
+      className="flex items-center gap-1.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (value === c.expect_status) return cancel();
+        update.mutate(
+          { id: c.id, expect_status: value },
+          { onSuccess: () => setDraft(null) },
+        );
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+      }}
+    >
+      <input
+        // biome-ignore lint/a11y/noAutofocus: opened by the value it replaces
+        autoFocus
+        aria-label="Expected status"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        list="uptime-statuses"
+        className="field w-[64px] py-[3px] font-mono"
+      />
+      <button
+        type="submit"
+        className="btn sm pri"
+        disabled={!value || update.isPending}
+      >
+        Save
+      </button>
+      <Button small onClick={cancel}>
+        Cancel
+      </Button>
+      <ErrorText error={update.error} />
+    </form>
   );
 }
 
@@ -501,7 +627,7 @@ function AddCheck({
                 `every ${every(c.interval_seconds)}, expects ${c.expect_status}${c.auto ? " (added by Dock for the domain)" : ""}`,
             )
             .join("; ")}
-          . Remove that check first to change its interval.
+          . Change its interval or status in the list.
         </span>
       )}
     </form>

@@ -155,7 +155,7 @@ export function LockStrip({
           (lockHolds(lock) ? (
             <>
               <Menu
-                label={`Open ${env} to tokens for a while`}
+                label={`Open to tokens… (${env})`}
                 right
                 button={
                   <span className={`btn sm ${warnBtn}`}>Open to tokens…</span>

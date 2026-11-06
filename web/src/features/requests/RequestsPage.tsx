@@ -1,7 +1,7 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import { findService, queries, useSession } from "../../data/queries";
+import { useSession } from "../../data/queries";
 import type { AccessRequest } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago, plural, until } from "../../ui/format";
@@ -291,7 +291,7 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
         </details>
       )}
       {status === "pending" ? (
-        <Decide request={r} service={service} />
+        <Decide request={r} />
       ) : (
         <p className="flex flex-wrap gap-4">
           {service ? (
@@ -370,20 +370,17 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * is a link away. Only admins in a UI session decide; tokens never can,
  * so there is no CLI equivalent.
  */
-function Decide({
-  request: r,
-  service,
-}: {
-  request: AccessRequest;
-  service: string | undefined;
-}) {
+function Decide({ request: r }: { request: AccessRequest }) {
   const id = r.id;
   const session = useSession();
   const org = useOrg();
   const decide = useDecideRequest();
   const [comment, setComment] = useState("");
-  const doomed = useWillFail(r, service);
-  if (session?.kind !== "user" || session.scope !== "admin") {
+  const admin = session?.kind === "user" && session.scope === "admin";
+  // The server's dry run of this request, asked when it is shown.
+  const check = useQuery({ ...requestQueries.check(id), enabled: admin }).data;
+  const doomed = check && !check.ok ? check : undefined;
+  if (!admin) {
     return (
       <p className="text-faint">
         An admin of the organization decides in the UI.
@@ -405,7 +402,8 @@ function Decide({
       {doomed && (
         <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-warn-text">
           <span>
-            <span className="text-warn">▲</span> Would fail: {doomed.reason}
+            <span className="text-warn">▲</span> Would fail:{" "}
+            {doomed.reason ?? "the server's check refused it."}
           </span>
           {doomed.service ? (
             <Link
@@ -451,34 +449,4 @@ function Decide({
       <ErrorText error={decide.error} />
     </div>
   );
-}
-
-/**
- * Why approving a request would fail, checked against the project's live
- * state before anyone approves: the service it names is gone, or a
- * restart of a service with no release. `service` is set when the
- * service exists (the place to fix it). Undefined when nothing says so
- * (the run itself still checks everything).
- */
-function useWillFail(r: AccessRequest, service: string | undefined) {
-  const overview = useQuery({
-    ...queries.overview(r.project),
-    enabled: !!service,
-  }).data;
-  if (!service || !overview) return undefined;
-  const found = findService(overview, {
-    project: r.project,
-    environment: r.environment,
-    service,
-  });
-  if (!found) {
-    return { reason: `${service} no longer exists in ${r.environment}.` };
-  }
-  if (r.operation === "restart" && !found.service.active_release) {
-    return {
-      reason: `${service} has no release to restart. Deploy it first.`,
-      service,
-    };
-  }
-  return undefined;
 }

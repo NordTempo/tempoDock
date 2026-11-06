@@ -37,7 +37,7 @@ import { imageLabel } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
-import { useHiddenFailures } from "./failed";
+import { hiddenFailures } from "./failed";
 
 const MovePanel = lazy(() => import("../move/MovePanel"));
 
@@ -63,7 +63,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   // anyone opens a running move's progress from its strip.
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);
-  const hidden = useHiddenFailures(services);
+  const hidden = hiddenFailures(services);
   const server = useServers().find((s) => s.name === environment.server);
   const head = `env-head-${environment.id}`;
   const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;

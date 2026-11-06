@@ -185,6 +185,10 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "service.run": ["run command", "ran a command in"],
   "service.start": ["start service", "started"],
   "service.stop": ["stop service", "stopped"],
+  "service.switch_references": [
+    "switch references",
+    "pointed variable references at",
+  ],
   "service.update": ["stage settings", "staged settings for"],
   "snapshot.create": ["take snapshot", "took a snapshot of"],
   "snapshot.created": ["snapshot taken", "took a snapshot of"],
@@ -206,6 +210,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "token.revoke": ["revoke token", "revoked"],
   "uptime.add": ["add uptime check", "added an uptime check to"],
   "uptime.remove": ["remove uptime check", "removed an uptime check from"],
+  "uptime.update": ["change uptime check", "changed an uptime check of"],
   "user.2fa_add": ["add second factor", "added a second factor for"],
   "user.2fa_remove": ["remove second factor", "removed a second factor of"],
   "user.2fa_reset": ["reset two-factor", "reset the two-factor sign-in of"],

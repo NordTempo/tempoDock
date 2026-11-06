@@ -9,9 +9,5 @@ export const backupHow: Record<Kind, string> = {
   volume: "file-level volume backup with restic",
 };
 
-/** The variable other services reference for a restored database. */
-export const exportOf = (kind: Kind) =>
-  kind === "redis" ? "REDIS_URL" : "DATABASE_URL";
-
 /** "03:00" */
 export const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00`;
