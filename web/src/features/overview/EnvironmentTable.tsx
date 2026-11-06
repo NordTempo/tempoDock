@@ -192,8 +192,9 @@ export function EnvironmentTable({
             right
             className={admin && !environment.lock ? "" : "ml-auto"}
             button={
-              <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
-                <Icon name="more" size={14} />
+              // Named, so its contents can be guessed before opening it.
+              <span className="btn sm">
+                More <Icon name="chevronDown" size={12} />
               </span>
             }
           >

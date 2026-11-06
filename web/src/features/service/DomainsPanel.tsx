@@ -143,7 +143,7 @@ function AddDomain({
   useShortcuts([{ key: "n", label: "add domain", run: () => setOpen(true) }]);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   return (
-    <div className="flex flex-wrap items-center gap-2.5">
+    <div className="flex flex-wrap items-center justify-end gap-2.5">
       <Button onClick={() => setOpen(true)}>
         Add domain <kbd>N</kbd>
       </Button>

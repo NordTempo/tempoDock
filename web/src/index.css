@@ -260,9 +260,12 @@
     margin: 4px;
   }
 
-  /* Darker than any typed value, so an example never reads as filled in. */
+  /*
+   * Darker than any typed value, so an example never reads as filled in,
+   * and still 4.5:1 on the field.
+   */
   ::placeholder {
-    color: #5f5f68;
+    color: #7b7b85;
   }
 
   /*
@@ -559,10 +562,10 @@
   }
 
   /*
-   * Status in tables and headers is a tinted chip, so the state reads
-   * before its word (the trial's clearest status, H1).
+   * Status is a tinted chip wherever StateText shows it, so the state
+   * reads before its word (the trial's clearest status, H1).
    */
-  :is(td, .page-bar) .state {
+  .state {
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -574,19 +577,19 @@
     white-space: nowrap;
   }
 
-  :is(td, .page-bar) .state[data-tone="ok"] {
+  .state[data-tone="ok"] {
     background: rgb(74 222 128 / 0.12);
   }
 
-  :is(td, .page-bar) .state[data-tone="fail"] {
+  .state[data-tone="fail"] {
     background: rgb(248 113 113 / 0.14);
   }
 
-  :is(td, .page-bar) .state:is([data-tone="warn"], [data-tone="prog"]) {
+  .state:is([data-tone="warn"], [data-tone="prog"]) {
     background: rgb(251 191 36 / 0.14);
   }
 
-  :is(td, .page-bar) .state[data-tone="mut"] {
+  .state[data-tone="mut"] {
     background: rgb(255 255 255 / 0.06);
   }
 

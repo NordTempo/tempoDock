@@ -10,6 +10,7 @@ import {
   ErrorText,
   Panel,
   SectionHead,
+  StateText,
 } from "../../ui/kit";
 import { notify } from "../../ui/notice";
 import { Saved } from "../create/form";
@@ -47,7 +48,6 @@ function percent(p: number | undefined) {
   return p >= 100 ? "100%" : `${Math.min(p, 99.99).toFixed(2)}%`;
 }
 
-const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-mut" };
 const stateWord = { up: "Up", down: "Down", unknown: "Unknown" };
 
 export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
@@ -234,7 +234,15 @@ function CheckRow({
   const p = c.last_probe;
   return (
     <tr className={fresh ? "[&>td]:bg-sel" : ""}>
-      <td className={stateClass[c.state]}>{stateWord[c.state]}</td>
+      <td>
+        <StateText
+          state={{
+            tone: c.state === "up" ? "ok" : c.state === "down" ? "fail" : "mut",
+            glyph: c.state === "up" ? "●" : c.state === "down" ? "✕" : "○",
+            label: stateWord[c.state],
+          }}
+        />
+      </td>
       <td
         className="whitespace-nowrap"
         title={`${c.url}, expects ${c.expect_status}`}

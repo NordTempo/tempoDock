@@ -135,7 +135,7 @@ export function GeneralPage() {
                     <>
                       {" · "}
                       <Link to="/$org/settings/sso" params={{ org: org.slug }}>
-                        providers
+                        manage providers
                       </Link>
                     </>
                   )}

@@ -73,7 +73,11 @@ export default function RestoreDialog({
 
   return (
     <Dialog
-      title={`Restore ${ref.service} from ${pointName(point)}?`}
+      title={
+        intoNew
+          ? `Restore ${pointName(point)} into a new service?`
+          : `Restore ${ref.service} from ${pointName(point)}?`
+      }
       onClose={onClose}
     >
       <form

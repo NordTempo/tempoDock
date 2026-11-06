@@ -433,10 +433,14 @@ export function PageBar({
       {/* Two lines (chosen in the 2026-11 trial): the way up, small, over a
           large title with what follows it. */}
       <div className="flex min-w-0 flex-col">
-        {parent && (
+        {/* The line is kept when there is no way up, so every title sits
+            at the same height. */}
+        {parent ? (
           <nav aria-label="Breadcrumb" className="text-xs text-mut">
             {parent}
           </nav>
+        ) : (
+          <span aria-hidden className="h-[18px]" />
         )}
         <div className="flex flex-wrap items-center gap-x-2.5">
           <h1 className="text-[24px] leading-7 font-semibold tracking-[-0.01em]">

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 /**
  * Short confirmations that an action went through ("Restarted web"), shown
- * at the bottom right for a few seconds. A module-level store, so any code
+ * at the top right, under the header, for a few seconds. A module-level store, so any code
  * (a mutation's onSuccess) can call notify() without a provider. Static on
  * purpose: no enter or exit animation. Each notice holds one timeout until
  * it goes; nothing runs while none is shown.
@@ -71,7 +71,7 @@ export function Notices() {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2"
+      className="pointer-events-none fixed top-[72px] right-6 z-50 flex flex-col items-end gap-2"
     >
       {list.map((n) => (
         <div
