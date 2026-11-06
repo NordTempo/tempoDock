@@ -336,7 +336,8 @@ export const LogRow = memo(function LogRow({ line }: { line: LogLine }) {
   const parts = line.text.split(/\b(WARN(?:ING)?|ERROR|FATAL|PANIC)\b/);
   return (
     <div
-      className={`border-l-2 px-3 whitespace-pre ${error ? "border-fail bg-fail-bg" : "border-transparent"}`}
+      // Long lines wrap (under their time) instead of running off the edge.
+      className={`border-l-2 pr-3 pl-[calc(0.75rem+9ch)] -indent-[9ch] break-words whitespace-pre-wrap ${error ? "border-fail bg-fail-bg" : "border-transparent"}`}
     >
       {line.time && <span className="text-faint">{clockSec(line.time)} </span>}
       {parts.map((part, i) =>

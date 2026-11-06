@@ -4,7 +4,8 @@ import type { ServiceView } from "../../data/types";
 /**
  * A service's tabs: label, route, G-sequence key and group (watching it,
  * operating it, configuring it, its history; the strip draws a line
- * between groups). The tab strip, the
+ * between groups). Tabs every service has come first in each group, so
+ * they keep their place from one service to the next. The tab strip, the
  * palette's "Logs · web production" commands and the ? help all read
  * this list, so a new tab shows up everywhere. Kept out of
  * ServiceHeader so the shell chunk doesn't pull the header in.
@@ -22,6 +23,13 @@ export const serviceTabs = [
     key: "g l",
     group: "watch",
   },
+  // CPU and memory. G M, from its old name Metrics: G R is the releases.
+  {
+    label: "Resources",
+    to: "/$org/$project/$environment/$service/resources",
+    key: "g m",
+    group: "watch",
+  },
   // Services with a domain only: their site's browser errors for now
   // (ADR 0059), next to Logs and Traffic, the other places problems show.
   {
@@ -37,33 +45,12 @@ export const serviceTabs = [
     key: "g t",
     group: "watch",
   },
-  // CPU and memory. G M, from its old name Metrics: G R is the releases.
-  {
-    label: "Resources",
-    to: "/$org/$project/$environment/$service/resources",
-    key: "g m",
-    group: "watch",
-  },
   // Services with a domain or uptime checks: their checks (ADR 0055).
   {
     label: "Uptime",
     to: "/$org/$project/$environment/$service/uptime",
     key: "g u",
     group: "watch",
-  },
-  // Database services only (isDatabase). G B, "base": G D is Domains.
-  {
-    label: "Data",
-    to: "/$org/$project/$environment/$service/data",
-    key: "g b",
-    group: "operate",
-  },
-  // Stateful services only. G K, "keep": G B is Data.
-  {
-    label: "Backups",
-    to: "/$org/$project/$environment/$service/backups",
-    key: "g k",
-    group: "operate",
   },
   // Scheduled jobs (ADR 0054). G J, "jobs".
   {
@@ -78,6 +65,20 @@ export const serviceTabs = [
     label: "One-off command",
     to: "/$org/$project/$environment/$service/run",
     key: "g c",
+    group: "operate",
+  },
+  // Database services only (isDatabase). G B, "base": G D is Domains.
+  {
+    label: "Data",
+    to: "/$org/$project/$environment/$service/data",
+    key: "g b",
+    group: "operate",
+  },
+  // Stateful services only. G K, "keep": G B is Data.
+  {
+    label: "Backups",
+    to: "/$org/$project/$environment/$service/backups",
+    key: "g k",
     group: "operate",
   },
   {
