@@ -62,10 +62,23 @@ function feedEntry(item: FeedItem): Entry {
  * What people, agents and the platform did in the project, newest first:
  * the audit log merged with live deploy and container events.
  */
-export function Activity({ project }: { project: string }) {
+export function Activity({
+  project,
+  environment,
+}: {
+  project: string;
+  /** Only what happened in this environment. */
+  environment?: string;
+}) {
   const org = useOrg();
-  const audit = useAuditLog({ project });
-  const feed = useFeed(project);
+  const prefix = `${project}/${environment}`;
+  const audit = useAuditLog({ project }).filter(
+    (e) =>
+      !environment || e.target === prefix || e.target.startsWith(`${prefix}/`),
+  );
+  const feed = useFeed(project).filter(
+    (item) => !environment || item.ref.environment === environment,
+  );
   const entries = [
     ...feed.map(feedEntry),
     ...audit.map((e) => auditEntry(e, project)),
@@ -78,7 +91,11 @@ export function Activity({ project }: { project: string }) {
       <SectionHead
         id="activity"
         right={
-          <Link to="/$org/audit" params={{ org }} search={{ project }}>
+          <Link
+            to="/$org/audit"
+            params={{ org }}
+            search={{ project, environment }}
+          >
             All activity
           </Link>
         }

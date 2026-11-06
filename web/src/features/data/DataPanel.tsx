@@ -101,11 +101,11 @@ export function DataPanel({
   ).length;
 
   const tabs = [
-    { tab: "tables", label: "Tables", key: "t" },
-    { tab: "sql", label: "SQL", key: "q" },
-    { tab: "schema", label: "Schema", key: "s" },
+    { tab: "tables", label: "Tables", key: "1" },
+    { tab: "sql", label: "SQL", key: "2" },
+    { tab: "schema", label: "Schema", key: "3" },
     ...(showChanges
-      ? [{ tab: "changes", label: "Changes", key: "c" } as const]
+      ? [{ tab: "changes", label: "Changes", key: "4" } as const]
       : []),
   ] as const;
 

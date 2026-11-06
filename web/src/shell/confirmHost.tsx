@@ -2,7 +2,7 @@ import { lazy, Suspense, useSyncExternalStore } from "react";
 import type { ServiceRef } from "../data/types";
 
 /**
- * An action the palette or command line asks about before it runs, with
+ * An action the palette asks about before it runs, with
  * the same confirm as its button: a restart, or a rollback to a release.
  */
 export type ConfirmRequest =

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useIsOperator, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
+import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { day, plural } from "../../ui/format";
@@ -115,13 +116,16 @@ function Members() {
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<InviteLinkInfo>();
   const invite = useInviteBase(inviting || !!link);
+  useShortcuts([
+    { key: "n", label: "invite people", run: () => setInviting(true) },
+  ]);
   return (
     <>
       <OrgSettingsBar
         actions={
           !inviting && (
             <Button primary onClick={() => setInviting(true)}>
-              Invite people
+              Invite people <kbd>N</kbd>
             </Button>
           )
         }

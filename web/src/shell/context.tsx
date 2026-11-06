@@ -147,9 +147,8 @@ export function EnvSwitch({
             ) : (
               <Link
                 key={e.environment.id}
-                to="/$org/$project"
-                params={{ org, project }}
-                hash={`env-${e.environment.name}`}
+                to="/$org/$project/$environment"
+                params={{ org, project, environment: e.environment.name }}
                 onClick={close}
                 className={menuItem}
                 role="menuitemradio"

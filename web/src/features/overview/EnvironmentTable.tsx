@@ -49,11 +49,11 @@ const MovePanel = lazy(() => import("../move/MovePanel"));
  */
 export function EnvironmentTable({
   env,
-  current = false,
+  scoped = false,
 }: {
   env: EnvironmentView;
-  /** The environment the URL names (#env-<name>): its section is marked. */
-  current?: boolean;
+  /** On the environment's own page, whose title already names it. */
+  scoped?: boolean;
 }) {
   const org = useOrg();
   const { environment, services, pending_changes: staged } = env;
@@ -81,19 +81,23 @@ export function EnvironmentTable({
   const head = `env-head-${environment.id}`;
   const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;
   return (
-    // The environment's anchor: /org/project/environment lands here.
-    <section
-      id={`env-${environment.name}`}
-      aria-labelledby={head}
-      aria-current={current ? "location" : undefined}
-      className={`scroll-mt-[64px] ${current ? "-ml-3 border-l-2 border-fg pl-2.5" : ""}`}
-    >
+    <section id={`env-${environment.name}`} aria-labelledby={head}>
       {/* The name, what needs a look (staged changes, a server that's
           down, the preview's pull request) and the rest in one menu, so
           the service table outweighs its toolbar. */}
       <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 id={head} className="text-sm font-semibold">
-          {environment.name}
+        <h2 id={head} className={scoped ? "sr-only" : "text-sm font-semibold"}>
+          {scoped ? (
+            `${environment.name} services`
+          ) : (
+            <Link
+              to="/$org/$project/$environment"
+              params={{ org, ...ref }}
+              className="hover:underline"
+            >
+              {environment.name}
+            </Link>
+          )}
         </h2>
         {pr && <PullRequestLink pr={pr} />}
         {server && server.status !== "online" && (

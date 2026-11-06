@@ -1,6 +1,7 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
+import { useShortcuts } from "../../shell/keys";
 import { since } from "../../ui/format";
 import { Act, Button, ErrorText, Page, Panel } from "../../ui/kit";
 import { useValidation } from "../create/form";
@@ -40,13 +41,16 @@ function Registries() {
   const [username, setUsername] = useState("");
   const password = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
+  useShortcuts([
+    { key: "n", label: "add registry login", run: () => setAdding(true) },
+  ]);
   return (
     <>
       <OrgSettingsBar
         actions={
           !adding && (
             <Button primary onClick={() => setAdding(true)}>
-              Add registry login
+              Add registry login <kbd>N</kbd>
             </Button>
           )
         }

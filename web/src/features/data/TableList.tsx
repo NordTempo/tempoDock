@@ -1,5 +1,4 @@
-import { useRef, useState } from "react";
-import { useShortcuts } from "../../shell/keys";
+import { useState } from "react";
 import { compactCount, tableName, tableRows } from "./cells";
 import type { DataTable } from "./types";
 
@@ -24,10 +23,6 @@ export function TableList({
   onSelect: (table: string) => void;
 }) {
   const [filter, setFilter] = useState("");
-  const input = useRef<HTMLInputElement>(null);
-  useShortcuts([
-    { key: "/", label: "find table", run: () => input.current?.focus() },
-  ]);
 
   const needle = filter.trim().toLowerCase();
   const shown = needle
@@ -41,7 +36,6 @@ export function TableList({
   return (
     <nav aria-label="Tables" className="flex min-h-0 flex-col gap-2">
       <input
-        ref={input}
         className="g-field h-8"
         placeholder="Find table  /"
         aria-label="Find table"

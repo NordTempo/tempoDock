@@ -35,6 +35,7 @@ const paths = {
   more: "M5 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1ZM12 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1ZM19 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1Z",
   // A padlock: a locked environment (ADR 0044).
   lock: "M8 11V8a4 4 0 0 1 8 0v3M5 11h14v10H5Z",
+  keyboard: "M3 6h18v12H3ZM7 10h.01M11 10h.01M15 10h.01M7 14h10",
 } as const;
 
 export type IconName = keyof typeof paths;

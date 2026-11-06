@@ -75,7 +75,7 @@ export function VariablesEditor({
   const revealedChanges = useRevealedChanges(env, reveal);
 
   useShortcuts([
-    { key: "p", label: "paste .env", run: () => setPasting(true) },
+    { key: "v", label: "paste .env", run: () => setPasting(true) },
     { key: "n", label: "add variable", run: () => focusNewLine() },
   ]);
 
@@ -106,7 +106,7 @@ export function VariablesEditor({
         </Button>
       )}
       <Button onClick={() => setPasting(!pasting)}>
-        Paste .env <kbd>P</kbd>
+        Paste .env <kbd>V</kbd>
       </Button>
       <Button onClick={focusNewLine}>
         Add variable <kbd>N</kbd>

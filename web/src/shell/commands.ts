@@ -23,6 +23,7 @@ import { rollbackTarget } from "../features/service/releases";
 import { tabsFor } from "../features/service/tabs";
 import { serviceState, type Tone } from "../ui/status";
 import { openConfirm } from "./confirmHost";
+import { openKeyHelp } from "./KeyHelp";
 import { useCurrentContext, useOrg } from "./location";
 
 export type Command = {
@@ -44,7 +45,7 @@ export type Command = {
 /**
  * Every palette command, built from the project tree and current location.
  * Rollback commands need release history, which is fetched only while
- * `withHistory` (the palette open, the command line in use); until then
+ * `withHistory` (the palette open); until then
  * only histories already cached count.
  */
 export function useCommands({
@@ -208,9 +209,8 @@ export function useCommands({
           weight: (inProject ? 0.5 : -1) + (inEnv ? 0.5 : 0),
           run: async () => {
             await navigate({
-              to: "/$org/$project",
-              params: { org, project },
-              hash: `env-${environment}`,
+              to: "/$org/$project/$environment",
+              params: { org, project, environment },
             });
             requestLock({ project, environment });
           },
@@ -425,6 +425,14 @@ export function useCommands({
     });
   }
   add({
+    id: "keys",
+    group: "Go to",
+    label: "Keyboard shortcuts",
+    cli: "?",
+    weight: -1,
+    run: openKeyHelp,
+  });
+  add({
     id: "logout",
     group: "Actions",
     label: "Log out",
@@ -480,7 +488,7 @@ const groupOrder = (c: Command) => (c.group === "Actions" ? 0 : 1);
 
 const RECENT = "dock.recent";
 
-/** Ids of the last few commands run from the palette or command line. */
+/** Ids of the last few commands run from the palette. */
 export function recentIds(): string[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(RECENT) ?? "[]");

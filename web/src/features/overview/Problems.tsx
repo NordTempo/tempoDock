@@ -50,12 +50,29 @@ function useAllProblems(project: string): Problem[] {
   return [...problems.slice(0, at), ...extra, ...problems.slice(at)];
 }
 
+/** The environment a problem is in; "" for servers and alerts. */
+function problemEnvironment(p: Problem): string {
+  if ("service" in p) return serviceRef(p.service.service).environment;
+  if (p.kind === "staged") return p.environment.environment.name;
+  return "";
+}
+
 /**
  * The overview's numbered "needs a human" list, worst first. Keys 1 to 9
  * open (or focus) a problem's action.
  */
-export function Problems({ project }: { project: string }) {
-  const problems = useAllProblems(project);
+export function Problems({
+  project,
+  environment,
+}: {
+  project: string;
+  /** Only this environment's problems, and those of no environment (servers, alerts). */
+  environment?: string;
+}) {
+  const problems = useAllProblems(project).filter((p) => {
+    const where = problemEnvironment(p);
+    return !environment || where === environment || where === "";
+  });
   useShortcuts(
     problems.slice(0, 9).map((_, i) => ({
       key: String(i + 1),

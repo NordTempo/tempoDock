@@ -71,7 +71,7 @@ export function Notices() {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed right-4 bottom-20 z-50 flex flex-col items-end gap-2"
+      className="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col items-end gap-2"
     >
       {list.map((n) => (
         <div

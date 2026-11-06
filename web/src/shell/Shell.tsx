@@ -8,14 +8,15 @@ import { type SSOChoice, useStartSSO } from "../features/sso/data";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
 import { Notices } from "../ui/notice";
-import { CommandLine } from "./CommandLine";
+import { KeyHelpHost, NotLive } from "./KeyHelp";
 import { PaletteProvider } from "./palette";
 import { Sidebar, useShellMode } from "./Sidebar";
 
 /**
- * Everything behind login: the sidebar, the page (which brings its own
- * PageBar), and the command line at the bottom. The platform console
- * (servers) gets an amber bar across the top. A person whose org needs a
+ * Everything behind login: the sidebar and the page (which brings its own
+ * PageBar). One command surface, the palette (Cmd+K or the sidebar's
+ * search), finds pages and runs commands; ? lists the keys. The platform
+ * console gets an amber bar across the top. A person whose org needs a
  * second factor (ADR 0057) or single sign-on (ADR 0058) they didn't sign
  * in with acts in none: they get their account page alone, with the way
  * back.
@@ -41,21 +42,21 @@ function OrgShell() {
       <div className="flex min-h-screen flex-col lg:flex-row">
         <Sidebar mode={mode} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">
+          <NotLive />
           <TwoFactorNotice />
           <div className="flex flex-1 flex-col">
             <Outlet />
           </div>
-          <CommandLine />
         </main>
       </div>
+      <KeyHelpHost />
       <Notices />
     </PaletteProvider>
   );
 }
 
 /**
- * A page still loading, inside the shell: the sidebar and command line
- * stay, the page gets an empty header bar and a few still placeholder
+ * A page still loading, inside the shell: the sidebar stays, the page gets an empty header bar and a few still placeholder
  * rows (no shimmer). The org and console routes use it, so a slow page
  * never blanks the navigation.
  */

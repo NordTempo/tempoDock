@@ -38,6 +38,7 @@ import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
+import { openKeyHelp } from "./KeyHelp";
 import { modKey } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
@@ -131,7 +132,7 @@ function AppNav() {
         className="mx-1 mb-2.5 flex items-center gap-2 rounded-[7px] border border-line bg-panel px-2.5 py-[7px] text-left text-mut hover:border-edge hover:text-sec"
       >
         <Icon name="search" />
-        <span className="flex-1">Jump to…</span>
+        <span className="flex-1">Search or run…</span>
         <kbd>{modKey.trim()}K</kbd>
       </button>
       <div className="px-2.5 pt-1.5 pb-1 text-2xs font-medium text-faint">
@@ -155,6 +156,11 @@ function AppNav() {
       <NavLink to="/$org/settings" icon="sliders">
         Organization settings
       </NavLink>
+      <button type="button" className="nav-row" onClick={openKeyHelp}>
+        <Icon name="keyboard" className="text-mut" />
+        <span className="flex-1 text-left">Keyboard shortcuts</span>
+        <kbd>?</kbd>
+      </button>
       <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
       <Me />
       {operator && (
@@ -498,22 +504,17 @@ function ProjectTree() {
   );
 }
 
-/**
- * The environment the URL is in: a route's $environment, or on the
- * project page the section its #env-<name> scrolls to.
- */
+/** The environment the URL is in, a route's $environment. */
 function useUrlEnvironment(): string | undefined {
-  const { environment } = useCurrentContext();
-  const hash = useRouterState({ select: (s) => s.location.hash });
-  return environment ?? (hash.startsWith("env-") ? hash.slice(4) : undefined);
+  return useCurrentContext().environment;
 }
 
 /**
  * Moves the page to another environment of the current project, on the
  * equivalent page where there is one: the same service tab (a release
  * opens the service, release numbers differ), the same shared variables,
- * else the project page at that environment's section. Project pages
- * without an environment (settings, compare) stay where they are.
+ * else that environment's page. Project pages without an environment
+ * (settings, compare) stay where they are.
  */
 function useSwitchEnvironment() {
   const navigate = useNavigate();
@@ -536,11 +537,14 @@ function useSwitchEnvironment() {
         params: (prev) => ({ ...prev, environment }),
         search: true,
       });
-    } else if (service || leaf === "/_app/$org/$project/") {
+    } else if (
+      service ||
+      leaf === "/_app/$org/$project/" ||
+      leaf === "/_app/$org/$project/$environment/"
+    ) {
       navigate({
-        to: "/$org/$project",
-        params: { org, project },
-        hash: `env-${environment}`,
+        to: "/$org/$project/$environment",
+        params: { org, project, environment },
       });
     }
   };

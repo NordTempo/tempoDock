@@ -35,7 +35,7 @@ function Servers() {
   const servers = useServers();
   const [adding, setAdding] = useState(false);
 
-  useShortcuts([{ key: "a", label: "add server", run: () => setAdding(true) }]);
+  useShortcuts([{ key: "n", label: "add server", run: () => setAdding(true) }]);
 
   return (
     <>
@@ -48,7 +48,7 @@ function Servers() {
             disabled={adding}
             onClick={() => setAdding(true)}
           >
-            Add server <kbd>A</kbd>
+            Add server <kbd>N</kbd>
           </Act>
         }
       />

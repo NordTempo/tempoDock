@@ -8,6 +8,7 @@ import {
 import { domainNeedsAttention } from "../../data/problems";
 import { listenPort, servicePath, useService } from "../../data/queries";
 import type { Domain, ServiceRef } from "../../data/types";
+import { useShortcuts } from "../../shell/keys";
 import { ago, since } from "../../ui/format";
 import {
   Act,
@@ -139,11 +140,12 @@ function AddDomain({
 }) {
   const generate = useGenerateDomain();
   const [open, setOpen] = useState(false);
+  useShortcuts([{ key: "n", label: "add domain", run: () => setOpen(true) }]);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   return (
     <div className="flex flex-wrap items-center gap-2.5">
       <Button primary onClick={() => setOpen(true)}>
-        Add domain
+        Add domain <kbd>N</kbd>
       </Button>
       {!hasGenerated && (
         <Act

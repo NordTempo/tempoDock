@@ -38,7 +38,7 @@ const marks: Record<VariableChange["action"], string> = {
 /**
  * An environment's staged changes, what applying them does, and the
  * buttons. Applying is all or nothing, like the API. ⌘↵ applies. With
- * `sticky` it stays in view above the command line while anything is
+ * `sticky` it stays in view at the bottom of the window while anything is
  * staged, so the way to apply is never scrolled away.
  */
 export function ApplyBox({
@@ -268,7 +268,7 @@ export function ApplyBox({
   return (
     <section
       aria-labelledby="staged"
-      className={`flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5 ${sticky ? "sticky bottom-[64px] z-10 shadow-lg shadow-black/60" : ""}`}
+      className={`flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5 ${sticky ? "sticky bottom-3 z-10 shadow-lg shadow-black/60" : ""}`}
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
