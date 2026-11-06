@@ -302,11 +302,11 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     ],
   ];
   return (
-    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line @4xl:grid-cols-4">
+    <dl className="facts grid grid-cols-2 gap-x-6 border-t border-line @4xl:grid-cols-4">
       {facts.map(([term, value]) => (
         <div
           key={term}
-          className={`flex flex-col gap-1 bg-page px-3.5 py-3 ${term === "Start command" ? "col-span-full" : ""}`}
+          className={`flex flex-col gap-1 border-b border-soft py-3 ${term === "Start command" ? "col-span-full" : ""}`}
         >
           <dt className="text-2xs text-faint">{term}</dt>
           <dd className="min-w-0 break-words text-xs">{value}</dd>

@@ -33,7 +33,10 @@ export function StateText({
   className?: string;
 }) {
   return (
-    <span className={`${toneText[state.tone]} ${className}`}>
+    <span
+      data-tone={state.tone}
+      className={`state ${toneText[state.tone]} ${className}`}
+    >
       {state.glyph && (
         <>
           <Glyph char={state.glyph} />{" "}
@@ -402,7 +405,7 @@ export function Page({
 }) {
   return (
     <div
-      className={`flex w-full flex-1 flex-col px-4 pt-6 pb-10 sm:px-7 ${width} ${gap}`}
+      className={`page flex w-full flex-1 flex-col px-4 pt-6 pb-10 sm:px-7 ${width} ${gap}`}
     >
       {children}
     </div>
@@ -426,19 +429,22 @@ export function PageBar({
   actions?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-5">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
+    <header className="page-bar sticky top-0 z-10 flex min-h-[64px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-7">
+      {/* Two lines (chosen in the 2026-11 trial): the way up, small, over a
+          large title with what follows it. */}
+      <div className="flex min-w-0 flex-col">
         {parent && (
-          <>
-            <span className="text-mut">{parent}</span>
-            <span aria-hidden className="text-faint">
-              /
-            </span>
-          </>
+          <nav aria-label="Breadcrumb" className="text-xs text-mut">
+            {parent}
+          </nav>
         )}
-        <h1 className="text-[18px] leading-6 font-semibold">{title}</h1>
-      </nav>
-      {after}
+        <div className="flex flex-wrap items-center gap-x-2.5">
+          <h1 className="text-[22px] leading-7 font-semibold tracking-[-0.01em]">
+            {title}
+          </h1>
+          {after}
+        </div>
+      </div>
       {actions && (
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {actions}

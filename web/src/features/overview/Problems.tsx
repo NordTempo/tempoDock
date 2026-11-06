@@ -526,7 +526,7 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft px-3.5 py-2.5 last:border-0">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft py-2.5 last:border-0">
       <span className="flex w-[172px] items-baseline gap-2.5 whitespace-nowrap">
         {n ? <kbd>{n}</kbd> : <span className="w-[15px]" />}
         <span className={toneText[tone]}>
