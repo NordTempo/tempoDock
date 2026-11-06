@@ -1,15 +1,15 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
-import { plural, since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
+import { since } from "../../ui/format";
+import { Act, Button, ErrorText, Page, Panel } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteRegistryCredential,
-  useOrgName,
   useSetRegistryCredential,
 } from "./data";
+import { OrgSettingsBar } from "./SettingsBar";
 
 /**
  * The organization's registry credentials (`dock registry credentials`,
@@ -18,11 +18,10 @@ import {
  * Passwords are write-only.
  */
 export function RegistriesPage() {
-  const org = useOrgName();
   if (!useIsAdmin()) {
     return (
       <>
-        <PageBar parent={org} title="Registries" />
+        <OrgSettingsBar />
         <Page>
           <p className="text-mut">
             Only the organization's admins see registry credentials.
@@ -31,31 +30,35 @@ export function RegistriesPage() {
       </>
     );
   }
-  return <Registries org={org} />;
+  return <Registries />;
 }
 
-function Registries({ org }: { org: string }) {
+function Registries() {
   const creds = useSuspenseQuery(orgQueries.registryCredentials()).data;
   // The form's host and username; Replace on a row fills them in.
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
   const password = useRef<HTMLInputElement>(null);
+  const [adding, setAdding] = useState(false);
   return (
     <>
-      <PageBar
-        parent={org}
-        title="Registries"
-        after={
-          <span className="text-xs text-faint">
-            {plural(creds.length, "registry", "registries")}
-          </span>
+      <OrgSettingsBar
+        actions={
+          !adding && (
+            <Button primary onClick={() => setAdding(true)}>
+              Add registry login
+            </Button>
+          )
         }
       />
-      <Page width="max-w-[900px]" gap="gap-5">
+      <Page>
         {creds.length === 0 ? (
-          <p className="text-mut">
-            No registry logins. Deploys pull every image anonymously.
-          </p>
+          !adding && (
+            <p className="text-mut">
+              No registry logins. Deploys pull every image anonymously. Add one
+              with Add registry login.
+            </p>
+          )
         ) : (
           <Panel>
             <table>
@@ -76,6 +79,7 @@ function Registries({ org }: { org: string }) {
                     updated={c.updated_at}
                     by={c.updated_by}
                     onReplace={() => {
+                      setAdding(true);
                       setHost(c.host);
                       setUsername(c.username);
                       password.current?.focus();
@@ -86,13 +90,20 @@ function Registries({ org }: { org: string }) {
             </table>
           </Panel>
         )}
-        <CredentialForm
-          host={host}
-          username={username}
-          password={password}
-          onHost={setHost}
-          onUsername={setUsername}
-        />
+        {adding && (
+          <CredentialForm
+            host={host}
+            username={username}
+            password={password}
+            onHost={setHost}
+            onUsername={setUsername}
+            onClose={() => {
+              setAdding(false);
+              setHost("");
+              setUsername("");
+            }}
+          />
+        )}
       </Page>
     </>
   );
@@ -146,12 +157,14 @@ function CredentialForm({
   password,
   onHost,
   onUsername,
+  onClose,
 }: {
   host: string;
   username: string;
   password: React.RefObject<HTMLInputElement | null>;
   onHost: (v: string) => void;
   onUsername: (v: string) => void;
+  onClose: () => void;
 }) {
   const set = useSetRegistryCredential();
   const [secret, setSecret] = useState("");
@@ -171,9 +184,8 @@ function CredentialForm({
           { host: host.trim(), username, password: secret },
           {
             onSuccess: () => {
-              onHost("");
-              onUsername("");
               setSecret("");
+              onClose();
             },
           },
         );
@@ -216,6 +228,7 @@ function CredentialForm({
       >
         Save
       </Act>
+      <Button onClick={onClose}>Cancel</Button>
       <span role="alert" className="text-xs text-fail">
         {v.problem([
           !host.trim() && "a host",

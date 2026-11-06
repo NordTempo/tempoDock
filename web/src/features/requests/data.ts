@@ -20,6 +20,7 @@ export const requestKeys = {
   all: ["requests"],
   list: ["requests", "list"],
   one: (id: number) => ["requests", "one", id],
+  check: (id: number) => ["requests", "check", id],
 } as const;
 
 export const requestQueries = {
@@ -37,6 +38,21 @@ export const requestQueries = {
       queryKey: requestKeys.one(id),
       queryFn: () =>
         body(api.GET("/api/v1/requests/{id}", { params: { path: { id } } })),
+    }),
+  /**
+   * Whether approving would run now, asked of the server (check-request:
+   * the call's own checks as the token, stopping at the lock). Asked each
+   * time a request is shown (staleTime 0), never on a timer; admins in a
+   * UI session only.
+   */
+  check: (id: number) =>
+    queryOptions({
+      queryKey: requestKeys.check(id),
+      queryFn: () =>
+        body(
+          api.POST("/api/v1/requests/{id}/check", { params: { path: { id } } }),
+        ),
+      staleTime: 0,
     }),
 };
 

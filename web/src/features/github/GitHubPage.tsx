@@ -31,7 +31,7 @@ export function GitHubPage() {
   return (
     <>
       <PageBar title="GitHub" />
-      <Page width="max-w-[900px]" gap="gap-5">
+      <Page width="max-w-[760px]">
         {gh.hooks_hint && (
           <p className="text-warn">
             GitHub needs a public address to deliver pushes to.{" "}

@@ -150,7 +150,7 @@ function Chart({
           {steps.length} steps, in order, within one visit
           {last &&
             first > 0 &&
-            ` · ${((last.sessions / first) * 100).toFixed(1)}% of ${count(first)} visits converted`}
+            ` · ${pct(last.sessions, first)} of ${count(first)} visits converted overall`}
         </span>
       </p>
       {!data.store_online && (
@@ -170,21 +170,24 @@ function Chart({
               className="flex min-w-0 flex-col gap-1"
             >
               <div className="relative h-36 rounded-ctl bg-hover">
+                {/* A nonzero count always shows a sliver. */}
                 <div
                   className="absolute inset-x-0 bottom-0 rounded-ctl bg-info/40"
                   style={{
                     height: `${first ? (s.sessions / first) * 100 : 0}%`,
+                    minHeight: s.sessions > 0 ? 3 : 0,
                   }}
                   title={`${count(s.sessions)} visits`}
                 />
               </div>
               <span className="text-sm font-semibold tabular-nums">
                 {count(s.sessions)}
-                {prev !== undefined && prev > 0 && (
-                  <span className="ml-1.5 text-xs font-normal text-mut">
-                    {((s.sessions / prev) * 100).toFixed(1)}%
-                  </span>
-                )}
+              </span>
+              {/* Each share names its basis: the step before, and the first. */}
+              <span className="truncate text-xs text-mut tabular-nums">
+                {prev !== undefined && prev > 0 && first > 0
+                  ? `${pct(s.sessions, prev)} of step ${i} · ${pct(s.sessions, first)} overall`
+                  : "\u00a0"}
               </span>
               <span className="truncate text-xs" title={`${s.kind} ${s.match}`}>
                 {i + 1}. <span className="text-mut">{s.kind}</span>{" "}
@@ -197,6 +200,9 @@ function Chart({
     </section>
   );
 }
+
+/** "3.6%": a share with one decimal. */
+const pct = (n: number, of: number) => `${((n / of) * 100).toFixed(1)}%`;
 
 /** A funnel's steps being written: a new one, or an old one replaced. */
 function Editor({
@@ -265,13 +271,12 @@ function Editor({
           // Steps have no ID; their place is who they are.
           <li key={i} className="flex flex-wrap items-center gap-2 text-xs">
             <span className="w-14 text-mut">{i + 1}</span>
-            <span className="flex gap-1">
+            <span className="seg">
               {(["page", "event"] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
                   aria-pressed={s.kind === k}
-                  className={`rounded-ctl px-1.5 ${s.kind === k ? "bg-sel text-fg" : "text-mut"}`}
                   onClick={() => set(i, { kind: k })}
                 >
                   {k === "page" ? "Page" : "Event"}

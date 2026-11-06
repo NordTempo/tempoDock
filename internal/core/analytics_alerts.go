@@ -191,7 +191,8 @@ func (c *Core) analyticsWritten(ctx context.Context, res analytics.WriteResult, 
 		n := snapshot[site]
 		c.siteAlert(ctx, site, alertSignal{Key: errorSpikeKey + strconv.FormatInt(site, 10), Kind: apitypes.AlertErrorSpike,
 			Severity: apitypes.SeverityWarning, Title: "Errors spiking on %s",
-			Message: fmt.Sprintf("%d errors in the last %d minutes, against about %d usually; see `dock analytics errors %%s`", n[0], spikeMinutes, n[1])}, t)
+			Message: fmt.Sprintf("%d errors in the last %d minutes, against about %d usually.", n[0], spikeMinutes, n[1]),
+			Command: "dock analytics errors %s", Target: &apitypes.AlertTarget{}}, t)
 	}
 }
 
@@ -218,7 +219,8 @@ func (c *Core) newErrorAlert(ctx context.Context, ne analytics.NewError, t time.
 	}
 	c.siteAlert(ctx, ne.Site, alertSignal{Key: prefix + ne.Group, Kind: apitypes.AlertNewError, Severity: apitypes.SeverityWarning,
 		Title:   "New error on %s: " + cutText(ne.Type+": "+ne.Message, 120),
-		Message: "First seen on " + where + "; see `dock analytics errors %s " + ne.Group + "`"}, t)
+		Message: "First seen on " + where + ".",
+		Command: "dock analytics errors %s " + ne.Group, Target: &apitypes.AlertTarget{ErrorGroup: ne.Group}}, t)
 }
 
 // cutText cuts s to n runes on one line.
@@ -250,7 +252,10 @@ func (c *Core) siteAlert(ctx context.Context, siteID int64, s alertSignal, t tim
 		c.log.Error("analytics alert: read the site's project", "site", siteID, "err", err)
 		return
 	}
-	s.Title, s.Message = strings.Replace(s.Title, "%s", site.Name, 1), strings.Replace(s.Message, "%s", site.Name, 1)
+	s.Title, s.Command = strings.Replace(s.Title, "%s", site.Name, 1), strings.Replace(s.Command, "%s", site.Name, 1)
+	if s.Target != nil {
+		s.Target.Site = site.Name
+	}
 	s.Project, s.Environment, s.projectID = p.Name, env.Name, p.ID
 	c.raiseAlert(ctx, s, t)
 }
@@ -373,8 +378,9 @@ func (c *Core) judgeTraffic(ctx context.Context, rows []analytics.TrafficRow, ho
 		case dropped:
 			c.siteAlert(ctx, site, alertSignal{Key: key, Kind: apitypes.AlertTrafficDrop, Severity: apitypes.SeverityWarning,
 				Title: "Traffic dropped on %s",
-				Message: fmt.Sprintf("%d page views %s to %s UTC, against usually %d that hour; check that the site and its script load",
-					now, hour.UTC().Format("15:04"), hour.Add(time.Hour).UTC().Format("15:04"), median)}, t)
+				Message: fmt.Sprintf("%d page views %s to %s UTC, against usually %d that hour; check that the site and its script load.",
+					now, hour.UTC().Format("15:04"), hour.Add(time.Hour).UTC().Format("15:04"), median),
+				Target: &apitypes.AlertTarget{}}, t)
 		case median < trafficMinUsual || float64(now) >= trafficRecoverShare*float64(median):
 			c.resolveAlert(ctx, key, t)
 		}

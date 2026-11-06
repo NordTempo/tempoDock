@@ -54,7 +54,6 @@ export function TokenDataFields({
       <select
         className="field py-1"
         value={current}
-        disabled={!value}
         onChange={(e) => set(e.target.value)}
       >
         {options.map((o) => (
@@ -89,20 +88,23 @@ export function TokenDataFields({
           Its own <span className="text-mut">{cap}</span>
         </span>
       </label>
-      <div className="flex flex-wrap gap-3 pl-6">
-        {select("Non-production", own.non_production, levels, (v) => {
-          const level = levels.find((l) => l === v);
-          if (level) onChange({ ...own, non_production: level });
-        })}
-        {select("Production", own.production, levels, (v) => {
-          const level = levels.find((l) => l === v);
-          if (level) onChange({ ...own, production: level });
-        })}
-        {select("Sensitive columns", own.sensitive, sensitivities, (v) => {
-          const sensitive = sensitivities.find((s) => s === v);
-          if (sensitive) onChange({ ...own, sensitive });
-        })}
-      </div>
+      {/* The levels only once "Its own" is chosen. */}
+      {value && (
+        <div className="flex flex-wrap gap-3 pl-6">
+          {select("Non-production", own.non_production, levels, (v) => {
+            const level = levels.find((l) => l === v);
+            if (level) onChange({ ...own, non_production: level });
+          })}
+          {select("Production", own.production, levels, (v) => {
+            const level = levels.find((l) => l === v);
+            if (level) onChange({ ...own, production: level });
+          })}
+          {select("Sensitive columns", own.sensitive, sensitivities, (v) => {
+            const sensitive = sensitivities.find((s) => s === v);
+            if (sensitive) onChange({ ...own, sensitive });
+          })}
+        </div>
+      )}
     </fieldset>
   );
 }

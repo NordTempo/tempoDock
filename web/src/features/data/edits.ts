@@ -4,9 +4,13 @@ import type { DataChange } from "./types";
 // highlighted in the grid, sent as one changeset on commit. Nothing here
 // talks to the server. Use with useReducer(editsReducer, noEdits).
 
-/** One row's staged change, keyed by its primary key. */
+/**
+ * One row's staged change, keyed by its primary key; a new row (`insert`)
+ * has no key yet and only its values.
+ */
 export type RowEdit = {
   key: Record<string, string>;
+  insert?: boolean;
   /** Values the editor saw, per edited column (the conflict check). */
   old: Record<string, string | null>;
   /** Values to set, per edited column. */
@@ -33,10 +37,27 @@ export type EditAction =
     }
   | { type: "delete"; key: Record<string, string> }
   | { type: "restore"; key: Record<string, string> }
+  | { type: "insert"; values: Record<string, string | null> }
   | { type: "discard" };
+
+/** New rows are numbered in the order they were staged. */
+let inserted = 0;
 
 export function editsReducer(edits: Edits, action: EditAction): Edits {
   if (action.type === "discard") return noEdits;
+  if (action.type === "insert") {
+    inserted++;
+    return {
+      ...edits,
+      [`insert:${inserted}`]: {
+        key: {},
+        insert: true,
+        old: {},
+        new: action.values,
+        deleted: false,
+      },
+    };
+  }
   const id = rowId(action.key);
   const current: RowEdit = edits[id] ?? {
     key: action.key,
@@ -72,12 +93,15 @@ export function editsReducer(edits: Edits, action: EditAction): Edits {
     : rest;
 }
 
-/** The changeset for a table's staged edits, deletes after updates. */
+/** The changeset for a table's staged edits: inserts, updates, deletes. */
 export function toChanges(table: string, edits: Edits): DataChange[] {
   const rows = Object.values(edits);
   return [
     ...rows
-      .filter((r) => !r.deleted)
+      .filter((r) => r.insert)
+      .map((r): DataChange => ({ op: "insert", table, new: r.new })),
+    ...rows
+      .filter((r) => !r.deleted && !r.insert)
       .map(
         (r): DataChange => ({
           op: "update",

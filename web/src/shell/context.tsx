@@ -91,9 +91,13 @@ export function EnvSwitch({
       <Menu label={`Environment: ${environment}`} button={pill}>
         {(close) => [
           // The one in view first, checked, so the menu reads as a choice.
+          // Environments are a choice of one (menuitemradio), so the menu's
+          // children are all items, as role="menu" requires.
           <div
             key="here"
-            aria-current="true"
+            role="menuitemradio"
+            aria-checked="true"
+            tabIndex={-1}
             className={`${menuItem} cursor-default text-fg hover:bg-transparent`}
           >
             <span aria-hidden className="w-[7px] text-2xs">
@@ -126,6 +130,8 @@ export function EnvSwitch({
                 }}
                 onClick={close}
                 className={menuItem}
+                role="menuitemradio"
+                aria-checked="false"
               >
                 {dot}
                 <span className="flex-1">
@@ -146,6 +152,8 @@ export function EnvSwitch({
                 hash={`env-${e.environment.name}`}
                 onClick={close}
                 className={menuItem}
+                role="menuitemradio"
+                aria-checked="false"
               >
                 {dot}
                 <span className="flex-1">
@@ -155,13 +163,14 @@ export function EnvSwitch({
               </Link>
             );
           }),
-          <div key="line" className="my-1 border-t border-line" />,
+          <hr key="line" className="my-1 border-0 border-t border-line" />,
           <Link
             key="compare"
             to="/$org/$project/compare"
             params={{ org, project }}
             onClick={close}
             className={menuItem}
+            role="menuitem"
           >
             <span aria-hidden className="w-[7px]" />
             <span className="flex-1">Compare environments</span>
@@ -180,14 +189,16 @@ export function EnvSwitch({
 /**
  * ● per server in view: the environment's server, or every server the
  * project runs on. Anything but online says so in words: "✕ homelab
- * offline".
+ * offline". With `troubleOnly`, only the servers that aren't online.
  */
 export function ServerDots({
   project,
   environment,
+  troubleOnly,
 }: {
   project: string;
   environment?: string;
+  troubleOnly?: boolean;
 }) {
   const servers = useServers();
   const tree = useProjectTree();
@@ -199,7 +210,10 @@ export function ServerDots({
       .filter((e) => !environment || e.environment.name === environment)
       .map((e) => e.environment.server),
   );
-  const shown = servers.filter((s) => names.has(s.name));
+  const shown = servers.filter(
+    (s) => names.has(s.name) && !(troubleOnly && s.status === "online"),
+  );
+  if (shown.length === 0) return null;
   return (
     <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
       {shown.map((s) => {

@@ -295,8 +295,31 @@ export function InviteError({ error }: { error: unknown }) {
   const dead = error instanceof ApiError && error.status === 404;
   const session = useQuery(queries.session()).data;
   return (
-    <Frame title={dead ? "This invite link doesn't work" : "Invite"}>
-      <ErrorText error={error instanceof Error ? error : null} />
+    <Frame
+      title={dead ? "This invite link doesn't work" : "The invite didn't load"}
+    >
+      {dead ? (
+        // The API can't tell these apart (a dead code reads as unknown),
+        // so the page lists them with what to do.
+        <div className="flex flex-col gap-2">
+          <p>Usually one of these:</p>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sec">
+            <li>
+              Part of the link is missing. Copy the whole link from the message
+              again.
+            </li>
+            <li>It expired. Invites last 7 days.</li>
+            <li>
+              It was used already, or the admin revoked it or made a new one.
+            </li>
+          </ul>
+          <p className="text-sec">
+            Ask the admin who invited you for a new link.
+          </p>
+        </div>
+      ) : (
+        <ErrorText error={error instanceof Error ? error : null} />
+      )}
       <div className="flex flex-wrap gap-2">
         <Link to="/" className="btn">
           {session ? "Go to projects" : "Sign in"}

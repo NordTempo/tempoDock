@@ -118,44 +118,45 @@ function Main({
   const panel = { project, site, stats, range, filters, onPick };
   return (
     <>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(104px,1fr))] gap-x-4 gap-y-3 tabular-nums">
+      {/* Six tiles in one row from a medium width; three under it. */}
+      <div className="grid grid-cols-3 gap-x-4 gap-y-3 tabular-nums md:grid-cols-6">
         <Kpi
           label="Visitors"
           value={count(o.visitors)}
-          change={delta(o.visitors, p.visitors)}
+          change={delta(o.visitors, p.visitors, range)}
           on={metric === "visitors"}
           onClick={() => setMetric("visitors")}
         />
         <Kpi
           label="Page views"
           value={count(o.pageviews)}
-          change={delta(o.pageviews, p.pageviews)}
+          change={delta(o.pageviews, p.pageviews, range)}
           on={metric === "pageviews"}
           onClick={() => setMetric("pageviews")}
         />
         <Kpi
           label="Sessions"
           value={count(o.sessions)}
-          change={delta(o.sessions, p.sessions)}
+          change={delta(o.sessions, p.sessions, range)}
         />
         <Kpi
           label="Bounce rate"
           value={`${Math.round(o.bounce_rate * 100)}%`}
           change={
             o.sessions && p.sessions
-              ? points(o.bounce_rate, p.bounce_rate)
+              ? points(o.bounce_rate, p.bounce_rate, range)
               : undefined
           }
         />
         <Kpi
           label="Session length"
           value={duration(o.duration_ms)}
-          change={delta(o.duration_ms, p.duration_ms)}
+          change={delta(o.duration_ms, p.duration_ms, range, duration)}
         />
         <Kpi
           label="Events"
           value={count(o.events)}
-          change={delta(o.events, p.events)}
+          change={delta(o.events, p.events, range)}
         />
       </div>
       <Chart stats={stats} metric={metric} />

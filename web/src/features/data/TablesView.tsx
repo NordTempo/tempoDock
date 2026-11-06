@@ -52,6 +52,8 @@ export function TablesView({
   const [edits, dispatch] = useReducer(editsReducer, noEdits);
   const [selected, setSelected] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  // The new-row form, open in edit mode.
+  const [addingRow, setAddingRow] = useState(false);
   // An exact count of the rows matching, asked for (`dock db rows --count`).
   const [counting, setCounting] = useState(false);
   const source = useDataSource();
@@ -110,10 +112,13 @@ export function TablesView({
   const canEdit = editing && table.editable && !!actions;
   const changes = toChanges(name, edits);
   const selectedRow = selected === null ? undefined : data[selected];
-  const keyAt = (row: number) => {
+  const selectedKey = selected === null ? null : keyAtRow(selected);
+  const selectedDeleted = !!selectedKey && !!edits[rowId(selectedKey)]?.deleted;
+  function keyAtRow(row: number) {
     const r = data[row];
     return r ? rowKey(table, names, r) : null;
-  };
+  }
+  const keyAt = keyAtRow;
 
   const gridColumns: GridCol[] = columns.map((c) => ({
     ...c,
@@ -195,6 +200,34 @@ export function TablesView({
               <Btn aria-pressed={adding} onClick={() => setAdding(!adding)}>
                 Filter <Kbd>F</Kbd>
               </Btn>
+              {/* Edit mode's row actions, beside the keys that do the same. */}
+              {canEdit && (
+                <>
+                  <Btn
+                    aria-pressed={addingRow}
+                    onClick={() => setAddingRow(!addingRow)}
+                  >
+                    Add row
+                  </Btn>
+                  <Btn
+                    disabled={selectedKey === null}
+                    title={
+                      selectedKey === null
+                        ? "Select a row first"
+                        : "Or press Delete"
+                    }
+                    onClick={() =>
+                      selectedKey &&
+                      dispatch({
+                        type: selectedDeleted ? "restore" : "delete",
+                        key: selectedKey,
+                      })
+                    }
+                  >
+                    {selectedDeleted ? "Restore row" : "Delete row"}
+                  </Btn>
+                </>
+              )}
               {onEditing && table.editable && (
                 <Btn aria-pressed={editing} onClick={() => onEditing(!editing)}>
                   {editing ? "Editing" : "Edit"} <Kbd>E</Kbd>
@@ -264,9 +297,19 @@ export function TablesView({
         )}
         {editing && canEdit && (
           <p className="px-5 pt-3 text-xs text-(--g-mut)">
-            Double-click a cell to change it, Delete removes its row. Nothing is
-            written until you commit.
+            Double-click a cell to change it. Nothing is written until you
+            commit.
           </p>
+        )}
+        {canEdit && addingRow && (
+          <AddRow
+            columns={(table.columns ?? []).filter((c) => !c.generated)}
+            onAdd={(values) => {
+              dispatch({ type: "insert", values });
+              setAddingRow(false);
+            }}
+            onCancel={() => setAddingRow(false)}
+          />
         )}
         <div className="relative mt-3 min-h-[300px] flex-1 px-3">
           {rows.error ? (
@@ -362,5 +405,75 @@ export function TablesView({
         )
       )}
     </div>
+  );
+}
+
+/**
+ * A new row's values, one field per column that isn't generated. An empty
+ * field is left out, so the column's default (or NULL) applies. Staged
+ * like other edits: it shows in the review pane until committed.
+ */
+function AddRow({
+  columns,
+  onAdd,
+  onCancel,
+}: {
+  columns: DataTable["columns"];
+  onAdd: (values: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  return (
+    <form
+      aria-label="Add a row"
+      className="mx-5 mt-3 flex flex-col gap-2 rounded-lg border border-(--g-line) p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onAdd(
+          Object.fromEntries(
+            Object.entries(values).filter(([, v]) => v !== ""),
+          ),
+        );
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+        {(columns ?? []).map((c, i) => (
+          <label key={c.name} className="flex flex-col gap-1 text-xs">
+            <span className="text-(--g-mut)">
+              <span className="font-mono text-(--g-text)">{c.name}</span>{" "}
+              {c.type_name}
+            </span>
+            <input
+              // biome-ignore lint/a11y/noAutofocus: the form opens on request
+              autoFocus={i === 0}
+              value={values[c.name] ?? ""}
+              placeholder={
+                c.default
+                  ? `default ${c.default}`
+                  : c.nullable
+                    ? "NULL"
+                    : "required"
+              }
+              onChange={(e) =>
+                setValues({ ...values, [c.name]: e.target.value })
+              }
+              className="g-field h-7 font-mono text-xs"
+            />
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center justify-end gap-2">
+        <Btn onClick={onCancel}>Cancel</Btn>
+        <Btn primary type="submit">
+          Stage row
+        </Btn>
+      </div>
+    </form>
   );
 }

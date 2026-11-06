@@ -3,8 +3,10 @@
 Postgres and Redis come as templates: a regular service with a pinned
 image, a volume, generated credentials and defaults tuned for a small
 server. Every service with a volume is backed up daily with restic, and a
-backup restores into a new service, never over the live one. Design:
-[ADR 0019](../decisions/0019-templates-and-backups.md).
+database restores into a new service, never over the live one; once it
+checks out, the environment switches to it in one step. Design:
+[ADR 0019](../decisions/0019-templates-and-backups.md) and
+[ADR 0061](../decisions/0061-one-restore-model.md).
 
 ## Add a database
 
@@ -95,19 +97,34 @@ app network.
 
 ## Restore
 
+Backups and snapshots (below) are both **restore points** of a service.
+The **Backups** tab lists them together, and one Restore action restores
+either:
+
+- A **template database** restores into a **new** service, `db-restored`
+  by default, and `db` keeps running untouched. Look at the data (the Data
+  panel works on it), then **Use db-restored**: every `${{db.KEY}}`
+  reference in the environment's variables becomes `${{db-restored.KEY}}`
+  and the services using it redeploy. Switching back is the same action
+  the other way, and `db` stays until you archive it.
+- **Any other service** restores a snapshot **in place**, after a safety
+  snapshot (see [Snapshots](#snapshots)): nothing refers to it by name.
+
+From the CLI:
+
 ```sh
-dock backup restore -s db --snapshot 4cf53263 --as db-old
+dock backup restore -s db --snapshot 4cf53263          # into db-restored
+dock volume snapshot restore 12 -s db                  # the same, from a snapshot
+dock service switch-references db --to db-restored --dry-run   # who would redeploy
+dock service switch-references db --to db-restored     # use it
+dock service switch-references db-restored --to db     # switch back
 ```
 
-This creates a **new** service `db-old` from the same template, with new
-credentials, and loads the snapshot into it. `db` keeps running untouched.
-When `db-old` checks out, point references at it:
-
-```sh
-dock env set -s api DATABASE_URL='${{db-old.DATABASE_URL}}' --deploy
-```
-
-and archive the old one when you no longer need it.
+A backup's restore gets new credentials, a snapshot's keeps the
+snapshot's. The switch needs every referenced key on the new service, and
+is refused while the environment has other staged changes (apply or
+discard them first). Literal URLs naming the host (`postgres://db:5432`)
+are not rewritten; use references so a switch catches them.
 
 Restores read only the repository backups go to now. A backup whose
 snapshot is in another one (its storage connection's endpoint or bucket
@@ -128,7 +145,7 @@ any service with a volume.
 ```sh
 dock volume snapshot -s db --note "before 2.0"   # take one now
 dock volume snapshot list -s db                  # snapshots and restores
-dock volume snapshot restore 12 -s db            # into a new service db-snapshot-12
+dock volume snapshot restore 12 -s db            # into a new service db-restored
 dock volume snapshot restore 12 -s db --in-place # replace db's data
 dock volume snapshot delete 12 -s db
 ```
@@ -146,11 +163,13 @@ Delete.
 | Kept | the newest 5 per service, at most 7 days | 7 daily, 4 weekly, 6 monthly |
 | Restore | seconds: files copied back | a dump loaded into a new service |
 
-A template database restores into a **new** service by default, with the
-credentials of the snapshot's data, and the original keeps running. Any
-service restores **in place**: it stops, its current data is snapshotted
-first (the *safety snapshot*, which undoes the restore), the snapshot is
-copied in, and it starts again. Deploys wait meanwhile.
+A template database restores into a **new** service, with the
+credentials of the snapshot's data, and the original keeps running; switch
+to it as in [Restore](#restore). Any other service restores **in place**:
+it stops, its current data is snapshotted first (the *safety snapshot*,
+which undoes the restore), the snapshot is copied in, and it starts again.
+Deploys wait meanwhile. (`--in-place` also works for a template database,
+for scripts; the console doesn't offer it.)
 
 Two actions take one by themselves, and stop if it fails:
 

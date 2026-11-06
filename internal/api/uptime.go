@@ -41,6 +41,18 @@ func registerUptime(s *Server, a huma.API) {
 		return reply(s.core.CheckDomains(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "update-uptime-check", Method: http.MethodPatch, Path: servicePathT + "/uptime-checks/{id}",
+		Summary:     "Change an uptime check",
+		Description: "Its interval or expected status, in place: the history stays and the new schedule applies at once. Scope: admin.",
+		Tags:        tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		ID   int64 `path:"id"`
+		Body apitypes.UpdateUptimeCheckRequest
+	}) (*out[apitypes.UptimeCheck], error) {
+		return reply(s.core.UpdateUptimeCheck(ctx, actor, in.ref(), in.ID, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "remove-uptime-check", Method: http.MethodDelete, Path: servicePathT + "/uptime-checks/{id}",
 		Summary: "Remove an uptime check", Description: "With its history; its open alert resolves. Scope: admin.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,

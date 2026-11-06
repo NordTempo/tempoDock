@@ -147,7 +147,7 @@ func newSnapshotRestoreCmd(g *globals) *cobra.Command {
 		Long: `Restore a snapshot and wait for it (--detach returns at once).
 
 A template database restores into a NEW service by default (--as names it,
-default <service>-snapshot-<id>) with the snapshot's credentials; the
+default <service>-restored) with the snapshot's credentials; the
 service itself is not touched. --in-place replaces the service's own
 volumes instead: it stops, a safety snapshot keeps the data it holds now
 (restore that one to undo), the snapshot is copied in and it starts again.
@@ -202,7 +202,7 @@ Other services restore in place only.`,
 		},
 	}
 	f.add(cmd, needService)
-	cmd.Flags().StringVar(&req.As, "as", "", "name of the new service (default <service>-snapshot-<id>)")
+	cmd.Flags().StringVar(&req.As, "as", "", "name of the new service (default <service>-restored)")
 	cmd.Flags().BoolVar(&req.InPlace, "in-place", false, "replace the service's own volumes, after a safety snapshot")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.Flags().BoolVar(&detach, "detach", false, "return once the restore started")

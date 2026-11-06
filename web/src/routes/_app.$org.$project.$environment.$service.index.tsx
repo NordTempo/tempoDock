@@ -9,6 +9,7 @@ import {
   useService,
 } from "../data/queries";
 import type { ServiceRef } from "../data/types";
+import { RestoredFrom } from "../features/backups/Restored";
 import { ConnectHint } from "../features/connect/ConnectHint";
 import { LogsPane, noFilter } from "../features/service/LogsPane";
 import { ReleasesTable } from "../features/service/ReleasesTable";
@@ -44,6 +45,7 @@ function ServiceOverview() {
       <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-4 pt-6 pb-10 sm:px-7">
         <StatusSentence view={service} />
         <ServiceFacts serviceRef={ref} />
+        {service.service.template && <RestoredFrom serviceRef={ref} />}
         <Signals serviceRef={ref} />
         {/* `dock connect` reaches a set port, or a database's own. */}
         {(service.service.port > 0 || !!service.service.template) && (

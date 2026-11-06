@@ -26,9 +26,9 @@ function ConsoleNotFound() {
   return (
     <>
       <PageBar title="Not found" />
-      <Page gap="gap-3">
-        <p className="text-mut">Nothing in the console at this address.</p>
-        <Link to="/console" className="btn pri self-start">
+      <Page gap="gap-2">
+        <p className="text-md">Nothing in the console at this address.</p>
+        <Link to="/console" className="btn pri mt-2 self-start">
           Back to the overview
         </Link>
       </Page>

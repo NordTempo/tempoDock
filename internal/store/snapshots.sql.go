@@ -13,7 +13,7 @@ import (
 const createSnapshot = `-- name: CreateSnapshot :one
 INSERT INTO volume_snapshots (service_id, server_id, trigger, status, volumes, note, created_by, started_at)
 VALUES (?, ?, ?, 'running', ?, ?, ?, ?)
-RETURNING id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at
+RETURNING id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at, log
 `
 
 type CreateSnapshotParams struct {
@@ -51,6 +51,7 @@ func (q *Queries) CreateSnapshot(ctx context.Context, arg CreateSnapshotParams) 
 		&i.CreatedBy,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Log,
 	)
 	return i, err
 }
@@ -125,7 +126,7 @@ func (q *Queries) FailRunningSnapshots(ctx context.Context, arg FailRunningSnaps
 }
 
 const finishSnapshot = `-- name: FinishSnapshot :exec
-UPDATE volume_snapshots SET status = ?, size_bytes = ?, paused_ms = ?, error = ?, finished_at = ? WHERE id = +?
+UPDATE volume_snapshots SET status = ?, size_bytes = ?, paused_ms = ?, error = ?, log = ?, finished_at = ? WHERE id = +?
 `
 
 type FinishSnapshotParams struct {
@@ -133,6 +134,7 @@ type FinishSnapshotParams struct {
 	SizeBytes  int64
 	PausedMs   int64
 	Error      string
+	Log        string
 	FinishedAt *time.Time
 	ID         int64
 }
@@ -143,6 +145,7 @@ func (q *Queries) FinishSnapshot(ctx context.Context, arg FinishSnapshotParams) 
 		arg.SizeBytes,
 		arg.PausedMs,
 		arg.Error,
+		arg.Log,
 		arg.FinishedAt,
 		arg.ID,
 	)
@@ -171,7 +174,7 @@ func (q *Queries) FinishSnapshotRestore(ctx context.Context, arg FinishSnapshotR
 }
 
 const getSnapshot = `-- name: GetSnapshot :one
-SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at FROM volume_snapshots WHERE id = +?
+SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at, log FROM volume_snapshots WHERE id = +?
 `
 
 func (q *Queries) GetSnapshot(ctx context.Context, id int64) (VolumeSnapshot, error) {
@@ -191,12 +194,13 @@ func (q *Queries) GetSnapshot(ctx context.Context, id int64) (VolumeSnapshot, er
 		&i.CreatedBy,
 		&i.StartedAt,
 		&i.FinishedAt,
+		&i.Log,
 	)
 	return i, err
 }
 
 const listExpiredSnapshots = `-- name: ListExpiredSnapshots :many
-SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY started_at, id LIMIT +?
+SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at, log FROM volume_snapshots WHERE started_at < +? AND status != 'running' ORDER BY started_at, id LIMIT +?
 `
 
 type ListExpiredSnapshotsParams struct {
@@ -230,6 +234,7 @@ func (q *Queries) ListExpiredSnapshots(ctx context.Context, arg ListExpiredSnaps
 			&i.CreatedBy,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.Log,
 		); err != nil {
 			return nil, err
 		}
@@ -329,7 +334,7 @@ func (q *Queries) ListServiceSnapshotRestores(ctx context.Context, arg ListServi
 }
 
 const listServiceSnapshots = `-- name: ListServiceSnapshots :many
-SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at FROM volume_snapshots WHERE service_id = +? ORDER BY id DESC LIMIT +?
+SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at, log FROM volume_snapshots WHERE service_id = +? ORDER BY id DESC LIMIT +?
 `
 
 type ListServiceSnapshotsParams struct {
@@ -361,6 +366,7 @@ func (q *Queries) ListServiceSnapshots(ctx context.Context, arg ListServiceSnaps
 			&i.CreatedBy,
 			&i.StartedAt,
 			&i.FinishedAt,
+			&i.Log,
 		); err != nil {
 			return nil, err
 		}

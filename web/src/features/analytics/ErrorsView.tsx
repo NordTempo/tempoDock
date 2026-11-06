@@ -103,7 +103,7 @@ export function ErrorsView({
       {!data.store_online && (
         <p className="text-warn-text">{data.store_error}</p>
       )}
-      <Summary data={data} />
+      <Summary data={data} range={range} />
       <LineChart
         title={`Errors per ${data.bucket}`}
         points={filled(data.series ?? [], data.from, data.to, step)}
@@ -125,13 +125,12 @@ export function ErrorsView({
           onChange={(e) => setText(e.target.value)}
           className="field w-64 py-0.5 text-xs"
         />
-        <span className="flex gap-1">
+        <span className="seg">
           {(["All", "New"] as const).map((label) => (
             <button
               key={label}
               type="button"
               aria-pressed={(label === "New") === onlyNew}
-              className={`min-h-[24px] rounded-ctl px-2 ${(label === "New") === onlyNew ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => setOnlyNew(label === "New")}
             >
               {label}
@@ -199,7 +198,7 @@ export function ErrorsView({
 }
 
 /** The range's totals against the period before; more is worse. */
-function Summary({ data }: { data: SiteErrors }) {
+function Summary({ data, range }: { data: SiteErrors; range: StatsRange }) {
   const s = data.summary;
   const p = data.previous;
   const worse = (c?: Change) => c && { ...c, up: !c.up };
@@ -208,31 +207,27 @@ function Summary({ data }: { data: SiteErrors }) {
       <Kpi
         label="Errors"
         value={count(s.errors)}
-        change={worse(delta(s.errors, p.errors))}
+        change={worse(delta(s.errors, p.errors, range))}
       />
       <Kpi
         label="Sessions with errors"
         value={`${(s.session_share * 100).toFixed(1)}%`}
         change={
           p.session_share
-            ? points(-s.session_share, -p.session_share)
+            ? points(-s.session_share, -p.session_share, range)
             : undefined
         }
       />
       <Kpi
         label="Visitors affected"
         value={count(s.visitors)}
-        change={worse(delta(s.visitors, p.visitors))}
+        change={worse(delta(s.visitors, p.visitors, range))}
       />
       <div className="border-b-2 border-transparent pb-1">
         <span className="block text-xs text-mut">Groups</span>
-        <span className="block text-lg font-semibold">
-          {count(s.groups)}
-          {s.new_groups > 0 && (
-            <small className="ml-1.5 text-xs font-normal text-warn-text">
-              {s.new_groups} new
-            </small>
-          )}
+        <span className="block text-lg font-semibold">{count(s.groups)}</span>
+        <span className="block text-xs text-warn-text">
+          {s.new_groups > 0 ? `${s.new_groups} new` : "\u00a0"}
         </span>
       </div>
     </div>

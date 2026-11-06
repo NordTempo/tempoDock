@@ -1,4 +1,5 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import {
   useCanDeploy,
@@ -7,6 +8,7 @@ import {
   useVolumes,
 } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
+import { useOrg } from "../../shell/location";
 import { ago, clock, day, elapsed } from "../../ui/format";
 import {
   Act,
@@ -27,17 +29,31 @@ import {
 } from "./data";
 
 /**
- * A service's Run tab (ADR 0048): a command box over the latest runs, the
- * selected one opened under its row with its output. Runs go in the
- * background; run events keep the list current.
+ * A service's One-off command tab (ADR 0048): a command box over the
+ * latest runs, the selected one opened under its row with its output.
+ * Runs go in the background; run events keep the list current. One line
+ * points at the start command, which this tab doesn't change.
  */
 export function RunPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
   const { service } = useService(ref);
   const runs = useSuspenseQuery(runQueries.list(ref)).data;
   const canDeploy = useCanDeploy(ref);
   const [selected, setSelected] = useState<number | null>(null);
   return (
     <>
+      <p className="text-mut">
+        Runs once. To change how {ref.service} starts, edit{" "}
+        <Link
+          to="/$org/$project/$environment/$service/build"
+          params={{ org, ...ref }}
+          search={{ edit: "start_command" }}
+          className="text-info underline underline-offset-2"
+        >
+          Start command in Build &amp; run
+        </Link>
+        .
+      </p>
       {service.active_release ? (
         <RunForm serviceRef={ref} onStarted={setSelected} />
       ) : (

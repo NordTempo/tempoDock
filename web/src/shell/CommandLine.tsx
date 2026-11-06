@@ -217,13 +217,13 @@ function Help({ onClose }: { onClose: () => void }) {
     >
       <div className="flex items-center border-b border-line px-5 py-3">
         <h2 className="text-md font-semibold">Keyboard shortcuts</h2>
+        {/* The visible text is the name ("Close esc"), as WCAG 2.5.3 asks. */}
         <button
           type="button"
-          className="lnk ml-auto"
-          aria-label="Close"
+          className="ml-auto flex items-center gap-1.5 text-xs text-mut hover:text-fg"
           onClick={onClose}
         >
-          <kbd>esc</kbd>
+          Close <kbd>esc</kbd>
         </button>
       </div>
       {/* Focus lands here, not on the close button. */}

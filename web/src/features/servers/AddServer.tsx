@@ -152,7 +152,7 @@ function Added({ added, onDone }: { added: AddedServer; onDone: () => void }) {
       aria-labelledby="added-server"
       className="flex flex-col gap-2.5 rounded-panel border border-ok-edge bg-ok-bg/30 p-4"
     >
-      <h2 id="added-server" className="text-[15px] font-semibold">
+      <h2 id="added-server" className="text-sm font-semibold">
         <span className="text-ok">✓</span> Added{" "}
         <span className="font-mono font-medium">{name}</span>
       </h2>

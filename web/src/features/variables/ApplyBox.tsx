@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useApplyChanges, useDiscardChanges } from "../../data/mutations";
 import {
@@ -9,12 +10,17 @@ import {
 import type {
   DiscardSelection,
   EnvRef,
+  Release,
+  ServiceView,
   Variable,
   VariableChange,
 } from "../../data/types";
 import { modKey, useKeydown } from "../../shell/keys";
+import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
-import { Act, ErrorText } from "../../ui/kit";
+import { Act, ErrorText, Glyph } from "../../ui/kit";
+import { notify } from "../../ui/notice";
+import { failurePhrase, stepPhrase } from "../../ui/status";
 import { imageLabel, shortImage } from "../service/releases";
 import {
   formatSetting,
@@ -74,6 +80,29 @@ export function ApplyBox({
         ]
       : [];
   });
+  // A service with a volume stops its old container before the new one
+  // starts: said as the rollback confirm says it.
+  const downtimes = affected.flatMap((s) =>
+    s.service.stateful && s.service.active_release && !s.service.stopped_at
+      ? [
+          `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: a volume allows one writer.`,
+        ]
+      : [],
+  );
+  const applyNow = () =>
+    apply.mutate(env, {
+      onSuccess: (r) => {
+        const started = (r.releases ?? []).map(
+          (x) => `${x.service} r${x.number}`,
+        );
+        notify(
+          started.length > 0
+            ? `Applied: started ${started.join(", ")}`
+            : "Applied",
+          started.length > 0 ? "info" : undefined,
+        );
+      },
+    });
   // Releases can't start on an unreachable server.
   const blocked = useDeployBlock(env);
   const applyBlocked = releases.length > 0 ? blocked : undefined;
@@ -82,26 +111,29 @@ export function ApplyBox({
     if (changes.count === 0 || busy || applyBlocked) return;
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      apply.mutate(env);
+      applyNow();
     }
   });
 
   if (changes.count === 0) {
     const applied = apply.data;
     if (!applied) return null;
-    const started = (applied.releases ?? []).map(
-      (r) => `${r.service} r${r.number}`,
-    );
     const skipped = applied.skipped ?? [];
     const failed = applied.failed ?? [];
     return (
       <div className="flex flex-col gap-1 text-mut">
         <p>
           <span className="text-ok">✓</span> Applied.{" "}
-          {started.length > 0 && `Started ${started.join(", ")}. `}
           {skipped.length > 0 &&
             `${skipped.join(", ")} picks it up after the deploy in progress.`}
         </p>
+        {(applied.releases ?? []).map((r) => (
+          <AppliedRelease
+            key={r.id}
+            release={r}
+            view={services.find((s) => s.service.name === r.service)}
+          />
+        ))}
         {failed.map((f) => (
           <p key={f} className="text-warn">
             ▲ Still staged: {f}
@@ -275,13 +307,18 @@ export function ApplyBox({
           {text}
         </p>
       ))}
+      {downtimes.map((text) => (
+        <p key={text} className="text-xs text-warn-text">
+          ▲ {text}
+        </p>
+      ))}
       <div className="flex flex-wrap items-start gap-2">
         <Act
           primary
           cli={`dock apply -e ${env.environment}`}
           disabled={busy || !!applyBlocked}
           title={applyBlocked}
-          onClick={() => apply.mutate(env)}
+          onClick={applyNow}
         >
           {releases.length > 0
             ? `Apply: release ${releases.join(", ")}`
@@ -312,5 +349,72 @@ export function ApplyBox({
         </span>
       </div>
     </section>
+  );
+}
+
+/**
+ * A release an apply started, as it goes, from the live service view:
+ * "web r11 is serving", or in the fail colour "web r11 failed its health
+ * check · Details". The release number links to its page.
+ */
+function AppliedRelease({
+  release: r,
+  view,
+}: {
+  release: Release;
+  view: ServiceView | undefined;
+}) {
+  const org = useOrg();
+  const link = (text: ReactNode, className = "") => (
+    <Link
+      to="/$org/$project/$environment/$service/releases/$number"
+      params={{
+        org,
+        project: r.project,
+        environment: r.environment,
+        service: r.service,
+        number: String(r.number),
+      }}
+      className={`underline decoration-faint underline-offset-2 hover:decoration-current ${className}`}
+    >
+      {text}
+    </Link>
+  );
+  const name = (
+    <>
+      {r.service} {link(<span className="font-mono">r{r.number}</span>)}
+    </>
+  );
+  const latest = view?.latest_release;
+  if (view?.service.active_release === r.number) {
+    return (
+      <p className="text-fg">
+        <span className="text-ok">●</span> {name} is serving
+      </p>
+    );
+  }
+  if (latest?.number === r.number && latest.status === "failed") {
+    return (
+      <p className="text-fail">
+        ✕ {name} {failurePhrase(latest)} · {link("Details")}
+      </p>
+    );
+  }
+  if (view?.active_release && view.active_release.number > r.number) {
+    return (
+      <p>
+        {name} was replaced by r{view.active_release.number}
+      </p>
+    );
+  }
+  const step =
+    view?.deploying?.number === r.number ? view.deploying.status : r.status;
+  return (
+    <p>
+      <span className="text-prog">
+        <Glyph char="◐" />
+      </span>{" "}
+      {name} {stepPhrase[step]}
+    </p>
   );
 }

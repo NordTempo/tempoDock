@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import type { AuditEvent } from "../../data/types";
 import { clockSec, day } from "../../ui/format";
-import { Actor, Scroll } from "../../ui/kit";
+import { Actor, Panel, Scroll } from "../../ui/kit";
 import { AuditDetail } from "./AuditDetail";
 
 /**
@@ -185,6 +185,10 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "service.run": ["run command", "ran a command in"],
   "service.start": ["start service", "started"],
   "service.stop": ["stop service", "stopped"],
+  "service.switch_references": [
+    "switch references",
+    "pointed variable references at",
+  ],
   "service.update": ["stage settings", "staged settings for"],
   "snapshot.create": ["take snapshot", "took a snapshot of"],
   "snapshot.created": ["snapshot taken", "took a snapshot of"],
@@ -206,6 +210,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "token.revoke": ["revoke token", "revoked"],
   "uptime.add": ["add uptime check", "added an uptime check to"],
   "uptime.remove": ["remove uptime check", "removed an uptime check from"],
+  "uptime.update": ["change uptime check", "changed an uptime check of"],
   "user.2fa_add": ["add second factor", "added a second factor for"],
   "user.2fa_remove": ["remove second factor", "removed a second factor of"],
   "user.2fa_reset": ["reset two-factor", "reset the two-factor sign-in of"],
@@ -321,11 +326,11 @@ export function AuditTable({
     );
   }
   return (
-    <Scroll>
+    <Panel>
       <table>
         <thead>
           <tr>
-            <th className="w-[104px] pl-2.5">Time</th>
+            <th className="w-[104px]">Time</th>
             <th>Actor</th>
             <th>Action</th>
             <th>Target</th>
@@ -345,14 +350,14 @@ export function AuditTable({
                     <th
                       colSpan={5}
                       scope="colgroup"
-                      className="pt-4 pl-2.5 text-xs font-semibold text-sec"
+                      className="pt-4 text-xs font-semibold text-sec"
                     >
                       {head}
                     </th>
                   </tr>
                 )}
                 <tr className={opened ? "bg-sel" : undefined}>
-                  <td className="pl-2.5 font-mono text-mut">
+                  <td className="font-mono text-mut">
                     <button
                       type="button"
                       aria-expanded={opened}
@@ -379,7 +384,7 @@ export function AuditTable({
                 </tr>
                 {opened && (
                   <tr>
-                    <td colSpan={5} className="pb-3 pl-2.5 whitespace-normal">
+                    <td colSpan={5} className="pb-3 whitespace-normal">
                       <AuditDetail event={e} />
                     </td>
                   </tr>
@@ -389,6 +394,6 @@ export function AuditTable({
           })}
         </tbody>
       </table>
-    </Scroll>
+    </Panel>
   );
 }

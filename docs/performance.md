@@ -176,6 +176,7 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Domain DNS/TLS checks | `internal/core/domains.go` | 5 s, backing off to 5 min | a domain is pending | a DNS lookup and TLS dial per domain; for one not yet verified, a TXT lookup from the control plane instead (ADR 0042) |
 | Cloudflare queue | `internal/core/cloudflare_queue.go` | once, at the earliest retry (5 s, backing off to 5 min per row); after a 429, at its `Retry-After` (5 min without one) | a tunnel or a domain through one is pending a retry (ADR 0036); otherwise it sleeps until kicked | one to five Cloudflare API calls per row, one at a time |
 | Registry restart wait | `internal/registry/platform.go` | every 100 ms, up to 1 min | the registry restarted for a storage change or migration (ADR 0034) | one `GET /v2/` per step until it answers, about a second |
+| Fake health pass | `internal/node/fake/fake.go` (PassHealthAfter) | once, 1 s after a container starts or restarts | `make dev` only (DOCK_FAKE_RUNTIME=1), for a container with a health check | one timer per start; then one health_status event |
 | Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe |
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
 | Template database setup retry | `internal/core/templates.go` | 1 s, doubling, 5 attempts (about 15 s) | setting up a new template database's data access failed | one setup attempt |

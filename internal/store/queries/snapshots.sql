@@ -4,7 +4,7 @@ VALUES (?, ?, ?, 'running', ?, ?, ?, ?)
 RETURNING *;
 
 -- name: FinishSnapshot :exec
-UPDATE volume_snapshots SET status = ?, size_bytes = ?, paused_ms = ?, error = ?, finished_at = ? WHERE id = +?;
+UPDATE volume_snapshots SET status = ?, size_bytes = ?, paused_ms = ?, error = ?, log = ?, finished_at = ? WHERE id = +?;
 
 -- name: GetSnapshot :one
 SELECT * FROM volume_snapshots WHERE id = +?;

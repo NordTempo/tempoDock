@@ -38,10 +38,7 @@ export function RegistryPage() {
   if (!registry.enabled) {
     return (
       <>
-        <PageBar
-          title="Registry"
-          after={<span className="text-xs text-faint">off</span>}
-        />
+        <PageBar title="Registry" />
         <Page gap="gap-3">
           <p>
             No registry: images stay on the server that built them. A second
@@ -73,9 +70,6 @@ export function RegistryPage() {
     <>
       <PageBar
         title="Registry"
-        after={
-          <span className="font-mono text-xs text-faint">{registry.host}</span>
-        }
         actions={
           <>
             {!moving && (
@@ -106,6 +100,9 @@ export function RegistryPage() {
           <MoveImages registry={registry} onClose={() => setMoving(false)} />
         )}
         <Facts>
+          <Fact label="Host">
+            <span className="font-mono">{registry.host}</span>
+          </Fact>
           <Fact label="Storage">
             {registry.storage === "local" ? (
               "this server's disk"

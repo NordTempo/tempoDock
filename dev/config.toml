@@ -4,7 +4,8 @@
 # For demo content, DOCK_FAKE_LOGS names a file of log lines every
 # container starts with ("E " lines go to stderr), and DOCK_FAKE_SPOOL a
 # file of analytics events (JSON lines, the ingest's format) added once
-# the analytics store runs.
+# the analytics store runs. DOCK_FAKE_PENDING_DOMAINS (comma-separated
+# hostnames) keeps those domains waiting for DNS.
 data_dir = ".data"
 listen = "127.0.0.1:7070"
 internal_listen = "127.0.0.1:7071"

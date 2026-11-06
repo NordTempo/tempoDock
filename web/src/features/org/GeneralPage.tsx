@@ -16,7 +16,6 @@ import {
   Confirm,
   ErrorText,
   Page,
-  PageBar,
   Panel,
 } from "../../ui/kit";
 import { Saved, useValidation } from "../create/form";
@@ -28,6 +27,7 @@ import {
   useSetLockSettings,
   useSetOrgTwoFactor,
 } from "./data";
+import { OrgSettingsBar } from "./SettingsBar";
 
 /**
  * The organization itself: its name, address (slug), whether members
@@ -45,14 +45,8 @@ export function GeneralPage() {
   const nameError = v.required(!name.trim(), "Enter a name.");
   return (
     <>
-      <PageBar
-        parent={org.name}
-        title="General"
-        after={
-          <span className="text-xs text-faint">your role: {org.role}</span>
-        }
-      />
-      <Page width="max-w-[760px]" gap="gap-5">
+      <OrgSettingsBar />
+      <Page width="max-w-[760px]">
         <Panel>
           <table>
             <tbody>
@@ -66,6 +60,11 @@ export function GeneralPage() {
                       onSubmit={(e) => {
                         e.preventDefault();
                         if (v.check(!!name.trim())) rename.mutate(name.trim());
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Escape") return;
+                        rename.reset();
+                        setName(org.name);
                       }}
                     >
                       <input
@@ -86,6 +85,17 @@ export function GeneralPage() {
                           Save
                         </Act>
                       )}
+                      {name.trim() !== org.name && (
+                        <Button
+                          small
+                          onClick={() => {
+                            rename.reset();
+                            setName(org.name);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
                       {nameError && (
                         <span role="alert" className="text-xs text-fail">
                           {nameError}
@@ -100,6 +110,10 @@ export function GeneralPage() {
                     org.name
                   )}
                 </td>
+              </tr>
+              <tr>
+                <td className="py-2.5 text-faint">Your role</td>
+                <td className="py-2.5">{org.role}</td>
               </tr>
               <tr>
                 <td className="py-2.5 text-faint">Address</td>
@@ -208,6 +222,11 @@ function LockSettings() {
                       request_ttl_hours: n,
                     });
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    save.reset();
+                    setHours(String(current));
+                  }}
                 >
                   <label className="flex items-center gap-2">
                     Expire after
@@ -231,6 +250,17 @@ function LockSettings() {
                       disabled={save.isPending}
                     >
                       Save
+                    </Button>
+                  )}
+                  {hours !== String(current) && (
+                    <Button
+                      small
+                      onClick={() => {
+                        save.reset();
+                        setHours(String(current));
+                      }}
+                    >
+                      Cancel
                     </Button>
                   )}
                   {!valid && (
@@ -410,7 +440,7 @@ function Delete({ name, slug }: { name: string; slug: string }) {
           onCancel={() => setAsking(false)}
         >
           Its members, invites, variables and tokens are deleted. This can't be
-          undone. Its audit log stays.
+          undone. Its activity stays.
         </Confirm>
       )}
     </DangerRow>

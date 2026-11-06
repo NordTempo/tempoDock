@@ -199,6 +199,7 @@ func (c *Core) alertRequest(ctx context.Context, r store.AccessRequest, le *Lock
 		Key: requestAlertKey(r.ID), Kind: apitypes.AlertAccessRequest, Severity: apitypes.SeverityWarning,
 		Title:   fmt.Sprintf("Access request #%d: %s", r.ID, requestSummary(r, le.Project, le.Environment)),
 		Message: "Approve or reject it in Dock, under Requests." + reasonSuffix(r.Reason),
+		Command: fmt.Sprintf("dock request show %d", r.ID), Target: &apitypes.AlertTarget{Request: r.ID},
 		Project: le.Project, Environment: le.Environment, projectID: le.ProjectID,
 	})
 }
@@ -532,7 +533,7 @@ func commentSuffix(comment string) string {
 // records how it went.
 func (c *Core) runRequest(r store.AccessRequest, es envScope, by Actor) {
 	ctx := c.ctx
-	result, err := c.replayRequest(ctx, r, es, by)
+	result, err := c.replayRequest(ctx, r, es, by, false)
 	status, msg := apitypes.RequestDone, ""
 	if err != nil {
 		status, msg = apitypes.RequestFailed, errorLine(err)
@@ -551,8 +552,63 @@ func (c *Core) runRequest(r store.AccessRequest, es envScope, by Actor) {
 	c.publishRequest(finished, es.project.Name, es.env.Name)
 }
 
-// replayRequest rebuilds the requester and runs the call through its layer.
-func (c *Core) replayRequest(ctx context.Context, r store.AccessRequest, es envScope, by Actor) (json.RawMessage, error) {
+// restartOps are the calls that restart a service, by Via and Op: their
+// one rule after the lock (an active release to copy) is checked too.
+var restartOps = map[string]bool{"api:restart": true, "mcp:redeploy": true}
+
+// CheckRequest says whether approving a pending request would run now:
+// it replays the call as approving would, but as a check-only actor that
+// every lock stops (lockedOut), so the call passes through its own
+// checks (the token still valid and allowed, its project, environment
+// and service still there) and stops before changing anything. Reaching
+// the lock means it would run; a restart also needs an active release.
+// Whoever may decide the request may check it; no step-up, since
+// nothing runs.
+func (c *Core) CheckRequest(ctx context.Context, a Actor, id int64) (apitypes.AccessRequestCheck, error) {
+	if a.Kind == "token" {
+		return apitypes.AccessRequestCheck{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, under Requests", a)
+	}
+	if err := a.require(apitypes.ScopeAdmin, "checking access requests"); err != nil {
+		return apitypes.AccessRequestCheck{}, err
+	}
+	r, es, err := c.loadRequest(ctx, a, id)
+	if err != nil {
+		return apitypes.AccessRequestCheck{}, err
+	}
+	if err := a.checkEnvAccess(apitypes.ScopeAdmin, "checking access requests", es.project, es.env); err != nil {
+		return apitypes.AccessRequestCheck{}, err
+	}
+	if st := c.toRequest(r, es, false).Status; st != apitypes.RequestPending {
+		return apitypes.AccessRequestCheck{Reason: fmt.Sprintf("access request #%d is %s; only a pending one is approved", id, st)}, nil
+	}
+	_, err = c.replayRequest(ctx, r, es, a, true)
+	le, locked := errors.AsType[*LockedError](err)
+	switch {
+	case locked && le.EnvID == es.env.ID:
+	case CodeOf(err) == apitypes.CodeUnauthorized:
+		return apitypes.AccessRequestCheck{Reason: "the token that asked is revoked, expired or no longer acts for its user"}, nil
+	case err != nil:
+		return apitypes.AccessRequestCheck{Reason: errorLine(err)}, nil
+	default:
+		// The call reached no lock, so it would change nothing here.
+		return apitypes.AccessRequestCheck{Reason: "the call no longer changes anything in " + es.String()}, nil
+	}
+	if le.Service != "" && restartOps[r.Via+":"+r.Operation] {
+		ss, err := c.loadService(ctx, a.OrgID, ServiceRef{es.project.Name, es.env.Name, le.Service})
+		if err != nil {
+			return apitypes.AccessRequestCheck{}, err
+		}
+		if _, err := c.restartable(ctx, ss); err != nil {
+			return apitypes.AccessRequestCheck{Reason: errorLine(err), Service: le.Service}, nil
+		}
+	}
+	return apitypes.AccessRequestCheck{OK: true}, nil
+}
+
+// replayRequest rebuilds the requester and runs the call through its
+// layer: as approved (runRequest), or with check as CheckRequest's
+// check-only actor.
+func (c *Core) replayRequest(ctx context.Context, r store.AccessRequest, es envScope, by Actor, check bool) (json.RawMessage, error) {
 	run := c.replayer(r.Via)
 	if run == nil {
 		return nil, fmt.Errorf("no way to run %s calls", r.Via)
@@ -577,7 +633,11 @@ func (c *Core) replayRequest(ctx context.Context, r store.AccessRequest, es envS
 			return nil, err
 		}
 	}
-	a.granted, a.approval = es.env.ID, &approval{id: r.ID, by: by.Name}
+	if check {
+		a.checkOnly = true
+	} else {
+		a.granted, a.approval = es.env.ID, &approval{id: r.ID, by: by.Name}
+	}
 	return run(ctx, a, r.Operation, args)
 }
 

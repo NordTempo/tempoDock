@@ -52,18 +52,12 @@ export function ArchivedProject({
   const archivedAt = overview.project.archived_at ?? "";
   return (
     <>
-      <PageBar
-        title={<span className="text-mut">{project}</span>}
-        after={
-          <span className="text-xs text-faint" title={archivedAt}>
-            archived {ago(archivedAt)}
-          </span>
-        }
-      />
+      <PageBar title={<span className="text-mut">{project}</span>} />
       <Page>
         <p className="text-mut">
-          Archived {day(archivedAt)}. Services are stopped and have no routes;
-          volumes and history are kept.
+          Archived <span title={archivedAt}>{day(archivedAt)}</span> (
+          {ago(archivedAt)}). Services are stopped and have no routes; volumes
+          and history are kept.
         </p>
         {overview.environments.map(({ environment, archived }) => (
           <section

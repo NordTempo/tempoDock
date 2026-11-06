@@ -1,15 +1,19 @@
 import type { Release, ReleaseSummary, Service } from "../../data/types";
 import { shortId } from "../../ui/status";
 
+/**
+ * The serving release already runs `r`'s image and config: it is a
+ * rollback to `r` (or a restart of one). Rolling back to `r` would change
+ * nothing, so no screen offers it.
+ */
+export const servesCopyOf = (serving: Release | undefined, r: Release) =>
+  serving?.from_release === r.number && serving.image_id === r.image_id;
+
 /** The release a one-click rollback goes back to: the newest replaced one. */
 export function rollbackTarget(releases: Release[]) {
-  // The serving release may itself be a rollback to the newest superseded
-  // one; rolling back to that again would change nothing, so skip it.
   const active = releases.find((r) => r.status === "active");
   return releases.find(
-    (r) =>
-      r.status === "superseded" &&
-      !(active?.from_release === r.number && active.image_id === r.image_id),
+    (r) => r.status === "superseded" && !servesCopyOf(active, r),
   );
 }
 
@@ -169,7 +173,7 @@ export function releaseDiff(from: Release, to: Release): ReleaseChange[] {
  * What rolling back from `from` to `to` takes away that the app may rely
  * on, one plain sentence each: volumes no longer mounted (or mounted
  * elsewhere) and variables removed. The rollback confirm shows them in
- * warning colour and turns its button red.
+ * warning colour.
  */
 export function rollbackLosses(from: Release, to: Release): string[] {
   const out: string[] = [];

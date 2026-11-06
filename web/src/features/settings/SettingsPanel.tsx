@@ -16,7 +16,6 @@ import {
   servicePath,
   useChanges,
   useEnvironment,
-  useIsAdmin,
   useReleases,
   useService,
   useSession,
@@ -28,8 +27,8 @@ import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
 import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
-import { ArchiveConfirm } from "../service/ArchiveConfirm";
 import { imageSetting } from "../service/releases";
+import { limitText } from "../service/Usage";
 import { ApplyBox } from "../variables/ApplyBox";
 import {
   editPlaceholder,
@@ -68,11 +67,12 @@ export function SettingsPanel({
   );
 
   const change = (key: SettingKey) => changes.find((c) => c.key === key);
-  const field = (key: TextSettingKey) => (
+  const field = (key: TextSettingKey, shown?: string) => (
     <Editable
       serviceRef={ref}
       settingKey={key}
       value={service[key]}
+      shown={shown}
       change={change(key)}
       open={edit === key}
     />
@@ -132,8 +132,11 @@ export function SettingsPanel({
             : "start new next to old, then cut over"}
         </Item>
         <Item label="Limits">
-          <span className="text-mut">CPU</span> {field("cpus")}{" "}
-          <span className="text-mut">memory</span> {field("memory_mb")}
+          {/* Limits in the wording every tab uses (limitText). */}
+          <span className="text-mut">CPU</span>{" "}
+          {field("cpus", limitText(service, "cpu"))}{" "}
+          <span className="text-mut">memory</span>{" "}
+          {field("memory_mb", limitText(service, "memory"))}
         </Item>
         <Item label="Build">
           {field("dockerfile_path")} <span className="text-mut">command</span>{" "}
@@ -185,45 +188,11 @@ export function SettingsPanel({
 
       <SourceSection serviceRef={ref} />
 
-      <DatabaseSettings serviceRef={ref} service={service} />
-
-      <ArchiveService serviceRef={ref} />
-    </>
-  );
-}
-
-/**
- * The end of Build & run, set apart in red: archiving the service, behind
- * the same confirm as the header's More menu. Admins only, like the API.
- */
-function ArchiveService({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const [asking, setAsking] = useState(false);
-  if (!useIsAdmin()) return null;
-  return (
-    <section
-      aria-labelledby="archive"
-      className="flex max-w-[860px] flex-wrap items-center gap-x-4 gap-y-2 rounded-panel border border-fail-edge px-3.5 py-3"
-    >
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <h2 id="archive" className="text-sm font-semibold">
-          Archive {ref.service}
-        </h2>
-        <span className="text-xs text-mut">
-          Stops it and frees its domains in {ref.environment}. Volumes,
-          variables and releases are kept.
-        </span>
-      </span>
-      <Act
-        danger
-        cli={`dock service archive ${ref.service} -e ${ref.environment}`}
-        onClick={() => setAsking(true)}
-      >
-        Archive {ref.service}
-      </Act>
-      {asking && (
-        <ArchiveConfirm serviceRef={ref} onCancel={() => setAsking(false)} />
+      {/* Only for databases: detected, or set here (so it can be undone). */}
+      {(service.data_engine || service.database !== "") && (
+        <DatabaseSettings serviceRef={ref} service={service} />
       )}
-    </section>
+    </>
   );
 }
 
@@ -461,8 +430,10 @@ function ImageValue({
  * A value that edits in place, drawn like the inputs of Source below it
  * with a pencil, so it reads as editable at a glance.
  */
+// A value that edits: a box with a hover border and a pointer across all
+// of it, in the regular weight, so it reads as a control, not a label.
 const editableBox =
-  "inline-flex min-h-[24px] items-center gap-1.5 rounded-ctl border px-1.5 text-left font-mono break-all hover:border-dash hover:bg-hover";
+  "inline-flex min-h-[24px] cursor-pointer items-center gap-1.5 rounded-ctl border px-1.5 text-left font-mono font-normal break-all hover:border-dash hover:bg-hover [&_*]:cursor-pointer";
 
 /** The pencil inside an editable value. */
 function Pencil() {
@@ -494,12 +465,15 @@ function Editable({
   serviceRef: ref,
   settingKey: key,
   value,
+  shown,
   change,
   open,
 }: {
   serviceRef: ServiceRef;
   settingKey: TextSettingKey;
   value: string | number;
+  /** The value as shown, when it reads better than formatSetting's. */
+  shown?: string;
   change: KeyedChange | undefined;
   open?: boolean;
 }) {
@@ -566,12 +540,12 @@ function Editable({
       <button
         type="button"
         title={`Edit ${label}`}
-        aria-label={`Edit ${label}: ${formatSetting(key, change ? change.new : value).replace(" (default)", " default")}`}
+        aria-label={`Edit ${label}: ${change ? formatSetting(key, change.new) : (shown ?? formatSetting(key, value).replace(" (default)", " default"))}`}
         onClick={() => {
           setError(null);
           setDraft(editText(key, change ? change.new : value));
         }}
-        className={`${editableBox} cursor-text ${change ? "border-warn-edge bg-stage-bg" : "border-edge bg-panel"}`}
+        className={`${editableBox} ${change ? "border-warn-edge bg-stage-bg" : "border-edge bg-panel"}`}
       >
         {/* One inline box, so the spaces between its parts survive. */}
         <span>
@@ -584,7 +558,7 @@ function Editable({
               {formatSetting(key, change.new)}
             </>
           ) : (
-            <Shown text={formatSetting(key, value)} />
+            <Shown text={shown ?? formatSetting(key, value)} />
           )}
         </span>
         <Pencil />

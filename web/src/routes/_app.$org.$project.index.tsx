@@ -1,5 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import { canDeploy, queries, serviceRef, useSession } from "../data/queries";
 import { canCreateEnvironment } from "../features/create/access";
@@ -13,8 +18,6 @@ import { Export } from "../features/overview/ProjectSettings";
 import { ServerDots } from "../shell/context";
 import { useShortcuts } from "../shell/keys";
 import { rememberProject, useOrg } from "../shell/location";
-import { usePalette } from "../shell/palette";
-import { plural } from "../ui/format";
 import { Act, Button, Glyph, Page, PageBar } from "../ui/kit";
 
 export const Route = createFileRoute("/_app/$org/$project/")({
@@ -67,7 +70,6 @@ function LiveOverview() {
   const { environments } = overview;
   const session = useSession();
   const navigate = useNavigate();
-  const openPalette = usePalette();
   const services = environments.flatMap((e) => e.services);
   const deploying = services.filter((s) => s.deploying);
   // Settings opens on Variables while an environment's changes wait.
@@ -84,10 +86,16 @@ function LiveOverview() {
   const deployable = environments.filter((e) =>
     canDeploy(session, { project, environment: e.environment.name }),
   );
-  const mayDeploy = services.length > 0 && deployable.length > 0;
-  // A new service goes to production, or the first environment the
-  // caller may deploy to; the dialog lets them pick another.
+  // /org/project/env lands here at #env-<name>: the header names that
+  // environment and its section is marked.
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  const here = environments.find((e) => hash === `env-${e.environment.name}`)
+    ?.environment.name;
+  // A new service goes to the environment in the URL, else production, or
+  // the first environment the caller may deploy to; the dialog lets them
+  // pick another.
   const target =
+    deployable.find((e) => e.environment.name === here) ??
     deployable.find((e) => e.environment.kind === "production") ??
     deployable[0];
   const newService = target
@@ -120,9 +128,6 @@ function LiveOverview() {
     ...(newService
       ? [{ key: "n", label: "new service", run: newService }]
       : []),
-    ...(mayDeploy
-      ? [{ key: "d", label: "redeploy", run: () => openPalette("deploy ") }]
-      : []),
     ...(watch
       ? [
           {
@@ -141,16 +146,19 @@ function LiveOverview() {
   return (
     <>
       <PageBar
-        title={project}
-        after={
-          <>
-            <span className="text-xs text-faint">
-              {plural(environments.length, "environment")} ·{" "}
-              {plural(services.length, "service")}
-            </span>
-            <ServerDots project={project} />
-          </>
+        parent={
+          here && (
+            <Link
+              to="/$org/$project"
+              params={{ org, project }}
+              className="hover:text-fg"
+            >
+              {project}
+            </Link>
+          )
         }
+        title={here ?? project}
+        after={<ServerDots project={project} troubleOnly />}
         actions={
           <>
             {canNewEnv && (
@@ -198,7 +206,11 @@ function LiveOverview() {
         <Problems project={project} />
 
         {environments.map((env) => (
-          <EnvironmentTable key={env.environment.id} env={env} />
+          <EnvironmentTable
+            key={env.environment.id}
+            env={env}
+            current={env.environment.name === here}
+          />
         ))}
 
         {environments.length === 0 && (

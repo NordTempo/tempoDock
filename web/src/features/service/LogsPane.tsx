@@ -149,7 +149,8 @@ export function LogsPane({
       ? [
           {
             n: active,
-            label: `r${active} ${service.stopped_at ? "stopped" : "serving"}`,
+            // Starting until its health check first passes, as the header says.
+            label: `r${active} ${service.stopped_at ? "stopped" : service.status.health === "starting" ? "starting" : "serving"}`,
           },
         ]
       : []),

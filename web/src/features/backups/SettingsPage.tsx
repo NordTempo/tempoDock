@@ -3,6 +3,7 @@ import { day, since, size, until } from "../../ui/format";
 import {
   Act,
   Button,
+  Confirm,
   CopyButton,
   ErrorText,
   Glyph,
@@ -12,6 +13,7 @@ import {
   SectionHead,
   StateText,
 } from "../../ui/kit";
+import { Saved } from "../create/form";
 import { BackupStorage } from "./BackupStorage";
 import { hourLabel } from "./backups";
 import {
@@ -38,22 +40,11 @@ export function BackupSettingsPage() {
     <>
       <PageBar
         title="Backups"
-        after={
-          <span className="text-xs text-faint">
-            {busy
-              ? `moving to ${settings.move?.to}`
-              : settings.storage
-                ? `off-box in ${settings.storage}, folder ${settings.path}`
-                : settings.off_box
-                  ? `off-box to ${settings.repository}`
-                  : "local repositories, one on each server"}
-          </span>
-        }
         actions={
           <>
             {!moving && (
               <Button disabled={busy} onClick={() => setMoving(true)}>
-                Move backups
+                Move to a storage bucket
               </Button>
             )}
             <Act
@@ -67,6 +58,25 @@ export function BackupSettingsPage() {
         }
       />
       <Page>
+        {/* Where backups go, in the body: no subtitle beside the title. */}
+        <p>
+          {busy ? (
+            <>Moving backups to {settings.move?.to}.</>
+          ) : settings.storage ? (
+            <>
+              Kept off-site in the storage bucket{" "}
+              <span className="font-mono">{settings.storage}</span>, folder{" "}
+              <span className="font-mono">{settings.path}</span>.
+            </>
+          ) : settings.off_box ? (
+            <>
+              Kept off-site in{" "}
+              <span className="font-mono">{settings.repository}</span>.
+            </>
+          ) : (
+            "Kept on each server, in its own local repository."
+          )}
+        </p>
         {!settings.off_box && (
           <p className="text-warn-text">
             <span className="text-warn">
@@ -80,7 +90,7 @@ export function BackupSettingsPage() {
                 className="text-fg underline underline-offset-3"
                 onClick={() => setMoving(true)}
               >
-                Move to a bucket
+                Move to a storage bucket
               </button>
             )}
           </p>
@@ -171,15 +181,20 @@ function ControlPlane({ settings }: { settings: BackupSettings }) {
   );
 }
 
-/** Retention and the hour in one form; only changed fields are sent. */
+/**
+ * Retention and the hour, by the app's save model: the hour saves on
+ * change and says Saved beside it; the counts are a form with Save
+ * (Enter saves, Esc puts them back). Only changed fields are sent.
+ */
 function Settings({ settings }: { settings: BackupSettings }) {
   const configure = useConfigureBackups();
-  const [keep, setKeep] = useState({
+  const hourSave = useConfigureBackups();
+  const saved = {
     daily: settings.keep_daily,
     weekly: settings.keep_weekly,
     monthly: settings.keep_monthly,
-  });
-  const [hour, setHour] = useState(settings.hour);
+  };
+  const [keep, setKeep] = useState(saved);
   const [password, setPassword] = useState<string>();
 
   const changes: ConfigureBackup = {
@@ -188,17 +203,37 @@ function Settings({ settings }: { settings: BackupSettings }) {
     ...(keep.monthly !== settings.keep_monthly && {
       keep_monthly: keep.monthly,
     }),
-    ...(hour !== settings.hour && { hour }),
   };
   const dirty = Object.keys(changes).length > 0;
+  // The first configure answers with the repository's password.
+  const keepPassword = (s: { password?: string }) => {
+    if (s.password) setPassword(s.password);
+  };
+  const discard = () => {
+    configure.reset();
+    setKeep(saved);
+  };
 
-  const save = (e: FormEvent) => {
-    e.preventDefault();
+  // Lowering a count deletes backups at the next run: it asks first.
+  const lowered = [
+    keep.daily < settings.keep_daily && `${keep.daily} daily`,
+    keep.weekly < settings.keep_weekly && `${keep.weekly} weekly`,
+    keep.monthly < settings.keep_monthly && `${keep.monthly} monthly`,
+  ].filter((x) => typeof x === "string");
+  const [confirming, setConfirming] = useState(false);
+  const cli = `dock backup configure${changes.keep_daily !== undefined ? ` --keep-daily ${changes.keep_daily}` : ""}${changes.keep_weekly !== undefined ? ` --keep-weekly ${changes.keep_weekly}` : ""}${changes.keep_monthly !== undefined ? ` --keep-monthly ${changes.keep_monthly}` : ""}`;
+  const commit = () =>
     configure.mutate(changes, {
-      onSuccess: (saved) => {
-        if (saved.password) setPassword(saved.password);
+      onSuccess: (r) => {
+        keepPassword(r);
+        setConfirming(false);
       },
     });
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    if (!dirty) return;
+    if (lowered.length > 0) setConfirming(true);
+    else commit();
   };
 
   const count = (label: string, k: keyof typeof keep, max: number) => (
@@ -227,70 +262,100 @@ function Settings({ settings }: { settings: BackupSettings }) {
       >
         Schedule
       </SectionHead>
-      <form
-        aria-label="Backup settings"
-        className="flex max-w-[760px] flex-col gap-3.5"
-        onSubmit={save}
-      >
-        <div className="flex flex-wrap gap-3">
-          {count("Keep daily", "daily", 365)}
-          {count("Keep weekly", "weekly", 520)}
-          {count("Keep monthly", "monthly", 240)}
-          <label className="flex flex-[1_1_120px] flex-col gap-1.5">
-            <span>
-              Time{" "}
-              <span className="text-mut">
-                (
-                {settings.time_zone === "Local"
-                  ? "server local"
-                  : settings.time_zone}
-                )
-              </span>
+      <div className="flex max-w-[760px] flex-col gap-3.5">
+        <label className="flex flex-wrap items-center gap-2.5">
+          <span>
+            Time{" "}
+            <span className="text-mut">
+              (
+              {settings.time_zone === "Local"
+                ? "server local"
+                : settings.time_zone}
+              )
             </span>
-            <select
-              value={hour}
-              onChange={(e) => setHour(Number(e.target.value))}
-              className="py-[7px] text-sm"
-            >
-              {Array.from({ length: 24 }, (_, h) => (
-                <option key={h} value={h}>
-                  {hourLabel(h)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {/* Only a changed form has anything to save. */}
-        {(dirty || configure.error) && (
+          </span>
+          <select
+            value={settings.hour}
+            disabled={hourSave.isPending}
+            title={`dock backup configure --hour ${settings.hour}`}
+            onChange={(e) =>
+              hourSave.mutate(
+                { hour: Number(e.target.value) },
+                { onSuccess: keepPassword },
+              )
+            }
+            className="py-[5px] text-sm"
+          >
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>
+                {hourLabel(h)}
+              </option>
+            ))}
+          </select>
+          <Saved ok={hourSave.isSuccess} />
+          <ErrorText error={hourSave.error} />
+        </label>
+        <form
+          aria-label="Retention"
+          className="flex flex-col gap-3.5"
+          onSubmit={save}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && dirty) {
+              e.preventDefault();
+              discard();
+            }
+          }}
+        >
+          <div className="flex flex-wrap gap-3">
+            {count("Keep daily", "daily", 365)}
+            {count("Keep weekly", "weekly", 520)}
+            {count("Keep monthly", "monthly", 240)}
+          </div>
+          {/* Save is always in view; it works once a count changed. */}
           <div className="flex flex-wrap items-center gap-2.5">
             <Act
-              primary
+              primary={dirty}
               type="submit"
-              cli={`dock backup configure${changes.keep_daily !== undefined ? ` --keep-daily ${changes.keep_daily}` : ""}${changes.keep_weekly !== undefined ? ` --keep-weekly ${changes.keep_weekly}` : ""}${changes.keep_monthly !== undefined ? ` --keep-monthly ${changes.keep_monthly}` : ""}${changes.hour !== undefined ? ` --hour ${changes.hour}` : ""}`}
+              cli={cli}
               disabled={!dirty || configure.isPending}
+              title={dirty ? undefined : "Change a count first"}
             >
-              Save
+              Save <kbd>↵</kbd>
             </Act>
-            <Button
-              onClick={() => {
-                configure.reset();
-                setKeep({
-                  daily: settings.keep_daily,
-                  weekly: settings.keep_weekly,
-                  monthly: settings.keep_monthly,
-                });
-                setHour(settings.hour);
-              }}
-            >
-              Discard
-            </Button>
+            {dirty && (
+              <Button onClick={discard}>
+                Cancel <kbd>Esc</kbd>
+              </Button>
+            )}
+            {!dirty && <Saved ok={configure.isSuccess} />}
             <ErrorText error={configure.error} />
           </div>
+          {lowered.length > 0 && (
+            <p className="text-xs text-warn-text">
+              ▲ Lower retention: older backups beyond the newest{" "}
+              {lowered.join(", ")} are deleted at the next run.
+            </p>
+          )}
+        </form>
+        {confirming && (
+          <Confirm
+            danger
+            title="Keep fewer backups?"
+            action="Save and prune"
+            cli={cli}
+            pending={configure.isPending}
+            error={configure.error}
+            onConfirm={commit}
+            onCancel={() => {
+              configure.reset();
+              setConfirming(false);
+            }}
+          >
+            Backups beyond the newest {lowered.join(", ")} are deleted at the
+            next run, for every service. This can't be undone.
+          </Confirm>
         )}
-        {!dirty && configure.isSuccess && (
-          <span className="text-xs text-ok">Saved</span>
-        )}
-      </form>
+      </div>
       {password && <PasswordBox password={password} first />}
     </section>
   );

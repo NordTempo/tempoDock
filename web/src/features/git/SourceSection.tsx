@@ -84,7 +84,17 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <SectionHead id="source">Source</SectionHead>
       {source.error ? (
         <ErrorText error={source.error} />
-      ) : !source.data ? null : !conn || editing ? (
+      ) : !source.data ? null : !conn && !editing ? (
+        // Nothing connected: say so, and the one way to connect.
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-sec">Not connected to GitHub.</span>
+          {canEdit && (
+            <Button small onClick={() => setEditing(true)}>
+              Connect a repository
+            </Button>
+          )}
+        </p>
+      ) : !conn || editing ? (
         canEdit ? (
           <ConnectForm
             connection={conn}
@@ -93,7 +103,7 @@ export function SourceSection({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             pending={connect.isPending}
             error={connect.error}
             onSubmit={(req) => connect.mutate(req)}
-            onCancel={conn ? () => setEditing(false) : undefined}
+            onCancel={() => setEditing(false)}
             flags={flags}
           />
         ) : (
@@ -385,7 +395,8 @@ function ConnectForm({
             },
             "main",
           )}{" "}
-          <span className="text-mut">every push deploys</span>
+          {/* Only once a repository is named: until then nothing deploys. */}
+          {repo.trim() && <span className="text-mut">every push deploys</span>}
         </Item>
         <Item label="Directory">
           {input("Directory", dir, setDir, "repository root")}{" "}

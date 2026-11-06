@@ -97,6 +97,17 @@ type AccessRequest struct {
 	Changes []VariableChange `json:"changes,omitempty"`
 }
 
+// AccessRequestCheck says whether approving a request would run now,
+// against live state, without running it.
+type AccessRequestCheck struct {
+	OK bool `json:"ok"`
+	// Reason is why it would fail, as the run would say it.
+	Reason string `json:"reason,omitempty"`
+	// Service names the service where the problem is fixed, when it is
+	// one; otherwise it is fixed in the request's environment.
+	Service string `json:"service,omitempty"`
+}
+
 // DecideAccessRequest approves or rejects a request.
 type DecideAccessRequest struct {
 	Comment string `json:"comment,omitempty" maxLength:"500" doc:"Shown to the requester and in the audit log"`

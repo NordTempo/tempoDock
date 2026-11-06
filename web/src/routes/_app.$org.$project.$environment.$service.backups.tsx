@@ -2,10 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { queries, servicePath } from "../data/queries";
 import { BackupsPanel } from "../features/backups/BackupsPanel";
 import { snapshotsQuery } from "../features/backups/data";
-import { SnapshotsPanel } from "../features/backups/SnapshotsPanel";
 
-// A stateful service's backups: how, where and when, and the latest runs;
-// then its volume snapshots.
+// A stateful service's restore points (ADR 0061): its backups and volume
+// snapshots in one list, and the restores that ran.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/backups",
 )({
@@ -21,10 +20,5 @@ export const Route = createFileRoute(
 
 function BackupsTab() {
   const ref = servicePath(Route.useParams());
-  return (
-    <>
-      <BackupsPanel serviceRef={ref} />
-      <SnapshotsPanel serviceRef={ref} />
-    </>
-  );
+  return <BackupsPanel serviceRef={ref} />;
 }

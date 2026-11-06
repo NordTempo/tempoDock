@@ -41,6 +41,9 @@ type Actor struct {
 	// approval for the audit log.
 	granted  int64
 	approval *approval
+	// checkOnly is CheckRequest's replay: every lock stops it (lockedOut),
+	// so the call runs its own checks up to its lock and nothing after.
+	checkOnly bool
 	// askFirst makes every change in an environment an access request,
 	// locked or not (MCP's request_access); changes outside one fail.
 	askFirst bool

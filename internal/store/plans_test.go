@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// What sign-in, the members page and the retention prunes run reads
-// through an index.
+// What sign-in, the members page, the project overview and the retention
+// prunes run reads through an index.
 func TestQueryPlansUseIndexes(t *testing.T) {
 	f := newDataFixture(t)
 	now := time.Now()
@@ -17,6 +17,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 		{"ListOrgMembers", listOrgMembers, []any{now, 1}},
 		{"PruneResolvedAlerts", pruneResolvedAlerts, []any{now}},
 		{"PruneGitDeliveries", pruneGitDeliveries, []any{now}},
+		{"ListProjectReleaseHeads", listProjectReleaseHeads, []any{1}},
 	})
 }
 

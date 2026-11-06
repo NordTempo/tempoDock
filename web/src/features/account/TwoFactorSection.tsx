@@ -42,9 +42,7 @@ export function TwoFactorSection() {
 
   return (
     <section aria-labelledby="two-factor" className="flex flex-col gap-3">
-      <SectionHead id="two-factor" aside="dock me two-factor">
-        Two-factor sign-in
-      </SectionHead>
+      <SectionHead id="two-factor">Two-factor sign-in</SectionHead>
       <dl className="props">
         <dt>Status</dt>
         <dd>

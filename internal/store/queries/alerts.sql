@@ -1,10 +1,10 @@
 -- name: OpenAlert :one
-INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateAlert :exec
-UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, updated_at = ? WHERE id = +?;
+UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, command = ?, target = ?, updated_at = ? WHERE id = +?;
 
 -- name: ResolveAlert :exec
 UPDATE alerts SET resolved_at = sqlc.arg(at), updated_at = sqlc.arg(at) WHERE id = +sqlc.arg(id) AND resolved_at IS NULL;
@@ -82,6 +82,7 @@ WHERE releases.status = 'failed' AND services.archived_at IS NULL;
 -- Rename only open alerts of this project; closed alerts keep their snapshots.
 -- name: RenameProjectAlerts :many
 UPDATE alerts SET project = sqlc.arg(name),
-    title = replace(title, sqlc.arg(old_name) || '/' || environment || '/' || service, sqlc.arg(name) || '/' || environment || '/' || service)
+    title = replace(title, sqlc.arg(old_name) || '/' || environment || '/' || service, sqlc.arg(name) || '/' || environment || '/' || service),
+    command = replace(command, '-p ' || sqlc.arg(old_name) || ' ', '-p ' || sqlc.arg(name) || ' ')
 WHERE project_id = +sqlc.arg(project_id) AND resolved_at IS NULL
 RETURNING *;

@@ -31,6 +31,8 @@ const paths = {
     "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9M12 3c-2.4 2.5-3.6 5.5-3.6 9s1.2 6.5 3.6 9",
   sliders: "M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1M15 4v4M9 10v4M17 16v4",
   cloud: "M7 18a4 4 0 0 1-.6-8A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9Z",
+  // Three dots: a menu of further actions.
+  more: "M5 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1ZM12 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1ZM19 11.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1Z",
   // A padlock: a locked environment (ADR 0044).
   lock: "M8 11V8a4 4 0 0 1 8 0v3M5 11h14v10H5Z",
 } as const;

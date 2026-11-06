@@ -17,6 +17,7 @@ export type UptimeCheck = Omit<Schema, "series" | "incidents"> & {
 };
 export type NewUptimeCheck = components["schemas"]["AddUptimeCheckRequest"];
 type UptimeUpdate = components["schemas"]["UptimeUpdate"];
+type UptimeCheckPatch = components["schemas"]["UpdateUptimeCheckRequest"];
 
 const path =
   "/api/v1/projects/{project}/environments/{environment}/services/{service}/uptime-checks";
@@ -55,6 +56,19 @@ export const useCheckDomains = (ref: ServiceRef) =>
         }),
       ),
     () => [uptimeKey(ref), keys.overview(ref.project)],
+  );
+
+/** Changes a check's interval or expected status in place. */
+export const useUpdateUptimeCheck = (ref: ServiceRef) =>
+  useAction(
+    ({ id, ...patch }: { id: number } & UptimeCheckPatch) =>
+      body(
+        api.PATCH(`${path}/{id}` as const, {
+          params: { path: { ...servicePath(ref), id } },
+          body: patch,
+        }),
+      ),
+    () => [uptimeKey(ref)],
   );
 
 export const useRemoveUptimeCheck = (ref: ServiceRef) =>

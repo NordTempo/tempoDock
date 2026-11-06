@@ -37,11 +37,12 @@ export const useStartService = () =>
 
 /**
  * Restarts the service: a new release with the active one's image and
- * config. The notice says it started; the header says when it serves.
+ * config. No notice here: the header follows the release and says once,
+ * in one notice, when it serves or fails.
  */
 export const useRestartService = () =>
   useAction(
-    ({ ref }: { ref: ServiceRef; stateful: boolean }) =>
+    ({ ref }: { ref: ServiceRef }) =>
       body(
         api.POST(
           "/api/v1/projects/{project}/environments/{environment}/services/{service}/restart",
@@ -49,10 +50,4 @@ export const useRestartService = () =>
         ),
       ),
     ({ ref }) => serviceWide(ref),
-    ({ ref, stateful }, r) => [
-      stateful
-        ? `Restarting ${ref.service}: it stops, then r${r.number} starts`
-        : `Restarting ${ref.service}: r${r.number} starts and takes over`,
-      "info",
-    ],
   );

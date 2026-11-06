@@ -67,8 +67,8 @@ export function VariablesEditor({
   const newLine = useRef<HTMLInputElement>(null);
   // The add line is the list's last: bring it into view, then type.
   const focusNewLine = () => {
-    newLine.current?.scrollIntoView({ block: "nearest" });
-    newLine.current?.focus();
+    newLine.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    newLine.current?.focus({ preventScroll: true });
   };
   const reveal = revealAll || revealedIds.size > 0;
   const revealed = useRevealedVariables(env, null, reveal);
@@ -429,8 +429,23 @@ function NewLine({
   const stage = useStageVariables();
   const [text, setText] = useState("");
   const parsed = parseDotenv(text);
+  const add = () => {
+    if (parsed.length === 0) return;
+    stage.mutate(
+      {
+        env,
+        service,
+        set: Object.fromEntries(parsed.map((p) => [p.name, p.value])),
+      },
+      { onSuccess: () => setText("") },
+    );
+  };
+  // Focused (Add variable, N), the row is ringed at full contrast and its
+  // Enter hint turns white, so the jump to it is plain to see.
   return (
-    <div className={`${grid} border-b-0 focus-within:bg-panel`}>
+    <div
+      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-panel focus-within:outline-2 focus-within:outline-fg`}
+    >
       <span className="text-right text-faint">{n}</span>
       <span />
       <input
@@ -439,23 +454,24 @@ function NewLine({
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") e.currentTarget.blur();
-          if (e.key !== "Enter" || parsed.length === 0) return;
-          stage.mutate(
-            {
-              env,
-              service,
-              set: Object.fromEntries(parsed.map((p) => [p.name, p.value])),
-            },
-            { onSuccess: () => setText("") },
-          );
+          if (e.key === "Enter") add();
         }}
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-info focus:bg-panel"
+        className="col-span-2 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
       />
-      <span className="font-sans text-2xs text-faint">
-        <ErrorText error={stage.error} /> ↵ add
+      <span className="flex items-center gap-1.5 font-sans text-2xs text-faint group-focus-within:text-fg">
+        <ErrorText error={stage.error} />
+        <button
+          type="button"
+          className="btn sm"
+          disabled={stage.isPending}
+          onClick={add}
+        >
+          Add
+        </button>
+        ↵
       </span>
     </div>
   );

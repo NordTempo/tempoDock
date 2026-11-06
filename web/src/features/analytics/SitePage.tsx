@@ -127,11 +127,6 @@ export function SitePage({
           </Link>
         }
         title={<span className="font-mono">{site.name}</span>}
-        after={
-          <span className="text-xs text-faint">
-            {project} · {site.environment}
-          </span>
-        }
       />
       <div className="flex flex-1">
         <nav

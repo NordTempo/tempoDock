@@ -105,3 +105,37 @@ export const backupLogQuery = (ref: ServiceRef, id: number) =>
       ),
     staleTime: Number.POSITIVE_INFINITY,
   });
+
+/** A failed snapshot's job output (`dock volume snapshot log`), read once. */
+export const snapshotLogQuery = (ref: ServiceRef, id: number) =>
+  queryOptions({
+    queryKey: [...snapshotsKey(ref), id, "log"],
+    queryFn: () =>
+      body(
+        api.GET(`${snapshotPath}/{snapshot}/log`, {
+          params: { path: { ...servicePath(ref), snapshot: id } },
+        }),
+      ),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+/**
+ * Points the environment's `${{from.KEY}}` references at `to` and applies
+ * it (ADR 0061); with `dry_run`, only lists the services that would get a
+ * release. `ref` is the service switched away from.
+ */
+export const useSwitchReferences = () =>
+  useAction(
+    ({
+      ref,
+      ...input
+    }: { ref: ServiceRef } & Schemas["SwitchReferencesRequest"]) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/switch-references",
+          { params: { path: servicePath(ref) }, body: input },
+        ),
+      ),
+    ({ ref, dry_run }) =>
+      dry_run ? [] : [keys.project(ref.project), ["audit"]],
+  );

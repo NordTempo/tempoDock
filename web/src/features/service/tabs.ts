@@ -39,9 +39,10 @@ export const serviceTabs = [
     to: "/$org/$project/$environment/$service/traffic",
     key: "g t",
   },
-  // One-off commands (ADR 0048). G C, "command": G R is the releases.
+  // One-off commands (ADR 0048), named so it isn't taken for how the
+  // service runs (Build & run). G C, "command": G R is the releases.
   {
-    label: "Run",
+    label: "One-off command",
     to: "/$org/$project/$environment/$service/run",
     key: "g c",
   },

@@ -107,7 +107,7 @@ export default function SiteSettingsDialog({
         }}
       >
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-mut">Name</span>
+          <span className="text-xs text-faint">Name</span>
           <input value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         {fields.map((field) => {

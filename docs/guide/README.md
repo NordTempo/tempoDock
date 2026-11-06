@@ -12,7 +12,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Domains](domains.md) | Custom and generated domains, DNS, TLS, redirects |
 | [Previews](previews.md) | An environment per pull request, cloned from staging, archived when it closes |
 | [Data](data.md) | Browsing, querying and changing database data; the data access policy |
-| [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service |
+| [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service and switch to it |
 | [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
 | [Single sign-on](sso.md) | Signing in through your organization's OpenID Connect provider (Google, Entra ID, Okta, Keycloak, Authentik), invites and just-in-time members, requiring it |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |

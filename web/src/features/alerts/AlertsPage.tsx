@@ -60,22 +60,9 @@ export function AlertsPage() {
   const resolved = (older.data ?? recent)
     .filter((a) => a.resolved_at)
     .slice(0, more ? MAX : HISTORY);
-  const critical = open.filter((a) => a.severity === "critical").length;
   return (
     <>
-      <PageBar
-        title="Alerts"
-        after={
-          <span className="text-xs text-faint">
-            {open.length === 0
-              ? "nothing open"
-              : `${open.length} open${critical ? ` · ${critical} critical` : ""}`}
-          </span>
-        }
-        actions={
-          <span className="font-mono text-2xs text-mut">dock alerts</span>
-        }
-      />
+      <PageBar title="Alerts" />
       <Page>
         {open.length > 0 && (
           <section aria-labelledby="open">
@@ -86,7 +73,6 @@ export function AlertsPage() {
         <section aria-labelledby="history">
           <SectionHead
             id="history"
-            aside={`last ${more ? MAX : HISTORY}`}
             right={
               !more &&
               resolved.length === HISTORY && (
@@ -100,7 +86,7 @@ export function AlertsPage() {
               )
             }
           >
-            Resolved
+            Last {more ? MAX : HISTORY} resolved
           </SectionHead>
           {resolved.length > 0 ? (
             <AlertTable alerts={resolved} />
@@ -112,6 +98,7 @@ export function AlertsPage() {
           )}
         </section>
         <Channels />
+        <p className="font-mono text-2xs text-mut">dock alerts</p>
       </Page>
     </>
   );

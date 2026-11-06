@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"slices"
 	"strconv"
@@ -91,8 +92,8 @@ func newUptimeState() uptimeState {
 	return uptimeState{kick: make(chan struct{}, 1), orgInFlight: map[int64]int{}, second: time.Second, checks: map[int64]*checkState{}}
 }
 
-// kickUptime has the scheduler reload its checks: one was added or
-// removed, or a service archived.
+// kickUptime has the scheduler reload its checks: one was added,
+// changed or removed, or a service archived.
 func (c *Core) kickUptime() {
 	select {
 	case c.uptime.kick <- struct{}{}:
@@ -354,6 +355,64 @@ func checkURL(raw string, ss svcScope, domains []store.Domain) (string, error) {
 	return u.String(), nil
 }
 
+// UpdateUptimeCheck changes a check's interval or expected status in
+// place, keeping its history, and returns it with its results. The
+// scheduler reloads at once: a new interval starts from now. Project
+// admins only.
+func (c *Core) UpdateUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, id int64, req apitypes.UpdateUptimeCheckRequest) (apitypes.UptimeCheck, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeAdmin, "changing an uptime check")
+	if err != nil {
+		return apitypes.UptimeCheck{}, err
+	}
+	if req.IntervalSeconds == nil && req.ExpectStatus == nil {
+		return apitypes.UptimeCheck{}, invalid("nothing to change: give interval_seconds or expect_status")
+	}
+	row, err := c.store.GetUptimeCheck(ctx, id)
+	if store.IsNotFound(err) || (err == nil && row.ServiceID != ss.svc.ID) {
+		return apitypes.UptimeCheck{}, notFound("uptime check %d not found on service %s; `dock uptime list` lists them", id, ss)
+	}
+	if err != nil {
+		return apitypes.UptimeCheck{}, err
+	}
+	params := store.UpdateUptimeCheckParams{ID: id, IntervalS: row.IntervalS, ExpectStatus: row.ExpectStatus}
+	if req.ExpectStatus != nil {
+		if params.ExpectStatus, err = parseExpectStatus(*req.ExpectStatus); err != nil {
+			return apitypes.UptimeCheck{}, err
+		}
+	}
+	if req.IntervalSeconds != nil {
+		interval, timeout := time.Duration(*req.IntervalSeconds)*time.Second, time.Duration(row.TimeoutMs)*time.Millisecond
+		switch {
+		case interval < uptimeMinInterval || interval > uptimeMaxInterval:
+			return apitypes.UptimeCheck{}, invalid("the interval must be 30 seconds to 1 hour, not %s", interval)
+		case timeout >= interval:
+			return apitypes.UptimeCheck{}, invalid("the interval must be longer than the check's timeout (%s); remove the check and add it again with a shorter --timeout", timeout)
+		}
+		params.IntervalS = int64(*req.IntervalSeconds)
+	}
+	if params.IntervalS == row.IntervalS && params.ExpectStatus == row.ExpectStatus {
+		return c.uptimeCheck(ctx, ss, a.Operator, id)
+	}
+	if _, err := c.store.UpdateUptimeCheck(ctx, params); err != nil {
+		return apitypes.UptimeCheck{}, err
+	}
+	c.audit(ctx, a, "uptime.update", &ss.project, &ss.env, ss.String(), fmt.Sprintf("changed uptime check %d of %s to every %ds, expecting %s", id, row.Url, params.IntervalS, expectStatusString(params.ExpectStatus)))
+	c.kickUptime()
+	return c.uptimeCheck(ctx, ss, a.Operator, id)
+}
+
+// uptimeCheck is one of a service's checks with its results.
+func (c *Core) uptimeCheck(ctx context.Context, ss svcScope, operator bool, id int64) (apitypes.UptimeCheck, error) {
+	checks, err := c.uptimeChecks(ctx, ss, operator)
+	if err != nil {
+		return apitypes.UptimeCheck{}, err
+	}
+	if i := slices.IndexFunc(checks, func(u apitypes.UptimeCheck) bool { return u.ID == id }); i >= 0 {
+		return checks[i], nil
+	}
+	return apitypes.UptimeCheck{}, notFound("uptime check %d not found on service %s; `dock uptime list` lists them", id, ss)
+}
+
 // RemoveUptimeCheck removes a service's uptime check, its history and
 // open alert. Project admins only.
 func (c *Core) RemoveUptimeCheck(ctx context.Context, a Actor, ref ServiceRef, id int64) error {
@@ -385,6 +444,11 @@ func (c *Core) ListUptimeChecks(ctx context.Context, a Actor, ref ServiceRef) ([
 	if err != nil {
 		return nil, err
 	}
+	return c.uptimeChecks(ctx, ss, a.Operator)
+}
+
+// uptimeChecks is ListUptimeChecks after its permission check.
+func (c *Core) uptimeChecks(ctx context.Context, ss svcScope, operator bool) ([]apitypes.UptimeCheck, error) {
 	rows, err := c.store.ListServiceUptimeChecks(ctx, ss.svc.ID)
 	if err != nil || len(rows) == 0 {
 		return []apitypes.UptimeCheck{}, err
@@ -412,7 +476,7 @@ func (c *Core) ListUptimeChecks(ctx context.Context, a Actor, ref ServiceRef) ([
 	slices.SortFunc(incidents, func(x, y store.ListUptimeIncidentsRow) int { return int(y.ID - x.ID) })
 	out := make([]apitypes.UptimeCheck, 0, len(rows))
 	for _, r := range rows {
-		uc := c.toUptimeCheck(r, ss.env.ServerID, servers, a.Operator)
+		uc := c.toUptimeCheck(r, ss.env.ServerID, servers, operator)
 		if i := slices.IndexFunc(totals, func(t store.UptimeTotalsRow) bool { return t.CheckID == r.ID }); i >= 0 {
 			t := totals[i]
 			uc.Uptime24h, uc.Uptime7d, uc.Uptime30d = percent(t.UpDay, t.TotalDay), percent(t.UpWeek, t.TotalWeek), percent(t.UpMonth, t.TotalMonth)

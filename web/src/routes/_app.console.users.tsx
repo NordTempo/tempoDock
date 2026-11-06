@@ -15,9 +15,11 @@ import {
 } from "../features/console/security";
 import { Saved, useValidation } from "../features/create/form";
 import { roleNote } from "../features/org/data";
+import { PersonCell, TwoFactorState } from "../features/org/people";
 import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
 import { day, plural } from "../ui/format";
+import { Icon } from "../ui/icons";
 import {
   Act,
   Button,
@@ -26,6 +28,8 @@ import {
   CopyButton,
   ErrorText,
   Glyph,
+  Menu,
+  menuItem,
   Page,
   PageBar,
   Panel,
@@ -52,18 +56,11 @@ function Users() {
   const org = useOrg();
   const [reset, setReset] = useState<Reset>();
   const [adding, setAdding] = useState(false);
-  const active = users.filter((u) => !u.disabled_at).length;
 
   return (
     <>
       <PageBar
         title="Users"
-        after={
-          <span className="text-xs text-faint">
-            {active} active
-            {users.length > active && ` · ${users.length - active} disabled`}
-          </span>
-        }
         actions={
           !adding && (
             <Button primary onClick={() => setAdding(true)}>
@@ -362,16 +359,7 @@ const UserRow = memo(function UserRow({
         {asking && (
           <span className="whitespace-normal">{confirms[asking]}</span>
         )}
-        <span className="flex items-center gap-2.5">
-          <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg">
-            {u.name.slice(0, 1).toUpperCase()}
-          </span>
-          <span>
-            <span className="font-medium">{u.name}</span>
-            {you && <span className="text-faint"> (you)</span>}
-            <span className="block text-2xs text-faint">{u.email}</span>
-          </span>
-        </span>
+        <PersonCell name={u.name} email={u.email} you={you} />
       </td>
       <td className="py-2.5">
         {u.role}
@@ -389,15 +377,7 @@ const UserRow = memo(function UserRow({
         )}
       </td>
       <td className="py-2.5">
-        {u.two_factor ? (
-          <span className="text-ok">
-            <Glyph char="●" /> on
-          </span>
-        ) : (
-          <span className="text-faint">
-            <Glyph char="○" /> off
-          </span>
-        )}
+        <TwoFactorState on={u.two_factor} />
       </td>
       <td
         className={`min-w-[84px] py-2.5 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
@@ -433,20 +413,46 @@ const UserRow = memo(function UserRow({
                 Disable
               </Act>
             )}
-            <Act
-              small
-              cli={`dock user reset-password ${u.email}`}
-              onClick={() => setAsking("reset")}
+            {/* The rest in the row's menu, like token rows. */}
+            <Menu
+              label={`${u.name}: more actions`}
+              right
+              className="inline-flex"
+              button={
+                <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
+                  <Icon name="more" size={14} />
+                </span>
+              }
             >
-              Reset password
-            </Act>
-            <Act
-              small
-              cli={`dock user delete ${u.email}`}
-              onClick={() => setAsking("delete")}
-            >
-              Delete
-            </Act>
+              {(close) => (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItem}
+                    title={`dock user reset-password ${u.email}`}
+                    onClick={() => {
+                      close();
+                      setAsking("reset");
+                    }}
+                  >
+                    Reset password
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`${menuItem} text-fail hover:text-fail`}
+                    title={`dock user delete ${u.email}`}
+                    onClick={() => {
+                      close();
+                      setAsking("delete");
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+            </Menu>
           </span>
         )}
         {!asking && <ErrorText error={setDisabled.error} />}
@@ -466,7 +472,8 @@ function AddUser({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Scope>("deploy");
+  // The least privilege, as on Members' invite form.
+  const [role, setRole] = useState<Scope>("read");
   const [operator, setOperator] = useState(false);
   const v = useValidation();
   const emailOk = /^[^\s@]+@[^\s@]+$/.test(email.trim());

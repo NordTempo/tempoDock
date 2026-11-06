@@ -50,12 +50,14 @@ export const atLeast = (level: DataLevel, wanted: DataLevel) =>
   ranks[level] >= ranks[wanted];
 
 /** What the caller may do, after "you can" in the panel's bar. */
+// What the caller may do, in plain words for the panel's header (the
+// database roles behind it are in Why).
 const canText: Record<DataLevel, string> = {
-  none: "do nothing",
-  schema: "see the schema",
-  read: "read",
-  propose: "read, propose",
-  write: "read, write",
+  none: "You can't open this database",
+  schema: "You can see tables and columns, not rows",
+  read: "You can read rows",
+  propose: "You can read rows and propose changes",
+  write: "You can read and change rows",
 };
 
 /**
@@ -79,7 +81,7 @@ export function DataPanel({
   className?: string;
   tableList?: boolean;
 }) {
-  const { roles, confirmName } = useDataSource();
+  const { confirmName } = useDataSource();
   const info = useDataInfo();
   const access = info.data?.access;
   const ready =
@@ -152,9 +154,6 @@ export function DataPanel({
   const production = access.confirm_commit;
   // Edit mode only applies to the Tables tab; it survives a look elsewhere.
   const writing = editing && view.tab === "tables";
-  // Masked callers read through the masked role, which can't select
-  // sensitive columns: SQL on them comes back as an error frame.
-  const reader = access.sensitive === "masked" ? roles.masked : roles.reader;
   const openTable = (table: string) =>
     onView({ ...view, table, filters: [], order: undefined });
 
@@ -179,21 +178,16 @@ export function DataPanel({
         </nav>
         <span className="ml-auto text-xs text-(--g-mut)">
           {info.data.engine} {info.data.server_version} ·{" "}
-          {writing ? (
+          {writing && (
             <span className="text-(--g-warn)">
-              editing{production && ` ${confirmName}`}
+              Editing{production && ` ${confirmName}`} ·{" "}
             </span>
-          ) : (
-            "viewing"
-          )}{" "}
-          as{" "}
-          <span className="font-mono">{writing ? roles.writer : reader}</span> ·
-          you can{" "}
+          )}
           <span className="text-(--g-text)">
             {canText[access.level]}
-            {access.approve && ", approve"}
+            {access.approve && ", and approve changes others propose"}
           </span>
-          {access.sensitive === "masked" && " (sensitive masked)"}{" "}
+          {access.sensitive === "masked" && "; sensitive columns are masked"}{" "}
           <WhyLink info={info.data} />
           {info.data.used_by?.length
             ? ` · used by ${info.data.used_by.join(", ")}`

@@ -31,6 +31,16 @@ type AddUptimeCheckRequest struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty" minimum:"0" maximum:"30" doc:"1 to 30, below the interval; default 10"`
 }
 
+// UpdateUptimeCheckRequest changes a check in place: at least one field.
+// Its history and state are kept.
+type UpdateUptimeCheckRequest struct {
+	// IntervalSeconds is how often it is probed: 30 to 3600, longer than
+	// the check's timeout.
+	IntervalSeconds *int `json:"interval_seconds,omitempty" minimum:"30" maximum:"3600" doc:"30 to 3600, longer than the timeout"`
+	// ExpectStatus is the status that means up: a code, or 2xx or 3xx.
+	ExpectStatus *string `json:"expect_status,omitempty" pattern:"^([1-5][0-9][0-9]|2xx|3xx)$" doc:"A status code, or 2xx or 3xx"`
+}
+
 // UptimeCheck is a check with its latest results.
 type UptimeCheck struct {
 	ID              int64     `json:"id"`

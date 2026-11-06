@@ -131,7 +131,11 @@ func (c *Core) serviceFor(ctx context.Context, a Actor, ref ServiceRef, need api
 	if err != nil {
 		return ss, err
 	}
-	return ss, a.checkEnv(need, action, ss.project, ss.env)
+	err = a.checkEnv(need, action, ss.project, ss.env)
+	if le, ok := errors.AsType[*LockedError](err); ok {
+		le.Service = ss.svc.Name
+	}
+	return ss, err
 }
 
 // ListProjects returns the projects the actor can see; archived ones only

@@ -12,6 +12,7 @@ import {
   StateText,
 } from "../../ui/kit";
 import { domainState } from "../../ui/status";
+import { Saved } from "../create/form";
 import {
   type Address,
   useAddress,
@@ -28,7 +29,7 @@ export function AddressPage() {
   return (
     <>
       <PageBar title="Address" />
-      <Page width="max-w-[900px]" gap="gap-5">
+      <Page width="max-w-[760px]">
         <Panel>
           <table>
             {/* Labels sit level with their controls. */}
@@ -105,8 +106,9 @@ export function AddressPage() {
 }
 
 /**
- * The hostname, saved with Save (shown while it differs from the saved
- * one); Remove asks first. An empty Save says what to type.
+ * The hostname, in the app's save model for text: Save and Cancel while it
+ * differs from the saved one, Enter saves, Esc cancels, "Saved" after.
+ * Remove asks first. An empty Save says what to type.
  */
 function HostnameForm({ address }: { address: Address }) {
   const set = useSetAddress();
@@ -124,6 +126,12 @@ function HostnameForm({ address }: { address: Address }) {
         if (!hostname) return setEmpty(true);
         set.mutate(hostname);
       }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !changed) return;
+        setDraft(address.hostname);
+        setEmpty(false);
+        set.reset();
+      }}
     >
       <span className="flex flex-wrap items-center gap-2">
         <input
@@ -132,6 +140,7 @@ function HostnameForm({ address }: { address: Address }) {
           value={draft}
           onChange={(e) => {
             setEmpty(false);
+            set.reset();
             setDraft(e.target.value);
           }}
           spellCheck={false}
@@ -148,21 +157,36 @@ function HostnameForm({ address }: { address: Address }) {
             Save
           </Act>
         )}
-        {address.hostname && (
-          <Button small onClick={() => setAsking(true)}>
-            Remove
+        {changed && address.hostname && (
+          <Button
+            small
+            onClick={() => {
+              setDraft(address.hostname);
+              set.reset();
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+        <Saved ok={set.isSuccess && !changed} />
+      </span>
+      {/* Remove sits apart from the field, and asks first. */}
+      <span className="flex flex-wrap items-center gap-2">
+        {empty ? (
+          <span role="alert" className="text-xs text-fail">
+            Type the name Dock answers at, like dock.example.com.
+          </span>
+        ) : (
+          <span className="text-xs text-mut">
+            Needed for invite links and GitHub pushes.
+          </span>
+        )}
+        {address.hostname && !changed && (
+          <Button small className="ml-auto" onClick={() => setAsking(true)}>
+            Remove address…
           </Button>
         )}
       </span>
-      {empty ? (
-        <span role="alert" className="text-xs text-fail">
-          Type the name Dock answers at, like dock.example.com.
-        </span>
-      ) : (
-        <span className="text-xs text-mut">
-          Needed for invite links and GitHub pushes.
-        </span>
-      )}
       <ErrorText error={set.error} />
       {asking && (
         <Confirm
@@ -184,8 +208,9 @@ function HostnameForm({ address }: { address: Address }) {
             setAsking(false);
           }}
         >
-          Dock stops answering at <b>{address.hostname}</b>: sessions and CLI
-          logins there stop working. It stays at {address.private_url}.
+          Dock stops answering at <b>{address.hostname}</b>. Invite links and
+          GitHub webhooks that use it stop working, and so do sessions and CLI
+          logins there. Dock stays at {address.private_url}.
         </Confirm>
       )}
     </form>

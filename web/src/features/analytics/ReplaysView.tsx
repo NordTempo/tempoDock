@@ -122,26 +122,24 @@ export function ReplaysView({
             : ""}
           kept {kept} days · inputs masked
         </span>
-        <span className="flex gap-1">
+        <span className="seg">
           {(["All", "With errors"] as const).map((label) => (
             <button
               key={label}
               type="button"
               aria-pressed={(label === "With errors") === errorsOnly}
-              className={`rounded-ctl px-1.5 ${(label === "With errors") === errorsOnly ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => onErrorsOnly(label === "With errors")}
             >
               {label}
             </button>
           ))}
         </span>
-        <span className="flex gap-1">
+        <span className="seg">
           {devices.map(([label, d]) => (
             <button
               key={label}
               type="button"
               aria-pressed={device === d}
-              className={`rounded-ctl px-1.5 ${device === d ? "bg-sel text-fg" : "text-mut"}`}
               onClick={() => onDevice(d)}
             >
               {label}

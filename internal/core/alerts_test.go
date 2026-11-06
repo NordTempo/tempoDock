@@ -137,6 +137,9 @@ func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
 	if a.Kind != string(apitypes.AlertDeployFailed) || a.Service != "web" || !strings.Contains(a.Message, "Release 2 failed") {
 		t.Fatalf("alert = %+v", a)
 	}
+	if out := toAlert(a); out.Target == nil || out.Target.Release != 2 || out.Command != "dock release show 2 -p shop -e production -s web" {
+		t.Fatalf("target %+v, command %q", out.Target, out.Command)
+	}
 	h.deploy(web, "app:3")
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(h.openAlert("deploy:service:1", true).Message, "Release 3") {

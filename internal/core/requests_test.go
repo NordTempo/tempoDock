@@ -314,3 +314,40 @@ func TestRequestApproveRace(t *testing.T) {
 		t.Fatalf("ran %d times: %v", len(evs), err)
 	}
 }
+
+// TestRequestCheck: checking runs a request's call through its own checks
+// without running it, and says why approving would fail.
+func TestRequestCheck(t *testing.T) {
+	h := newRequestHarness(t)
+	le := h.ask("1", "")
+	if _, err := h.c.CheckRequest(h.ctx, h.agent, le.Request); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a token checks: %v", err)
+	}
+	if got, err := h.c.CheckRequest(h.ctx, h.admin, le.Request); err != nil || !got.OK {
+		t.Fatalf("check: %+v %v", got, err)
+	}
+	if h.staged() {
+		t.Fatal("checking ran the call")
+	}
+
+	// A restart of a service with nothing deployed would fail there. The
+	// API's replayer is the test one here.
+	h.c.SetReplayer("api", h.c.replayer("test"))
+	web := ServiceRef{"shop", "production", "web"}
+	_, err := h.c.Restart(h.ctx, h.agent, web)
+	err = h.c.FileRequest(h.ctx, h.agent, err, Call{Via: "api", Op: "restart", Title: "Restart", Args: json.RawMessage(`{}`)})
+	restart, _ := errors.AsType[*LockedError](err)
+	if restart == nil || restart.Request == 0 {
+		t.Fatalf("restart: %v", err)
+	}
+	if got, err := h.c.CheckRequest(h.ctx, h.admin, restart.Request); err != nil || got.OK || got.Service != "web" || !strings.Contains(got.Reason, "no active release") {
+		t.Fatalf("restart check: %+v %v", got, err)
+	}
+	h.deploy(web, "app:1")
+	if got, err := h.c.CheckRequest(h.ctx, h.admin, restart.Request); err != nil || !got.OK {
+		t.Fatalf("restart check after a deploy: %+v %v", got, err)
+	}
+	if rels, _ := h.c.ListReleases(h.ctx, testSystem, web, 10); len(rels) != 1 {
+		t.Fatalf("checking a restart released: %d releases", len(rels))
+	}
+}

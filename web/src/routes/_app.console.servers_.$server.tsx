@@ -75,12 +75,12 @@ function ServerNotFound() {
         }
         title={<span className="font-mono">{server}</span>}
       />
-      <Page gap="gap-3">
-        <h2 className="text-lg font-semibold">
-          Server <span className="font-mono">{server}</span> not found
+      <Page gap="gap-2">
+        <h2 className="text-md font-normal">
+          Server <b className="font-mono">{server}</b> not found
         </h2>
         <p className="text-mut">It may have been removed or renamed.</p>
-        <Link to="/console/servers" className="btn pri self-start">
+        <Link to="/console/servers" className="btn pri mt-2 self-start">
           Back to servers
         </Link>
       </Page>
@@ -97,6 +97,14 @@ function ServerPage() {
   const live = useLiveServer(name);
   const { accepts, placement, builder, confirm, error } =
     useServerSwitches(server);
+  // What the server is, under its status: "dock 0.27.0 · control plane".
+  const facts = [
+    server.version && `dock ${server.version}`,
+    server.local && "control plane",
+    server.builder && "builds images",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <>
@@ -107,20 +115,12 @@ function ServerPage() {
           </Link>
         }
         title={<span className="font-mono">{name}</span>}
-        after={
-          <span className="text-xs text-faint">
-            {[
-              server.version && `dock ${server.version}`,
-              server.local && "control plane",
-              server.builder && "builds images",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        }
       />
       <Page>
-        <StatusSentence detail={detail} />
+        <div className="flex flex-col gap-1">
+          <StatusSentence detail={detail} />
+          {facts && <p className="text-mut">{facts}</p>}
+        </div>
 
         <LinkSection server={server} />
         {(server.tunnel || server.tunnel_port > 0) && (

@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useAddDomain } from "../../data/mutations";
 import type { Domain, ServiceRef } from "../../data/types";
 import { Dialog } from "../../ui/Dialog";
-import { Act, Button, Check, ErrorText } from "../../ui/kit";
+import { Check } from "../../ui/kit";
 import { useCloudflareZones } from "../cloudflare/data";
+import { Footer, invalid, useValidation } from "../create/form";
 
 /**
  * Adds a hostname: your own (you create its DNS record), or from a zone
@@ -44,14 +45,19 @@ export default function AddDomainDialog({
     : hostname.trim();
   const target = fromCloudflare ? "" : redirect.trim();
   const flags = `-s ${ref.service} -e ${ref.environment}`;
+  // A missing hostname marks its field on submit (the one validation pattern).
+  const v = useValidation();
+  const hostError = v.required(!host, "Enter a hostname.");
   const option = (on: boolean) =>
     `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"}`;
   return (
     <Dialog title={`Add a domain to ${ref.service}`} onClose={onClose} wide>
       <form
+        ref={v.form}
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
+          if (!v.check(!!host)) return;
           add.mutate(
             {
               ref,
@@ -88,11 +94,12 @@ export default function AddDomainDialog({
               <span className="flex flex-wrap gap-2">
                 <input
                   aria-label="Hostname"
+                  aria-invalid={!!hostError}
                   data-autofocus
                   value={hostname}
                   onChange={(e) => setHostname(e.target.value)}
                   placeholder="app.example.com"
-                  className="field min-w-0 flex-[1_1_220px] py-[7px] font-mono"
+                  className={`field min-w-0 flex-[1_1_220px] py-[7px] font-mono ${invalid(hostError)}`}
                 />
                 <input
                   aria-label="Redirect to, optional"
@@ -102,6 +109,11 @@ export default function AddDomainDialog({
                   placeholder="redirect to, optional"
                   className="field min-w-0 flex-[1_1_160px] py-[7px] font-mono"
                 />
+                {hostError && (
+                  <span role="alert" className="basis-full text-xs text-fail">
+                    {hostError}
+                  </span>
+                )}
               </span>
             )}
           </span>
@@ -171,27 +183,23 @@ export default function AddDomainDialog({
             onChange={setNewSite}
           />
         )}
-        <ErrorText error={add.error} />
-        <div className="flex items-center justify-end gap-2.5">
-          {!host && (
-            <span className="mr-auto text-xs text-faint">
-              {fromCloudflare ? "Pick a zone first" : "Type a hostname first"}
-            </span>
-          )}
-          <Button onClick={onClose}>Cancel</Button>
-          <Act
-            primary
-            type="submit"
-            cli={`dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""}${newSite && !target ? " --analytics new" : ""} ${flags}`}
-            disabled={add.isPending || !host}
-          >
-            {add.isPending
+        <Footer
+          className="mt-1"
+          submit={
+            add.isPending
               ? fromCloudflare
                 ? "Setting up…"
                 : "Adding…"
-              : `Add ${host || "domain"}`}
-          </Act>
-        </div>
+              : `Add ${host || "domain"}`
+          }
+          pending={add.isPending}
+          problem={v.problem([!host && "a hostname"])}
+          error={add.error}
+          cli={[
+            `dock domain add ${host || "<host>"}${target ? ` --redirect-to ${target}` : ""}${fromCloudflare ? " --cloudflare" : ""}${newSite && !target ? " --analytics new" : ""} ${flags}`,
+          ]}
+          onClose={onClose}
+        />
       </form>
     </Dialog>
   );

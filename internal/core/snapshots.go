@@ -332,13 +332,15 @@ func (c *Core) runSnapshot(ctx context.Context, ss svcScope, row store.VolumeSna
 // and with prune applies retention. The caller holds the claim on the
 // service.
 func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume, prune bool) (store.VolumeSnapshot, error) {
-	size, paused, err := c.snapshotJob(ctx, ss, row, vols)
+	size, paused, out, err := c.snapshotJob(ctx, ss, row, vols)
 	if ctx.Err() != nil {
 		return row, ctx.Err() // shutting down: the next start marks it failed
 	}
 	fin := store.FinishSnapshotParams{Status: string(apitypes.SnapshotReady), SizeBytes: size, PausedMs: paused.Milliseconds(), FinishedAt: ptr(now()), ID: row.ID}
 	if err != nil {
-		fin.Status, fin.Error = string(apitypes.SnapshotFailed), err.Error()
+		// Only a failed one keeps its log: the job's environment holds no
+		// secrets to mask (snapshot ID and volume names).
+		fin.Status, fin.Error, fin.Log = string(apitypes.SnapshotFailed), err.Error(), runTail(out)
 	}
 	// Recorded before the audit event announces it, so whoever the event
 	// wakes (MCP's create_snapshot) reads the outcome.
@@ -368,15 +370,15 @@ var noRoom = regexp.MustCompile(`dock-snapshot: no-room (\d+) (\d+) (\d+)`)
 var snapshotSize = regexp.MustCompile(`dock-snapshot: size (\d+)`)
 
 // snapshotJob runs the copy on the service's server and returns the
-// snapshot's size and how long the service was paused.
-func (c *Core) snapshotJob(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume) (int64, time.Duration, error) {
+// snapshot's size, how long the service was paused and the job's output.
+func (c *Core) snapshotJob(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume) (int64, time.Duration, string, error) {
 	rt, err := c.runtimeFor(ss.env.ServerID)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	pause, err := c.runningContainers(ctx, ss, rt)
 	if err != nil {
-		return 0, 0, c.nodeErr(ss.env.ServerID, err)
+		return 0, 0, "", c.nodeErr(ss.env.ServerID, err)
 	}
 	spec := node.JobSpec{
 		Name:   fmt.Sprintf("dock_p%d_e%d_s%d_snapshot%d", ss.project.ID, ss.env.ID, ss.svc.ID, row.ID),
@@ -395,18 +397,33 @@ func (c *Core) snapshotJob(ctx context.Context, ss svcScope, row store.VolumeSna
 	if m := noRoom.FindStringSubmatch(out); m != nil {
 		need, _ := strconv.ParseInt(m[1], 10, 64)
 		avail, _ := strconv.ParseInt(m[2], 10, 64)
-		return 0, paused, fmt.Errorf("not enough disk on the server: the snapshot needs %s and %s is free, of which a tenth of the disk stays free; delete old snapshots (`dock volume snapshot delete`) or free disk first",
+		return 0, paused, out, fmt.Errorf("not enough disk on the server: the snapshot needs %s and %s is free, of which a tenth of the disk stays free; delete old snapshots (`dock volume snapshot delete`) or free disk first",
 			humanBytes(need<<10), humanBytes(avail<<10))
 	}
 	if err != nil {
-		return 0, paused, err
+		return 0, paused, out, err
 	}
 	m := snapshotSize.FindStringSubmatch(out)
 	if m == nil {
-		return 0, paused, fmt.Errorf("the snapshot job didn't report a size%s", withOutput(out))
+		return 0, paused, out, errors.New("the snapshot didn't finish, so nothing was saved; its log shows why")
 	}
 	kib, _ := strconv.ParseInt(m[1], 10, 64)
-	return kib << 10, paused, nil
+	return kib << 10, paused, out, nil
+}
+
+// SnapshotLog returns what a failed snapshot's job printed (its last
+// 16 KB), as apitypes.BackupLog; empty for one that succeeded. Scope:
+// deploy, like a backup's log.
+func (c *Core) SnapshotLog(ctx context.Context, a Actor, ref ServiceRef, id int64) (apitypes.BackupLog, error) {
+	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "reading a snapshot's log")
+	if err != nil {
+		return apitypes.BackupLog{}, err
+	}
+	snap, err := c.serviceSnapshot(ctx, ss, id)
+	if err != nil {
+		return apitypes.BackupLog{}, err
+	}
+	return apitypes.BackupLog{ID: id, Output: snap.Log}, nil
 }
 
 // runningContainers lists the IDs of the running containers of a
@@ -466,7 +483,7 @@ func (c *Core) runToolJob(ctx context.Context, serverID int64, rt node.Runtime, 
 
 // RestoreSnapshot restores snapshot id of a service. A template database
 // restores into a new service by default (req.As, default
-// <service>-snapshot-<id>): created with the snapshot's credentials, its
+// <service>-restored): created with the snapshot's credentials, its
 // volume filled from the snapshot before its first deploy, the service
 // itself untouched. With req.InPlace the service's own volumes are
 // replaced: it is stopped, its current data is snapshotted first (the
@@ -668,7 +685,7 @@ func mountNames(mounts []node.Mount) []string {
 // restoreIntoNew starts a restore of a template database's snapshot into
 // a new service.
 func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTemplate, snap store.VolumeSnapshot, as string) (apitypes.SnapshotRestoreResult, error) {
-	name := cmp.Or(as, fmt.Sprintf("%s-snapshot-%d", ss.svc.Name, snap.ID))
+	name := cmp.Or(as, ss.svc.Name+"-restored")
 	if err := validName("service", name); err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}

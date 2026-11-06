@@ -66,6 +66,42 @@ func TestAddUptimeCheckValidates(t *testing.T) {
 	}
 }
 
+func TestUpdateUptimeCheck(t *testing.T) {
+	h := newHarness(t)
+	web := h.uptimeService()
+	chk, err := h.c.AddUptimeCheck(h.ctx, testSystem, web, apitypes.AddUptimeCheckRequest{URL: "https://shop.example.com/", TimeoutSeconds: 30, IntervalSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		req  apitypes.UpdateUptimeCheckRequest
+		want string
+	}{
+		{apitypes.UpdateUptimeCheckRequest{}, "nothing to change"},
+		{apitypes.UpdateUptimeCheckRequest{IntervalSeconds: new(10)}, "30 seconds to 1 hour"},
+		{apitypes.UpdateUptimeCheckRequest{IntervalSeconds: new(30)}, "longer than the check's timeout"},
+		{apitypes.UpdateUptimeCheckRequest{ExpectStatus: new("4xx")}, "2xx or 3xx"},
+	} {
+		if _, err := h.c.UpdateUptimeCheck(h.ctx, testSystem, web, chk.ID, tc.req); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%+v: %v, want %q", tc.req, err, tc.want)
+		}
+	}
+	got, err := h.c.UpdateUptimeCheck(h.ctx, testSystem, web, chk.ID, apitypes.UpdateUptimeCheckRequest{IntervalSeconds: new(300), ExpectStatus: new("3xx")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != chk.ID || got.IntervalSeconds != 300 || got.ExpectStatus != "3xx" || got.TimeoutSeconds != 30 || len(got.Series) != 48 {
+		t.Fatalf("updated = %+v", got)
+	}
+	if !slices.ContainsFunc(h.shopAudit(), func(e apitypes.AuditEvent) bool { return e.Action == "uptime.update" }) {
+		t.Error("no uptime.update audit event")
+	}
+	api := h.service("api", apitypes.CreateServiceRequest{Port: 3000})
+	if _, err := h.c.UpdateUptimeCheck(h.ctx, testSystem, api, chk.ID, apitypes.UpdateUptimeCheckRequest{ExpectStatus: new("2xx")}); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("updating through another service: %v, want not found", err)
+	}
+}
+
 func TestUptimeChecksPermissions(t *testing.T) {
 	h := newHarness(t)
 	web := h.uptimeService()
@@ -88,6 +124,9 @@ func TestUptimeChecksPermissions(t *testing.T) {
 		}
 		if err := h.c.RemoveUptimeCheck(h.ctx, a, web, chk.ID); CodeOf(err) != apitypes.CodeForbidden {
 			t.Errorf("%s removes: %v, want forbidden", a.Name, err)
+		}
+		if _, err := h.c.UpdateUptimeCheck(h.ctx, a, web, chk.ID, apitypes.UpdateUptimeCheckRequest{ExpectStatus: new("2xx")}); CodeOf(err) != apitypes.CodeForbidden {
+			t.Errorf("%s updates: %v, want forbidden", a.Name, err)
 		}
 	}
 	// An admin token of another project sees nothing of this one.

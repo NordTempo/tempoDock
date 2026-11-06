@@ -321,6 +321,35 @@ func (q *Queries) RollupUptimeHour(ctx context.Context, arg RollupUptimeHourPara
 	return err
 }
 
+const updateUptimeCheck = `-- name: UpdateUptimeCheck :one
+UPDATE uptime_checks SET interval_s = ?, expect_status = ? WHERE id = +?
+RETURNING id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto
+`
+
+type UpdateUptimeCheckParams struct {
+	IntervalS    int64
+	ExpectStatus int64
+	ID           int64
+}
+
+// A check's interval and expected status, changed in place.
+func (q *Queries) UpdateUptimeCheck(ctx context.Context, arg UpdateUptimeCheckParams) (UptimeCheck, error) {
+	row := q.db.QueryRowContext(ctx, updateUptimeCheck, arg.IntervalS, arg.ExpectStatus, arg.ID)
+	var i UptimeCheck
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Url,
+		&i.ExpectStatus,
+		&i.IntervalS,
+		&i.TimeoutMs,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.Auto,
+	)
+	return i, err
+}
+
 const uptimeProjectSummary = `-- name: UptimeProjectSummary :many
 SELECT c.id, c.service_id,
   CAST(coalesce(sum(s.up), 0) AS INTEGER) AS up, CAST(coalesce(sum(s.total), 0) AS INTEGER) AS total

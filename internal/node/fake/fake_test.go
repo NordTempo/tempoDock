@@ -6,6 +6,7 @@ import (
 	"net"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
 )
@@ -72,5 +73,49 @@ func TestRunJobPause(t *testing.T) {
 	want := []string{"start db", "job snap", "pause " + svc.ID, "unpause " + svc.ID, "job bad"}
 	if !slices.Equal(ops, want) {
 		t.Fatalf("ops = %q, want %q", ops, want)
+	}
+}
+
+// DOCK_FAKE_PENDING_DOMAINS keeps the hostnames it names waiting for DNS.
+func TestPendingDomains(t *testing.T) {
+	t.Setenv("DOCK_FAKE_PENDING_DOMAINS", "shop.example.com, Blog.example.com")
+	r := New()
+	for host, ok := range map[string]bool{"shop.example.com": false, "blog.example.com": false, "api.example.com": true} {
+		got, err := r.CheckDomain(context.Background(), host)
+		if err != nil || got.DNSOK != ok || got.CertificateOK != ok {
+			t.Errorf("%s: %+v %v, want DNS ok %v", host, got, err, ok)
+		}
+	}
+}
+
+// With PassHealthAfter a started container's check passes like Docker's:
+// healthy, with a health_status event; a failed check stays starting.
+func TestPassHealthAfter(t *testing.T) {
+	ctx := context.Background()
+	r := New()
+	r.PassHealthAfter(time.Millisecond)
+	r.FailHealthCheck(func(s node.ContainerSpec) error {
+		if s.Name == "bad" {
+			return errors.New("500")
+		}
+		return nil
+	})
+	evs, err := r.Events(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, _ := r.Start(ctx, node.ContainerSpec{Name: "good", Image: "app", Health: &node.LivenessCheck{}})
+	bad, _ := r.Start(ctx, node.ContainerSpec{Name: "bad", Image: "app", Health: &node.LivenessCheck{}})
+	for ev := range evs {
+		if ev.Action == "health_status" {
+			if ev.ContainerID != good.ID || ev.Health != node.HealthHealthy {
+				t.Fatalf("event %+v", ev)
+			}
+			break
+		}
+	}
+	time.Sleep(10 * time.Millisecond)
+	if c, _ := r.Inspect(ctx, bad.ID); c.Health != node.HealthStarting {
+		t.Fatalf("failed check: %q", c.Health)
 	}
 }

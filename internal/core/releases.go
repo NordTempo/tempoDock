@@ -998,10 +998,7 @@ func (c *Core) Restart(ctx context.Context, a Actor, ref ServiceRef) (apitypes.R
 	if err != nil {
 		return apitypes.Release{}, err
 	}
-	active, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
-	if store.IsNotFound(err) {
-		return apitypes.Release{}, invalid("service %s has no active release to restart; deploy it first", ss)
-	}
+	active, err := c.restartable(ctx, ss)
 	if err != nil {
 		return apitypes.Release{}, err
 	}
@@ -1011,6 +1008,16 @@ func (c *Core) Restart(ctx context.Context, a Actor, ref ServiceRef) (apitypes.R
 	}
 	c.audit(ctx, a, "release.restart", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d restarts release %d", rel.Number, active.Number))
 	return c.toRelease(ctx, ss, rel, false)
+}
+
+// restartable is the release a restart of ss copies: its active one.
+// Restart and CheckRequest both ask it.
+func (c *Core) restartable(ctx context.Context, ss svcScope) (store.Release, error) {
+	active, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
+	if store.IsNotFound(err) {
+		return active, invalid("service %s has no active release to restart; deploy it first", ss)
+	}
+	return active, err
 }
 
 // ListReleases returns a service's releases, newest first.

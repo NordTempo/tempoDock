@@ -94,7 +94,7 @@ type CreateSnapshotRequest struct {
 
 // RestoreSnapshotRequest restores a snapshot. By default a template
 // database restores into a new service (As names it, default
-// <service>-snapshot-<id>), leaving the service as it is. InPlace
+// <service>-restored), leaving the service as it is. InPlace
 // replaces the service's own volumes instead: it is stopped, its current
 // data is snapshotted first (the restore's safety snapshot), the
 // snapshot's data is copied in, and it starts again. Services that aren't

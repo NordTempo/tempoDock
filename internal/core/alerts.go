@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -39,7 +40,11 @@ type alertSignal struct {
 	Kind     apitypes.AlertKind
 	Severity apitypes.AlertSeverity
 	Title    string
-	Message  string
+	// Message is a human sentence; the command that shows more goes in
+	// Command, what it points at in Target.
+	Message string
+	Command string
+	Target  *apitypes.AlertTarget
 	// What the alert is about, where that applies.
 	Project, Environment, Service, Server string
 	projectID, serviceID                  int64
@@ -251,6 +256,8 @@ func deployFailed(project, env, service string, number int64, reason string, ser
 		Key: "deploy:" + alertServiceKey(serviceID, project, env, service), serviceID: serviceID, Kind: apitypes.AlertDeployFailed, Severity: apitypes.SeverityWarning,
 		Title:   "Deploy of " + svc + " failed",
 		Message: fmt.Sprintf("Release %d failed: %s. The release before it keeps serving.", number, reason),
+		Command: fmt.Sprintf("dock release show %d %s", number, svcFlags(project, env, service)),
+		Target:  &apitypes.AlertTarget{Release: number},
 		Project: project, Environment: env, Service: service,
 	}
 }
@@ -263,6 +270,8 @@ func backupFailed(project, env, service string, id int64, reason string, service
 		Key: "backup:" + alertServiceKey(serviceID, project, env, service), serviceID: serviceID, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
 		Title:   "Backup of " + svc + " failed",
 		Message: fmt.Sprintf("Backup %d failed: %s.", id, strings.TrimRight(strings.TrimSpace(reason), ".:; ")),
+		Command: fmt.Sprintf("dock backup log %d %s", id, svcFlags(project, env, service)),
+		Target:  &apitypes.AlertTarget{Backup: id},
 		Project: project, Environment: env, Service: service,
 	}
 }
@@ -521,17 +530,23 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	e.mu.Lock()
 	if name := c.bus.projectName(s.projectID, s.Project); name != s.Project {
 		s.Title = strings.Replace(s.Title, s.Project+"/", name+"/", 1)
+		s.Command = strings.Replace(s.Command, "-p "+s.Project+" ", "-p "+name+" ", 1)
 		s.Project = name
 	}
+	target := alertTargetJSON(s.Target)
 	cur, ok := e.open[s.Key]
 	if ok {
-		if cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message && cur.Project == s.Project {
+		if cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message && cur.Project == s.Project &&
+			cur.Command == s.Command && cur.Target == target {
 			e.mu.Unlock()
 			return
 		}
 		escalated := severityRank(s.Severity) > severityRank(apitypes.AlertSeverity(cur.Severity))
 		cur.Severity, cur.Title, cur.Message, cur.Project, cur.UpdatedAt = string(s.Severity), s.Title, s.Message, s.Project, t
-		err := c.store.UpdateAlert(ctx, store.UpdateAlertParams{Severity: cur.Severity, Title: cur.Title, Message: cur.Message, Project: cur.Project, UpdatedAt: t, ID: cur.ID})
+		cur.Command, cur.Target = s.Command, target
+		err := c.store.UpdateAlert(ctx, store.UpdateAlertParams{
+			Severity: cur.Severity, Title: cur.Title, Message: cur.Message, Project: cur.Project, Command: cur.Command, Target: cur.Target, UpdatedAt: t, ID: cur.ID,
+		})
 		if err != nil {
 			e.mu.Unlock()
 			c.log.Error("update alert", "alert", s.Key, "err", err)
@@ -555,6 +570,7 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	row, err := c.store.OpenAlert(ctx, store.OpenAlertParams{
 		Key: s.Key, Kind: string(s.Kind), Severity: string(s.Severity), Title: s.Title, Message: s.Message,
 		Project: s.Project, Environment: s.Environment, Service: s.Service, Server: s.Server, OpenedAt: t, UpdatedAt: t, ProjectID: pid, ServiceID: sid,
+		Command: s.Command, Target: target,
 	})
 	if err != nil {
 		e.mu.Unlock()
@@ -628,11 +644,33 @@ func (c *Core) publishAlert(a store.Alert) {
 }
 
 func toAlert(a store.Alert) apitypes.Alert {
-	return apitypes.Alert{
+	out := apitypes.Alert{
 		ID: a.ID, Kind: apitypes.AlertKind(a.Kind), Severity: apitypes.AlertSeverity(a.Severity), Title: a.Title, Message: a.Message,
-		Project: a.Project, Environment: a.Environment, Service: a.Service, Server: a.Server,
+		Project: a.Project, Environment: a.Environment, Service: a.Service, Server: a.Server, Command: a.Command,
 		OpenedAt: a.OpenedAt, UpdatedAt: a.UpdatedAt, ResolvedAt: a.ResolvedAt,
 	}
+	if a.Target != "" {
+		var t apitypes.AlertTarget
+		if json.Unmarshal([]byte(a.Target), &t) == nil {
+			out.Target = &t
+		}
+	}
+	return out
+}
+
+// alertTargetJSON is how an alert's target is stored: JSON, or empty
+// without one.
+func alertTargetJSON(t *apitypes.AlertTarget) string {
+	if t == nil {
+		return ""
+	}
+	b, _ := json.Marshal(t) // a struct of strings and numbers: never fails
+	return string(b)
+}
+
+// svcFlags are the CLI flags naming a service, for an alert's command.
+func svcFlags(project, env, service string) string {
+	return "-p " + project + " -e " + env + " -s " + service
 }
 
 // maxAlertList caps one page of alerts.

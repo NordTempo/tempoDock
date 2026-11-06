@@ -185,7 +185,9 @@ func startDaemon(bin string) (*daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	ports, err := freePorts(3)
+	// Every listener gets a free port, so another dock on this machine
+	// (a dev daemon, another worktree's) doesn't collide with its defaults.
+	ports, err := freePorts(6)
 	if err != nil {
 		return nil, err
 	}
@@ -203,11 +205,14 @@ admin_socket = %q
 http_port = 18080
 https_port = 18443
 disable_tls = true
+traffic_listen = "127.0.0.1:%d"
 
 # The fake runtime runs an in-memory store; it only needs a binary to name.
 [analytics]
 store_binary = %q
-`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), filepath.Join(dir, "dock-analytics"))
+ingest_listen = "127.0.0.1:%d"
+stats_listen = "127.0.0.1:%d"
+`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), ports[3], filepath.Join(dir, "dock-analytics"), ports[4], ports[5])
 	if err := os.WriteFile(filepath.Join(dir, "dock-analytics"), []byte("fake"), 0o755); err != nil {
 		return nil, err
 	}

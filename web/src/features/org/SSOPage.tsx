@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useSession } from "../../data/queries";
 import { CliHint } from "../../ui/CliHint";
-import { day, plural } from "../../ui/format";
+import { day } from "../../ui/format";
 import {
   Act,
   Button,
@@ -14,7 +14,6 @@ import {
   Page,
   Panel,
   SectionHead,
-  TitleRow,
 } from "../../ui/kit";
 import { Saved } from "../create/form";
 import {
@@ -24,6 +23,7 @@ import {
   useSetOrgSSOOnly,
   useUpdateSSOProvider,
 } from "./data";
+import { OrgSettingsBar } from "./SettingsBar";
 
 type Provider = components["schemas"]["SSOProvider"];
 /** A provider's role for people it lets in without an invite; "" for none. */
@@ -47,12 +47,14 @@ const callbackPath = "/api/v1/auth/sso/callback";
 export function SSOPage() {
   if (!useIsAdmin()) {
     return (
-      <Page>
-        <TitleRow title="Single sign-on" />
-        <p className="text-mut">
-          Only the organization's admins manage single sign-on.
-        </p>
-      </Page>
+      <>
+        <OrgSettingsBar />
+        <Page>
+          <p className="text-mut">
+            Only the organization's admins manage single sign-on.
+          </p>
+        </Page>
+      </>
     );
   }
   return <SSO />;
@@ -60,78 +62,90 @@ export function SSOPage() {
 
 function SSO() {
   const providers = useSuspenseQuery(orgQueries.ssoProviders()).data;
+  const [adding, setAdding] = useState(false);
   const org = useSuspenseQuery(orgQueries.org()).data;
   // The daemon's own address, as it tells providers; this page's before
   // there is one.
   const callback =
     providers[0]?.redirect_url ?? window.location.origin + callbackPath;
   return (
-    <Page width="max-w-[1000px]" gap="gap-5">
-      <TitleRow
-        title="Single sign-on"
-        context={`OpenID Connect providers members of ${org.name} sign in through · ${plural(providers.length, "provider")}${org.sso_only ? " · required" : ""}`}
+    <>
+      <OrgSettingsBar
         actions={
-          <span className="font-mono text-2xs text-mut">dock org sso list</span>
+          !adding && (
+            <Button primary onClick={() => setAdding(true)}>
+              Add provider
+            </Button>
+          )
         }
       />
-      <dl className="props">
-        <dt>Redirect URL</dt>
-        <dd className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <code className="min-w-0 font-mono [overflow-wrap:anywhere]">
-            {callback}
-          </code>
-          <CopyButton text={callback} />
-          <span className="text-xs text-mut">
-            Register it at the provider for a web app with scopes{" "}
-            <span className="font-mono">openid email profile</span>.
-          </span>
-        </dd>
-      </dl>
-      {providers.length > 0 ? (
-        <Panel>
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Issuer</th>
-                <th>Client ID</th>
-                <th>Domains</th>
-                <th title="Who may join on their first sign-in">New members</th>
-                <th>Added</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {providers.map((p) => (
-                <ProviderRow
-                  key={p.name}
-                  provider={p}
-                  last={org.sso_only && providers.length === 1}
-                />
-              ))}
-            </tbody>
-          </table>
-        </Panel>
-      ) : (
-        <p className="text-mut">
-          No providers yet. Add the one your team signs in with.
-        </p>
-      )}
-      <section
-        aria-labelledby="add-provider"
-        className="flex flex-col gap-4 rounded-panel border border-line p-4"
-      >
-        <h2 id="add-provider" className="text-sm font-semibold">
-          Add a provider
-        </h2>
-        <ProviderForm />
-      </section>
-      <SSOOnly
-        on={org.sso_only}
-        slug={org.slug}
-        hasProviders={providers.length > 0}
-      />
-    </Page>
+      <Page>
+        <dl className="props">
+          <dt>Redirect URL</dt>
+          <dd className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <code className="min-w-0 font-mono [overflow-wrap:anywhere]">
+              {callback}
+            </code>
+            <CopyButton text={callback} />
+            <span className="text-xs text-mut">
+              Register it at the provider for a web app with scopes{" "}
+              <span className="font-mono">openid email profile</span>.
+            </span>
+          </dd>
+        </dl>
+        {providers.length > 0 ? (
+          <Panel>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Issuer</th>
+                  <th>Client ID</th>
+                  <th>Domains</th>
+                  <th title="Who may join on their first sign-in">
+                    New members
+                  </th>
+                  <th>Added</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {providers.map((p) => (
+                  <ProviderRow
+                    key={p.name}
+                    provider={p}
+                    last={org.sso_only && providers.length === 1}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+        ) : (
+          !adding && (
+            <p className="text-mut">
+              No providers yet. Add the one your team signs in with: Add
+              provider.
+            </p>
+          )
+        )}
+        {adding && (
+          <section
+            aria-labelledby="add-provider"
+            className="flex flex-col gap-4 rounded-panel border border-line p-4"
+          >
+            <h2 id="add-provider" className="text-sm font-semibold">
+              Add a provider
+            </h2>
+            <ProviderForm onDone={() => setAdding(false)} />
+          </section>
+        )}
+        <SSOOnly
+          on={org.sso_only}
+          slug={org.slug}
+          hasProviders={providers.length > 0}
+        />
+      </Page>
+    </>
   );
 }
 
@@ -321,6 +335,7 @@ function ProviderForm({
               setSecret("");
               setDomainText("");
               setJIT("");
+              onDone?.();
             },
           },
         );

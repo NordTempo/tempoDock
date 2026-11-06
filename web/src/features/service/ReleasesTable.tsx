@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useRollback } from "../../data/mutations";
-import { useCanDeploy, useService } from "../../data/queries";
+import { useCanDeploy, useReleases, useService } from "../../data/queries";
 import type { Release, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
@@ -20,13 +20,15 @@ import {
   imageLabel,
   releaseDiff,
   rollbackLosses,
+  servesCopyOf,
   shortImage,
 } from "./releases";
 
 /**
  * Release history: one line per release (what, short image, who, when),
  * a failure's cause under it in full, Details on a failed row and a small
- * Roll back button on every superseded row (left out while a deploy runs).
+ * Roll back button on every superseded row (left out while a deploy runs,
+ * and where the serving release already is a copy of it).
  */
 export function ReleasesTable({
   serviceRef: ref,
@@ -39,12 +41,16 @@ export function ReleasesTable({
   deploying: boolean;
 }) {
   const org = useOrg();
-  // A stopped service's active release serves nothing (ADR 0050).
-  const stopped = !!useService(ref).service.stopped_at;
+  // A stopped service's active release serves nothing (ADR 0050), and it
+  // is starting until its health check first passes.
+  const { service } = useService(ref);
+  const stopped = !!service.stopped_at;
+  const starting = service.status.health === "starting";
   const mayDeploy = useCanDeploy(ref);
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
   const target = releases.find((r) => r.number === confirming);
+  const serving = releases.find((r) => r.status === "active");
   if (releases.length === 0) {
     return <p className="text-mut">Not deployed yet.</p>;
   }
@@ -62,7 +68,7 @@ export function ReleasesTable({
             <col />
             <col className="w-[100px]" />
             <col className="w-[44px]" />
-            <col className="w-[96px]" />
+            <col className="w-[124px]" />
           </colgroup>
           <thead>
             <tr>
@@ -94,15 +100,21 @@ export function ReleasesTable({
                         r.status === "active"
                           ? stopped
                             ? { tone: "mut", glyph: "○", label: "stopped" }
-                            : { tone: "ok", glyph: "●", label: "serving" }
+                            : starting
+                              ? { tone: "mut", glyph: "◐", label: "starting" }
+                              : { tone: "ok", glyph: "●", label: "serving" }
                           : releaseState(r.status)
                       }
                     />
                   </td>
-                  <td className="truncate">
-                    <span title={image}>
+                  {/* What wraps to two lines; the title has it in full. */}
+                  <td className="whitespace-normal">
+                    <span
+                      className="line-clamp-2 break-words"
+                      title={`${releaseWhat(r)} ${image}`}
+                    >
                       {releaseWhat(r)}{" "}
-                      <span className="font-mono text-xs text-mut">
+                      <span className="font-mono text-xs whitespace-nowrap text-mut">
                         {shortImage(image)}
                       </span>
                     </span>
@@ -116,7 +128,7 @@ export function ReleasesTable({
                       </div>
                     )}
                   </td>
-                  <td className="truncate">
+                  <td className="truncate" title={r.created_by}>
                     <Actor name={r.created_by} kind={actorKind(r.created_by)} />
                   </td>
                   <td className="text-faint">{since(r.created_at)}</td>
@@ -127,16 +139,27 @@ export function ReleasesTable({
                         Details
                       </Link>
                     )}
-                    {r.status === "superseded" && mayDeploy && !deploying && (
-                      <Button
-                        small
-                        title={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
-                        aria-label={`Roll back to r${r.number}`}
-                        onClick={() => setConfirming(r.number)}
+                    {r.status === "superseded" && servesCopyOf(serving, r) && (
+                      <span
+                        className="text-xs text-faint"
+                        title={`r${serving?.number} already runs r${r.number}'s image and config`}
                       >
-                        Roll back
-                      </Button>
+                        same as serving
+                      </span>
                     )}
+                    {r.status === "superseded" &&
+                      mayDeploy &&
+                      !deploying &&
+                      !servesCopyOf(serving, r) && (
+                        <Button
+                          small
+                          title={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
+                          aria-label={`Roll back to r${r.number}`}
+                          onClick={() => setConfirming(r.number)}
+                        >
+                          Roll back
+                        </Button>
+                      )}
                   </td>
                 </tr>
               );
@@ -148,7 +171,7 @@ export function ReleasesTable({
         <RollbackConfirm
           serviceRef={ref}
           target={target}
-          serving={releases.find((r) => r.status === "active")}
+          serving={serving}
           blocked={deploying}
           onDone={() => setConfirming(null)}
         />
@@ -161,8 +184,8 @@ export function ReleasesTable({
  * Asks before rolling back: which service, from which release to which,
  * what changes against the serving release, and whether the service is
  * briefly unreachable. Changes that lose data or features (a volume no
- * longer mounted, variables removed) get a warning line each and a red
- * button. The header, the releases table and a release's page use it.
+ * longer mounted, variables removed) get a warning line each. One style
+ * wherever it opens: the header, the releases table and a release's page.
  */
 export function RollbackConfirm({
   serviceRef: ref,
@@ -180,6 +203,14 @@ export function RollbackConfirm({
 }) {
   const rollback = useRollback();
   const stateful = useService(ref).service.stateful;
+  // Newer replaced releases the one-click target passes over: the serving
+  // release already runs them.
+  const skipped = useReleases(ref).filter(
+    (r) =>
+      r.status === "superseded" &&
+      r.number > target.number &&
+      servesCopyOf(serving, r),
+  );
   const from = serving ? `r${serving.number}` : undefined;
   const changes = serving ? releaseDiff(serving, target) : [];
   const losses = serving ? rollbackLosses(serving, target) : [];
@@ -187,7 +218,6 @@ export function RollbackConfirm({
     <Confirm
       title={`Roll back ${ref.service} to r${target.number}?`}
       action={`Roll back to r${target.number}`}
-      danger={losses.length > 0}
       cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
       pending={blocked || rollback.isPending}
       error={rollback.error}
@@ -202,6 +232,12 @@ export function RollbackConfirm({
       <p>
         A new release of <b>{ref.service}</b> in {ref.environment} with r
         {target.number}'s image and config.
+        {skipped.map((r) => (
+          <span key={r.number} className="text-mut">
+            {" "}
+            r{r.number} is skipped: {from} already runs its image and config.
+          </span>
+        ))}
       </p>
       {from && (
         <p className="mt-2">

@@ -26,8 +26,12 @@ import { isPending, useRequestsIfAdmin } from "../requests/data";
 
 // An environment's lock on the project overview (ADR 0044, mock "Header
 // B"): a strip under its header while locked, with who and why, the
-// requests waiting there, Open for… and Unlock; a quiet Lock link and a
-// one-line form while unlocked.
+// requests waiting there, Pause lock for… and Unlock; a one-line form
+// while unlocked. One description of what a lock does everywhere:
+// changes by tokens wait for an admin's approval (`lockEffect`).
+
+/** What a lock does, in the words every lock control uses. */
+export const lockEffect = "changes by tokens wait for an admin's approval";
 
 const touches = ({ ref }: { ref: EnvRef }) => [
   keys.overview(ref.project),
@@ -85,11 +89,11 @@ function useUnlock() {
   );
 }
 
-/** What Open for… offers, as minutes and as `--for`. */
+/** What Pause lock for… offers, as minutes and as `--for`. */
 const openFor = [
-  [15, "15 min", "15m"],
-  [60, "1 h", "1h"],
-  [240, "4 h", "4h"],
+  [15, "15 minutes", "15m"],
+  [60, "1 hour", "1h"],
+  [240, "4 hours", "4h"],
 ] as const;
 
 const strip =
@@ -127,13 +131,12 @@ export function LockStrip({
           </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
-            {lock.reason && <> · {lock.reason}</>} · tokens can't change it
-            until it's unlocked
+            {lock.reason && <> · {lock.reason}</>} · {lockEffect}
           </span>
         </>
       ) : (
         <span className="inline-flex items-center gap-1.5">
-          <Icon name="lock" size={12} /> Open until{" "}
+          <Icon name="lock" size={12} /> Lock paused until{" "}
           {clock(lock.open_until ?? "")}, then locked again
         </span>
       )}
@@ -152,16 +155,26 @@ export function LockStrip({
           (lockHolds(lock) ? (
             <>
               <Menu
-                label={`Open for… (${env})`}
+                label={`Pause lock for… (${env})`}
                 right
-                button={<span className={`btn sm ${warnBtn}`}>Open for…</span>}
+                button={
+                  <span className={`btn sm ${warnBtn}`}>Pause lock for…</span>
+                }
               >
-                {(close) =>
-                  openFor.map(([minutes, label, flag]) => (
+                {(close) => [
+                  <span
+                    key="head"
+                    role="presentation"
+                    className="max-w-60 px-2.5 pt-1 pb-1.5 text-2xs text-mut"
+                  >
+                    Tokens change {env} without approval for
+                  </span>,
+                  ...openFor.map(([minutes, label, flag]) => (
                     <button
                       key={minutes}
                       type="button"
                       className={menuItem}
+                      role="menuitem"
                       title={`dock environment unlock ${env} --for ${flag}`}
                       disabled={busy}
                       onClick={() => {
@@ -171,8 +184,8 @@ export function LockStrip({
                     >
                       {label}
                     </button>
-                  ))
-                }
+                  )),
+                ]}
               </Menu>
               <Act
                 small
@@ -209,8 +222,9 @@ export function LockStrip({
                   ) : (
                     ""
                   )}
-                  . Tokens can change {env} again until someone locks it. To let
-                  one change through, use Open for… instead.
+                  . Tokens can change {env} without approval until someone locks
+                  it again. To let them in for a while, use Pause lock for…
+                  instead.
                 </Confirm>
               )}
             </>
@@ -269,7 +283,7 @@ export function LockForm({
         Cancel
       </Button>
       <span className="text-mut">
-        Tokens can read; every change they try waits for approval.
+        Then {lockEffect}. People signed in here aren't affected.
       </span>
       <ErrorText error={lock.error} />
     </form>

@@ -26,10 +26,7 @@ function Sites() {
     projects.set(s.project, [...(projects.get(s.project) ?? []), s]);
   return (
     <>
-      <PageBar
-        title="Analytics"
-        after={<span className="text-xs text-faint">last 24 hours</span>}
-      />
+      <PageBar title="Analytics" />
       <Page>
         {sites.length === 0 && (
           <p className="text-mut">
@@ -49,8 +46,8 @@ function Sites() {
                 <thead>
                   <tr>
                     <th>Site</th>
-                    <th className="text-right">Visitors</th>
-                    <th className="text-right">Page views</th>
+                    <th className="text-right">Visitors, 24h</th>
+                    <th className="text-right">Page views, 24h</th>
                     <th>Services</th>
                   </tr>
                 </thead>

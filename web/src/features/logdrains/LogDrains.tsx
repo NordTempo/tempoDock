@@ -24,15 +24,23 @@ const placeholders: Record<Kind, string> = {
   loki: "https://loki.example.com",
 };
 
-/** The environment's log drains, as a section of its page. */
+/**
+ * One environment's log drains, as a section of the project settings'
+ * Log drains tab (one per environment, headed by its name).
+ */
 export function LogDrains({ env }: { env: EnvRef }) {
   const drains = useLogDrains(env);
   const isAdmin = useIsAdmin();
   const [adding, setAdding] = useState(false);
+  const head = `drains-${env.environment}-head`;
   return (
-    <section aria-labelledby="log-drains-head" id="log-drains" className="mt-4">
+    <section
+      aria-labelledby={head}
+      id={`drains-${env.environment}`}
+      className="scroll-mt-[64px]"
+    >
       <SectionHead
-        id="log-drains-head"
+        id={head}
         right={
           isAdmin &&
           !adding && (
@@ -42,7 +50,7 @@ export function LogDrains({ env }: { env: EnvRef }) {
           )
         }
       >
-        Log drains
+        {env.environment}
       </SectionHead>
       {drains.length > 0 ? (
         <Panel>
@@ -67,12 +75,7 @@ export function LogDrains({ env }: { env: EnvRef }) {
           </table>
         </Panel>
       ) : (
-        !adding && (
-          <p className="py-1 text-mut">
-            No drains: output stays on the server, in{" "}
-            <span className="font-mono">dock logs</span>.
-          </p>
-        )
+        !adding && <p className="py-1 text-mut">No drains.</p>
       )}
       {adding && <AddDrain env={env} onClose={() => setAdding(false)} />}
     </section>

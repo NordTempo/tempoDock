@@ -25,9 +25,10 @@ const acceptsField = {
 
 /**
  * An admin's switches for one server: which kinds it accepts, whether it
- * takes new placements and whether it builds images. Turning one on
- * applies at once; turning one off asks first (the `confirm` node, which
- * the caller places), as a danger when no other server does that work.
+ * takes new placements and whether it builds images. Every change asks
+ * first (the `confirm` node, which the caller places), naming its effect,
+ * as a danger when no other server does that work. A switch that would
+ * leave production environments nowhere to run is disabled, with why.
  * Each switch says Saved beside it once its change went through.
  */
 export function useServerSwitches(server: Server) {
@@ -54,13 +55,31 @@ export function useServerSwitches(server: Server) {
     const others = servers.filter(
       (s) => s.name !== name && s[field] && !s.disabled_for_placement,
     );
+    const lastProduction =
+      kind === "production" && server[field] && others.length === 0;
     return (
       <Check
         label={words}
         checked={server[field]}
-        disabled={update.isPending}
+        disabled={update.isPending || lastProduction}
+        reason={lastProduction ? "The only production server." : undefined}
         onChange={(on) => {
-          if (on) return apply({ [field]: true });
+          if (on)
+            return setAsk({
+              patch: { [field]: true },
+              action: `Accept ${words}`,
+              cli: `dock server update ${name} --${words}`,
+              text: (
+                <>
+                  Place {words} environments on{" "}
+                  <b className="font-mono font-medium">{name}</b>?{" "}
+                  <span className="text-mut">
+                    New ones can land here; environments elsewhere stay where
+                    they are.
+                  </span>
+                </>
+              ),
+            });
           setAsk({
             patch: { [field]: false },
             action: `Stop ${words}`,
@@ -91,6 +110,12 @@ export function useServerSwitches(server: Server) {
     );
   };
 
+  // Production goes only where placement is open: closing the last open
+  // server would leave new projects nowhere to run.
+  const lastPlacement =
+    !server.disabled_for_placement &&
+    !servers.some((s) => s.name !== name && !s.disabled_for_placement);
+
   return {
     accepts: (
       <span className="inline-flex flex-wrap items-center gap-x-3">
@@ -104,12 +129,25 @@ export function useServerSwitches(server: Server) {
         <Check
           label="new placements"
           checked={!server.disabled_for_placement}
-          disabled={update.isPending}
+          disabled={update.isPending || lastPlacement}
+          reason={lastPlacement ? "The only open server." : undefined}
           onChange={(on) => {
-            if (on) return apply({ disabled_for_placement: false });
-            const last = !servers.some(
-              (s) => s.name !== name && !s.disabled_for_placement,
-            );
+            if (on)
+              return setAsk({
+                patch: { disabled_for_placement: false },
+                action: "Enable placement",
+                cli: `dock server update ${name} --enable-placement`,
+                text: (
+                  <>
+                    Place new projects on{" "}
+                    <b className="font-mono font-medium">{name}</b> again?{" "}
+                    <span className="text-mut">
+                      New projects can land here.
+                    </span>
+                  </>
+                ),
+              });
+            const last = lastPlacement;
             setAsk({
               patch: { disabled_for_placement: true },
               action: "Disable placement",
@@ -144,7 +182,21 @@ export function useServerSwitches(server: Server) {
           checked={server.builder}
           disabled={update.isPending}
           onChange={(on) => {
-            if (on) return apply({ builder: true });
+            if (on)
+              return setAsk({
+                patch: { builder: true },
+                action: "Build images here",
+                cli: `dock server update ${name} --builder`,
+                text: (
+                  <>
+                    Build images on{" "}
+                    <b className="font-mono font-medium">{name}</b>?{" "}
+                    <span className="text-mut">
+                      New builds may run here and use its CPU and memory.
+                    </span>
+                  </>
+                ),
+              });
             const others = servers.filter((s) => s.name !== name && s.builder);
             setAsk({
               patch: { builder: false },

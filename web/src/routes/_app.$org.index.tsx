@@ -48,11 +48,6 @@ function Home() {
     <>
       <PageBar
         title="Projects"
-        after={
-          <span className="text-xs text-faint">
-            {plural(projects.length, "project")}
-          </span>
-        }
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -88,7 +83,13 @@ function Home() {
                   <td className="w-[24%]">
                     {h ? (
                       <span className={h.tone}>
-                        <Glyph char={h.glyph} /> {h.label}
+                        <Glyph char={h.glyph} />{" "}
+                        {h.parts.map(([text, tone], i) => (
+                          <span key={text} className={tone}>
+                            {i > 0 && ", "}
+                            {text}
+                          </span>
+                        ))}
                       </span>
                     ) : (
                       <span className="text-faint">not loaded</span>
@@ -136,6 +137,9 @@ function Home() {
   );
 }
 
+/** A piece of a project's health and the colour of its state. */
+type Part = [text: string, tone: string];
+
 /**
  * A project's row: its worst state (failing services, a failed latest
  * deploy, a deploy running), how many services run, its environments and
@@ -177,7 +181,7 @@ function health(o: ProjectOverview | undefined) {
       rank: 3,
       tone: "text-fail",
       glyph: "✕" as const,
-      label: `${plural(failing, "service")} failing`,
+      parts: [[`${plural(failing, "service")} failing`, "text-fail"]],
     };
   if (failedDeploys > 0)
     return {
@@ -185,7 +189,7 @@ function health(o: ProjectOverview | undefined) {
       rank: 2,
       tone: "text-fail",
       glyph: "✕" as const,
-      label: `${plural(failedDeploys, "deploy")} failed`,
+      parts: [[`${plural(failedDeploys, "deploy")} failed`, "text-fail"]],
     };
   if (deploying > 0)
     return {
@@ -193,7 +197,7 @@ function health(o: ProjectOverview | undefined) {
       rank: 1,
       tone: "text-prog",
       glyph: "◐" as const,
-      label: "deploying",
+      parts: [["deploying", "text-prog"]],
     };
   // Nothing broken: say what isn't running, if anything.
   const idle = [
@@ -208,24 +212,27 @@ function health(o: ProjectOverview | undefined) {
       "stopped",
     ],
   ] as const;
-  const note = idle
+  // Each part in its own state's colour: green covers only what runs.
+  const note: Part[] = idle
     .filter(([n]) => n > 0)
-    .map(([n, what]) => `${n} ${what}`)
-    .join(", ");
+    .map(([n, what]) => [`${n} ${what}`, "text-mut"]);
   if (services.length === 0 || running === 0)
     return {
       ...base,
       rank: 0,
       tone: "text-mut",
       glyph: "○" as const,
-      label: note || "no services",
+      parts: note.length > 0 ? note : [["no services", "text-mut"] as Part],
     };
   return {
     ...base,
     rank: 0,
     tone: "text-ok",
     glyph: "●" as const,
-    label: note ? `running, ${note}` : "all running",
+    parts: [
+      [note.length > 0 ? `${running} running` : "all running", "text-ok"],
+      ...note,
+    ] as Part[],
   };
 }
 
@@ -252,7 +259,6 @@ function NoProjects() {
     <>
       <PageBar
         title="Projects"
-        after={<span className="text-xs text-faint">none yet</span>}
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -261,7 +267,7 @@ function NoProjects() {
           )
         }
       />
-      <Page width="max-w-[720px]" gap="gap-5">
+      <Page width="max-w-[720px]">
         {canCreate && (
           <p className="text-mut">
             Create a project, then add services from an image, a GitHub

@@ -1,17 +1,12 @@
-import {
-  createFileRoute,
-  Link,
-  Outlet,
-  useParams,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { queries, useProjectOverview } from "../data/queries";
 import { rememberProject, useOrg } from "../shell/location";
 import { PageBar } from "../ui/kit";
 
 // A project's settings (ADR 0059): General (name, placement, config
-// file, archive), the shared variables of each environment and preview
-// environments, as tabs.
+// file, archive), the shared variables of each environment, log drains
+// and preview environments, as tabs.
 export const Route = createFileRoute("/_app/$org/$project/settings")({
   loader: ({ context: { queryClient }, params }) =>
     queryClient.ensureQueryData(queries.overview(params.project)),
@@ -22,41 +17,21 @@ function ProjectSettings() {
   const org = useOrg();
   const { project } = Route.useParams();
   const { environments } = useProjectOverview(project);
-  // On an environment's variables, the header names the environment.
-  const { environment } = useParams({ strict: false });
   useEffect(() => rememberProject(project), [project]);
-  const projectLink = (
-    <Link
-      to="/$org/$project"
-      params={{ org, project }}
-      className="hover:text-fg"
-    >
-      {project}
-    </Link>
-  );
+  // Tabs (and the environment picked on Variables) don't add a level.
   return (
     <>
       <PageBar
         parent={
-          environment ? (
-            <>
-              {projectLink}
-              <span aria-hidden className="px-1.5 text-faint">
-                /
-              </span>
-              <Link
-                to="/$org/$project/settings"
-                params={{ org, project }}
-                className="hover:text-fg"
-              >
-                Settings
-              </Link>
-            </>
-          ) : (
-            projectLink
-          )
+          <Link
+            to="/$org/$project"
+            params={{ org, project }}
+            className="hover:text-fg"
+          >
+            {project}
+          </Link>
         }
-        title={environment ? `${environment} variables` : "Settings"}
+        title="Settings"
       />
       <nav
         aria-label="Project settings"
@@ -78,6 +53,14 @@ function ProjectSettings() {
             {environments.some((e) => e.pending_changes > 0) && (
               <span className="text-warn"> ▲</span>
             )}
+          </Link>
+        )}
+        {environments.length > 0 && (
+          <Link
+            to="/$org/$project/settings/log-drains"
+            params={{ org, project }}
+          >
+            Log drains
           </Link>
         )}
         <Link to="/$org/$project/settings/previews" params={{ org, project }}>

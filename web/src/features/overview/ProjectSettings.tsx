@@ -106,14 +106,12 @@ export function ArchiveProject({ project }: { project: string }) {
   const [confirming, setConfirming] = useState(false);
   if (!isAdmin) return null;
   return (
-    <section className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-fail-edge pt-4">
+    <section className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-4">
       <span className="min-w-0 flex-1 text-mut">
         Archiving stops every service and removes its routes. Volumes and
         history are kept.
       </span>
-      <Button danger onClick={() => setConfirming(true)}>
-        Archive {project}
-      </Button>
+      <Button onClick={() => setConfirming(true)}>Archive {project}</Button>
       {confirming && (
         <Confirm
           danger

@@ -70,13 +70,33 @@ type Alert struct {
 	Message  string        `json:"message,omitempty"`
 	// Project, Environment, Service and Server say what the alert is
 	// about, where that applies.
-	Project     string     `json:"project,omitempty"`
-	Environment string     `json:"environment,omitempty"`
-	Service     string     `json:"service,omitempty"`
-	Server      string     `json:"server,omitempty"`
-	OpenedAt    time.Time  `json:"opened_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
+	Project     string `json:"project,omitempty"`
+	Environment string `json:"environment,omitempty"`
+	Service     string `json:"service,omitempty"`
+	Server      string `json:"server,omitempty"`
+	// Command is the CLI command that shows more, for a copy control;
+	// the message doesn't repeat it.
+	Command string `json:"command,omitempty" example:"dock release show 8 -p shop -e production -s web"`
+	// Target is what the alert points at, for a link to it.
+	Target     *AlertTarget `json:"target,omitempty"`
+	OpenedAt   time.Time    `json:"opened_at"`
+	UpdatedAt  time.Time    `json:"updated_at"`
+	ResolvedAt *time.Time   `json:"resolved_at,omitempty"`
+}
+
+// AlertTarget is what an alert points at, beyond its project,
+// environment, service and server: the site and error group of
+// new_error, error_spike and traffic_drop, the release number of
+// deploy_failed, the access request of access_request, the job and run
+// of job_failed, the backup run of a service's backup_failed.
+type AlertTarget struct {
+	Site       string `json:"site,omitempty"`
+	ErrorGroup string `json:"error_group,omitempty"`
+	Release    int64  `json:"release,omitempty"`
+	Request    int64  `json:"request,omitempty"`
+	Job        string `json:"job,omitempty"`
+	Run        int64  `json:"run,omitempty"`
+	Backup     int64  `json:"backup,omitempty"`
 }
 
 // AlertChannelKind is how a channel sends alerts.
