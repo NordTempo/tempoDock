@@ -159,7 +159,7 @@ function Attention() {
       key: "backup-local",
       tone: "warn",
       text: "Backups stay on each server; nothing is off-box",
-      to: <Link to="/console/backups">Set up S3</Link>,
+      to: <Link to="/console/backups">Move them to a storage bucket</Link>,
     });
   }
   if (registry.last_prune_error) {

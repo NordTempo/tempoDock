@@ -61,6 +61,11 @@ export function GeneralPage() {
                         e.preventDefault();
                         if (v.check(!!name.trim())) rename.mutate(name.trim());
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Escape") return;
+                        rename.reset();
+                        setName(org.name);
+                      }}
                     >
                       <input
                         aria-label="Name"
@@ -79,6 +84,17 @@ export function GeneralPage() {
                         >
                           Save
                         </Act>
+                      )}
+                      {name.trim() !== org.name && (
+                        <Button
+                          small
+                          onClick={() => {
+                            rename.reset();
+                            setName(org.name);
+                          }}
+                        >
+                          Cancel
+                        </Button>
                       )}
                       {nameError && (
                         <span role="alert" className="text-xs text-fail">
@@ -206,6 +222,11 @@ function LockSettings() {
                       request_ttl_hours: n,
                     });
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Escape") return;
+                    save.reset();
+                    setHours(String(current));
+                  }}
                 >
                   <label className="flex items-center gap-2">
                     Expire after
@@ -229,6 +250,17 @@ function LockSettings() {
                       disabled={save.isPending}
                     >
                       Save
+                    </Button>
+                  )}
+                  {hours !== String(current) && (
+                    <Button
+                      small
+                      onClick={() => {
+                        save.reset();
+                        setHours(String(current));
+                      }}
+                    >
+                      Cancel
                     </Button>
                   )}
                   {!valid && (
@@ -408,7 +440,7 @@ function Delete({ name, slug }: { name: string; slug: string }) {
           onCancel={() => setAsking(false)}
         >
           Its members, invites, variables and tokens are deleted. This can't be
-          undone. Its audit log stays.
+          undone. Its activity stays.
         </Confirm>
       )}
     </DangerRow>

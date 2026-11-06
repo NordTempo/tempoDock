@@ -42,36 +42,43 @@ export const shown = (
 /** A KPI's change: its words, whether it is good, and whether it is small. */
 export type Change = { text: string; up: boolean; quiet?: boolean };
 
+/** Before this, the previous count is too small for a change to mean much. */
+const TINY = 5;
+
 /**
- * "+12%" against the period before, with a tone; "no data before" when
- * there was nothing to compare with, and "14× before" past +999%, since a
- * percentage of next to nothing says little. Those, and changes under
- * 10%, are quiet.
+ * A change against the previous period, naming it: "+12% vs previous 24h".
+ * "new" when the previous value was tiny (a percentage of next to
+ * nothing says little), and the difference itself ("+888 vs previous
+ * 24h", through `fmt`) past +999%. Those, and changes under 10%, are
+ * quiet.
  */
-export function delta(now: number, before: number): Change | undefined {
-  if (!before) {
-    return now ? { text: "no data before", up: true, quiet: true } : undefined;
+export function delta(
+  now: number,
+  before: number,
+  period = "period",
+  fmt: (n: number) => string = count,
+): Change | undefined {
+  const vs = ` vs previous ${period}`;
+  if (before < TINY && fmt === count) {
+    return now > before ? { text: "new", up: true, quiet: true } : undefined;
   }
+  if (!before) return now ? { text: "new", up: true, quiet: true } : undefined;
   const pct = Math.round(((now - before) / before) * 100);
   if (pct > 999) {
-    return {
-      text: `${Math.round(now / before)}× before`,
-      up: true,
-      quiet: true,
-    };
+    return { text: `+${fmt(now - before)}${vs}`, up: true, quiet: true };
   }
   return {
-    text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%`,
+    text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%${vs}`,
     up: pct >= 0,
     quiet: Math.abs(pct) < 10,
   };
 }
 
 /** A rate's change in percentage points; a lower bounce rate is good. */
-export function points(now: number, before: number): Change {
+export function points(now: number, before: number, period = "period"): Change {
   const pts = Math.round((now - before) * 100);
   return {
-    text: `${pts > 0 ? "+" : pts < 0 ? "−" : "±"}${Math.abs(pts)} pts`,
+    text: `${pts > 0 ? "+" : pts < 0 ? "−" : "±"}${Math.abs(pts)} pts vs previous ${period}`,
     up: pts <= 0,
     quiet: Math.abs(pts) < 2,
   };
@@ -97,20 +104,18 @@ export function Kpi({
   on?: boolean;
   onClick?: () => void;
 }) {
+  // The change on its own line, never wrapped, so tiles keep one height.
   const content = (
     <>
-      <span className={`block text-xs ${on ? "text-fg" : "text-mut"}`}>
+      <span className={`block truncate text-xs ${on ? "text-fg" : "text-mut"}`}>
         {label}
       </span>
-      <span className="block text-lg font-semibold">
-        {value}
-        {change && (
-          <small
-            className={`ml-1.5 text-xs font-normal ${change.quiet ? "text-mut" : change.up ? "text-ok" : "text-fail"}`}
-          >
-            {change.text}
-          </small>
-        )}
+      <span className="block truncate text-lg font-semibold">{value}</span>
+      <span
+        className={`block truncate text-xs ${!change || change.quiet ? "text-mut" : change.up ? "text-ok" : "text-fail"}`}
+        title={change?.text}
+      >
+        {change?.text ?? "\u00a0"}
       </span>
     </>
   );
@@ -119,12 +124,12 @@ export function Kpi({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`border-b-2 pb-1 text-left ${on ? "border-fg" : "border-transparent"}`}
+      className={`min-w-0 border-b-2 pb-1 text-left ${on ? "border-fg" : "border-transparent"}`}
     >
       {content}
     </button>
   ) : (
-    <div className="border-b-2 border-transparent pb-1">{content}</div>
+    <div className="min-w-0 border-b-2 border-transparent pb-1">{content}</div>
   );
 }
 

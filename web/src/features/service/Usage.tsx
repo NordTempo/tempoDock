@@ -3,7 +3,7 @@ import { cpus, pct, size } from "../../ui/format";
 
 // A service's resource use against its effective limit, as in the overview
 // and on server pages: "231M / 512M", "12% of 1 CPU". The limit is the
-// service's own or the server's default ("server default" says which).
+// service's own or the server's default (the tooltip says which).
 // Usage is the latest sample, at most a minute old (live on the Resources
 // tab). Without a running container, the limit alone: limitText.
 
@@ -22,13 +22,16 @@ const MiB = 1024 * 1024;
 /** Near the limit: worth a look before it runs out. */
 const HIGH = 0.9;
 
-const Default = ({ on }: { on: boolean }) =>
-  on ? <span className="font-sans text-faint"> server default</span> : null;
+/** Says in a tooltip that a limit is the server's default, to keep cells short. */
+const limitTitle = (fromDefault: boolean) =>
+  fromDefault
+    ? "The server's default limit; the service sets none"
+    : "The service's own limit";
 
 /**
  * A limit in the one wording every screen uses: "512M limit", "1 CPU
- * server default" (the service sets none, the server's default applies),
- * or "no limit".
+ * default" (the service sets none, the server's default applies), or
+ * "no limit".
  */
 export function limitText(s: Limited, what: "cpu" | "memory") {
   const [value, fromDefault] =
@@ -39,7 +42,7 @@ export function limitText(s: Limited, what: "cpu" | "memory") {
           s.memory_from_default,
         ];
   if (!value) return "no limit";
-  return `${value} ${fromDefault ? "server default" : "limit"}`;
+  return `${value} ${fromDefault ? "default" : "limit"}`;
 }
 
 /** Share of the memory limit in use, 0 to 1, or null without a sample. */
@@ -60,8 +63,12 @@ export function MemoryUsage({ service: s }: { service: Limited }) {
       <span className={share !== null && share >= HIGH ? "text-warn" : ""}>
         {size(s.usage.memory_bytes)}
       </span>
-      {limit && <span className="text-mut"> / {limit}</span>}
-      <Default on={s.memory_from_default} />
+      {limit && (
+        <span className="text-mut" title={limitTitle(s.memory_from_default)}>
+          {" "}
+          / {limit}
+        </span>
+      )}
     </span>
   );
 }
@@ -79,10 +86,12 @@ export function CpuUsage({ service: s }: { service: Limited }) {
       <span className={limit && share >= HIGH * 100 ? "text-warn" : ""}>
         {pct(share)}
       </span>
-      <span className="text-mut">
+      <span
+        className="text-mut"
+        title={limit ? limitTitle(s.cpus_from_default) : undefined}
+      >
         {limit ? ` of ${cpus(limit)}` : " of a core"}
       </span>
-      <Default on={s.cpus_from_default} />
     </span>
   );
 }

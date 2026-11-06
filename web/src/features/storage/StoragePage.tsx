@@ -33,22 +33,22 @@ export function StoragePage() {
       <PageBar
         title="Storage"
         actions={
-          !adding &&
-          storage.length > 0 && (
+          !adding && (
             <Button
+              primary
               onClick={() => {
                 setEditing(undefined);
                 setAdding(true);
               }}
             >
-              Add storage
+              Add storage bucket
             </Button>
           )
         }
       />
       <Page>
         <section aria-labelledby="connections" className="flex flex-col gap-2">
-          <SectionHead id="connections">Connections</SectionHead>
+          <SectionHead id="connections">Storage buckets</SectionHead>
           {storage.length > 0 ? (
             <Panel>
               <table>
@@ -80,16 +80,11 @@ export function StoragePage() {
             </Panel>
           ) : (
             !adding && (
-              <div className="flex flex-col items-start gap-3 py-2">
-                <p className="text-mut">
-                  No storage yet. An S3-compatible bucket can hold the
-                  registry's images and the backups; until then they stay on the
-                  servers' disks.
-                </p>
-                <Button primary onClick={() => setAdding(true)}>
-                  Add storage
-                </Button>
-              </div>
+              <p className="py-2 text-mut">
+                No storage buckets yet. An S3-compatible bucket can hold the
+                registry's images and the backups; until then they stay on the
+                servers' disks. Add one with Add storage bucket.
+              </p>
             )
           )}
           {adding && <StorageForm onClose={() => setAdding(false)} />}
@@ -241,7 +236,9 @@ function StorageForm({
       : `dock storage set ${storage.name} --access-key-id … --secret-access-key-stdin`;
   return (
     <form
-      aria-label={storage ? `Change storage ${storage.name}` : "Add storage"}
+      aria-label={
+        storage ? `Change storage bucket ${storage.name}` : "Add storage bucket"
+      }
       className="flex max-w-[760px] flex-col gap-3.5 border-t border-line pt-3.5"
       onKeyDown={(e) => e.key === "Escape" && onClose()}
       onSubmit={submit}
@@ -341,7 +338,11 @@ function StorageForm({
       <ErrorText error={add.error ?? update.error} />
       <div className="flex items-center gap-2.5">
         <Act primary type="submit" cli={cli} disabled={pending}>
-          {pending ? "Checking the bucket…" : storage ? "Save" : "Add storage"}
+          {pending
+            ? "Checking the bucket…"
+            : storage
+              ? "Save"
+              : "Add storage bucket"}
         </Act>
         <Button onClick={onClose}>Cancel</Button>
       </div>

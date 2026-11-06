@@ -1,6 +1,6 @@
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useLogout, useRestart, useRollback } from "../data/mutations";
+import { useLogout } from "../data/mutations";
 import {
   canDeploy,
   deployBlock,
@@ -17,10 +17,12 @@ import {
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { openDeploy } from "../features/deploy/start";
+import { requestLock } from "../features/overview/lockRequest";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
 import { tabsFor } from "../features/service/tabs";
 import { serviceState, type Tone } from "../ui/status";
+import { openConfirm } from "./confirmHost";
 import { useCurrentContext, useOrg } from "./location";
 
 export type Command = {
@@ -54,8 +56,6 @@ export function useCommands({
   const here = useCurrentContext();
   const org = useOrg();
   const navigate = useNavigate();
-  const restart = useRestart();
-  const rollback = useRollback();
   const logout = useLogout();
   const operator = useIsOperator();
   const session = useSession();
@@ -197,6 +197,25 @@ export function useCommands({
             openCreate({ kind: "service", env: ref, source: "database" }),
         });
       }
+      // Lock: the environment's lock form on the project page (admins).
+      if (session?.scope === "admin" && !env.lock) {
+        add({
+          id: `lock:${project}/${environment}`,
+          group: "Actions",
+          label: `Lock ${environment}${inProject ? "" : ` · ${project}`}`,
+          strong: environment,
+          cli: `dock environment lock ${environment}${pFlag}`,
+          weight: (inProject ? 0.5 : -1) + (inEnv ? 0.5 : 0),
+          run: async () => {
+            await navigate({
+              to: "/$org/$project",
+              params: { org, project },
+              hash: `env-${environment}`,
+            });
+            requestLock({ project, environment });
+          },
+        });
+      }
       const mayDeploy = canDeploy(session, { project, environment });
       add({
         id: `vars:${project}/${environment}`,
@@ -265,7 +284,9 @@ export function useCommands({
             note: busy ?? note,
             cli: `dock restart${flags}`,
             weight: weight - 0.5,
-            run: refuse ?? (() => restart.mutateAsync(params)),
+            // The same confirm as the service's Restart button.
+            run:
+              refuse ?? (() => openConfirm({ kind: "restart", ref: params })),
           });
         }
         const target = rollbackTarget(
@@ -280,12 +301,15 @@ export function useCommands({
             note: busy ?? note,
             cli: `dock rollback ${target.number}${flags}`,
             weight: weight - 0.5,
+            // The same confirm as the releases' Roll back.
             run:
               refuse ??
-              (async () => {
-                await rollback.mutateAsync({ ref: params, to: target.number });
-                await open();
-              }),
+              (() =>
+                openConfirm({
+                  kind: "rollback",
+                  ref: params,
+                  to: target.number,
+                })),
           });
         }
         add({
@@ -339,7 +363,7 @@ export function useCommands({
           ["Users", "/console/users", "dock user list"],
           ["Data access policy", "/console/data-access", "dock db policy show"],
           ["Alerts", "/console/alerts", "dock alerts"],
-          ["Audit log", "/console/audit", "dock audit"],
+          ["Activity", "/console/audit", "dock audit"],
           ["GitHub App", "/console/github", "dock github"],
           ["Cloudflare", "/console/cloudflare", "dock cloudflare"],
           ["Address", "/console/address", "dock address"],

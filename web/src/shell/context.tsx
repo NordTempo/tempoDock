@@ -126,6 +126,7 @@ export function EnvSwitch({
                 }}
                 onClick={close}
                 className={menuItem}
+                role="menuitem"
               >
                 {dot}
                 <span className="flex-1">
@@ -146,6 +147,7 @@ export function EnvSwitch({
                 hash={`env-${e.environment.name}`}
                 onClick={close}
                 className={menuItem}
+                role="menuitem"
               >
                 {dot}
                 <span className="flex-1">
@@ -155,13 +157,14 @@ export function EnvSwitch({
               </Link>
             );
           }),
-          <div key="line" className="my-1 border-t border-line" />,
+          <hr key="line" className="my-1 border-0 border-t border-line" />,
           <Link
             key="compare"
             to="/$org/$project/compare"
             params={{ org, project }}
             onClick={close}
             className={menuItem}
+            role="menuitem"
           >
             <span aria-hidden className="w-[7px]" />
             <span className="flex-1">Compare environments</span>

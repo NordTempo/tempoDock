@@ -1,5 +1,5 @@
-import { Link } from "@tanstack/react-router";
-import { lazy, Suspense, useState } from "react";
+import { Link, useLocation } from "@tanstack/react-router";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useBackupSchedule, useRunBackup } from "../../data/mutations";
 import {
   useBackups,
@@ -22,7 +22,7 @@ import {
 } from "../../ui/kit";
 import type { State } from "../../ui/status";
 import { Saved } from "../create/form";
-import { backupHow, hourLabel } from "./backups";
+import { backupWhat, hourLabel } from "./backups";
 import { useDeleteSnapshot, useSnapshots, useTakeSnapshot } from "./data";
 import {
   type PointState,
@@ -57,6 +57,19 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const take = useTakeSnapshot();
   const [note, setNote] = useState("");
   const [open, setOpen] = useState<Open | null>(null);
+  // Taking a snapshot pauses the service: production asks first.
+  const production = useEnvironment(ref).environment.kind === "production";
+  const [askSnapshot, setAskSnapshot] = useState(false);
+  const takeNow = () =>
+    take.mutate(
+      { ref, note: note.trim() },
+      {
+        onSuccess: () => {
+          setNote("");
+          setAskSnapshot(false);
+        },
+      },
+    );
   const close = () => setOpen(null);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   // A template database restores into a new service, from either kind.
@@ -75,6 +88,19 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     p.state === "ready" &&
     (p.kind === "snapshot" || (backups.restorable && !p.run.not_restorable));
   const latest = points.find(restorable)?.key;
+  // #backup-<id> (a failed backup's alert links there): scroll to its row
+  // and open its log, once per hash.
+  const hash = useLocation({ select: (l) => l.hash });
+  // Points change with live events; only the hash decides when this runs.
+  useEffect(() => {
+    const id = /^backup-(\d+)$/.exec(hash)?.[1];
+    const point = id
+      ? points.find((p) => p.kind === "backup" && p.run.id === Number(id))
+      : undefined;
+    if (!point) return;
+    document.getElementById(hash)?.scrollIntoView({ block: "center" });
+    setOpen({ what: "log", point });
+  }, [hash]);
   // Retry sits on the newest run of a kind only, when that one failed.
   const newest = (kind: RestorePoint["kind"]) =>
     points.find((p) => p.kind === kind)?.key;
@@ -89,10 +115,8 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             className="flex flex-wrap items-center gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              take.mutate(
-                { ref, note: note.trim() },
-                { onSuccess: () => setNote("") },
-              );
+              if (production) setAskSnapshot(true);
+              else takeNow();
             }}
           >
             <input
@@ -109,6 +133,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               cli={`dock volume snapshot ${flags}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`}
               disabled={!!why || take.isPending}
               reason={why}
+              title={`${ref.service} pauses while its volume is copied`}
             >
               Take snapshot
             </Act>
@@ -129,7 +154,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <dl className="props grid-cols-[120px_minmax(0,1fr)]">
         <dt>Backups</dt>
         <dd>
-          {backupHow[backups.kind]}, <Where backups={backups} />
+          {backupWhat[backups.kind]}, <Where backups={backups} />
           {backups.warning && (
             <span className="block text-warn">{backups.warning}</span>
           )}
@@ -145,15 +170,35 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           for {plural(snaps.keep_days, "day")}
         </dd>
       </dl>
-      {records.slice(0, 3).map((r) => (
-        <RestoreLine
-          key={r.key}
+      {askSnapshot && (
+        <Confirm
+          title={`Take a snapshot of ${ref.service} in ${ref.environment}?`}
+          action="Take snapshot"
+          cli={`dock volume snapshot ${flags}${note.trim() ? ` --note ${JSON.stringify(note.trim())}` : ""}`}
+          pending={take.isPending}
+          error={take.error}
+          onConfirm={takeNow}
+          onCancel={() => {
+            take.reset();
+            setAskSnapshot(false);
+          }}
+        >
+          <b>
+            {ref.service} pauses while its volume is copied, usually a few
+            seconds.
+          </b>{" "}
+          Requests to it wait meanwhile.
+        </Confirm>
+      )}
+      {records[0] && (
+        <RestoreStatus
+          key={records[0].key}
           serviceRef={ref}
-          record={r}
+          record={records[0]}
           canSwitch={canDeploy}
           onUse={(to) => setOpen({ what: "switch", to })}
         />
-      ))}
+      )}
       {points.length === 0 ? (
         <p className="text-mut">No backups or snapshots yet.</p>
       ) : (
@@ -238,18 +283,26 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** Off-box, or local with the way to configure a repository. */
+/** Kept off-site, or on this server only with the way to change that. */
 function Where({ backups }: { backups: ServiceBackups }) {
   const operator = useIsOperator();
-  if (backups.off_box) return <>off-box, to the configured repository</>;
+  if (backups.off_box) return <>kept off-site</>;
   return (
     <span title="dock backup configure">
-      <span className="text-warn">local, not off-box</span>
-      {" · "}
-      {operator ? (
-        <Link to="/console/backups">Configure a repository</Link>
-      ) : (
-        <span className="text-mut">an operator can configure a repository</span>
+      <span className="text-warn">kept on this server only</span>
+      {operator && (
+        <>
+          {" · "}
+          <Link to="/console/backups" className="text-info hover:underline">
+            Add off-site storage
+          </Link>
+        </>
+      )}
+      {!operator && (
+        <span className="text-mut">
+          {" "}
+          · an operator can add off-site storage
+        </span>
       )}
     </span>
   );
@@ -357,7 +410,12 @@ function PointRow({
 }) {
   const good = p.state === "ready";
   return (
-    <tr className={good ? "" : "text-mut"}>
+    <tr
+      id={
+        p.kind === "backup" ? `backup-${p.run.id}` : `snapshot-${p.snapshot.id}`
+      }
+      className={`scroll-mt-24 ${good ? "" : "text-mut"}`}
+    >
       <td className="whitespace-nowrap" title={`${day(p.at)} ${clock(p.at)}`}>
         {ago(p.at)}
         {latest && <span className="text-ok"> latest</span>}
@@ -378,9 +436,9 @@ function PointRow({
       <td className="font-mono">{p.size > 0 ? size(p.size) : none}</td>
       <td
         className={
-          p.kind === "backup" && p.where !== "off-box"
-            ? "font-mono text-warn"
-            : "font-mono"
+          p.kind === "backup" && p.where !== "off-site"
+            ? "whitespace-nowrap text-warn"
+            : "whitespace-nowrap"
         }
       >
         {p.where}
@@ -428,11 +486,25 @@ function PointRow({
   );
 }
 
+/** Restores dismissed here, so a status row stays gone after a reload. */
+const dismissedKey = "dock.restores.dismissed";
+const dismissed = () => {
+  try {
+    return new Set<string>(
+      JSON.parse(localStorage.getItem(dismissedKey) ?? "[]"),
+    );
+  } catch {
+    return new Set<string>();
+  }
+};
+
 /**
- * One restore that ran, in a line: where it went and how it went. A
- * finished restore into a new service that still exists offers Use.
+ * The latest restore as a status row until it is dismissed: running,
+ * failed, or done ("✓ Restored backup 9d03b7a1 into db-restored") with
+ * Open and Use for a new service that still exists, or the undo for an
+ * in-place one. Announced politely as it changes.
  */
-function RestoreLine({
+function RestoreStatus({
   serviceRef: ref,
   record: r,
   canSwitch,
@@ -445,45 +517,67 @@ function RestoreLine({
 }) {
   const org = useOrg();
   const { services } = useEnvironment(ref);
-  const target = r.to && services.find((s) => s.service.name === r.to);
+  const id = `${ref.project}/${ref.environment}/${ref.service}/${r.key}`;
+  const [gone, setGone] = useState(() => dismissed().has(id));
+  const target = r.to
+    ? services.find((s) => s.service.name === r.to)?.service.name
+    : undefined;
+  const into = r.to ? `into ${r.to}` : "in place";
+  if (gone) return null;
+  const dismiss = () => {
+    const all = dismissed();
+    all.add(id);
+    // The newest few are enough to remember.
+    localStorage.setItem(dismissedKey, JSON.stringify([...all].slice(-20)));
+    setGone(true);
+  };
   return (
-    <p className="flex flex-wrap items-center gap-x-1.5 text-mut">
-      <span>
-        Restored {r.from}{" "}
-        {r.to ? (
+    <div
+      aria-live="polite"
+      className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border px-3.5 py-2.5 ${r.status === "failed" ? "border-fail-edge" : "border-line"}`}
+    >
+      <span className="min-w-0 flex-1 text-fg">
+        {r.status === "running" ? (
           <>
-            into{" "}
-            {target ? (
-              <Link
-                to="/$org/$project/$environment/$service"
-                params={{ org, ...ref, service: r.to }}
-                className="font-mono"
-              >
-                {r.to}
-              </Link>
-            ) : (
-              <span className="font-mono">{r.to}</span>
-            )}
+            <span className="text-prog">◐</span> Restoring {r.from} {into}
+          </>
+        ) : r.status === "failed" ? (
+          <>
+            <span className="text-fail">✕</span> Restoring {r.from} {into}{" "}
+            failed: <span className="text-fail">{r.error}</span>
           </>
         ) : (
-          "in place"
+          <>
+            <span className="text-ok">✓</span> Restored {r.from} {into}{" "}
+            <span className="text-mut">{ago(r.at)}</span>
+            {r.safety ? (
+              <span className="text-mut">
+                . Undo: restore snapshot {r.safety}.
+              </span>
+            ) : null}
+          </>
         )}
-        ,{" "}
-        {r.status === "running" ? (
-          "running"
-        ) : r.status === "failed" ? (
-          <span className="text-fail">failed: {r.error}</span>
-        ) : (
-          `done ${ago(r.at)}`
-        )}
-        {r.safety ? `. Undo: restore snapshot ${r.safety}.` : ""}
       </span>
+      {target && (
+        <Link
+          to="/$org/$project/$environment/$service"
+          params={{ org, ...ref, service: target }}
+          className="btn sm"
+        >
+          Open {target}
+        </Link>
+      )}
       {r.status === "succeeded" && target && canSwitch && (
-        <Button small onClick={() => onUse(target.service.name)}>
-          Use {target.service.name}
+        <Button small primary onClick={() => onUse(target)}>
+          Use {target}
         </Button>
       )}
-    </p>
+      {r.status !== "running" && (
+        <Button small onClick={dismiss} aria-label="Dismiss">
+          Dismiss
+        </Button>
+      )}
+    </div>
   );
 }
 

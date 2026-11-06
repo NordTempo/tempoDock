@@ -35,7 +35,11 @@ function siteOf(a: Alert) {
  * says where to decide it, which the row's link does instead.
  */
 export function alertText(a: Alert): { text: string; cli?: string } {
-  const message = a.message ?? "";
+  // An access request's says where to decide it (for channels: email,
+  // chat); the row's Review link does that here.
+  const message = (a.message ?? "")
+    .replace(/^Approve or reject it in Dock, under Requests\.\s*/, "")
+    .trim();
   if (!legacy(a)) return { text: message, cli: a.command || undefined };
   const cli = message.match(command)?.[1];
   const text = message
@@ -110,22 +114,26 @@ export function AlertLink({
           Review request
         </Link>
       );
-    case "backup_failed":
+    case "backup_failed": {
+      // The failed run's row (#backup-<id>), whose log says why.
+      const run = a.target?.backup ? `backup-${a.target.backup}` : undefined;
       if (svc)
         return (
           <Link
             to="/$org/$project/$environment/$service/backups"
             params={svc}
+            hash={run}
             {...props}
           >
-            Open backups
+            {run ? "See why" : "Open backups"}
           </Link>
         );
       return (
-        <Link to="/console/backups" {...props}>
-          Open backups
+        <Link to="/console/backups" hash={run} {...props}>
+          {run ? "See why" : "Open backups"}
         </Link>
       );
+    }
     case "deploy_failed": {
       const number = a.target?.release
         ? String(a.target.release)

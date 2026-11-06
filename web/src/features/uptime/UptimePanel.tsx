@@ -532,6 +532,9 @@ function AddCheck({
       c.expect_status === req.expect_status &&
       c.interval_seconds === req.interval_seconds,
   );
+  // The check the warning offers to change instead of adding a second.
+  const first = existing[0];
+  const update = useUpdateUptimeCheck(ref);
   return (
     <form
       aria-label="Add an uptime check"
@@ -619,15 +622,49 @@ function AddCheck({
         <ErrorText error={add.error} />
       </span>
       {existing.length > 0 && (
-        <span role="status" className="text-warn-text">
-          ▲ Already checked:{" "}
-          {existing
-            .map(
-              (c) =>
-                `every ${every(c.interval_seconds)}, expects ${c.expect_status}${c.auto ? " (added by Dock for the domain)" : ""}`,
-            )
-            .join("; ")}
-          . Change its interval or status in the list.
+        <span
+          role="status"
+          className="flex flex-wrap items-center gap-2 text-warn-text"
+        >
+          <span>
+            ▲ Already checked:{" "}
+            {existing
+              .map(
+                (c) =>
+                  `every ${every(c.interval_seconds)}, expects ${c.expect_status}${c.auto ? " (added by Dock for the domain)" : ""}`,
+              )
+              .join("; ")}
+            .
+          </span>
+          {first && !repeat && (
+            <Button
+              small
+              primary
+              disabled={update.isPending}
+              title={`dock uptime update ${first.id} --interval ${intervalS}s --status ${status} -s ${ref.service} -e ${ref.environment}`}
+              onClick={() =>
+                update.mutate(
+                  {
+                    id: first.id,
+                    interval_seconds: intervalS,
+                    expect_status: status,
+                  },
+                  {
+                    onSuccess: () => {
+                      setUrl("");
+                      notify(
+                        `The check of ${first.url} now runs every ${every(intervalS)}, expecting ${status}.`,
+                      );
+                    },
+                  },
+                )
+              }
+            >
+              Set existing to every {every(intervalS)}
+              {status !== first.expect_status ? `, expects ${status}` : ""}
+            </Button>
+          )}
+          <ErrorText error={update.error} />
         </span>
       )}
     </form>

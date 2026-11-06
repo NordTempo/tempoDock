@@ -62,12 +62,7 @@ export function AlertsPage() {
     .slice(0, more ? MAX : HISTORY);
   return (
     <>
-      <PageBar
-        title="Alerts"
-        actions={
-          <span className="font-mono text-2xs text-mut">dock alerts</span>
-        }
-      />
+      <PageBar title="Alerts" />
       <Page>
         {open.length > 0 && (
           <section aria-labelledby="open">
@@ -78,7 +73,6 @@ export function AlertsPage() {
         <section aria-labelledby="history">
           <SectionHead
             id="history"
-            aside={`last ${more ? MAX : HISTORY}`}
             right={
               !more &&
               resolved.length === HISTORY && (
@@ -92,7 +86,7 @@ export function AlertsPage() {
               )
             }
           >
-            Resolved
+            Last {more ? MAX : HISTORY} resolved
           </SectionHead>
           {resolved.length > 0 ? (
             <AlertTable alerts={resolved} />
@@ -104,6 +98,7 @@ export function AlertsPage() {
           )}
         </section>
         <Channels />
+        <p className="font-mono text-2xs text-mut">dock alerts</p>
       </Page>
     </>
   );

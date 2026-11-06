@@ -7,14 +7,8 @@ import {
   useTokens,
 } from "../../data/queries";
 import type { Scope } from "../../data/types";
-import {
-  Button,
-  Check,
-  CopyButton,
-  ErrorText,
-  Page,
-  SectionHead,
-} from "../../ui/kit";
+import { Dialog } from "../../ui/Dialog";
+import { Button, Check, CopyButton, ErrorText, Page } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import { TokenDataFields, tokenDataFlags } from "../data/TokenData";
 import type { DataTokenAccess } from "../data/types";
@@ -235,6 +229,7 @@ function CreateToken({
   const create = useCreateToken();
   const v = useValidation();
   const nameId = useId();
+  const envWhy = useId();
   const operatorCaller = useIsOperator();
   const projects = useProjects();
   const tree = useProjectTree();
@@ -271,8 +266,8 @@ function CreateToken({
     .join(" ");
 
   return (
-    <section aria-labelledby="create" className="flex max-w-[760px] flex-col">
-      <SectionHead id="create">Create a token</SectionHead>
+    // The standard create dialog, like New project and New service.
+    <Dialog title="Create token" onClose={onCancel} wide>
       <form
         ref={v.form}
         className="flex flex-col gap-4"
@@ -299,10 +294,7 @@ function CreateToken({
         }}
       >
         <label className="flex flex-col gap-1.5">
-          <span>
-            Name{" "}
-            <span className="text-xs text-faint">shown in the audit log</span>
-          </span>
+          <span>Name</span>
           <input
             id={nameId}
             // biome-ignore lint/a11y/noAutofocus: opened by "Create token"
@@ -384,6 +376,7 @@ function CreateToken({
             <select
               value={environment}
               disabled={!project}
+              aria-describedby={project ? undefined : envWhy}
               onChange={(e) => setEnvironment(e.target.value)}
               className="field py-[7px]"
             >
@@ -392,6 +385,11 @@ function CreateToken({
                 <option key={e}>{e}</option>
               ))}
             </select>
+            {!project && (
+              <span id={envWhy} className="text-xs text-mut">
+                Pick a project first.
+              </span>
+            )}
           </label>
           <label className="flex flex-[1_1_200px] flex-col gap-1.5">
             <span>Expires</span>
@@ -447,6 +445,6 @@ function CreateToken({
           {cli}
         </code>
       </form>
-    </section>
+    </Dialog>
   );
 }

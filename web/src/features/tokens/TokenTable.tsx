@@ -5,7 +5,8 @@ import { useIsAdmin, useIsOperator } from "../../data/queries";
 import type { Token } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
-import { Actor, actorKind, Button, Confirm, Panel } from "../../ui/kit";
+import { Icon } from "../../ui/icons";
+import { Actor, actorKind, Confirm, Menu, menuItem, Panel } from "../../ui/kit";
 import { useSaveTokenData } from "../data/dockPolicy";
 import {
   TokenDataEditor,
@@ -14,8 +15,10 @@ import {
 } from "../data/TokenData";
 
 /**
- * Tokens with revoke, data access (admins) and their activity. `mine`
- * leaves out who created them, for the caller's own on their account.
+ * Tokens: the name opens its activity; data access shows under it only
+ * where it differs from the data policy; changing data access (admins)
+ * and revoking are in the row's menu. `mine` leaves out who created
+ * them, for the caller's own on their account.
  */
 export function TokenTable({
   tokens,
@@ -34,9 +37,6 @@ export function TokenTable({
               <th>Scope</th>
               <th>Limited to</th>
               {!mine && <th>Created by</th>}
-              <th title="What the token may do in the Data panel">
-                Data access
-              </th>
               <th>Last used</th>
               <th>Expires</th>
               <th />
@@ -97,10 +97,23 @@ function TokenRow({
   return (
     <>
       <tr className={`*:align-middle ${dead ? "text-faint" : ""}`}>
-        <td className={`py-2 ${dead ? "" : "text-info"}`}>
-          ◇ {token.name}
+        <td className="py-2">
+          <Link
+            to={operator ? "/console/audit" : "/$org/audit"}
+            params={{ org }}
+            search={{ actor: token.name }}
+            title={`What ${token.name} did`}
+            className={dead ? "text-faint" : "text-info hover:underline"}
+          >
+            ◇ {token.name}
+          </Link>
           {mine && token.origin === "cli_login" && (
             <span className="text-mut"> via dock login</span>
+          )}
+          {token.data && (
+            <span className="block text-2xs text-sec">
+              data: {tokenDataText(token.data)}
+            </span>
           )}
         </td>
         <td className="py-2">
@@ -122,9 +135,6 @@ function TokenRow({
             )}
           </td>
         )}
-        <td className={`py-2 ${token.data ? "" : "text-mut"}`}>
-          {token.data ? tokenDataText(token.data) : "follows policy"}
-        </td>
         <td className={`py-2 ${token.last_used_at ? "" : "text-mut"}`}>
           {token.last_used_at ? ago(token.last_used_at) : "never"}
         </td>
@@ -140,30 +150,50 @@ function TokenRow({
           )}
         </td>
         <td className="w-full py-1.5 text-right">
-          <span className="inline-flex items-center gap-1.5">
-            <Link
-              to={operator ? "/console/audit" : "/$org/audit"}
-              params={{ org }}
-              search={{ actor: token.name }}
-              className="btn sm no-underline"
+          {((admin && !dead) || !token.revoked_at) && (
+            <Menu
+              label={`${token.name}: actions`}
+              right
+              className="inline-flex"
+              button={
+                <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
+                  <Icon name="more" size={14} />
+                </span>
+              }
             >
-              Activity
-            </Link>
-            {admin && !dead && (
-              <Button
-                small
-                aria-expanded={editingData}
-                onClick={() => setEditingData((e) => !e)}
-              >
-                Data access
-              </Button>
-            )}
-            {!token.revoked_at && (
-              <Button small onClick={() => setConfirming(true)}>
-                Revoke
-              </Button>
-            )}
-          </span>
+              {(close) => (
+                <>
+                  {admin && !dead && (
+                    <button
+                      type="button"
+                      className={menuItem}
+                      role="menuitem"
+                      onClick={() => {
+                        close();
+                        setEditingData(true);
+                      }}
+                    >
+                      Change data access
+                    </button>
+                  )}
+                  {!token.revoked_at && (
+                    <button
+                      type="button"
+                      className={menuItem}
+                      role="menuitem"
+                      title={`dock token revoke ${token.id}`}
+                      onClick={() => {
+                        close();
+                        setConfirming(true);
+                      }}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </>
+              )}
+            </Menu>
+          )}
           {/* The modal inherits the cell's alignment and nowrap. */}
           <div className="contents text-left whitespace-normal">
             {confirming && (
@@ -194,7 +224,7 @@ function TokenRow({
       </tr>
       {editingData && (
         <tr>
-          <td colSpan={mine ? 7 : 8}>
+          <td colSpan={mine ? 6 : 7}>
             <TokenDataEditor
               data={token.data}
               cap={tokenCap}

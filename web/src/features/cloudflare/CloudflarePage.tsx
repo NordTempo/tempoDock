@@ -38,8 +38,9 @@ export function CloudflarePage() {
         actions={
           <>
             {connections.length > 0 && <RetryFailed />}
-            {!adding && connections.length > 0 && (
+            {!adding && (
               <Button
+                primary
                 onClick={() => {
                   setEditing(undefined);
                   setAdding(true);
@@ -84,16 +85,12 @@ export function CloudflarePage() {
             </Panel>
           ) : (
             !adding && (
-              <div className="flex flex-col items-start gap-3 py-2">
-                <p className="text-mut">
-                  No connection. With a Cloudflare API token, Dock runs each
-                  server's tunnel and adds domains from your zones; without one,
-                  tunnels and their DNS are set up by hand.
-                </p>
-                <Button primary onClick={() => setAdding(true)}>
-                  Add connection
-                </Button>
-              </div>
+              <p className="py-2 text-mut">
+                No connection. With a Cloudflare API token, Dock runs each
+                server's tunnel and adds domains from your zones; without one,
+                tunnels and their DNS are set up by hand. Add one with Add
+                connection.
+              </p>
             )
           )}
           {adding && <TokenForm onClose={() => setAdding(false)} />}

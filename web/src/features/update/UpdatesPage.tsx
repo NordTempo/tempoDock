@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ago, day, plural } from "../../ui/format";
 import {
   Act,
+  Button,
   ErrorText,
   Glyph,
   Page,
@@ -74,23 +75,25 @@ export function UpdatesPage() {
     <>
       <PageBar
         title="Updates"
-        after={
-          <span className="text-xs text-faint">
-            runs <span className="font-mono">{st.version}</span>
-            {st.checked_at && <> · checked {ago(st.checked_at)}</>} ·{" "}
-            <button
-              type="button"
-              className="text-info hover:text-fg"
+        actions={
+          <>
+            <Act
+              cli="dock update"
               disabled={check.isPending}
               onClick={() => check.mutate()}
             >
               {check.isPending ? "Checking…" : "Check now"}
-            </button>
-          </span>
+            </Act>
+            {action}
+          </>
         }
-        actions={action}
       />
       <Page>
+        {/* Status in the body, not beside the title. */}
+        <p className="text-sec">
+          Runs <span className="font-mono text-fg">{st.version}</span>
+          {st.checked_at && <>, releases checked {ago(st.checked_at)}</>}.
+        </p>
         <ErrorText error={start.error ?? check.error} />
         <Problems st={st} onCheck={() => check.mutate()} />
         {st.last && st.last.status !== "succeeded" && !running && (
@@ -109,6 +112,41 @@ export function UpdatesPage() {
   );
 }
 
+/**
+ * The release check's error, short: what failed on one line, the fix on
+ * a second. The daemon's sentence is "what; how to fix it"; the technical
+ * detail stays in the title (and the log).
+ */
+function CheckError({
+  error,
+  detail,
+  onCheck,
+}: {
+  error: string;
+  detail?: string;
+  onCheck: () => void;
+}) {
+  const [what = error, ...rest] = error.split(/;\s*/);
+  const fix = rest.join("; ");
+  const sentence = (t: string) =>
+    `${t.charAt(0).toUpperCase()}${t.slice(1)}${/[.!?]$/.test(t) ? "" : "."}`;
+  return (
+    <div
+      role="alert"
+      title={detail}
+      className="flex flex-col items-start gap-1"
+    >
+      <p className="text-fail">
+        <Glyph char="✕" /> Can't read releases: {what.replace(/\.$/, "")}.
+      </p>
+      {fix && <p className="text-sec">{sentence(fix)}</p>}
+      <Button small onClick={onCheck}>
+        Try again
+      </Button>
+    </div>
+  );
+}
+
 /** Why the check or an update can't happen, and what to do. */
 function Problems({
   st,
@@ -121,20 +159,11 @@ function Problems({
   return (
     <>
       {st.check_error && (
-        <p
-          role="alert"
-          title={st.check_detail}
-          className="flex flex-wrap items-baseline gap-x-3"
-        >
-          {/* The daemon's sentence says what went wrong and what to do;
-              the technical detail is in the title (and its log). */}
-          <span className="text-fail">
-            <Glyph char="✕" /> {st.check_error}
-          </span>
-          <button type="button" className="lnk" onClick={onCheck}>
-            Try again
-          </button>
-        </p>
+        <CheckError
+          error={st.check_error}
+          detail={st.check_detail}
+          onCheck={onCheck}
+        />
       )}
       {!st.updater && (
         <p className="text-warn-text">

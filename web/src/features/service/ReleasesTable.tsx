@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useRollback } from "../../data/mutations";
-import { useCanDeploy, useService } from "../../data/queries";
+import { useCanDeploy, useReleases, useService } from "../../data/queries";
 import type { Release, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
@@ -41,8 +41,11 @@ export function ReleasesTable({
   deploying: boolean;
 }) {
   const org = useOrg();
-  // A stopped service's active release serves nothing (ADR 0050).
-  const stopped = !!useService(ref).service.stopped_at;
+  // A stopped service's active release serves nothing (ADR 0050), and it
+  // is starting until its health check first passes.
+  const { service } = useService(ref);
+  const stopped = !!service.stopped_at;
+  const starting = service.status.health === "starting";
   const mayDeploy = useCanDeploy(ref);
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
@@ -97,7 +100,9 @@ export function ReleasesTable({
                         r.status === "active"
                           ? stopped
                             ? { tone: "mut", glyph: "○", label: "stopped" }
-                            : { tone: "ok", glyph: "●", label: "serving" }
+                            : starting
+                              ? { tone: "mut", glyph: "◐", label: "starting" }
+                              : { tone: "ok", glyph: "●", label: "serving" }
                           : releaseState(r.status)
                       }
                     />
@@ -129,6 +134,14 @@ export function ReleasesTable({
                       <Link {...page(r)} className="btn sm">
                         Details
                       </Link>
+                    )}
+                    {r.status === "superseded" && servesCopyOf(serving, r) && (
+                      <span
+                        className="text-xs text-faint"
+                        title={`r${serving?.number} already runs r${r.number}'s image and config`}
+                      >
+                        same as serving
+                      </span>
                     )}
                     {r.status === "superseded" &&
                       mayDeploy &&
@@ -186,6 +199,14 @@ export function RollbackConfirm({
 }) {
   const rollback = useRollback();
   const stateful = useService(ref).service.stateful;
+  // Newer replaced releases the one-click target passes over: the serving
+  // release already runs them.
+  const skipped = useReleases(ref).filter(
+    (r) =>
+      r.status === "superseded" &&
+      r.number > target.number &&
+      servesCopyOf(serving, r),
+  );
   const from = serving ? `r${serving.number}` : undefined;
   const changes = serving ? releaseDiff(serving, target) : [];
   const losses = serving ? rollbackLosses(serving, target) : [];
@@ -207,6 +228,12 @@ export function RollbackConfirm({
       <p>
         A new release of <b>{ref.service}</b> in {ref.environment} with r
         {target.number}'s image and config.
+        {skipped.map((r) => (
+          <span key={r.number} className="text-mut">
+            {" "}
+            r{r.number} is skipped: {from} already runs its image and config.
+          </span>
+        ))}
       </p>
       {from && (
         <p className="mt-2">

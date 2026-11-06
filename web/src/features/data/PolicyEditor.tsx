@@ -124,8 +124,8 @@ export function PolicyEditor<F extends string>({
             <tr>
               <th>Subject</th>
               <th>{kindColumn}</th>
-              <th>Set here</th>
-              <th>Effective</th>
+              <th>Rule here</th>
+              <th>Result</th>
               <th>Why</th>
             </tr>
           </thead>
@@ -168,8 +168,11 @@ export function PolicyEditor<F extends string>({
                           }}
                         >
                           <option value="">inherit</option>
+                          {/* Each level says what it allows, in its option. */}
                           {levels.map((l) => (
-                            <option key={l}>{l}</option>
+                            <option key={l} value={l}>
+                              {l}: {levelNotes[l]}
+                            </option>
                           ))}
                         </select>
                         {here && (
@@ -186,23 +189,21 @@ export function PolicyEditor<F extends string>({
                             }}
                           >
                             {sensitivities.map((s) => (
-                              <option key={s}>{s}</option>
+                              <option key={s} value={s}>
+                                {sensitiveNotes[s]}
+                              </option>
                             ))}
                           </select>
                         )}
                       </span>
                     </td>
-                    <td>
+                    <td className="whitespace-nowrap">
                       <span
                         className={
                           effective.level === "none" ? "text-(--g-mut)" : ""
                         }
                       >
-                        {effective.level}
-                      </span>
-                      <span className="text-(--g-mut)">
-                        {" "}
-                        · {effective.sensitive}
+                        {resultText(effective.level, effective.sensitive)}
                       </span>
                     </td>
                     <td className="w-full text-(--g-mut)">
@@ -241,7 +242,36 @@ export function PolicyEditor<F extends string>({
   );
 }
 
-/** What the levels and sensitive settings mean, behind a disclosure. */
+/** The sensitive settings in their options' words. */
+const sensitiveNotes: Record<(typeof sensitivities)[number], string> = {
+  masked: "sensitive columns hidden",
+  visible: "sensitive columns after a reveal",
+};
+
+/** A rule's result as a sentence: "can read, sensitive columns hidden". */
+function resultText(
+  level: (typeof levels)[number],
+  sensitive: (typeof sensitivities)[number],
+) {
+  const rows =
+    sensitive === "masked"
+      ? "sensitive columns hidden"
+      : "sensitive columns after an audited reveal";
+  switch (level) {
+    case "none":
+      return "no access";
+    case "schema":
+      return "sees tables and columns, no rows";
+    case "read":
+      return `can read, ${rows}`;
+    case "propose":
+      return `can read and propose changes, ${rows}`;
+    case "write":
+      return `can read and write, ${rows}`;
+  }
+}
+
+/** What the levels and sensitive settings mean, behind a disclosure (tempoBase). */
 export function PolicyLegend() {
   return (
     <details className="text-(--g-dim)">

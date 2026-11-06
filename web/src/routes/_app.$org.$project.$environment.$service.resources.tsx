@@ -95,7 +95,7 @@ function Now({ service: s }: { service: Service }) {
         )}
         of={
           s.effective_cpus
-            ? `of ${cpus(s.effective_cpus)}${s.cpus_from_default ? " server default" : ""}`
+            ? `of ${cpus(s.effective_cpus)}${s.cpus_from_default ? " default" : ""}`
             : "of a core"
         }
       />
@@ -104,7 +104,7 @@ function Now({ service: s }: { service: Service }) {
         value={size(u.memory_bytes)}
         of={
           s.effective_memory_mb
-            ? `/ ${size(s.effective_memory_mb * MiB)}${s.memory_from_default ? " server default" : ""}`
+            ? `/ ${size(s.effective_memory_mb * MiB)}${s.memory_from_default ? " default" : ""}`
             : undefined
         }
       />

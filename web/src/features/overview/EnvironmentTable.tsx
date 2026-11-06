@@ -20,7 +20,7 @@ import type {
 import { useOrg } from "../../shell/location";
 import { ago, plural } from "../../ui/format";
 import { Icon } from "../../ui/icons";
-import { Button, Menu, menuItem, Panel, StateText } from "../../ui/kit";
+import { Act, Button, Menu, menuItem, Panel, StateText } from "../../ui/kit";
 import { serviceState } from "../../ui/status";
 import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
@@ -38,6 +38,7 @@ import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
 import { hiddenFailures } from "./failed";
+import { lockRequestDone, useLockRequested } from "./lockRequest";
 
 const MovePanel = lazy(() => import("../move/MovePanel"));
 
@@ -46,7 +47,14 @@ const MovePanel = lazy(() => import("../move/MovePanel"));
  * environment (ADR 0056) also shows its pull request, status and
  * addresses, and can be closed.
  */
-export function EnvironmentTable({ env }: { env: EnvironmentView }) {
+export function EnvironmentTable({
+  env,
+  current = false,
+}: {
+  env: EnvironmentView;
+  /** The environment the URL names (#env-<name>): its section is marked. */
+  current?: boolean;
+}) {
   const org = useOrg();
   const { environment, services, pending_changes: staged } = env;
   const ref = { project: environment.project, environment: environment.name };
@@ -56,6 +64,11 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const canClone = canCreateEnvironment(useSession(), ref.project);
   const admin = useIsAdmin();
   const [locking, setLocking] = useState(false);
+  // The palette's "Lock <env>" opens the form here.
+  if (useLockRequested(ref) && !locking) {
+    lockRequestDone();
+    setLocking(true);
+  }
   const pr = environment.preview;
   const [closing, setClosing] = useState(false);
   const newService = () => openCreate({ kind: "service", env: ref });
@@ -72,7 +85,8 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
     <section
       id={`env-${environment.name}`}
       aria-labelledby={head}
-      className="scroll-mt-[64px]"
+      aria-current={current ? "location" : undefined}
+      className={`scroll-mt-[64px] ${current ? "-ml-3 border-l-2 border-fg pl-2.5" : ""}`}
     >
       {/* The name, what needs a look (staged changes, a server that's
           down, the preview's pull request) and the rest in one menu, so
@@ -96,10 +110,21 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
             ▲ {plural(staged, "staged change")}
           </Link>
         )}
+        {admin && !environment.lock && (
+          <Act
+            small
+            className="ml-auto"
+            cli={cli(`lock ${ref.environment}`)}
+            aria-expanded={locking}
+            onClick={() => setLocking(!locking)}
+          >
+            <Icon name="lock" size={12} /> Lock
+          </Act>
+        )}
         <Menu
           label={`${environment.name}: more actions`}
           right
-          className="ml-auto"
+          className={admin && !environment.lock ? "" : "ml-auto"}
           button={
             <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
               <Icon name="more" size={14} />
@@ -108,7 +133,10 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
         >
           {(close) => (
             <>
-              <span className="px-2.5 pt-1 pb-1.5 text-2xs text-mut">
+              <span
+                role="presentation"
+                className="px-2.5 pt-1 pb-1.5 text-2xs text-mut"
+              >
                 Runs on{" "}
                 <span className="font-mono text-sec">{environment.server}</span>
               </span>
@@ -116,6 +144,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 to="/$org/$project/settings/variables/$environment"
                 params={{ org, ...ref }}
                 className={menuItem}
+                role="menuitem"
                 onClick={close}
               >
                 Shared variables
@@ -125,6 +154,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 params={{ org, project: ref.project }}
                 hash={`drains-${ref.environment}`}
                 className={menuItem}
+                role="menuitem"
                 onClick={close}
               >
                 Log drains
@@ -133,6 +163,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 <button
                   type="button"
                   className={menuItem}
+                  role="menuitem"
                   title={`dock service create <name> -e ${ref.environment} -p ${ref.project}`}
                   onClick={() => {
                     close();
@@ -146,6 +177,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 <button
                   type="button"
                   className={menuItem}
+                  role="menuitem"
                   title={cli(`clone ${ref.environment} <name>`)}
                   onClick={() => {
                     close();
@@ -159,23 +191,11 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                   Clone into a new environment
                 </button>
               )}
-              {admin && !environment.lock && (
-                <button
-                  type="button"
-                  className={menuItem}
-                  title={cli(`lock ${ref.environment}`)}
-                  onClick={() => {
-                    close();
-                    setLocking(true);
-                  }}
-                >
-                  Lock against token changes
-                </button>
-              )}
               {pr && canClone && (
                 <button
                   type="button"
                   className={menuItem}
+                  role="menuitem"
                   title={previewsCli(`close ${ref.environment}`, ref.project)}
                   onClick={() => {
                     close();
@@ -189,6 +209,7 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
                 <button
                   type="button"
                   className={menuItem}
+                  role="menuitem"
                   title={cli(`move ${ref.environment} --to <server>`)}
                   onClick={() => {
                     close();
@@ -416,10 +437,11 @@ const ServiceRow = memo(function ServiceRow({
         )}
       </td>
       <td className="py-2.5 text-xs">
-        <div>
+        {/* Wraps instead of running into the Volume column. */}
+        <div className="pr-4 whitespace-normal">
           <CpuUsage service={service} />
         </div>
-        <div>
+        <div className="pr-4 whitespace-normal">
           <MemoryUsage service={service} />
         </div>
       </td>

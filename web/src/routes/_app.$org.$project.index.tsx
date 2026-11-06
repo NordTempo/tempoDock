@@ -1,5 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import { canDeploy, queries, serviceRef, useSession } from "../data/queries";
 import { canCreateEnvironment } from "../features/create/access";
@@ -81,9 +86,16 @@ function LiveOverview() {
   const deployable = environments.filter((e) =>
     canDeploy(session, { project, environment: e.environment.name }),
   );
-  // A new service goes to production, or the first environment the
-  // caller may deploy to; the dialog lets them pick another.
+  // /org/project/env lands here at #env-<name>: the header names that
+  // environment and its section is marked.
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  const here = environments.find((e) => hash === `env-${e.environment.name}`)
+    ?.environment.name;
+  // A new service goes to the environment in the URL, else production, or
+  // the first environment the caller may deploy to; the dialog lets them
+  // pick another.
   const target =
+    deployable.find((e) => e.environment.name === here) ??
     deployable.find((e) => e.environment.kind === "production") ??
     deployable[0];
   const newService = target
@@ -134,7 +146,18 @@ function LiveOverview() {
   return (
     <>
       <PageBar
-        title={project}
+        parent={
+          here && (
+            <Link
+              to="/$org/$project"
+              params={{ org, project }}
+              className="hover:text-fg"
+            >
+              {project}
+            </Link>
+          )
+        }
+        title={here ?? project}
         after={<ServerDots project={project} troubleOnly />}
         actions={
           <>
@@ -183,7 +206,11 @@ function LiveOverview() {
         <Problems project={project} />
 
         {environments.map((env) => (
-          <EnvironmentTable key={env.environment.id} env={env} />
+          <EnvironmentTable
+            key={env.environment.id}
+            env={env}
+            current={env.environment.name === here}
+          />
         ))}
 
         {environments.length === 0 && (

@@ -393,7 +393,7 @@ func ParseBackup(output string) (Result, error) {
 		}
 	}
 	if res.SnapshotID == "" {
-		return res, errors.New("restic reported no snapshot")
+		return res, errors.New("the backup didn't finish, so nothing was saved (restic reported no snapshot)")
 	}
 	return res, nil
 }

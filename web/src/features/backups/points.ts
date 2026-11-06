@@ -13,7 +13,7 @@ export type RestorePoint = {
   at: string;
   size: number;
   state: PointState;
-  /** "local", "off-box" for a backup; the server for a snapshot. */
+  /** "this server" or "off-site" for a backup; the server for a snapshot. */
   where: string;
   /** The error, a snapshot's note or why it can't be restored here. */
   detail?: string;
@@ -48,7 +48,7 @@ export function restorePoints(
         at: run.started_at,
         size: run.size_bytes,
         state: backupState(run),
-        where: run.off_box ? "off-box" : run.repository || "local",
+        where: run.off_box ? "off-site" : "this server",
         detail:
           run.error ??
           (run.pruned ? "removed by retention" : undefined) ??

@@ -26,7 +26,7 @@ import { isPending, useRequestsIfAdmin } from "../requests/data";
 
 // An environment's lock on the project overview (ADR 0044, mock "Header
 // B"): a strip under its header while locked, with who and why, the
-// requests waiting there, Open to tokens… and Unlock; a one-line form
+// requests waiting there, Pause lock for… and Unlock; a one-line form
 // while unlocked. One description of what a lock does everywhere:
 // changes by tokens wait for an admin's approval (`lockEffect`).
 
@@ -89,7 +89,7 @@ function useUnlock() {
   );
 }
 
-/** What Open to tokens… offers, as minutes and as `--for`. */
+/** What Pause lock for… offers, as minutes and as `--for`. */
 const openFor = [
   [15, "15 minutes", "15m"],
   [60, "1 hour", "1h"],
@@ -136,7 +136,7 @@ export function LockStrip({
         </>
       ) : (
         <span className="inline-flex items-center gap-1.5">
-          <Icon name="lock" size={12} /> Open to tokens until{" "}
+          <Icon name="lock" size={12} /> Lock paused until{" "}
           {clock(lock.open_until ?? "")}, then locked again
         </span>
       )}
@@ -155,15 +155,16 @@ export function LockStrip({
           (lockHolds(lock) ? (
             <>
               <Menu
-                label={`Open to tokens… (${env})`}
+                label={`Pause lock for… (${env})`}
                 right
                 button={
-                  <span className={`btn sm ${warnBtn}`}>Open to tokens…</span>
+                  <span className={`btn sm ${warnBtn}`}>Pause lock for…</span>
                 }
               >
                 {(close) => [
                   <span
                     key="head"
+                    role="presentation"
                     className="max-w-60 px-2.5 pt-1 pb-1.5 text-2xs text-mut"
                   >
                     Tokens change {env} without approval for
@@ -173,6 +174,7 @@ export function LockStrip({
                       key={minutes}
                       type="button"
                       className={menuItem}
+                      role="menuitem"
                       title={`dock environment unlock ${env} --for ${flag}`}
                       disabled={busy}
                       onClick={() => {
@@ -221,7 +223,7 @@ export function LockStrip({
                     ""
                   )}
                   . Tokens can change {env} without approval until someone locks
-                  it again. To let them in for a while, use Open to tokens…
+                  it again. To let them in for a while, use Pause lock for…
                   instead.
                 </Confirm>
               )}

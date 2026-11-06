@@ -3,6 +3,7 @@ import { day, since, size, until } from "../../ui/format";
 import {
   Act,
   Button,
+  Confirm,
   CopyButton,
   ErrorText,
   Glyph,
@@ -39,22 +40,11 @@ export function BackupSettingsPage() {
     <>
       <PageBar
         title="Backups"
-        after={
-          <span className="text-xs text-faint">
-            {busy
-              ? `moving to ${settings.move?.to}`
-              : settings.storage
-                ? `off-box in ${settings.storage}, folder ${settings.path}`
-                : settings.off_box
-                  ? `off-box to ${settings.repository}`
-                  : "local repositories, one on each server"}
-          </span>
-        }
         actions={
           <>
             {!moving && (
               <Button disabled={busy} onClick={() => setMoving(true)}>
-                Move backups
+                Move to a storage bucket
               </Button>
             )}
             <Act
@@ -68,6 +58,25 @@ export function BackupSettingsPage() {
         }
       />
       <Page>
+        {/* Where backups go, in the body: no subtitle beside the title. */}
+        <p>
+          {busy ? (
+            <>Moving backups to {settings.move?.to}.</>
+          ) : settings.storage ? (
+            <>
+              Kept off-site in the storage bucket{" "}
+              <span className="font-mono">{settings.storage}</span>, folder{" "}
+              <span className="font-mono">{settings.path}</span>.
+            </>
+          ) : settings.off_box ? (
+            <>
+              Kept off-site in{" "}
+              <span className="font-mono">{settings.repository}</span>.
+            </>
+          ) : (
+            "Kept on each server, in its own local repository."
+          )}
+        </p>
         {!settings.off_box && (
           <p className="text-warn-text">
             <span className="text-warn">
@@ -81,7 +90,7 @@ export function BackupSettingsPage() {
                 className="text-fg underline underline-offset-3"
                 onClick={() => setMoving(true)}
               >
-                Move to a bucket
+                Move to a storage bucket
               </button>
             )}
           </p>
@@ -205,9 +214,26 @@ function Settings({ settings }: { settings: BackupSettings }) {
     setKeep(saved);
   };
 
+  // Lowering a count deletes backups at the next run: it asks first.
+  const lowered = [
+    keep.daily < settings.keep_daily && `${keep.daily} daily`,
+    keep.weekly < settings.keep_weekly && `${keep.weekly} weekly`,
+    keep.monthly < settings.keep_monthly && `${keep.monthly} monthly`,
+  ].filter((x) => typeof x === "string");
+  const [confirming, setConfirming] = useState(false);
+  const cli = `dock backup configure${changes.keep_daily !== undefined ? ` --keep-daily ${changes.keep_daily}` : ""}${changes.keep_weekly !== undefined ? ` --keep-weekly ${changes.keep_weekly}` : ""}${changes.keep_monthly !== undefined ? ` --keep-monthly ${changes.keep_monthly}` : ""}`;
+  const commit = () =>
+    configure.mutate(changes, {
+      onSuccess: (r) => {
+        keepPassword(r);
+        setConfirming(false);
+      },
+    });
   const save = (e: FormEvent) => {
     e.preventDefault();
-    if (dirty) configure.mutate(changes, { onSuccess: keepPassword });
+    if (!dirty) return;
+    if (lowered.length > 0) setConfirming(true);
+    else commit();
   };
 
   const count = (label: string, k: keyof typeof keep, max: number) => (
@@ -285,25 +311,50 @@ function Settings({ settings }: { settings: BackupSettings }) {
             {count("Keep weekly", "weekly", 520)}
             {count("Keep monthly", "monthly", 240)}
           </div>
-          {/* Only a changed form has anything to save. */}
-          {(dirty || configure.error) && (
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Act
-                primary
-                type="submit"
-                cli={`dock backup configure${changes.keep_daily !== undefined ? ` --keep-daily ${changes.keep_daily}` : ""}${changes.keep_weekly !== undefined ? ` --keep-weekly ${changes.keep_weekly}` : ""}${changes.keep_monthly !== undefined ? ` --keep-monthly ${changes.keep_monthly}` : ""}`}
-                disabled={!dirty || configure.isPending}
-              >
-                Save <kbd>↵</kbd>
-              </Act>
+          {/* Save is always in view; it works once a count changed. */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Act
+              primary={dirty}
+              type="submit"
+              cli={cli}
+              disabled={!dirty || configure.isPending}
+              title={dirty ? undefined : "Change a count first"}
+            >
+              Save <kbd>↵</kbd>
+            </Act>
+            {dirty && (
               <Button onClick={discard}>
                 Cancel <kbd>Esc</kbd>
               </Button>
-              <ErrorText error={configure.error} />
-            </div>
+            )}
+            {!dirty && <Saved ok={configure.isSuccess} />}
+            <ErrorText error={configure.error} />
+          </div>
+          {lowered.length > 0 && (
+            <p className="text-xs text-warn-text">
+              ▲ Lower retention: older backups beyond the newest{" "}
+              {lowered.join(", ")} are deleted at the next run.
+            </p>
           )}
-          {!dirty && <Saved ok={configure.isSuccess} />}
         </form>
+        {confirming && (
+          <Confirm
+            danger
+            title="Keep fewer backups?"
+            action="Save and prune"
+            cli={cli}
+            pending={configure.isPending}
+            error={configure.error}
+            onConfirm={commit}
+            onCancel={() => {
+              configure.reset();
+              setConfirming(false);
+            }}
+          >
+            Backups beyond the newest {lowered.join(", ")} are deleted at the
+            next run, for every service. This can't be undone.
+          </Confirm>
+        )}
       </div>
       {password && <PasswordBox password={password} first />}
     </section>

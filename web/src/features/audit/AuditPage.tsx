@@ -72,8 +72,8 @@ function download(name: string, text: string) {
 }
 
 /**
- * The audit log with its filters: the organization's (/audit, called
- * Activity in its sidebar) and the console's (/console/audit), which can show the platform's log too
+ * The audit log, called Activity everywhere, with its filters: the
+ * organization's (/audit) and the console's (/console/audit), which can show the platform's log too
  * (withPlatform). The route owns the URL; onSearch replaces its search
  * params.
  */
@@ -137,7 +137,7 @@ export function AuditPage({
   return (
     <>
       <PageBar
-        title={withPlatform ? "Audit log" : "Activity"}
+        title="Activity"
         actions={
           <Button
             small

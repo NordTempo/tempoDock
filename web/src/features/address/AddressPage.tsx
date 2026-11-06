@@ -169,21 +169,24 @@ function HostnameForm({ address }: { address: Address }) {
           </Button>
         )}
         <Saved ok={set.isSuccess && !changed} />
+      </span>
+      {/* Remove sits apart from the field, and asks first. */}
+      <span className="flex flex-wrap items-center gap-2">
+        {empty ? (
+          <span role="alert" className="text-xs text-fail">
+            Type the name Dock answers at, like dock.example.com.
+          </span>
+        ) : (
+          <span className="text-xs text-mut">
+            Needed for invite links and GitHub pushes.
+          </span>
+        )}
         {address.hostname && !changed && (
-          <Button small onClick={() => setAsking(true)}>
-            Remove
+          <Button small className="ml-auto" onClick={() => setAsking(true)}>
+            Remove address…
           </Button>
         )}
       </span>
-      {empty ? (
-        <span role="alert" className="text-xs text-fail">
-          Type the name Dock answers at, like dock.example.com.
-        </span>
-      ) : (
-        <span className="text-xs text-mut">
-          Needed for invite links and GitHub pushes.
-        </span>
-      )}
       <ErrorText error={set.error} />
       {asking && (
         <Confirm
@@ -205,8 +208,9 @@ function HostnameForm({ address }: { address: Address }) {
             setAsking(false);
           }}
         >
-          Dock stops answering at <b>{address.hostname}</b>: sessions and CLI
-          logins there stop working. It stays at {address.private_url}.
+          Dock stops answering at <b>{address.hostname}</b>. Invite links and
+          GitHub webhooks that use it stop working, and so do sessions and CLI
+          logins there. Dock stays at {address.private_url}.
         </Confirm>
       )}
     </form>

@@ -72,7 +72,15 @@ export function RequestsPage({ selected }: { selected?: number }) {
           </p>
         ) : (
           <Scroll>
-            <table>
+            {/* Fixed widths: a decision changes a row's text, not the layout. */}
+            <table className="table-fixed">
+              <colgroup>
+                <col className="w-[38%]" />
+                <col className="w-[18%]" />
+                <col className="w-[20%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+              </colgroup>
               <thead>
                 <tr>
                   <th className="pl-2.5">Request</th>

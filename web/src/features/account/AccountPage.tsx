@@ -37,12 +37,7 @@ export function AccountPage() {
   if (!me) return null;
   return (
     <>
-      <PageBar
-        title="Account"
-        actions={
-          <span className="font-mono text-2xs text-mut">dock whoami</span>
-        }
-      />
+      <PageBar title="Account" />
       <Page>
         <dl className="props">
           <dt>Name</dt>
@@ -130,6 +125,11 @@ export function AccountPage() {
             This session is a token; tokens have no password.
           </p>
         )}
+        {/* The page's CLI equivalents, in the usual mono footer. */}
+        <p className="font-mono text-2xs text-mut">
+          dock whoami · dock me password · dock me two-factor · dock token list
+          --mine
+        </p>
       </Page>
     </>
   );
@@ -191,9 +191,7 @@ function OwnTokens() {
   const org = useOrg();
   return (
     <section aria-labelledby="own-tokens" className="flex flex-col gap-3">
-      <SectionHead id="own-tokens" aside="dock token list --mine">
-        Your tokens
-      </SectionHead>
+      <SectionHead id="own-tokens">Your tokens</SectionHead>
       <TokenTable tokens={tokens} mine />
       {admin && (
         <p className="text-mut">
@@ -232,9 +230,7 @@ function ChangePassword() {
 
   return (
     <section aria-labelledby="password" className="flex flex-col gap-3">
-      <SectionHead id="password" aside="dock me password">
-        Change password
-      </SectionHead>
+      <SectionHead id="password">Change password</SectionHead>
       <form
         ref={v.form}
         className="flex flex-col gap-3"

@@ -62,6 +62,7 @@ export function SSOPage() {
 
 function SSO() {
   const providers = useSuspenseQuery(orgQueries.ssoProviders()).data;
+  const [adding, setAdding] = useState(false);
   const org = useSuspenseQuery(orgQueries.org()).data;
   // The daemon's own address, as it tells providers; this page's before
   // there is one.
@@ -69,7 +70,15 @@ function SSO() {
     providers[0]?.redirect_url ?? window.location.origin + callbackPath;
   return (
     <>
-      <OrgSettingsBar />
+      <OrgSettingsBar
+        actions={
+          !adding && (
+            <Button primary onClick={() => setAdding(true)}>
+              Add provider
+            </Button>
+          )
+        }
+      />
       <Page width="max-w-[1000px]" gap="gap-5">
         <dl className="props">
           <dt>Redirect URL</dt>
@@ -112,19 +121,24 @@ function SSO() {
             </table>
           </Panel>
         ) : (
-          <p className="text-mut">
-            No providers yet. Add the one your team signs in with.
-          </p>
+          !adding && (
+            <p className="text-mut">
+              No providers yet. Add the one your team signs in with: Add
+              provider.
+            </p>
+          )
         )}
-        <section
-          aria-labelledby="add-provider"
-          className="flex flex-col gap-4 rounded-panel border border-line p-4"
-        >
-          <h2 id="add-provider" className="text-sm font-semibold">
-            Add a provider
-          </h2>
-          <ProviderForm />
-        </section>
+        {adding && (
+          <section
+            aria-labelledby="add-provider"
+            className="flex flex-col gap-4 rounded-panel border border-line p-4"
+          >
+            <h2 id="add-provider" className="text-sm font-semibold">
+              Add a provider
+            </h2>
+            <ProviderForm onDone={() => setAdding(false)} />
+          </section>
+        )}
         <SSOOnly
           on={org.sso_only}
           slug={org.slug}
@@ -321,6 +335,7 @@ function ProviderForm({
               setSecret("");
               setDomainText("");
               setJIT("");
+              onDone?.();
             },
           },
         );

@@ -70,7 +70,9 @@ export function BackupStorage({
                     <td className="py-2 font-mono">
                       {r.server || (
                         <span className="font-sans text-mut">
-                          {r.repository === "local" ? "each server" : "bucket"}
+                          {r.repository === "local"
+                            ? "each server"
+                            : "storage bucket"}
                         </span>
                       )}
                     </td>
@@ -151,7 +153,7 @@ function MoveForm({
     .reduce((n, r) => n + r.snapshots, 0);
   return (
     <form
-      aria-label="Move backups"
+      aria-label="Move to a storage bucket"
       className="flex max-w-[760px] flex-col gap-3 border-t border-line pt-3.5"
       onKeyDown={(e) => e.key === "Escape" && onDone()}
       onSubmit={(e) => {
@@ -161,14 +163,14 @@ function MoveForm({
     >
       {storage.length === 0 ? (
         <p className="text-mut">
-          Add a bucket on the <Link to="/console/storage">Storage</Link> page
-          first.
+          Add a storage bucket on the <Link to="/console/storage">Storage</Link>{" "}
+          page first.
         </p>
       ) : (
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-[2_1_240px] flex-col gap-1.5">
             <span>
-              Move to <span className="text-mut">a storage connection</span>
+              Move to <span className="text-mut">a storage bucket</span>
             </span>
             <select
               value={to}
@@ -177,13 +179,13 @@ function MoveForm({
             >
               {storage.map((s) => (
                 <option key={s.name} value={s.name}>
-                  {s.name} · bucket {s.bucket}
+                  {s.name} · {s.bucket}
                 </option>
               ))}
             </select>
           </label>
           <label className="flex flex-[1_1_160px] flex-col gap-1.5">
-            <span>Folder in the bucket</span>
+            <span>Folder in the storage bucket</span>
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
@@ -207,7 +209,7 @@ function MoveForm({
           cli={`dock backup move --storage ${to || "<name>"}${path.trim() && path.trim() !== "dock-backups" ? ` --path ${path.trim()}` : ""}`}
           disabled={!to || move.isPending}
         >
-          Move backups
+          Move to {to || "the storage bucket"}
         </Act>
         <Button onClick={onDone}>Cancel</Button>
       </div>

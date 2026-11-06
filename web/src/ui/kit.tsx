@@ -83,7 +83,7 @@ export function LockMark({ lock }: { lock: EnvironmentLock | undefined }) {
       title={
         holds
           ? "locked"
-          : `open to tokens until ${clock(lock.open_until ?? "")}, then locked`
+          : `lock paused until ${clock(lock.open_until ?? "")}, then locked again`
       }
     >
       <Icon name="lock" size={11} />
@@ -191,14 +191,19 @@ export function Check({
   checked,
   onChange,
   disabled,
+  reason,
   title,
 }: {
   label: ReactNode;
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  /** Why it is disabled, shown beside it while it is (like Button's). */
+  reason?: string;
   title?: string;
 }) {
+  const id = useId();
+  const why = disabled ? reason : undefined;
   return (
     <label
       className={`inline-flex items-center gap-1.5 ${disabled ? "text-faint" : "cursor-pointer"}`}
@@ -210,9 +215,15 @@ export function Check({
         className="m-[4px] size-[16px] accent-fg"
         checked={checked}
         disabled={disabled}
+        aria-describedby={why ? id : undefined}
         onChange={(e) => onChange(e.target.checked)}
       />
       {label}
+      {why && (
+        <span id={id} className="text-xs text-mut">
+          ({why})
+        </span>
+      )}
     </label>
   );
 }
@@ -515,7 +526,10 @@ export function Fact({
 }
 
 /**
- * A small popup menu under its button. It is fixed to the viewport, so a
+ * A small popup menu under its button (role="menu"): give each row
+ * `role="menuitem"` and className={menuItem}; labels inside get
+ * role="presentation", dividers role="separator". Arrow keys move
+ * between items. It is fixed to the viewport, so a
  * panel's overflow can't clip it; scrolling, Escape or a click outside
  * closes it.
  */
@@ -536,6 +550,7 @@ export function Menu({
   const [at, setAt] = useState<DOMRect | null>(null);
   const root = useRef<HTMLSpanElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!at) return;
     const close = () => setAt(null);
@@ -544,7 +559,21 @@ export function Menu({
         event.target instanceof Node && root.current?.contains(event.target);
       if (!inside) close();
     };
+    // Esc closes; the arrow keys move between the items (role="menuitem").
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        const items = [
+          ...(popup.current?.querySelectorAll<HTMLElement>(
+            '[role="menuitem"]:not(:disabled)',
+          ) ?? []),
+        ];
+        if (items.length === 0) return;
+        event.preventDefault();
+        const at = items.indexOf(document.activeElement as HTMLElement);
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        items[(at + step + items.length) % items.length]?.focus();
+        return;
+      }
       if (event.key !== "Escape") return;
       close();
       trigger.current?.focus();
@@ -566,6 +595,7 @@ export function Menu({
         ref={trigger}
         type="button"
         aria-label={label}
+        aria-haspopup="menu"
         aria-expanded={!!at}
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
@@ -576,6 +606,9 @@ export function Menu({
       </button>
       {at && (
         <div
+          ref={popup}
+          role="menu"
+          aria-label={label}
           style={{
             top: at.bottom + 4,
             ...(right

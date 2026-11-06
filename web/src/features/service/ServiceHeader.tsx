@@ -126,6 +126,16 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           hash: "releases",
         }),
     },
+    // S means settings everywhere: here, Build & run.
+    {
+      key: "s",
+      label: "build & run",
+      run: () =>
+        navigate({
+          to: "/$org/$project/$environment/$service/build",
+          params: { org, ...ref },
+        }),
+    },
     ...(view.domains.length > 0
       ? [
           {
@@ -174,7 +184,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** Source, address, resources, port and server: the Overview's facts. */
+/** Image, address, resources, port and server, start command: the Overview's facts. */
 export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const view = useService(ref);
@@ -240,11 +250,34 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <EnvServer name={server} />
       </span>,
     ],
+    // How it starts, a full row: the One-off command tab runs a command
+    // once; this is where the start command changes.
+    [
+      "Start command",
+      <span key="c" className="flex flex-wrap items-baseline gap-x-2">
+        <span className="font-mono break-all">
+          {service.start_command || (
+            <span className="font-sans text-mut">the image's default</span>
+          )}
+        </span>
+        <Link
+          to="/$org/$project/$environment/$service/build"
+          params={{ org, ...ref }}
+          search={{ edit: "start_command" }}
+          className="text-info hover:underline"
+        >
+          Edit
+        </Link>
+      </span>,
+    ],
   ];
   return (
     <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line @4xl:grid-cols-4">
       {facts.map(([term, value]) => (
-        <div key={term} className="flex flex-col gap-1 bg-page px-3.5 py-3">
+        <div
+          key={term}
+          className={`flex flex-col gap-1 bg-page px-3.5 py-3 ${term === "Start command" ? "col-span-full" : ""}`}
+        >
           <dt className="text-2xs text-faint">{term}</dt>
           <dd className="min-w-0 break-words text-xs">{value}</dd>
         </div>
@@ -276,17 +309,18 @@ function NextImage({
   return (
     <span className="font-sans break-words text-mut" title={image.next}>
       Next deploy uses{" "}
-      <span className="font-mono text-warn-text">{shortImage(image.next)}</span>
+      <span className="font-mono text-sec">{shortImage(image.next)}</span>
       {image.failed && (
         <>
-          {", "}
+          {" ("}
           <Link
             to="/$org/$project/$environment/$service/releases/$number"
             params={{ org, ...ref, number: String(image.failed.number) }}
-            className="text-fail underline decoration-fail-edge underline-offset-2 hover:decoration-current"
+            className="underline decoration-faint underline-offset-2 hover:decoration-current"
           >
             failed as r{image.failed.number}
           </Link>
+          {")"}
           {mayDeploy && servingRef && !staged && (
             <>
               {" · "}
@@ -329,15 +363,12 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   const { status } = service;
   const serving = service.active_release;
   const mut = (text: string) => <span className="text-mut">{text}</span>;
-  // A failed deploy that isn't serving: newer than what serves, or the
-  // image the next deploy uses (still pending after a rollback).
-  const image = imageSetting(service, useReleases(refOf(service)));
+  // A failed deploy while it is the latest attempt; once a newer release
+  // serves, the Image cell says it instead.
   const failedNext =
     latest?.status === "failed" && latest.number > (serving ?? 0)
       ? latest
-      : image.differs
-        ? image.failed
-        : undefined;
+      : undefined;
   const failedLine = failedNext && (
     <span className="text-fail">
       r{failedNext.number} {failurePhrase(failedNext)}{" "}
@@ -486,10 +517,13 @@ export function StatusSentence({ view }: { view: ServiceView }) {
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
  * equivalents, and a menu with the rarer actions (Archive, for admins).
  * Stop, roll back and archive ask first, and restart does in production.
+ * Stop and Start have no key (S opens Build & run, see ServiceTabs).
  * Buttons that can't apply (Roll back with nothing to go back to) are
  * left out; one line says why the others wait.
  */
 function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const navigate = useNavigate();
   const isAdmin = useIsAdmin();
   const onDeploy = () => openDeploy(ref);
   const { service, deploying, latest_release: latest } = useService(ref);
@@ -517,6 +551,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       { ref },
       {
         onSuccess: (r) => {
+          notify(`Restarting ${ref.service}…`, "info");
           setRestarting(r.number);
           setConfirming(null);
         },
@@ -525,17 +560,36 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const askRestart = () =>
     production ? setConfirming("restart") : doRestart();
 
-  // Once the restart's release serves (or fails), say so.
+  // Once the restart's release serves (its health check passed) or fails,
+  // say so: the same "starting until healthy" as the header and overview.
+  const health = service.status.health;
   useEffect(() => {
     if (restarting === null) return;
-    if (service.active_release === restarting) {
-      notify(`${ref.service} restarted, r${restarting} serving`);
+    if (service.active_release === restarting && health !== "starting") {
+      notify(
+        health === "unhealthy"
+          ? `r${restarting} runs but fails its health check`
+          : `r${restarting} serving`,
+        health === "unhealthy" ? "fail" : "ok",
+      );
       setRestarting(null);
     } else if (latest?.number === restarting && latest.status === "failed") {
-      notify(`r${restarting} ${failurePhrase(latest)}`, "fail");
+      const failed = restarting;
+      notify(
+        `r${failed} ${failurePhrase(latest)}${service.active_release ? `, r${service.active_release} still serving` : ""}`,
+        "fail",
+        {
+          label: "See why",
+          run: () =>
+            navigate({
+              to: "/$org/$project/$environment/$service/releases/$number",
+              params: { org, ...ref, number: String(failed) },
+            }),
+        },
+      );
       setRestarting(null);
     }
-  }, [restarting, service.active_release, latest, ref.service]);
+  }, [restarting, service.active_release, health, latest, navigate, org, ref]);
 
   // A GitHub deploy queues behind a running one; the window says what applies.
   const canDeploy = mayDeploy && !blocked;
@@ -574,25 +628,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           },
         ]
       : []),
-    ...(stopped
-      ? [
-          {
-            key: "s",
-            label: "start",
-            disabled: !canStart,
-            run: () => start.mutate(ref),
-          },
-        ]
-      : service.active_release
-        ? [
-            {
-              key: "s",
-              label: "stop",
-              disabled: !canStop,
-              run: () => setConfirming("stop"),
-            },
-          ]
-        : []),
+    // Stop and Start have no key: S opens Build & run (settings
+    // everywhere), and stopping is rare and destructive.
   ];
   useShortcuts(mayDeploy ? shortcuts : []);
 
@@ -671,7 +708,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           title={busy ?? "Start a copy of the active release"}
           onClick={() => start.mutate(ref)}
         >
-          Start <kbd>S</kbd>
+          Start
         </Act>
       ) : (
         service.active_release && (
@@ -681,7 +718,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             title={busy ?? "Remove its container; domains answer 503"}
             onClick={() => setConfirming("stop")}
           >
-            Stop <kbd>S</kbd>
+            Stop
           </Act>
         )
       )}
@@ -733,7 +770,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           {(close) => (
             <button
               type="button"
-              className={menuItem}
+              role="menuitem"
+              className={`${menuItem} text-fail`}
               title={`dock service archive ${ref.service} -e ${ref.environment}`}
               onClick={() => {
                 close();

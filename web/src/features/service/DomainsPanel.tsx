@@ -116,6 +116,7 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                     domain={d}
                     port={port}
                     fresh={d.hostname === added}
+                    inCard={waiting.includes(d)}
                   />
                 ))}
               </tbody>
@@ -334,19 +335,35 @@ function DnsCard({
           )}
         </div>
       )}
-      <div className="flex flex-wrap gap-x-[22px] gap-y-1.5 text-xs">
+      {/* Steps, not counts: joined by arrows, only the current one coloured. */}
+      <ol
+        aria-label="Progress"
+        className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs"
+      >
         {steps.map((label, i) => (
-          <span
-            key={label}
-            className={
-              i + 1 === step ? (error ? "text-fail" : "text-warn") : "text-mut"
-            }
-          >
-            {i + 1 === step ? (error ? "✕" : "▲") : i + 1 < step ? "✓" : "○"}{" "}
-            {i + 1} {label}
-          </span>
+          <li key={label} className="flex items-center gap-2">
+            {i > 0 && (
+              <span aria-hidden className="text-faint">
+                →
+              </span>
+            )}
+            <span
+              aria-current={i + 1 === step ? "step" : undefined}
+              className={
+                i + 1 === step
+                  ? error
+                    ? "text-fail"
+                    : "text-warn"
+                  : i + 1 < step
+                    ? "text-mut"
+                    : "text-faint"
+              }
+            >
+              {label}
+            </span>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
   );
 }
@@ -418,16 +435,20 @@ function DomainRow({
   domain: d,
   port,
   fresh,
+  inCard,
 }: {
   serviceRef: ServiceRef;
   domain: Domain;
   port: number;
   fresh: boolean;
+  /** Its records are in the panel above; the row doesn't repeat them. */
+  inCard: boolean;
 }) {
   const remove = useRemoveDomain();
   const [confirming, setConfirming] = useState(false);
   // Until it resolves here, the row says which record makes it work.
   const needsRecord =
+    !inCard &&
     !d.dns &&
     !d.verification &&
     (d.status === "added" || d.status === "waiting_for_dns") &&
@@ -454,7 +475,11 @@ function DomainRow({
           <RecordsToCreate domain={d} />
         ) : (
           <>
-            {detail(d)}
+            {inCard &&
+            !d.verification &&
+            (d.status === "added" || d.status === "waiting_for_dns")
+              ? "waiting for the DNS record above"
+              : detail(d)}
             {d.redirect_to
               ? ` · redirects to ${d.redirect_to}`
               : ` · to :${port}`}

@@ -22,6 +22,7 @@ import {
   rememberCommand,
   useCommands,
 } from "./commands";
+import { ConfirmHost } from "./confirmHost";
 import { modKey, useKeydown } from "./keys";
 import { useCurrentContext } from "./location";
 
@@ -50,6 +51,7 @@ export function PaletteProvider({ children }: { children: ReactNode }) {
       )}
       <CreateHost />
       <DeployHost />
+      <ConfirmHost />
     </PaletteContext>
   );
 }

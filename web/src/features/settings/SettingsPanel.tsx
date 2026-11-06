@@ -430,8 +430,10 @@ function ImageValue({
  * A value that edits in place, drawn like the inputs of Source below it
  * with a pencil, so it reads as editable at a glance.
  */
+// A value that edits: a box with a hover border and a pointer across all
+// of it, in the regular weight, so it reads as a control, not a label.
 const editableBox =
-  "inline-flex min-h-[24px] items-center gap-1.5 rounded-ctl border px-1.5 text-left font-mono break-all hover:border-dash hover:bg-hover";
+  "inline-flex min-h-[24px] cursor-pointer items-center gap-1.5 rounded-ctl border px-1.5 text-left font-mono font-normal break-all hover:border-dash hover:bg-hover [&_*]:cursor-pointer";
 
 /** The pencil inside an editable value. */
 function Pencil() {
@@ -543,7 +545,7 @@ function Editable({
           setError(null);
           setDraft(editText(key, change ? change.new : value));
         }}
-        className={`${editableBox} cursor-text ${change ? "border-warn-edge bg-stage-bg" : "border-edge bg-panel"}`}
+        className={`${editableBox} ${change ? "border-warn-edge bg-stage-bg" : "border-edge bg-panel"}`}
       >
         {/* One inline box, so the spaces between its parts survive. */}
         <span>

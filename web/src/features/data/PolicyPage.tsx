@@ -9,7 +9,7 @@ import {
   useSavePolicy,
 } from "./dockPolicy";
 import { ErrorText } from "./kit";
-import { PolicyEditor, PolicyLegend } from "./PolicyEditor";
+import { PolicyEditor } from "./PolicyEditor";
 import { kindNames, kinds } from "./policy";
 
 /**
@@ -139,11 +139,6 @@ export function PolicyPage({
         </div>
 
         <div className={styleA}>
-          <p className="mb-2 text-xs text-mut">
-            Set here is this scope's rule; inherit takes the one above.
-            Effective is what applies; masked means sensitive columns' values
-            are hidden.
-          </p>
           {policy.error ? (
             <ErrorText error={policy.error} />
           ) : !policy.data || (parentScope && !parent.data) ? (
@@ -199,7 +194,6 @@ export function PolicyPage({
               </p>
             </div>
           </details>
-          <PolicyLegend />
         </div>
       </Page>
     </>

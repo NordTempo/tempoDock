@@ -405,7 +405,7 @@ func (c *Core) snapshotJob(ctx context.Context, ss svcScope, row store.VolumeSna
 	}
 	m := snapshotSize.FindStringSubmatch(out)
 	if m == nil {
-		return 0, paused, out, fmt.Errorf("the snapshot job didn't report a size%s", withOutput(out))
+		return 0, paused, out, fmt.Errorf("the snapshot didn't finish, so nothing was saved (the job reported no size)%s", withOutput(out))
 	}
 	kib, _ := strconv.ParseInt(m[1], 10, 64)
 	return kib << 10, paused, out, nil

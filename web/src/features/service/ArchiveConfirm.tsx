@@ -5,8 +5,10 @@ import { useOrg } from "../../shell/location";
 import { Confirm } from "../../ui/kit";
 
 /**
- * Asks before archiving a service, then archives it and goes to its
- * project. The header's More menu and the end of Build & run open it.
+ * Asks before archiving a service, like Stop: what happens, what is
+ * kept and where it is listed, the CLI line and a red button. Then it
+ * archives, goes to the project and says so (the mutation's notice).
+ * The header's More menu and Build & run open it.
  */
 export function ArchiveConfirm({
   serviceRef: ref,
@@ -43,7 +45,9 @@ export function ArchiveConfirm({
       <b>
         Its container stops and its domains stop answering in {ref.environment}.
       </b>{" "}
-      Volumes, variables and release history are kept.
+      Volumes, variables and release history are kept, listed under Archived on
+      the project page. It can't be started again or rolled back, and its images
+      leave the rollback window.
     </Confirm>
   );
 }

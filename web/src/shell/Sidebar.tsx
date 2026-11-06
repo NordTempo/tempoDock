@@ -214,7 +214,10 @@ function OrgSwitcher() {
       >
         {(close) => (
           <>
-            <div className="px-2.5 pt-1 pb-0.5 text-2xs text-faint">
+            <div
+              role="presentation"
+              className="px-2.5 pt-1 pb-0.5 text-2xs text-faint"
+            >
               Organizations
             </div>
             {orgs.map((o) => (
@@ -222,6 +225,7 @@ function OrgSwitcher() {
                 key={o.slug}
                 type="button"
                 className={menuItem}
+                role="menuitem"
                 aria-current={o.slug === current?.slug ? "page" : undefined}
                 onClick={() => {
                   close();
@@ -239,6 +243,7 @@ function OrgSwitcher() {
             <button
               type="button"
               className={menuItem}
+              role="menuitem"
               title="dock org create"
               onClick={() => {
                 close();
@@ -252,6 +257,7 @@ function OrgSwitcher() {
                 to="/$org/settings/members"
                 params={{ org: current.slug }}
                 className={menuItem}
+                role="menuitem"
                 onClick={close}
               >
                 <Icon name="users" className="text-mut" /> Members
@@ -262,16 +268,18 @@ function OrgSwitcher() {
                 to="/$org/settings"
                 params={{ org: current.slug }}
                 className={menuItem}
+                role="menuitem"
                 onClick={close}
               >
                 <Icon name="sliders" className="text-mut" /> Organization
                 settings
               </Link>
             )}
-            <div className="my-1 border-t border-line" />
+            <hr className="my-1 border-0 border-t border-line" />
             <button
               type="button"
               className={menuItem}
+              role="menuitem"
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
             >
@@ -439,6 +447,7 @@ function ProjectTree() {
                 {environments && (
                   <ProjectNote
                     services={environments.flatMap((e) => e.services)}
+                    shown={env?.services.length ?? 0}
                   />
                 )}
               </Link>
@@ -554,13 +563,20 @@ function EnvironmentMenu({
   onPick: (name: string) => void;
 }) {
   const org = useOrg();
+  if (environments.length < 2) {
+    return (
+      <span className="flex min-h-[24px] items-center gap-1 px-1.5 text-2xs text-mut">
+        {shown.name} <LockMark lock={shown.lock} />
+      </span>
+    );
+  }
+  // A control, not a label: a box on hover, the chevron always.
   const label = (
-    <span className="flex min-h-[24px] items-center gap-1 px-1.5 text-2xs text-mut hover:text-fg">
+    <span className="flex min-h-[24px] items-center gap-1 rounded-ctl border border-line px-1.5 text-xs text-sec hover:border-edge hover:bg-panel hover:text-fg">
       {shown.name} <LockMark lock={shown.lock} />
-      {environments.length > 1 && <Icon name="chevronDown" size={10} />}
+      <Icon name="chevronDown" size={12} className="text-mut" />
     </span>
   );
-  if (environments.length < 2) return label;
   return (
     <Menu
       label={`Environment shown for ${project}: ${shown.name}`}
@@ -573,6 +589,7 @@ function EnvironmentMenu({
               key={e.id}
               type="button"
               className={menuItem}
+              role="menuitem"
               aria-current={e.name === shown.name ? "true" : undefined}
               onClick={() => {
                 close();
@@ -586,11 +603,12 @@ function EnvironmentMenu({
               </span>
             </button>
           ))}
-          <div className="my-1 border-t border-line" />
+          <hr className="my-1 border-0 border-t border-line" />
           <Link
             to="/$org/$project/compare"
             params={{ org, project }}
             className={menuItem}
+            role="menuitem"
             onClick={close}
           >
             Compare environments
@@ -699,6 +717,7 @@ function NewInProject({
             <button
               type="button"
               className={menuItem}
+              role="menuitem"
               onClick={() => {
                 close();
                 openCreate({ kind: "service", env: service });
@@ -711,6 +730,7 @@ function NewInProject({
             <button
               type="button"
               className={menuItem}
+              role="menuitem"
               onClick={() => {
                 close();
                 openCreate({ kind: "environment", project });
@@ -725,8 +745,17 @@ function NewInProject({
   );
 }
 
-/** "deploying", "1 failed", or how many services. */
-function ProjectNote({ services }: { services: ServiceView[] }) {
+/**
+ * "deploying" or "1 failed" in any environment, else how many services
+ * the tree lists (`shown`: the environment it shows).
+ */
+function ProjectNote({
+  services,
+  shown,
+}: {
+  services: ServiceView[];
+  shown: number;
+}) {
   const failed = services.filter((s) => serviceState(s).tone === "fail");
   if (services.some((s) => s.deploying)) {
     return <span className="text-2xs text-warn">deploying</span>;
@@ -734,7 +763,7 @@ function ProjectNote({ services }: { services: ServiceView[] }) {
   if (failed.length > 0) {
     return <span className="text-2xs text-fail">{failed.length} failed</span>;
   }
-  return <span className="text-2xs text-faint">{services.length}</span>;
+  return <span className="text-2xs text-faint">{shown}</span>;
 }
 
 function ServiceLink({ view }: { view: ServiceView }) {
@@ -839,7 +868,7 @@ function ConsoleNav() {
         <OpenAlertCount />
       </NavLink>
       <NavLink to="/console/audit" icon="activity">
-        Audit log
+        Activity
       </NavLink>
       <div className={groupLabel}>System</div>
       <NavLink to="/console/address" icon="globe">

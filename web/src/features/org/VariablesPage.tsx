@@ -40,17 +40,25 @@ export function VariablesPage() {
   // dismissed.
   const [changed, setChanged] = useState<string>();
   const changedVar = vars.find((v) => v.key === changed);
+  const [adding, setAdding] = useState(false);
   return (
     <>
       <OrgSettingsBar
         actions={
           admin && (
-            <Act
-              cli="dock org env list --reveal"
-              onClick={() => setReveal(!reveal)}
-            >
-              {reveal ? "Hide values" : "Reveal values"}
-            </Act>
+            <>
+              <Act
+                cli="dock org env list --reveal"
+                onClick={() => setReveal(!reveal)}
+              >
+                {reveal ? "Hide values" : "Reveal values"}
+              </Act>
+              {!adding && (
+                <Button primary onClick={() => setAdding(true)}>
+                  Add variable
+                </Button>
+              )}
+            </>
           )
         }
       />
@@ -62,11 +70,21 @@ export function VariablesPage() {
             onDone={() => setChanged(undefined)}
           />
         )}
+        {admin && adding && (
+          <AddVariable
+            onAdded={(key) => {
+              setAdding(false);
+              setChanged(key);
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        )}
         {reveal && <ErrorText error={values.error} />}
         {vars.length === 0 ? (
           <p className="text-mut">
             No organization variables yet. Every project can use them as{" "}
-            <span className="font-mono text-fg">{orgRef}</span>.
+            <span className="font-mono text-fg">{orgRef}</span>
+            {admin ? ". Add one with Add variable." : "."}
           </p>
         ) : (
           <Panel>
@@ -102,7 +120,6 @@ export function VariablesPage() {
             <span className="font-mono text-fg">{orgRef}</span>.
           </p>
         )}
-        {admin && <AddVariable onAdded={setChanged} />}
       </Page>
     </>
   );
@@ -278,7 +295,13 @@ function VariableRow({
   );
 }
 
-function AddVariable({ onAdded }: { onAdded: (name: string) => void }) {
+function AddVariable({
+  onAdded,
+  onCancel,
+}: {
+  onAdded: (name: string) => void;
+  onCancel: () => void;
+}) {
   const set = useSetOrgVariable();
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
@@ -328,6 +351,7 @@ function AddVariable({ onAdded }: { onAdded: (name: string) => void }) {
       >
         Add
       </Act>
+      <Button onClick={onCancel}>Cancel</Button>
       {nameError && (
         <span role="alert" className="text-xs text-fail">
           {nameError}

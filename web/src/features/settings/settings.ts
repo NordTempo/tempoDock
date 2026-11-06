@@ -74,7 +74,7 @@ export function formatSetting(
     case "health_check_retries":
       return n ? String(n) : "3 (default)";
     case "health_check_start_period_seconds":
-      return n ? `${n}s` : "health check timeout (default)";
+      return n ? `${n}s` : "same as timeout";
     case "cpus":
       return n ? String(n) : "no limit";
     case "memory_mb":

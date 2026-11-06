@@ -2,11 +2,11 @@ import type { ServiceBackups } from "../../data/types";
 
 type Kind = ServiceBackups["kind"];
 
-/** How a kind of backup reads the data. */
-export const backupHow: Record<Kind, string> = {
-  postgres: "pg_dump -Fc, streamed to restic",
-  redis: "Redis RDB snapshot, to restic",
-  volume: "file-level volume backup with restic",
+/** What a kind of backup keeps, as an outcome; the tools are in the log. */
+export const backupWhat: Record<Kind, string> = {
+  postgres: "Database dumps",
+  redis: "Redis snapshots",
+  volume: "Copies of its volumes' files",
 };
 
 /** "03:00" */
