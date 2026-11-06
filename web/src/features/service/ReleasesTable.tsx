@@ -20,13 +20,15 @@ import {
   imageLabel,
   releaseDiff,
   rollbackLosses,
+  servesCopyOf,
   shortImage,
 } from "./releases";
 
 /**
  * Release history: one line per release (what, short image, who, when),
  * a failure's cause under it in full, Details on a failed row and a small
- * Roll back button on every superseded row (left out while a deploy runs).
+ * Roll back button on every superseded row (left out while a deploy runs,
+ * and where the serving release already is a copy of it).
  */
 export function ReleasesTable({
   serviceRef: ref,
@@ -45,6 +47,7 @@ export function ReleasesTable({
   // A rollback first shows the image and config it brings back.
   const [confirming, setConfirming] = useState<number | null>(null);
   const target = releases.find((r) => r.number === confirming);
+  const serving = releases.find((r) => r.status === "active");
   if (releases.length === 0) {
     return <p className="text-mut">Not deployed yet.</p>;
   }
@@ -127,16 +130,19 @@ export function ReleasesTable({
                         Details
                       </Link>
                     )}
-                    {r.status === "superseded" && mayDeploy && !deploying && (
-                      <Button
-                        small
-                        title={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
-                        aria-label={`Roll back to r${r.number}`}
-                        onClick={() => setConfirming(r.number)}
-                      >
-                        Roll back
-                      </Button>
-                    )}
+                    {r.status === "superseded" &&
+                      mayDeploy &&
+                      !deploying &&
+                      !servesCopyOf(serving, r) && (
+                        <Button
+                          small
+                          title={`dock rollback ${r.number} -s ${ref.service} -e ${ref.environment}`}
+                          aria-label={`Roll back to r${r.number}`}
+                          onClick={() => setConfirming(r.number)}
+                        >
+                          Roll back
+                        </Button>
+                      )}
                   </td>
                 </tr>
               );
@@ -148,7 +154,7 @@ export function ReleasesTable({
         <RollbackConfirm
           serviceRef={ref}
           target={target}
-          serving={releases.find((r) => r.status === "active")}
+          serving={serving}
           blocked={deploying}
           onDone={() => setConfirming(null)}
         />
@@ -161,8 +167,8 @@ export function ReleasesTable({
  * Asks before rolling back: which service, from which release to which,
  * what changes against the serving release, and whether the service is
  * briefly unreachable. Changes that lose data or features (a volume no
- * longer mounted, variables removed) get a warning line each and a red
- * button. The header, the releases table and a release's page use it.
+ * longer mounted, variables removed) get a warning line each. One style
+ * wherever it opens: the header, the releases table and a release's page.
  */
 export function RollbackConfirm({
   serviceRef: ref,
@@ -187,7 +193,6 @@ export function RollbackConfirm({
     <Confirm
       title={`Roll back ${ref.service} to r${target.number}?`}
       action={`Roll back to r${target.number}`}
-      danger={losses.length > 0}
       cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
       pending={blocked || rollback.isPending}
       error={rollback.error}

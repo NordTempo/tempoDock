@@ -268,4 +268,15 @@ func registerProjects(s *Server, a huma.API) {
 	}) (*out[apitypes.ChangeResult], error) {
 		return reply(s.core.SetVariables(ctx, actor, in.ref(), in.Body))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "switch-references", Method: http.MethodPost, Path: servicePathT + "/switch-references",
+		Summary:     "Switch references to another service",
+		Description: "Rewrites every `${{service.KEY}}` reference to this service in the environment's variables to `${{to.KEY}}` and applies it: the services using it get config releases (ADR 0061, \"use the restored database\"). Switching back is the same call the other way. `to` must be a live service of the environment with every referenced key. Refused while the environment has other staged changes. `dry_run` only lists the services that would change. Scope: deploy.",
+		Tags:        tags,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.SwitchReferencesRequest
+	}) (*out[apitypes.SwitchReferencesResult], error) {
+		return reply(s.core.SwitchReferences(ctx, actor, in.ref(), in.Body))
+	})
 }

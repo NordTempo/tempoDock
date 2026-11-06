@@ -40,7 +40,9 @@ import (
 // of the API, CLI and UI.
 func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog.Logger) (node.Runtime, *caddy.Proxy, *ingest.Ingest, error) {
 	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
-		return fake.New(), nil, nil, nil
+		rt := fake.New()
+		rt.PassHealthAfter(time.Second) // health checks pass, as on Docker
+		return rt, nil, nil, nil
 	}
 	containers, err := docker.New(cfg.Network.Pool)
 	if err != nil {

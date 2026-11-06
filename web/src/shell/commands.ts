@@ -375,9 +375,7 @@ export function useCommands({
     ["Analytics", "/$org/analytics", "dock analytics sites"],
     ["Organization variables", "/$org/settings/variables", "dock org env list"],
     ["Organization settings", "/$org/settings/general", "dock org list"],
-    ...(operator
-      ? []
-      : ([["Audit log", "/$org/audit", "dock audit"]] as const)),
+    ...(operator ? [] : ([["Activity", "/$org/audit", "dock audit"]] as const)),
   ] as const;
   for (const [label, to, cli] of orgPages) {
     add({

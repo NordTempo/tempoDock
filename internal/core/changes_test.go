@@ -285,3 +285,56 @@ func TestFailedDeployRestoresSettings(t *testing.T) {
 		t.Fatalf("staged after the failed source deploy: %+v", p)
 	}
 }
+
+// Staging the image a service already serves applies without a release:
+// after a failed deploy (the image un-stages) and after a rollback (the
+// live setting still names the newer image).
+func TestApplyServedImageStartsNoRelease(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1", Port: 3000, HealthCheckPath: "/healthz"})
+	h.deploy(web, "app:1")
+	h.rt.FailHealthCheck(func(s node.ContainerSpec) error {
+		if strings.HasSuffix(s.Name, "_r2") {
+			return errors.New("GET /healthz: 500")
+		}
+		return nil
+	})
+	use := func(image string) []apitypes.Release {
+		t.Helper()
+		res, err := h.c.UpdateService(h.ctx, testSystem, web, apitypes.UpdateServiceRequest{Image: &image, Apply: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Applied == nil {
+			return nil
+		}
+		for _, r := range res.Applied.Releases {
+			h.wait(web, r.Number)
+		}
+		return res.Applied.Releases
+	}
+	if rels := use("app:2"); len(rels) != 1 {
+		t.Fatalf("apply app:2: %+v", rels)
+	}
+	if rels := use("app:1"); len(rels) != 0 {
+		t.Fatalf("app:1 after the failure released: %+v", rels)
+	}
+
+	if rels := use("app:3"); len(rels) != 1 { // r3, live
+		t.Fatalf("apply app:3: %+v", rels)
+	}
+	rb, err := h.c.Rollback(h.ctx, testSystem, web, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, rb.Number)
+	if rels := use("app:1"); len(rels) != 0 {
+		t.Fatalf("app:1 after the rollback released: %+v", rels)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false); p.Count != 0 {
+		t.Fatalf("still staged: %+v", p)
+	}
+	if svc, _ := h.c.GetService(h.ctx, testSystem, web); svc.Image != "app:1" {
+		t.Fatalf("live image %q", svc.Image)
+	}
+}

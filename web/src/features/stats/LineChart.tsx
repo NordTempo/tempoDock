@@ -105,8 +105,10 @@ export const LineChart = memo(function LineChart({
       : span > rangeDay
         ? `${day(new Date(t).toISOString())} ${clockOf(t)}`
         : clockOf(t);
+  // Axis labels: hours up to two days (a day's quarters would all read
+  // the same date), dates past that.
   const tick = (t: number) =>
-    span > rangeDay ? day(new Date(t).toISOString()) : clockOf(t);
+    span > 2 * rangeDay ? day(new Date(t).toISOString()) : clockOf(t);
 
   const described = stats.last
     ? `${title}: now ${format(stats.last.v)}, average ${format(stats.avg ?? 0)}, peak ${format(stats.peak?.v ?? 0)}`
@@ -163,7 +165,7 @@ export const LineChart = memo(function LineChart({
               className="absolute right-0 -translate-y-1/2"
               style={{ top: `${f * 100}%` }}
             >
-              {format(max * (1 - f))}
+              {format(Number((max * (1 - f)).toPrecision(12)))}
             </span>
           ))}
           {maxNote && <span className="absolute top-2 right-0">{maxNote}</span>}

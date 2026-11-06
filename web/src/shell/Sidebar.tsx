@@ -20,7 +20,12 @@ import {
   useServers,
   useSession,
 } from "../data/queries";
-import type { Environment, Org, ServiceView } from "../data/types";
+import type {
+  Environment,
+  EnvironmentView,
+  Org,
+  ServiceView,
+} from "../data/types";
 import { useOpenAlertsIfAdmin } from "../features/alerts/data";
 import {
   canCreateEnvironment,
@@ -29,7 +34,6 @@ import {
 import { openCreate } from "../features/create/open";
 import { isPending, useRequestsIfAdmin } from "../features/requests/data";
 import { useUpdateNote } from "../features/update/data";
-import type { FileRoutesById } from "../routeTree.gen";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
@@ -39,30 +43,16 @@ import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
 
 /**
- * Which sidebar a page gets: the project tree, organization settings (its
- * tokens and activity, your account), or the platform console (operators:
- * every page under /console).
+ * Which sidebar a page gets: the project tree (every organization page,
+ * its settings included), or the platform console (operators: every page
+ * under /console).
  */
-export type ShellMode = "app" | "settings" | "console";
-
-const settings = new Set<keyof FileRoutesById>([
-  "/_app/$org/settings/members",
-  "/_app/$org/settings/variables",
-  "/_app/$org/settings/general",
-  "/_app/$org/settings/tokens",
-  "/_app/$org/settings/registries",
-  "/_app/$org/settings/sso",
-  "/_app/$org/audit",
-  "/_app/account",
-]);
+export type ShellMode = "app" | "console";
 
 export const useShellMode = (): ShellMode =>
   useMatches({
-    select: (matches) => {
-      if (matches.some((m) => m.routeId === "/_app/console")) return "console";
-      const id = matches.at(-1)?.routeId;
-      return id && settings.has(id) ? "settings" : "app";
-    },
+    select: (matches) =>
+      matches.some((m) => m.routeId === "/_app/console") ? "console" : "app",
   });
 
 /**
@@ -80,13 +70,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
   }
   return (
     <nav
-      aria-label={
-        mode === "console"
-          ? "Platform"
-          : mode === "settings"
-            ? "Settings"
-            : "Organization"
-      }
+      aria-label={mode === "console" ? "Platform" : "Organization"}
       className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky lg:w-[248px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
         // Under the console's sticky amber bar.
         mode === "console"
@@ -106,9 +90,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
       <div
         className={`${open ? "flex" : "hidden"} flex-1 flex-col gap-0.5 lg:flex`}
       >
-        {mode === "app" && <AppNav />}
-        {mode === "settings" && <SettingsNav />}
-        {mode === "console" && <ConsoleNav />}
+        {mode === "app" ? <AppNav /> : <ConsoleNav />}
       </div>
     </nav>
   );
@@ -168,16 +150,6 @@ function AppNav() {
         <NavLink to="/$org/requests" icon="inbox">
           <span className="flex-1">Requests</span>
           <PendingRequestCount />
-        </NavLink>
-      )}
-      {admin && (
-        <NavLink to="/$org/settings/tokens" icon="key">
-          Tokens
-        </NavLink>
-      )}
-      {admin && (
-        <NavLink to="/$org/settings/members" icon="users">
-          Members
         </NavLink>
       )}
       <NavLink to="/$org/settings" icon="sliders">
@@ -381,8 +353,11 @@ function OpenAlertCount() {
 }
 
 /**
- * Projects, each with the services of one environment: the one picked in
- * the environment menu under it, else the one in view, else production.
+ * Projects, each with the services of one environment. The current
+ * project shows the environment in the URL (a service's, or the project
+ * page's #env-<name>); others the one picked in the menu under them, else
+ * production. Picking another environment of the current project moves
+ * the page there too (useSwitchEnvironment).
  * The current project is open; others open on demand. A project whose
  * services haven't loaded (or failed to) still gets its row. "New
  * project" sits under the last one for those who may create one.
@@ -394,6 +369,8 @@ function ProjectTree() {
     useProjectTree().map((o) => [o.project.name, o.environments]),
   );
   const here = useCurrentContext();
+  const urlEnvironment = useUrlEnvironment();
+  const switchEnvironment = useSwitchEnvironment();
   const session = useSession();
   const newProject = canCreateProject(session) && (
     <button
@@ -428,13 +405,9 @@ function ProjectTree() {
         const environments = overviews.get(project.name);
         const current = project.name === here.project;
         const expanded = folds.get(project.name) ?? current;
-        const choice = picked.get(project.name);
+        const choice = (current && urlEnvironment) || picked.get(project.name);
         const env =
           environments?.find((e) => e.environment.name === choice) ||
-          (current &&
-            environments?.find(
-              (e) => e.environment.name === here.environment,
-            )) ||
           environments?.find((e) => e.environment.kind === "production") ||
           environments?.[0];
         return (
@@ -487,11 +460,12 @@ function ProjectTree() {
                       project={project.name}
                       shown={env.environment}
                       environments={environments.map((e) => e.environment)}
-                      onPick={(name) =>
+                      onPick={(name) => {
                         setPicked((prev) =>
                           new Map(prev).set(project.name, name),
-                        )
-                      }
+                        );
+                        if (current) switchEnvironment(name, environments);
+                      }}
                     />
                   </li>
                 )}
@@ -513,6 +487,54 @@ function ProjectTree() {
       {newProject && <li>{newProject}</li>}
     </ul>
   );
+}
+
+/**
+ * The environment the URL is in: a route's $environment, or on the
+ * project page the section its #env-<name> scrolls to.
+ */
+function useUrlEnvironment(): string | undefined {
+  const { environment } = useCurrentContext();
+  const hash = useRouterState({ select: (s) => s.location.hash });
+  return environment ?? (hash.startsWith("env-") ? hash.slice(4) : undefined);
+}
+
+/**
+ * Moves the page to another environment of the current project, on the
+ * equivalent page where there is one: the same service tab (a release
+ * opens the service, release numbers differ), the same shared variables,
+ * else the project page at that environment's section. Project pages
+ * without an environment (settings, compare) stay where they are.
+ */
+function useSwitchEnvironment() {
+  const navigate = useNavigate();
+  const org = useOrg();
+  const { project, service, release } = useCurrentContext();
+  const leaf = useMatches({ select: (m) => m.at(-1)?.routeId });
+  return (environment: string, environments: EnvironmentView[]) => {
+    if (!project) return;
+    const there = environments.find((e) => e.environment.name === environment);
+    const hasService =
+      service && there?.services.some((s) => s.service.name === service);
+    if (hasService && release) {
+      navigate({
+        to: "/$org/$project/$environment/$service",
+        params: { org, project, environment, service },
+      });
+    } else if (hasService || leaf?.includes("/settings/variables/")) {
+      navigate({
+        to: ".",
+        params: (prev) => ({ ...prev, environment }),
+        search: true,
+      });
+    } else if (service || leaf === "/_app/$org/$project/") {
+      navigate({
+        to: "/$org/$project",
+        params: { org, project },
+        hash: `env-${environment}`,
+      });
+    }
+  };
 }
 
 /**
@@ -754,54 +776,6 @@ function ServiceLink({ view }: { view: ServiceView }) {
   );
 }
 
-function SettingsNav() {
-  const admin = useIsAdmin();
-  const slug = useOrg();
-  const org = useOrgs().find((o) => o.slug === slug);
-  const params = { org: slug };
-  return (
-    <>
-      <Link to="/" className="nav-row mb-1 text-mut">
-        <Icon name="chevronLeft" /> Back to projects
-      </Link>
-      <div className={groupLabel}>{org?.name ?? "Organization"}</div>
-      {admin && (
-        <NavLink to="/$org/settings/members" params={params}>
-          Members
-        </NavLink>
-      )}
-      <NavLink to="/$org/settings/variables" params={params}>
-        Variables
-      </NavLink>
-      {admin && (
-        <NavLink to="/$org/settings/tokens" params={params}>
-          Tokens
-        </NavLink>
-      )}
-      {admin && (
-        <NavLink to="/$org/settings/registries" params={params}>
-          Registries
-        </NavLink>
-      )}
-      {admin && (
-        <NavLink to="/$org/settings/sso" params={params}>
-          Single sign-on
-        </NavLink>
-      )}
-      <NavLink to="/$org/audit" params={params}>
-        Audit log
-      </NavLink>
-      <NavLink to="/$org/settings/general" params={params}>
-        General
-      </NavLink>
-      <div className={groupLabel}>You</div>
-      <NavLink to="/account">Account</NavLink>
-      <div className="min-h-6 flex-1" />
-      <Me />
-    </>
-  );
-}
-
 /**
  * The platform console's sidebar: infrastructure (servers, each with its
  * link status), access, and operations. Only admins reach it.
@@ -865,7 +839,7 @@ function ConsoleNav() {
         <OpenAlertCount />
       </NavLink>
       <NavLink to="/console/audit" icon="activity">
-        Audit
+        Audit log
       </NavLink>
       <div className={groupLabel}>System</div>
       <NavLink to="/console/address" icon="globe">

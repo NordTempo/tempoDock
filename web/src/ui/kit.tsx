@@ -14,8 +14,8 @@ import { Icon } from "./icons";
 import { type GlyphChar, type State, toneText } from "./status";
 
 /**
- * A status glyph. ● ○ ◐ are CSS dots (filled, ring, open ring; never
- * animated), everything else text.
+ * A status glyph. ● ○ ◐ are CSS dots (filled, ring, half-filled ring;
+ * never animated), everything else text.
  */
 export function Glyph({ char }: { char: GlyphChar }) {
   if (char === "●") return <span className="dot" aria-hidden />;
@@ -83,7 +83,7 @@ export function LockMark({ lock }: { lock: EnvironmentLock | undefined }) {
       title={
         holds
           ? "locked"
-          : `open until ${clock(lock.open_until ?? "")}, then locked`
+          : `open to tokens until ${clock(lock.open_until ?? "")}, then locked`
       }
     >
       <Icon name="lock" size={11} />
@@ -99,6 +99,11 @@ export const actorKind = (name: string): AuditEvent["actor_kind"] =>
 type ButtonProps = ComponentProps<"button"> & {
   primary?: boolean;
   small?: boolean;
+  /**
+   * Red: only on the button that does something destructive (a Confirm's,
+   * an inline "Remove now"). The button that opens the question (Archive,
+   * Remove, Revoke, Delete) stays neutral, so every trigger looks alike.
+   */
   danger?: boolean;
   /**
    * Why the button is disabled, shown as text beside it while it is (a

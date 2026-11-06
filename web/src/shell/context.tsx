@@ -180,14 +180,16 @@ export function EnvSwitch({
 /**
  * ● per server in view: the environment's server, or every server the
  * project runs on. Anything but online says so in words: "✕ homelab
- * offline".
+ * offline". With `troubleOnly`, only the servers that aren't online.
  */
 export function ServerDots({
   project,
   environment,
+  troubleOnly,
 }: {
   project: string;
   environment?: string;
+  troubleOnly?: boolean;
 }) {
   const servers = useServers();
   const tree = useProjectTree();
@@ -199,7 +201,10 @@ export function ServerDots({
       .filter((e) => !environment || e.environment.name === environment)
       .map((e) => e.environment.server),
   );
-  const shown = servers.filter((s) => names.has(s.name));
+  const shown = servers.filter(
+    (s) => names.has(s.name) && !(troubleOnly && s.status === "online"),
+  );
+  if (shown.length === 0) return null;
   return (
     <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
       {shown.map((s) => {

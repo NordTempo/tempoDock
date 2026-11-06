@@ -474,7 +474,7 @@
     border-bottom: 0;
   }
 
-  /* Status dots: running (filled), stopped (ring), in progress (open ring). */
+  /* Status dots: running (filled), stopped (ring), in progress (half). */
   .dot,
   .ring,
   .pi {
@@ -494,13 +494,11 @@
     border: 1.5px solid currentColor;
   }
 
-  /* Static in-progress glyph: a ring with a gap. Never animated. */
+  /* Static in-progress glyph: a half-filled ring, like ◐. An open ring
+     read as the letter C at this size. Never animated. */
   .pi {
-    width: 8px;
-    height: 8px;
     border: 1.5px solid currentColor;
-    border-right-color: transparent;
-    vertical-align: 0;
+    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
   }
 
   /* A small rounded label: deploy steps, roles, "serving". */

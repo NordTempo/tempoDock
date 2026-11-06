@@ -34,20 +34,6 @@ export const Route = createFileRoute("/_app/console/servers")({
 function Servers() {
   const servers = useServers();
   const [adding, setAdding] = useState(false);
-  const count = (status: Server["status"]) =>
-    servers.filter((s) => s.status === status).length;
-  const context = (
-    [
-      ["online", count("online")],
-      ["offline", count("offline")],
-      ["joining", count("joining")],
-      ["incompatible", count("incompatible")],
-      ["revoked", count("revoked")],
-    ] as const
-  )
-    .filter(([word, n]) => n > 0 || word === "online")
-    .map(([word, n]) => `${n} ${word}`)
-    .join(" · ");
 
   useShortcuts([{ key: "a", label: "add server", run: () => setAdding(true) }]);
 
@@ -55,7 +41,6 @@ function Servers() {
     <>
       <PageBar
         title="Servers"
-        after={<span className="text-xs text-faint">{context}</span>}
         actions={
           <Act
             primary

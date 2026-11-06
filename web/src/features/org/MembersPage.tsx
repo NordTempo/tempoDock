@@ -13,9 +13,7 @@ import {
   Confirm,
   CopyButton,
   ErrorText,
-  Glyph,
   Page,
-  PageBar,
   Panel,
 } from "../../ui/kit";
 import { addressQuery } from "../address/data";
@@ -30,6 +28,8 @@ import {
   useRevokeInvite,
   useSetMemberRole,
 } from "./data";
+import { Avatar, PersonCell, TwoFactorState } from "./people";
+import { OrgSettingsBar } from "./SettingsBar";
 
 type Invite = components["schemas"]["Invite"];
 
@@ -46,7 +46,7 @@ export function MembersPage() {
     // Non-admins can't list members, so the admins can't be named.
     return (
       <>
-        <PageBar parent={org} title="Members" />
+        <OrgSettingsBar />
         <Page>
           <p className="text-mut">
             Ask an admin of {org} to invite people or change roles.
@@ -55,7 +55,7 @@ export function MembersPage() {
       </>
     );
   }
-  return <Members org={org} />;
+  return <Members />;
 }
 
 /** A created invite: whom for, and the code its link carries. */
@@ -105,7 +105,7 @@ function LocalLinkNote({ operator }: { operator: boolean }) {
   );
 }
 
-function Members({ org }: { org: string }) {
+function Members() {
   const members = useSuspenseQuery(orgQueries.members()).data;
   const required = useSuspenseQuery(orgQueries.org()).data.require_two_factor;
   const without = members.filter((u) => !u.two_factor).length;
@@ -117,32 +117,7 @@ function Members({ org }: { org: string }) {
   const invite = useInviteBase(inviting || !!link);
   return (
     <>
-      <PageBar
-        parent={org}
-        title="Members"
-        after={
-          <span className="text-xs text-faint">
-            {plural(members.length, "person", "people")}
-            {invites.length > 0 && ` · ${invites.length} invited`}
-            {without > 0 && (
-              <>
-                {" · "}
-                <Link
-                  to="/$org/settings/general"
-                  params={{ org: slug }}
-                  className="text-warn underline decoration-warn/50 underline-offset-[3px] hover:decoration-warn"
-                  title={
-                    required
-                      ? "They can't act here until they add one"
-                      : "Require two-factor sign-in in General"
-                  }
-                >
-                  {without} without two-factor
-                </Link>
-              </>
-            )}
-          </span>
-        }
+      <OrgSettingsBar
         actions={
           !inviting && (
             <Button primary onClick={() => setInviting(true)}>
@@ -154,6 +129,21 @@ function Members({ org }: { org: string }) {
       <Page gap="gap-5">
         <div className="flex flex-wrap items-start gap-8">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+            {without > 0 && (
+              <p className="text-warn-text">
+                {plural(without, "person", "people")} without two-factor
+                sign-in.{" "}
+                <Link
+                  to="/$org/settings/general"
+                  params={{ org: slug }}
+                  className="text-warn underline"
+                >
+                  {required
+                    ? "They can't act here until they add one"
+                    : "Require it in General"}
+                </Link>
+              </p>
+            )}
             {inviting && invite.local && (
               <LocalLinkNote operator={invite.operator} />
             )}
@@ -186,7 +176,7 @@ function Members({ org }: { org: string }) {
                       Two-factor
                     </th>
                     <th>Access</th>
-                    <th>Since</th>
+                    <th>Added</th>
                     <th />
                   </tr>
                 </thead>
@@ -296,7 +286,8 @@ function InviteForm({
 }) {
   const create = useCreateInvite();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Scope>("deploy");
+  // The least privilege: an admin raises it on purpose.
+  const [role, setRole] = useState<Scope>("read");
   const v = useValidation();
   const typed = email.trim();
   const emailError =
@@ -310,7 +301,7 @@ function InviteForm({
       ref={v.form}
       noValidate
       aria-label="Invite someone"
-      className="flex flex-wrap items-center gap-2.5"
+      className="flex flex-wrap items-end gap-2.5"
       onSubmit={(e) => {
         e.preventDefault();
         if (!v.check(/^[^\s@]+@[^\s@]+$/.test(typed))) return;
@@ -326,19 +317,26 @@ function InviteForm({
         );
       }}
     >
-      <input
-        type="email"
-        aria-label="Email"
-        placeholder="name@company.com"
-        // biome-ignore lint/a11y/noAutofocus: opened by "Invite people"
-        autoFocus
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        aria-invalid={!!emailError}
-        aria-describedby={emailError ? "invite-email-error" : undefined}
-        className={`field min-w-0 flex-[1_1_260px] py-[7px] ${emailError ? "border-fail" : ""}`}
-      />
-      <RoleSelect value={role} onChange={setRole} label="Role" />
+      <label className="flex min-w-0 flex-[1_1_260px] flex-col gap-1">
+        <span className="text-xs text-sec">Email</span>
+        <input
+          type="email"
+          placeholder="name@company.com"
+          // biome-ignore lint/a11y/noAutofocus: opened by "Invite people"
+          autoFocus
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-invalid={!!emailError}
+          aria-describedby={emailError ? "invite-email-error" : undefined}
+          className={`field py-[7px] ${emailError ? "border-fail" : ""}`}
+        />
+      </label>
+      <span className="flex flex-col gap-1">
+        <label htmlFor="invite-role" className="text-xs text-sec">
+          Role
+        </label>
+        <RoleSelect id="invite-role" value={role} onChange={setRole} />
+      </span>
       <Act
         primary
         type="submit"
@@ -362,19 +360,23 @@ function InviteForm({
   );
 }
 
+/** The role picker; `label` names it where no visible label does. */
 function RoleSelect({
+  id,
   value,
   onChange,
   label,
   disabled,
 }: {
+  id?: string;
   value: Scope;
   onChange: (role: Scope) => void;
-  label: string;
+  label?: string;
   disabled?: boolean;
 }) {
   return (
     <select
+      id={id}
       aria-label={label}
       value={value}
       disabled={disabled}
@@ -386,26 +388,6 @@ function RoleSelect({
         <option key={r}>{r}</option>
       ))}
     </select>
-  );
-}
-
-/** A person's initial in a circle; an invite gets an empty dashed one. */
-function Avatar({ name }: { name?: string }) {
-  if (!name) {
-    return (
-      <span
-        aria-hidden
-        className="size-6 flex-none rounded-full border border-dashed border-dash"
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg"
-    >
-      {name.slice(0, 1).toUpperCase()}
-    </span>
   );
 }
 
@@ -436,16 +418,7 @@ function MemberRow({
   return (
     <tr className="*:align-middle">
       <td className="py-2">
-        <span className="flex items-center gap-2.5">
-          <Avatar name={name || email} />
-          <span>
-            {email}
-            {you && <span className="text-faint"> (you)</span>}
-            {name && name !== email && (
-              <span className="block text-2xs text-faint">{name}</span>
-            )}
-          </span>
-        </span>
+        <PersonCell name={name} email={email} you={you} />
       </td>
       <td className="py-1.5">
         {you ? (
@@ -474,18 +447,11 @@ function MemberRow({
         )}
       </td>
       <td className="py-2">
-        {member.two_factor ? (
-          <span className="text-ok">
-            <Glyph char="●" /> on
-          </span>
-        ) : (
-          <span
-            className="text-warn"
-            title={required ? "Can't act here until they add one" : undefined}
-          >
-            off
-          </span>
-        )}
+        <TwoFactorState
+          on={member.two_factor}
+          required={required}
+          note={required ? "Can't act here until they add one" : undefined}
+        />
       </td>
       <td
         className={`min-w-[120px] py-2 whitespace-normal ${access ? "text-mut" : "text-faint"}`}

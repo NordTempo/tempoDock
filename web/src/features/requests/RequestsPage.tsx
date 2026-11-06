@@ -58,22 +58,12 @@ function sentence(text: string) {
  */
 export function RequestsPage({ selected }: { selected?: number }) {
   const requests = useSuspenseQuery(requestQueries.list()).data;
-  const pending = requests.filter((r) => isPending(r)).length;
   // Without a selection, the oldest pending one is the next to decide.
   const id =
     selected ?? (requests.findLast((r) => isPending(r)) ?? requests[0])?.id;
   return (
     <>
-      <PageBar
-        title="Requests"
-        after={
-          <span className="text-xs text-faint">
-            {pending > 0
-              ? `${plural(pending, "request")} waiting`
-              : plural(requests.length, "request")}
-          </span>
-        }
-      />
+      <PageBar title="Requests" />
       <Page gap="gap-5">
         {requests.length === 0 ? (
           <p className="text-mut">

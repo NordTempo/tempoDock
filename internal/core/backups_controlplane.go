@@ -109,7 +109,8 @@ func (c *Core) runControlPlaneBackup(ctx context.Context, row store.ControlPlane
 		c.signalAlert(ctx, alertSignal{
 			Key: controlPlaneAlertKey, Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityWarning,
 			Title:   "Control plane backup failed",
-			Message: fmt.Sprintf("The control plane's backup failed: %s. Without one, losing this server loses the platform's state; `dock admin backup` makes one by hand.", err),
+			Message: fmt.Sprintf("The control plane's backup failed: %s. Without one, losing this server loses the platform's state; run one by hand once the cause is fixed.", err),
+			Command: "dock backup run --control-plane",
 		})
 	} else {
 		c.signalAlert(ctx, alertSignal{Key: controlPlaneAlertKey, Resolve: true})

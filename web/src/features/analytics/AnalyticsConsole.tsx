@@ -2,8 +2,9 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServers } from "../../data/queries";
+import { CliHint } from "../../ui/CliHint";
 import { ErrorBlock } from "../../ui/ErrorBlock";
-import { bytes, plural } from "../../ui/format";
+import { bytes } from "../../ui/format";
 import {
   Act,
   Button,
@@ -15,7 +16,7 @@ import {
   PageBar,
   SectionHead,
 } from "../../ui/kit";
-import { notify } from "../../ui/notice";
+import { Saved } from "../create/form";
 import {
   analyticsDefaultsQuery,
   analyticsStatusQuery,
@@ -23,7 +24,7 @@ import {
   useSetDefaults,
 } from "./data";
 import { SettingInput } from "./SettingInput";
-import { fields, flags, text, valid, value } from "./settings";
+import { type Field, fields, flags, text, valid, value } from "./settings";
 
 // The console's Analytics page (ADR 0037), for operators: the analytics
 // store's state, the server it runs on, and every site's default settings.
@@ -75,7 +76,18 @@ export function AnalyticsConsole() {
           >
             {status.events.toLocaleString("en-US")}
           </Fact>
-          <Fact label="Locations">{status.geoip || "not downloaded"}</Fact>
+          <Fact
+            label="Visitor locations"
+            note={
+              status.geoip
+                ? "DB-IP's database, updated monthly"
+                : status.enabled
+                  ? "countries read unknown until the store downloads DB-IP's database; it tries daily"
+                  : "downloaded when the store starts"
+            }
+          >
+            {status.geoip || "none yet"}
+          </Fact>
         </Facts>
         {status.moving_to && (
           <p>
@@ -110,9 +122,9 @@ export function AnalyticsConsole() {
 }
 
 /**
- * Moves the store to another server, after saying what that means: its
- * data goes along, unless its server is offline and the new store starts
- * empty.
+ * Where the store runs, as a select that acts on change: picking another
+ * server asks first (its data moves along, unless its server is offline
+ * and the new store starts empty), then says Saved.
  */
 function ServerPicker({
   current,
@@ -125,35 +137,38 @@ function ServerPicker({
 }) {
   const servers = useServers();
   const move = useSetAnalyticsServer();
-  const [server, setServer] = useState(current);
-  const [confirming, setConfirming] = useState(false);
-  const cli = `dock analytics server ${server}${online ? "" : " --start-empty"}`;
+  // The server picked and waiting for the confirm.
+  const [server, setServer] = useState<string>();
+  const cli = `dock analytics server ${server ?? "<server>"}${online ? "" : " --start-empty"}`;
   return (
     <section aria-labelledby="server" className="flex flex-col gap-2">
       <SectionHead id="server">Analytics server</SectionHead>
-      <span className="flex items-center gap-2.5">
-        <select
-          aria-label="Analytics server"
-          value={server}
-          onChange={(e) => setServer(e.target.value)}
-        >
-          {servers.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <Act
-          cli={cli}
-          disabled={server === current || moving || move.isPending}
-          reason={server === current ? "pick another server" : undefined}
-          onClick={() => setConfirming(true)}
-        >
-          Move the store
-        </Act>
+      <span className="flex flex-wrap items-center gap-2.5">
+        <CliHint cli={cli} className="act">
+          <select
+            aria-label="Analytics server"
+            value={server ?? current}
+            disabled={moving || move.isPending}
+            onChange={(e) => {
+              move.reset();
+              if (e.target.value !== current) setServer(e.target.value);
+            }}
+          >
+            {servers.map((s) => (
+              <option key={s.name} value={s.name}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </CliHint>
+        <Saved ok={move.isSuccess} />
+        <span className="text-xs text-mut">
+          {moving
+            ? "A move is running; pick again when it's done."
+            : "Pick another server to move the store there, with its data."}
+        </span>
       </span>
-      <span className="text-xs text-mut">Its data moves with it.</span>
-      {confirming && (
+      {server && (
         <Confirm
           action={`Move to ${server}`}
           cli={cli}
@@ -162,10 +177,13 @@ function ServerPicker({
           onConfirm={() =>
             move.mutate(
               { server, start_empty: !online },
-              { onSuccess: () => setConfirming(false) },
+              { onSuccess: () => setServer(undefined) },
             )
           }
-          onCancel={() => setConfirming(false)}
+          onCancel={() => {
+            move.reset();
+            setServer(undefined);
+          }}
         >
           {online
             ? `Its data is copied to ${server} and checked, then the store and its data are removed from ${current}. Events wait on each server meanwhile.`
@@ -176,88 +194,93 @@ function ServerPicker({
   );
 }
 
-/** Every site's defaults: what a site uses where it sets nothing. */
+/**
+ * Every site's defaults: what a site uses where it sets nothing. Each
+ * setting saves on its own, in the app's save model.
+ */
 function Defaults() {
   const { data: defaults } = useSuspenseQuery(analyticsDefaultsQuery());
-  const set = useSetDefaults();
-  // What the form started from: a refetch (another operator's change)
-  // doesn't make untouched fields look changed, or save them back.
-  const [base, setBase] = useState(() =>
-    Object.fromEntries(fields.map((f) => [f.key, text(defaults, f.key)])),
-  );
-  const [draft, setDraft] = useState(base);
-  const changed = fields.filter((f) => draft[f.key] !== base[f.key]);
-  const ok = fields.every((f) => valid(f.key, draft[f.key] ?? ""));
   return (
     <section aria-labelledby="defaults" className="flex flex-col gap-2">
       <SectionHead id="defaults">Site defaults</SectionHead>
-      <form
-        className="flex max-w-xl flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          set.mutate(
-            {
-              settings: Object.assign(
-                {},
-                ...changed.map((f) => value(f.key, draft[f.key] ?? "")),
-              ),
-            },
-            {
-              onSuccess: () => {
-                setBase(draft);
-                notify("Site defaults saved");
-              },
-            },
-          );
-        }}
-      >
+      <div className="flex max-w-xl flex-col gap-4">
         {fields.map((field) => (
-          <div key={field.key} className="flex flex-col gap-1">
-            <label
-              htmlFor={`default-${field.key}`}
-              className="text-sm font-semibold"
-            >
-              {field.label}
-            </label>
-            <SettingInput
-              id={`default-${field.key}`}
-              field={field}
-              value={draft[field.key] ?? ""}
-              onChange={(t) => setDraft((d) => ({ ...d, [field.key]: t }))}
-            />
-            <span className="text-xs text-faint">{field.help}</span>
-          </div>
+          <DefaultField
+            key={field.key}
+            field={field}
+            saved={text(defaults, field.key)}
+          />
         ))}
-        {/* Nothing saves on its own: a changed form gets a bar that stays
-            in view above the command line until saved or discarded. */}
-        {changed.length > 0 && (
-          <div className="sticky bottom-[60px] z-10 flex flex-wrap items-center gap-2.5 border-t border-line bg-page py-3">
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One default. A switch saves on change; text and numbers get Save and
+ * Cancel while changed (Enter saves a number, Esc cancels). "Saved" after.
+ */
+function DefaultField({ field, saved }: { field: Field; saved: string }) {
+  const set = useSetDefaults();
+  const [draft, setDraft] = useState(saved);
+  // Another operator's change shows unless this field is being edited.
+  const [was, setWas] = useState(saved);
+  if (was !== saved) {
+    setWas(saved);
+    if (draft === was) setDraft(saved);
+  }
+  const changed = draft !== saved;
+  const ok = valid(field.key, draft);
+  const cli = `dock analytics defaults set ${flags(field.key, draft).join(" ")}`;
+  const save = (t: string) => set.mutate({ settings: value(field.key, t) });
+  const cancel = () => {
+    set.reset();
+    setDraft(saved);
+  };
+  const id = `default-${field.key}`;
+  return (
+    <form
+      className="flex flex-col gap-1"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed && ok) save(draft);
+      }}
+      onKeyDown={(e) => e.key === "Escape" && changed && cancel()}
+    >
+      <label htmlFor={id} className="text-sm font-semibold">
+        {field.label}
+      </label>
+      <span className="flex flex-wrap items-center gap-2">
+        <SettingInput
+          id={id}
+          field={field}
+          value={draft}
+          onChange={(t) => {
+            set.reset();
+            setDraft(t);
+            if (field.kind === "switch") save(t);
+          }}
+        />
+        {changed && field.kind !== "switch" && (
+          <>
             <Act
+              small
               primary
               type="submit"
-              cli={`dock analytics defaults set${changed
-                .flatMap((f) => flags(f.key, draft[f.key] ?? ""))
-                .map((f) => ` ${f}`)
-                .join("")}`}
+              cli={cli}
               disabled={!ok || set.isPending}
             >
-              {set.isPending ? "Saving…" : "Save defaults"}
+              Save
             </Act>
-            <Button
-              onClick={() => {
-                set.reset();
-                setDraft(base);
-              }}
-            >
-              Discard
+            <Button small onClick={cancel}>
+              Cancel
             </Button>
-            <span className="text-xs text-mut">
-              {plural(changed.length, "change")}
-            </span>
-            <ErrorText error={set.error} />
-          </div>
+          </>
         )}
-      </form>
-    </section>
+        <Saved ok={set.isSuccess && !changed} />
+        <ErrorText error={set.error} />
+      </span>
+      <span className="text-xs text-mut">{field.help}</span>
+    </form>
   );
 }

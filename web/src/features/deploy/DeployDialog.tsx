@@ -352,6 +352,7 @@ function FolderDeploy({
         }}
       />
       <Progress phase={phase} />
+      {!working && <Cutover serviceRef={ref} />}
       <div className="flex flex-wrap items-start gap-2">
         {working ? (
           <Button
@@ -449,9 +450,11 @@ function ImageDeploy({
   onClose: () => void;
 }) {
   const client = useQueryClient();
-  const { service } = useService(ref);
+  const { service, latest_release } = useService(ref);
   const releases = useReleases(ref);
   const setting = imageSetting(service, releases);
+  const serving = setting.serving;
+  const next = (latest_release?.number ?? 0) + 1;
   const current = service.image;
   const servingImage = setting.serving?.image_ref ?? "";
   const [image, setImage] = useState(
@@ -526,17 +529,27 @@ function ImageDeploy({
           {failedBefore.error ? `: ${failedBefore.error}` : "."}
         </p>
       )}
-      {wanted && wanted !== current && (
-        <p className="text-xs text-mut">
-          {current ? (
-            <>
-              Replaces <span className="font-mono">{current}</span> as the
-              service's image.
-            </>
-          ) : (
-            "Becomes the service's image."
-          )}
-        </p>
+      {/* What it deploys, what serves now, and whether that means downtime,
+          in the words the rollback confirm uses. */}
+      {wanted && (
+        <div className="flex flex-col gap-1 text-xs text-sec [&_b]:font-semibold [&_b]:text-fg">
+          <p>
+            Deploys <span className="font-mono">{shortImage(wanted)}</span> as r
+            {next}
+            {serving && (
+              <>
+                , in place of r{serving.number} (
+                <span className="font-mono">{shortImage(setting.now)}</span>)
+              </>
+            )}
+            .
+            {wanted !== current &&
+              (current
+                ? ` Later deploys use it too, not ${shortImage(current)}.`
+                : " Later deploys use it too.")}
+          </p>
+          <Cutover serviceRef={ref} />
+        </div>
       )}
       <div className="flex flex-wrap items-start gap-2">
         <span className="min-w-0 flex-1 self-center text-xs">
@@ -547,17 +560,45 @@ function ImageDeploy({
           <ErrorText error={deploy.error} />
         </span>
         <Button onClick={onClose}>Cancel</Button>
-        <Act
+        <Button
           primary={!failedBefore}
           type="submit"
-          cli={`dock deploy --image ${wanted || "<image>"} -s ${ref.service} -e ${ref.environment}`}
           disabled={!wanted || !!busy || deploy.isPending}
           title={busy}
         >
           {failedBefore ? "Deploy failed image again" : "Deploy image"}
-        </Act>
+        </Button>
       </div>
+      {/* The CLI line under a rule, as the other dialogs end. */}
+      <code className="border-t border-line pt-2.5 font-mono text-2xs break-all text-faint">
+        dock deploy --image {wanted || "<image>"} -s {ref.service} -e{" "}
+        {ref.environment}
+      </code>
     </form>
+  );
+}
+
+/**
+ * What the new release does to the serving one, in the words the rollback
+ * confirm uses: a service with a volume is down while the old container
+ * stops; others keep serving until the new release passes its check.
+ */
+function Cutover({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const { service } = useService(ref);
+  const serving = service.active_release;
+  if (!serving || service.stopped_at) return null;
+  return service.stateful ? (
+    <p className="text-xs [&_b]:font-semibold [&_b]:text-fg">
+      <b>
+        {ref.service} is down for a few seconds while r{serving} stops and the
+        new release starts: a volume allows one writer.
+      </b>
+    </p>
+  ) : (
+    <p className="text-xs text-sec">
+      r{serving} keeps serving until the new release passes its health check, so{" "}
+      {ref.service} stays reachable.
+    </p>
   );
 }
 
@@ -599,6 +640,7 @@ function GitDeploy({
       }}
     >
       <p className="font-mono text-xs">{targetText(conn)}</p>
+      <Cutover serviceRef={ref} />
       <label className="flex flex-col gap-1">
         <span className="text-2xs text-faint">Commit, branch or tag</span>
         <input

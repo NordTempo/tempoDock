@@ -30,9 +30,10 @@ func envLock(e store.Environment) *apitypes.EnvironmentLock {
 }
 
 // lockedOut reports whether e's lock stops the actor: it is a token, the
-// lock holds, and no approved request lets this call through.
+// lock holds, and no approved request lets this call through. A
+// check-only replay (CheckRequest) is always stopped, so it never runs.
 func (a Actor) lockedOut(e store.Environment) bool {
-	return a.askFirst || (a.Kind == "token" && a.granted != e.ID && lockHolds(e, now()))
+	return a.checkOnly || a.askFirst || (a.Kind == "token" && a.granted != e.ID && lockHolds(e, now()))
 }
 
 // checkLock is checkEnv's lock alone, for the few changes whose scope
@@ -54,8 +55,9 @@ type LockedError struct {
 	ProjectID int64
 	EnvID     int64
 	// Project and Environment name the locked environment; Action is what
-	// was refused, as checkEnv was told ("setting variables").
-	Project, Environment, Action string
+	// was refused, as checkEnv was told ("setting variables"). Service is
+	// the service the call changes, when it loaded one (serviceFor).
+	Project, Environment, Action, Service string
 	// Request is the access request filed for the call, 0 before one is.
 	Request int64
 	// askedFirst: the environment isn't locked; the caller asked first.

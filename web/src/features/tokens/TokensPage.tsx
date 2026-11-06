@@ -7,20 +7,18 @@ import {
   useTokens,
 } from "../../data/queries";
 import type { Scope } from "../../data/types";
-import { plural } from "../../ui/format";
 import {
   Button,
   Check,
   CopyButton,
   ErrorText,
   Page,
-  PageBar,
   SectionHead,
 } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import { TokenDataFields, tokenDataFlags } from "../data/TokenData";
 import type { DataTokenAccess } from "../data/types";
-import { useOrgName } from "../org/data";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import { TokenTable, tokenCap } from "./TokenTable";
 
 /**
@@ -29,7 +27,6 @@ import { TokenTable, tokenCap } from "./TokenTable";
  */
 export function TokensPage() {
   const tokens = useTokens();
-  const live = tokens.filter((t) => !t.revoked_at);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<{
     name: string;
@@ -39,14 +36,7 @@ export function TokensPage() {
 
   return (
     <>
-      <PageBar
-        parent={useOrgName()}
-        title="Tokens"
-        after={
-          <span className="text-xs text-faint">
-            {plural(live.length, "token")}
-          </span>
-        }
+      <OrgSettingsBar
         actions={
           !creating && (
             <Button primary onClick={() => setCreating(true)}>
@@ -106,13 +96,18 @@ export function TokensPage() {
         </section>
 
         {!created && (
-          <section
-            aria-labelledby="mcp"
-            className="flex max-w-[760px] flex-col gap-2.5"
-          >
-            <SectionHead id="mcp">Connect an agent</SectionHead>
-            <McpConfig />
-          </section>
+          // Folded: the tokens are the page; this is a how-to.
+          <details className="group max-w-[760px]">
+            <summary className="flex w-fit cursor-pointer items-center gap-1.5 font-semibold">
+              <span aria-hidden className="text-mut group-open:rotate-90">
+                ›
+              </span>
+              Connect an agent over MCP
+            </summary>
+            <div className="pt-2.5">
+              <McpConfig />
+            </div>
+          </details>
         )}
       </Page>
     </>
@@ -148,16 +143,13 @@ function McpConfig({ secret }: { secret?: string }) {
     null,
     2,
   );
+  // Wrapped, not scrolled: a command clipped at the edge reads as whole.
   const block = (label: string, text: string) => (
     <div className="flex flex-col gap-1">
       <span className="flex items-center gap-2 text-xs text-mut">
         {label} <CopyButton text={text} />
       </span>
-      <pre
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: it scrolls sideways, so the keyboard must reach it (WCAG scrollable region)
-        tabIndex={0}
-        className="overflow-x-auto rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs"
-      >
+      <pre className="rounded-ctl border border-line bg-side px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
         {text}
       </pre>
     </div>
@@ -187,7 +179,15 @@ function McpConfig({ secret }: { secret?: string }) {
         </span>
       </div>
       {block("Claude Code, writes .mcp.json", claude)}
-      {block(".mcp.json, or another client's mcp.json", json)}
+      <details className="group">
+        <summary className="w-fit cursor-pointer text-xs text-mut hover:text-fg">
+          <span aria-hidden className="inline-block group-open:rotate-90">
+            ›
+          </span>{" "}
+          Another MCP client: the mcp.json entry
+        </summary>
+        <div className="pt-1.5">{block(".mcp.json", json)}</div>
+      </details>
       {!(secret && inline) && (
         <p className="text-xs text-mut">
           Set <span className="font-mono">DOCK_TOKEN</span> to a scoped token

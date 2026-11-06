@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { plural, since } from "../../ui/format";
+import { since } from "../../ui/format";
 import {
   Act,
   Button,
@@ -32,11 +32,6 @@ export function StoragePage() {
     <>
       <PageBar
         title="Storage"
-        after={
-          <span className="text-xs text-faint">
-            {plural(storage.length, "connection")}
-          </span>
-        }
         actions={
           !adding &&
           storage.length > 0 && (

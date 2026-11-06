@@ -39,12 +39,19 @@ func registerSnapshots(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "restore-snapshot", Method: http.MethodPost, Path: servicePathT + "/snapshots/{snapshot}/restore",
 		Summary: "Restore a snapshot", Tags: tags, DefaultStatus: http.StatusAccepted,
-		Description: "A template database restores into a new service by default (`as`, default <service>-snapshot-<id>), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.",
+		Description: "A template database restores into a new service by default (`as`, default <service>-restored), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		SnapshotPath
 		Body apitypes.RestoreSnapshotRequest
 	}) (*out[apitypes.SnapshotRestoreResult], error) {
 		return reply(s.core.RestoreSnapshot(ctx, actor, in.ref(), in.Snapshot, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-snapshot-log", Method: http.MethodGet, Path: servicePathT + "/snapshots/{snapshot}/log",
+		Summary: "Get a snapshot's log", Tags: tags,
+		Description: "What a failed snapshot's job printed: its last 16 KB. Empty for a snapshot that succeeded. Scope: deploy, like a backup's log.",
+	}, func(ctx context.Context, actor core.Actor, in *SnapshotPath) (*out[apitypes.BackupLog], error) {
+		return reply(s.core.SnapshotLog(ctx, actor, in.ref(), in.Snapshot))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "delete-snapshot", Method: http.MethodDelete, Path: servicePathT + "/snapshots/{snapshot}",

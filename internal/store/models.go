@@ -52,6 +52,8 @@ type Alert struct {
 	ResolvedAt  *time.Time
 	ProjectID   *int64
 	ServiceID   *int64
+	Command     string
+	Target      string
 }
 
 type AlertChannel struct {
@@ -953,6 +955,7 @@ type VolumeSnapshot struct {
 	CreatedBy  string
 	StartedAt  time.Time
 	FinishedAt *time.Time
+	Log        string
 }
 
 type VolumeSnapshotRestore struct {

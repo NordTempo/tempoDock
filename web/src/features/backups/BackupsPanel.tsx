@@ -22,6 +22,7 @@ import {
   StateText,
 } from "../../ui/kit";
 import type { State } from "../../ui/status";
+import { Saved } from "../create/form";
 import { backupHow, exportOf, hourLabel } from "./backups";
 import { backupLogQuery } from "./data";
 
@@ -108,6 +109,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         canRestore={canDeploy && !running}
         canDeploy={canDeploy}
         onRestored={setRestored}
+        onRetry={why || run.isPending ? undefined : () => run.mutate(ref)}
       />
       {backups.restorable && backups.runs.length > 0 && (
         <p className="text-mut">
@@ -226,6 +228,7 @@ function Schedule({
           )}
         </>
       )}
+      <Saved ok={update.isSuccess} />
       <ErrorText error={update.error} />
     </span>
   );
@@ -244,12 +247,15 @@ function Runs({
   canRestore,
   canDeploy,
   onRestored,
+  onRetry,
 }: {
   serviceRef: ServiceRef;
   backups: ServiceBackups;
   canRestore: boolean;
   canDeploy: boolean;
   onRestored: (service: string) => void;
+  /** Runs a backup now; unset while one can't start. */
+  onRetry?: () => void;
 }) {
   const [restoring, setRestoring] = useState<number | null>(null);
   const [log, setLog] = useState<BackupRun | null>(null);
@@ -271,7 +277,9 @@ function Runs({
             <th>Snapshot</th>
             <th>Repository</th>
             <th>Detail</th>
-            <th />
+            <th>
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -281,6 +289,13 @@ function Runs({
               serviceRef={ref}
               run={r}
               onLog={canDeploy ? () => setLog(r) : undefined}
+              onRetry={
+                r === runs[0] &&
+                r.status === "failed" &&
+                r.operation === "backup"
+                  ? onRetry
+                  : undefined
+              }
               restorable={
                 backups.restorable &&
                 r.operation === "backup" &&
@@ -355,6 +370,7 @@ function RunRow({
   serviceRef: ref,
   run: r,
   onLog,
+  onRetry,
   restorable,
   canRestore,
   open,
@@ -365,6 +381,8 @@ function RunRow({
   run: BackupRun;
   /** Opens the run's log; unset without deploy access. */
   onLog?: () => void;
+  /** Runs the backup again: only on the newest run, when it failed. */
+  onRetry?: () => void;
   restorable: boolean;
   canRestore: boolean;
   open: boolean;
@@ -432,11 +450,20 @@ function RunRow({
           !(restorable && r.not_restorable) &&
           none}
       </td>
-      <td>
+      <td className="whitespace-nowrap">
         <span className="flex items-center justify-end gap-1.5">
           {onLog && r.status !== "running" && (
             <Button small onClick={onLog}>
               View log
+            </Button>
+          )}
+          {onRetry && (
+            <Button
+              small
+              title={`dock backup run -s ${ref.service} -e ${ref.environment}`}
+              onClick={onRetry}
+            >
+              Retry
             </Button>
           )}
           {restorable && (

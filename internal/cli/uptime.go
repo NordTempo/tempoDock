@@ -16,7 +16,7 @@ import (
 // newUptimeCmd is `dock uptime`: a service's uptime checks (ADR 0055).
 func newUptimeCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "uptime", Short: "Check a service's URLs from another server"})
-	cmd.AddCommand(newUptimeListCmd(g), newUptimeAddCmd(g), newUptimeDomainsCmd(g), newUptimeRemoveCmd(g))
+	cmd.AddCommand(newUptimeListCmd(g), newUptimeAddCmd(g), newUptimeDomainsCmd(g), newUptimeUpdateCmd(g), newUptimeRemoveCmd(g))
 	return cmd
 }
 
@@ -170,6 +170,59 @@ and removes them with the domain; this catches up domains from before.`,
 		},
 	}
 	f.add(cmd, needService)
+	return cmd
+}
+
+// newUptimeUpdateCmd is `dock uptime update`: a check's interval or
+// expected status, changed in place with its history kept.
+func newUptimeUpdateCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var status string
+	var interval time.Duration
+	cmd := &cobra.Command{
+		Use:   "update <id> [--interval 5m] [--status 2xx]",
+		Short: "Change an uptime check's interval or expected status",
+		Long: `Change a check in place: its history stays and the new interval applies at
+once. Project admins only.`,
+		Example: `  dock uptime update 3 --interval 5m
+  dock uptime update 3 --status 3xx -s web`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(strings.TrimSpace(args[0]), 10, 64)
+			if err != nil {
+				return &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("%q is not a check ID", args[0]), Hint: "`dock uptime list` shows the IDs."}
+			}
+			var req apitypes.UpdateUptimeCheckRequest
+			if cmd.Flags().Changed("interval") {
+				if interval%time.Second != 0 {
+					return &output.Error{Exit: output.ExitUsage, Message: "--interval is whole seconds", Hint: "For example --interval 90s."}
+				}
+				secs := int(interval / time.Second)
+				req.IntervalSeconds = &secs
+			}
+			if cmd.Flags().Changed("status") {
+				req.ExpectStatus = &status
+			}
+			if req.IntervalSeconds == nil && req.ExpectStatus == nil {
+				return &output.Error{Exit: output.ExitUsage, Message: "nothing to change", Hint: "Give --interval, --status or both."}
+			}
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			c, err := send[apitypes.UptimeCheck](cmd.Context(), s, http.MethodPatch, t.servicePath()+"/uptime-checks/"+strconv.FormatInt(id, 10), req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(c, func() error {
+				g.io.Successf("Uptime check %d: %s every %ds, expecting %s", c.ID, c.URL, c.IntervalSeconds, c.ExpectStatus)
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	cmd.Flags().StringVar(&status, "status", "", "the status that means up: a code, 2xx or 3xx")
+	cmd.Flags().DurationVar(&interval, "interval", 0, "how often to probe, 30s to 1h")
 	return cmd
 }
 

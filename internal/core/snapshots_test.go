@@ -190,6 +190,10 @@ func TestSnapshotRefusedWithoutRoom(t *testing.T) {
 	if s.Status != apitypes.SnapshotFailed || !strings.Contains(s.Error, "not enough disk") || !strings.Contains(s.Error, "4.0 MB") {
 		t.Fatalf("snapshot = %+v", s)
 	}
+	// A failed snapshot keeps its job's output for View log.
+	if log, err := h.c.SnapshotLog(h.ctx, testSystem, app, s.ID); err != nil || !strings.Contains(log.Output, "no-room 4096") {
+		t.Fatalf("log = %+v, %v", log, err)
+	}
 }
 
 func TestSnapshotRetentionKeepsTheNewest(t *testing.T) {
@@ -260,7 +264,7 @@ func TestSnapshotRestoreIntoNewService(t *testing.T) {
 	s := h.snapshot(db)
 
 	res := h.restoreSnapshot(db, s.ID, apitypes.RestoreSnapshotRequest{})
-	name := "db-snapshot-" + strconv.FormatInt(s.ID, 10)
+	name := "db-restored"
 	if res.Service == nil || res.Service.Name != name || res.Restore.InPlace {
 		t.Fatalf("result = %+v", res)
 	}

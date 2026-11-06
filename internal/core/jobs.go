@@ -167,7 +167,9 @@ func (c *Core) jobEnded(ss svcScope, job store.ServiceJob, row store.ServiceRun)
 		c.raiseAlert(ctx, alertSignal{
 			Key: key, serviceID: ss.svc.ID, projectID: ss.project.ID, Kind: apitypes.AlertJobFailed, Severity: apitypes.SeverityWarning,
 			Title:   fmt.Sprintf("Job %s of %s failed", job.Name, svc),
-			Message: fmt.Sprintf("Run %d (`%s`) %s. `dock job history %s -s %s` shows its output.", row.ID, cleanLine(job.Command, 120), how, job.Name, ss.svc.Name),
+			Message: fmt.Sprintf("Run %d (`%s`) %s.", row.ID, cleanLine(job.Command, 120), how),
+			Command: fmt.Sprintf("dock job history %s %s", job.Name, svcFlags(ss.project.Name, ss.env.Name, ss.svc.Name)),
+			Target:  &apitypes.AlertTarget{Job: job.Name, Run: row.ID},
 			Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		}, now())
 	}

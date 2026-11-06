@@ -92,7 +92,7 @@ func (h *handler) addSnapshotTools(s *mcpkit.Server[core.Actor]) {
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Snapshot int64  `json:"snapshot" doc:"The snapshot's id (list_snapshots shows them)."`
-			As       string `json:"as,omitempty" doc:"Name of the new service. Default: <service>-snapshot-<id>."`
+			As       string `json:"as,omitempty" doc:"Name of the new service. Default: <service>-restored."`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)

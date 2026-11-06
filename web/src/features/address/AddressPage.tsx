@@ -12,6 +12,7 @@ import {
   StateText,
 } from "../../ui/kit";
 import { domainState } from "../../ui/status";
+import { Saved } from "../create/form";
 import {
   type Address,
   useAddress,
@@ -105,8 +106,9 @@ export function AddressPage() {
 }
 
 /**
- * The hostname, saved with Save (shown while it differs from the saved
- * one); Remove asks first. An empty Save says what to type.
+ * The hostname, in the app's save model for text: Save and Cancel while it
+ * differs from the saved one, Enter saves, Esc cancels, "Saved" after.
+ * Remove asks first. An empty Save says what to type.
  */
 function HostnameForm({ address }: { address: Address }) {
   const set = useSetAddress();
@@ -124,6 +126,12 @@ function HostnameForm({ address }: { address: Address }) {
         if (!hostname) return setEmpty(true);
         set.mutate(hostname);
       }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !changed) return;
+        setDraft(address.hostname);
+        setEmpty(false);
+        set.reset();
+      }}
     >
       <span className="flex flex-wrap items-center gap-2">
         <input
@@ -132,6 +140,7 @@ function HostnameForm({ address }: { address: Address }) {
           value={draft}
           onChange={(e) => {
             setEmpty(false);
+            set.reset();
             setDraft(e.target.value);
           }}
           spellCheck={false}
@@ -148,7 +157,19 @@ function HostnameForm({ address }: { address: Address }) {
             Save
           </Act>
         )}
-        {address.hostname && (
+        {changed && address.hostname && (
+          <Button
+            small
+            onClick={() => {
+              setDraft(address.hostname);
+              set.reset();
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+        <Saved ok={set.isSuccess && !changed} />
+        {address.hostname && !changed && (
           <Button small onClick={() => setAsking(true)}>
             Remove
           </Button>

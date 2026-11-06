@@ -48,6 +48,15 @@ func registerRequests(s *Server, a huma.API) {
 		}
 		return reply(s.core.GetRequest(ctx, actor, in.ID))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "check-request", Method: http.MethodPost, Path: base + "/{id}/check",
+		Summary:     "Check an access request",
+		Description: "Whether approving would run now, against live state, without running it: the call goes through its own checks as the token that asked and stops at the environment's lock. `reason` says why it would fail, `service` names the service where that is fixed. Admins in a UI session only.", Tags: tags,
+		// Checking is never itself a request.
+		Metadata: map[string]any{"replay": false},
+	}, func(ctx context.Context, actor core.Actor, in *RequestPath) (*out[apitypes.AccessRequestCheck], error) {
+		return reply(s.core.CheckRequest(ctx, actor, in.ID))
+	})
 	for _, approve := range []bool{true, false} {
 		id, summary, desc := "reject-request", "Reject an access request", "Nothing runs. Admins in a UI session only."
 		if approve {

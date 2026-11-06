@@ -175,6 +175,24 @@
         ],
         "type": "object"
       },
+      "AccessRequestCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
       "AddDomainRequest": {
         "additionalProperties": false,
         "properties": {
@@ -461,6 +479,12 @@
       "Alert": {
         "additionalProperties": false,
         "properties": {
+          "command": {
+            "examples": [
+              "dock release show 8 -p shop -e production -s web"
+            ],
+            "type": "string"
+          },
           "environment": {
             "type": "string"
           },
@@ -498,6 +522,9 @@
               "critical"
             ],
             "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/AlertTarget"
           },
           "title": {
             "examples": [
@@ -596,6 +623,37 @@
           "channel",
           "ok"
         ],
+        "type": "object"
+      },
+      "AlertTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "error_group": {
+            "type": "string"
+          },
+          "job": {
+            "type": "string"
+          },
+          "release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "request": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "site": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AnalyticsOverview": {
@@ -8933,6 +8991,9 @@
               "null"
             ]
           },
+          "last_failed_deploy": {
+            "$ref": "#/components/schemas/ReleaseSummary"
+          },
           "latest_release": {
             "$ref": "#/components/schemas/ReleaseSummary"
           },
@@ -8946,6 +9007,23 @@
         "required": [
           "service",
           "domains"
+        ],
+        "type": "object"
+      },
+      "ServiceRelease": {
+        "additionalProperties": false,
+        "properties": {
+          "number": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "number"
         ],
         "type": "object"
       },
@@ -10676,6 +10754,61 @@
         ],
         "type": "object"
       },
+      "SwitchReferencesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "to": {
+            "examples": [
+              "db-restored"
+            ],
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "to"
+        ],
+        "type": "object"
+      },
+      "SwitchReferencesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceRelease"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "services": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "services",
+          "releases"
+        ],
+        "type": "object"
+      },
       "TOTPSetup": {
         "additionalProperties": false,
         "properties": {
@@ -11574,6 +11707,24 @@
         "required": [
           "data"
         ],
+        "type": "object"
+      },
+      "UpdateUptimeCheckRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expect_status": {
+            "description": "A status code, or 2xx or 3xx",
+            "pattern": "^([1-5][0-9][0-9]|2xx|3xx)$",
+            "type": "string"
+          },
+          "interval_seconds": {
+            "description": "30 to 3600, longer than the timeout",
+            "format": "int64",
+            "maximum": 3600,
+            "minimum": 30,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "UptimeBucket": {
@@ -37967,9 +38118,172 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots/{snapshot}/log": {
+      "get": {
+        "description": "What a failed snapshot's job printed: its last 16 KB. Empty for a snapshot that succeeded. Scope: deploy, like a backup's log.",
+        "operationId": "get-snapshot-log",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Snapshot ID",
+            "in": "path",
+            "name": "snapshot",
+            "required": true,
+            "schema": {
+              "description": "Snapshot ID",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupLog"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a snapshot's log",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots/{snapshot}/restore": {
       "post": {
-        "description": "A template database restores into a new service by default (`as`, default \u003cservice\u003e-snapshot-\u003cid\u003e), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.",
+        "description": "A template database restores into a new service by default (`as`, default \u003cservice\u003e-restored), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.",
         "operationId": "restore-snapshot",
         "parameters": [
           {
@@ -38824,6 +39138,177 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/switch-references": {
+      "post": {
+        "description": "Rewrites every `${{service.KEY}}` reference to this service in the environment's variables to `${{to.KEY}}` and applies it: the services using it get config releases (ADR 0061, \"use the restored database\"). Switching back is the same call the other way. `to` must be a live service of the environment with every referenced key. Refused while the environment has other staged changes. `dry_run` only lists the services that would change. Scope: deploy.",
+        "operationId": "switch-references",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchReferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwitchReferencesResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Switch references to another service",
+        "tags": [
+          "variables"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/traffic": {
       "get": {
         "description": "Requests to the service's domains, counted from the proxy's access log: points over the range, totals and the most requested paths, with IDs in paths replaced by `:id`. Visitors are Dock Analytics'.",
@@ -39642,6 +40127,184 @@
           }
         ],
         "summary": "Remove an uptime check",
+        "tags": [
+          "uptime"
+        ]
+      },
+      "patch": {
+        "description": "Its interval or expected status, in place: the history stays and the new schedule applies at once. Scope: admin.",
+        "operationId": "update-uptime-check",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUptimeCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UptimeCheck"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change an uptime check",
         "tags": [
           "uptime"
         ]
@@ -46067,6 +46730,138 @@
           }
         ],
         "summary": "Approve an access request",
+        "tags": [
+          "requests"
+        ]
+      }
+    },
+    "/api/v1/requests/{id}/check": {
+      "post": {
+        "description": "Whether approving would run now, against live state, without running it: the call goes through its own checks as the token that asked and stops at the environment's lock. `reason` says why it would fail, `service` names the service where that is fixed. Admins in a UI session only.",
+        "operationId": "check-request",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Access request number",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Access request number",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessRequestCheck"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check an access request",
         "tags": [
           "requests"
         ]

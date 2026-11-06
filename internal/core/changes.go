@@ -440,7 +440,17 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 			// Build-only settings take effect on the next build; no release.
 			buildOnly := live
 			buildOnly.DockerfilePath, buildOnly.BuildCommand = next.DockerfilePath, next.BuildCommand
-			if buildOnly != *next {
+			// Nor does an image the service already serves, alone: "use
+			// 1.3.0 again" after a failed 1.4.0 must not restart 1.3.0.
+			imageOnly := live
+			imageOnly.Image = next.Image
+			serving := false
+			if imageOnly == *next && next.Image != live.Image && next.Image != "" {
+				if serving, err = servesImage(ctx, q, s.ID, next.Image); err != nil {
+					return res, err
+				}
+			}
+			if buildOnly != *next && !serving {
 				res.services[s.ID] = res.services[s.ID] || (next.Image != live.Image && next.Image != "")
 			}
 		}
@@ -464,6 +474,15 @@ func applyPending(ctx context.Context, q *store.Queries, envID int64, only *int6
 		err = q.ClearEnvironmentPendingSettings(ctx, envID)
 	}
 	return res, err
+}
+
+// servesImage reports whether the service's active release runs image.
+func servesImage(ctx context.Context, q *store.Queries, serviceID int64, image string) (bool, error) {
+	active, err := q.GetActiveRelease(ctx, serviceID)
+	if store.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil && active.ImageRef == image, err
 }
 
 // applyEnv applies all staged changes in an environment and queues a

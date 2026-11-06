@@ -15,6 +15,7 @@ import {
 } from "../features/console/security";
 import { Saved, useValidation } from "../features/create/form";
 import { roleNote } from "../features/org/data";
+import { PersonCell, TwoFactorState } from "../features/org/people";
 import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
 import { day, plural } from "../ui/format";
@@ -52,18 +53,11 @@ function Users() {
   const org = useOrg();
   const [reset, setReset] = useState<Reset>();
   const [adding, setAdding] = useState(false);
-  const active = users.filter((u) => !u.disabled_at).length;
 
   return (
     <>
       <PageBar
         title="Users"
-        after={
-          <span className="text-xs text-faint">
-            {active} active
-            {users.length > active && ` · ${users.length - active} disabled`}
-          </span>
-        }
         actions={
           !adding && (
             <Button primary onClick={() => setAdding(true)}>
@@ -362,16 +356,7 @@ const UserRow = memo(function UserRow({
         {asking && (
           <span className="whitespace-normal">{confirms[asking]}</span>
         )}
-        <span className="flex items-center gap-2.5">
-          <span className="grid size-6 flex-none place-items-center rounded-full bg-edge text-2xs font-semibold text-fg">
-            {u.name.slice(0, 1).toUpperCase()}
-          </span>
-          <span>
-            <span className="font-medium">{u.name}</span>
-            {you && <span className="text-faint"> (you)</span>}
-            <span className="block text-2xs text-faint">{u.email}</span>
-          </span>
-        </span>
+        <PersonCell name={u.name} email={u.email} you={you} />
       </td>
       <td className="py-2.5">
         {u.role}
@@ -389,15 +374,7 @@ const UserRow = memo(function UserRow({
         )}
       </td>
       <td className="py-2.5">
-        {u.two_factor ? (
-          <span className="text-ok">
-            <Glyph char="●" /> on
-          </span>
-        ) : (
-          <span className="text-faint">
-            <Glyph char="○" /> off
-          </span>
-        )}
+        <TwoFactorState on={u.two_factor} />
       </td>
       <td
         className={`min-w-[84px] py-2.5 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
@@ -466,7 +443,8 @@ function AddUser({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Scope>("deploy");
+  // The least privilege, as on Members' invite form.
+  const [role, setRole] = useState<Scope>("read");
   const [operator, setOperator] = useState(false);
   const v = useValidation();
   const emailOk = /^[^\s@]+@[^\s@]+$/.test(email.trim());

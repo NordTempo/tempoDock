@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,5 +124,48 @@ func TestListAuditFiltersAndPages(t *testing.T) {
 	}
 	if len(page) != 1 || page[0].ID != all[1].ID {
 		t.Fatalf("page before %d = %+v, want event %d", all[0].ID, page, all[1].ID)
+	}
+}
+
+// The overview's last failed deploy outlives a rollback and clears once a
+// later deploy succeeds.
+func TestOverviewLastFailedDeploy(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 3000, HealthCheckPath: "/healthz"})
+	h.deploy(web, "app:1")
+	h.rt.FailHealthCheck(func(s node.ContainerSpec) error {
+		if strings.HasSuffix(s.Name, "_r2") {
+			return errors.New("GET /healthz: 500")
+		}
+		return nil
+	})
+	lastFailed := func() *apitypes.ReleaseSummary {
+		t.Helper()
+		o, err := h.c.Overview(h.ctx, testSystem, "shop")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o.Environments[0].Services[0].LastFailedDeploy
+	}
+	if f := lastFailed(); f != nil {
+		t.Fatalf("before a failure: %+v", f)
+	}
+	if r := h.deploy(web, "app:bad"); r.Status != apitypes.ReleaseFailed {
+		t.Fatalf("r2 = %s", r.Status)
+	}
+	if f := lastFailed(); f == nil || f.Number != 2 {
+		t.Fatalf("after r2 failed: %+v", f)
+	}
+	rb, err := h.c.Rollback(h.ctx, testSystem, web, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, rb.Number)
+	if f := lastFailed(); f == nil || f.Number != 2 {
+		t.Fatalf("after a rollback: %+v", f)
+	}
+	h.deploy(web, "app:2")
+	if f := lastFailed(); f != nil {
+		t.Fatalf("after a good deploy: %+v", f)
 	}
 }

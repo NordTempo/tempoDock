@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { ago, plural } from "../../ui/format";
+import { ago } from "../../ui/format";
 import {
   Act,
   Button,
@@ -35,11 +35,6 @@ export function CloudflarePage() {
     <>
       <PageBar
         title="Cloudflare"
-        after={
-          <span className="text-xs text-faint">
-            {plural(connections.length, "connection")}
-          </span>
-        }
         actions={
           <>
             {connections.length > 0 && <RetryFailed />}

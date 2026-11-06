@@ -454,10 +454,18 @@ WHERE releases.status IN ('queued', 'building', 'starting', 'health_checking')
 UNION ALL
 SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id FROM svc JOIN releases ON releases.service_id = svc.id
 WHERE releases.number = (SELECT max(latest.number) FROM releases latest WHERE latest.service_id = svc.id)
+UNION ALL
+SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id FROM svc JOIN releases ON releases.service_id = svc.id
+WHERE releases.status = 'failed' AND releases.number = (
+    SELECT d.number FROM releases d WHERE d.service_id = svc.id
+      AND d.source NOT IN ('rollback', 'restart') AND d.status IN ('active', 'superseded', 'failed')
+    ORDER BY d.number DESC LIMIT 1)
 `
 
 // For every service in a project: its active, in-flight and latest
-// releases. A release in several of these roles appears once per role.
+// releases, and its last finished deploy (not a rollback or restart)
+// when that one failed. A release in several of these roles appears
+// once per role.
 func (q *Queries) ListProjectReleaseHeads(ctx context.Context, projectID int64) ([]Release, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectReleaseHeads, projectID)
 	if err != nil {

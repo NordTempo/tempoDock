@@ -3,15 +3,15 @@ import { useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useRevealedQuery } from "../../data/queries";
 import { since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
+import { Act, Button, ErrorText, Page, Panel } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteOrgVariable,
-  useOrgName,
   useRedeployOrgVariable,
   useSetOrgVariable,
 } from "./data";
+import { OrgSettingsBar } from "./SettingsBar";
 
 type Use = components["schemas"]["VariableUse"];
 
@@ -42,15 +42,7 @@ export function VariablesPage() {
   const changedVar = vars.find((v) => v.key === changed);
   return (
     <>
-      <PageBar
-        parent={useOrgName()}
-        title="Variables"
-        after={
-          <span className="text-xs text-faint">
-            shared by every project, used only as{" "}
-            <span className="font-mono">{orgRef}</span>
-          </span>
-        }
+      <OrgSettingsBar
         actions={
           admin && (
             <Act
@@ -72,7 +64,10 @@ export function VariablesPage() {
         )}
         {reveal && <ErrorText error={values.error} />}
         {vars.length === 0 ? (
-          <p className="text-mut">No organization variables yet.</p>
+          <p className="text-mut">
+            No organization variables yet. Every project can use them as{" "}
+            <span className="font-mono text-fg">{orgRef}</span>.
+          </p>
         ) : (
           <Panel>
             <table>
@@ -100,6 +95,12 @@ export function VariablesPage() {
               </tbody>
             </table>
           </Panel>
+        )}
+        {vars.length > 0 && (
+          <p className="text-mut">
+            Every project can use these as{" "}
+            <span className="font-mono text-fg">{orgRef}</span>.
+          </p>
         )}
         {admin && <AddVariable onAdded={setChanged} />}
       </Page>

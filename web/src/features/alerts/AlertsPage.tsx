@@ -60,18 +60,10 @@ export function AlertsPage() {
   const resolved = (older.data ?? recent)
     .filter((a) => a.resolved_at)
     .slice(0, more ? MAX : HISTORY);
-  const critical = open.filter((a) => a.severity === "critical").length;
   return (
     <>
       <PageBar
         title="Alerts"
-        after={
-          <span className="text-xs text-faint">
-            {open.length === 0
-              ? "nothing open"
-              : `${open.length} open${critical ? ` · ${critical} critical` : ""}`}
-          </span>
-        }
         actions={
           <span className="font-mono text-2xs text-mut">dock alerts</span>
         }

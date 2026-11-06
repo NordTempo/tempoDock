@@ -13,8 +13,6 @@ import { Export } from "../features/overview/ProjectSettings";
 import { ServerDots } from "../shell/context";
 import { useShortcuts } from "../shell/keys";
 import { rememberProject, useOrg } from "../shell/location";
-import { usePalette } from "../shell/palette";
-import { plural } from "../ui/format";
 import { Act, Button, Glyph, Page, PageBar } from "../ui/kit";
 
 export const Route = createFileRoute("/_app/$org/$project/")({
@@ -67,7 +65,6 @@ function LiveOverview() {
   const { environments } = overview;
   const session = useSession();
   const navigate = useNavigate();
-  const openPalette = usePalette();
   const services = environments.flatMap((e) => e.services);
   const deploying = services.filter((s) => s.deploying);
   // Settings opens on Variables while an environment's changes wait.
@@ -84,7 +81,6 @@ function LiveOverview() {
   const deployable = environments.filter((e) =>
     canDeploy(session, { project, environment: e.environment.name }),
   );
-  const mayDeploy = services.length > 0 && deployable.length > 0;
   // A new service goes to production, or the first environment the
   // caller may deploy to; the dialog lets them pick another.
   const target =
@@ -120,9 +116,6 @@ function LiveOverview() {
     ...(newService
       ? [{ key: "n", label: "new service", run: newService }]
       : []),
-    ...(mayDeploy
-      ? [{ key: "d", label: "redeploy", run: () => openPalette("deploy ") }]
-      : []),
     ...(watch
       ? [
           {
@@ -142,15 +135,7 @@ function LiveOverview() {
     <>
       <PageBar
         title={project}
-        after={
-          <>
-            <span className="text-xs text-faint">
-              {plural(environments.length, "environment")} ·{" "}
-              {plural(services.length, "service")}
-            </span>
-            <ServerDots project={project} />
-          </>
-        }
+        after={<ServerDots project={project} troubleOnly />}
         actions={
           <>
             {canNewEnv && (

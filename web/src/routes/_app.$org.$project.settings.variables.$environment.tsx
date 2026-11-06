@@ -1,14 +1,11 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { envPath, queries, useProjectOverview } from "../data/queries";
-import { logDrainQueries } from "../features/logdrains/data";
-import { LogDrains } from "../features/logdrains/LogDrains";
 import { LockStrip } from "../features/overview/EnvironmentLock";
 import { VariablesEditor } from "../features/variables/VariablesEditor";
 import { useOrg } from "../shell/location";
 
-// An environment's shared variables, one environment at a time, with its
-// log drains under them (ADR 0059; they were the environment's page,
-// /<org>/<project>/<environment>, which redirects here).
+// An environment's shared variables, one environment at a time (ADR 0059).
+// Log drains have their own tab.
 export const Route = createFileRoute(
   "/_app/$org/$project/settings/variables/$environment",
 )({
@@ -26,7 +23,6 @@ export const Route = createFileRoute(
     await Promise.all([
       queryClient.ensureQueryData(queries.variables(params, null)),
       queryClient.ensureQueryData(queries.changes(params)),
-      queryClient.ensureQueryData(logDrainQueries.list(envPath(params))),
     ]);
   },
   component: SharedVariables,
@@ -40,8 +36,9 @@ function SharedVariables() {
   const lock = environments.find(
     (e) => e.environment.name === params.environment,
   )?.environment.lock;
+  // Capped like the other settings tabs, scope list included.
   return (
-    <>
+    <div className="flex w-full max-w-[1100px] flex-col">
       {environments.length > 1 && (
         <nav
           aria-label="Environment"
@@ -70,12 +67,7 @@ function SharedVariables() {
           <LockStrip envRef={env} lock={lock} />
         </div>
       )}
-      <VariablesEditor
-        key={params.environment}
-        env={env}
-        service={null}
-        footer={<LogDrains env={env} />}
-      />
-    </>
+      <VariablesEditor key={params.environment} env={env} service={null} />
+    </div>
   );
 }

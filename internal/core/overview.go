@@ -116,6 +116,9 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			if rh.latest != nil {
 				so.LatestRelease = summarize(*rh.latest)
 			}
+			if rh.lastFailed != nil {
+				so.LastFailedDeploy = summarize(*rh.lastFailed)
+			}
 			so.Service = c.serviceOf(ss, link, pending, active, stateful[s.ID])
 			if b, ok := backups[s.ID]; ok {
 				run := toBackupRun(b, s.Name, nil)
@@ -132,9 +135,10 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 	return out, nil
 }
 
-// releaseHeads are the releases an overview shows for one service.
+// releaseHeads are the releases an overview shows for one service;
+// lastFailed is its newest finished deploy when that failed.
 type releaseHeads struct {
-	active, deploying, latest *store.Release
+	active, deploying, latest, lastFailed *store.Release
 }
 
 // releaseHeadsByService sorts ListProjectReleaseHeads rows by service and role.
@@ -148,6 +152,10 @@ func releaseHeadsByService(rows []store.Release) map[int64]releaseHeads {
 			h.active = r
 		case !status.Done():
 			h.deploying = r
+		case status == apitypes.ReleaseFailed && r.Source != string(apitypes.SourceRollback) && r.Source != string(apitypes.SourceRestart):
+			// Only the query's last-deploy row is a failed deploy that
+			// isn't the latest release; a failed latest one is both.
+			h.lastFailed = r
 		}
 		if h.latest == nil || r.Number > h.latest.Number {
 			h.latest = r

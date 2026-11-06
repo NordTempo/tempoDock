@@ -3,9 +3,9 @@ import { cpus, pct, size } from "../../ui/format";
 
 // A service's resource use against its effective limit, as in the overview
 // and on server pages: "231M / 512M", "12% of 1 CPU". The limit is the
-// service's own or the server default ("default" says which). Usage is the
-// latest sample, at most a minute old (live on the Resources tab). Without
-// a running container, the limit alone: "512M limit", "1 CPU default".
+// service's own or the server's default ("server default" says which).
+// Usage is the latest sample, at most a minute old (live on the Resources
+// tab). Without a running container, the limit alone: limitText.
 
 /** What usage cells need: a service, or a service on a server page. */
 type Limited = Pick<
@@ -23,7 +23,24 @@ const MiB = 1024 * 1024;
 const HIGH = 0.9;
 
 const Default = ({ on }: { on: boolean }) =>
-  on ? <span className="font-sans text-faint"> default</span> : null;
+  on ? <span className="font-sans text-faint"> server default</span> : null;
+
+/**
+ * A limit in the one wording every screen uses: "512M limit", "1 CPU
+ * server default" (the service sets none, the server's default applies),
+ * or "no limit".
+ */
+export function limitText(s: Limited, what: "cpu" | "memory") {
+  const [value, fromDefault] =
+    what === "cpu"
+      ? [s.effective_cpus ? cpus(s.effective_cpus) : "", s.cpus_from_default]
+      : [
+          s.effective_memory_mb ? size(s.effective_memory_mb * MiB) : "",
+          s.memory_from_default,
+        ];
+  if (!value) return "no limit";
+  return `${value} ${fromDefault ? "server default" : "limit"}`;
+}
 
 /** Share of the memory limit in use, 0 to 1, or null without a sample. */
 export const memoryShare = (s: Limited) =>
@@ -36,13 +53,7 @@ export function MemoryUsage({ service: s }: { service: Limited }) {
   const limit = s.effective_memory_mb ? size(s.effective_memory_mb * MiB) : "";
   const share = memoryShare(s);
   if (!s.usage) {
-    return (
-      <span className="text-mut">
-        {limit
-          ? `${limit} ${s.memory_from_default ? "default" : "limit"}`
-          : "no limit"}
-      </span>
-    );
+    return <span className="text-mut">{limitText(s, "memory")}</span>;
   }
   return (
     <span>
@@ -59,13 +70,7 @@ export function MemoryUsage({ service: s }: { service: Limited }) {
 export function CpuUsage({ service: s }: { service: Limited }) {
   const limit = s.effective_cpus;
   if (!s.usage) {
-    return (
-      <span className="text-mut">
-        {limit
-          ? `${cpus(limit)} ${s.cpus_from_default ? "default" : "limit"}`
-          : "no limit"}
-      </span>
-    );
+    return <span className="text-mut">{limitText(s, "cpu")}</span>;
   }
   // cpu_percent is relative to one core; the limit may be more or less.
   const share = limit ? s.usage.cpu_percent / limit : s.usage.cpu_percent;

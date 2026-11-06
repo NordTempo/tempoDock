@@ -51,6 +51,7 @@ import { Route as AppConsoleServersServerRouteImport } from './routes/_app.conso
 import { Route as AppOrgProjectEnvironmentIndexRouteImport } from './routes/_app.$org.$project.$environment.index'
 import { Route as AppOrgProjectEnvironmentServiceRouteImport } from './routes/_app.$org.$project.$environment.$service'
 import { Route as AppOrgProjectSettingsIndexRouteImport } from './routes/_app.$org.$project.settings.index'
+import { Route as AppOrgProjectSettingsLogDrainsRouteImport } from './routes/_app.$org.$project.settings.log-drains'
 import { Route as AppOrgProjectSettingsPreviewsRouteImport } from './routes/_app.$org.$project.settings.previews'
 import { Route as AppOrgAnalyticsProjectSiteRouteImport } from './routes/_app.$org.analytics.$project.$site'
 import { Route as AppOrgProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.index'
@@ -294,6 +295,12 @@ const AppOrgProjectSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AppOrgProjectSettingsRoute,
   } as any)
+const AppOrgProjectSettingsLogDrainsRoute =
+  AppOrgProjectSettingsLogDrainsRouteImport.update({
+    id: '/log-drains',
+    path: '/log-drains',
+    getParentRoute: () => AppOrgProjectSettingsRoute,
+  } as any)
 const AppOrgProjectSettingsPreviewsRoute =
   AppOrgProjectSettingsPreviewsRouteImport.update({
     id: '/previews',
@@ -509,6 +516,7 @@ export interface FileRoutesByFullPath {
   '/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
   '/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
+  '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/$org/analytics/$project/$site': typeof AppOrgAnalyticsProjectSiteRouteWithChildren
   '/$org/$project/$environment/': typeof AppOrgProjectEnvironmentIndexRoute
@@ -577,6 +585,7 @@ export interface FileRoutesByTo {
   '/$org/$project': typeof AppOrgProjectIndexRoute
   '/$org/analytics': typeof AppOrgAnalyticsIndexRoute
   '/$org/settings': typeof AppOrgSettingsIndexRoute
+  '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/$org/$project/$environment': typeof AppOrgProjectEnvironmentIndexRoute
   '/$org/$project/settings': typeof AppOrgProjectSettingsIndexRoute
@@ -650,6 +659,7 @@ export interface FileRoutesById {
   '/_app/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
   '/_app/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/_app/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
+  '/_app/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/_app/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/_app/$org/analytics/$project/$site': typeof AppOrgAnalyticsProjectSiteRouteWithChildren
   '/_app/$org/$project/$environment/': typeof AppOrgProjectEnvironmentIndexRoute
@@ -724,6 +734,7 @@ export interface FileRouteTypes {
     | '/$org/analytics/'
     | '/$org/settings/'
     | '/$org/$project/$environment/$service'
+    | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
     | '/$org/analytics/$project/$site'
     | '/$org/$project/$environment/'
@@ -792,6 +803,7 @@ export interface FileRouteTypes {
     | '/$org/$project'
     | '/$org/analytics'
     | '/$org/settings'
+    | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
     | '/$org/$project/$environment'
     | '/$org/$project/settings'
@@ -864,6 +876,7 @@ export interface FileRouteTypes {
     | '/_app/$org/analytics/'
     | '/_app/$org/settings/'
     | '/_app/$org/$project/$environment/$service'
+    | '/_app/$org/$project/settings/log-drains'
     | '/_app/$org/$project/settings/previews'
     | '/_app/$org/analytics/$project/$site'
     | '/_app/$org/$project/$environment/'
@@ -1202,6 +1215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectSettingsIndexRouteImport
       parentRoute: typeof AppOrgProjectSettingsRoute
     }
+    '/_app/$org/$project/settings/log-drains': {
+      id: '/_app/$org/$project/settings/log-drains'
+      path: '/log-drains'
+      fullPath: '/$org/$project/settings/log-drains'
+      preLoaderRoute: typeof AppOrgProjectSettingsLogDrainsRouteImport
+      parentRoute: typeof AppOrgProjectSettingsRoute
+    }
     '/_app/$org/$project/settings/previews': {
       id: '/_app/$org/$project/settings/previews'
       path: '/previews'
@@ -1409,6 +1429,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppOrgProjectSettingsRouteChildren {
+  AppOrgProjectSettingsLogDrainsRoute: typeof AppOrgProjectSettingsLogDrainsRoute
   AppOrgProjectSettingsPreviewsRoute: typeof AppOrgProjectSettingsPreviewsRoute
   AppOrgProjectSettingsIndexRoute: typeof AppOrgProjectSettingsIndexRoute
   AppOrgProjectSettingsVariablesEnvironmentRoute: typeof AppOrgProjectSettingsVariablesEnvironmentRoute
@@ -1416,6 +1437,7 @@ interface AppOrgProjectSettingsRouteChildren {
 }
 
 const AppOrgProjectSettingsRouteChildren: AppOrgProjectSettingsRouteChildren = {
+  AppOrgProjectSettingsLogDrainsRoute: AppOrgProjectSettingsLogDrainsRoute,
   AppOrgProjectSettingsPreviewsRoute: AppOrgProjectSettingsPreviewsRoute,
   AppOrgProjectSettingsIndexRoute: AppOrgProjectSettingsIndexRoute,
   AppOrgProjectSettingsVariablesEnvironmentRoute:

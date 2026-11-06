@@ -258,7 +258,8 @@ func TestJobAlerts(t *testing.T) {
 		}
 		settle(func() bool { open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); return len(open) == 1 })
 		open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0)
-		if len(open) != 1 || open[0].Kind != apitypes.AlertJobFailed {
+		if len(open) != 1 || open[0].Kind != apitypes.AlertJobFailed || open[0].Target == nil || open[0].Target.Job != "nightly" ||
+			open[0].Target.Run == 0 || strings.Contains(open[0].Message, "`dock") {
 			t.Fatalf("alerts after a failure = %+v", open)
 		}
 		h.rt.OnJob(nil)

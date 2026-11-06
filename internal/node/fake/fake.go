@@ -57,6 +57,9 @@ type Runtime struct {
 	routesErr   error
 	routesHold  *routesHold
 	healthGate  chan struct{}
+	// passHealth, when set (PassHealthAfter), turns a started container's
+	// health from starting to healthy that long after it starts.
+	passHealth  time.Duration
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
 	dialAddr    string
@@ -142,6 +145,33 @@ func (r *Runtime) SetHealth(id, health, output string) {
 	if changed {
 		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "health_status", Health: health})
 	}
+}
+
+// PassHealthAfter makes containers with a health check report healthy d
+// after they start or restart, with a health_status event, as Docker's
+// probe would; until then they are starting. A `make dev` daemon sets it
+// (about a second); tests leave it off and drive health with SetHealth.
+// A failed (FailHealthCheck) or held (HoldHealthChecks) check stays
+// starting.
+func (r *Runtime) PassHealthAfter(d time.Duration) { r.mu.Lock(); r.passHealth = d; r.mu.Unlock() }
+
+// passHealthLater arms passHealth's one-shot timer for container id,
+// started at started; a restart since (a new StartedAt) or a health
+// state other than starting leaves it alone. Called with r.mu held.
+func (r *Runtime) passHealthLater(id string, started time.Time) {
+	if r.passHealth <= 0 {
+		return
+	}
+	time.AfterFunc(r.passHealth, func() {
+		r.mu.Lock()
+		c, ok := r.containers[id]
+		pass := ok && c.State == node.StateRunning && c.StartedAt.Equal(started) && c.Health == node.HealthStarting && r.healthGate == nil &&
+			(r.healthErr == nil || r.healthErr(r.specs[id]) == nil)
+		r.mu.Unlock()
+		if pass {
+			r.SetHealth(id, node.HealthHealthy, "")
+		}
+	})
 }
 
 // FailHealthCheck makes health checks fail for containers where fn returns
@@ -585,6 +615,9 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 	out := *c
 	if !exit {
 		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "start"})
+		if c.Health != "" {
+			r.passHealthLater(id, c.StartedAt)
+		}
 	}
 	r.mu.Unlock()
 	if exit {
@@ -645,6 +678,7 @@ func (r *Runtime) Restart(_ context.Context, id string, _ time.Duration) error {
 	c.StartedAt = time.Now()
 	if c.Health != "" {
 		c.Health, c.HealthOutput = node.HealthStarting, ""
+		r.passHealthLater(id, c.StartedAt)
 	}
 	for _, action := range []string{"die", "start", "restart"} {
 		ev := node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: action}
@@ -1127,7 +1161,23 @@ func (r *Runtime) CheckDomain(_ context.Context, hostname string) (node.DomainCh
 	if fn != nil {
 		return fn(hostname), nil
 	}
+	if demoPendingDomain(hostname) {
+		return node.DomainCheck{ExpectedIPs: []string{"127.0.0.1"}, Error: hostname + " doesn't resolve to this server yet"}, nil
+	}
 	return node.DomainCheck{ExpectedIPs: []string{"127.0.0.1"}, ResolvedIPs: []string{"127.0.0.1"}, DNSOK: true, CertificateOK: true}, nil
+}
+
+// demoPendingDomain reports whether DOCK_FAKE_PENDING_DOMAINS (hostnames,
+// comma-separated) names hostname: a `make dev` daemon keeps those
+// waiting for DNS, so the UI shows the record to create. Read per check,
+// which runs every few seconds at most per pending domain.
+func demoPendingDomain(hostname string) bool {
+	for h := range strings.SplitSeq(os.Getenv("DOCK_FAKE_PENDING_DOMAINS"), ",") {
+		if strings.EqualFold(strings.TrimSpace(h), hostname) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetHostStats fixes what HostStats returns. Until it is called, every

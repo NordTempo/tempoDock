@@ -797,6 +797,33 @@ type ChangeResult struct {
 	Applied *AppliedChanges `json:"applied,omitempty"`
 }
 
+// SwitchReferencesRequest points an environment's ${{from.KEY}}
+// references at another service (ADR 0061): "use the restored database".
+type SwitchReferencesRequest struct {
+	// To is the service the references point at afterwards, live and in
+	// the same environment.
+	To string `json:"to" minLength:"1" example:"db-restored"`
+	// DryRun only reports which services would change.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// SwitchReferencesResult is what switching references changed, or would
+// change with dry_run.
+type SwitchReferencesResult struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	// Services are those whose config changes, by name.
+	Services []string `json:"services"`
+	// Releases are the config releases it started; empty for a dry run.
+	Releases []ServiceRelease `json:"releases"`
+}
+
+// ServiceRelease names a release of a service.
+type ServiceRelease struct {
+	Service string `json:"service"`
+	Number  int64  `json:"number"`
+}
+
 // DomainStatus is a domain's DNS and certificate progress.
 type DomainStatus string
 
@@ -1505,7 +1532,12 @@ type ServiceOverview struct {
 	// LatestRelease is the newest release whatever its status, so a failed
 	// last deploy shows without reading the release history.
 	LatestRelease *ReleaseSummary `json:"latest_release,omitempty"`
-	Domains       []Domain        `json:"domains"`
+	// LastFailedDeploy is the newest finished deploy (not a rollback or
+	// restart) when it failed: it outlives a rollback to an earlier
+	// release and clears once a later deploy of a new image or config
+	// succeeds. It may be LatestRelease itself.
+	LastFailedDeploy *ReleaseSummary `json:"last_failed_deploy,omitempty"`
+	Domains          []Domain        `json:"domains"`
 	// Backup is the latest backup run of a stateful service, if any.
 	Backup *BackupRun `json:"backup,omitempty"`
 	// Uptime sums up the service's uptime checks, if it has any.

@@ -2993,6 +2993,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots/{snapshot}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a snapshot's log
+         * @description What a failed snapshot's job printed: its last 16 KB. Empty for a snapshot that succeeded. Scope: deploy, like a backup's log.
+         */
+        get: operations["get-snapshot-log"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots/{snapshot}/restore": {
         parameters: {
             query?: never;
@@ -3004,7 +3024,7 @@ export interface paths {
         put?: never;
         /**
          * Restore a snapshot
-         * @description A template database restores into a new service by default (`as`, default <service>-snapshot-<id>), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.
+         * @description A template database restores into a new service by default (`as`, default <service>-restored), and the service is not touched. `in_place` replaces the service's own volumes instead: it stops, a safety snapshot keeps the data it holds now (restore that one to undo), the snapshot is copied in and it starts again. Other services restore in place only. Runs in the background: the answer is the restore, running, and the new service; snapshot.restored or snapshot.restore_failed is audited at the end. Scope: deploy.
          */
         post: operations["restore-snapshot"];
         delete?: never;
@@ -3095,6 +3115,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/switch-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch references to another service
+         * @description Rewrites every `${{service.KEY}}` reference to this service in the environment's variables to `${{to.KEY}}` and applies it: the services using it get config releases (ADR 0061, "use the restored database"). Switching back is the same call the other way. `to` must be a live service of the environment with every referenced key. Refused while the environment has other staged changes. `dry_run` only lists the services that would change. Scope: deploy.
+         */
+        post: operations["switch-references"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/traffic": {
         parameters: {
             query?: never;
@@ -3176,7 +3216,11 @@ export interface paths {
         delete: operations["remove-uptime-check"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change an uptime check
+         * @description Its interval or expected status, in place: the history stays and the new schedule applies at once. Scope: admin.
+         */
+        patch: operations["update-uptime-check"];
         trace?: never;
     };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/volumes": {
@@ -3881,6 +3925,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/requests/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check an access request
+         * @description Whether approving would run now, against live state, without running it: the call goes through its own checks as the token that asked and stops at the environment's lock. `reason` says why it would fail, `service` names the service where that is fixed. Admins in a UI session only.
+         */
+        post: operations["check-request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/requests/{id}/reject": {
         parameters: {
             query?: never;
@@ -4446,6 +4510,11 @@ export interface components {
             /** @enum {string} */
             via: "api" | "mcp";
         };
+        AccessRequestCheck: {
+            ok: boolean;
+            reason?: string;
+            service?: string;
+        };
         AddDomainRequest: {
             /**
              * @description For a hostname with analytics history: keep its site (default) or start a new one
@@ -4534,6 +4603,8 @@ export interface components {
             url?: string;
         };
         Alert: {
+            /** @example dock release show 8 -p shop -e production -s web */
+            command?: string;
             environment?: string;
             /** Format: int64 */
             id: number;
@@ -4549,6 +4620,7 @@ export interface components {
             service?: string;
             /** @enum {string} */
             severity: "warning" | "critical";
+            target?: components["schemas"]["AlertTarget"];
             /** @example Disk 91% full on vps-1 */
             title: string;
             /** Format: date-time */
@@ -4577,6 +4649,19 @@ export interface components {
             channel: components["schemas"]["AlertChannel"];
             error?: string;
             ok: boolean;
+        };
+        AlertTarget: {
+            /** Format: int64 */
+            backup?: number;
+            error_group?: string;
+            job?: string;
+            /** Format: int64 */
+            release?: number;
+            /** Format: int64 */
+            request?: number;
+            /** Format: int64 */
+            run?: number;
+            site?: string;
         };
         AnalyticsOverview: {
             /** Format: double */
@@ -6952,9 +7037,15 @@ export interface components {
             backup?: components["schemas"]["BackupRun"];
             deploying?: components["schemas"]["ReleaseSummary"];
             domains: components["schemas"]["Domain"][] | null;
+            last_failed_deploy?: components["schemas"]["ReleaseSummary"];
             latest_release?: components["schemas"]["ReleaseSummary"];
             service: components["schemas"]["Service"];
             uptime?: components["schemas"]["ServiceUptime"];
+        };
+        ServiceRelease: {
+            /** Format: int64 */
+            number: number;
+            service: string;
         };
         ServiceSnapshots: {
             into_new: boolean;
@@ -7477,6 +7568,17 @@ export interface components {
             updated_by: string;
             used_by: string[] | null;
         };
+        SwitchReferencesRequest: {
+            dry_run?: boolean;
+            /** @example db-restored */
+            to: string;
+        };
+        SwitchReferencesResult: {
+            from: string;
+            releases: components["schemas"]["ServiceRelease"][] | null;
+            services: string[] | null;
+            to: string;
+        };
         TOTPSetup: {
             ceremony: string;
             secret: string;
@@ -7754,6 +7856,15 @@ export interface components {
         };
         UpdateTokenRequest: {
             data: components["schemas"]["DataTokenAccess"];
+        };
+        UpdateUptimeCheckRequest: {
+            /** @description A status code, or 2xx or 3xx */
+            expect_status?: string;
+            /**
+             * Format: int64
+             * @description 30 to 3600, longer than the timeout
+             */
+            interval_seconds?: number;
         };
         UptimeBucket: {
             /** Format: date-time */
@@ -25647,6 +25758,104 @@ export interface operations {
             };
         };
     };
+    "get-snapshot-log": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                /** @description Snapshot ID */
+                snapshot: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupLog"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "restore-snapshot": {
         parameters: {
             query?: {
@@ -26176,6 +26385,115 @@ export interface operations {
             };
         };
     };
+    "switch-references": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchReferencesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwitchReferencesResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "service-traffic": {
         parameters: {
             query?: {
@@ -26613,6 +26931,116 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-uptime-check": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUptimeCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UptimeCheck"];
+                };
             };
             /** @description Bad Request */
             400: {
@@ -30576,6 +31004,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccessRequest"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "check-request": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Access request number */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessRequestCheck"];
                 };
             };
             /** @description Bad Request */

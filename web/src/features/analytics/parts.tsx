@@ -10,8 +10,10 @@ export const count = (n: number) => n.toLocaleString("en-US");
  * A count chart's values: whole, or with one decimal below 10, so 7
  * visitors over 30 days average 0.2 a day rather than 0.
  */
-export const charted = (v: number) =>
-  v < 10 && !Number.isInteger(v) ? v.toFixed(1) : count(Math.round(v));
+export const charted = (v: number) => {
+  const r = Math.round(v * 10) / 10;
+  return r < 10 && !Number.isInteger(r) ? r.toFixed(1) : count(Math.round(r));
+};
 
 const regions = new Intl.DisplayNames(["en"], { type: "region" });
 /** A country's name from its ISO code ("NO": Norway). */
@@ -41,14 +43,23 @@ export const shown = (
 export type Change = { text: string; up: boolean; quiet?: boolean };
 
 /**
- * "+12%" against the period before, with a tone; "new" when there was
- * nothing before, ">999%" past that, since a percentage of next to
- * nothing says little. Those, and changes under 10%, are quiet.
+ * "+12%" against the period before, with a tone; "no data before" when
+ * there was nothing to compare with, and "14× before" past +999%, since a
+ * percentage of next to nothing says little. Those, and changes under
+ * 10%, are quiet.
  */
 export function delta(now: number, before: number): Change | undefined {
-  if (!before) return now ? { text: "new", up: true, quiet: true } : undefined;
+  if (!before) {
+    return now ? { text: "no data before", up: true, quiet: true } : undefined;
+  }
   const pct = Math.round(((now - before) / before) * 100);
-  if (pct > 999) return { text: ">999%", up: true, quiet: true };
+  if (pct > 999) {
+    return {
+      text: `${Math.round(now / before)}× before`,
+      up: true,
+      quiet: true,
+    };
+  }
   return {
     text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)}%`,
     up: pct >= 0,

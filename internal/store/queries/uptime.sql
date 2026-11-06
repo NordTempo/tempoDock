@@ -8,6 +8,11 @@ RETURNING *;
 -- name: GetUptimeCheck :one
 SELECT * FROM uptime_checks WHERE id = +?;
 
+-- name: UpdateUptimeCheck :one
+-- A check's interval and expected status, changed in place.
+UPDATE uptime_checks SET interval_s = ?, expect_status = ? WHERE id = +?
+RETURNING *;
+
 -- name: DeleteUptimeCheck :exec
 -- Its statistics go with it (ON DELETE CASCADE).
 DELETE FROM uptime_checks WHERE id = +?;

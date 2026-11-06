@@ -1,15 +1,15 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
-import { plural, since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, PageBar, Panel } from "../../ui/kit";
+import { since } from "../../ui/format";
+import { Act, Button, ErrorText, Page, Panel } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteRegistryCredential,
-  useOrgName,
   useSetRegistryCredential,
 } from "./data";
+import { OrgSettingsBar } from "./SettingsBar";
 
 /**
  * The organization's registry credentials (`dock registry credentials`,
@@ -18,11 +18,10 @@ import {
  * Passwords are write-only.
  */
 export function RegistriesPage() {
-  const org = useOrgName();
   if (!useIsAdmin()) {
     return (
       <>
-        <PageBar parent={org} title="Registries" />
+        <OrgSettingsBar />
         <Page>
           <p className="text-mut">
             Only the organization's admins see registry credentials.
@@ -31,10 +30,10 @@ export function RegistriesPage() {
       </>
     );
   }
-  return <Registries org={org} />;
+  return <Registries />;
 }
 
-function Registries({ org }: { org: string }) {
+function Registries() {
   const creds = useSuspenseQuery(orgQueries.registryCredentials()).data;
   // The form's host and username; Replace on a row fills them in.
   const [host, setHost] = useState("");
@@ -42,15 +41,7 @@ function Registries({ org }: { org: string }) {
   const password = useRef<HTMLInputElement>(null);
   return (
     <>
-      <PageBar
-        parent={org}
-        title="Registries"
-        after={
-          <span className="text-xs text-faint">
-            {plural(creds.length, "registry", "registries")}
-          </span>
-        }
-      />
+      <OrgSettingsBar />
       <Page width="max-w-[900px]" gap="gap-5">
         {creds.length === 0 ? (
           <p className="text-mut">

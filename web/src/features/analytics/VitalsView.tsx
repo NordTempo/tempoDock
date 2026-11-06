@@ -21,12 +21,22 @@ import { chartMarkers, count, shown } from "./parts";
 // and the deploys, then pages, devices, browsers and countries for it.
 // Device is a switch of its own: the numbers differ most by it.
 
-const names: Record<Vital, [short: string, long: string]> = {
-  lcp: ["LCP", "Largest Contentful Paint"],
-  inp: ["INP", "Interaction to Next Paint"],
-  cls: ["CLS", "Cumulative Layout Shift"],
-  fcp: ["FCP", "First Contentful Paint"],
-  ttfb: ["TTFB", "Time to First Byte"],
+// The full name is what the tiles show; the abbreviation and what the
+// vital measures are the tooltip.
+const names: Record<Vital, [short: string, long: string, means: string]> = {
+  lcp: ["LCP", "Largest Contentful Paint", "when the main content shows"],
+  inp: [
+    "INP",
+    "Interaction to Next Paint",
+    "how fast the page answers a click or key",
+  ],
+  cls: [
+    "CLS",
+    "Cumulative Layout Shift",
+    "how much the layout jumps while loading",
+  ],
+  fcp: ["FCP", "First Contentful Paint", "when anything first shows"],
+  ttfb: ["TTFB", "Time to First Byte", "how fast the server answers"],
 };
 
 /** A vital's value as people read it: "180ms", "2.9s", "0.04". */
@@ -34,6 +44,15 @@ function value(metric: Vital, v: number) {
   if (v < 0) return "–";
   if (metric === "cls") return v.toFixed(2);
   return v < 1000 ? `${Math.round(v)}ms` : `${(v / 1000).toFixed(1)}s`;
+}
+
+/**
+ * A chart's values in one unit for the whole axis: seconds once its top
+ * passes one, so "800ms" and "1.2s" don't stand on the same axis.
+ */
+function axisValue(metric: Vital, v: number, top: number) {
+  if (metric === "cls" || top < 1000) return value(metric, v);
+  return `${(v / 1000).toFixed(1)}s`;
 }
 
 type Rating = "good" | "fair" | "poor";
@@ -149,35 +168,44 @@ export function VitalsView({
         <span className="text-faint">
           <span className="text-ok">●</span> good ·{" "}
           <span className="text-warn">▲</span> needs improvement ·{" "}
-          <span className="text-fail">■</span> poor · p75 of{" "}
-          {count(data.all.loads)} page loads · thresholds from web.dev
+          <span className="text-fail">■</span> poor · p75: 3 in 4 of{" "}
+          {count(data.all.loads)} page loads are this fast or faster ·
+          thresholds from web.dev
         </span>
       </div>
       <div
         role="tablist"
         aria-label="Vital"
-        className="grid grid-cols-[repeat(auto-fit,minmax(110px,1fr))] gap-x-6 gap-y-3 tabular-nums"
+        className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-6 gap-y-3 tabular-nums"
       >
-        {vitals.map((m) => (
-          <button
-            key={m}
-            type="button"
-            role="tab"
-            aria-selected={m === metric}
-            title={names[m][1]}
-            onClick={() => onMetric(m)}
-            className={`border-b-2 pb-1 text-left ${m === metric ? "border-fg" : "border-transparent"}`}
-          >
-            <span
-              className={`block text-xs ${m === metric ? "text-fg" : "text-mut"}`}
+        {vitals.map((m) => {
+          const good = data.thresholds[m]?.good;
+          return (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={m === metric}
+              title={`${names[m][0]}: ${names[m][2]}`}
+              onClick={() => onMetric(m)}
+              className={`border-b-2 pb-1 text-left ${m === metric ? "border-fg" : "border-transparent"}`}
             >
-              {names[m][0]}
-            </span>
-            <span className="text-lg font-semibold">
-              <Rated data={data} metric={m} v={data.all[m].p75} />
-            </span>
-          </button>
-        ))}
+              <span
+                className={`block text-xs ${m === metric ? "text-fg" : "text-sec"}`}
+              >
+                {names[m][1]}
+              </span>
+              <span className="text-lg font-semibold">
+                <Rated data={data} metric={m} v={data.all[m].p75} />
+              </span>
+              {good !== undefined && (
+                <span className="block text-2xs text-mut">
+                  good at {value(m, good)} or less
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
       <LineChart
         title={`${names[metric][1]}, p75 per ${data.bucket}`}
@@ -186,7 +214,7 @@ export function VitalsView({
         to={data.to}
         resolution={step / 1000}
         max={top || 1}
-        format={(v) => value(metric, v)}
+        format={(v) => axisValue(metric, v, top)}
         markers={chartMarkers(data.markers)}
         guides={
           t

@@ -362,6 +362,9 @@ func slackText(n apitypes.AlertNotification) string {
 	if n.Alert.Message != "" && n.Event != "resolved" {
 		text += "\n" + n.Alert.Message
 	}
+	if n.Alert.Command != "" && n.Event != "resolved" {
+		text += "\n`" + n.Alert.Command + "`"
+	}
 	return slackEscaper.Replace(text)
 }
 
@@ -374,6 +377,9 @@ func emailText(n apitypes.AlertNotification) (subject, text string) {
 	b.WriteString(a.Title + "\n\n")
 	if a.Message != "" {
 		b.WriteString(a.Message + "\n\n")
+	}
+	if a.Command != "" && a.ResolvedAt == nil {
+		b.WriteString("More: " + a.Command + "\n\n")
 	}
 	for _, kv := range [][2]string{{"Project", a.Project}, {"Environment", a.Environment}, {"Service", a.Service}, {"Server", a.Server}} {
 		if kv[1] != "" {

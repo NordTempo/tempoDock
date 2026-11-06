@@ -38,10 +38,7 @@ export function RegistryPage() {
   if (!registry.enabled) {
     return (
       <>
-        <PageBar
-          title="Registry"
-          after={<span className="text-xs text-faint">off</span>}
-        />
+        <PageBar title="Registry" />
         <Page gap="gap-3">
           <p>
             No registry: images stay on the server that built them. A second

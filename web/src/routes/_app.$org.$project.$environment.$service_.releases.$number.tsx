@@ -5,19 +5,22 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { api, body } from "../api/client";
 import { useServiceLogs } from "../data/live";
-import { useDeploy } from "../data/mutations";
+import { serviceWide, useAction, useStageSettings } from "../data/mutations";
 import {
   findService,
   queries,
   servicePath,
   useCanDeploy,
+  useChanges,
   useDeployBlock,
   useRelease,
   useReleases,
   useService,
 } from "../data/queries";
-import type { LogLine, Release } from "../data/types";
+import type { LogLine, Release, ServiceRef } from "../data/types";
+import { invalid, useValidation } from "../features/create/form";
 import { openDeploy } from "../features/deploy/start";
 import { shortSha, useGitDeploy } from "../features/git/api";
 import { LogRow } from "../features/service/LogsPane";
@@ -26,6 +29,8 @@ import {
   imageLabel,
   refusedPort,
   releaseDiff,
+  servesCopyOf,
+  shortImage,
 } from "../features/service/releases";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useShortcuts } from "../shell/keys";
@@ -35,6 +40,7 @@ import {
   Act,
   Actor,
   actorKind,
+  Button,
   ErrorText,
   Glyph,
   Page,
@@ -74,7 +80,7 @@ function ReleasePage() {
   const view = useService(ref);
   const release = useRelease(ref, Number(params.number));
   const releases = useReleases(ref);
-  const deploy = useDeploy();
+  const deploy = useDeployImage();
   const gitDeploy = useGitDeploy(ref);
   const mayDeploy = useCanDeploy(ref);
   const [rollingBack, setRollingBack] = useState(false);
@@ -92,6 +98,10 @@ function ReleasePage() {
       x.number < release.number &&
       (x.status === "active" || x.status === "superseded"),
   );
+
+  // Rolling back to what already serves would change nothing.
+  const alreadyServing = servesCopyOf(servingRelease, release);
+  const [fixing, setFixing] = useState(false);
 
   const older = releases.find((x) => x.number < release.number);
   const newer = [...releases].reverse().find((x) => x.number > release.number);
@@ -181,7 +191,12 @@ function ReleasePage() {
               {serving && serving !== release.number ? (
                 <>
                   <span className="text-ok">●</span>{" "}
-                  <b className="font-semibold">r{serving} is still serving.</b>{" "}
+                  <b className="font-semibold">
+                    {/* Said as it was then; a later release may serve now. */}
+                    {previous && previous.number !== serving
+                      ? `r${previous.number} kept serving; r${serving} serves now.`
+                      : `r${serving} is still serving.`}
+                  </b>{" "}
                   <span className="text-mut">
                     {service.stateful
                       ? `${r} never got traffic.`
@@ -218,17 +233,31 @@ function ReleasePage() {
             )}
           </dl>
           {fix && <p className="text-md leading-normal">{fix.text}</p>}
+          {fix && fixing && (
+            <FixAndDeploy
+              release={release}
+              fix={fix}
+              onClose={() => setFixing(false)}
+              onDeployed={toService}
+            />
+          )}
           <div className="mt-1 flex flex-wrap items-start gap-2.5">
-            {fix && (
-              <Link
-                to="/$org/$project/$environment/$service/build"
-                params={{ org, ...ref }}
-                search={{ edit: fix.edit }}
-                className="btn pri"
-              >
-                {fix.label}
-              </Link>
-            )}
+            {fix &&
+              !fixing &&
+              (mayDeploy ? (
+                <Button primary onClick={() => setFixing(true)}>
+                  {fix.label}
+                </Button>
+              ) : (
+                <Link
+                  to="/$org/$project/$environment/$service/build"
+                  params={{ org, ...ref }}
+                  search={{ edit: fix.edit }}
+                  className="btn pri"
+                >
+                  {fix.label}
+                </Link>
+              ))}
             <Act
               primary={!fix}
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
@@ -245,7 +274,10 @@ function ReleasePage() {
             {failed && mayDeploy && (
               <DeployAgain
                 release={release}
-                image={service.image}
+                // An image release retries its own image; others the setting.
+                image={
+                  release.source === "image" ? release.image_ref : service.image
+                }
                 disabled={
                   !!view.deploying ||
                   !!blocked ||
@@ -253,7 +285,9 @@ function ReleasePage() {
                   gitDeploy.isPending
                 }
                 title={blocked}
-                onImage={() => deploy.mutate(ref, { onSuccess: toService })}
+                onImage={(image) =>
+                  deploy.mutate({ ref, image }, { onSuccess: toService })
+                }
                 onCommit={(sha) =>
                   gitDeploy.mutate(sha, { onSuccess: toService })
                 }
@@ -285,12 +319,14 @@ function ReleasePage() {
             {release.status === "superseded" && mayDeploy && !rollingBack && (
               <Act
                 cli={`dock rollback ${release.number} -s ${ref.service} -e ${ref.environment}`}
-                disabled={!!view.deploying || !!blocked}
-                title={
-                  blocked ??
-                  (view.deploying
-                    ? `r${view.deploying.number} is deploying`
-                    : undefined)
+                disabled={alreadyServing || !!view.deploying || !!blocked}
+                reason={
+                  alreadyServing
+                    ? `r${servingRelease?.number} already runs ${r}'s image and config`
+                    : (blocked ??
+                      (view.deploying
+                        ? `r${view.deploying.number} is deploying`
+                        : undefined))
                 }
                 onClick={() => setRollingBack(true)}
               >
@@ -319,7 +355,14 @@ function ReleasePage() {
           <SectionHead id="steps">
             {failed ? "What failed" : "Steps"}
           </SectionHead>
-          <StepTable steps={deploySteps(release, serving, service.stateful)} />
+          {/* What served when it ran, not what serves now. */}
+          <StepTable
+            steps={deploySteps(
+              release,
+              previous?.number ?? null,
+              service.stateful,
+            )}
+          />
         </section>
 
         <LastLines release={release} />
@@ -346,13 +389,14 @@ function DeployAgain({
   image: string | undefined;
   disabled: boolean;
   title: string | undefined;
-  onImage: () => void;
+  onImage: (image: string) => void;
   onCommit: (sha: string) => void;
   onOpen: () => void;
 }) {
   const ref = servicePath(Route.useParams());
   const flags = `-s ${ref.service} -e ${ref.environment}`;
-  const { commit } = release;
+  // An image release with commit metadata still retries as an image.
+  const commit = release.source === "image" ? undefined : release.commit;
   if (commit) {
     return (
       <Act
@@ -369,10 +413,10 @@ function DeployAgain({
   if (image) {
     return (
       <Act
-        cli={`dock deploy ${flags}`}
+        cli={`dock deploy --image ${image} ${flags}`}
         disabled={disabled}
         title={title}
-        onClick={onImage}
+        onClick={() => onImage(image)}
       >
         Deploy {imageLabel({ image_ref: image, image_id: "" })} again
       </Act>
@@ -478,6 +522,167 @@ function likelyFix(
     };
   }
   return undefined;
+}
+
+/** Deploys a given image (`dock deploy --image`), taking staged changes with it. */
+const useDeployImage = () =>
+  useAction(
+    ({ ref, image }: { ref: ServiceRef; image: string }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases",
+          { params: { path: servicePath(ref) }, body: { image } },
+        ),
+      ),
+    ({ ref }) => serviceWide(ref),
+    ({ ref }, r) => [
+      `Deploy of ${ref.service} started as r${r.number}`,
+      "info",
+    ],
+  );
+
+/**
+ * The likely fix, edited in place: the new port or health check path is
+ * staged and the failed release's own image (or commit) deploys again
+ * with it, so the retry is the release that failed, not the serving one.
+ * An upload has nothing to redeploy; it stages and opens Deploy.
+ */
+function FixAndDeploy({
+  release,
+  fix,
+  onClose,
+  onDeployed,
+}: {
+  release: Release;
+  fix: NonNullable<ReturnType<typeof likelyFix>>;
+  onClose: () => void;
+  onDeployed: () => void;
+}) {
+  const ref = servicePath(Route.useParams());
+  const changes = useChanges(ref);
+  const stage = useStageSettings();
+  const deployImage = useDeployImage();
+  const gitDeploy = useGitDeploy(ref);
+  const port = fix.edit === "port";
+  const [value, setValue] = useState(
+    port ? String(release.config.port) : release.config.health_check_path,
+  );
+  const v = useValidation();
+  const typed = value.trim();
+  const problem = port
+    ? /^\d+$/.test(typed) && Number(typed) >= 1 && Number(typed) <= 65535
+      ? undefined
+      : "Enter a port from 1 to 65535."
+    : typed.startsWith("/")
+      ? undefined
+      : "Enter a path that starts with /.";
+  const error = v.tried ? problem : undefined;
+  // An image release deploys its image again, a git build its commit.
+  const image = release.source === "image" ? release.image_ref : "";
+  const commit = image ? undefined : release.commit;
+  const what = commit
+    ? shortSha(commit.sha)
+    : image
+      ? shortImage(imageLabel(release))
+      : "";
+  // Other staged changes of this service go out with the deploy too.
+  const others =
+    changes.settings.filter(
+      (c) => c.service === ref.service && c.field !== fix.edit,
+    ).length +
+    changes.variables.filter((c) => c.service === ref.service).length +
+    changes.volumes.filter((c) => c.service === ref.service).length;
+  const flags = `-s ${ref.service} -e ${ref.environment}`;
+  const setFlag = port ? `--port ${typed}` : `--health-check-path ${typed}`;
+  const pending =
+    stage.isPending || deployImage.isPending || gitDeploy.isPending;
+
+  const submit = () => {
+    if (!v.check(!problem)) return;
+    const patch = port ? { port: Number(typed) } : { health_check_path: typed };
+    stage.mutate(
+      { ref, patch },
+      {
+        onSuccess: () => {
+          if (commit) gitDeploy.mutate(commit.sha, { onSuccess: onDeployed });
+          else if (image)
+            deployImage.mutate({ ref, image }, { onSuccess: onDeployed });
+          else openDeploy(ref);
+        },
+      },
+    );
+  };
+  return (
+    <form
+      ref={v.form}
+      aria-label={fix.label}
+      className="flex flex-col gap-1.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span className="text-xs text-faint">
+            {port ? "Port" : "Health check path"}
+          </span>
+          <input
+            // biome-ignore lint/a11y/noAutofocus: opened by the button it replaces
+            autoFocus
+            value={value}
+            inputMode={port ? "numeric" : undefined}
+            aria-invalid={!!error}
+            onChange={(e) => setValue(e.target.value)}
+            className={`field w-40 py-[5px] font-mono ${invalid(error)}`}
+            spellCheck={false}
+          />
+        </label>
+        <button type="submit" className="btn pri" disabled={pending}>
+          {commit || image
+            ? `Save and deploy ${what}`
+            : "Save and choose a folder"}{" "}
+          <kbd>↵</kbd>
+        </button>
+        <Button onClick={onClose}>
+          Cancel <kbd>Esc</kbd>
+        </Button>
+        <span className="text-xs">
+          {error ? (
+            <span className="text-fail">{error}</span>
+          ) : (
+            <ErrorText
+              error={stage.error ?? deployImage.error ?? gitDeploy.error}
+            />
+          )}
+        </span>
+      </div>
+      {others > 0 && (
+        <p className="text-xs text-mut">
+          {ref.service}'s {others} other staged{" "}
+          {others === 1 ? "change goes" : "changes go"} out with it.
+        </p>
+      )}
+      <div className="flex flex-col font-mono text-2xs break-all text-faint">
+        <code>
+          dock service update {ref.service} {setFlag} -e {ref.environment}
+        </code>
+        <code>
+          {commit
+            ? `dock git deploy --ref ${commit.sha} ${flags}`
+            : image
+              ? `dock deploy --image ${image} ${flags}`
+              : `dock deploy <dir> ${flags}`}
+        </code>
+      </div>
+    </form>
+  );
 }
 
 /** The release's last container lines; for a failed one, why it stopped. */

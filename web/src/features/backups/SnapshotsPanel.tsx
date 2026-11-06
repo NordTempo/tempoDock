@@ -139,7 +139,9 @@ export function SnapshotsPanel({
                 <th>Size</th>
                 <th>Paused</th>
                 <th className="w-full">Note</th>
-                <th />
+                <th className="text-right">
+                  <span className="sr-only">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -153,6 +155,7 @@ export function SnapshotsPanel({
                   ask={ask?.id === s.id ? ask.what : null}
                   onAsk={(what) => setAsk(what ? { id: s.id, what } : null)}
                   onRestored={setRestored}
+                  onRetry={() => take.mutate({ ref, note: s.note ?? "" })}
                 />
               ))}
             </tbody>
@@ -178,6 +181,7 @@ function SnapshotRow({
   ask,
   onAsk,
   onRestored,
+  onRetry,
 }: {
   serviceRef: ServiceRef;
   snapshot: Snapshot;
@@ -186,6 +190,8 @@ function SnapshotRow({
   ask: Ask["what"] | null;
   onAsk: (what: Ask["what"] | null) => void;
   onRestored: (service: string) => void;
+  /** Takes a new snapshot with a failed one's note. */
+  onRetry: () => void;
 }) {
   const restore = useRestoreSnapshot();
   const remove = useDeleteSnapshot();
@@ -222,9 +228,21 @@ function SnapshotRow({
           s.note || none
         )}
       </td>
-      <td>
+      {/* Actions sit at the right edge, whichever a row has. */}
+      <td className="whitespace-nowrap">
         {s.status !== "running" && (
-          <span className="flex gap-1.5">
+          <span className="flex justify-end gap-1.5">
+            {s.status === "failed" && (
+              <Button
+                small
+                disabled={!canAct}
+                reason={reason}
+                title={`dock volume snapshot ${flags}`}
+                onClick={onRetry}
+              >
+                Retry
+              </Button>
+            )}
             {ready && intoNew && (
               <Button
                 small

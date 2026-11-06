@@ -16,7 +16,6 @@ import {
   Confirm,
   ErrorText,
   Page,
-  PageBar,
   Panel,
 } from "../../ui/kit";
 import { Saved, useValidation } from "../create/form";
@@ -28,6 +27,7 @@ import {
   useSetLockSettings,
   useSetOrgTwoFactor,
 } from "./data";
+import { OrgSettingsBar } from "./SettingsBar";
 
 /**
  * The organization itself: its name, address (slug), whether members
@@ -45,13 +45,7 @@ export function GeneralPage() {
   const nameError = v.required(!name.trim(), "Enter a name.");
   return (
     <>
-      <PageBar
-        parent={org.name}
-        title="General"
-        after={
-          <span className="text-xs text-faint">your role: {org.role}</span>
-        }
-      />
+      <OrgSettingsBar />
       <Page width="max-w-[760px]" gap="gap-5">
         <Panel>
           <table>
@@ -100,6 +94,10 @@ export function GeneralPage() {
                     org.name
                   )}
                 </td>
+              </tr>
+              <tr>
+                <td className="py-2.5 text-faint">Your role</td>
+                <td className="py-2.5">{org.role}</td>
               </tr>
               <tr>
                 <td className="py-2.5 text-faint">Address</td>

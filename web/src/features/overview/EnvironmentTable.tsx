@@ -9,6 +9,7 @@ import {
   useCanDeploy,
   useIsAdmin,
   useIsOperator,
+  useServers,
   useSession,
 } from "../../data/queries";
 import type {
@@ -18,8 +19,10 @@ import type {
 } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago, plural } from "../../ui/format";
-import { Act, Button, Panel, SectionHead, StateText } from "../../ui/kit";
-import { kindLabel, serviceState } from "../../ui/status";
+import { Icon } from "../../ui/icons";
+import { Button, Menu, menuItem, Panel, StateText } from "../../ui/kit";
+import { serviceState } from "../../ui/status";
+import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
 import { MoveStrip } from "../move/MoveStrip";
@@ -61,9 +64,9 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);
   const hidden = useHiddenFailures(services);
-  // Small bordered buttons: what the environment can do, at a glance.
-  const act = "btn sm no-underline";
+  const server = useServers().find((s) => s.name === environment.server);
   const head = `env-head-${environment.id}`;
+  const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;
   return (
     // The environment's anchor: /org/project/environment lands here.
     <section
@@ -71,107 +74,136 @@ export function EnvironmentTable({ env }: { env: EnvironmentView }) {
       aria-labelledby={head}
       className="scroll-mt-[64px]"
     >
-      <SectionHead
-        id={head}
-        aside={
-          <>
-            {pr && (
-              <>
-                <PullRequestLink pr={pr} /> ·{" "}
-              </>
-            )}
-            on <EnvServer name={environment.server} /> ·{" "}
-            {kindLabel[environment.kind]}
-          </>
-        }
-        right={
-          <span className="-my-1 flex flex-wrap items-center gap-1.5">
-            {staged > 0 && (
+      {/* The name, what needs a look (staged changes, a server that's
+          down, the preview's pull request) and the rest in one menu, so
+          the service table outweighs its toolbar. */}
+      <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h2 id={head} className="text-sm font-semibold">
+          {environment.name}
+        </h2>
+        {pr && <PullRequestLink pr={pr} />}
+        {server && server.status !== "online" && (
+          <span className="text-xs">
+            <EnvServer name={environment.server} />
+          </span>
+        )}
+        {staged > 0 && (
+          <Link
+            to="/$org/$project/settings/variables/$environment"
+            params={{ org, ...ref }}
+            className="text-xs text-warn hover:text-warn-text"
+          >
+            ▲ {plural(staged, "staged change")}
+          </Link>
+        )}
+        <Menu
+          label={`${environment.name}: more actions`}
+          right
+          className="ml-auto"
+          button={
+            <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
+              <Icon name="more" size={14} />
+            </span>
+          }
+        >
+          {(close) => (
+            <>
+              <span className="px-2.5 pt-1 pb-1.5 text-2xs text-mut">
+                Runs on{" "}
+                <span className="font-mono text-sec">{environment.server}</span>
+              </span>
               <Link
                 to="/$org/$project/settings/variables/$environment"
                 params={{ org, ...ref }}
-                className={`${act} text-warn hover:text-warn-text`}
+                className={menuItem}
+                onClick={close}
               >
-                ▲ {plural(staged, "staged change")}
+                Shared variables
               </Link>
-            )}
-            <Link
-              to="/$org/$project/settings/variables/$environment"
-              params={{ org, ...ref }}
-              className={act}
-            >
-              Variables
-            </Link>
-            <Link
-              to="/$org/$project/settings/variables/$environment"
-              params={{ org, ...ref }}
-              hash="log-drains"
-              className={act}
-            >
-              Log drains
-            </Link>
-            {canDeploy && (
-              <Act
-                small
-                cli={`dock service create <name> -e ${ref.environment} -p ${ref.project}`}
-                onClick={newService}
+              <Link
+                to="/$org/$project/settings/log-drains"
+                params={{ org, project: ref.project }}
+                hash={`drains-${ref.environment}`}
+                className={menuItem}
+                onClick={close}
               >
-                New service
-              </Act>
-            )}
-            {canClone && (
-              <Act
-                small
-                cli={`dock environment clone ${ref.environment} <name> -p ${ref.project}`}
-                onClick={() =>
-                  openCreate({
-                    kind: "environment",
-                    project: ref.project,
-                    cloneFrom: ref.environment,
-                  })
-                }
-              >
-                Clone
-              </Act>
-            )}
-            {admin && !environment.lock && (
-              <Act
-                small
-                cli={`dock environment lock ${ref.environment} -p ${ref.project}`}
-                aria-expanded={locking}
-                onClick={() => setLocking(!locking)}
-              >
-                Lock
-              </Act>
-            )}
-            {pr && canClone && (
-              <Act
-                small
-                cli={previewsCli(`close ${ref.environment}`, ref.project)}
-                onClick={() => setClosing(true)}
-              >
-                Close preview
-              </Act>
-            )}
-            {operator && (
-              // Apart from the others: it moves every service.
-              <span className="ml-1.5 flex items-center border-l border-line pl-3">
-                <Act
-                  small
-                  cli={`dock env move ${ref.environment} --to <server> -p ${ref.project}`}
-                  aria-expanded={moveOpen}
-                  className={moveOpen ? "bg-hover text-fg" : ""}
-                  onClick={() => setMoveOpen(!moveOpen)}
+                Log drains
+              </Link>
+              {canDeploy && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  title={`dock service create <name> -e ${ref.environment} -p ${ref.project}`}
+                  onClick={() => {
+                    close();
+                    newService();
+                  }}
                 >
-                  Move
-                </Act>
-              </span>
-            )}
-          </span>
-        }
-      >
-        {environment.name}
-      </SectionHead>
+                  New service in {ref.environment}
+                </button>
+              )}
+              {canClone && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  title={cli(`clone ${ref.environment} <name>`)}
+                  onClick={() => {
+                    close();
+                    openCreate({
+                      kind: "environment",
+                      project: ref.project,
+                      cloneFrom: ref.environment,
+                    });
+                  }}
+                >
+                  Clone into a new environment
+                </button>
+              )}
+              {admin && !environment.lock && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  title={cli(`lock ${ref.environment}`)}
+                  onClick={() => {
+                    close();
+                    setLocking(true);
+                  }}
+                >
+                  Lock against token changes
+                </button>
+              )}
+              {pr && canClone && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  title={previewsCli(`close ${ref.environment}`, ref.project)}
+                  onClick={() => {
+                    close();
+                    setClosing(true);
+                  }}
+                >
+                  Close preview
+                </button>
+              )}
+              {operator && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  title={cli(`move ${ref.environment} --to <server>`)}
+                  onClick={() => {
+                    close();
+                    setMoveOpen(!moveOpen);
+                  }}
+                >
+                  {moveOpen
+                    ? "Hide the move"
+                    : `Move every service to another server`}
+                </button>
+              )}
+            </>
+          )}
+        </Menu>
+      </div>
       {environment.lock ? (
         <LockStrip envRef={ref} lock={environment.lock} />
       ) : (
@@ -276,6 +308,19 @@ const ServiceRow = memo(function ServiceRow({
     (a, b) => Number(a.generated) - Number(b.generated),
   );
   const attention = rest.filter(domainNeedsAttention).length;
+  // The analytics site counting this service's domains, if one does.
+  const site = useQuery({
+    ...sitesQuery(ref.project),
+    select: (sites) =>
+      sites.find(
+        (x) =>
+          !x.archived &&
+          x.environment === ref.environment &&
+          x.hostnames?.some((h) =>
+            view.domains.some((d) => d.hostname === h.hostname),
+          ),
+      )?.name,
+  }).data;
   const oldImage = active ? imageLabel(active) : "";
   const newImage = deploying ? imageLabel(deploying) : "";
 
@@ -359,6 +404,15 @@ const ServiceRow = memo(function ServiceRow({
           </>
         ) : (
           <span className="text-faint">·</span>
+        )}
+        {site && (
+          <Link
+            to="/$org/analytics/$project/$site"
+            params={{ org, project: ref.project, site }}
+            className="ml-2 inline-flex align-[-2px] text-mut hover:text-fg"
+          >
+            <Icon name="bars" size={13} label={`Analytics for ${site}`} />
+          </Link>
         )}
       </td>
       <td className="py-2.5 text-xs">

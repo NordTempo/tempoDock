@@ -24,6 +24,7 @@ func newServiceCmd(g *globals) *cobra.Command {
 		newServiceStopCmd(g),
 		newServiceStartCmd(g),
 		newServiceArchiveCmd(g),
+		newServiceSwitchReferencesCmd(g),
 	)
 	return cmd
 }
@@ -389,6 +390,65 @@ next deploy, ` + "`dock apply`" + `, or right away with --deploy.`,
 
 // newServiceStopCmd is `dock service stop`: the service's container is
 // removed and its domains answer 503, keeping everything else (ADR 0050).
+// newServiceSwitchReferencesCmd is `dock service switch-references`:
+// point the environment's ${{name.KEY}} references at another service,
+// such as a restored database, and redeploy those using it (ADR 0061).
+func newServiceSwitchReferencesCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var to string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "switch-references [name] --to SERVICE [--dry-run]",
+		Short: "Point the references to a service at another one, such as a restored database",
+		Long: `Rewrite every ${{name.KEY}} reference in the environment's variables to
+${{SERVICE.KEY}} and apply it: the services using name get config releases.
+This is how a restored database (db-restored) takes over from db; switch back
+the same way. SERVICE must be live and have every key that is referenced.
+Refused while the environment has other staged changes. --dry-run lists the
+services that would change.`,
+		Example: `  dock service switch-references db --to db-restored --dry-run
+  dock service switch-references db --to db-restored
+  dock service switch-references db-restored --to db`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			serviceArg(&f, args)
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			req := apitypes.SwitchReferencesRequest{To: to, DryRun: dryRun}
+			res, err := send[apitypes.SwitchReferencesResult](cmd.Context(), s, http.MethodPost, t.servicePath()+"/switch-references", req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(res, func() error {
+				switch {
+				case len(res.Services) == 0:
+					g.io.Successf("Nothing in the environment references %s.", res.From)
+				case dryRun:
+					g.io.Successf("Switching from %s to %s would change %s: %s", res.From, res.To, plural(len(res.Services), "service"), strings.Join(res.Services, ", "))
+				default:
+					rels := make([]string, 0, len(res.Releases))
+					for _, r := range res.Releases {
+						rels = append(rels, fmt.Sprintf("%s r%d", r.Service, r.Number))
+					}
+					g.io.Successf("Switched %s from %s to %s.", strings.Join(res.Services, ", "), res.From, res.To)
+					if len(rels) > 0 {
+						g.io.Progressf("Releasing %s; `dock status -a` follows them.", strings.Join(rels, ", "))
+					}
+				}
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	cmd.Flags().StringVar(&to, "to", "", "the service the references point at afterwards")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "only list the services that would change")
+	_ = cmd.MarkFlagRequired("to")
+	return cmd
+}
+
 func newServiceStopCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var yes bool
