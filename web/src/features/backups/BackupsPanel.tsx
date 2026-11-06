@@ -135,7 +135,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               reason={why}
               title={`${ref.service} pauses while its volume is copied`}
             >
-              Take snapshot
+              Snapshot the volume
             </Act>
             <Act
               small

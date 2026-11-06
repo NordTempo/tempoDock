@@ -434,14 +434,17 @@ const ServiceRow = memo(function ServiceRow({
         ) : (
           <span className="text-faint">·</span>
         )}
+        {/* A labelled way to the site's analytics, under its domain. */}
         {site && (
-          <Link
-            to="/$org/analytics/$project/$site"
-            params={{ org, project: ref.project, site }}
-            className="ml-2 inline-flex align-[-2px] text-mut hover:text-fg"
-          >
-            <Icon name="bars" size={13} label={`Analytics for ${site}`} />
-          </Link>
+          <div className="text-2xs">
+            <Link
+              to="/$org/analytics/$project/$site"
+              params={{ org, project: ref.project, site }}
+              className="text-mut underline decoration-dash underline-offset-3 hover:text-fg"
+            >
+              Analytics
+            </Link>
+          </div>
         )}
       </td>
       <td className="py-2.5 text-xs">

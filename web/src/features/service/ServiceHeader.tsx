@@ -272,10 +272,10 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </Link>,
     ],
     [
-      "Port · server",
+      "Port and server",
       <span key="p">
-        <span className="font-mono">:{listenPort(service)}</span> ·{" "}
-        <EnvServer name={server} />
+        <span className="font-mono">:{listenPort(service)}</span>{" "}
+        <span className="text-mut">on server</span> <EnvServer name={server} />
       </span>,
     ],
     // How it starts, a full row: the One-off command tab runs a command
