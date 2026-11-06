@@ -40,7 +40,8 @@ const marks: Record<VariableChange["action"], string> = {
 /**
  * An environment's staged changes, what applying them does, and the
  * buttons. Applying is all or nothing, like the API. ⌘↵ applies. With
- * `sticky` it stays in view at the bottom of the window while anything is
+ * `bar` it is a strip under the service's tabs, in the sticky header: it
+ * pushes the page down instead of covering it, and stays in view while anything is
  * staged, so the way to apply is never scrolled away.
  */
 export function ApplyBox({
@@ -48,7 +49,7 @@ export function ApplyBox({
   reveal,
   variables = [],
   service,
-  sticky,
+  bar,
 }: {
   env: EnvRef;
   /** Show old and new values (admin, on request). */
@@ -57,12 +58,13 @@ export function ApplyBox({
   variables?: Variable[];
   /** The service on screen: its own changes can be discarded alone. */
   service?: string | null;
-  sticky?: boolean;
+  /** A strip in the service header instead of a panel in the page. */
+  bar?: boolean;
 }) {
   const org = useOrg();
-  // In view at the page's foot (sticky) it is one line until opened, so it
+  // As the header's strip it is one line until opened, so it
   // covers as little of the page as it can.
-  const [open, setOpen] = useState(!sticky);
+  const [open, setOpen] = useState(!bar);
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
   const { services } = useEnvironment(env);
@@ -127,7 +129,9 @@ export function ApplyBox({
     const skipped = applied.skipped ?? [];
     const failed = applied.failed ?? [];
     return (
-      <div className="flex flex-col gap-1 text-mut">
+      <div
+        className={`flex flex-col gap-1 text-mut ${bar ? "border-b border-line px-5 py-2" : ""}`}
+      >
         <p>
           <span className="text-ok">✓</span> Applied.{" "}
           {skipped.length > 0 &&
@@ -276,7 +280,7 @@ export function ApplyBox({
   return (
     <section
       aria-labelledby="staged"
-      className={`flex flex-col rounded-panel border border-warn-edge bg-stage-bg px-4 ${open ? "gap-3 py-3.5" : "gap-2 py-2.5"} ${sticky ? "sticky bottom-3 z-10 shadow-lg shadow-black/60" : ""}`}
+      className={`flex flex-col border-warn-edge bg-stage-bg ${bar ? "border-b px-5" : "rounded-panel border px-4"} ${open ? "gap-3 py-3" : "gap-2 py-2"}`}
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
@@ -297,7 +301,7 @@ export function ApplyBox({
             What's this?
           </Link>
         </span>
-        {sticky && (
+        {bar && (
           <button
             type="button"
             className="lnk ml-auto"
@@ -316,7 +320,7 @@ export function ApplyBox({
       )}
       {open && (
         <div
-          className={`overflow-x-auto font-mono text-xs leading-[1.9] ${sticky ? "max-h-[30vh] overflow-y-auto" : ""}`}
+          className={`overflow-x-auto font-mono text-xs leading-[1.9] ${bar ? "max-h-[30vh] overflow-y-auto" : ""}`}
         >
           {lines.map((line) => (
             <div key={line.id} className="whitespace-nowrap">

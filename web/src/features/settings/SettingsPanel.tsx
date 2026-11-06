@@ -34,7 +34,6 @@ import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
 import { imageSetting } from "../service/releases";
 import { limitText } from "../service/Usage";
-import { ApplyBox } from "../variables/ApplyBox";
 import {
   editPlaceholder,
   editText,
@@ -216,12 +215,6 @@ export function SettingsPanel({
           </Item>
         </dl>
       </section>
-      <ApplyBox
-        env={envPath(ref)}
-        reveal={false}
-        service={ref.service}
-        sticky
-      />
 
       <SourceSection serviceRef={ref} />
 

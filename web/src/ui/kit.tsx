@@ -185,6 +185,29 @@ export function CopyButton({
   );
 }
 
+/**
+ * A quiet "Copy command" for a dialog's `dock` equivalent: the command is
+ * its tooltip and goes to the clipboard on click.
+ */
+function CopyCommand({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="lnk"
+      title={text}
+      aria-label={`Copy command: ${text}`}
+      onClick={async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? "Copied" : "Copy command"}
+    </button>
+  );
+}
+
 /** A labeled checkbox for an on/off setting. */
 export function Check({
   label,
@@ -236,8 +259,8 @@ export function Check({
  * The app's one confirmation: a small modal that asks before a change that
  * is hard to take back. The title asks the question ("Roll back to r7?",
  * from `action` unless `title` is given), `children` say in plain words what
- * will happen, and the button names the action. The CLI equivalent sits in
- * the footer. `typed` asks the person to type a name first; keep it for
+ * will happen, and the button names the action. Copy command in the
+ * footer gives the CLI equivalent. `typed` asks the person to type a name first; keep it for
  * destructive changes that can't be undone (deleting an organization).
  * Render it only while asking: Esc, the backdrop and Cancel call onCancel.
  * The safe button has focus, so Enter never destroys by accident.
@@ -319,10 +342,10 @@ export function Confirm({
 }
 
 /**
- * Every dialog's footer, edge to edge under a line: the CLI equivalent on
- * top, then a row with `note` (why it can't go on yet, or the error) on
- * the left and the buttons, Cancel first and the named action last, on the
- * right. Put it last in a Dialog's body (it bleeds into the body's
+ * Every dialog's footer, edge to edge under a line: one row with Copy
+ * command (the CLI equivalent) and `note` (why it can't go on yet, or the
+ * error) on the left and the buttons, Cancel first and the named action
+ * last, on the right. Put it last in a Dialog's body (it bleeds into the body's
  * padding). `className` sets the space above it: 16px by default, less
  * where the form's own gap already spaces it.
  */
@@ -342,14 +365,9 @@ export function DialogFoot({
     <div
       className={`-mx-5 -mb-4 flex flex-col gap-2.5 border-t border-line px-5 py-3 ${className}`}
     >
-      {lines.length > 0 && (
-        <div className="flex flex-col gap-0.5 font-mono text-2xs break-words text-faint">
-          {lines.map((line) => (
-            <code key={line}>{line}</code>
-          ))}
-        </div>
-      )}
       <div className="flex flex-wrap items-center gap-2">
+        {/* The CLI equivalent one click away, not a second line of text. */}
+        {lines.length > 0 && <CopyCommand text={lines.join("\n")} />}
         <span className="min-w-0 flex-1 text-xs">{note}</span>
         {children}
       </div>
@@ -469,7 +487,7 @@ export function SectionHead({
 }) {
   return (
     <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-      <h2 id={id} className="text-md font-semibold">
+      <h2 id={id} className="text-[15px] font-semibold">
         {children}
       </h2>
       {aside && <span className="text-xs text-faint">{aside}</span>}

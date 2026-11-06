@@ -9,6 +9,7 @@ import {
   Actor,
   actorKind,
   Button,
+  Confirm,
   ErrorText,
   Page,
   PageBar,
@@ -387,6 +388,7 @@ function Decide({ request: r }: { request: AccessRequest }) {
   const org = useOrg();
   const decide = useDecideRequest();
   const [comment, setComment] = useState("");
+  const [asking, setAsking] = useState(false);
   const admin = session?.kind === "user" && session.scope === "admin";
   // The server's dry run of this request, asked when it is shown.
   const check = useQuery({ ...requestQueries.check(id), enabled: admin }).data;
@@ -400,6 +402,8 @@ function Decide({ request: r }: { request: AccessRequest }) {
   }
   const run = (approve: boolean) =>
     decide.mutate({ id, approve, comment: comment.trim() });
+  // Approving runs the call at once in a locked environment: asked first,
+  // in the one Confirm, like every other change that affects what runs.
   return (
     <div className="flex flex-col gap-2">
       <textarea
@@ -452,11 +456,31 @@ function Decide({ request: r }: { request: AccessRequest }) {
           primary
           disabled={decide.isPending || !!doomed}
           reason={doomed ? "Fix the cause first, or reject." : undefined}
-          onClick={() => run(true)}
+          onClick={() => setAsking(true)}
         >
-          Approve and run
+          Approve and run…
         </Button>
       </div>
+      {asking && (
+        <Confirm
+          title={`Run "${r.title}" in ${r.project}/${r.environment}?`}
+          action="Approve and run"
+          pending={decide.isPending}
+          error={decide.error}
+          onConfirm={() =>
+            decide.mutate(
+              { id, approve: true, comment: comment.trim() },
+              { onSuccess: () => setAsking(false) },
+            )
+          }
+          onCancel={() => setAsking(false)}
+        >
+          <p>
+            It runs once now, as {r.requested_by}, and {r.environment} stays
+            locked.
+          </p>
+        </Confirm>
+      )}
       <ErrorText error={decide.error} />
     </div>
   );

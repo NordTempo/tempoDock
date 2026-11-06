@@ -354,7 +354,7 @@ function InviteForm({
         cli={`dock org invite ${email.trim() || "<email>"} --role ${role}`}
         disabled={create.isPending}
       >
-        Invite
+        Create invite link
       </Act>
       <Button onClick={onCancel}>Cancel</Button>
       {emailError && (

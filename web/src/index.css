@@ -33,7 +33,7 @@
   --font-mono:
     "JetBrains Mono", "Inter", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --text-2xs: 11px;
+  --text-2xs: 12px;
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 13px;
@@ -303,7 +303,7 @@
 
   kbd {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 15px;
     color: var(--color-mut);
     border: 1px solid var(--color-edge);
@@ -440,6 +440,12 @@
   .btn.danger:hover:not(:disabled) {
     background: var(--color-fail-bg);
     border-color: var(--color-fail);
+  }
+
+  /* A destructive button that can't run looks like any disabled one. */
+  .btn.danger:disabled {
+    color: var(--color-faint);
+    border-color: var(--color-line);
   }
 
   /*
@@ -593,7 +599,7 @@
     align-items: center;
     gap: 5px;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 16px;
     padding: 1px 8px;
     border-radius: 999px;
@@ -703,7 +709,7 @@
     background: var(--color-side);
     white-space: normal;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
     color: var(--color-faint);
   }
 }

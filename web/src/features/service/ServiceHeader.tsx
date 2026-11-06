@@ -783,11 +783,11 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Act
           cli={`dock rollback ${target.number} ${flags}`}
           disabled={!canRollback}
-          title={busy ?? `To r${target.number}: the dialog says why that one`}
+          title={busy}
           onClick={() => setConfirming("rollback")}
         >
-          {/* Which release, and why, is the dialog's first line. */}
-          Roll back <kbd>B</kbd>
+          {/* Why this release is the dialog's first line. */}
+          Roll back to r{target.number} <kbd>B</kbd>
         </Act>
       )}
       <Act
