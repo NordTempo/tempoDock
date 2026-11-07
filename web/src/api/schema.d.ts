@@ -4596,7 +4596,7 @@ export interface paths {
         };
         /**
          * List the organization's analytics sites
-         * @description Live sites in every project you can read, by project, with each site's visitors and page views over the last 24 hours (absent while the analytics store can't be reached). At most 200.
+         * @description Live sites in every project you can read, by project, with each site's visitors and page views over the range, the range before it and per hour (per day over 30d); the numbers are absent while the analytics store can't be reached. At most 200.
          */
         get: operations["list-org-sites"];
         put?: never;
@@ -6862,8 +6862,10 @@ export interface components {
             role: string;
         };
         OrgSite: {
-            last_24h?: components["schemas"]["AnalyticsOverview"];
+            overview?: components["schemas"]["AnalyticsOverview"];
+            previous?: components["schemas"]["AnalyticsOverview"];
             project: string;
+            series?: components["schemas"]["AnalyticsPoint"][] | null;
             site: components["schemas"]["Site"];
         };
         OrgSiteDefaults: {
@@ -35695,6 +35697,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description How far back to count */
+                range?: "24h" | "7d" | "30d";
             };
             header?: never;
             path?: never;
@@ -35749,6 +35753,15 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -6978,11 +6978,23 @@
       "OrgSite": {
         "additionalProperties": false,
         "properties": {
-          "last_24h": {
+          "overview": {
+            "$ref": "#/components/schemas/AnalyticsOverview"
+          },
+          "previous": {
             "$ref": "#/components/schemas/AnalyticsOverview"
           },
           "project": {
             "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsPoint"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "site": {
             "$ref": "#/components/schemas/Site"
@@ -53143,7 +53155,7 @@
     },
     "/api/v1/sites": {
       "get": {
-        "description": "Live sites in every project you can read, by project, with each site's visitors and page views over the last 24 hours (absent while the analytics store can't be reached). At most 200.",
+        "description": "Live sites in every project you can read, by project, with each site's visitors and page views over the range, the range before it and per hour (per day over 30d); the numbers are absent while the analytics store can't be reached. At most 200.",
         "operationId": "list-org-sites",
         "parameters": [
           {
@@ -53151,6 +53163,22 @@
             "in": "query",
             "name": "org",
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "How far back to count",
+            "explode": false,
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "default": "24h",
+              "description": "How far back to count",
+              "enum": [
+                "24h",
+                "7d",
+                "30d"
+              ],
               "type": "string"
             }
           }
@@ -53221,6 +53249,16 @@
               }
             },
             "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {

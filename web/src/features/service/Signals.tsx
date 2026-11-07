@@ -99,8 +99,8 @@ function VisitorsLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         params={{ org, project: ref.project, site: found.site.name }}
         className={target}
       >
-        {found.last_24h
-          ? `${compact.format(found.last_24h.visitors)} visitors in 24 h`
+        {found.overview
+          ? `${compact.format(found.overview.visitors)} visitors in 24 h`
           : found.site.name}{" "}
         →
       </Link>

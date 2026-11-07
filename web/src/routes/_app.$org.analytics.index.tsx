@@ -1,35 +1,64 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { serviceRef, useProjects, useProjectTree } from "../data/queries";
-import { orgSitesQuery } from "../features/analytics/loaders";
-import { count } from "../features/analytics/parts";
+import {
+  type OrgSitesRange,
+  orgSitesQuery,
+  orgSitesRanges,
+} from "../features/analytics/loaders";
+import {
+  SiteRows,
+  SiteTiles,
+  useSiteView,
+  ViewSwitch,
+} from "../features/analytics/SiteList";
+import { RangeSwitch } from "../features/stats/parts";
 import { useOrg } from "../shell/location";
-import { Icon } from "../ui/icons";
 import { Page, PageBar, Panel, SectionHead } from "../ui/kit";
 
-// The Analytics area (ADR 0059, layout C): the organization's sites,
-// grouped by project, each with its last 24 hours. A site opens its page
-// on the same range. Projects that count nothing yet are listed too, with
+// The Analytics area (ADR 0059, layout C): the organization's sites with
+// their visitors and page views over a range (24h unless ?range= says
+// otherwise), as rows by project or as tiles. A site opens its page on
+// the same range. Projects that count nothing yet are listed too, with
 // the way to turn analytics on: a domain's switch on its service's
 // Domains tab.
 export const Route = createFileRoute("/_app/$org/analytics/")({
-  loader: ({ context: { queryClient } }) =>
-    queryClient.ensureQueryData(orgSitesQuery()),
+  validateSearch: (s: Record<string, unknown>): { range?: OrgSitesRange } =>
+    orgSitesRanges.includes(s.range as OrgSitesRange)
+      ? { range: s.range as OrgSitesRange }
+      : {},
+  loaderDeps: ({ search: { range } }) => ({ range }),
+  loader: ({ context: { queryClient }, deps: { range } }) =>
+    queryClient.ensureQueryData(orgSitesQuery(range)),
   component: Sites,
 });
 
 function Sites() {
-  const org = useOrg();
-  const sites = useSuspenseQuery(orgSitesQuery()).data;
-  // By project, in the API's order.
-  const projects = new Map<string, typeof sites>();
-  for (const s of sites)
-    projects.set(s.project, [...(projects.get(s.project) ?? []), s]);
+  const { range = "24h" } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const [view, setView] = useSiteView();
+  const sites = useSuspenseQuery(orgSitesQuery(range)).data;
   return (
     <>
-      <PageBar title="Analytics" />
+      <PageBar
+        title="Analytics"
+        actions={
+          sites.length > 0 && (
+            <>
+              <RangeSwitch
+                value={range}
+                options={orgSitesRanges}
+                onChange={(r) =>
+                  navigate({ search: r === "24h" ? {} : { range: r } })
+                }
+              />
+              <ViewSwitch value={view} onChange={setView} />
+            </>
+          )
+        }
+      />
       <Page>
-        {sites.length === 0 && (
+        {sites.length === 0 ? (
           <p className="text-mut">
             No site counts visits yet. Turn counting on for a domain on its
             service's Domains tab, or with{" "}
@@ -38,65 +67,12 @@ function Sites() {
             </code>
             .
           </p>
+        ) : view === "tiles" ? (
+          <SiteTiles sites={sites} range={range} />
+        ) : (
+          <SiteRows sites={sites} range={range} />
         )}
-        {[...projects].map(([project, rows]) => (
-          <section key={project} aria-labelledby={`p-${project}`}>
-            <SectionHead id={`p-${project}`}>{project}</SectionHead>
-            <Panel>
-              <table className="tabular-nums">
-                <thead>
-                  <tr>
-                    <th>Site</th>
-                    <th className="text-right">Visitors, 24h</th>
-                    <th className="text-right">Page views, 24h</th>
-                    <th>Services</th>
-                    <th>
-                      <span className="sr-only">Open</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(({ site, last_24h: day }) => (
-                    <tr key={site.name} className="row-link">
-                      <td className="w-[45%]">
-                        <Link
-                          to="/$org/analytics/$project/$site"
-                          params={{ org, project, site: site.name }}
-                          search={{ range: "24h" }}
-                          className="row-main font-mono text-fg underline decoration-dash underline-offset-3 hover:decoration-fg"
-                        >
-                          {site.name}
-                        </Link>{" "}
-                        <span className="text-xs text-faint">
-                          {site.environment}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        {day ? count(day.visitors) : "–"}
-                      </td>
-                      <td className="text-right">
-                        {day ? count(day.pageviews) : "–"}
-                      </td>
-                      <td className="text-mut">
-                        {[
-                          ...new Set(
-                            (site.hostnames ?? []).flatMap(
-                              (h) => h.service || [],
-                            ),
-                          ),
-                        ].join(", ") || "–"}
-                      </td>
-                      <td className="row-go" aria-hidden>
-                        <Icon name="chevronRight" size={14} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Panel>
-          </section>
-        ))}
-        <WithoutAnalytics counted={new Set(projects.keys())} />
+        <WithoutAnalytics counted={new Set(sites.map((s) => s.project))} />
       </Page>
     </>
   );
