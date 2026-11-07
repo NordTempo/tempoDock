@@ -9,13 +9,14 @@ import { useReleases, useService } from "../../data/queries";
 import type { LogLine, ServiceRef } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { clockSec, since } from "../../ui/format";
+import { logLevel } from "./logLevel";
 
 export type LogFilter = {
   /** A release's output; null follows the active release. */
   release: number | null;
   /** Build output instead of container output. */
   build: boolean;
-  /** stderr lines and lines that say error, fatal or panic. */
+  /** Lines that state an error level, or say error, fatal or panic. */
   errors: boolean;
   /** Text, or /regex/. */
   query: string;
@@ -42,9 +43,6 @@ const sinces = ["", "10m", "1h", "6h", "24h"];
 
 /** Rendered lines are capped; the stream keeps more for filtering. */
 const VISIBLE = 500;
-
-// Error words, or an HTTP 5xx status between spaces ("POST /api 502 31ms").
-const errorWords = /\b(error|fatal|panic|exception)\b|\s5\d\d\s/i;
 
 function matcher(query: string): (text: string) => boolean {
   const regex = /^\/(.+)\/([a-z]*)$/.exec(query);
@@ -118,12 +116,7 @@ export function LogsPane({
     const matches = filter.query ? matcher(filter.query) : null;
     const out: LogLine[] = [];
     for (const line of stream.lines) {
-      if (
-        filter.errors &&
-        line.stream !== "stderr" &&
-        !errorWords.test(line.text)
-      )
-        continue;
+      if (filter.errors && logLevel(line.text) !== "error") continue;
       if (matches && !matches(line.text)) continue;
       out.push(line);
       if (out.length === VISIBLE) break;
@@ -327,10 +320,11 @@ export function LogsPane({
 }
 
 /**
- * One log line, with WARN and ERROR words colored. A line the Errors only
- * filter keeps (stderr, or error words) gets a red rule and tint, so
- * errors stand out without the filter. Quiet drops the tint, for a block
- * that is already about a failure (a failed release's last lines).
+ * One log line, with WARN and ERROR words colored. A line logLevel reads
+ * as an error (the ones Errors only keeps) gets a red rule and tint, a
+ * warning an amber one, so they stand out without the filter. Quiet drops
+ * the tint, for a block that is already about a failure (a failed
+ * release's last lines).
  */
 export const LogRow = memo(function LogRow({
   line,
@@ -339,13 +333,12 @@ export const LogRow = memo(function LogRow({
   line: LogLine;
   quiet?: boolean;
 }) {
-  const error =
-    !quiet && (line.stream === "stderr" || errorWords.test(line.text));
+  const level = quiet ? null : logLevel(line.text);
   const parts = line.text.split(/\b(WARN(?:ING)?|ERROR|FATAL|PANIC)\b/);
   return (
     <div
       // Long lines wrap (under their time) instead of running off the edge.
-      className={`border-l-2 pr-3 pl-[calc(0.75rem+9ch)] -indent-[9ch] break-words whitespace-pre-wrap ${error ? "border-fail bg-fail-bg" : "border-transparent"}`}
+      className={`border-l-2 pr-3 pl-[calc(0.75rem+9ch)] -indent-[9ch] break-words whitespace-pre-wrap ${level === "error" ? "border-fail bg-fail-bg" : level === "warn" ? "border-warn bg-warn-bg" : "border-transparent"}`}
     >
       {line.time && <span className="text-faint">{clockSec(line.time)} </span>}
       {parts.map((part, i) =>
