@@ -57,7 +57,7 @@ func TestFirstUseInATransactionNeedsNoSecondConnection(t *testing.T) {
 			close(locked)
 			// Let the others take every other connection, waiting in BEGIN.
 			time.Sleep(300 * time.Millisecond)
-			_, err := q.CountOrgAdmins(ctx, f.project.OrgID)
+			_, err := q.CountOtherOrgAdmins(ctx, CountOtherOrgAdminsParams{OrgID: f.project.OrgID, UserID: 1})
 			return err
 		}); err != nil {
 			t.Error(err)

@@ -391,6 +391,9 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 		c.log.Error("record the end of a run", "run", r.row.ID, "err", err)
 	}
 	r.row.Status, r.row.ExitCode, r.row.Error, r.row.Output, r.row.FinishedAt = string(status), code, msg, output, &at
+	// The run's slots go before its end is announced: a client that saw
+	// it end may act on the job at once (remove it, run it again).
+	r.release()
 	if r.job != nil {
 		// A job's run is its history, not the audit log's (a job every
 		// minute would bury it); running one now is audited as job.run.

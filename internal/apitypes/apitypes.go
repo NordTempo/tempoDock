@@ -531,6 +531,9 @@ type Release struct {
 	// dropped it since.
 	LogsKept bool           `json:"logs_kept" doc:"The output of the release's removed container was kept, so its logs can be read until [logs] limits drop it"`
 	Events   []ReleaseEvent `json:"events,omitempty" doc:"Progress lines; only included when fetching one release"`
+	// NewErrors counts the service's error issues first seen in this
+	// release (ADR 0062), for "N new errors since this release".
+	NewErrors int `json:"new_errors" doc:"Error issues first seen in this release; only counted when fetching one release"`
 }
 
 // ReleaseConfig summarises a release's resolved config without secret values.
@@ -1030,6 +1033,9 @@ type User struct {
 	Tokens int `json:"tokens"`
 	// TwoFactor is set when the user has a passkey or an authenticator app.
 	TwoFactor bool `json:"two_factor"`
+	// ExpiresAt is when an operator's membership from Join as operator
+	// ends (ADR 0062); unset for every other member.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // ResetPasswordRequest sets another user's password. Without a password

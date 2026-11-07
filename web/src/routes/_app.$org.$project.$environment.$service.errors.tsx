@@ -1,59 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { servicePath } from "../data/queries";
-import { applyChange, parseFilter } from "../features/analytics/data";
-import { ErrorsView } from "../features/analytics/ErrorsView";
-import {
-  type AnalyticsSearch,
-  analyticsSearch,
-  sitesQuery,
-} from "../features/analytics/loaders";
-import { ServiceSite } from "../features/analytics/ServiceSite";
+import { errorsQuery } from "../features/errors/data";
+import { ErrorsView } from "../features/errors/ErrorsView";
 
-// A service's Errors tab (ADR 0059): for now the browser errors Dock
-// Analytics collects on its site's pages (ADR 0037).
-// …/web/errors?site=…&range=7d&g=<group>, g the group opened under its row.
-type Search = AnalyticsSearch & { g?: string };
-
+// A service's Errors tab (ADR 0062): the org's errors view fixed to this
+// service: its open alerts, then its issues from the browser, its logs
+// and 5xx spikes. …/web/errors?all=1 shows resolved ones too.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/errors",
 )({
-  validateSearch: (s: Record<string, unknown>): Search => ({
-    ...analyticsSearch(s),
-    ...(typeof s.g === "string" && /^[0-9a-f]{16}$/.test(s.g) && { g: s.g }),
+  validateSearch: (s: Record<string, unknown>): { all?: boolean } => ({
+    all: s.all === true || s.all === "1" || undefined,
   }),
-  loader: ({ context: { queryClient }, params }) =>
-    queryClient.ensureQueryData(sitesQuery(params.project)),
-  component: Errors,
+  loaderDeps: ({ search }) => search,
+  loader: ({ context: { queryClient }, params, deps }) =>
+    queryClient.ensureQueryData(
+      errorsQuery({ ...servicePath(params), all: deps.all }),
+    ),
+  component: ErrorsTab,
 });
 
-function Errors() {
+function ErrorsTab() {
   const ref = servicePath(Route.useParams());
-  const search = Route.useSearch();
+  const { all } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
-  const range = search.range ?? "30d";
   return (
-    <ServiceSite
-      serviceRef={ref}
-      site={search.site}
-      range={range}
-      filters={filters}
-      onChange={(change) =>
-        navigate({ search: (s) => applyChange(s, change), replace: true })
+    <ErrorsView
+      fixed
+      filter={{ ...ref, all }}
+      onFilter={(next) =>
+        navigate({ search: { all: next.all || undefined }, replace: true })
       }
-    >
-      {(site) => (
-        <ErrorsView
-          project={ref.project}
-          site={site.name}
-          range={range}
-          filters={filters}
-          open={search.g}
-          onOpen={(g) =>
-            navigate({ search: (s) => ({ ...s, g }), replace: true })
-          }
-        />
-      )}
-    </ServiceSite>
+    />
   );
 }

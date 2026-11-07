@@ -324,6 +324,7 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 	if err != nil {
 		return 0, err
 	}
+	c.connectionWorks(ctx, cloudflareAlertKey(row.ID))
 	c.cloudflareChanged(ctx)
 	return len(zones), nil
 }
@@ -348,6 +349,7 @@ func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, name string) error
 	if err := c.store.DeleteCloudflareConnection(ctx, row.ID); err != nil {
 		return err
 	}
+	c.connectionWorks(ctx, cloudflareAlertKey(row.ID))
 	c.audit(ctx, a.platform(), "cloudflare.connection_remove", nil, nil, name, "removed Cloudflare connection "+name+"; the records of its domains stay in Cloudflare")
 	c.cloudflareChanged(ctx)
 	return nil

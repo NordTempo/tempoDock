@@ -103,6 +103,10 @@ go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmark
   SQLite queries, the retention pass, the alert engine's event handling,
   the access check for login-protected services, traffic counting, a
   site dashboard's deploy markers (`BenchmarkListSiteDeploys`), and
+error issues (`BenchmarkAssembler` and `BenchmarkErrorFollowerLine`, a
+log line without an error: 130 and 80 ns, no allocation;
+`BenchmarkErrorsWrite50`, a tick's write of 100 issues; `BenchmarkListErrors`,
+the errors page of 50 services and 200 issues),
 the analytics ingest and spool (`BenchmarkIngestEvent`,
 `BenchmarkAppend`: 4 µs and 6 allocations an event, budget 20 µs;
 `BenchmarkIngestError` and `BenchmarkIngestVitals`, 5 µs;
@@ -148,6 +152,15 @@ event driven: Docker's event stream, the in-process event bus and SSE.
 - Prefer a timer to the next deadline over a fixed ticker; prefer backoff
   over a fixed retry interval.
 - Resource stats and logs are read only while someone is viewing them.
+- Log followers ([ADR 0046](decisions/0046-log-history-and-drains.md),
+  [ADR 0062](decisions/0062-org-alerts-and-operators.md#one-place-for-errors))
+  have no timer: each running service container has one Logs stream,
+  which blocks until the container writes. Every line is read for
+  errors as it arrives (`BenchmarkErrorFollowerLine`: a lock and a byte
+  scan, no allocation); found errors wait in a bounded sink for the
+  statistics tick, which writes them. A remote server's lines cross its
+  node link, one HTTP/2 stream per container, at most 150 per server
+  outside environments with drains.
 - Traffic counting ([ADR 0033](decisions/0033-traffic-statistics.md))
   has no timer: the counter blocks on its UDP socket until Caddy sends a
   line, and the stats tick drains it. Caddy never waits for it.
@@ -163,10 +176,11 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 |---|---|---|---|---|
 | Statistics tick | `internal/core/stats.go` | 1 min, on the minute | always (ADR 0015) | a few file reads per server and container, plus one `memory.stat` per systemd unit and container for the memory breakdown (ADR 0032, `BenchmarkHostStats`), one transaction, one `usage` event per server and per environment (`BenchmarkStatsTick50`) |
 | Traffic on the tick | `internal/core/traffic.go` | with the statistics tick | always (ADR 0033) | one drain per server; with requests, one transaction and one `traffic` event per environment (`BenchmarkTrafficTick50`, ~7 ms for 50 busy services); at each new hour a trim and prune |
-| Alerts on the tick | `internal/core/alerts.go` | with the statistics tick | always (ADR 0020) | in memory: disk use and offline time per server, quiet crash loops; one reminder query only while alerts are open (part of `BenchmarkStatsTick50`) |
+| Alerts on the tick | `internal/core/alerts.go` | with the statistics tick | always (ADR 0020) | in memory: disk, memory and CPU use (from the samples just taken, ADR 0062) and offline time per server, quiet crash loops; one reminder query only while alerts are open (part of `BenchmarkStatsTick50`). Connection alerts (Cloudflare, GitHub App, storage, registry) have no timer: they open and resolve on calls Dock makes anyway |
+| Error issues on the tick | `internal/core/errors_ingest.go` | with the statistics tick | always (ADR 0062) | in memory: ends errors that waited 2 s for their next line (a lock per follower) and expires day-old error alerts; with errors since the last tick, one transaction of a few indexed statements per issue (`BenchmarkErrorsWrite50`, ~2.6 ms for 100 issues in 50 services) and an alert per new or regressed issue (at most 3 open per service). A minute without errors writes nothing |
 | Health restarts on the tick | `internal/core/health.go` | with the statistics tick | always (ADR 0043) | in memory: one map walk; for an unhealthy service whose backoff ran out, an inspect, two queries and a restart |
 | Ongoing health probe | Docker, inside each app container (`cmd/dock-probe`) | 30 s per container (`health_check_interval_seconds`); 2 s during a start period | a service with something to probe runs (ADR 0043) | one exec of dock-probe by Docker: a connect and at most one HTTP request, ~4 MB for a few ms in the app's cgroup. Nothing in the daemon: it reads the result from Docker's event stream |
-| Retention pass | `internal/core/retention.go` | at most hourly, on the statistics tick | always (ADR 0020) | three indexed reads when nothing is due (`BenchmarkRetentionPass`, ~50 µs); otherwise batches of 200 deletes, 10 per kind. In the background, one service ID list and one `prune-logs` call per online server: a directory listing per service with log history (ADR 0046) |
+| Retention pass | `internal/core/retention.go` | at most hourly, on the statistics tick | always (ADR 0020) | three indexed reads when nothing is due, and three indexed statements on error issues (quiet ones resolve, old resolved ones and counts go; ADR 0062) (`BenchmarkRetentionPass`, ~50 µs); otherwise batches of 200 deletes, 10 per kind. In the background, one service ID list and one `prune-logs` call per online server: a directory listing per service with log history (ADR 0046) |
 | Disk prune | `internal/core/retention.go` | at most hourly per server, on the statistics tick | a server's Docker disk is past `prune_disk_percent` | one image list and removals, a BuildKit prune on builders, in the background |
 | Alert delivery retry | `internal/core/alerts_notify.go` | 0, 10 s, 1 min, 5 min, 15 min | a channel has notifications queued | one HTTP POST or SMTP session per attempt |
 | Log drain batch | `internal/core/drains_deliver.go` | once, 1 s after a sender starts on a batch (sooner when 1,000 lines are queued) | a log drain has lines queued (ADR 0046); the sender exits when its queue is empty | one HTTP POST, or one syslog write, per batch of up to 1,000 lines; per line a follower pays one non-blocking enqueue per drain (`BenchmarkDrainEnqueue`) and the sender one encode (`BenchmarkDrainEncodeHTTP`, `BenchmarkDrainEncodeLoki`, `BenchmarkDrainEncodeSyslog`, per 1,000 lines). The HTTP client keeps one idle connection per drain host, closed 90 s after the last batch |
@@ -287,6 +301,12 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
   chunk 429. The counts are a 16 KB table and an entry per site, reset
   by the first request of a new second, without a timer
   (`BenchmarkIngestEventParallel/parallel=8`).
+- Error issues ([ADR 0062](decisions/0062-org-alerts-and-operators.md#one-place-for-errors)):
+  a follower keeps at most one error being assembled (50 lines, 8 KB)
+  and a reference to its last line; the sink between two ticks holds at
+  most 50 fingerprints per service and 2,000 in all, dropping and
+  counting past them; a tick opens at most 10 issues per service, and a
+  service has at most 1,000.
 - Project rename canonicalization keeps one current name per renamed project ID
   for the daemon's lifetime. It is bounded by projects, not rename count, and
   avoids DB reads for in-flight events. There are no historical aliases or timers

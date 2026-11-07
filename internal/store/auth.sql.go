@@ -272,7 +272,7 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 
 const getTokenByHash = `-- name: GetTokenByHash :one
 SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.sso_org_id, users.email AS user_email, users.operator AS user_operator,
-    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, sso_orgs.slug AS sso_org_slug
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at, sso_orgs.slug AS sso_org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = tokens.sso_org_id
 WHERE tokens.hash = +?
@@ -284,6 +284,7 @@ type GetTokenByHashRow struct {
 	UserOperator   *bool
 	UserDisabledAt *time.Time
 	OrgSlug        *string
+	OrgSuspendedAt *time.Time
 	SsoOrgSlug     *string
 }
 
@@ -319,6 +320,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 		&i.UserOperator,
 		&i.UserDisabledAt,
 		&i.OrgSlug,
+		&i.OrgSuspendedAt,
 		&i.SsoOrgSlug,
 	)
 	return i, err
@@ -326,7 +328,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 
 const getTokenByIDWithOwner = `-- name: GetTokenByIDWithOwner :one
 SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.sso_org_id, users.email AS user_email, users.operator AS user_operator,
-    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, sso_orgs.slug AS sso_org_slug
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at, sso_orgs.slug AS sso_org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = tokens.sso_org_id
 WHERE tokens.id = +?
@@ -338,6 +340,7 @@ type GetTokenByIDWithOwnerRow struct {
 	UserOperator   *bool
 	UserDisabledAt *time.Time
 	OrgSlug        *string
+	OrgSuspendedAt *time.Time
 	SsoOrgSlug     *string
 }
 
@@ -371,6 +374,7 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 		&i.UserOperator,
 		&i.UserDisabledAt,
 		&i.OrgSlug,
+		&i.OrgSuspendedAt,
 		&i.SsoOrgSlug,
 	)
 	return i, err
@@ -419,13 +423,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, org_members.role,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, org_members.role, org_members.expires_at,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1 AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens,
     EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
 FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +?2
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 ORDER BY org_members.user_id
 `
 
@@ -437,6 +442,7 @@ type ListOrgMembersParams struct {
 type ListOrgMembersRow struct {
 	User      User
 	Role      string
+	ExpiresAt *int64
 	Sessions  int64
 	Tokens    int64
 	TwoFactor bool
@@ -444,7 +450,7 @@ type ListOrgMembersRow struct {
 
 // ListOrgMembers is an org's users with their role, live sessions and
 // usable tokens: the tokens they created (user_id), as their account page
-// lists them.
+// lists them. An operator who joined for a while shows until it expires.
 func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) ([]ListOrgMembersRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOrgMembers, arg.Now, arg.OrgID)
 	if err != nil {
@@ -465,6 +471,7 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 			&i.User.FactorFailures,
 			&i.User.FactorFailedAt,
 			&i.Role,
+			&i.ExpiresAt,
 			&i.Sessions,
 			&i.Tokens,
 			&i.TwoFactor,

@@ -332,7 +332,7 @@ func (c *Core) watchServer(ctx context.Context, serverID int64, kick <-chan stru
 					if err := c.reconcileServer(ctx, serverID, rt, false); err != nil {
 						c.log.Warn("resync server", "server", serverID, "err", err)
 					}
-					c.followServerDrains(ctx, serverID)
+					c.followServer(ctx, serverID)
 				}
 				continue
 			}
@@ -346,8 +346,8 @@ func (c *Core) watchServer(ctx context.Context, serverID int64, kick <-chan stru
 // releases are removed, stateful releases cut short while it was away are
 // started again, service statuses are read, its routes are applied again
 // (the control plane is the source of truth), it runs the Cloudflare
-// tunnel Dock runs for it, its domains in Cloudflare follow, and log
-// drains follow its containers again.
+// tunnel Dock runs for it, its domains in Cloudflare follow, and its
+// containers are followed again for errors and log drains.
 func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	rt := c.connected(serverID)
 	if rt == nil {
@@ -369,7 +369,7 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	}
 	c.kickDomains()
 	c.kickBackups() // overdue backups run now
-	c.followServerDrains(ctx, serverID)
+	c.followServer(ctx, serverID)
 	c.kickJobs()              // and overdue jobs
 	c.resumeMoves(ctx, false) // a move may have waited for it
 	c.resumeServerDrains(ctx) // and a drain

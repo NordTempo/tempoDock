@@ -124,7 +124,7 @@ func (q *Queries) DeleteSSOProviderDomains(ctx context.Context, providerID int64
 }
 
 const findSSOProviders = `-- name: FindSSOProviders :many
-SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only
+SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
 FROM sso_provider_domains
 JOIN sso_providers ON sso_providers.id = sso_provider_domains.provider_id
 JOIN orgs ON orgs.id = sso_providers.org_id
@@ -166,6 +166,9 @@ func (q *Queries) FindSSOProviders(ctx context.Context, domain string) ([]FindSS
 			&i.Org.RequestTtlHours,
 			&i.Org.RequireTwoFactor,
 			&i.Org.SsoOnly,
+			&i.Org.SuspendedAt,
+			&i.Org.SuspendedBy,
+			&i.Org.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -260,7 +263,7 @@ func (q *Queries) GetSSOIdentity(ctx context.Context, arg GetSSOIdentityParams) 
 }
 
 const getSSOProviderByOrg = `-- name: GetSSOProviderByOrg :one
-SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only
+SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
 FROM orgs JOIN sso_providers ON sso_providers.org_id = orgs.id
 WHERE orgs.slug = +?1 AND sso_providers.name = +?2
 `
@@ -298,12 +301,15 @@ func (q *Queries) GetSSOProviderByOrg(ctx context.Context, arg GetSSOProviderByO
 		&i.Org.RequestTtlHours,
 		&i.Org.RequireTwoFactor,
 		&i.Org.SsoOnly,
+		&i.Org.SuspendedAt,
+		&i.Org.SuspendedBy,
+		&i.Org.DeletedAt,
 	)
 	return i, err
 }
 
 const getSSOProviderWithOrg = `-- name: GetSSOProviderWithOrg :one
-SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only
+SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
 FROM sso_providers JOIN orgs ON orgs.id = sso_providers.org_id
 WHERE sso_providers.id = +?
 `
@@ -334,6 +340,9 @@ func (q *Queries) GetSSOProviderWithOrg(ctx context.Context, id int64) (GetSSOPr
 		&i.Org.RequestTtlHours,
 		&i.Org.RequireTwoFactor,
 		&i.Org.SsoOnly,
+		&i.Org.SuspendedAt,
+		&i.Org.SuspendedBy,
+		&i.Org.DeletedAt,
 	)
 	return i, err
 }
@@ -439,7 +448,7 @@ func (q *Queries) ListSSOProviderDomains(ctx context.Context, providerID int64) 
 }
 
 const setOrgSSOOnly = `-- name: SetOrgSSOOnly :one
-UPDATE orgs SET sso_only = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only
+UPDATE orgs SET sso_only = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
 `
 
 type SetOrgSSOOnlyParams struct {
@@ -459,12 +468,15 @@ func (q *Queries) SetOrgSSOOnly(ctx context.Context, arg SetOrgSSOOnlyParams) (O
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
 		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const setOrgSSOOnlyBySlug = `-- name: SetOrgSSOOnlyBySlug :one
-UPDATE orgs SET sso_only = ? WHERE slug = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only
+UPDATE orgs SET sso_only = ? WHERE slug = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
 `
 
 type SetOrgSSOOnlyBySlugParams struct {
@@ -484,6 +496,9 @@ func (q *Queries) SetOrgSSOOnlyBySlug(ctx context.Context, arg SetOrgSSOOnlyBySl
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
 		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
 	)
 	return i, err
 }

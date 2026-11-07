@@ -25,13 +25,41 @@ func (q *Queries) AddAlertNotice(ctx context.Context, arg AddAlertNoticeParams) 
 	return err
 }
 
+const alertProjectOrg = `-- name: AlertProjectOrg :one
+SELECT org_id FROM projects WHERE id = +?
+`
+
+// The org of the project an alert is about.
+func (q *Queries) AlertProjectOrg(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, alertProjectOrg, id)
+	var org_id int64
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
+const alertServiceOrg = `-- name: AlertServiceOrg :one
+SELECT projects.org_id FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE services.id = +?
+`
+
+// The org of the service an alert is about.
+func (q *Queries) AlertServiceOrg(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, alertServiceOrg, id)
+	var org_id int64
+	err := row.Scan(&org_id)
+	return org_id, err
+}
+
 const createAlertChannel = `-- name: CreateAlertChannel :one
-INSERT INTO alert_channels (name, kind, target, config, min_severity, renotify_minutes, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures
+INSERT INTO alert_channels (org_id, name, kind, target, config, min_severity, renotify_minutes, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures
 `
 
 type CreateAlertChannelParams struct {
+	OrgID           *int64
 	Name            string
 	Kind            string
 	Target          string
@@ -43,6 +71,7 @@ type CreateAlertChannelParams struct {
 
 func (q *Queries) CreateAlertChannel(ctx context.Context, arg CreateAlertChannelParams) (AlertChannel, error) {
 	row := q.db.QueryRowContext(ctx, createAlertChannel,
+		arg.OrgID,
 		arg.Name,
 		arg.Kind,
 		arg.Target,
@@ -54,6 +83,7 @@ func (q *Queries) CreateAlertChannel(ctx context.Context, arg CreateAlertChannel
 	var i AlertChannel
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
 		&i.Kind,
 		&i.Target,
@@ -78,6 +108,20 @@ func (q *Queries) DeleteAlertChannel(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteAlertChannelCopy = `-- name: DeleteAlertChannelCopy :exec
+DELETE FROM alert_channel_copies WHERE channel_id = +? AND org_id = +?
+`
+
+type DeleteAlertChannelCopyParams struct {
+	ChannelID int64
+	OrgID     int64
+}
+
+func (q *Queries) DeleteAlertChannelCopy(ctx context.Context, arg DeleteAlertChannelCopyParams) error {
+	_, err := q.db.ExecContext(ctx, deleteAlertChannelCopy, arg.ChannelID, arg.OrgID)
+	return err
+}
+
 const deleteAlertNotices = `-- name: DeleteAlertNotices :exec
 DELETE FROM alert_notices WHERE alert_id = +?
 `
@@ -88,7 +132,7 @@ func (q *Queries) DeleteAlertNotices(ctx context.Context, alertID int64) error {
 }
 
 const getAlert = `-- name: GetAlert :one
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target FROM alerts WHERE id = +?
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id FROM alerts WHERE id = +?
 `
 
 func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
@@ -112,19 +156,26 @@ func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
 		&i.ServiceID,
 		&i.Command,
 		&i.Target,
+		&i.OrgID,
 	)
 	return i, err
 }
 
 const getAlertChannel = `-- name: GetAlertChannel :one
-SELECT id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels WHERE name = +?
+SELECT id, org_id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) AND name = +?2
 `
 
-func (q *Queries) GetAlertChannel(ctx context.Context, name string) (AlertChannel, error) {
-	row := q.db.QueryRowContext(ctx, getAlertChannel, name)
+type GetAlertChannelParams struct {
+	Org  int64
+	Name string
+}
+
+func (q *Queries) GetAlertChannel(ctx context.Context, arg GetAlertChannelParams) (AlertChannel, error) {
+	row := q.db.QueryRowContext(ctx, getAlertChannel, arg.Org, arg.Name)
 	var i AlertChannel
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
 		&i.Kind,
 		&i.Target,
@@ -141,7 +192,7 @@ func (q *Queries) GetAlertChannel(ctx context.Context, name string) (AlertChanne
 }
 
 const getAlertChannelByID = `-- name: GetAlertChannelByID :one
-SELECT id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels WHERE id = +?
+SELECT id, org_id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels WHERE id = +?
 `
 
 func (q *Queries) GetAlertChannelByID(ctx context.Context, id int64) (AlertChannel, error) {
@@ -149,6 +200,7 @@ func (q *Queries) GetAlertChannelByID(ctx context.Context, id int64) (AlertChann
 	var i AlertChannel
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
 		&i.Kind,
 		&i.Target,
@@ -164,12 +216,62 @@ func (q *Queries) GetAlertChannelByID(ctx context.Context, id int64) (AlertChann
 	return i, err
 }
 
-const listAlertChannels = `-- name: ListAlertChannels :many
-SELECT id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels ORDER BY name
+const listAlertChannelCopies = `-- name: ListAlertChannelCopies :many
+SELECT alert_channels.id, alert_channels.org_id, alert_channels.name, alert_channels.kind, alert_channels.target, alert_channels.config, alert_channels.min_severity, alert_channels.renotify_minutes, alert_channels.created_at, alert_channels.last_sent_at, alert_channels.last_error, alert_channels.last_error_at, alert_channels.failures, alert_channel_copies.org_id AS copy_org_id FROM alert_channel_copies
+JOIN alert_channels ON alert_channels.id = alert_channel_copies.channel_id
 `
 
-func (q *Queries) ListAlertChannels(ctx context.Context) ([]AlertChannel, error) {
-	rows, err := q.db.QueryContext(ctx, listAlertChannels)
+type ListAlertChannelCopiesRow struct {
+	AlertChannel AlertChannel
+	CopyOrgID    int64
+}
+
+// Platform channels still to be copied into an org (0070_org_alerts.sql).
+func (q *Queries) ListAlertChannelCopies(ctx context.Context) ([]ListAlertChannelCopiesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAlertChannelCopies)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAlertChannelCopiesRow
+	for rows.Next() {
+		var i ListAlertChannelCopiesRow
+		if err := rows.Scan(
+			&i.AlertChannel.ID,
+			&i.AlertChannel.OrgID,
+			&i.AlertChannel.Name,
+			&i.AlertChannel.Kind,
+			&i.AlertChannel.Target,
+			&i.AlertChannel.Config,
+			&i.AlertChannel.MinSeverity,
+			&i.AlertChannel.RenotifyMinutes,
+			&i.AlertChannel.CreatedAt,
+			&i.AlertChannel.LastSentAt,
+			&i.AlertChannel.LastError,
+			&i.AlertChannel.LastErrorAt,
+			&i.AlertChannel.Failures,
+			&i.CopyOrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAlertChannels = `-- name: ListAlertChannels :many
+SELECT id, org_id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) ORDER BY name
+`
+
+// An org's channels (org 0: the platform's), by name.
+func (q *Queries) ListAlertChannels(ctx context.Context, org int64) ([]AlertChannel, error) {
+	rows, err := q.db.QueryContext(ctx, listAlertChannels, org)
 	if err != nil {
 		return nil, err
 	}
@@ -179,6 +281,7 @@ func (q *Queries) ListAlertChannels(ctx context.Context) ([]AlertChannel, error)
 		var i AlertChannel
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrgID,
 			&i.Name,
 			&i.Kind,
 			&i.Target,
@@ -204,46 +307,22 @@ func (q *Queries) ListAlertChannels(ctx context.Context) ([]AlertChannel, error)
 	return items, nil
 }
 
-const listAlertNotices = `-- name: ListAlertNotices :many
-SELECT channel_id FROM alert_notices WHERE alert_id = +?
-`
-
-// The channels told about an alert.
-func (q *Queries) ListAlertNotices(ctx context.Context, alertID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listAlertNotices, alertID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []int64
-	for rows.Next() {
-		var channel_id int64
-		if err := rows.Scan(&channel_id); err != nil {
-			return nil, err
-		}
-		items = append(items, channel_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listAlerts = `-- name: ListAlerts :many
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target FROM alerts WHERE id < +?1 ORDER BY id DESC LIMIT +?2
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id FROM alerts
+WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) AND id < +?2
+ORDER BY id DESC LIMIT +?3
 `
 
 type ListAlertsParams struct {
+	Org      int64
 	BeforeID int64
 	MaxRows  int64
 }
 
-// Every alert, open or not, newest first; page with before_id.
+// An org's alerts (org 0: the platform's), open or not, newest first;
+// page with before_id.
 func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert, error) {
-	rows, err := q.db.QueryContext(ctx, listAlerts, arg.BeforeID, arg.MaxRows)
+	rows, err := q.db.QueryContext(ctx, listAlerts, arg.Org, arg.BeforeID, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +348,7 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 			&i.ServiceID,
 			&i.Command,
 			&i.Target,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
@@ -284,15 +364,15 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 }
 
 const listDueReminders = `-- name: ListDueReminders :many
-SELECT alert_notices.alert_id, alert_notices.channel_id FROM alert_notices
+SELECT alert_notices.alert_id, alert_channels.id, alert_channels.org_id, alert_channels.name, alert_channels.kind, alert_channels.target, alert_channels.config, alert_channels.min_severity, alert_channels.renotify_minutes, alert_channels.created_at, alert_channels.last_sent_at, alert_channels.last_error, alert_channels.last_error_at, alert_channels.failures FROM alert_notices
 JOIN alert_channels ON alert_channels.id = alert_notices.channel_id
 WHERE alert_channels.renotify_minutes > 0
   AND alert_notices.notified_at + alert_channels.renotify_minutes * 60 <= CAST(?1 AS INTEGER)
 `
 
 type ListDueRemindersRow struct {
-	AlertID   int64
-	ChannelID int64
+	AlertID      int64
+	AlertChannel AlertChannel
 }
 
 // Open alerts a channel was told about longer than its renotify interval
@@ -306,7 +386,22 @@ func (q *Queries) ListDueReminders(ctx context.Context, now int64) ([]ListDueRem
 	var items []ListDueRemindersRow
 	for rows.Next() {
 		var i ListDueRemindersRow
-		if err := rows.Scan(&i.AlertID, &i.ChannelID); err != nil {
+		if err := rows.Scan(
+			&i.AlertID,
+			&i.AlertChannel.ID,
+			&i.AlertChannel.OrgID,
+			&i.AlertChannel.Name,
+			&i.AlertChannel.Kind,
+			&i.AlertChannel.Target,
+			&i.AlertChannel.Config,
+			&i.AlertChannel.MinSeverity,
+			&i.AlertChannel.RenotifyMinutes,
+			&i.AlertChannel.CreatedAt,
+			&i.AlertChannel.LastSentAt,
+			&i.AlertChannel.LastError,
+			&i.AlertChannel.LastErrorAt,
+			&i.AlertChannel.Failures,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -377,8 +472,52 @@ func (q *Queries) ListFailedLatestReleases(ctx context.Context) ([]ListFailedLat
 	return items, nil
 }
 
+const listNoticedChannels = `-- name: ListNoticedChannels :many
+SELECT alert_channels.id, alert_channels.org_id, alert_channels.name, alert_channels.kind, alert_channels.target, alert_channels.config, alert_channels.min_severity, alert_channels.renotify_minutes, alert_channels.created_at, alert_channels.last_sent_at, alert_channels.last_error, alert_channels.last_error_at, alert_channels.failures FROM alert_notices
+JOIN alert_channels ON alert_channels.id = alert_notices.channel_id
+WHERE alert_notices.alert_id = +?
+`
+
+// The channels told about an alert, whichever org they are in now.
+func (q *Queries) ListNoticedChannels(ctx context.Context, alertID int64) ([]AlertChannel, error) {
+	rows, err := q.db.QueryContext(ctx, listNoticedChannels, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AlertChannel
+	for rows.Next() {
+		var i AlertChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.Kind,
+			&i.Target,
+			&i.Config,
+			&i.MinSeverity,
+			&i.RenotifyMinutes,
+			&i.CreatedAt,
+			&i.LastSentAt,
+			&i.LastError,
+			&i.LastErrorAt,
+			&i.Failures,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenAlerts = `-- name: ListOpenAlerts :many
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC
 `
 
 // Read once when the daemon starts; the alert engine keeps them in memory.
@@ -409,6 +548,7 @@ func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
 			&i.ServiceID,
 			&i.Command,
 			&i.Target,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
@@ -424,9 +564,9 @@ func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
 }
 
 const openAlert = `-- name: OpenAlert :one
-INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target
+INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id
 `
 
 type OpenAlertParams struct {
@@ -445,6 +585,7 @@ type OpenAlertParams struct {
 	ServiceID   *int64
 	Command     string
 	Target      string
+	OrgID       *int64
 }
 
 func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, error) {
@@ -464,6 +605,7 @@ func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, er
 		arg.ServiceID,
 		arg.Command,
 		arg.Target,
+		arg.OrgID,
 	)
 	var i Alert
 	err := row.Scan(
@@ -484,6 +626,7 @@ func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, er
 		&i.ServiceID,
 		&i.Command,
 		&i.Target,
+		&i.OrgID,
 	)
 	return i, err
 }
@@ -505,7 +648,7 @@ UPDATE alerts SET project = ?1,
     title = replace(title, ?2 || '/' || environment || '/' || service, ?1 || '/' || environment || '/' || service),
     command = replace(command, '-p ' || ?2 || ' ', '-p ' || ?1 || ' ')
 WHERE project_id = +?3 AND resolved_at IS NULL
-RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target
+RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id
 `
 
 type RenameProjectAlertsParams struct {
@@ -542,6 +685,7 @@ func (q *Queries) RenameProjectAlerts(ctx context.Context, arg RenameProjectAler
 			&i.ServiceID,
 			&i.Command,
 			&i.Target,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}

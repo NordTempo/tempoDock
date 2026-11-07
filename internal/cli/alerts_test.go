@@ -31,6 +31,11 @@ func TestAlertChannelCommands(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 	ok[apitypes.CreatedAlertChannel](t, "alerts", "channel", "add", "down", "--slack", hook.URL+"/down", "--renotify", "0")
+	// --platform reaches the platform's channels, apart from the org's.
+	ok[apitypes.CreatedAlertChannel](t, "alerts", "channel", "add", "pager", "--platform", "--slack", hook.URL+"/pager")
+	if chs := ok[[]apitypes.AlertChannel](t, "alerts", "channel", "list", "--platform"); len(chs) != 1 || chs[0].Name != "pager" {
+		t.Fatalf("platform channels = %+v", chs)
+	}
 	chs := ok[[]apitypes.AlertChannel](t, "alerts", "channel", "list")
 	if len(chs) != 2 || chs[0].Name != "down" || chs[0].RenotifyMinutes != 0 || strings.Contains(chs[1].Target, "s3cret") {
 		t.Fatalf("channels = %+v", chs)
@@ -49,8 +54,12 @@ func TestAlertChannelCommands(t *testing.T) {
 		t.Fatalf("alerts = %+v", alerts)
 	}
 
+	// A deploy token reads its org's alerts, not the platform's.
 	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
-	if code, _, _ := exec(t, "alerts"); code != int(output.ExitAuth) {
-		t.Fatalf("deploy token listing alerts: exit %d", code)
+	if code, _, stderr := exec(t, "alerts"); code != 0 {
+		t.Fatalf("deploy token listing its org's alerts: exit %d %q", code, stderr)
+	}
+	if code, _, _ := exec(t, "alerts", "--platform"); code != int(output.ExitAuth) {
+		t.Fatalf("deploy token listing the platform's alerts: exit %d", code)
 	}
 }

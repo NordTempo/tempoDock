@@ -411,6 +411,8 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	col.events = col.events[:0]
 
 	c.trafficTick(ctx, col, now, at)
+	// Error issues are written on the tick too (ADR 0062).
+	c.errorsTick(ctx, now)
 
 	// Alerts and retention ride on the tick (ADR 0020).
 	c.alertTick(ctx, now, servers, hosts)

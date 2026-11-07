@@ -401,8 +401,11 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	unlock() // the builder is free; pushing is done
 	digest, err := c.reg.Digest(ctx, repo, ref[strings.LastIndexByte(ref, ':')+1:])
 	if err != nil {
+		c.connectionFailed(ctx, "registry:push", "registry:push", "The platform registry is failing",
+			fmt.Sprintf("A build pushed its image, but the registry couldn't find it: %v. Builds fail until the registry answers; see `dock registry`.", err), "dock registry")
 		return "", step(apitypes.CodeBuildFailed, "find the pushed image in the registry: %w", err)
 	}
+	c.connectionWorks(ctx, "registry:push")
 	d.rel.ImageDigest, d.rel.BuiltOnServerID = digest, &builder.ID
 	if err := c.store.SetReleaseDigest(ctx, store.SetReleaseDigestParams{ImageDigest: digest, BuiltOnServerID: &builder.ID, ID: d.rel.ID}); err != nil {
 		return "", err

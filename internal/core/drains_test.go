@@ -158,11 +158,27 @@ func TestLogDrainDeliversLabelledLines(t *testing.T) {
 		t.Fatalf("drains = %+v", list)
 	}
 
-	// Without drains, nothing is followed.
+	// Without drains, nothing is drained; containers are still followed,
+	// for their errors (ADR 0062).
 	if err := h.c.RemoveLogDrain(h.ctx, testSystem, EnvRef{"shop", "production"}, d.ID); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "followers to stop", func() bool { return h.followed(h.containerID(web, 2)) == false })
+	if !h.followed(h.containerID(web, 2)) || h.drained("shop", "production") {
+		t.Fatal("after its last drain, the environment should have followers and no drains")
+	}
+}
+
+// drained reports whether an environment's followers send to drains.
+func (h *harness) drained(project, env string) bool {
+	h.t.Helper()
+	es, err := h.c.envFor(h.ctx, testSystem, EnvRef{project, env}, apitypes.ScopeRead, "testing")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	m := h.c.logDrains
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.envs[es.env.ID] != nil && m.envs[es.env.ID].drained()
 }
 
 // A container that starts again before its old log stream has ended
@@ -232,7 +248,7 @@ func (h *harness) containerID(ref ServiceRef, number int64) string {
 	return r.ContainerID
 }
 
-// followed reports whether a container's output is being drained.
+// followed reports whether a container's output is being followed.
 func (h *harness) followed(id string) bool {
 	m := h.c.logDrains
 	m.mu.Lock()

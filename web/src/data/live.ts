@@ -267,8 +267,17 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       applyServer(queryClient, event.server, event.message === "removed");
       return;
     case "alert":
-      // Only admins get these; they patch the alert lists.
-      if (event.alert) applyAlertEvent(queryClient, event.alert);
+      // Org members get their org's, operators the platform's; each
+      // patches its scope's lists.
+      if (event.alert) {
+        applyAlertEvent(queryClient, event.alert);
+        // A new or regressed error issue raises one; the lists follow.
+        if (
+          event.alert.kind === "new_error" ||
+          event.alert.kind === "error_regressed"
+        )
+          queryClient.invalidateQueries({ queryKey: ["errors"] });
+      }
       return;
     case "update":
       // Only operators get these: an update moved on.
@@ -276,8 +285,11 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       return;
     case "disk":
       // Only operators get these: a server's disk was read again.
-      if (event.disk)
+      if (event.disk) {
         queryClient.setQueryData(diskKey(event.disk.server), event.disk);
+        // Each org's volumes come from these readings.
+        queryClient.invalidateQueries({ queryKey: ["console", "orgs"] });
+      }
       return;
     case "analytics":
       // Only operators get these: the analytics store started or failed.
@@ -600,6 +612,9 @@ function invalidateForAudit(
   if (kind === "project") invalidate(keys.projects);
   if (kind === "token") invalidate(keys.tokens);
   if (kind === "user") invalidate(keys.users);
+  // An org created, changed or acted on by the operator (the console's
+  // Organizations page, for operators).
+  if (kind === "org") invalidate(["console", "orgs"]);
   // Registry credentials (features/org/data.ts), set from the CLI too.
   if (audit.action.startsWith("org.registry_credential"))
     invalidate(["org", "registry-credentials"]);

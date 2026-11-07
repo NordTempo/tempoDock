@@ -42,17 +42,6 @@ func (q *Queries) AddOrgMember(ctx context.Context, arg AddOrgMemberParams) erro
 	return err
 }
 
-const countOrgAdmins = `-- name: CountOrgAdmins :one
-SELECT count(*) FROM org_members WHERE org_id = +? AND role = 'admin'
-`
-
-func (q *Queries) CountOrgAdmins(ctx context.Context, orgID int64) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countOrgAdmins, orgID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countOrgProjects = `-- name: CountOrgProjects :one
 SELECT count(*) FROM projects WHERE org_id = +?
 `
@@ -64,8 +53,27 @@ func (q *Queries) CountOrgProjects(ctx context.Context, orgID int64) (int64, err
 	return count, err
 }
 
+const countOtherOrgAdmins = `-- name: CountOtherOrgAdmins :one
+SELECT count(*) FROM org_members
+WHERE org_id = +?1 AND role = 'admin' AND expires_at IS NULL AND user_id != +?2
+`
+
+type CountOtherOrgAdminsParams struct {
+	OrgID  int64
+	UserID int64
+}
+
+// The org's own admins other than user_id. An operator who joined for a
+// while doesn't count: the org must keep an admin of its own.
+func (q *Queries) CountOtherOrgAdmins(ctx context.Context, arg CountOtherOrgAdminsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOtherOrgAdmins, arg.OrgID, arg.UserID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrg = `-- name: CreateOrg :one
-INSERT INTO orgs (slug, name) VALUES (?, ?) RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only
+INSERT INTO orgs (slug, name) VALUES (?, ?) RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
 `
 
 type CreateOrgParams struct {
@@ -85,6 +93,9 @@ func (q *Queries) CreateOrg(ctx context.Context, arg CreateOrgParams) (Org, erro
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
 		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -223,7 +234,7 @@ func (q *Queries) DeleteRegistryCredential(ctx context.Context, arg DeleteRegist
 }
 
 const getInviteByHash = `-- name: GetInviteByHash :one
-SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only
+SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
 FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id
 WHERE org_invites.hash = +?
 `
@@ -257,12 +268,16 @@ func (q *Queries) GetInviteByHash(ctx context.Context, hash string) (GetInviteBy
 		&i.Org.RequestTtlHours,
 		&i.Org.RequireTwoFactor,
 		&i.Org.SsoOnly,
+		&i.Org.SuspendedAt,
+		&i.Org.SuspendedBy,
+		&i.Org.DeletedAt,
 	)
 	return i, err
 }
 
 const getMemberRole = `-- name: GetMemberRole :one
 SELECT role FROM org_members WHERE org_id = +? AND user_id = +?
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 `
 
 type GetMemberRoleParams struct {
@@ -280,6 +295,7 @@ func (q *Queries) GetMemberRole(ctx context.Context, arg GetMemberRoleParams) (s
 const getMemberRoleByEmail = `-- name: GetMemberRoleByEmail :one
 SELECT org_members.role FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +?1 AND users.email = +?2
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 `
 
 type GetMemberRoleByEmailParams struct {
@@ -297,9 +313,10 @@ func (q *Queries) GetMemberRoleByEmail(ctx context.Context, arg GetMemberRoleByE
 }
 
 const getMembership = `-- name: GetMembership :one
-SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, org_members.role
+SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at, org_members.role
 FROM org_members JOIN orgs ON orgs.id = org_members.org_id
 WHERE org_members.user_id = +?1 AND orgs.slug = +?2
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 `
 
 type GetMembershipParams struct {
@@ -325,13 +342,16 @@ func (q *Queries) GetMembership(ctx context.Context, arg GetMembershipParams) (G
 		&i.Org.RequestTtlHours,
 		&i.Org.RequireTwoFactor,
 		&i.Org.SsoOnly,
+		&i.Org.SuspendedAt,
+		&i.Org.SuspendedBy,
+		&i.Org.DeletedAt,
 		&i.Role,
 	)
 	return i, err
 }
 
 const getOrg = `-- name: GetOrg :one
-SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only FROM orgs WHERE id = +?
+SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at FROM orgs WHERE id = +?
 `
 
 func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
@@ -346,12 +366,15 @@ func (q *Queries) GetOrg(ctx context.Context, id int64) (Org, error) {
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
 		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getOrgBySlug = `-- name: GetOrgBySlug :one
-SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only FROM orgs WHERE slug = +?
+SELECT id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at FROM orgs WHERE slug = +?
 `
 
 func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
@@ -366,6 +389,9 @@ func (q *Queries) GetOrgBySlug(ctx context.Context, slug string) (Org, error) {
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
 		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -653,9 +679,9 @@ func (q *Queries) ListRegistryCredentials(ctx context.Context, orgID int64) ([]R
 }
 
 const listUserOrgs = `-- name: ListUserOrgs :many
-SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, org_members.role
+SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at, org_members.role
 FROM org_members JOIN orgs ON orgs.id = org_members.org_id
-WHERE org_members.user_id = +?
+WHERE org_members.user_id = +? AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 ORDER BY org_members.org_id
 `
 
@@ -665,7 +691,7 @@ type ListUserOrgsRow struct {
 }
 
 // ListUserOrgs is every org a user belongs to, with their role in it,
-// oldest first.
+// oldest first. An operator's membership that expired is no longer one.
 func (q *Queries) ListUserOrgs(ctx context.Context, userID int64) ([]ListUserOrgsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUserOrgs, userID)
 	if err != nil {
@@ -684,6 +710,9 @@ func (q *Queries) ListUserOrgs(ctx context.Context, userID int64) ([]ListUserOrg
 			&i.Org.RequestTtlHours,
 			&i.Org.RequireTwoFactor,
 			&i.Org.SsoOnly,
+			&i.Org.SuspendedAt,
+			&i.Org.SuspendedBy,
+			&i.Org.DeletedAt,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -728,7 +757,7 @@ func (q *Queries) RemoveOrgMember(ctx context.Context, arg RemoveOrgMemberParams
 }
 
 const renameOrg = `-- name: RenameOrg :one
-UPDATE orgs SET name = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only
+UPDATE orgs SET name = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
 `
 
 type RenameOrgParams struct {
@@ -748,6 +777,9 @@ func (q *Queries) RenameOrg(ctx context.Context, arg RenameOrgParams) (Org, erro
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
 		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
 	)
 	return i, err
 }

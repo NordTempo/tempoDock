@@ -186,18 +186,19 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "list_alerts", "List alerts",
-		"The platform's alerts: full disks, offline servers, crash loops, failed deploys and backups, domain errors, analytics anomalies. Open ones by default, critical first; all includes resolved ones, newest first. "+
-			"Platform operators only: other tokens are refused.",
+		"The organization's alerts: crash loops, failed deploys, backups and jobs, unhealthy services, uptime, domain errors, analytics anomalies, access requests. Open ones by default, critical first; all includes resolved ones, newest first. "+
+			"With platform, the platform's alerts instead (full disks, memory and CPU, offline servers, failed Dock updates, the control plane's backup), for platform operators only.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			All    bool  `json:"all,omitempty" doc:"Also resolved alerts, newest first."`
-			Limit  int   `json:"limit,omitempty" doc:"With all: how many. Default 50, at most 500."`
-			Before int64 `json:"before,omitempty" doc:"With all: only alerts with a smaller id, to page back."`
+			Platform bool  `json:"platform,omitempty" doc:"The platform's alerts instead of the organization's. Operators only."`
+			All      bool  `json:"all,omitempty" doc:"Also resolved alerts, newest first."`
+			Limit    int   `json:"limit,omitempty" doc:"With all: how many. Default 50, at most 500."`
+			Before   int64 `json:"before,omitempty" doc:"With all: only alerts with a smaller id, to page back."`
 		}) (mcpkit.Reply, error) {
 			n, err := mcpkit.Limit("limit", in.Limit, 50, 500)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			as, err := h.core.ListAlerts(ctx, c.Actor, in.All, n, in.Before)
+			as, err := h.core.ListAlerts(ctx, c.Actor, in.Platform, in.All, n, in.Before)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}

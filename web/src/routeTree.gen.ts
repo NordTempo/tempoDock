@@ -20,7 +20,9 @@ import { Route as AppAccountRouteImport } from './routes/_app.account'
 import { Route as AppConsoleRouteImport } from './routes/_app.console'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
 import { Route as AppOrgIndexRouteImport } from './routes/_app.$org.index'
+import { Route as AppOrgAlertsRouteImport } from './routes/_app.$org.alerts'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
+import { Route as AppOrgErrorsRouteImport } from './routes/_app.$org.errors'
 import { Route as AppOrgHelpRouteImport } from './routes/_app.$org.help'
 import { Route as AppOrgRequestsRouteImport } from './routes/_app.$org.requests'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
@@ -32,6 +34,7 @@ import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.bac
 import { Route as AppConsoleCloudflareRouteImport } from './routes/_app.console.cloudflare'
 import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.data-access'
 import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.github'
+import { Route as AppConsoleOrgsRouteImport } from './routes/_app.console.orgs'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleStorageRouteImport } from './routes/_app.console.storage'
@@ -137,9 +140,19 @@ const AppOrgIndexRoute = AppOrgIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppOrgRoute,
 } as any)
+const AppOrgAlertsRoute = AppOrgAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AppOrgRoute,
+} as any)
 const AppOrgAuditRoute = AppOrgAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgErrorsRoute = AppOrgErrorsRouteImport.update({
+  id: '/errors',
+  path: '/errors',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppOrgHelpRoute = AppOrgHelpRouteImport.update({
@@ -195,6 +208,11 @@ const AppConsoleDataAccessRoute = AppConsoleDataAccessRouteImport.update({
 const AppConsoleGithubRoute = AppConsoleGithubRouteImport.update({
   id: '/github',
   path: '/github',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleOrgsRoute = AppConsoleOrgsRouteImport.update({
+  id: '/orgs',
+  path: '/orgs',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleRegistryRoute = AppConsoleRegistryRouteImport.update({
@@ -492,7 +510,9 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
+  '/$org/alerts': typeof AppOrgAlertsRoute
   '/$org/audit': typeof AppOrgAuditRoute
+  '/$org/errors': typeof AppOrgErrorsRoute
   '/$org/help': typeof AppOrgHelpRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
@@ -503,6 +523,7 @@ export interface FileRoutesByFullPath {
   '/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
   '/console/github': typeof AppConsoleGithubRoute
+  '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/storage': typeof AppConsoleStorageRoute
@@ -564,7 +585,9 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountRoute
   '/invite/$code': typeof InviteCodeRoute
   '/': typeof AppIndexRoute
+  '/$org/alerts': typeof AppOrgAlertsRoute
   '/$org/audit': typeof AppOrgAuditRoute
+  '/$org/errors': typeof AppOrgErrorsRoute
   '/$org/help': typeof AppOrgHelpRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
@@ -575,6 +598,7 @@ export interface FileRoutesByTo {
   '/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
   '/console/github': typeof AppConsoleGithubRoute
+  '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
   '/console/storage': typeof AppConsoleStorageRoute
@@ -637,7 +661,9 @@ export interface FileRoutesById {
   '/_app/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/$org/alerts': typeof AppOrgAlertsRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
+  '/_app/$org/errors': typeof AppOrgErrorsRoute
   '/_app/$org/help': typeof AppOrgHelpRoute
   '/_app/$org/requests': typeof AppOrgRequestsRoute
   '/_app/console/address': typeof AppConsoleAddressRoute
@@ -648,6 +674,7 @@ export interface FileRoutesById {
   '/_app/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/_app/console/data-access': typeof AppConsoleDataAccessRoute
   '/_app/console/github': typeof AppConsoleGithubRoute
+  '/_app/console/orgs': typeof AppConsoleOrgsRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/storage': typeof AppConsoleStorageRoute
@@ -713,7 +740,9 @@ export interface FileRouteTypes {
     | '/account'
     | '/console'
     | '/invite/$code'
+    | '/$org/alerts'
     | '/$org/audit'
+    | '/$org/errors'
     | '/$org/help'
     | '/$org/requests'
     | '/console/address'
@@ -724,6 +753,7 @@ export interface FileRouteTypes {
     | '/console/cloudflare'
     | '/console/data-access'
     | '/console/github'
+    | '/console/orgs'
     | '/console/registry'
     | '/console/servers'
     | '/console/storage'
@@ -785,7 +815,9 @@ export interface FileRouteTypes {
     | '/account'
     | '/invite/$code'
     | '/'
+    | '/$org/alerts'
     | '/$org/audit'
+    | '/$org/errors'
     | '/$org/help'
     | '/$org/requests'
     | '/console/address'
@@ -796,6 +828,7 @@ export interface FileRouteTypes {
     | '/console/cloudflare'
     | '/console/data-access'
     | '/console/github'
+    | '/console/orgs'
     | '/console/registry'
     | '/console/servers'
     | '/console/storage'
@@ -857,7 +890,9 @@ export interface FileRouteTypes {
     | '/_app/console'
     | '/invite/$code'
     | '/_app/'
+    | '/_app/$org/alerts'
     | '/_app/$org/audit'
+    | '/_app/$org/errors'
     | '/_app/$org/help'
     | '/_app/$org/requests'
     | '/_app/console/address'
@@ -868,6 +903,7 @@ export interface FileRouteTypes {
     | '/_app/console/cloudflare'
     | '/_app/console/data-access'
     | '/_app/console/github'
+    | '/_app/console/orgs'
     | '/_app/console/registry'
     | '/_app/console/servers'
     | '/_app/console/storage'
@@ -1010,11 +1046,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgIndexRouteImport
       parentRoute: typeof AppOrgRoute
     }
+    '/_app/$org/alerts': {
+      id: '/_app/$org/alerts'
+      path: '/alerts'
+      fullPath: '/$org/alerts'
+      preLoaderRoute: typeof AppOrgAlertsRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
     '/_app/$org/audit': {
       id: '/_app/$org/audit'
       path: '/audit'
       fullPath: '/$org/audit'
       preLoaderRoute: typeof AppOrgAuditRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/errors': {
+      id: '/_app/$org/errors'
+      path: '/errors'
+      fullPath: '/$org/errors'
+      preLoaderRoute: typeof AppOrgErrorsRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/help': {
@@ -1092,6 +1142,13 @@ declare module '@tanstack/react-router' {
       path: '/github'
       fullPath: '/console/github'
       preLoaderRoute: typeof AppConsoleGithubRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/orgs': {
+      id: '/_app/console/orgs'
+      path: '/orgs'
+      fullPath: '/console/orgs'
+      preLoaderRoute: typeof AppConsoleOrgsRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/registry': {
@@ -1566,7 +1623,9 @@ const AppOrgAnalyticsProjectSiteRouteWithChildren =
   )
 
 interface AppOrgRouteChildren {
+  AppOrgAlertsRoute: typeof AppOrgAlertsRoute
   AppOrgAuditRoute: typeof AppOrgAuditRoute
+  AppOrgErrorsRoute: typeof AppOrgErrorsRoute
   AppOrgHelpRoute: typeof AppOrgHelpRoute
   AppOrgRequestsRoute: typeof AppOrgRequestsRoute
   AppOrgIndexRoute: typeof AppOrgIndexRoute
@@ -1588,7 +1647,9 @@ interface AppOrgRouteChildren {
 }
 
 const AppOrgRouteChildren: AppOrgRouteChildren = {
+  AppOrgAlertsRoute: AppOrgAlertsRoute,
   AppOrgAuditRoute: AppOrgAuditRoute,
+  AppOrgErrorsRoute: AppOrgErrorsRoute,
   AppOrgHelpRoute: AppOrgHelpRoute,
   AppOrgRequestsRoute: AppOrgRequestsRoute,
   AppOrgIndexRoute: AppOrgIndexRoute,
@@ -1623,6 +1684,7 @@ interface AppConsoleRouteChildren {
   AppConsoleCloudflareRoute: typeof AppConsoleCloudflareRoute
   AppConsoleDataAccessRoute: typeof AppConsoleDataAccessRoute
   AppConsoleGithubRoute: typeof AppConsoleGithubRoute
+  AppConsoleOrgsRoute: typeof AppConsoleOrgsRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleStorageRoute: typeof AppConsoleStorageRoute
@@ -1641,6 +1703,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleCloudflareRoute: AppConsoleCloudflareRoute,
   AppConsoleDataAccessRoute: AppConsoleDataAccessRoute,
   AppConsoleGithubRoute: AppConsoleGithubRoute,
+  AppConsoleOrgsRoute: AppConsoleOrgsRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleStorageRoute: AppConsoleStorageRoute,
