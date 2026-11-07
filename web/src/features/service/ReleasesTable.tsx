@@ -181,10 +181,10 @@ export function ReleasesTable({
 }
 
 /**
- * Asks before rolling back. What the service loses (a volume no longer
- * mounted, variables removed) leads in red; then the new release and any
- * downtime, every change against the serving release, and why this
- * release. One style wherever it opens: the header, the releases table
+ * Asks before rolling back: why this release in one line, then what the
+ * service loses (a volume no longer mounted, variables removed) in red,
+ * the new release and any downtime, and every change against the serving
+ * release (folded when losses lead). One style wherever it opens: the header, the releases table
  * and a release's page.
  */
 export function RollbackConfirm({
@@ -241,6 +241,14 @@ export function RollbackConfirm({
         onDone();
       }}
     >
+      {/* Why this release, first and short: the header button names no
+          release, so the dialog says which and why before anything else. */}
+      {passed.length > 0 && (
+        <p className="mb-3 text-mut">
+          r{target.number} is the last release that served and differs from{" "}
+          {from}: {passed.join(", ")}.
+        </p>
+      )}
       {/* What it takes away comes first, in red: the reason to stop. */}
       {losses.length > 0 && (
         <div className="mb-3 rounded-[6px] border border-fail-edge bg-fail-bg px-3 py-2">
@@ -303,13 +311,6 @@ export function RollbackConfirm({
             )}
           </div>
         </details>
-      )}
-      {/* Why this release: the last one before that differs and served. */}
-      {passed.length > 0 && (
-        <p className="mt-3 text-xs text-mut">
-          Why r{target.number}: it is the last release that served and differs
-          from {from}; {passed.join(", ")}.
-        </p>
       )}
       <p className="mt-2 font-mono text-2xs text-faint">
         {copiedConfig(target)}

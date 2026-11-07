@@ -152,17 +152,24 @@ export function LockStrip({
             Review {plural(waiting.length, "waiting request")}
           </Link>
         )}
+        {/* Not this lock's: said as elsewhere, so it isn't read as tied
+            to this environment. */}
         {!waiting[0] && elsewhere[0] && (
-          <Link
-            to="/$org/requests"
-            params={{ org }}
-            search={{ id: elsewhere[0].id }}
-            className={`btn sm ${warnBtn}`}
-          >
-            {elsewhere.length === 1
-              ? `Review ${elsewhere[0].project}/${elsewhere[0].environment}'s request`
-              : `Review ${elsewhere.length} waiting requests`}
-          </Link>
+          <span className="flex items-center gap-2">
+            <span className="text-mut">
+              {elsewhere.length === 1
+                ? `None here; 1 request waits in ${elsewhere[0].project}/${elsewhere[0].environment}`
+                : `None here; ${elsewhere.length} requests wait elsewhere`}
+            </span>
+            <Link
+              to="/$org/requests"
+              params={{ org }}
+              search={{ id: elsewhere[0].id }}
+              className={`btn sm ${warnBtn}`}
+            >
+              Review
+            </Link>
+          </span>
         )}
         {admin &&
           (lockHolds(lock) ? (

@@ -102,7 +102,7 @@ export const serviceTabs = [
     group: "configure",
   },
   {
-    label: "Audit",
+    label: "Activity",
     to: "/$org/$project/$environment/$service/audit",
     key: "g a",
     group: "history",

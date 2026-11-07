@@ -779,8 +779,9 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           }
           onClick={() => setConfirming("rollback")}
         >
-          {/* Why this release is the dialog's first line. */}
-          Roll back to r{target.number} <kbd>B</kbd>
+          {/* The target and why it is that one open in the dialog: a
+              release number here read as "the one before" (it may not be). */}
+          Roll back <kbd>B</kbd>
         </Act>
       )}
       <Act

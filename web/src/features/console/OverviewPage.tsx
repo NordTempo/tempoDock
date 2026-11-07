@@ -74,7 +74,7 @@ export function ConsoleOverview() {
               id="activity"
               right={
                 <Link to="/console/audit" className={more}>
-                  Audit →
+                  Activity →
                 </Link>
               }
             >

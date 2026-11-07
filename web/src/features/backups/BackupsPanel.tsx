@@ -562,7 +562,11 @@ function RestoreStatus({
           </>
         ) : (
           <>
-            <span className="text-ok">✓</span> Restored {r.from} {into}{" "}
+            <span className="text-ok">✓</span>{" "}
+            {target && canSwitch && (
+              <b className="font-semibold">Step 1 of 2 done: </b>
+            )}
+            Restored {r.from} {into}{" "}
             <span className="text-mut">{ago(r.at)}</span>
             {r.safety ? (
               <span className="text-mut">
@@ -572,6 +576,7 @@ function RestoreStatus({
             {/* A copy changes nothing yet: say what still runs, and the step that switches. */}
             {target && (
               <span className="mt-1 block text-warn-text">
+                {canSwitch && <b className="font-semibold">Step 2: </b>}
                 {ref.service} still holds the old data, and the services that
                 use it still read {ref.service}.
                 {canSwitch &&
@@ -596,8 +601,11 @@ function RestoreStatus({
         </Link>
       )}
       {r.status !== "running" && (
-        <Button small onClick={dismiss} aria-label="Dismiss">
-          Dismiss
+        <Button small onClick={dismiss}>
+          {/* Before step 2, closing it means keeping the old data. */}
+          {r.status === "succeeded" && target && canSwitch
+            ? `Keep using ${ref.service}`
+            : "Dismiss"}
         </Button>
       )}
     </div>
