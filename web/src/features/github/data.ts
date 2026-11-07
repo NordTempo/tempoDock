@@ -71,3 +71,18 @@ export function useRemoveApp() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: githubKey }),
   });
 }
+
+/** The org's view of GitHub: the platform's App and its own installations. */
+export const githubOrgQuery = () =>
+  queryOptions({
+    queryKey: [...githubKey, "org"],
+    queryFn: () => body(api.GET("/api/v1/github/org")),
+  });
+
+/** Opens the App's install page on GitHub for the caller's own org. */
+export const useInstallForOrg = () =>
+  useMutation({
+    mutationFn: () =>
+      body(api.POST("/api/v1/github/installations", { body: {} })),
+    onSuccess: go,
+  });

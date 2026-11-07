@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { createContext, type FormEvent, useContext, useState } from "react";
 import { ago } from "../../ui/format";
 import {
   Act,
@@ -12,8 +12,10 @@ import {
   StateText,
 } from "../../ui/kit";
 import { useValidation } from "../create/form";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import {
   type Cloudflare,
+  type CloudflareScope,
   useAddCloudflare,
   useCloudflare,
   useRefreshCloudflare,
@@ -22,36 +24,47 @@ import {
   useUpdateCloudflare,
 } from "./data";
 
-// The console's Cloudflare page (ADR 0036): the API tokens Dock runs
-// tunnels and routes domains with. Each server page shows its tunnel,
-// each domain how it is routed. Tokens are write-only.
+// Cloudflare connections (ADR 0036): the API tokens Dock runs tunnels and
+// routes domains with. The console's page holds the platform's (Dock's
+// address and server tunnels; "shared" lets orgs add domains from their
+// zones), an org's settings its own (ADR 0062). Each server page shows its
+// tunnel, each domain how it is routed. Tokens are write-only.
 
-export function CloudflarePage() {
-  const connections = useCloudflare();
+/** The page's scope, for its rows and form. */
+const Scope = createContext<CloudflareScope>("platform");
+
+/** The CLI flag of the scope. */
+const flag = (scope: CloudflareScope) =>
+  scope === "platform" ? " --platform" : "";
+
+export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
+  const connections = useCloudflare(scope);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string>();
   const edited = connections.find((c) => c.name === editing);
-  return (
+  const actions = (
     <>
-      <PageBar
-        title="Cloudflare"
-        actions={
-          <>
-            {connections.length > 0 && <RetryFailed />}
-            {!adding && (
-              <Button
-                primary
-                onClick={() => {
-                  setEditing(undefined);
-                  setAdding(true);
-                }}
-              >
-                Add connection
-              </Button>
-            )}
-          </>
-        }
-      />
+      {scope === "platform" && connections.length > 0 && <RetryFailed />}
+      {!adding && (
+        <Button
+          primary
+          onClick={() => {
+            setEditing(undefined);
+            setAdding(true);
+          }}
+        >
+          Add connection
+        </Button>
+      )}
+    </>
+  );
+  return (
+    <Scope.Provider value={scope}>
+      {scope === "platform" ? (
+        <PageBar title="Cloudflare" actions={actions} />
+      ) : (
+        <OrgSettingsBar actions={actions} />
+      )}
       <Page>
         <section aria-labelledby="connections" className="flex flex-col gap-2">
           <SectionHead id="connections">Connections</SectionHead>
@@ -63,7 +76,8 @@ export function CloudflarePage() {
                     <th>Name</th>
                     <th>Account</th>
                     <th>Zones</th>
-                    <th>Tunnels</th>
+                    <th>{scope === "platform" ? "Tunnels" : "Used by"}</th>
+                    {scope === "platform" && <th>Shared</th>}
                     <th>Status</th>
                     <th>Changed</th>
                     <th />
@@ -86,10 +100,9 @@ export function CloudflarePage() {
           ) : (
             !adding && (
               <p className="py-2 text-mut">
-                No connection. With a Cloudflare API token, Dock runs each
-                server's tunnel and adds domains from your zones; without one,
-                tunnels and their DNS are set up by hand. Add one with Add
-                connection.
+                {scope === "platform"
+                  ? "No connection. With a Cloudflare API token, Dock runs each server's tunnel and adds domains from your zones; without one, tunnels and their DNS are set up by hand. Add one with Add connection."
+                  : "No connection of this organization's own. Domains can use the zones the platform shares; to add domains from your own Cloudflare zones, add a token here. It needs to be in the same Cloudflare account as the platform's tunnels."}
               </p>
             )
           )}
@@ -103,7 +116,7 @@ export function CloudflarePage() {
           )}
         </section>
       </Page>
-    </>
+    </Scope.Provider>
   );
 }
 
@@ -140,8 +153,10 @@ function ConnectionRow({
   connection: Cloudflare;
   onEdit: () => void;
 }) {
-  const refresh = useRefreshCloudflare();
-  const remove = useRemoveCloudflare();
+  const scope = useContext(Scope);
+  const refresh = useRefreshCloudflare(scope);
+  const remove = useRemoveCloudflare(scope);
+  const update = useUpdateCloudflare(scope);
   const [confirming, setConfirming] = useState(false);
   const zones = c.zones ?? [];
   const tunnels = c.used_by ?? [];
@@ -155,6 +170,21 @@ function ConnectionRow({
       <td className="py-2">
         {tunnels.length > 0 ? tunnels.join(", ") : faint}
       </td>
+      {scope === "platform" && (
+        <td className="py-2">
+          <Act
+            small
+            cli={`dock cloudflare set ${c.name} --platform --shared=${!c.shared}`}
+            disabled={update.isPending}
+            title="Shared: organizations may add domains from its zones"
+            onClick={() =>
+              update.mutate({ name: c.name, change: { shared: !c.shared } })
+            }
+          >
+            {c.shared ? "Shared" : "Not shared"}
+          </Act>
+        </td>
+      )}
       <td className="py-2 whitespace-normal">
         {c.status === "ok" ? (
           <StateText state={{ tone: "ok", glyph: "●", label: "working" }} />
@@ -170,10 +200,10 @@ function ConnectionRow({
       </td>
       <td className="w-full py-1.5 text-right">
         <span className="inline-flex items-center gap-3">
-          <ErrorText error={refresh.error} />
+          <ErrorText error={refresh.error ?? update.error} />
           <Act
             small
-            cli={`dock cloudflare refresh ${c.name}`}
+            cli={`dock cloudflare refresh ${c.name}${flag(scope)}`}
             disabled={refresh.isPending}
             onClick={() => refresh.mutate(c.name)}
           >
@@ -195,7 +225,7 @@ function ConnectionRow({
             <Confirm
               danger
               action={`Remove ${c.name}`}
-              cli={`dock cloudflare remove ${c.name}`}
+              cli={`dock cloudflare remove ${c.name}${flag(scope)}`}
               pending={remove.isPending}
               error={remove.error}
               onConfirm={() =>
@@ -227,8 +257,9 @@ function TokenForm({
   connection?: Cloudflare;
   onClose: () => void;
 }) {
-  const add = useAddCloudflare();
-  const update = useUpdateCloudflare();
+  const scope = useContext(Scope);
+  const add = useAddCloudflare(scope);
+  const update = useUpdateCloudflare(scope);
   const [name, setName] = useState(connection?.name ?? "");
   const [token, setToken] = useState("");
   const [account, setAccount] = useState("");
@@ -265,8 +296,8 @@ function TokenForm({
   };
 
   const cli = connection
-    ? `printf %s "$TOKEN" | dock cloudflare set ${connection.name} --token-stdin`
-    : `printf %s "$TOKEN" | dock cloudflare add ${name.trim() || "<name>"} --token-stdin${account.trim() ? ` --account-id ${account.trim()}` : ""}`;
+    ? `printf %s "$TOKEN" | dock cloudflare set ${connection.name} --token-stdin${flag(scope)}`
+    : `printf %s "$TOKEN" | dock cloudflare add ${name.trim() || "<name>"} --token-stdin${account.trim() ? ` --account-id ${account.trim()}` : ""}${flag(scope)}`;
   return (
     <form
       ref={v.form}

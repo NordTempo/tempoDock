@@ -20,6 +20,8 @@ type Section = {
     | "/$org/settings/tokens"
     | "/$org/settings/sso"
     | "/$org/settings/registries"
+    | "/$org/settings/github"
+    | "/$org/settings/cloudflare"
     | "/$org/settings/data-access"
     | "/$org/settings/analytics";
   label: string;
@@ -47,6 +49,8 @@ export const settingsGroups: { label: string; sections: Section[] }[] = [
   {
     label: "Connections",
     sections: [
+      { to: "/$org/settings/github", label: "GitHub", admin: true },
+      { to: "/$org/settings/cloudflare", label: "Cloudflare", admin: true },
       { to: "/$org/settings/registries", label: "Registries", admin: true },
     ],
   },
@@ -112,7 +116,7 @@ export function OrgSettingsColumn() {
   const marks: Partial<Record<Section["to"], ReactNode>> = {
     "/$org/settings/members": members?.length,
     "/$org/settings/tokens": tokens?.filter((t) => !t.revoked_at).length,
-    "/$org/settings/registries": failing("registry") ? "!" : undefined,
+    "/$org/settings/cloudflare": failing("cloudflare") ? "!" : undefined,
   };
   return (
     <nav

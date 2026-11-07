@@ -47,8 +47,10 @@ import { Route as AppOrgProjectSettingsRouteImport } from './routes/_app.$org.$p
 import { Route as AppOrgAnalyticsIndexRouteImport } from './routes/_app.$org.analytics.index'
 import { Route as AppOrgSettingsIndexRouteImport } from './routes/_app.$org.settings.index'
 import { Route as AppOrgSettingsAnalyticsRouteImport } from './routes/_app.$org.settings.analytics'
+import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org.settings.cloudflare'
 import { Route as AppOrgSettingsDataAccessRouteImport } from './routes/_app.$org.settings.data-access'
 import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.settings.general'
+import { Route as AppOrgSettingsGithubRouteImport } from './routes/_app.$org.settings.github'
 import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.settings.members'
 import { Route as AppOrgSettingsRegistriesRouteImport } from './routes/_app.$org.settings.registries'
 import { Route as AppOrgSettingsSsoRouteImport } from './routes/_app.$org.settings.sso'
@@ -278,6 +280,12 @@ const AppOrgSettingsAnalyticsRoute = AppOrgSettingsAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
+const AppOrgSettingsCloudflareRoute =
+  AppOrgSettingsCloudflareRouteImport.update({
+    id: '/cloudflare',
+    path: '/cloudflare',
+    getParentRoute: () => AppOrgSettingsRoute,
+  } as any)
 const AppOrgSettingsDataAccessRoute =
   AppOrgSettingsDataAccessRouteImport.update({
     id: '/data-access',
@@ -287,6 +295,11 @@ const AppOrgSettingsDataAccessRoute =
 const AppOrgSettingsGeneralRoute = AppOrgSettingsGeneralRouteImport.update({
   id: '/general',
   path: '/general',
+  getParentRoute: () => AppOrgSettingsRoute,
+} as any)
+const AppOrgSettingsGithubRoute = AppOrgSettingsGithubRouteImport.update({
+  id: '/github',
+  path: '/github',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
 const AppOrgSettingsMembersRoute = AppOrgSettingsMembersRouteImport.update({
@@ -554,8 +567,10 @@ export interface FileRoutesByFullPath {
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
+  '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
+  '/$org/settings/github': typeof AppOrgSettingsGithubRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/$org/settings/sso': typeof AppOrgSettingsSsoRoute
@@ -630,8 +645,10 @@ export interface FileRoutesByTo {
   '/console': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
+  '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
+  '/$org/settings/github': typeof AppOrgSettingsGithubRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/$org/settings/sso': typeof AppOrgSettingsSsoRoute
@@ -710,8 +727,10 @@ export interface FileRoutesById {
   '/_app/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/_app/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/_app/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
+  '/_app/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/_app/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/_app/$org/settings/general': typeof AppOrgSettingsGeneralRoute
+  '/_app/$org/settings/github': typeof AppOrgSettingsGithubRoute
   '/_app/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/_app/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/_app/$org/settings/sso': typeof AppOrgSettingsSsoRoute
@@ -792,8 +811,10 @@ export interface FileRouteTypes {
     | '/$org/$project/compare'
     | '/$org/$project/settings'
     | '/$org/settings/analytics'
+    | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
     | '/$org/settings/general'
+    | '/$org/settings/github'
     | '/$org/settings/members'
     | '/$org/settings/registries'
     | '/$org/settings/sso'
@@ -868,8 +889,10 @@ export interface FileRouteTypes {
     | '/console'
     | '/$org/$project/compare'
     | '/$org/settings/analytics'
+    | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
     | '/$org/settings/general'
+    | '/$org/settings/github'
     | '/$org/settings/members'
     | '/$org/settings/registries'
     | '/$org/settings/sso'
@@ -947,8 +970,10 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/compare'
     | '/_app/$org/$project/settings'
     | '/_app/$org/settings/analytics'
+    | '/_app/$org/settings/cloudflare'
     | '/_app/$org/settings/data-access'
     | '/_app/$org/settings/general'
+    | '/_app/$org/settings/github'
     | '/_app/$org/settings/members'
     | '/_app/$org/settings/registries'
     | '/_app/$org/settings/sso'
@@ -1270,6 +1295,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSettingsAnalyticsRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
+    '/_app/$org/settings/cloudflare': {
+      id: '/_app/$org/settings/cloudflare'
+      path: '/cloudflare'
+      fullPath: '/$org/settings/cloudflare'
+      preLoaderRoute: typeof AppOrgSettingsCloudflareRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
     '/_app/$org/settings/data-access': {
       id: '/_app/$org/settings/data-access'
       path: '/data-access'
@@ -1282,6 +1314,13 @@ declare module '@tanstack/react-router' {
       path: '/general'
       fullPath: '/$org/settings/general'
       preLoaderRoute: typeof AppOrgSettingsGeneralRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
+    '/_app/$org/settings/github': {
+      id: '/_app/$org/settings/github'
+      path: '/github'
+      fullPath: '/$org/settings/github'
+      preLoaderRoute: typeof AppOrgSettingsGithubRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
     '/_app/$org/settings/members': {
@@ -1562,8 +1601,10 @@ declare module '@tanstack/react-router' {
 
 interface AppOrgSettingsRouteChildren {
   AppOrgSettingsAnalyticsRoute: typeof AppOrgSettingsAnalyticsRoute
+  AppOrgSettingsCloudflareRoute: typeof AppOrgSettingsCloudflareRoute
   AppOrgSettingsDataAccessRoute: typeof AppOrgSettingsDataAccessRoute
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
+  AppOrgSettingsGithubRoute: typeof AppOrgSettingsGithubRoute
   AppOrgSettingsMembersRoute: typeof AppOrgSettingsMembersRoute
   AppOrgSettingsRegistriesRoute: typeof AppOrgSettingsRegistriesRoute
   AppOrgSettingsSsoRoute: typeof AppOrgSettingsSsoRoute
@@ -1574,8 +1615,10 @@ interface AppOrgSettingsRouteChildren {
 
 const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
   AppOrgSettingsAnalyticsRoute: AppOrgSettingsAnalyticsRoute,
+  AppOrgSettingsCloudflareRoute: AppOrgSettingsCloudflareRoute,
   AppOrgSettingsDataAccessRoute: AppOrgSettingsDataAccessRoute,
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,
+  AppOrgSettingsGithubRoute: AppOrgSettingsGithubRoute,
   AppOrgSettingsMembersRoute: AppOrgSettingsMembersRoute,
   AppOrgSettingsRegistriesRoute: AppOrgSettingsRegistriesRoute,
   AppOrgSettingsSsoRoute: AppOrgSettingsSsoRoute,
