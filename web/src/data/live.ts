@@ -603,6 +603,8 @@ function invalidateForAudit(
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
+  // Environments name their server: open projects show the new name.
+  if (audit.action === "server.rename") invalidate(["project"]);
   if (!audit.project) return;
   // A preview opened, moved to a new commit or closed (its environment
   // appears or leaves with the overview below), or the settings changed.

@@ -263,7 +263,7 @@ func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.Analytics
 	c.analytics.mu.Unlock()
 	st, err := c.store.GetAnalyticsSettings(ctx)
 	if store.IsNotFound(err) {
-		out.Server = c.local.Name
+		out.Server = c.localName()
 		return out, nil
 	}
 	if err != nil {
@@ -321,7 +321,8 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 		return apitypes.AnalyticsStatus{}, err
 	}
 	target := c.local
-	if req.Server != "" && req.Server != c.local.Name {
+	target.Name = c.localName()
+	if req.Server != "" && req.Server != target.Name {
 		s, err := c.store.GetServerByName(ctx, req.Server)
 		if store.IsNotFound(err) {
 			return apitypes.AnalyticsStatus{}, notFound("server %q not found; see `dock server list`", req.Server)

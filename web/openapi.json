@@ -11487,6 +11487,11 @@
           },
           "disabled_for_placement": {
             "type": "boolean"
+          },
+          "name": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "type": "object"
@@ -47484,7 +47489,7 @@
         ]
       },
       "patch": {
-        "description": "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Operators only.",
+        "description": "Renames the server, or changes which environment kinds it accepts, whether it takes new placements and builds, and its base domain. Environments already there stay; a rename keeps everything but the name. Operators only.",
         "operationId": "update-server",
         "parameters": [
           {

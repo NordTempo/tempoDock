@@ -106,7 +106,10 @@ type Core struct {
 	bus        *bus
 	// renameMu keeps committed renames and their live events in order.
 	renameMu sync.Mutex
+	// local is the control plane's own server as it was at start-up; its
+	// ID never changes. Read its name with localName: a rename moves it.
 	local    store.Server
+	localNow atomic.Pointer[string]
 	drain    time.Duration
 	// install is this control plane's install ID, the dock.control_plane
 	// label on everything it creates (see labels and foreign).
@@ -327,8 +330,12 @@ func (c *Core) registerLocalServer(ctx context.Context) error {
 		return fmt.Errorf("register local server: %w", err)
 	}
 	c.local = srv
+	c.localNow.Store(&srv.Name)
 	return nil
 }
+
+// localName is the control plane's own server's current name.
+func (c *Core) localName() string { return *c.localNow.Load() }
 
 // createLocalServer registers this server, named after its host. The
 // first server takes every kind of environment; once a second one joins,

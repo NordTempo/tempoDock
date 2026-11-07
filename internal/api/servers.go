@@ -68,7 +68,7 @@ func registerServers(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "update-server", Method: http.MethodPatch, Path: serverPathT,
 		Summary: "Update a server", Tags: tags,
-		Description: "Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Operators only.",
+		Description: "Renames the server, or changes which environment kinds it accepts, whether it takes new placements and builds, and its base domain. Environments already there stay; a rename keeps everything but the name. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServerPath
 		Body apitypes.UpdateServerRequest

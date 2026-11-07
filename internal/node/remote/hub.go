@@ -155,8 +155,10 @@ type Hub struct {
 
 // session is one live connection to a node.
 type session struct {
-	id   int64
-	name string
+	id int64
+	// label is the server's name, which Rename can change while it is
+	// connected; read it with name.
+	label atomic.Pointer[string]
 	// fingerprint is the node's key, checked again when registering.
 	fingerprint string
 	hello       Hello
@@ -183,13 +185,17 @@ func (s *session) close() {
 
 // newSession wraps a new connection's HTTP/2 client.
 func newSession(ctx context.Context, id int64, name string, cc *http.ClientConn) *session {
-	s := &session{id: id, name: name, cc: cc, done: make(chan struct{})}
+	s := &session{id: id, cc: cc, done: make(chan struct{})}
+	s.label.Store(&name)
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	return s
 }
 
+// name is the server's current name, for messages and logs.
+func (s *session) name() string { return *s.label.Load() }
+
 func (s *session) state() State {
-	return State{ServerID: s.id, Server: s.name, Status: s.status, Hello: s.hello}
+	return State{ServerID: s.id, Server: s.name(), Status: s.status, Hello: s.hello}
 }
 
 // NewHub creates a hub. Call Serve to accept connections.
@@ -322,41 +328,41 @@ func (h *Hub) connect(ctx, helloCtx context.Context, conn *tls.Conn, key NodeKey
 	req := helloRequest{Version: version.Version, Protocol: Protocol, MinProtocol: minProto}
 	if err := call(helloCtx, s, opHello, req, nil, nil, nil, &s.hello); err != nil {
 		s.close()
-		return fmt.Errorf("hello from %s: %w", s.name, err)
+		return fmt.Errorf("hello from %s: %w", s.name(), err)
 	}
 	dropped, err := checkFacts(&s.hello.Facts)
 	if err != nil {
 		s.close()
-		return fmt.Errorf("hello from %s: %w", s.name, err)
+		return fmt.Errorf("hello from %s: %w", s.name(), err)
 	}
 	if len(dropped) > 0 {
-		h.log.Warn("node reported what DNS can't point at; ignored, check its config.toml", "server", s.name, "ignored", dropped)
+		h.log.Warn("node reported what DNS can't point at; ignored, check its config.toml", "server", s.name(), "ignored", dropped)
 	}
 	if key.Next {
 		if err := h.o.Store.PromoteKey(helloCtx, s.id); err != nil {
 			s.close()
-			return fmt.Errorf("promote the new key of %s: %w", s.name, err)
+			return fmt.Errorf("promote the new key of %s: %w", s.name(), err)
 		}
-		h.log.Info("node key rotated", "server", s.name)
+		h.log.Info("node key rotated", "server", s.name())
 	}
 	s.status = StatusOnline
 	if s.hello.Protocol < minProto {
 		s.status = StatusIncompatible
-		h.log.Error("node is too old: upgrade dock on it", "server", s.name, "version", s.hello.Version,
+		h.log.Error("node is too old: upgrade dock on it", "server", s.name(), "version", s.hello.Version,
 			"protocol", s.hello.Protocol, "min_protocol", minProto)
 	}
 	if err := h.register(helloCtx, s); err != nil {
 		s.close()
-		return fmt.Errorf("hello from %s: %w", s.name, err)
+		return fmt.Errorf("hello from %s: %w", s.name(), err)
 	}
-	h.log.Info("node connected", "server", s.name, "version", s.hello.Version, "status", s.status)
+	h.log.Info("node connected", "server", s.name(), "version", s.hello.Version, "status", s.status)
 	if s.status == StatusOnline && h.o.Registry != "" {
 		(&registryPool{h: h, s: s}).fill()
 	}
 	go func() {
 		<-s.done
 		if h.unregister(s) {
-			h.log.Info("node disconnected", "server", s.name)
+			h.log.Info("node disconnected", "server", s.name())
 		}
 	}()
 	return nil
@@ -413,7 +419,7 @@ func (h *Hub) register(ctx context.Context, s *session) error {
 	h.mu.Lock()
 	old := h.sessions[s.id]
 	h.sessions[s.id] = s
-	h.names[s.id] = s.name
+	h.names[s.id] = s.name()
 	h.notifyLocked()
 	h.mu.Unlock()
 	if old != nil {
@@ -437,7 +443,7 @@ func (h *Hub) unregister(s *session) bool {
 	}
 	h.mu.Unlock()
 	if current && h.o.OnStatus != nil {
-		h.o.OnStatus(State{ServerID: s.id, Server: s.name, Status: StatusOffline})
+		h.o.OnStatus(State{ServerID: s.id, Server: s.name(), Status: StatusOffline})
 	}
 	return current
 }
@@ -500,7 +506,7 @@ func (h *Hub) RotateKey(ctx context.Context, serverID int64) (string, error) {
 		return "", err
 	}
 	if _, err := fingerprintBytes(r.Fingerprint); err != nil {
-		return "", fmt.Errorf("server %s: %w", s.name, err)
+		return "", fmt.Errorf("server %s: %w", s.name(), err)
 	}
 	if err := h.o.Store.SetNextKey(ctx, serverID, r.Fingerprint); err != nil {
 		return "", err
@@ -516,6 +522,19 @@ func (h *Hub) session(serverID int64) *session {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.sessions[serverID]
+}
+
+// Rename has messages and logs about a server use its new name, while it
+// is connected and after it disconnects.
+func (h *Hub) Rename(serverID int64, name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if s := h.sessions[serverID]; s != nil {
+		s.label.Store(&name)
+	}
+	if _, ok := h.names[serverID]; ok {
+		h.names[serverID] = name
+	}
 }
 
 func (h *Hub) name(serverID int64) string {

@@ -706,7 +706,9 @@ func TestLimits(t *testing.T) {
 	t.Run("control plane caps what a node sends", func(t *testing.T) {
 		// A hostile node bypassing the node side's own checks.
 		huge := append(bytes.Repeat([]byte("x"), maxMessage+1), '\n')
-		err := read(context.Background(), &session{name: "evil"}, io.NopCloser(bytes.NewReader(huge)), nil, nil, nil)
+		evil := &session{}
+		evil.label.Store(new("evil"))
+		err := read(context.Background(), evil, io.NopCloser(bytes.NewReader(huge)), nil, nil, nil)
 		if !errors.Is(err, errTooLarge) {
 			t.Fatalf("read = %v, want errTooLarge", err)
 		}

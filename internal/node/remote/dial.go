@@ -52,9 +52,9 @@ func (c *Client) Dial(ctx context.Context, req node.DialRequest) (net.Conn, erro
 	}
 	if s.dials.Add(1) > maxDials {
 		s.dials.Add(-1)
-		return nil, fmt.Errorf("server %s: %w", s.name, errTooManyDials)
+		return nil, fmt.Errorf("server %s: %w", s.name(), errTooManyDials)
 	}
-	remote := fmt.Sprintf("%s/%s:%d", s.name, shortID(req.ContainerID), req.Port)
+	remote := fmt.Sprintf("%s/%s:%d", s.name(), shortID(req.ContainerID), req.Port)
 	lc, err := openConn(ctx, s, opDial, dialRequest{ContainerID: req.ContainerID, Port: req.Port}, remote, func() { s.dials.Add(-1) })
 	if err != nil {
 		s.dials.Add(-1)
@@ -122,7 +122,7 @@ func (c *linkConn) receive(s *session, downPeer net.Conn) {
 	_, err := io.Copy(downPeer, c.body)
 	_ = c.body.Close()
 	if err != nil && !errors.Is(err, io.ErrClosedPipe) && !errors.Is(err, context.Canceled) {
-		c.err = offline(context.Background(), s.name, err)
+		c.err = offline(context.Background(), s.name(), err)
 	}
 	_ = downPeer.Close()
 	_ = c.upPeer.Close()

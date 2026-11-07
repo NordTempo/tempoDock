@@ -1184,14 +1184,17 @@ type EffectiveLimits struct {
 	CPUsFromDefault   bool `json:"cpus_from_default"`
 }
 
-// UpdateServerRequest changes a server's settings: what may be placed on
-// it, whether it builds, and its base domain. Only fields that are set
-// change.
+// UpdateServerRequest changes a server's settings: its name, what may be
+// placed on it, whether it builds, and its base domain. Only fields that
+// are set change.
 type UpdateServerRequest struct {
-	AcceptsProduction    *bool `json:"accepts_production,omitempty"`
-	AcceptsNonProduction *bool `json:"accepts_non_production,omitempty"`
-	DisabledForPlacement *bool `json:"disabled_for_placement,omitempty"`
-	Builder              *bool `json:"builder,omitempty"`
+	// Name renames the server. Its environments, link and history stay;
+	// only the name it is shown and addressed by changes.
+	Name                 *string `json:"name,omitempty" minLength:"1" maxLength:"32"`
+	AcceptsProduction    *bool   `json:"accepts_production,omitempty"`
+	AcceptsNonProduction *bool   `json:"accepts_non_production,omitempty"`
+	DisabledForPlacement *bool   `json:"disabled_for_placement,omitempty"`
+	Builder              *bool   `json:"builder,omitempty"`
 	// BaseDomain is a domain like up.example.dev with a wildcard DNS
 	// record pointing at the server (or its tunnel); "" removes it.
 	BaseDomain *string `json:"base_domain,omitempty" maxLength:"253"`

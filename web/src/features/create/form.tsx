@@ -29,7 +29,7 @@ const reserved = {
  * is fine or still empty. `taken` holds the names already in use.
  */
 export function nameProblem(
-  kind: "org" | "project" | "environment" | "service",
+  kind: "org" | "project" | "environment" | "service" | "server",
   name: string,
   taken: readonly string[] = [],
 ) {
@@ -49,6 +49,7 @@ export function nameProblem(
       project: "organization",
       environment: "project",
       service: "environment",
+      server: "Dock",
     }[kind];
     return `${name} is taken in this ${where}. Pick another name.`;
   }

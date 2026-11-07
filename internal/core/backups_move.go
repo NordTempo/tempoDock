@@ -146,7 +146,7 @@ func (c *Core) moveSources(ctx context.Context, set store.BackupSetting, cur bac
 		if from.Name == to.Name && nested(set.StoragePath, toPath) {
 			return nil, invalid("folder %q and %q in bucket %s contain one another; pick a folder outside the current one", set.StoragePath, toPath, to.Name)
 		}
-		return []moveSource{{label: set.Repository, serverID: c.local.ID, server: c.local.Name, from: cur, bucket: &from, prefix: set.StoragePath}}, nil
+		return []moveSource{{label: set.Repository, serverID: c.local.ID, server: c.localName(), from: cur, bucket: &from, prefix: set.StoragePath}}, nil
 	}
 	ids, err := c.store.ListLocalBackupServers(ctx)
 	if err != nil {
@@ -454,7 +454,7 @@ func (c *Core) backupRepositories(ctx context.Context, current string) ([]apityp
 	}
 	cp, err := c.store.GetControlPlaneBackup(ctx)
 	if err == nil && cp.Status == string(apitypes.BackupSucceeded) && cp.SnapshotID != "" {
-		add(cp.Repository, c.local.Name, 1, cp.SizeBytes)
+		add(cp.Repository, c.localName(), 1, cp.SizeBytes)
 	} else if err != nil && !store.IsNotFound(err) {
 		return nil, err
 	}

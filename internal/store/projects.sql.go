@@ -745,6 +745,65 @@ func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) (P
 	return i, err
 }
 
+const renameServer = `-- name: RenameServer :one
+UPDATE servers SET name = ?1 WHERE id = +?2
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
+`
+
+type RenameServerParams struct {
+	Name string
+	ID   int64
+}
+
+// Renames a server. Everything else refers to it by ID; the unique index
+// on name refuses a name another server has.
+func (q *Queries) RenameServer(ctx context.Context, arg RenameServerParams) (Server, error) {
+	row := q.db.QueryRowContext(ctx, renameServer, arg.Name, arg.ID)
+	var i Server
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Builder,
+		&i.Local,
+		&i.Status,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.AcceptsProduction,
+		&i.AcceptsNonProduction,
+		&i.DisabledForPlacement,
+		&i.MemoryBytes,
+		&i.Version,
+		&i.KeyFingerprint,
+		&i.NextKeyFingerprint,
+		&i.RevokedAt,
+		&i.Ingress,
+		&i.PublicIps,
+		&i.TunnelHostname,
+		&i.DockerVersion,
+		&i.BaseDomain,
+		&i.ConnectedAt,
+		&i.DisconnectReason,
+		&i.PlainHttp,
+	)
+	return i, err
+}
+
+const renameServerTunnel = `-- name: RenameServerTunnel :exec
+UPDATE cloudflare_tunnels SET server_name = ?1 WHERE server_id = +?2
+`
+
+type RenameServerTunnelParams struct {
+	Name     string
+	ServerID *int64
+}
+
+// Keeps the name a server's Cloudflare tunnel row shows in messages in
+// step with a rename.
+func (q *Queries) RenameServerTunnel(ctx context.Context, arg RenameServerTunnelParams) error {
+	_, err := q.db.ExecContext(ctx, renameServerTunnel, arg.Name, arg.ServerID)
+	return err
+}
+
 const setEnvironmentLock = `-- name: SetEnvironmentLock :one
 UPDATE environments SET locked_at = ?, locked_by = ?, lock_reason = ?, open_until = ?
 WHERE id = +? RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at

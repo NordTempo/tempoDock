@@ -734,6 +734,46 @@ func TestPromoteStopsWhenAReleaseCantStart(t *testing.T) {
 	}
 }
 
+// A rename changes only the name: environments follow by ID, and names
+// in use (by a server or a join token) are refused.
+func TestRenameServer(t *testing.T) {
+	p, _ := labPool(t)
+	rename := func(from, to string) (apitypes.Server, error) {
+		return p.c.UpdateServer(p.ctx, testSystem, from, apitypes.UpdateServerRequest{Name: &to})
+	}
+	if _, err := p.c.AddServer(p.ctx, testSystem, apitypes.AddServerRequest{Name: "lab2"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []string{p.c.local.Name, "lab2"} {
+		if _, err := rename("homelab", to); CodeOf(err) != apitypes.CodeConflict {
+			t.Errorf("rename to %s: %v", to, err)
+		}
+	}
+	if _, err := rename("homelab", "Lab One"); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("invalid name: %v", err)
+	}
+
+	s, err := rename("homelab", "lab1")
+	if err != nil || s.Name != "lab1" || s.ID != p.ids["homelab"] {
+		t.Fatalf("rename = %+v, %v", s, err)
+	}
+	if got := p.server("shop", "staging"); got != "lab1" {
+		t.Fatalf("shop/staging on %s, want lab1", got)
+	}
+	if _, err := p.c.GetServer(p.ctx, testSystem, "homelab"); CodeOf(err) != apitypes.CodeNotFound {
+		t.Fatalf("old name: %v", err)
+	}
+	audit, _ := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "server.rename", Limit: 1, Platform: true})
+	if len(audit) != 1 || audit[0].Summary != "renamed server homelab to lab1" {
+		t.Fatalf("audit = %+v", audit)
+	}
+
+	// The control plane's own server can be renamed too.
+	if _, err := rename(p.c.local.Name, "control"); err != nil || p.c.localName() != "control" {
+		t.Fatalf("local rename: %v, name %s", err, p.c.localName())
+	}
+}
+
 // Adding a server mints a join token; the node's join creates it; a
 // revoke drops its key and connection but keeps its environments, which
 // keep it from being removed.

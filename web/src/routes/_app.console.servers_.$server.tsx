@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { memo, useMemo } from "react";
+import { lazy, memo, Suspense, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { queries, useServer } from "../data/queries";
 import type {
@@ -29,6 +29,7 @@ import {
 import { useOrg } from "../shell/location";
 import { ago, bytes, pct, plural, size } from "../ui/format";
 import {
+  Act,
   ErrorText,
   Glyph,
   Page,
@@ -38,6 +39,8 @@ import {
   StateText,
 } from "../ui/kit";
 import { containerState, kindLabel } from "../ui/status";
+
+const RenameServer = lazy(() => import("../features/servers/RenameServer"));
 
 // One server: live usage, history, what is placed on it, where its memory
 // goes and the services there by memory. /console/servers/homelab?range=24h
@@ -97,6 +100,7 @@ function ServerPage() {
   const live = useLiveServer(name);
   const { accepts, placement, builder, confirm, error } =
     useServerSwitches(server);
+  const [renaming, setRenaming] = useState(false);
   // What the server is, under its status: "dock 0.27.0 · control plane".
   const facts = [
     server.version && `dock ${server.version}`,
@@ -115,7 +119,24 @@ function ServerPage() {
           </Link>
         }
         title={<span className="font-mono">{name}</span>}
+        actions={
+          // A joining server has no row to rename yet.
+          server.id > 0 && (
+            <Act
+              small
+              cli={`dock server rename ${name} <name>`}
+              onClick={() => setRenaming(true)}
+            >
+              Rename
+            </Act>
+          )
+        }
       />
+      {renaming && (
+        <Suspense fallback={null}>
+          <RenameServer server={server} onClose={() => setRenaming(false)} />
+        </Suspense>
+      )}
       <Page>
         <div className="flex flex-col gap-1">
           <StatusSentence detail={detail} />

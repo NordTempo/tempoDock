@@ -20,7 +20,7 @@ func newServerCmd(g *globals) *cobra.Command {
 		Short: "Servers environments run on, and what may be placed on them",
 	})
 	cmd.AddCommand(newServerListCmd(g), newServerShowCmd(g), newServerDiskCmd(g), newServerPruneCmd(g), newServerAddCmd(g),
-		newServerUpdateCmd(g), newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g), newServerTunnelCmd(g))
+		newServerUpdateCmd(g), newServerRenameCmd(g), newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g), newServerTunnelCmd(g))
 	return cmd
 }
 
@@ -219,6 +219,33 @@ func tunnelWords(t *apitypes.ServerTunnel) string {
 		words += ": " + t.Reason
 	}
 	return words
+}
+
+// newServerRenameCmd renames a server; its environments, link and history
+// stay, since everything refers to it by ID.
+func newServerRenameCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <current> <new>",
+		Short: "Rename a server, keeping its environments and link (admin)",
+		Long: `Rename a server. Its environments, apps, link and history stay; only the name
+it is shown and addressed by changes. Scripts that name it need updating.`,
+		Example: "  dock server rename vps-2 hetzner-fsn",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			sv, err := send[apitypes.Server](cmd.Context(), s, http.MethodPatch, apiPrefix+"/servers/"+url.PathEscape(args[0]), apitypes.UpdateServerRequest{Name: &args[1]})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(sv, func() error {
+				g.io.Successf("Renamed server %s to %s", args[0], sv.Name)
+				return nil
+			})
+		},
+	}
 }
 
 func newServerRevokeCmd(g *globals) *cobra.Command {
