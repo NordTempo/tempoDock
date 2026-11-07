@@ -836,7 +836,7 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 				if srv, gerr := c.store.GetServer(ctx, serverID); gerr == nil {
 					where = "server " + srv.Name
 				}
-				c.connectionFailed(ctx, storage, "Backup storage "+repo.URL+" can't be reached",
+				c.connectionFailed(ctx, storage, storage, "Backup storage "+repo.URL+" can't be reached",
 					fmt.Sprintf("A backup job on %s got no answer from it: %v. Backups and restores there fail until it answers; check the bucket and its keys with `dock storage`.", where, err), "dock storage")
 			}
 			return res.Output, err

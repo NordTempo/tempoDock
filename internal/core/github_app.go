@@ -215,7 +215,7 @@ func (c *Core) installationToken(ctx context.Context, id int64) (string, error) 
 // sign in as the App or get an installation token, so pushes don't
 // deploy and statuses aren't posted until it can.
 func (c *Core) githubAppFailed(ctx context.Context, err error) {
-	c.connectionFailed(ctx, githubAppAlertKey, "The GitHub App is failing",
+	c.connectionFailed(ctx, githubAppAlertKey, githubAppAlertKey, "The GitHub App is failing",
 		fmt.Sprintf("Dock couldn't get a GitHub token for the App: %v. Deploys from GitHub and commit statuses wait until it can.", err), "dock github status")
 }
 

@@ -119,6 +119,10 @@ type AlertTarget struct {
 	Job        string `json:"job,omitempty"`
 	Run        int64  `json:"run,omitempty"`
 	Backup     int64  `json:"backup,omitempty"`
+	// Connection names the connection of connection_failed:
+	// cloudflare:<name>, github:app, storage:<repository> or
+	// registry:prune and registry:push.
+	Connection string `json:"connection,omitempty"`
 }
 
 // AlertChannelKind is how a channel sends alerts.

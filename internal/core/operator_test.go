@@ -1,0 +1,191 @@
+package core
+
+import (
+	"testing"
+
+	"github.com/NordTempo/tempoDock/internal/apitypes"
+)
+
+// operator makes a platform operator who is a member of no org.
+func (h *harness) operator(email string) Actor {
+	h.t.Helper()
+	a := h.member(email, nil)
+	h.exec(`UPDATE users SET operator = 1 WHERE id = ?`, a.UserID)
+	a.Operator = true
+	return a
+}
+
+// consoleOrg finds an org on the operator's list.
+func (h *harness) consoleOrg(op Actor, slug string) (apitypes.OperatorOrg, bool) {
+	h.t.Helper()
+	all, err := h.c.OperatorOrgs(h.ctx, op, false)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	for _, o := range all {
+		if o.Slug == slug {
+			return o, true
+		}
+	}
+	return apitypes.OperatorOrg{}, false
+}
+
+// An operator who isn't a member sees every org's people and size, and
+// may suspend it, fix its admins and stop its services, but not read its
+// content; members and other users may do none of it.
+func TestOperatorAdministersOrgsWithoutMembership(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	op := h.operator("op@x")
+	admin := h.in(h.member("ada@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	dev := h.in(h.member("dev@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
+	h.member("bob@x", map[string]apitypes.Scope{"acme": apitypes.ScopeRead})
+
+	o, ok := h.consoleOrg(op, "test")
+	if !ok || o.Services != 1 || o.Projects != 1 || o.Owner != "ada@x" || o.Status != apitypes.OrgActive {
+		t.Fatalf("test org = %+v", o)
+	}
+	if acme, _ := h.consoleOrg(op, "acme"); acme.Status != apitypes.OrgNoAdmin || len(acme.Admins) != 0 {
+		t.Fatalf("acme = %+v; want no admin", acme)
+	}
+	for _, a := range []Actor{admin, dev} {
+		if _, err := h.c.OperatorOrgs(h.ctx, a, false); CodeOf(err) != apitypes.CodeForbidden {
+			t.Fatalf("%s listed every org: %v", a, err)
+		}
+		if _, err := h.c.SuspendOrg(h.ctx, a, "test", true); CodeOf(err) != apitypes.CodeForbidden {
+			t.Fatalf("%s suspended the org: %v", a, err)
+		}
+	}
+	// Not a member: the org's content is out of reach.
+	if _, err := h.c.ListVariables(h.ctx, op, web.Env(), "web", false); err == nil {
+		t.Fatal("the operator read the org's variables without joining")
+	}
+
+	// Suspended: reads work, deploys and changes don't, the app runs on.
+	if o, err := h.c.SuspendOrg(h.ctx, op, "test", true); err != nil || o.Status != apitypes.OrgSuspended || o.SuspendedBy != "op@x" {
+		t.Fatalf("suspend = %+v, %v", o, err)
+	}
+	dev = h.in(h.member("dev2@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
+	if _, err := h.c.GetService(h.ctx, dev, web); err != nil {
+		t.Fatalf("a member can't read a suspended org: %v", err)
+	}
+	if _, err := h.c.DeployImage(h.ctx, dev, web, apitypes.DeployImageRequest{Image: "app:2"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("a member deployed in a suspended org: %v", err)
+	}
+	if _, err := h.c.DeployImage(h.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("a deploy outside a member's request (a push) went ahead: %v", err)
+	}
+	if s, _ := h.c.GetService(h.ctx, testSystem, web); s.ActiveRelease == nil || *s.ActiveRelease != 1 {
+		t.Fatalf("service = %+v; release 1 keeps running", s)
+	}
+	if _, err := h.c.SuspendOrg(h.ctx, op, "test", false); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "app:2")
+
+	// An org without an admin gets one from the operator.
+	bob, err := h.store.GetUserByEmail(h.ctx, "bob@x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.OperatorSetMemberRole(h.ctx, op, "acme", bob.ID, apitypes.OperatorMemberRequest{Role: apitypes.ScopeAdmin}); err != nil {
+		t.Fatal(err)
+	}
+	if acme, _ := h.consoleOrg(op, "acme"); acme.Status != apitypes.OrgActive || acme.Owner != "bob@x" {
+		t.Fatalf("acme = %+v; want bob as its admin", acme)
+	}
+	if _, err := h.c.OperatorAddMember(h.ctx, op, "acme", apitypes.OperatorMemberRequest{Email: "ada@x", Role: apitypes.ScopeDeploy}); err != nil {
+		t.Fatal(err)
+	}
+
+	if out, err := h.c.StopOrgServices(h.ctx, op, "test"); err != nil || out.Stopped != 1 {
+		t.Fatalf("stop = %+v, %v", out, err)
+	}
+	if s, _ := h.c.GetService(h.ctx, testSystem, web); s.StoppedAt == nil {
+		t.Fatalf("service = %+v; want stopped", s)
+	}
+	// The org's admins see what the operator did in their own log.
+	evs, err := h.c.ListAudit(h.ctx, admin, AuditFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, e := range evs {
+		seen[e.Action] = true
+	}
+	if !seen["org.suspend"] || !seen["org.unsuspend"] || !seen["org.stop_services"] {
+		t.Fatalf("the org's log = %v; want the operator's actions", seen)
+	}
+}
+
+// Join as operator makes the operator an admin for a while, which the
+// org's admins see; when it runs out the access ends at once, and the
+// retention pass removes the membership and says so.
+func TestJoinAsOperatorExpires(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	op := h.operator("op@x")
+	h.member("ada@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin})
+
+	grant, err := h.c.JoinOrgAsOperator(h.ctx, op, "test", apitypes.JoinOrgRequest{Hours: 2})
+	if err != nil || grant.Role != apitypes.ScopeAdmin {
+		t.Fatalf("join = %+v, %v", grant, err)
+	}
+	in := h.in(op, "test")
+	if _, err := h.c.ListVariables(h.ctx, in, web.Env(), "web", false); err != nil {
+		t.Fatalf("a joined operator can't read the org: %v", err)
+	}
+	if o, _ := h.consoleOrg(op, "test"); o.Members != 1 || len(o.Admins) != 1 {
+		t.Fatalf("org = %+v; the operator isn't one of its own", o)
+	}
+	// An operator who joined may leave though the org has one admin of its own.
+	if _, err := h.c.JoinOrgAsOperator(h.ctx, op, "test", apitypes.JoinOrgRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("joined twice: %v", err)
+	}
+
+	h.exec(`UPDATE org_members SET expires_at = unixepoch() - 1 WHERE user_id = ?`, op.UserID)
+	if _, err := h.c.actIn(h.ctx, op, "test", apitypes.ScopeAdmin); CodeOf(err) != apitypes.CodeNotFound {
+		t.Fatalf("an expired operator still acts in the org: %v", err)
+	}
+	h.c.expireOperatorMembers(h.ctx)
+	var left int
+	if err := h.store.DB.QueryRowContext(h.ctx, `SELECT count(*) FROM org_members WHERE user_id = ?`, op.UserID).Scan(&left); err != nil || left != 0 {
+		t.Fatalf("memberships left = %d, %v", left, err)
+	}
+	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{})
+	var joined, ended bool
+	for _, e := range evs {
+		joined = joined || e.Action == "org.operator_join"
+		ended = ended || e.Action == "org.operator_leave"
+	}
+	if !joined || !ended {
+		t.Fatal("the org's log doesn't show the operator joining and leaving")
+	}
+}
+
+// Deleting an org with projects needs its slug typed, archives the
+// projects and hides the org; its members lose it.
+func TestOperatorDeletesOrg(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	op := h.operator("op@x")
+	ada := h.member("ada@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin})
+
+	if err := h.c.OperatorDeleteOrg(h.ctx, op, "test", "tset"); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("deleted without the right slug: %v", err)
+	}
+	if err := h.c.OperatorDeleteOrg(h.ctx, op, "test", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := h.consoleOrg(op, "test"); ok {
+		t.Fatal("a deleted org is still listed")
+	}
+	if _, err := h.c.actIn(h.ctx, ada, "test", apitypes.ScopeAdmin); CodeOf(err) != apitypes.CodeNotFound {
+		t.Fatalf("a member still acts in the deleted org: %v", err)
+	}
+	if p, err := h.c.GetProject(h.ctx, testSystem, "shop"); err != nil || p.ArchivedAt == nil {
+		t.Fatalf("project = %+v, %v; want archived", p, err)
+	}
+}

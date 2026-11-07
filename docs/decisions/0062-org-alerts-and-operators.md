@@ -107,6 +107,46 @@ time, writes an audit entry the org's admins see, and the membership
 expires by itself. Permissions are checked in core through `Actor`, as
 everything else.
 
+How it works (`internal/core/operator.go`, `/console/orgs/...`):
+
+- **Use per org** in a fixed number of queries: orgs with their member,
+  project and service counts in one pass, their admins, each service's
+  org, CPU a week ago (the 10-minute points), the newest backup of each
+  service, 30 days of hourly traffic and the registry's kept images. CPU
+  and memory now come from the statistics in memory; volumes from the
+  servers' last disk readings, kept per service. The Organizations page
+  asks for stale servers (read over a minute ago) to be read again in the
+  background, at most once a minute each; the overview doesn't. Images
+  are a count: the registry doesn't size images per service cheaply.
+- **Owner** is an org's first admin. **No admin** is an org without an
+  admin of its own; an operator who joined doesn't count, and may leave
+  while the org keeps one.
+- **Operator actions** reuse the org's own operations (rename, roles,
+  removing members) with the operator acting as an admin there
+  (`operatorIn`), built only by these functions, so it never reaches the
+  org's content. Each is audited in the org's log and the platform's.
+  Adding a member takes an existing account.
+- **Suspended** (`orgs.suspended_at`): the actor of a member or token
+  carries it, and any scope above read is refused with a conflict that
+  says the operator suspended it. Every deploy, pushes and previews too,
+  passes `startRelease`, which checks the org however it was asked for.
+  Apps keep running; reads work.
+- **Stop services** stops each running service as `dock stop` does.
+- **Delete** needs the slug typed. An org without projects is deleted as
+  its admins delete it. One with projects keeps their history, since
+  projects are never deleted: every project is archived (containers
+  stopped, volumes and releases kept), members, invites, variables,
+  registry credentials and policy removed, tokens revoked, and the org is
+  marked deleted and hidden from every list.
+- **Join as operator** adds a membership with `expires_at` (1 to 24
+  hours, people only). Lookups ignore it from then on, so access ends at
+  once without a timer; the hourly retention pass removes the row and
+  audits it. A live event stream opened while a member keeps streaming
+  until it reconnects.
+- No CLI yet for these: they are the console's (ADR 0026 asks for UI
+  with every CLI command, not the reverse). A `dock` command can follow
+  when operators script them.
+
 ### The console overview answers "is the platform healthy?"
 
 Its first screen (mock O): open platform alerts, the servers and their

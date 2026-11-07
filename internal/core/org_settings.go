@@ -160,8 +160,9 @@ func (c *Core) member(ctx context.Context, a Actor, userID int64, action string)
 	return c.store.GetUser(ctx, userID)
 }
 
-// keepAnAdmin refuses to leave the org without an admin when userID stops
-// being one (next: their new role; "" for leaving).
+// keepAnAdmin refuses to leave the org without an admin of its own when
+// userID stops being one (next: their new role; "" for leaving). An
+// operator who joined for a while is no admin of its own, and may go.
 func (c *Core) keepAnAdmin(ctx context.Context, orgID, userID int64, next apitypes.Scope) error {
 	if next == apitypes.ScopeAdmin {
 		return nil
@@ -170,11 +171,11 @@ func (c *Core) keepAnAdmin(ctx context.Context, orgID, userID int64, next apityp
 	if err != nil || role != string(apitypes.ScopeAdmin) {
 		return err
 	}
-	n, err := c.store.CountOrgAdmins(ctx, orgID)
+	n, err := c.store.CountOtherOrgAdmins(ctx, store.CountOtherOrgAdminsParams{OrgID: orgID, UserID: userID})
 	if err != nil {
 		return err
 	}
-	if n <= 1 {
+	if n == 0 {
 		return conflict("an organization needs an admin; make another member admin first")
 	}
 	return nil

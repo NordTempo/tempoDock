@@ -450,6 +450,9 @@ type Org struct {
 	RequestTtlHours  int64
 	RequireTwoFactor bool
 	SsoOnly          bool
+	SuspendedAt      *time.Time
+	SuspendedBy      string
+	DeletedAt        *time.Time
 }
 
 type OrgInvite struct {
@@ -470,6 +473,7 @@ type OrgMember struct {
 	UserID    int64
 	Role      string
 	CreatedAt time.Time
+	ExpiresAt *int64
 }
 
 type OrgVariable struct {

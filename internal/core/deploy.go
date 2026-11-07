@@ -365,7 +365,7 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	unlock() // the builder is free; pushing is done
 	digest, err := c.reg.Digest(ctx, repo, ref[strings.LastIndexByte(ref, ':')+1:])
 	if err != nil {
-		c.connectionFailed(ctx, "registry:push", "The platform registry is failing",
+		c.connectionFailed(ctx, "registry:push", "registry:push", "The platform registry is failing",
 			fmt.Sprintf("A build pushed its image, but the registry couldn't find it: %v. Builds fail until the registry answers; see `dock registry`.", err), "dock registry")
 		return "", step(apitypes.CodeBuildFailed, "find the pushed image in the registry: %w", err)
 	}

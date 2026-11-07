@@ -64,3 +64,14 @@ func TestOrgAlertQueryPlans(t *testing.T) {
 		{"AlertServiceOrg", alertServiceOrg, []any{1}},
 	})
 }
+
+// An org's services and lapsed operator memberships are found through
+// indexes. (The Organizations page's own queries list every org, admin
+// and service on purpose, and group bounded ranges of statistics.)
+func TestOperatorQueryPlans(t *testing.T) {
+	f := newDataFixture(t)
+	checkPlans(t, f.s, []planCase{
+		{"ListOrgLiveServices", listOrgLiveServices, []any{1}},
+		{"ListExpiredOrgMembers", listExpiredOrgMembers, nil},
+	})
+}

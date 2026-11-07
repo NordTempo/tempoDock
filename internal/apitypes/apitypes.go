@@ -1030,6 +1030,9 @@ type User struct {
 	Tokens int `json:"tokens"`
 	// TwoFactor is set when the user has a passkey or an authenticator app.
 	TwoFactor bool `json:"two_factor"`
+	// ExpiresAt is when an operator's membership from Join as operator
+	// ends (ADR 0062); unset for every other member.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // ResetPasswordRequest sets another user's password. Without a password

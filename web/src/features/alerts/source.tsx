@@ -204,6 +204,22 @@ export function AlertLink({
           Open jobs
         </Link>
       );
+    case "update_failed":
+      return (
+        <Link to="/console/updates" {...props}>
+          Open updates
+        </Link>
+      );
+    case "connection_failed": {
+      const [kind] = (a.target?.connection ?? "").split(":");
+      const to = connectionPages[kind ?? ""];
+      if (!to) break;
+      return (
+        <Link to={to} {...props}>
+          Open {kind === "github" ? "GitHub" : kind}
+        </Link>
+      );
+    }
   }
   if (a.server)
     return (
@@ -224,6 +240,20 @@ export function AlertLink({
   return null;
 }
 
+/** The console page of each kind of platform connection. */
+const connectionPages: Record<
+  string,
+  | "/console/cloudflare"
+  | "/console/github"
+  | "/console/storage"
+  | "/console/registry"
+> = {
+  cloudflare: "/console/cloudflare",
+  github: "/console/github",
+  storage: "/console/storage",
+  registry: "/console/registry",
+};
+
 /** The kind of an alert in a word or two, for a problem row's label. */
 export const alertLabel = (a: Alert) =>
   ({
@@ -232,6 +262,10 @@ export const alertLabel = (a: Alert) =>
     traffic_drop: "Traffic drop",
     access_request: "Request",
     disk: "Disk filling up",
+    memory: "Memory pressure",
+    cpu: "CPU busy",
+    update_failed: "Update failed",
+    connection_failed: "Connection failing",
     uptime_down: "Down",
     job_failed: "Job failed",
   })[a.kind] ?? "Alert";

@@ -304,7 +304,7 @@ func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 		u.lastErr = ""
 		if err != nil {
 			u.lastErr = err.Error()
-			c.connectionFailed(ctx, "registry:prune", "The registry's prune is failing",
+			c.connectionFailed(ctx, "registry:prune", "registry:prune", "The registry's prune is failing",
 				fmt.Sprintf("Pruning old images from the platform registry failed: %v. Its storage keeps growing until a prune works; the next deploy tries again.", err), "dock registry prune")
 		} else {
 			u.lastPrune = time.Now()

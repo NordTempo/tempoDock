@@ -36,6 +36,14 @@ type diskState struct {
 	mu         sync.Mutex
 	last       map[int64]apitypes.ServerDisk
 	refreshing map[int64]bool
+	// volumes are the same readings' volume bytes per service ID, for
+	// each org's use on the console (orgUsage).
+	volumes map[int64]map[int64]int64
+	// tried is when the console's Organizations page last asked for each
+	// server to be read again (refreshStaleDisks), so a read that keeps
+	// failing, whose error event refetches the page, isn't asked for
+	// again within diskFresh.
+	tried map[int64]time.Time
 }
 
 // ServerDisk returns where a server's disk goes: its services' volumes,
@@ -74,13 +82,13 @@ func (c *Core) readDiskShared(ctx context.Context, srv store.Server) (apitypes.S
 		// Not the caller's ctx: others may wait on this read.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), diskReadTimeout)
 		defer cancel()
-		d, err := c.readDisk(ctx, srv)
+		d, vols, err := c.readDisk(ctx, srv)
 		if err == nil {
 			c.disk.mu.Lock()
 			if c.disk.last == nil {
-				c.disk.last = map[int64]apitypes.ServerDisk{}
+				c.disk.last, c.disk.volumes = map[int64]apitypes.ServerDisk{}, map[int64]map[int64]int64{}
 			}
-			c.disk.last[srv.ID] = d
+			c.disk.last[srv.ID], c.disk.volumes[srv.ID] = d, vols
 			c.disk.mu.Unlock()
 		}
 		return d, err
@@ -127,23 +135,30 @@ func (c *Core) refreshDisk(srv store.Server) {
 	}()
 }
 
-// readDisk asks a server for its disk usage and filesystem and groups it.
-func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerDisk, error) {
+// readDisk asks a server for its disk usage and filesystem and groups it,
+// with the bytes of each service's volumes by service ID.
+func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerDisk, map[int64]int64, error) {
 	rt := c.connected(srv.ID)
 	if rt == nil {
-		return apitypes.ServerDisk{}, errf(apitypes.CodeServerOffline, "server %s is offline; its disk can be read once it is back", srv.Name)
+		return apitypes.ServerDisk{}, nil, errf(apitypes.CodeServerOffline, "server %s is offline; its disk can be read once it is back", srv.Name)
 	}
 	req, err := c.pruneRequest(ctx, srv.ID)
 	if err != nil {
-		return apitypes.ServerDisk{}, err
+		return apitypes.ServerDisk{}, nil, err
 	}
 	du, err := rt.DiskUsage(ctx, req)
 	if err != nil {
-		return apitypes.ServerDisk{}, c.nodeErr(srv.ID, err)
+		return apitypes.ServerDisk{}, nil, c.nodeErr(srv.ID, err)
 	}
 	host, err := rt.HostStats(ctx)
 	if err != nil {
-		return apitypes.ServerDisk{}, c.nodeErr(srv.ID, err)
+		return apitypes.ServerDisk{}, nil, c.nodeErr(srv.ID, err)
+	}
+	vols := map[int64]int64{}
+	for _, v := range du.Volumes {
+		if id, err := strconv.ParseInt(v.Service, 10, 64); err == nil && (v.ControlPlane == "" || v.ControlPlane == c.install) {
+			vols[id] += v.Bytes
+		}
 	}
 	var registry int64
 	if srv.ID == c.local.ID && c.reg != nil {
@@ -153,13 +168,13 @@ func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerD
 	}
 	services, err := c.store.ListServerServices(ctx, srv.ID)
 	if err != nil {
-		return apitypes.ServerDisk{}, err
+		return apitypes.ServerDisk{}, nil, err
 	}
 	names := make(map[string]string, len(services))
 	for _, s := range services {
 		names[strconv.FormatInt(s.ID, 10)] = s.ProjectName + "/" + s.EnvironmentName + "/" + s.Name
 	}
-	return c.diskParts(srv, du, host, registry, names), nil
+	return c.diskParts(srv, du, host, registry, names), vols, nil
 }
 
 // diskParts groups a server's disk usage into the console's parts.

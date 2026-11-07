@@ -17,14 +17,15 @@ import (
 // registry:prune and registry:push.
 
 // connectionFailed opens (or updates) the platform alert for a connection
-// that just failed: title names it, msg says what failed and what to do.
-func (c *Core) connectionFailed(ctx context.Context, key, title, msg, command string) {
+// that just failed: conn names it for clients (AlertTarget.Connection),
+// title for people, msg says what failed and what to do.
+func (c *Core) connectionFailed(ctx context.Context, key, conn, title, msg, command string) {
 	if ctx.Err() != nil {
 		return // shutting down or the caller gave up: not the connection's fault
 	}
 	c.signalAlert(ctx, alertSignal{
 		Key: key, Kind: apitypes.AlertConnection, Severity: apitypes.SeverityWarning,
-		Title: title, Message: msg, Command: command,
+		Title: title, Message: msg, Command: command, Target: &apitypes.AlertTarget{Connection: conn},
 	})
 }
 

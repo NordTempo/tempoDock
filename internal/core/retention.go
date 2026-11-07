@@ -209,6 +209,7 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if err := c.expireRequests(ctx, now); err != nil {
 		c.log.Warn("retention: access requests", "err", err)
 	}
+	c.expireOperatorMembers(ctx)
 	if out.requests, err = c.store.PruneAccessRequests(ctx, now.Add(-days(c.cfg.Retention.AuditDays)).UTC()); err != nil {
 		c.log.Warn("retention: access requests", "err", err)
 	}

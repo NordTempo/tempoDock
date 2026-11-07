@@ -848,6 +848,9 @@ function ConsoleNav() {
       <NavLink to="/console" exact icon="grid">
         Overview
       </NavLink>
+      <NavLink to="/console/orgs" icon="users">
+        Organizations
+      </NavLink>
       <div className={groupLabel}>Infrastructure</div>
       <NavLink to="/console/servers" exact icon="server">
         Servers

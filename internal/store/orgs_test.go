@@ -105,7 +105,7 @@ func TestOrgQueryPlans(t *testing.T) {
 		{"GetInviteByHash", getInviteByHash, []any{"h"}},
 		{"ListOrgVariables", listOrgVariables, []any{1}},
 		{"ListOrgVariableUses", listOrgVariableUses, []any{1}},
-		{"CountOrgAdmins", countOrgAdmins, []any{1}},
+		{"CountOtherOrgAdmins", countOtherOrgAdmins, []any{1, 1}},
 		{"CountOrgProjects", countOrgProjects, []any{1}},
 	})
 
