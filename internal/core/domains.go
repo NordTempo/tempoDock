@@ -163,7 +163,7 @@ func (c *Core) cloudflareZoneFor(ctx context.Context, a Actor, ss svcScope, host
 	if err != nil {
 		return nil, err
 	}
-	z, err := c.prepareCloudflareDomain(ctx, a, srv, host)
+	z, err := c.prepareCloudflareDomain(ctx, a, srv, ss.project.OrgID, host)
 	if err != nil {
 		return nil, err
 	}
@@ -205,10 +205,10 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 		if exists {
 			continue
 		}
-		// Under a zone Dock manages, on a tunnel server, Dock routes it
+		// Under a platform zone, on a tunnel server, Dock routes it
 		// through the tunnel like a domain from Cloudflare (no wildcard).
 		var zone *store.CloudflareZone
-		if _, managed := c.zoneFor(host); managed && c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel {
+		if _, managed := c.zoneFor(0, host); managed && c.ingressOf(srv).mode == apitypes.IngressCloudflareTunnel {
 			if zone, err = c.cloudflareZoneFor(ctx, a, ss, host); err != nil {
 				return apitypes.DomainChange{}, err
 			}

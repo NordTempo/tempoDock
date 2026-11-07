@@ -4,9 +4,14 @@ import "time"
 
 // Cloudflare is a Cloudflare connection (ADR 0036): an API token with
 // which Dock runs tunnels for tunnel servers and routes domains added
-// from its zones through them. The token is never returned.
+// from its zones through them. The token is never returned. A connection
+// is the platform's (it runs server tunnels) or an org's own, whose
+// zones only that org's domains use (ADR 0062).
 type Cloudflare struct {
-	Name        string `json:"name" example:"home"`
+	Name string `json:"name" example:"home"`
+	// Shared is set on a platform connection whose zones org domains may
+	// use; never on an org's own.
+	Shared      bool   `json:"shared"`
 	AccountID   string `json:"account_id"`
 	AccountName string `json:"account_name"`
 	// Status is invalid once Cloudflare refused the token (revoked or
@@ -39,19 +44,28 @@ type CreateCloudflareRequest struct {
 	// AccountID picks the account when the token reaches several, and is
 	// needed for tokens owned by an account.
 	AccountID string `json:"account_id,omitempty"`
+	// Shared lets org domains use a platform connection's zones; only for
+	// the platform's.
+	Shared bool `json:"shared,omitempty" doc:"Platform connections only: organizations' domains may use its zones"`
 }
 
 // UpdateCloudflareRequest gives a Cloudflare connection a new token (a
-// revoked or expired one, or new zones). It is checked like a new one.
+// revoked or expired one, or new zones), checked like a new one, and on a
+// platform connection shares it or stops sharing it. Without a token only
+// Shared changes.
 type UpdateCloudflareRequest struct {
-	Token     string  `json:"token" minLength:"1"`
-	AccountID *string `json:"account_id,omitempty"`
+	Token     string  `json:"token,omitempty"`
+	AccountID *string `json:"account_id,omitempty" doc:"Needs a token"`
+	Shared    *bool   `json:"shared,omitempty" doc:"Platform connections only: organizations' domains may use its zones"`
 }
 
-// CloudflareZone is a zone domains can be added from (ADR 0036).
+// CloudflareZone is a zone domains can be added from (ADR 0036): one of
+// the org's own connections, or of a platform connection shared with
+// orgs (Platform).
 type CloudflareZone struct {
 	Name       string `json:"name" example:"tempo.run"`
 	Connection string `json:"connection"`
+	Platform   bool   `json:"platform,omitempty" doc:"The platform's zone, shared with organizations, not the organization's own"`
 }
 
 // DNSRecordStatus is how far Dock is with routing a domain through a

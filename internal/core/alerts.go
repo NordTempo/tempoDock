@@ -53,6 +53,9 @@ type alertSignal struct {
 	// What the alert is about, where that applies.
 	Project, Environment, Service, Server string
 	projectID, serviceID                  int64
+	// orgID, when set, is the org the alert belongs to, for one that
+	// names no project or service (an org's own connection).
+	orgID int64
 	// Resolve closes the open alert with Key; the other fields are unused.
 	Resolve bool
 }
@@ -679,14 +682,16 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	c.notify(ctx, row, "opened", now)
 }
 
-// alertOrg is the org an alert belongs to: its project's, or its
-// service's; nil (the platform's) for an alert that names neither, about
-// a server or Dock itself. A new kind of alert falls into place by what
+// alertOrg is the org an alert belongs to: the one its signal names
+// (orgID), its project's, or its service's; nil (the platform's) for an
+// alert that names none, about a server or Dock itself. A new kind of alert falls into place by what
 // it names. One indexed read, when an alert opens.
 func (c *Core) alertOrg(ctx context.Context, s alertSignal) *int64 {
 	var org int64
 	var err error
 	switch {
+	case s.orgID != 0:
+		return &s.orgID
 	case s.projectID != 0:
 		org, err = c.store.AlertProjectOrg(ctx, s.projectID)
 	case s.serviceID != 0:

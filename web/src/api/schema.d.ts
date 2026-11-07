@@ -594,13 +594,13 @@ export interface paths {
         };
         /**
          * List Cloudflare connections
-         * @description The API tokens Dock runs tunnels and routes domains with, their zones and the servers whose tunnels they run. Tokens are never returned. Operators only.
+         * @description The organization's own API tokens Dock routes domains with (with platform, the platform's, which run server tunnels too), their zones and, for the platform's, the servers whose tunnels they run. Tokens are never returned. Organization admins; operators for the platform's.
          */
         get: operations["list-cloudflare"];
         put?: never;
         /**
          * Add a Cloudflare connection
-         * @description Dock checks the token (active, reaches the account and its tunnels, lists zones) before saving it, so a mistake fails here (400, saying what to fix). Zones whose DNS records the token can't read are left out. Operators only.
+         * @description Dock checks the token (active, reaches the account and its tunnels, lists zones) before saving it, so a mistake fails here (400, saying what to fix). Zones whose DNS records the token can't read are left out, and for an organization's own connection zones Cloudflare doesn't serve yet; a zone connected elsewhere is refused (409). A platform connection may be shared: organizations' domains may then use its zones. Organization admins; operators for the platform's.
          */
         post: operations["create-cloudflare"];
         delete?: never;
@@ -658,7 +658,7 @@ export interface paths {
         };
         /**
          * List the zones domains can be added from
-         * @description The zones of working Cloudflare connections, for adding a domain from Cloudflare. Scope: deploy.
+         * @description The zones of the organization's own Cloudflare connections and of those the platform shares, for adding a domain from Cloudflare. Scope: deploy.
          */
         get: operations["list-cloudflare-zones"];
         put?: never;
@@ -681,14 +681,14 @@ export interface paths {
         post?: never;
         /**
          * Remove a Cloudflare connection
-         * @description Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it. Operators only.
+         * @description Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it. Organization admins; operators for the platform's.
          */
         delete: operations["remove-cloudflare"];
         options?: never;
         head?: never;
         /**
-         * Give a Cloudflare connection a new token
-         * @description Checked like a new one; its zones are listed again. A connection whose token Cloudflare refused works again. Operators only.
+         * Give a Cloudflare connection a new token, or share it
+         * @description A new token is checked like a new one; its zones are listed again and its failed domains tried again. A connection whose token Cloudflare refused works again. shared (platform connections only) lets organizations' domains use its zones; turned off, domains already in them keep working. Organization admins; operators for the platform's.
          */
         patch: operations["update-cloudflare"];
         trace?: never;
@@ -704,7 +704,7 @@ export interface paths {
         put?: never;
         /**
          * List a Cloudflare connection's zones again
-         * @description After zones were added to or taken from its token in Cloudflare. Operators only.
+         * @description After zones were added to or taken from its token in Cloudflare, or a permission was fixed; its failed domains are tried again. Organization admins; operators for the platform's.
          */
         post: operations["refresh-cloudflare"];
         delete?: never;
@@ -1110,7 +1110,7 @@ export interface paths {
         put?: never;
         /**
          * Get the GitHub App's install link for an org
-         * @description Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which assigns the installation to the org. Operators only.
+         * @description Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which assigns the installation to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any.
          */
         post: operations["install-github-app"];
         delete?: never;
@@ -1135,9 +1135,29 @@ export interface paths {
         post?: never;
         /**
          * Unassign a GitHub App installation
-         * @description Its org's services stop fetching from it. Operators only.
+         * @description Its org's services stop fetching from it. Organization admins for their own organization's installations; operators for any.
          */
         delete: operations["unassign-github-installation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/github/org": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the GitHub App for the organization
+         * @description The platform's GitHub App, if it has one, and the organization's own installations (asked of GitHub now) with the services connected through each. Organization admins.
+         */
+        get: operations["get-github-org"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5392,6 +5412,7 @@ export interface components {
             account_name: string;
             /** @example home */
             name: string;
+            shared: boolean;
             /** @enum {string} */
             status: "ok" | "invalid";
             status_reason?: string;
@@ -5421,6 +5442,8 @@ export interface components {
             connection: string;
             /** @example tempo.run */
             name: string;
+            /** @description The platform's zone, shared with organizations, not the organization's own */
+            platform?: boolean;
         };
         CommandRun: {
             command: string;
@@ -5576,6 +5599,8 @@ export interface components {
         CreateCloudflareRequest: {
             account_id?: string;
             name: string;
+            /** @description Platform connections only: organizations' domains may use its zones */
+            shared?: boolean;
             /** @description API token: Account › Cloudflare Tunnel › Edit, Zone › DNS › Edit and Zone › Zone › Read */
             token: string;
         };
@@ -6496,9 +6521,22 @@ export interface components {
         GitHubLink: {
             url: string;
         };
+        GitHubOrg: {
+            app?: components["schemas"]["GitHubOrgApp"];
+            installations: components["schemas"]["GitHubInstallation"][] | null;
+            installations_error?: string;
+        };
+        GitHubOrgApp: {
+            name: string;
+            /** @description The GitHub account that owns the App */
+            owner: string;
+            slug: string;
+            /** @description The App's page on GitHub */
+            url: string;
+        };
         GitHubOrgRequest: {
-            /** @description The org's slug */
-            org: string;
+            /** @description The org's slug; empty for the caller's own. Only operators name another org. */
+            org?: string;
         };
         GitHubRepo: {
             default_branch: string;
@@ -8368,8 +8406,11 @@ export interface components {
             hour?: number;
         };
         UpdateCloudflareRequest: {
+            /** @description Needs a token */
             account_id?: string;
-            token: string;
+            /** @description Platform connections only: organizations' domains may use its zones */
+            shared?: boolean;
+            token?: string;
         };
         UpdateDataPolicyRequest: {
             rules: components["schemas"]["DataPolicyRule"][] | null;
@@ -11620,6 +11661,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -11681,6 +11724,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -11697,6 +11749,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -12036,6 +12090,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {
@@ -12132,6 +12188,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {
@@ -12234,6 +12292,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {
@@ -14839,6 +14899,83 @@ export interface operations {
             };
             /** @description Locked */
             423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-github-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubOrg"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

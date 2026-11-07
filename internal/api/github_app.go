@@ -19,8 +19,10 @@ import (
 const githubAppNewPath = Prefix + "/github/app/new"
 
 // registerGitHub registers the install's GitHub App (ADR 0031): operators
-// create it, install it and assign installations to orgs; members list the
-// repositories their org can connect. GitHub's redirects back land on
+// create it, install it and assign installations to orgs; an org's admins
+// see and install it for their own org and unassign their own
+// installations (ADR 0062); members list the repositories their org can
+// connect. GitHub's redirects back land on
 // plain pages (githubPages), outside Huma.
 func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	tags := []string{"github"}
@@ -50,9 +52,17 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 		return nil, s.core.RemoveGitHubApp(ctx, actor)
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-github-org", Method: http.MethodGet, Path: Prefix + "/github/org",
+		Summary: "Show the GitHub App for the organization", Tags: tags,
+		Description: "The platform's GitHub App, if it has one, and the organization's own installations (asked of GitHub now) with the services connected through each. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.GitHubOrg], error) {
+		return reply(s.core.GitHubOrgStatus(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "install-github-app", Method: http.MethodPost, Path: Prefix + "/github/installations",
 		Summary: "Get the GitHub App's install link for an org", Tags: tags,
-		Description: "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which assigns the installation to the org. Operators only.",
+		Description: "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which assigns the installation to the org, unless another org has it. " +
+			"Organization admins for their own organization (org empty or theirs); operators for any.",
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.GitHubOrgRequest }) (*out[apitypes.GitHubLink], error) {
 		return reply(s.core.StartGitHubInstall(ctx, actor, in.Body))
 	})
@@ -69,7 +79,7 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	authed(s, a, huma.Operation{
 		OperationID: "unassign-github-installation", Method: http.MethodDelete, Path: Prefix + "/github/installations/{id}",
 		Summary: "Unassign a GitHub App installation", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Its org's services stop fetching from it. Operators only.",
+		Description: "Its org's services stop fetching from it. Organization admins for their own organization's installations; operators for any.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ID int64 `path:"id"`
 	}) (*struct{}, error) {

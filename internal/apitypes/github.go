@@ -71,7 +71,30 @@ type GitHubLink struct {
 
 // GitHubOrgRequest names the org an installation is for.
 type GitHubOrgRequest struct {
-	Org string `json:"org" minLength:"1" maxLength:"32" doc:"The org's slug"`
+	Org string `json:"org,omitempty" maxLength:"32" doc:"The org's slug; empty for the caller's own. Only operators name another org."`
+}
+
+// GitHubOrg is the GitHub App as an org's admins see it (ADR 0062): the
+// platform's App and the org's own installations.
+type GitHubOrg struct {
+	// App is nil while the platform has no App (an operator creates it).
+	App *GitHubOrgApp `json:"app,omitempty"`
+	// Installations are those assigned to the org, as GitHub lists them;
+	// one GitHub no longer lists has Missing set.
+	Installations []GitHubInstallation `json:"installations"`
+	// InstallationsError says why GitHub couldn't be asked; Installations
+	// then holds only what Dock has assigned.
+	InstallationsError string `json:"installations_error,omitempty"`
+}
+
+// GitHubOrgApp is the platform's GitHub App, for orgs. The install link
+// comes from POST /github/installations, since it carries a single-use
+// state.
+type GitHubOrgApp struct {
+	Slug  string `json:"slug"`
+	Name  string `json:"name"`
+	Owner string `json:"owner" doc:"The GitHub account that owns the App"`
+	URL   string `json:"url" doc:"The App's page on GitHub"`
 }
 
 // GitHubRepos are the repositories the caller's org can connect through

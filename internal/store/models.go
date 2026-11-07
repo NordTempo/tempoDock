@@ -206,7 +206,9 @@ type CliLogin struct {
 
 type CloudflareConnection struct {
 	ID           int64
+	OrgID        *int64
 	Name         string
+	Shared       bool
 	AccountID    string
 	AccountName  string
 	Token        []byte

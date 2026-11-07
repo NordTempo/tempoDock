@@ -288,3 +288,49 @@ How it works:
 - Supersedes the "Alerts" row of 0027's table and its phase 2 "Next: org
   alert channels". Amends 0025's console: Organizations joins it, and its
   overview is about platform health.
+
+### Connections
+
+The owner's rule: the platform runs infrastructure and sets defaults and
+limits; orgs own their own people, access, connections, policies and
+activity within those limits.
+
+- **GitHub:** the App stays the platform's. Operators create and remove
+  it, see every installation and assign or move one between orgs. An
+  org's unlimited admins see the App and their org's installations
+  (`GET /github/org`, `dock github installations`), get an install link
+  for their own org (`POST /github/installations` without `org`, `dock
+  github install`) and unassign their own installations. An installation
+  another org has is refused as before. Audited in the org's log.
+- **Cloudflare:** a connection is the platform's (`org_id` NULL) or an
+  org's own. The platform's run server tunnels (picked by `--cloudflare`,
+  join tokens) and serve Dock's own names; `shared` lets every org's
+  domains use its zones. An org's own serve only its domains. Operators
+  manage the platform's with `platform=true` (`dock cloudflare
+  --platform`), an org's unlimited admins their own, as with alert
+  channels. Migration 0070 makes existing connections the platform's,
+  shared, so installs keep working; a new platform connection isn't
+  shared until an operator says so. Stopping sharing keeps the domains
+  already in its zones.
+- **Zones:** an org's hostname looks in the org's own zones first, then
+  in shared platform zones, never another org's; a name under a server's
+  base domain uses any platform zone. `GET /cloudflare/zones` lists only
+  those. A zone belongs to one owner: a token reaching a zone connected
+  elsewhere is refused (409). An org's own connection takes only zones
+  Cloudflare serves (active): a zone added to an account but not
+  delegated proves nothing, and domains from Cloudflare need no TXT proof
+  ([0042](0042-domain-verification.md)).
+- **Tunnels stay the platform's:** a domain in an org's zone goes through
+  the server's tunnel, which must be in the zone's Cloudflare account. A
+  server without one gets it made with a platform connection in that
+  account, or the domain is refused saying so. So an org's own
+  connection in an account the platform has no tunnel in can't route
+  domains yet.
+- **Failures:** an org's own connection failing is the org's
+  `connection_failed` alert (its key `cloudflare:<id>`, its target
+  `cloudflare:<name>`), for its members and channels; a platform
+  connection's stays the platform's. A refresh or a new token retries the
+  connection's failed domains, since `dock cloudflare retry` is the
+  operator's.
+- **Sealed tokens:** a platform connection's keeps its AAD (its name), an
+  org's is `<org ID>/<name>`, as channels.

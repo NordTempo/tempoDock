@@ -19,8 +19,57 @@ func newGitHubCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "github", Short: "The GitHub App that deploys pushes without per-service webhooks or tokens"})
 	app := group(&cobra.Command{Use: "app", Short: "Create or remove Dock's GitHub App (operator)"})
 	app.AddCommand(newGitHubAppCreateCmd(g), newGitHubAppRemoveCmd(g))
-	cmd.AddCommand(newGitHubStatusCmd(g), app, newGitHubInstallCmd(g), newGitHubAssignCmd(g), newGitHubUnassignCmd(g), newGitHubReposCmd(g))
+	cmd.AddCommand(newGitHubStatusCmd(g), app, newGitHubInstallationsCmd(g), newGitHubInstallCmd(g), newGitHubAssignCmd(g), newGitHubUnassignCmd(g), newGitHubReposCmd(g))
 	return cmd
+}
+
+// newGitHubInstallationsCmd is `dock github installations`: the App as the
+// org's admins see it.
+func newGitHubInstallationsCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "installations",
+		Short: "Show the GitHub App and the organization's installations (admin)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			st, err := get[apitypes.GitHubOrg](cmd.Context(), s, apiPrefix+"/github/org")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error {
+				if st.App == nil {
+					g.io.Successf("The platform has no GitHub App yet; an operator creates one with `dock github app create`.")
+					return nil
+				}
+				if err := g.io.Fields("app", st.App.Name+" ("+st.App.URL+")", "owner", st.App.Owner); err != nil {
+					return err
+				}
+				if st.InstallationsError != "" {
+					g.io.Warnf("GitHub couldn't list the installations: %s", st.InstallationsError)
+				}
+				if len(st.Installations) == 0 {
+					_, _ = fmt.Fprintln(g.io.Out, "\nNot installed for this organization yet. Install it with `dock github install`.")
+					return nil
+				}
+				_, _ = fmt.Fprintln(g.io.Out)
+				t := g.io.Table("id", "account", "repos", "services", "state")
+				for _, i := range st.Installations {
+					state := "ok"
+					switch {
+					case i.Missing:
+						state = "uninstalled on GitHub"
+					case i.Suspended:
+						state = "suspended"
+					}
+					t.Row(strconv.FormatInt(i.ID, 10), i.Account, dash(i.Repositories), strconv.Itoa(i.Connections), state)
+				}
+				return t.Flush()
+			})
+		},
+	}
 }
 
 func newGitHubStatusCmd(g *globals) *cobra.Command {
@@ -154,24 +203,32 @@ GitHub too.`,
 func newGitHubInstallCmd(g *globals) *cobra.Command {
 	var open bool
 	cmd := &cobra.Command{
-		Use:   "install <org>",
-		Short: "Install the GitHub App for an org (operator)",
-		Long: `Print the GitHub App's install link for an org (valid for an hour). On
-GitHub, choose the account and repositories; GitHub then sends you back to
-Dock, which lets the org deploy from them.`,
-		Example: "  dock github install default",
-		Args:    cobra.ExactArgs(1),
+		Use:   "install [<org>]",
+		Short: "Install the GitHub App for the organization (admin; another org: operator)",
+		Long: `Print the GitHub App's install link for the organization (valid for an hour).
+On GitHub, choose the account and repositories; GitHub then sends you back
+to Dock, which lets the organization deploy from them, unless another
+organization has that installation. An operator may name any org.`,
+		Example: `  dock github install
+  dock github install default`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var req apitypes.GitHubOrgRequest
+			what := "to install the GitHub App"
+			if len(args) == 1 {
+				req.Org = args[0]
+				what += " for " + args[0]
+			}
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
-			link, err := send[apitypes.GitHubLink](cmd.Context(), s, http.MethodPost, apiPrefix+"/github/installations", apitypes.GitHubOrgRequest{Org: args[0]})
+			link, err := send[apitypes.GitHubLink](cmd.Context(), s, http.MethodPost, apiPrefix+"/github/installations", req)
 			if err != nil {
 				return err
 			}
 			return g.io.Print(link, func() error {
-				g.openLink(link.URL, open, "to install the GitHub App for "+args[0])
+				g.openLink(link.URL, open, what)
 				return nil
 			})
 		},
@@ -214,7 +271,7 @@ assigned to another org moves; that org's services stop fetching from it.`,
 func newGitHubUnassignCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "unassign <installation-id>",
-		Short: "Stop an org deploying from an installation (operator)",
+		Short: "Stop the organization deploying from an installation (admin; another org's: operator)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := installationID(args[0])
@@ -254,7 +311,7 @@ func newGitHubReposCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(repos, func() error {
 				if len(repos.Repos) == 0 {
-					g.io.Successf("No repositories: the GitHub App isn't installed for this org; an operator runs `dock github install <org>`")
+					g.io.Successf("No repositories: the GitHub App isn't installed for this org; its admins install it with `dock github install`")
 					return nil
 				}
 				t := g.io.Table("repository", "default branch", "visibility")

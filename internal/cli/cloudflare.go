@@ -14,7 +14,8 @@ import (
 
 // Cloudflare connections (ADR 0036): API tokens with which Dock runs
 // Cloudflare tunnels for tunnel servers and routes domains added from the
-// tokens' zones through them.
+// tokens' zones through them. The org's own by default; --platform for
+// the platform's (ADR 0062).
 
 // cloudflareScopes is what a token needs, for help texts.
 const cloudflareScopes = `Create an API token in the Cloudflare dashboard (My Profile › API Tokens, or
@@ -31,11 +32,16 @@ through tunnels.`
 func newCloudflareCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cloudflare",
-		Short: "Cloudflare connections: tunnels and domains through them (admin)",
-		Long: `List the Cloudflare connections: API tokens with which Dock runs Cloudflare
-tunnels for servers behind one, and routes domains added from the tokens'
-zones (` + "`dock domain add <host> --cloudflare`" + `) through them with a proxied
-CNAME. Tokens are never shown.
+		Short: "Cloudflare connections: domains from Cloudflare zones (admin; --platform: operators)",
+		Long: `List the organization's Cloudflare connections: API tokens with which Dock
+routes domains added from the tokens' zones (` + "`dock domain add <host> --cloudflare`" + `)
+through the servers' Cloudflare tunnels with a proxied CNAME. Only this
+organization's domains use its zones. Tokens are never shown.
+
+--platform lists the platform's connections instead, for operators: they
+run the servers' tunnels, and a shared one's zones are open to every
+organization's domains. It works with every subcommand: ` + "`dock cloudflare add --platform`" + `
+adds one for the platform.
 
 ` + cloudflareScopes,
 		Args: cobra.NoArgs,
@@ -44,31 +50,48 @@ CNAME. Tokens are never shown.
 			if err != nil {
 				return err
 			}
-			list, err := get[[]apitypes.Cloudflare](cmd.Context(), s, apiPrefix+"/cloudflare")
+			list, err := get[[]apitypes.Cloudflare](cmd.Context(), s, withPlatform(cmd, apiPrefix+"/cloudflare"))
 			if err != nil {
 				return err
 			}
+			platform, _ := cmd.Flags().GetBool("platform")
 			return g.io.Print(list, func() error {
 				if len(list) == 0 {
-					g.io.Detail("No Cloudflare connections. Add one with `dock cloudflare add <name> --token-stdin`.")
+					g.io.Detail("No Cloudflare connections. Add one with `dock cloudflare add <name> --token-stdin`" + platformFlag(platform) + ".")
 					return nil
 				}
-				t := g.io.Table("name", "account", "zones", "status", "tunnels for", "changed")
+				cols := []string{"name", "account", "zones", "status", "changed"}
+				if platform {
+					cols = append(cols, "shared", "tunnels for")
+				}
+				t := g.io.Table(cols...)
 				for _, cf := range list {
 					status := string(cf.Status)
 					if cf.StatusReason != "" {
 						status += ": " + cf.StatusReason
 					}
-					t.Row(cf.Name, cf.AccountName, orDash(strings.Join(cf.Zones, ", ")), status, orDash(strings.Join(cf.UsedBy, ", ")),
-						ago(cf.UpdatedAt)+" by "+cf.UpdatedBy)
+					row := []string{cf.Name, cf.AccountName, orDash(strings.Join(cf.Zones, ", ")), status, ago(cf.UpdatedAt) + " by " + cf.UpdatedBy}
+					if platform {
+						row = append(row, yesNo(cf.Shared), orDash(strings.Join(cf.UsedBy, ", ")))
+					}
+					t.Row(row...)
 				}
 				return t.Flush()
 			})
 		},
 	}
+	cmd.PersistentFlags().Bool("platform", false, "the platform's connections instead of the organization's (operators)")
 	cmd.AddCommand(newCloudflareAddCmd(g), newCloudflareSetCmd(g), newCloudflareRefreshCmd(g), newCloudflareRemoveCmd(g),
 		newCloudflareZonesCmd(g), newCloudflareRecordsCmd(g), newCloudflareRetryCmd(g))
 	return cmd
+}
+
+// platformFlag is " --platform" for hints when the command ran with it.
+func platformFlag(on bool) string {
+	if on {
+		return " --platform"
+	}
+	return ""
 }
 
 // readToken reads an API token piped to stdin.
@@ -85,13 +108,19 @@ func readToken(g *globals, cmdline string) (string, error) {
 }
 
 // printCloudflare reports a saved connection.
-func printCloudflare(g *globals, cf apitypes.Cloudflare, verb string) error {
+func printCloudflare(g *globals, cmd *cobra.Command, cf apitypes.Cloudflare, verb string) error {
+	platform, _ := cmd.Flags().GetBool("platform")
 	return g.io.Print(cf, func() error {
 		g.io.Successf("%s Cloudflare connection %s: account %s", verb, cf.Name, cf.AccountName)
-		if len(cf.Zones) == 0 {
-			g.io.Detail("No domains can be added from it yet: give the token Zone › DNS › Edit and Zone › Read on some zones, then `dock cloudflare refresh " + cf.Name + "`.")
-		} else {
-			g.io.Detail("Domains can be added from " + strings.Join(cf.Zones, ", ") + " (`dock domain add <host> --cloudflare`).")
+		switch {
+		case len(cf.Zones) == 0:
+			g.io.Detail("No domains can be added from it yet: give the token Zone › DNS › Edit and Zone › Read on some zones, then `dock cloudflare refresh " + cf.Name + platformFlag(platform) + "`.")
+		case platform && !cf.Shared:
+			g.io.Detail("Its zones are the platform's own: " + strings.Join(cf.Zones, ", ") + ". Share them with organizations with `dock cloudflare set " + cf.Name + " --platform --shared`.")
+		case platform:
+			g.io.Detail("Every organization's domains can be added from " + strings.Join(cf.Zones, ", ") + " (`dock domain add <host> --cloudflare`).")
+		default:
+			g.io.Detail("This organization's domains can be added from " + strings.Join(cf.Zones, ", ") + " (`dock domain add <host> --cloudflare`).")
 		}
 		return nil
 	})
@@ -102,16 +131,21 @@ func newCloudflareAddCmd(g *globals) *cobra.Command {
 	var req apitypes.CreateCloudflareRequest
 	var tokenStdin bool
 	cmd := &cobra.Command{
-		Use:   "add <name> --token-stdin [--account-id <id>]",
-		Short: "Add a Cloudflare connection (admin)",
-		Long: `Add a Cloudflare connection. Dock checks the token before saving it: it is
-active, reaches the account and its tunnels, and lists zones; zones whose DNS
-records it can't read are left out. --account-id picks the account when the
-token reaches several, and is needed for a token owned by an account.
+		Use:   "add <name> --token-stdin [--account-id <id>] [--platform [--shared]]",
+		Short: "Add a Cloudflare connection (admin; --platform: operators)",
+		Long: `Add a Cloudflare connection for the organization (with --platform, for the
+platform). Dock checks the token before saving it: it is active, reaches the
+account and its tunnels, and lists zones; zones whose DNS records it can't
+read are left out, and for the organization's own those Cloudflare doesn't
+serve yet. A zone connected to Dock elsewhere is refused. --account-id picks
+the account when the token reaches several, and is needed for a token owned
+by an account. --shared (with --platform) lets every organization's domains
+use the connection's zones.
 
 ` + cloudflareScopes,
-		Example: `  printf %s "$CLOUDFLARE_API_TOKEN" | dock cloudflare add home --token-stdin`,
-		Args:    cobra.ExactArgs(1),
+		Example: `  printf %s "$CLOUDFLARE_API_TOKEN" | dock cloudflare add home --token-stdin
+  printf %s "$CLOUDFLARE_API_TOKEN" | dock cloudflare add edge --token-stdin --platform --shared`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !tokenStdin {
 				return usageError("the API token is required", "Pipe it in with --token-stdin; it never goes in an argument.")
@@ -125,39 +159,51 @@ token reaches several, and is needed for a token owned by an account.
 			if err != nil {
 				return err
 			}
-			cf, err := send[apitypes.Cloudflare](cmd.Context(), s, http.MethodPost, apiPrefix+"/cloudflare", req)
+			cf, err := send[apitypes.Cloudflare](cmd.Context(), s, http.MethodPost, withPlatform(cmd, apiPrefix+"/cloudflare"), req)
 			if err != nil {
 				return err
 			}
-			return printCloudflare(g, cf, "Added")
+			return printCloudflare(g, cmd, cf, "Added")
 		},
 	}
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the API token from stdin")
 	cmd.Flags().StringVar(&req.AccountID, "account-id", "", "Cloudflare account ID")
+	cmd.Flags().BoolVar(&req.Shared, "shared", false, "with --platform: every organization's domains may use its zones")
 	return cmd
 }
 
 // newCloudflareSetCmd is `dock cloudflare set`.
 func newCloudflareSetCmd(g *globals) *cobra.Command {
 	var accountID string
-	var tokenStdin bool
+	var tokenStdin, shared bool
 	cmd := &cobra.Command{
-		Use:   "set <name> --token-stdin [--account-id <id>]",
-		Short: "Give a Cloudflare connection a new token (admin)",
+		Use:   "set <name> [--token-stdin [--account-id <id>]] [--platform --shared[=false]]",
+		Short: "Give a Cloudflare connection a new token, or share it (admin; --platform: operators)",
 		Long: `Give a Cloudflare connection a new token, checked like a new one; its zones
 are listed again. A connection whose token Cloudflare refused (revoked or
-expired) works again, and the tunnels and domains waiting for it resume.`,
-		Example: `  printf %s "$NEW_TOKEN" | dock cloudflare set home --token-stdin`,
-		Args:    cobra.ExactArgs(1),
+expired) works again, and the tunnels and domains waiting for it resume.
+
+With --platform, --shared lets every organization's domains use the
+connection's zones, and --shared=false stops that; domains already in them
+keep working.`,
+		Example: `  printf %s "$NEW_TOKEN" | dock cloudflare set home --token-stdin
+  dock cloudflare set edge --platform --shared`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !tokenStdin {
+			var req apitypes.UpdateCloudflareRequest
+			if cmd.Flags().Changed("shared") {
+				req.Shared = &shared
+			}
+			if !tokenStdin && req.Shared == nil {
 				return usageError("the new API token is required", "Pipe it in with --token-stdin; to list new zones with the same token, use `dock cloudflare refresh`.")
 			}
-			token, err := readToken(g, "dock cloudflare set "+args[0]+" --token-stdin")
-			if err != nil {
-				return err
+			if tokenStdin {
+				token, err := readToken(g, "dock cloudflare set "+args[0]+" --token-stdin")
+				if err != nil {
+					return err
+				}
+				req.Token = token
 			}
-			req := apitypes.UpdateCloudflareRequest{Token: token}
 			if cmd.Flags().Changed("account-id") {
 				req.AccountID = &accountID
 			}
@@ -165,15 +211,16 @@ expired) works again, and the tunnels and domains waiting for it resume.`,
 			if err != nil {
 				return err
 			}
-			cf, err := send[apitypes.Cloudflare](cmd.Context(), s, http.MethodPatch, apiPrefix+"/cloudflare/"+url.PathEscape(args[0]), req)
+			cf, err := send[apitypes.Cloudflare](cmd.Context(), s, http.MethodPatch, withPlatform(cmd, apiPrefix+"/cloudflare/"+url.PathEscape(args[0])), req)
 			if err != nil {
 				return err
 			}
-			return printCloudflare(g, cf, "Saved")
+			return printCloudflare(g, cmd, cf, "Saved")
 		},
 	}
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the API token from stdin")
 	cmd.Flags().StringVar(&accountID, "account-id", "", "Cloudflare account ID")
+	cmd.Flags().BoolVar(&shared, "shared", false, "with --platform: every organization's domains may use its zones")
 	return cmd
 }
 
@@ -181,19 +228,21 @@ expired) works again, and the tunnels and domains waiting for it resume.`,
 func newCloudflareRefreshCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "refresh <name>",
-		Short: "List a Cloudflare connection's zones again (admin)",
-		Long:  `Check the connection's token again and list its zones, after zones were added to (or taken from) the token in Cloudflare.`,
-		Args:  cobra.ExactArgs(1),
+		Short: "List a Cloudflare connection's zones again (admin; --platform: operators)",
+		Long: `Check the connection's token again and list its zones, after zones were added
+to (or taken from) the token in Cloudflare, or a permission was fixed. Its
+failed domains are tried again.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
-			cf, err := send[apitypes.Cloudflare](cmd.Context(), s, http.MethodPost, apiPrefix+"/cloudflare/"+url.PathEscape(args[0])+"/refresh", nil)
+			cf, err := send[apitypes.Cloudflare](cmd.Context(), s, http.MethodPost, withPlatform(cmd, apiPrefix+"/cloudflare/"+url.PathEscape(args[0])+"/refresh"), nil)
 			if err != nil {
 				return err
 			}
-			return printCloudflare(g, cf, "Refreshed")
+			return printCloudflare(g, cmd, cf, "Refreshed")
 		},
 	}
 }
@@ -203,7 +252,7 @@ func newCloudflareRemoveCmd(g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Remove a Cloudflare connection no tunnel uses (admin)",
+		Short: "Remove a Cloudflare connection no tunnel uses (admin; --platform: operators)",
 		Long:  `Remove a Cloudflare connection. Dock forgets the domains it routed with it; their records stay in Cloudflare. Refused while a server's tunnel uses it.`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -216,7 +265,7 @@ func newCloudflareRemoveCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := del(cmd.Context(), s, apiPrefix+"/cloudflare/"+url.PathEscape(args[0])); err != nil {
+			if err := del(cmd.Context(), s, withPlatform(cmd, apiPrefix+"/cloudflare/"+url.PathEscape(args[0]))); err != nil {
 				return err
 			}
 			return g.io.Print(map[string]string{"removed": args[0]}, func() error {
@@ -234,8 +283,10 @@ func newCloudflareZonesCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "zones",
 		Short: "List the zones domains can be added from",
-		Long:  `List the zones of the Cloudflare connections: a hostname in one can be added with ` + "`dock domain add <host> --cloudflare`" + `, and Dock routes it through the server's tunnel.`,
-		Args:  cobra.NoArgs,
+		Long: `List the zones the organization's domains may use: its own connections' and
+those the platform shares. A hostname in one can be added with ` + "`dock domain add <host> --cloudflare`" + `,
+and Dock routes it through the server's tunnel.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
 			if err != nil {
@@ -247,12 +298,16 @@ func newCloudflareZonesCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(list, func() error {
 				if len(list) == 0 {
-					g.io.Detail("No Cloudflare zones are connected; an operator adds a connection with `dock cloudflare add`.")
+					g.io.Detail("No Cloudflare zones are connected for this organization; its admins add a connection with `dock cloudflare add`.")
 					return nil
 				}
-				t := g.io.Table("zone", "connection")
+				t := g.io.Table("zone", "connection", "from")
 				for _, z := range list {
-					t.Row(z.Name, z.Connection)
+					from := "organization"
+					if z.Platform {
+						from = "platform"
+					}
+					t.Row(z.Name, z.Connection, from)
 				}
 				return t.Flush()
 			})
