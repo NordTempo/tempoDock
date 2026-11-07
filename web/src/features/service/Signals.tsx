@@ -22,9 +22,9 @@ const target = "inline-flex min-h-[24px] items-center";
 const stateWord = {
   up: "Up",
   down: "Down",
-  unknown: "checked soon, no result yet",
+  unknown: "waiting for the first check",
 };
-const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-mut" };
+const stateClass = { up: "text-ok", down: "text-fail", unknown: "text-sec" };
 
 export function Signals({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { uptime, domains } = useService(ref);

@@ -371,14 +371,18 @@ function Split({ stat }: { stat: VitalStat }) {
   if (!stat.samples) return null;
   const good = (stat.good / stat.samples) * 100;
   const poor = (stat.poor / stat.samples) * 100;
+  // The bar, and the good share in words: not colour alone.
   return (
     <span
-      className="flex h-1.5 w-24 overflow-hidden rounded-full bg-line"
+      className="flex items-center gap-2"
       title={`${Math.round(good)}% good · ${Math.round(100 - good - poor)}% needs improvement · ${Math.round(poor)}% poor`}
     >
-      <span className="bg-ok" style={{ width: `${good}%` }} />
-      <span className="bg-warn" style={{ width: `${100 - good - poor}%` }} />
-      <span className="bg-fail" style={{ width: `${poor}%` }} />
+      <span className="flex h-1.5 w-24 overflow-hidden rounded-full bg-line">
+        <span className="bg-ok" style={{ width: `${good}%` }} />
+        <span className="bg-warn" style={{ width: `${100 - good - poor}%` }} />
+        <span className="bg-fail" style={{ width: `${poor}%` }} />
+      </span>
+      <span className="text-2xs text-mut">{Math.round(good)}% good</span>
     </span>
   );
 }

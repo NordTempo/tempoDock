@@ -118,7 +118,7 @@ export function LockStrip({
   );
   // None here yet: still point at the ones waiting elsewhere, so the
   // strip always leads to what the lock is for.
-  const elsewhere = pending.length - waiting.length;
+  const elsewhere = pending.filter((r) => !waiting.includes(r));
   const [asking, setAsking] = useState(false);
   const error = lockNow.error ?? (asking ? null : unlock.error);
   const busy = lockNow.isPending || unlock.isPending;
@@ -147,18 +147,21 @@ export function LockStrip({
             to="/$org/requests"
             params={{ org }}
             search={{ id: waiting[0].id }}
-            className="hover:underline"
+            className={`btn sm ${warnBtn}`}
           >
-            {plural(waiting.length, "request")} waiting
+            Review {plural(waiting.length, "waiting request")}
           </Link>
         )}
-        {!waiting[0] && elsewhere > 0 && (
+        {!waiting[0] && elsewhere[0] && (
           <Link
             to="/$org/requests"
             params={{ org }}
-            className="text-warn-text hover:underline"
+            search={{ id: elsewhere[0].id }}
+            className={`btn sm ${warnBtn}`}
           >
-            {plural(elsewhere, "request")} waiting in other environments
+            {elsewhere.length === 1
+              ? `Review ${elsewhere[0].project}/${elsewhere[0].environment}'s request`
+              : `Review ${elsewhere.length} waiting requests`}
           </Link>
         )}
         {admin &&

@@ -68,7 +68,7 @@ variables once, not as literals in components.
 | Links, info | `#93c5fd` |
 | Sans | Inter (weights 400, 500, 600) |
 | Mono | JetBrains Mono (ids, hashes, images, logs, values) |
-| Sizes | 24px page titles, 16px section headings, 14px body, 13px meta, 12.5px table heads and hints |
+| Sizes | 24px page titles, 16px section headings, 14px body, 13.5px meta and hints, 13px table heads |
 | Radius | 6px controls and rows, 8 to 10px panels, 999px dots and badges |
 | Layout | sidebar 248px with the organization switcher, search, project tree and the organization's pages; main column with a 52px header bar and 24px 28px content, one width for every page (max 1400px) |
 | Root size | 14px, so Tailwind's spacing scale is 14/16 of the usual: a size that must be exact (24px targets) is written in px |

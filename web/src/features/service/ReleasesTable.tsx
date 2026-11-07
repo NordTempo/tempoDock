@@ -267,34 +267,42 @@ export function RollbackConfirm({
             `${from} keeps serving until the new release passes its health check.`
           ))}
       </p>
+      {/* Every change, folded when the losses above already say the part
+          that matters, so the dialog stays short. */}
       {serving && (
-        <div className="mt-3 flex flex-col gap-0.5 text-xs">
-          <span className="text-mut">Every change from {from}</span>
-          {changes.length === 0 ? (
-            <span className="text-mut">
-              Same image, settings and variable names; variable values return to
-              r{target.number}'s.
-            </span>
-          ) : (
-            changes.map((c) => (
-              <span key={c.what + c.text} className="font-mono break-words">
-                {c.what === "added" ? (
-                  <>
-                    <span className="text-ok">+ back</span> {c.text}
-                  </>
-                ) : c.what === "removed" ? (
-                  <>
-                    <span className="text-fail">− removed</span> {c.text}
-                  </>
-                ) : (
-                  <>
-                    <span className="text-warn">~</span> {c.text}
-                  </>
-                )}
+        <details open={losses.length === 0} className="mt-3 text-xs">
+          <summary className="cursor-pointer text-mut">
+            {changes.length === 0
+              ? `Same as ${from}`
+              : `All ${changes.length} ${changes.length === 1 ? "change" : "changes"} from ${from}`}
+          </summary>
+          <div className="mt-1 flex flex-col gap-0.5">
+            {changes.length === 0 ? (
+              <span className="text-mut">
+                Same image, settings and variable names; variable values return
+                to r{target.number}'s.
               </span>
-            ))
-          )}
-        </div>
+            ) : (
+              changes.map((c) => (
+                <span key={c.what + c.text} className="font-mono break-words">
+                  {c.what === "added" ? (
+                    <>
+                      <span className="text-ok">+ back</span> {c.text}
+                    </>
+                  ) : c.what === "removed" ? (
+                    <>
+                      <span className="text-fail">− removed</span> {c.text}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-warn">~ changed</span> {c.text}
+                    </>
+                  )}
+                </span>
+              ))
+            )}
+          </div>
+        </details>
       )}
       {/* Why this release: the last one before that differs and served. */}
       {passed.length > 0 && (

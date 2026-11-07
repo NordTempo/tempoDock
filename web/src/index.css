@@ -33,8 +33,10 @@
   --font-mono:
     "JetBrains Mono", "Inter", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --text-2xs: 12.5px;
-  --text-xs: 13px;
+  /* Meta and hints share one size, 13.5px (a blind trial, 2026-11: the
+     two smaller sizes read as small grey text). */
+  --text-2xs: 13.5px;
+  --text-xs: 13.5px;
   --text-sm: 14px;
   --text-base: 14px;
   --text-md: 15px;
@@ -324,7 +326,7 @@
 
   th {
     font-weight: 500;
-    font-size: 12.5px;
+    font-size: 13px;
     text-align: left;
     color: var(--color-mut);
     padding: 8px 14px 8px 0;

@@ -561,7 +561,8 @@ const useDeployImage = () =>
  * The likely fix, edited in place: the new port or health check path is
  * staged and the failed release's own image (or commit) deploys again
  * with it, so the retry is the release that failed, not the serving one.
- * An upload has nothing to redeploy; it stages and opens Deploy.
+ * An upload has nothing to redeploy; it stages and opens Deploy. Save only
+ * stages it without deploying, to apply later.
  */
 function FixAndDeploy({
   release,
@@ -633,6 +634,12 @@ function FixAndDeploy({
       },
     );
   };
+  // Or only save it, to apply later with other changes (no deploy now).
+  const saveOnly = () => {
+    if (!v.check(!problem)) return;
+    const patch = port ? { port: Number(typed) } : { health_check_path: typed };
+    stage.mutate({ ref, patch }, { onSuccess: onClose });
+  };
   return (
     <form
       ref={v.form}
@@ -669,6 +676,15 @@ function FixAndDeploy({
           {commit || image ? "Save and deploy" : "Save and choose a folder"}{" "}
           <kbd>↵</kbd>
         </button>
+        {(commit || image) && (
+          <Button
+            disabled={pending}
+            title="Saves it as a change waiting to apply; nothing deploys now"
+            onClick={saveOnly}
+          >
+            Save only
+          </Button>
+        )}
         <Button onClick={onClose}>
           Cancel <kbd>Esc</kbd>
         </Button>
