@@ -17,7 +17,7 @@ import (
 )
 
 // TestSyncKeepsEveryCommittedWrite is a move's copy against a real
-// database (ADR 0062): Postgres takes inserts the whole time the live
+// database (ADR 0063): Postgres takes inserts the whole time the live
 // passes copy its volume, then stops cleanly (the fence), the final pass
 // copies the rest and a check pass finds nothing different. A Postgres
 // started on the copy has every row whose insert was acknowledged.

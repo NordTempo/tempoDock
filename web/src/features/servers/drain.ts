@@ -9,7 +9,7 @@ import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 
-// A server's drain (ADR 0062): its running or latest drain with the ports
+// A server's drain (ADR 0063): its running or latest drain with the ports
 // it forwards, null when it never drained and forwards nothing.
 // server_drain events carry the whole drain and set it here
 // (data/live.ts); nothing polls. The server list carries each server's

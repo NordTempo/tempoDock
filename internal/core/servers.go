@@ -534,7 +534,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		}
 		// Its forwards end with it, and the history that names it goes:
 		// drains, moves to and from it, and snapshots whose files were
-		// on it (ADR 0062). The audit log keeps the record.
+		// on it (ADR 0063). The audit log keeps the record.
 		if err := q.DeleteServerForwards(ctx, srv.ID); err != nil {
 			return err
 		}

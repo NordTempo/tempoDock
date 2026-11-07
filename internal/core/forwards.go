@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Forwarding (ADR 0062). A server a service moved away from keeps the
+// Forwarding (ADR 0063). A server a service moved away from keeps the
 // service's old host port in server_forwards and listens on it
 // (node.Proxy.Forward). Its Caddy keeps routing the service's domains to
 // that port, so requests that still reach it (DNS caches, records Dock

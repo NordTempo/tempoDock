@@ -40,7 +40,7 @@ build() {
   echo "dist/$1"
   GOOS="$2" GOARCH="$3" go build -trimpath -tags "${4:-}" -ldflags "$ldflags" -o "dist/$1" "${5:-./cmd/dock}"
 }
-# dock embeds dock-probe (ADR 0043) and dock-sync (ADR 0062) from
+# dock embeds dock-probe (ADR 0043) and dock-sync (ADR 0063) from
 # internal/node/probe for its own architecture: build them right before
 # each server binary, and remove them after, so no binary embeds another
 # architecture's.

@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { queries } from "../../data/queries";
 
 /**
- * A line under the console bar for each server that drains (ADR 0062), on
+ * A line under the console bar for each server that drains (ADR 0063), on
  * every console page, so an operator who moved on keeps seeing it. A
  * paused one says why: it waits for them. Static text, patched by server
  * events; nothing repaints.

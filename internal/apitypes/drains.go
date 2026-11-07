@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Draining a server (ADR 0062): every environment on it (or every one of
+// Draining a server (ADR 0063): every environment on it (or every one of
 // a kind) moves to other servers, one at a time, without downtime.
 
 // DrainStatus is where a server drain is.

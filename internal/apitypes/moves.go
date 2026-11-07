@@ -12,7 +12,7 @@ const (
 	MoveFailed      MoveStatus = "failed"
 )
 
-// MoveStep is the step a move is on, in order (ADR 0062): prepare
+// MoveStep is the step a move is on, in order (ADR 0063): prepare
 // (images, network, volumes and host ports on the target), sync (volumes
 // and snapshots copy in passes while the source serves), stop (the hold
 // starts: requests wait, and the environment's services stop on the

@@ -19,7 +19,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Moving an environment to another server (ADRs 0053 and 0062). A move is
+// Moving an environment to another server (ADRs 0053 and 0063). A move is
 // a state machine in environment_moves: prepare, sync, stop, copy, start,
 // switch, cleanup. Until the switch the environment is on its source in
 // every sense, and a failure (or a restart) rolls back; the switch is one
@@ -786,7 +786,7 @@ func (c *Core) pullForMove(ctx context.Context, ss svcScope, rel *store.Release,
 	return nil
 }
 
-// Live passes (ADR 0062): a service's volumes copy again and again while
+// Live passes (ADR 0063): a service's volumes copy again and again while
 // it serves, each pass sending only what changed, until a pass is quick
 // (syncQuick), stops getting quicker, or syncMaxPasses ran. The last
 // pass's time is about what the final copy in the hold takes.

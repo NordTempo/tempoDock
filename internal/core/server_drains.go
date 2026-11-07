@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Draining a server (ADR 0062): every environment on it, or every one of
+// Draining a server (ADR 0063): every environment on it, or every one of
 // a kind, moves to other servers without downtime, one at a time, so the
 // server can take a kind off, go into maintenance or be removed. A drain
 // is a list in server_drain_items that a goroutine works through: each

@@ -239,7 +239,7 @@ const jobProtocol = 2
 
 // MoveSyncProtocol is the first protocol whose nodes mount dock-sync in
 // jobs (JobSpec.Sync), hold routes and forward connections: what a move
-// without downtime needs of both servers (ADR 0062).
+// without downtime needs of both servers (ADR 0063).
 const MoveSyncProtocol = 21
 
 // SnapshotProtocol is the first protocol whose nodes pause containers

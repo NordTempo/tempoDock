@@ -15,7 +15,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// Forwarding over the node link (ADR 0062), protocol 21. The node never
+// Forwarding over the node link (ADR 0063), protocol 21. The node never
 // calls the control plane, so a listener on a node is two calls:
 //
 //   - forward-listen {port}: the node listens on 127.0.0.1:port with its

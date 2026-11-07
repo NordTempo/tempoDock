@@ -656,7 +656,7 @@ SELECT server_forwards.host_port FROM server_forwards WHERE server_forwards.serv
 // that is still draining, or failed to stop, never shares it. An open
 // environment move holds the ports it reserved for the services it
 // starts there (ADR 0053).
-// A server forwarding a moved service keeps its old port (ADR 0062).
+// A server forwarding a moved service keeps its old port (ADR 0063).
 func (q *Queries) ListUsedHostPorts(ctx context.Context, serverID int64) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listUsedHostPorts, serverID)
 	if err != nil {

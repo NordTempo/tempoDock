@@ -293,7 +293,7 @@ type JobSpec struct {
 	// terminal and input. Not together with Stdin.
 	Stream *JobStream
 	// Sync bind-mounts the server's dock-sync read-only at SyncPath, for
-	// the passes that copy a volume to another server (ADR 0062). A
+	// the passes that copy a volume to another server (ADR 0063). A
 	// server without one fails the job with ErrNoSync (wrapped).
 	Sync bool
 }
@@ -456,7 +456,7 @@ type Proxy interface {
 	// whether a valid certificate is being served for it.
 	CheckDomain(ctx context.Context, hostname string) (DomainCheck, error)
 	// Forward listens on 127.0.0.1:port, where this server's Caddy sends
-	// the requests of an environment that moved away (ADR 0062): the
+	// the requests of an environment that moved away (ADR 0063): the
 	// control plane accepts each connection and pipes it to the
 	// service's container on the server it is on now. Closing the
 	// listener stops it; on a remote server, so does the link dropping.
@@ -941,7 +941,7 @@ type Route struct {
 	// Hold makes Caddy wait for the upstream, trying it again for up to
 	// HoldFor, instead of answering 502 when it refuses connections: a
 	// moving environment's services are stopped on one server and not
-	// yet started on the other for a few seconds (ADR 0062), and a
+	// yet started on the other for a few seconds (ADR 0063), and a
 	// forwarded route's listener only accepts once the target serves.
 	Hold bool
 }

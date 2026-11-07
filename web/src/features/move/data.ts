@@ -11,7 +11,7 @@ import { envPath, keys } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
 import { elapsed } from "../../ui/format";
 
-// An environment's move to another server (ADRs 0053, 0062): the running move or
+// An environment's move to another server (ADRs 0053, 0063): the running move or
 // the latest one, null when it never moved. environment_move events carry
 // the whole move and set it here (data/live.ts); nothing polls. The key
 // sits outside the environment's, so the audits of other changes in it

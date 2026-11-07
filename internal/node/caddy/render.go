@@ -378,7 +378,7 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 		}
 		if r.Hold {
 			// A refused connection is tried again, every request held
-			// until the upstream answers or HoldFor passes (ADR 0062).
+			// until the upstream answers or HoldFor passes (ADR 0063).
 			h.LoadBalancing = &loadBalancing{TryDuration: node.HoldFor.String(), TryInterval: holdInterval.String()}
 		}
 		// Through the tunnel, visitors are on https://, port 443, at

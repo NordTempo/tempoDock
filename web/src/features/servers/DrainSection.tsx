@@ -17,7 +17,7 @@ import {
   useStartDrain,
 } from "./drain";
 
-// The server page's Drain section (ADR 0062): plan moving every
+// The server page's Drain section (ADR 0063): plan moving every
 // environment (or every one of a kind) off the server, start it, follow it
 // one environment at a time, and see what the server forwards after. The
 // drain's state comes from server_drain events (drain.ts).

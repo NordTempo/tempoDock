@@ -346,7 +346,7 @@ func TestMoveEnvironmentKeepsAStoppedServiceStopped(t *testing.T) {
 // TestMoveWithoutDowntime: a write that lands while the move copies is
 // on the target, requests are held during the switch and forwarded from
 // the source after it, and a deploy during the move waits for it and
-// runs on the target (ADR 0062).
+// runs on the target (ADR 0063).
 func TestMoveWithoutDowntime(t *testing.T) {
 	p, lab, db, web, _ := movePool(t)
 	staging := EnvRef{"shop", "staging"}

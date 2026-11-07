@@ -40,7 +40,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 		return err
 	}
 	// Services that moved away are forwarded from their old port (ADR
-	// 0062), and those of a move in its hold wait for their upstream.
+	// 0063), and those of a move in its hold wait for their upstream.
 	fwd, err := c.store.ListForwardedDomains(ctx, serverID)
 	if err != nil {
 		return err

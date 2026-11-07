@@ -592,7 +592,7 @@ type wireRoute struct {
 	// Stopped is new in protocol 17 (ADR 0050); older nodes ignore it and
 	// proxy to Upstream, the stopped release's port, so they answer 502.
 	Stopped string `json:"stopped,omitempty"`
-	// Hold is new in protocol 21 (ADR 0062); older nodes answer 502 while
+	// Hold is new in protocol 21 (ADR 0063); older nodes answer 502 while
 	// the upstream is down instead of waiting.
 	Hold bool `json:"hold,omitempty"`
 }

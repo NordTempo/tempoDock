@@ -2,7 +2,7 @@
 
 Status: accepted (decided by the agent, on Saile's direction, 2026-11-03).
 Amends [0015](0015-server-pools-and-placement.md). Amended by
-[0062](0062-moves-without-downtime-and-server-drains.md): volumes copy
+[0063](0063-moves-without-downtime-and-server-drains.md): volumes copy
 while their services run and requests are held for the switch instead of
 stateful services being down for the copy; generated domains keep their
 hostname; snapshots move along; the source forwards what still reaches

@@ -1,7 +1,7 @@
 //go:build linux
 
 // Package volsync copies a directory tree to another server while the
-// tree may still change, in passes (ADR 0062). It is what dock-sync
+// tree may still change, in passes (ADR 0063). It is what dock-sync
 // (cmd/dock-sync) runs inside two job containers, one on each server,
 // joined by the control plane:
 //

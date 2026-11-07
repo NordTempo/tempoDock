@@ -950,7 +950,7 @@ func isClosed(ln net.Listener) bool {
 	return ok && fl.closed.Load()
 }
 
-// syncJob plays dock-sync (ADR 0062) on a volume's data: `recv ROOT`
+// syncJob plays dock-sync (ADR 0063) on a volume's data: `recv ROOT`
 // writes the data it holds ("M", its length, the bytes), then reads "S"
 // (unchanged) or "C" and new data; `send [--live|--check] ROOT` reads that
 // list and answers with its own data where it differs, --check exiting 3

@@ -194,9 +194,9 @@ type Core struct {
 	jobs jobState
 	// moves holds the environment moves being driven (ADR 0053).
 	moves moveState
-	// fwd holds the listeners of moved services' forwards (ADR 0062).
+	// fwd holds the listeners of moved services' forwards (ADR 0063).
 	fwd forwardState
-	// drains are the server drains being driven (ADR 0062).
+	// drains are the server drains being driven (ADR 0063).
 	drains serverDrainState
 
 	// uploads holds the services with a source upload streaming to disk.
@@ -443,7 +443,7 @@ func (c *Core) Start(ctx context.Context) error {
 	// A move a restart cut short rolls back, or finishes its clean-up.
 	c.resumeMoves(ctx, true)
 	// This server's forwards of services that moved away listen again,
-	// and drains go on (ADR 0062).
+	// and drains go on (ADR 0063).
 	c.ensureForwards(ctx, c.localID)
 	c.resumeServerDrains(ctx)
 	// Remote servers are reconciled as they connect (NodeStatus); ones a

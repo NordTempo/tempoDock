@@ -1,5 +1,5 @@
 -- foreign_keys: off
--- Moves without downtime, server drains and forwarding (ADR 0062).
+-- Moves without downtime, server drains and forwarding (ADR 0063).
 -- Rebuilds environment_moves (a 'sync' step: volumes copied in passes
 -- while the source serves, and the drain a move belongs to) and
 -- environment_move_services (its 'syncing' and 'synced' states and pass

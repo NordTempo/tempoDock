@@ -68,7 +68,7 @@ JOIN environment_moves ON environment_moves.id = environment_move_services.move_
 WHERE environment_moves.to_server_id = +sqlc.arg(server_id)
   AND environment_moves.status IN ('running', 'rolling_back') AND environment_move_services.host_port > 0
 UNION ALL
--- A server forwarding a moved service keeps its old port (ADR 0062).
+-- A server forwarding a moved service keeps its old port (ADR 0063).
 SELECT server_forwards.host_port FROM server_forwards WHERE server_forwards.server_id = +sqlc.arg(server_id);
 
 -- name: ClearReleaseHostPort :exec

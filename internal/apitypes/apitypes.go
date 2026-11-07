@@ -1117,7 +1117,7 @@ const (
 // Server is a machine running a node runtime. A server that is still
 // joining (a pending join token) has ID 0 and no facts yet.
 type Server struct {
-	// Drain is the server's running or paused drain (ADR 0062), for
+	// Drain is the server's running or paused drain (ADR 0063), for
 	// operators.
 	Drain   *DrainProgress `json:"drain,omitempty"`
 	ID      int64          `json:"id"`
@@ -1624,7 +1624,7 @@ const (
 	// ended (ADR 0053). Move is the move.
 	EventEnvironmentMove EventType = "environment_move"
 	// EventServerDrain: a server drain went an environment further, or
-	// ended (ADR 0062). Drain is the drain. Operators only.
+	// ended (ADR 0063). Drain is the drain. Operators only.
 	EventServerDrain EventType = "server_drain"
 )
 

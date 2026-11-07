@@ -55,7 +55,7 @@ type CreateServerDrainParams struct {
 	StartedAt time.Time
 }
 
-// Server drains and forwarding (ADR 0062).
+// Server drains and forwarding (ADR 0063).
 func (q *Queries) CreateServerDrain(ctx context.Context, arg CreateServerDrainParams) (ServerDrain, error) {
 	row := q.db.QueryRowContext(ctx, createServerDrain,
 		arg.ServerID,

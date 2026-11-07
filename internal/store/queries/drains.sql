@@ -1,4 +1,4 @@
--- Server drains and forwarding (ADR 0062).
+-- Server drains and forwarding (ADR 0063).
 
 -- name: CreateServerDrain :one
 INSERT INTO server_drains (server_id, kind, max_hold_s, created_by, started_at) VALUES (?, ?, ?, ?, ?) RETURNING *;

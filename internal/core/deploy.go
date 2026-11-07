@@ -191,7 +191,7 @@ func (d *deployment) run(ctx context.Context) error {
 }
 
 // waitForMove holds a deploy while its environment moves to another
-// server (ADR 0062), so a deploy during server maintenance isn't
+// server (ADR 0063), so a deploy during server maintenance isn't
 // refused: it goes on once the move ended, on the server the environment
 // is on then, with a host port there.
 func (d *deployment) waitForMove(ctx context.Context) error {

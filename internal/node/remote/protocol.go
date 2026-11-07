@@ -75,7 +75,7 @@ const (
 	// adds remove-volume, for a closed preview's volumes (ADR 0056); 21
 	// adds run-job's sync (dock-sync mounted in the job), the routes'
 	// hold, and forward-listen and forward-accept, connections a server
-	// forwards to the server its environment moved to (ADR 0062).
+	// forwards to the server its environment moved to (ADR 0063).
 	Protocol = 21
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
@@ -167,7 +167,7 @@ const (
 	opAckSpool        = "ack-spool"
 	opEnsureAnalytics = "ensure-analytics-store"
 	opDialAnalytics   = "dial-analytics" // raw bytes, like dial
-	// Forwarding a moved environment's connections (ADR 0062), protocol
+	// Forwarding a moved environment's connections (ADR 0063), protocol
 	// 21: see forward.go.
 	opForwardListen = "forward-listen"
 	opForwardAccept = "forward-accept" // raw bytes, like dial

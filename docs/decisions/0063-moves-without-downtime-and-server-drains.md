@@ -1,4 +1,4 @@
-# 0062: Moves without downtime, and draining a server
+# 0063: Moves without downtime, and draining a server
 
 Status: accepted (decided by the agent, on Saile's direction, 2026-11-07).
 Amends [0053](0053-moving-environments.md).

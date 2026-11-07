@@ -11,7 +11,7 @@ import (
 )
 
 // registerServerDrains registers draining a server: moving every
-// environment on it to other servers without downtime (ADR 0062).
+// environment on it to other servers without downtime (ADR 0063).
 func registerServerDrains(s *Server, a huma.API) {
 	tags := []string{"servers"}
 	authed(s, a, huma.Operation{

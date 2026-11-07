@@ -1,7 +1,7 @@
 //go:build linux
 
 // Command dock-sync copies a volume to another server in passes, while
-// the service using it may still run (ADR 0062). dock embeds it
+// the service using it may still run (ADR 0063). dock embeds it
 // (internal/node/probe), writes it to its data dir and bind-mounts it
 // read-only into the two job containers of a pass:
 //

@@ -13,7 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Draining a server (ADR 0062): `dock server drain`.
+// Draining a server (ADR 0063): `dock server drain`.
 
 // newServerDrainCmd is `dock server drain <server>`: plan, confirm, start
 // and follow a drain, or --status, --resume [--skip] and --cancel.

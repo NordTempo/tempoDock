@@ -1,7 +1,7 @@
 // Package probe embeds dock-probe (cmd/dock-probe), the health probe
 // Docker runs inside app containers for their ongoing health check (ADR
 // 0043), and dock-sync (cmd/dock-sync), which copies volumes between
-// servers inside job containers (ADR 0062), and installs them on the
+// servers inside job containers (ADR 0063), and installs them on the
 // server. `make build` builds both into bin/ before building dock; a plain
 // `go build` embeds none.
 package probe

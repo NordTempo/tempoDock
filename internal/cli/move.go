@@ -13,7 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Moving an environment to another server (ADRs 0053 and 0062): `dock
+// Moving an environment to another server (ADRs 0053 and 0063): `dock
 // environment move`, also registered under `dock env`.
 
 // newEnvironmentMoveCmd is `dock environment move [<environment>] --to
