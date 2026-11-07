@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Migration 0070 keeps an existing Cloudflare connection as the
+// Migration 0073 keeps an existing Cloudflare connection as the
 // platform's, shared, with its token and everything that points at it
 // (zones, records, join tokens); names are unique per org from then on.
 func TestOrgConnectionsMigration(t *testing.T) {

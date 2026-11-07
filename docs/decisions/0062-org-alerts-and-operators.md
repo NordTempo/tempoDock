@@ -172,7 +172,7 @@ access, connections, policies and activity within those limits.
   environments) in its settings. The platform keeps a default (where an
   org set nothing, in place of the built-in rules) and a ceiling (the most
   any org rule or token gives) per subject and environment kind
-  (`/console/data-policy`, migration 0071). Org rules above the ceiling
+  (`/console/data-policy`, migration 0074). Org rules above the ceiling
   are refused; older ones are capped where they apply. Org admins keep
   full access. With neither set, nothing changes for existing installs.
 - **Analytics:** the store and its server stay the platform's, and so do
@@ -308,7 +308,7 @@ activity within those limits.
   domains use its zones. An org's own serve only its domains. Operators
   manage the platform's with `platform=true` (`dock cloudflare
   --platform`), an org's unlimited admins their own, as with alert
-  channels. Migration 0070 makes existing connections the platform's,
+  channels. Migration 0073 makes existing connections the platform's,
   shared, so installs keep working; a new platform connection isn't
   shared until an operator says so. Stopping sharing keeps the domains
   already in its zones.
