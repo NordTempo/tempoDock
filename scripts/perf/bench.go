@@ -144,7 +144,7 @@ func checkBench(o options, t *table) error {
 		if _, ok := base.Benchmarks[name]; !ok {
 			continue
 		}
-		if _, _, allocsOK, nsOK := judge(name, summarize(rs)); !(allocsOK && nsOK) && !slices.Contains(again, runs.dir[name]) {
+		if _, _, allocsOK, nsOK := judge(name, summarize(rs)); (!allocsOK || !nsOK) && !slices.Contains(again, runs.dir[name]) {
 			again = append(again, runs.dir[name])
 		}
 	}
