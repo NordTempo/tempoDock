@@ -384,7 +384,7 @@ export const useRevokeToken = () =>
 export const useCreateUser = () =>
   useAction(
     (input: NewUser) => body(api.POST("/api/v1/users", { body: input })),
-    () => [keys.users, ["audit"]],
+    () => [keys.users, ["console"], ["audit"]],
   );
 
 /** Disabled users can't log in; tokens they created keep working. */
@@ -396,14 +396,14 @@ export const useSetUserDisabled = () =>
           ? api.POST("/api/v1/users/{id}/disable", { params: { path: { id } } })
           : api.POST("/api/v1/users/{id}/enable", { params: { path: { id } } }),
       ),
-    () => [keys.users, ["audit"]],
+    () => [keys.users, ["console"], ["audit"]],
   );
 
 export const useDeleteUser = () =>
   useAction(
     (id: number) =>
       done(api.DELETE("/api/v1/users/{id}", { params: { path: { id } } })),
-    () => [keys.users, ["audit"]],
+    () => [keys.users, ["console"], ["audit"]],
   );
 
 /**
@@ -419,7 +419,7 @@ export const useResetPassword = () =>
           body: password ? { password } : {},
         }),
       ),
-    () => [keys.users, ["audit"]],
+    () => [keys.users, ["console"], ["audit"]],
   );
 
 /**

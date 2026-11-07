@@ -23,7 +23,7 @@ func cfPool(t *testing.T, zones ...string) (*pool, *cloudflaretest.Server) {
 	p.opts.CloudflareAPI = cf.URL
 	p.restart()
 	p.tunnelMode("")
-	if _, err := p.c.AddCloudflare(p.ctx, testSystem, apitypes.CreateCloudflareRequest{Name: "home", Token: cloudflaretest.Token}); err != nil {
+	if _, err := p.c.AddCloudflare(p.ctx, testSystem, true, apitypes.CreateCloudflareRequest{Name: "home", Token: cloudflaretest.Token, Shared: true}); err != nil {
 		t.Fatal(err)
 	}
 	return p, cf
@@ -80,7 +80,7 @@ func TestCloudflareConnection(t *testing.T) {
 	p.opts.CloudflareAPI = cf.URL
 	p.restart()
 	add := func(token string) (apitypes.Cloudflare, error) {
-		return p.c.AddCloudflare(p.ctx, testSystem, apitypes.CreateCloudflareRequest{Name: "home", Token: token})
+		return p.c.AddCloudflare(p.ctx, testSystem, true, apitypes.CreateCloudflareRequest{Name: "home", Token: token, Shared: true})
 	}
 	if _, err := add("wrong"); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "refused the token") {
 		t.Fatalf("bad token: %v", err)
@@ -100,17 +100,17 @@ func TestCloudflareConnection(t *testing.T) {
 		t.Fatalf("add = %+v, %v", got, err)
 	}
 	deployer := Actor{Name: "ci", Kind: "token", Scope: apitypes.ScopeDeploy, OrgID: 1}
-	if _, err := p.c.ListCloudflare(p.ctx, deployer); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := p.c.ListCloudflare(p.ctx, deployer, true); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("non-operator lists connections: %v", err)
 	}
-	if zones, err := p.c.ListCloudflareZones(p.ctx, deployer); err != nil || len(zones) != 1 || zones[0] != (apitypes.CloudflareZone{Name: "tempo.run", Connection: "home"}) {
+	if zones, err := p.c.ListCloudflareZones(p.ctx, deployer); err != nil || len(zones) != 1 || zones[0] != (apitypes.CloudflareZone{Name: "tempo.run", Connection: "home", Platform: true}) {
 		t.Fatalf("zones = %+v, %v", zones, err)
 	}
 	p.tunnelMode("")
 	if _, err := p.c.SetServerTunnel(p.ctx, testSystem, "homelab", apitypes.ServerTunnelRequest{Action: "create"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.c.RemoveCloudflare(p.ctx, testSystem, "home"); CodeOf(err) != apitypes.CodeConflict {
+	if err := p.c.RemoveCloudflare(p.ctx, testSystem, true, "home"); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("remove a connection in use: %v", err)
 	}
 }
@@ -253,7 +253,7 @@ func TestCloudflareDomainAdoptsTunnel(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		list, _ := p.c.ListCloudflare(p.ctx, testSystem)
+		list, _ := p.c.ListCloudflare(p.ctx, testSystem, true)
 		return len(list) == 1 && len(list[0].UsedBy) == 0
 	})
 	cf.Mu.Lock()
@@ -308,7 +308,7 @@ func TestCloudflareDomainRefused(t *testing.T) {
 	if doms, _ := p.c.ListDomains(p.ctx, testSystem, web); len(doms) != 0 {
 		t.Fatalf("domains = %+v", doms)
 	}
-	if list, _ := p.c.ListCloudflare(p.ctx, testSystem); len(list[0].UsedBy) != 0 {
+	if list, _ := p.c.ListCloudflare(p.ctx, testSystem, true); len(list[0].UsedBy) != 0 {
 		t.Fatal("a refused domain created a tunnel")
 	}
 }
@@ -328,7 +328,7 @@ func TestCloudflareTokenRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool {
-		list, _ := p.c.ListCloudflare(p.ctx, testSystem)
+		list, _ := p.c.ListCloudflare(p.ctx, testSystem, true)
 		return len(list) == 1 && list[0].Status == apitypes.CloudflareInvalid
 	})
 	connAlert := func() []apitypes.Alert {
@@ -347,7 +347,7 @@ func TestCloudflareTokenRevoked(t *testing.T) {
 	cf.Mu.Lock()
 	cf.Token = "new-token"
 	cf.Mu.Unlock()
-	if _, err := p.c.UpdateCloudflare(p.ctx, testSystem, "home", apitypes.UpdateCloudflareRequest{Token: "new-token"}); err != nil {
+	if _, err := p.c.UpdateCloudflare(p.ctx, testSystem, true, "home", apitypes.UpdateCloudflareRequest{Token: "new-token"}); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return len(cf.Named("shop.tempo.run")) == 0 })

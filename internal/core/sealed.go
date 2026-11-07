@@ -36,8 +36,8 @@ var (
 	sealedGitToken                     = secrets.Column{Table: "git_connections", Name: "token", Key: []string{"service_id"}}
 	sealedAccessKey                    = secrets.Column{Table: "service_access", Name: "key", Key: []string{"service_id"}}
 	sealedStorageKeys                  = secrets.Column{Table: "storage_connections", Name: "credentials", Key: []string{"name"}}
-	sealedCloudflareToken              = secrets.Column{Table: "cloudflare_connections", Name: "token", Key: []string{"name"}}
-	sealedTunnelToken                  = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}} // the tunnel's, wherever its row points
+	sealedCloudflareToken              = secrets.Column{Table: "cloudflare_connections", Name: "token", Key: []string{"ifnull(org_id || '/', '') || name"}} // as a channel's (cloudflareAAD)
+	sealedTunnelToken                  = secrets.Column{Table: "cloudflare_tunnels", Name: "token", Key: []string{"tunnel_id"}}                             // the tunnel's, wherever its row points
 	sealedAnalyticsSalt                = secrets.Column{Table: "analytics_salts", Name: "salt", Key: []string{"day"}}
 	sealedBackupKeys                   = secrets.Column{Table: "backup_settings", Name: "credentials"}
 	sealedBackupPassword               = secrets.Column{Table: "backup_settings", Name: "password"}

@@ -431,7 +431,88 @@ func (c *Core) createSite(ctx context.Context, q *store.Queries, projectID, envI
 	if err != nil {
 		return store.Site{}, err
 	}
-	return q.CreateSite(ctx, store.CreateSiteParams{EnvironmentID: envID, Name: name, PublicSlug: &slug, CreatedBy: by, CreatedAt: t})
+	site, err := q.CreateSite(ctx, store.CreateSiteParams{EnvironmentID: envID, Name: name, PublicSlug: &slug, CreatedBy: by, CreatedAt: t})
+	if err != nil {
+		return site, err
+	}
+	// The org's defaults for new sites (ADR 0062) become the site's own
+	// settings; the platform's defaults stay under them.
+	p, err := q.GetProject(ctx, projectID)
+	if err != nil {
+		return site, err
+	}
+	od, err := q.GetOrgSiteDefaults(ctx, p.OrgID)
+	if store.IsNotFound(err) {
+		return site, nil
+	}
+	if err != nil {
+		return site, err
+	}
+	if err := q.SetSiteSettings(ctx, store.SetSiteSettingsParams{Settings: od.Settings, ID: site.ID}); err != nil {
+		return site, err
+	}
+	site.Settings = od.Settings
+	return site, nil
+}
+
+// OrgSiteDefaults returns the org's defaults for new analytics sites:
+// Own is what the org set, Effective the platform's defaults with them.
+// Anyone in the org may read them.
+func (c *Core) OrgSiteDefaults(ctx context.Context, a Actor) (apitypes.OrgSiteDefaults, error) {
+	if err := a.require(apitypes.ScopeRead, "reading the analytics defaults"); err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	return c.orgSiteDefaults(ctx, a.OrgID)
+}
+
+// orgSiteDefaults reads an org's site defaults over the platform's.
+func (c *Core) orgSiteDefaults(ctx context.Context, orgID int64) (apitypes.OrgSiteDefaults, error) {
+	platform, err := c.siteDefaults(ctx)
+	if err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	var own apitypes.SiteSettings
+	od, err := c.store.GetOrgSiteDefaults(ctx, orgID)
+	if err == nil {
+		if err := json.Unmarshal([]byte(od.Settings), &own); err != nil {
+			return apitypes.OrgSiteDefaults{}, err
+		}
+	} else if !store.IsNotFound(err) {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	return apitypes.OrgSiteDefaults{Own: own, Effective: mergeSettings(platform, own)}, nil
+}
+
+// SetOrgSiteDefaults changes the org's defaults for new sites (existing
+// sites keep their settings); reset names settings to set back to the
+// platform's default. The org's unlimited admins.
+func (c *Core) SetOrgSiteDefaults(ctx context.Context, a Actor, set apitypes.SiteSettings, reset []string) (apitypes.OrgSiteDefaults, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "changing the analytics defaults"); err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	if set.PublicDomain != nil {
+		return apitypes.OrgSiteDefaults{}, invalid("a public domain belongs to one site; set it on the site with `dock analytics site set SITE --public-domain HOST`")
+	}
+	cur, err := c.orgSiteDefaults(ctx, a.OrgID)
+	if err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	own := mergeSettings(cur.Own, set)
+	if err := resetSettings(&own, reset); err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	if err := checkSettings(own); err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	b, err := json.Marshal(own)
+	if err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	if err := c.store.SetOrgSiteDefaults(ctx, store.SetOrgSiteDefaultsParams{OrgID: a.OrgID, Settings: string(b), UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
+		return apitypes.OrgSiteDefaults{}, err
+	}
+	c.audit(ctx, a, "analytics.defaults", nil, nil, "analytics defaults", "changed the organization's analytics defaults for new sites")
+	return c.orgSiteDefaults(ctx, a.OrgID)
 }
 
 // freeSiteName is name, or name-2, name-3..., whichever no live site of
@@ -663,7 +744,8 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 	return c.GetSite(ctx, a, project, newName)
 }
 
-// SiteDefaults returns the install's site defaults (operators).
+// SiteDefaults returns the platform's site defaults (operators): what
+// every site gets unless its org or the site itself sets otherwise.
 func (c *Core) SiteDefaults(ctx context.Context, a Actor) (apitypes.SiteSettings, error) {
 	if err := a.requireOperator("reading the analytics defaults"); err != nil {
 		return apitypes.SiteSettings{}, err

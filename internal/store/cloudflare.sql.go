@@ -23,13 +23,15 @@ func (q *Queries) CountConnectionUse(ctx context.Context, connectionID int64) (i
 }
 
 const createCloudflareConnection = `-- name: CreateCloudflareConnection :one
-INSERT INTO cloudflare_connections (name, account_id, account_name, token, created_at, updated_at, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by
+INSERT INTO cloudflare_connections (org_id, name, shared, account_id, account_name, token, created_at, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by
 `
 
 type CreateCloudflareConnectionParams struct {
+	OrgID       *int64
 	Name        string
+	Shared      bool
 	AccountID   string
 	AccountName string
 	Token       []byte
@@ -40,7 +42,9 @@ type CreateCloudflareConnectionParams struct {
 
 func (q *Queries) CreateCloudflareConnection(ctx context.Context, arg CreateCloudflareConnectionParams) (CloudflareConnection, error) {
 	row := q.db.QueryRowContext(ctx, createCloudflareConnection,
+		arg.OrgID,
 		arg.Name,
+		arg.Shared,
 		arg.AccountID,
 		arg.AccountName,
 		arg.Token,
@@ -51,7 +55,9 @@ func (q *Queries) CreateCloudflareConnection(ctx context.Context, arg CreateClou
 	var i CloudflareConnection
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
+		&i.Shared,
 		&i.AccountID,
 		&i.AccountName,
 		&i.Token,
@@ -161,15 +167,23 @@ func (q *Queries) DeleteCloudflareZones(ctx context.Context, connectionID int64)
 }
 
 const getCloudflareConnection = `-- name: GetCloudflareConnection :one
-SELECT id, name, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections WHERE name = +?
+SELECT id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) AND name = +?2
 `
 
-func (q *Queries) GetCloudflareConnection(ctx context.Context, name string) (CloudflareConnection, error) {
-	row := q.db.QueryRowContext(ctx, getCloudflareConnection, name)
+type GetCloudflareConnectionParams struct {
+	Org  int64
+	Name string
+}
+
+// An org's connection (org 0: the platform's) by name.
+func (q *Queries) GetCloudflareConnection(ctx context.Context, arg GetCloudflareConnectionParams) (CloudflareConnection, error) {
+	row := q.db.QueryRowContext(ctx, getCloudflareConnection, arg.Org, arg.Name)
 	var i CloudflareConnection
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
+		&i.Shared,
 		&i.AccountID,
 		&i.AccountName,
 		&i.Token,
@@ -183,7 +197,7 @@ func (q *Queries) GetCloudflareConnection(ctx context.Context, name string) (Clo
 }
 
 const getCloudflareConnectionByID = `-- name: GetCloudflareConnectionByID :one
-SELECT id, name, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections WHERE id = +?
+SELECT id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections WHERE id = +?
 `
 
 func (q *Queries) GetCloudflareConnectionByID(ctx context.Context, id int64) (CloudflareConnection, error) {
@@ -191,7 +205,9 @@ func (q *Queries) GetCloudflareConnectionByID(ctx context.Context, id int64) (Cl
 	var i CloudflareConnection
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
+		&i.Shared,
 		&i.AccountID,
 		&i.AccountName,
 		&i.Token,
@@ -259,9 +275,11 @@ func (q *Queries) GetCloudflareTunnelByServer(ctx context.Context, serverID *int
 }
 
 const listCloudflareConnections = `-- name: ListCloudflareConnections :many
-SELECT id, name, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections ORDER BY name
+SELECT id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections ORDER BY name
 `
 
+// Every connection, the platform's and every org's, for the names kept
+// in memory.
 func (q *Queries) ListCloudflareConnections(ctx context.Context) ([]CloudflareConnection, error) {
 	rows, err := q.db.QueryContext(ctx, listCloudflareConnections)
 	if err != nil {
@@ -273,7 +291,50 @@ func (q *Queries) ListCloudflareConnections(ctx context.Context) ([]CloudflareCo
 		var i CloudflareConnection
 		if err := rows.Scan(
 			&i.ID,
+			&i.OrgID,
 			&i.Name,
+			&i.Shared,
+			&i.AccountID,
+			&i.AccountName,
+			&i.Token,
+			&i.Status,
+			&i.StatusReason,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCloudflareConnectionsOf = `-- name: ListCloudflareConnectionsOf :many
+SELECT id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) ORDER BY name
+`
+
+// An org's connections (org 0: the platform's), by name.
+func (q *Queries) ListCloudflareConnectionsOf(ctx context.Context, org int64) ([]CloudflareConnection, error) {
+	rows, err := q.db.QueryContext(ctx, listCloudflareConnectionsOf, org)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CloudflareConnection
+	for rows.Next() {
+		var i CloudflareConnection
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.Shared,
 			&i.AccountID,
 			&i.AccountName,
 			&i.Token,
@@ -407,24 +468,35 @@ func (q *Queries) ListCloudflareTunnels(ctx context.Context) ([]ListCloudflareTu
 }
 
 const listCloudflareZones = `-- name: ListCloudflareZones :many
-SELECT id, connection_id, zone_id, name FROM cloudflare_zones ORDER BY name
+SELECT cloudflare_zones.id, cloudflare_zones.connection_id, cloudflare_zones.zone_id, cloudflare_zones.name, CAST(coalesce(cloudflare_connections.org_id, 0) AS INTEGER) AS org_id, cloudflare_connections.shared
+FROM cloudflare_zones JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_zones.connection_id
+ORDER BY cloudflare_zones.name
 `
 
-// Every connection's zones; few, kept in memory to match hostnames.
-func (q *Queries) ListCloudflareZones(ctx context.Context) ([]CloudflareZone, error) {
+type ListCloudflareZonesRow struct {
+	CloudflareZone CloudflareZone
+	OrgID          int64
+	Shared         bool
+}
+
+// Every connection's zones with whose they are (org 0: the platform's)
+// and whether orgs may use them; few, kept in memory to match hostnames.
+func (q *Queries) ListCloudflareZones(ctx context.Context) ([]ListCloudflareZonesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCloudflareZones)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []CloudflareZone
+	var items []ListCloudflareZonesRow
 	for rows.Next() {
-		var i CloudflareZone
+		var i ListCloudflareZonesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ConnectionID,
-			&i.ZoneID,
-			&i.Name,
+			&i.CloudflareZone.ID,
+			&i.CloudflareZone.ConnectionID,
+			&i.CloudflareZone.ZoneID,
+			&i.CloudflareZone.Name,
+			&i.OrgID,
+			&i.Shared,
 		); err != nil {
 			return nil, err
 		}
@@ -725,6 +797,23 @@ func (q *Queries) RetryCloudflareTunnel(ctx context.Context, arg RetryCloudflare
 	return err
 }
 
+const retryConnectionRecords = `-- name: RetryConnectionRecords :exec
+UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE connection_id = +? AND status = 'error'
+`
+
+type RetryConnectionRecordsParams struct {
+	UpdatedAt    time.Time
+	ConnectionID int64
+}
+
+// Works on a connection's failed records again, after it got a new token
+// or was refreshed.
+func (q *Queries) RetryConnectionRecords(ctx context.Context, arg RetryConnectionRecordsParams) error {
+	_, err := q.db.ExecContext(ctx, retryConnectionRecords, arg.UpdatedAt, arg.ConnectionID)
+	return err
+}
+
 const retryFailedCloudflare = `-- name: RetryFailedCloudflare :execrows
 UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE status = 'error'
@@ -797,9 +886,32 @@ type SaveCloudflareZoneParams struct {
 	Name         string
 }
 
-// A zone another connection reached before moves to this one.
+// A zone another connection reached before moves to this one; core
+// refuses a zone another owner's connection has (saveZones).
 func (q *Queries) SaveCloudflareZone(ctx context.Context, arg SaveCloudflareZoneParams) error {
 	_, err := q.db.ExecContext(ctx, saveCloudflareZone, arg.ConnectionID, arg.ZoneID, arg.Name)
+	return err
+}
+
+const setCloudflareConnectionShared = `-- name: SetCloudflareConnectionShared :exec
+UPDATE cloudflare_connections SET shared = ?, updated_at = ?, updated_by = ? WHERE id = +?
+`
+
+type SetCloudflareConnectionSharedParams struct {
+	Shared    bool
+	UpdatedAt time.Time
+	UpdatedBy string
+	ID        int64
+}
+
+// Whether org domains may use a platform connection's zones.
+func (q *Queries) SetCloudflareConnectionShared(ctx context.Context, arg SetCloudflareConnectionSharedParams) error {
+	_, err := q.db.ExecContext(ctx, setCloudflareConnectionShared,
+		arg.Shared,
+		arg.UpdatedAt,
+		arg.UpdatedBy,
+		arg.ID,
+	)
 	return err
 }
 
@@ -900,7 +1012,7 @@ const updateCloudflareConnection = `-- name: UpdateCloudflareConnection :one
 UPDATE cloudflare_connections
 SET account_id = ?, account_name = ?, token = ?, status = 'ok', status_reason = '', updated_at = ?, updated_by = ?
 WHERE id = +?
-RETURNING id, name, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by
+RETURNING id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by
 `
 
 type UpdateCloudflareConnectionParams struct {
@@ -925,7 +1037,9 @@ func (q *Queries) UpdateCloudflareConnection(ctx context.Context, arg UpdateClou
 	var i CloudflareConnection
 	err := row.Scan(
 		&i.ID,
+		&i.OrgID,
 		&i.Name,
+		&i.Shared,
 		&i.AccountID,
 		&i.AccountName,
 		&i.Token,

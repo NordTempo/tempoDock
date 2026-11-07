@@ -179,6 +179,9 @@ const (
 	// PolicyConnection is tempoBase's per-connection scope (ADR 0024);
 	// Dock never uses it.
 	PolicyConnection DataPolicyScope = "connection"
+	// PolicyPlatform: the platform's default (ADR 0062), set by
+	// operators, in place of the built-in one.
+	PolicyPlatform DataPolicyScope = "platform"
 )
 
 // DataPolicyRule sets one subject's access to databases in environments of
@@ -194,7 +197,7 @@ type DataPolicyRule struct {
 	Sensitive DataSensitivity `json:"sensitive" enum:"masked,visible"`
 	// From says which policy the rule comes from. Only set in
 	// DataPolicy.Effective.
-	From DataPolicyScope `json:"from,omitempty" enum:"built_in,default,project,environment,connection" readOnly:"true"`
+	From DataPolicyScope `json:"from,omitempty" enum:"built_in,platform,default,project,environment,connection" readOnly:"true"`
 }
 
 // DataPolicy is the data access policy at one scope.
@@ -278,7 +281,7 @@ type DataPermission struct {
 type DataPermissionStep struct {
 	Source DataPermissionSource `json:"source" enum:"admin,policy,token,cap,production,locked"`
 	// Policy and Subject name the rule, for policy steps.
-	Policy    DataPolicyScope `json:"policy,omitempty" enum:"built_in,default,project,environment,connection"`
+	Policy    DataPolicyScope `json:"policy,omitempty" enum:"built_in,platform,default,project,environment,connection"`
 	Subject   DataSubject     `json:"subject,omitempty" enum:"role:read,role:deploy,tokens"`
 	Level     DataLevel       `json:"level" enum:"none,schema,read,propose,write"`
 	Sensitive DataSensitivity `json:"sensitive" enum:"masked,visible"`
@@ -791,4 +794,16 @@ type DataHistoryEntry struct {
 	AuditID   int64     `json:"audit_id"`
 	CreatedAt time.Time `json:"created_at"`
 	AuditDetail
+}
+
+// PlatformDataPolicy is the platform's part of the data access policy
+// (ADR 0062): Defaults apply where an org set nothing (in place of the
+// built-in rules), Ceilings are the most any org rule or token gives a
+// subject in an environment kind. Org admins keep full access. Either
+// list may be empty: then the built-in defaults, and no ceiling.
+type PlatformDataPolicy struct {
+	Defaults []DataPolicyRule `json:"defaults"`
+	Ceilings []DataPolicyRule `json:"ceilings"`
+	// BuiltIn are Dock's own defaults, for reference.
+	BuiltIn []DataPolicyRule `json:"built_in" readOnly:"true"`
 }

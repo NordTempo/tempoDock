@@ -405,7 +405,7 @@ never points DNS at an IP and makes no wildcard record.
 3. **Connect** it on the control plane (or Console › Cloudflare):
 
    ```sh
-   printf %s "$CLOUDFLARE_API_TOKEN" | dock cloudflare add home --token-stdin
+   printf %s "$CLOUDFLARE_API_TOKEN" | dock cloudflare add home --token-stdin --platform --shared
    ```
 
    Dock checks the token and lists the zones domains can come from
@@ -445,7 +445,7 @@ untouched, and so does the wildcard.
 
 If Cloudflare is down, tunnels and domains wait and are retried. If the
 token is revoked or expires, the connection shows `invalid` and its work
-waits for `dock cloudflare set home --token-stdin`. Dock asks Cloudflare
+waits for `dock cloudflare set home --platform --token-stdin`. Dock asks Cloudflare
 nothing while idle. Removing a server deletes the tunnel Dock created,
 never one it adopted.
 

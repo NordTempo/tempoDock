@@ -25,41 +25,60 @@ import (
 // is added from it.
 const cfNameCheckTimeout = 15 * time.Second
 
-// ListCloudflareZones returns the zones domains can be added from: those
-// of working connections. Anyone who can add domains may list them.
-func (c *Core) ListCloudflareZones(ctx context.Context, a Actor) ([]apitypes.CloudflareZone, error) {
+// ListCloudflareZones returns the zones the actor's org may add domains
+// from: its own connections' and the platform's shared ones, never
+// another org's. Anyone who can add domains may list them.
+func (c *Core) ListCloudflareZones(_ context.Context, a Actor) ([]apitypes.CloudflareZone, error) {
 	if !a.Operator {
 		if err := a.require(apitypes.ScopeDeploy, "listing Cloudflare zones"); err != nil {
 			return nil, err
 		}
 	}
+	return c.usableZones(a.OrgID), nil
+}
+
+// usableZones are the zones org's domains may use (cfZone.usableBy), by
+// name.
+func (c *Core) usableZones(org int64) []apitypes.CloudflareZone {
 	c.cf.mu.Lock()
 	defer c.cf.mu.Unlock()
 	out := make([]apitypes.CloudflareZone, 0, len(c.cf.zones))
 	for _, z := range c.cf.zones {
-		out = append(out, apitypes.CloudflareZone{Name: z.Name, Connection: c.cf.conns[z.ConnectionID]})
+		if z.usableBy(org) {
+			out = append(out, apitypes.CloudflareZone{Name: z.Name, Connection: c.cf.conns[z.ConnectionID], Platform: z.org == 0})
+		}
 	}
 	slices.SortFunc(out, func(a, b apitypes.CloudflareZone) int { return cmp.Compare(a.Name, b.Name) })
-	return out, nil
+	return out
+}
+
+// underBase reports whether host is a server's base domain or under it:
+// the platform's names, which may use any platform zone.
+func underBase(host, base string) bool {
+	return base != "" && (host == base || strings.HasSuffix(host, "."+base))
 }
 
 // prepareCloudflareDomain checks that host can be added from Cloudflare
-// to a service on srv, and gets srv's tunnel ready for it (adopting the
-// one it runs, or creating one): host is in a managed zone, srv can take
-// a tunnel (tunnel mode, or a direct server with a tunnel listener), and
+// to a service of org's on srv, and gets srv's tunnel ready for it
+// (adopting the one it runs, or creating one): host is in a zone org may
+// use (zoneFor; under srv's base domain, the platform's), srv can take a
+// tunnel (tunnel mode, or a direct server with a tunnel listener), and
 // no record Dock didn't make is in the way. It returns the zone.
-func (c *Core) prepareCloudflareDomain(ctx context.Context, a Actor, srv store.Server, host string) (store.CloudflareZone, error) {
-	z, ok := c.zoneFor(host)
+func (c *Core) prepareCloudflareDomain(ctx context.Context, a Actor, srv store.Server, org int64, host string) (store.CloudflareZone, error) {
+	if underBase(host, c.ingressOf(srv).baseDomain) {
+		org = 0
+	}
+	z, ok := c.zoneFor(org, host)
 	if !ok {
-		zones, _ := c.ListCloudflareZones(ctx, System)
+		zones := c.usableZones(org)
 		names := make([]string, len(zones))
 		for i, z := range zones {
 			names[i] = z.Name
 		}
 		if len(names) == 0 {
-			return z, invalid("no Cloudflare zone is connected to Dock; an operator adds one with `dock cloudflare add`")
+			return z, invalid("no Cloudflare zone is connected for this organization; its admins add a connection with `dock cloudflare add`, or the platform's operator shares one")
 		}
-		return z, invalid("%s isn't in a zone connected to Dock (%s)", host, strings.Join(names, ", "))
+		return z, invalid("%s isn't in a Cloudflare zone this organization may use (%s)", host, strings.Join(names, ", "))
 	}
 	if c.tunnelPort(srv) == 0 {
 		return z, invalid("domains from Cloudflare go through a tunnel, and %s", c.noTunnelListener(srv))
@@ -69,7 +88,11 @@ func (c *Core) prepareCloudflareDomain(ctx context.Context, a Actor, srv store.S
 		return z, err
 	}
 	if conn.Status != string(apitypes.CloudflareOK) {
-		return z, invalid("Cloudflare connection %s doesn't work (%s); an operator gives it a new token with `dock cloudflare set %s --token-stdin`", conn.Name, conn.StatusReason, conn.Name)
+		who := "the organization's admins give"
+		if conn.OrgID == nil {
+			who = "an operator gives"
+		}
+		return z, invalid("Cloudflare connection %s doesn't work (%s); %s it a new token with `dock cloudflare set %s%s --token-stdin`", conn.Name, conn.StatusReason, who, conn.Name, cfFlag(conn.OrgID))
 	}
 	cl, err := c.cfClient(conn)
 	if err != nil {

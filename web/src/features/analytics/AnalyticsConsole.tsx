@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useServers } from "../../data/queries";
@@ -20,8 +20,10 @@ import { Saved } from "../create/form";
 import {
   analyticsDefaultsQuery,
   analyticsStatusQuery,
+  orgAnalyticsDefaultsQuery,
   useSetAnalyticsServer,
   useSetDefaults,
+  useSetOrgDefaults,
 } from "./data";
 import { SettingInput } from "./SettingInput";
 import { type Field, fields, flags, text, valid, value } from "./settings";
@@ -194,24 +196,51 @@ function ServerPicker({
   );
 }
 
+/** Whose site defaults a form edits: the platform's or the org's. */
+export type DefaultsScope = "platform" | "org";
+
 /**
- * Every site's defaults: what a site uses where it sets nothing. Each
- * setting saves on its own, in the app's save model.
+ * Site defaults: what a site uses where it sets nothing. The platform's
+ * (operators, the console) apply to every site; an org's (its settings)
+ * to the org's new sites, over the platform's. Each setting saves on its
+ * own, in the app's save model.
  */
+export function SiteDefaults({ scope }: { scope: DefaultsScope }) {
+  const platform = useQuery({
+    ...analyticsDefaultsQuery(),
+    enabled: scope === "platform",
+  }).data;
+  const org = useQuery({
+    ...orgAnalyticsDefaultsQuery(),
+    enabled: scope === "org",
+  }).data;
+  const defaults = scope === "platform" ? platform : org?.effective;
+  if (!defaults) return null;
+  return (
+    <div className="flex max-w-xl flex-col gap-4">
+      {fields.map((field) => (
+        <DefaultField
+          key={field.key}
+          scope={scope}
+          field={field}
+          saved={text(defaults, field.key)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** The platform's site defaults, on the console's Analytics page. */
 function Defaults() {
-  const { data: defaults } = useSuspenseQuery(analyticsDefaultsQuery());
   return (
     <section aria-labelledby="defaults" className="flex flex-col gap-2">
       <SectionHead id="defaults">Site defaults</SectionHead>
-      <div className="flex max-w-xl flex-col gap-4">
-        {fields.map((field) => (
-          <DefaultField
-            key={field.key}
-            field={field}
-            saved={text(defaults, field.key)}
-          />
-        ))}
-      </div>
+      <p className="max-w-xl text-xs text-mut">
+        What every site uses where neither it nor its organization set
+        something. Organizations set their own defaults for new sites in their
+        settings.
+      </p>
+      <SiteDefaults scope="platform" />
     </section>
   );
 }
@@ -220,8 +249,18 @@ function Defaults() {
  * One default. A switch saves on change; text and numbers get Save and
  * Cancel while changed (Enter saves a number, Esc cancels). "Saved" after.
  */
-function DefaultField({ field, saved }: { field: Field; saved: string }) {
-  const set = useSetDefaults();
+function DefaultField({
+  scope,
+  field,
+  saved,
+}: {
+  scope: DefaultsScope;
+  field: Field;
+  saved: string;
+}) {
+  const platformSet = useSetDefaults();
+  const orgSet = useSetOrgDefaults();
+  const set = scope === "platform" ? platformSet : orgSet;
   const [draft, setDraft] = useState(saved);
   // Another operator's change shows unless this field is being edited.
   const [was, setWas] = useState(saved);
@@ -231,7 +270,10 @@ function DefaultField({ field, saved }: { field: Field; saved: string }) {
   }
   const changed = draft !== saved;
   const ok = valid(field.key, draft);
-  const cli = `dock analytics defaults set ${flags(field.key, draft).join(" ")}`;
+  const cli =
+    scope === "platform"
+      ? `dock analytics defaults set ${flags(field.key, draft).join(" ")}`
+      : undefined;
   const save = (t: string) => set.mutate({ settings: value(field.key, t) });
   const cancel = () => {
     set.reset();

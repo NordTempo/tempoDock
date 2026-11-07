@@ -3,15 +3,13 @@ import { queries } from "../data/queries";
 import { AuditPage } from "../features/audit/AuditPage";
 import { validateAuditSearch } from "../features/audit/search";
 
-// The organization's audit log, or the platform's, in the platform
-// console. The same page as the organization's (/audit), under the
-// console's sidebar.
+// The platform's activity (ADR 0062): servers, accounts and logins,
+// platform settings, updates and backups, and operators' actions on orgs.
+// An org's own activity is in the org; an operator sees it by joining.
 export const Route = createFileRoute("/_app/console/audit")({
   validateSearch: validateAuditSearch,
   loaderDeps: ({ search }) => ({
-    platform: search.platform,
-    project: search.project,
-    environment: search.environment,
+    platform: true as const,
     action: search.action,
     limit: search.limit,
   }),
@@ -24,9 +22,15 @@ function Audit() {
   const navigate = Route.useNavigate();
   return (
     <AuditPage
-      search={Route.useSearch()}
-      onSearch={(search) => navigate({ search, replace: true })}
-      withPlatform
+      search={{
+        ...Route.useSearch(),
+        platform: true,
+        project: undefined,
+        environment: undefined,
+      }}
+      onSearch={(search) =>
+        navigate({ search: { ...search, platform: undefined }, replace: true })
+      }
     />
   );
 }

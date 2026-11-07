@@ -986,7 +986,7 @@ export interface components {
             /** @enum {string} */
             level: "none" | "schema" | "read" | "propose" | "write";
             /** @enum {string} */
-            policy?: "built_in" | "default" | "project" | "environment" | "connection";
+            policy?: "built_in" | "platform" | "default" | "project" | "environment" | "connection";
             /** @enum {string} */
             sensitive: "masked" | "visible";
             /** @enum {string} */
@@ -1005,7 +1005,7 @@ export interface components {
         };
         DataPolicyRule: {
             /** @enum {string} */
-            readonly from?: "built_in" | "default" | "project" | "environment" | "connection";
+            readonly from?: "built_in" | "platform" | "default" | "project" | "environment" | "connection";
             /** @enum {string} */
             kind: "production" | "non_production";
             /** @enum {string} */

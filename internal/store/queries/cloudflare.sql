@@ -1,16 +1,27 @@
 -- name: ListCloudflareConnections :many
+-- Every connection, the platform's and every org's, for the names kept
+-- in memory.
 SELECT * FROM cloudflare_connections ORDER BY name;
 
+-- name: ListCloudflareConnectionsOf :many
+-- An org's connections (org 0: the platform's), by name.
+SELECT * FROM cloudflare_connections WHERE coalesce(org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER) ORDER BY name;
+
 -- name: GetCloudflareConnection :one
-SELECT * FROM cloudflare_connections WHERE name = +?;
+-- An org's connection (org 0: the platform's) by name.
+SELECT * FROM cloudflare_connections WHERE coalesce(org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER) AND name = +sqlc.arg(name);
 
 -- name: GetCloudflareConnectionByID :one
 SELECT * FROM cloudflare_connections WHERE id = +?;
 
 -- name: CreateCloudflareConnection :one
-INSERT INTO cloudflare_connections (name, account_id, account_name, token, created_at, updated_at, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO cloudflare_connections (org_id, name, shared, account_id, account_name, token, created_at, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
+
+-- name: SetCloudflareConnectionShared :exec
+-- Whether org domains may use a platform connection's zones.
+UPDATE cloudflare_connections SET shared = ?, updated_at = ?, updated_by = ? WHERE id = +?;
 
 -- name: UpdateCloudflareConnection :one
 -- A new token (checked): the connection works again.
@@ -26,14 +37,18 @@ UPDATE cloudflare_connections SET status = ?, status_reason = ? WHERE id = +?;
 DELETE FROM cloudflare_connections WHERE id = +?;
 
 -- name: ListCloudflareZones :many
--- Every connection's zones; few, kept in memory to match hostnames.
-SELECT * FROM cloudflare_zones ORDER BY name;
+-- Every connection's zones with whose they are (org 0: the platform's)
+-- and whether orgs may use them; few, kept in memory to match hostnames.
+SELECT sqlc.embed(cloudflare_zones), CAST(coalesce(cloudflare_connections.org_id, 0) AS INTEGER) AS org_id, cloudflare_connections.shared
+FROM cloudflare_zones JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_zones.connection_id
+ORDER BY cloudflare_zones.name;
 
 -- name: DeleteCloudflareZones :exec
 DELETE FROM cloudflare_zones WHERE connection_id = +?;
 
 -- name: SaveCloudflareZone :exec
--- A zone another connection reached before moves to this one.
+-- A zone another connection reached before moves to this one; core
+-- refuses a zone another owner's connection has (saveZones).
 INSERT INTO cloudflare_zones (connection_id, zone_id, name) VALUES (?, ?, ?)
 ON CONFLICT (name) DO UPDATE SET connection_id = excluded.connection_id, zone_id = excluded.zone_id;
 
@@ -142,6 +157,12 @@ DELETE FROM cloudflare_records WHERE id = +sqlc.arg(id) AND gen = +sqlc.arg(gen)
 -- Works on a record again.
 UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE id = +?;
+
+-- name: RetryConnectionRecords :exec
+-- Works on a connection's failed records again, after it got a new token
+-- or was refreshed.
+UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE connection_id = +? AND status = 'error';
 
 -- name: RetryFailedCloudflare :execrows
 UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?

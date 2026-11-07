@@ -29,6 +29,7 @@ export {
   analyticsStatusQuery,
   type Filter,
   filterParam,
+  orgAnalyticsDefaultsQuery,
   parseFilter,
   type StatsRange,
   sitesQuery,
@@ -168,6 +169,12 @@ export const useUpdateSite = () =>
 export const useSetDefaults = () =>
   useAnalyticsAction((change: Schemas["UpdateSiteRequest"]) =>
     body(api.PATCH("/api/v1/analytics/defaults", { body: change })),
+  );
+
+/** The org's defaults for its new sites (its admins). */
+export const useSetOrgDefaults = () =>
+  useAnalyticsAction((change: Schemas["UpdateSiteRequest"]) =>
+    body(api.PATCH("/api/v1/org/analytics/defaults", { body: change })),
   );
 
 // Servers show which one runs the store.

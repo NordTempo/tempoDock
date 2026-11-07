@@ -147,6 +147,47 @@ How it works (`internal/core/operator.go`, `/console/orgs/...`):
   with every CLI command, not the reverse). A `dock` command can follow
   when operators script them.
 
+### The platform sets defaults and limits; orgs decide within them
+
+The owner's rule for everything else in the console: the platform runs
+infrastructure and sets defaults and limits; orgs own their people,
+access, connections, policies and activity within those limits.
+
+- **Activity in three levels.** The console's Activity shows the
+  platform's log only: servers, accounts and logins, platform settings,
+  updates, backups, and operators' actions on orgs. An org's Activity
+  shows its own; project and service tabs are filtered views of it. What
+  an operator does to an org is written to both. The console's mixed
+  "organization or platform" switch is gone: an operator sees an org's
+  own activity by joining it.
+- **Accounts are the platform's, roles the org's.** The console's Users
+  page lists every account with the orgs it belongs to and owns, and
+  manages accounts (create, disable, delete, reset password) and who
+  operates the platform (`PUT /console/users/{id}/operator`; one who can
+  sign in always remains). Roles are set in each org's Members. Dock has
+  no per-project permissions for people (only tokens are limited to a
+  project or environment), so none moves; project and environment rules
+  that exist are the data access policy's, now in the org's settings.
+- **Data access:** each org edits its own rules (its default, projects,
+  environments) in its settings. The platform keeps a default (where an
+  org set nothing, in place of the built-in rules) and a ceiling (the most
+  any org rule or token gives) per subject and environment kind
+  (`/console/data-policy`, migration 0074). Org rules above the ceiling
+  are refused; older ones are capped where they apply. Org admins keep
+  full access. With neither set, nothing changes for existing installs.
+- **Analytics:** the store and its server stay the platform's, and so do
+  the platform's site defaults. Each org sets defaults for its new sites
+  (`/org/analytics/defaults`); a new site starts with them, existing
+  sites keep their settings.
+- **GitHub and Cloudflare:** the GitHub App stays the platform's; an org
+  installs it for itself and manages its own installations. An org's
+  Cloudflare connections and domains are its own; the platform keeps the
+  connections for Dock's own address and server tunnels.
+- **Org settings** (mock S2) hold every section in one grouped column
+  with counts and marks: General, Variables; Members, Tokens, Single
+  sign-on; GitHub, Cloudflare, Registries; Data access, Analytics
+  defaults.
+
 ### The console overview answers "is the platform healthy?"
 
 Its first screen (mock O): open platform alerts, the servers and their
@@ -247,3 +288,49 @@ How it works:
 - Supersedes the "Alerts" row of 0027's table and its phase 2 "Next: org
   alert channels". Amends 0025's console: Organizations joins it, and its
   overview is about platform health.
+
+### Connections
+
+The owner's rule: the platform runs infrastructure and sets defaults and
+limits; orgs own their own people, access, connections, policies and
+activity within those limits.
+
+- **GitHub:** the App stays the platform's. Operators create and remove
+  it, see every installation and assign or move one between orgs. An
+  org's unlimited admins see the App and their org's installations
+  (`GET /github/org`, `dock github installations`), get an install link
+  for their own org (`POST /github/installations` without `org`, `dock
+  github install`) and unassign their own installations. An installation
+  another org has is refused as before. Audited in the org's log.
+- **Cloudflare:** a connection is the platform's (`org_id` NULL) or an
+  org's own. The platform's run server tunnels (picked by `--cloudflare`,
+  join tokens) and serve Dock's own names; `shared` lets every org's
+  domains use its zones. An org's own serve only its domains. Operators
+  manage the platform's with `platform=true` (`dock cloudflare
+  --platform`), an org's unlimited admins their own, as with alert
+  channels. Migration 0073 makes existing connections the platform's,
+  shared, so installs keep working; a new platform connection isn't
+  shared until an operator says so. Stopping sharing keeps the domains
+  already in its zones.
+- **Zones:** an org's hostname looks in the org's own zones first, then
+  in shared platform zones, never another org's; a name under a server's
+  base domain uses any platform zone. `GET /cloudflare/zones` lists only
+  those. A zone belongs to one owner: a token reaching a zone connected
+  elsewhere is refused (409). An org's own connection takes only zones
+  Cloudflare serves (active): a zone added to an account but not
+  delegated proves nothing, and domains from Cloudflare need no TXT proof
+  ([0042](0042-domain-verification.md)).
+- **Tunnels stay the platform's:** a domain in an org's zone goes through
+  the server's tunnel, which must be in the zone's Cloudflare account. A
+  server without one gets it made with a platform connection in that
+  account, or the domain is refused saying so. So an org's own
+  connection in an account the platform has no tunnel in can't route
+  domains yet.
+- **Failures:** an org's own connection failing is the org's
+  `connection_failed` alert (its key `cloudflare:<id>`, its target
+  `cloudflare:<name>`), for its members and channels; a platform
+  connection's stays the platform's. A refresh or a new token retries the
+  connection's failed domains, since `dock cloudflare retry` is the
+  operator's.
+- **Sealed tokens:** a platform connection's keeps its AAD (its name), an
+  org's is `<org ID>/<name>`, as channels.

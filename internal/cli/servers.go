@@ -103,7 +103,7 @@ server that builds images for others. All of it can be changed later with
 ` + "`dock server update`" + `.
 
 --tunnel puts the server behind a Cloudflare tunnel that Dock creates once it
-joins, with a Cloudflare connection (` + "`dock cloudflare add`" + `): it needs no
+joins, with a platform Cloudflare connection (` + "`dock cloudflare add --platform`" + `): it needs no
 open ports, and domains added from Cloudflare go through the tunnel.`,
 		Example: `  dock server add homelab --non-production --builder --tunnel
   dock server add vps-2 --production`,
@@ -151,7 +151,7 @@ func newServerTunnelCmd(g *globals) *cobra.Command {
 		Use:   "tunnel",
 		Short: "Have Dock run a server's Cloudflare tunnel (admin)",
 		Long: `Have Dock run a Cloudflare tunnel on a server, in tunnel mode or next to a direct server's public IP (ADR 0036), with
-a Cloudflare connection (` + "`dock cloudflare add`" + `): cloudflared runs there in
+a platform Cloudflare connection (` + "`dock cloudflare add --platform`" + `): cloudflared runs there in
 Dock's dock-cloudflared container, and a tunnel Dock created is deleted with
 the server. Adding a domain from Cloudflare does this when the server needs it.`,
 	})

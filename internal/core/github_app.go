@@ -21,15 +21,19 @@ import (
 // (GitHubManifest), which posts the App's manifest to github.com; GitHub
 // redirects back with a code (CompleteGitHubApp), exchanged for the App's
 // ID, private key and webhook secret. Installing the App on a GitHub
-// account gives it read access to that account's repositories; operators
-// assign each installation to the org that may deploy from it. Services
+// account gives it read access to that account's repositories; each
+// installation is assigned to the org that may deploy from it. The App
+// is the platform's: operators create and remove it, and assign or move
+// installations; an org's admins install it for their own org and
+// unassign their own installations (ADR 0062). Services
 // then connect a repository with no webhook or token of their own, and
 // the App's one webhook (gitAppWebhook) routes pushes to them.
 //
 // The links into GitHub carry a state: 256 random bits, issued to an
-// operator, single use, valid for githubFlowTTL. The state is the
-// authority for GitHub's redirect back, which therefore needs no session
-// and works when the flow was started from the CLI.
+// operator (or an org's admin, for that org's install), single use,
+// valid for githubFlowTTL. The state is the authority for GitHub's
+// redirect back, which therefore needs no session and works when the
+// flow was started from the CLI.
 
 const (
 	// githubWeb is GitHub's web origin, where Apps are registered and
@@ -66,7 +70,7 @@ type githubAppState struct {
 // githubFlow is a link into GitHub waiting for its redirect back.
 type githubFlow struct {
 	install bool  // an install link; else the App's manifest
-	actor   Actor // the operator who started it
+	actor   Actor // the operator or org admin who started it
 	// owner is the GitHub org to register the App under and hookID its
 	// webhook's ID, for a manifest.
 	owner   string
@@ -458,21 +462,39 @@ func (c *Core) RemoveGitHubApp(ctx context.Context, a Actor) error {
 
 // StartGitHubInstall returns the App's install link on GitHub for an org:
 // GitHub's redirect back (CompleteGitHubInstall) assigns the installation
-// to it. Operators only.
+// to it. An org's unlimited admins install it for their own org (req.Org
+// empty or theirs); operators for any.
 func (c *Core) StartGitHubInstall(ctx context.Context, a Actor, req apitypes.GitHubOrgRequest) (apitypes.GitHubLink, error) {
-	if err := a.requireOperator("installing the GitHub App"); err != nil {
+	org, err := c.installOrg(ctx, a, strings.TrimSpace(req.Org))
+	if err != nil {
 		return apitypes.GitHubLink{}, err
 	}
 	app, err := c.githubApp(ctx)
 	if err != nil {
 		return apitypes.GitHubLink{}, err
 	}
-	org, err := c.orgNamed(ctx, req.Org)
-	if err != nil {
-		return apitypes.GitHubLink{}, err
-	}
 	state := c.git.app.startFlow(githubFlow{install: true, actor: a, org: org})
 	return apitypes.GitHubLink{URL: app.HtmlUrl + "/installations/new?state=" + url.QueryEscape(state)}, nil
+}
+
+// installOrg is the org an install link is for: the named one for an
+// operator, else the actor's own, for its unlimited admins.
+func (c *Core) installOrg(ctx context.Context, a Actor, slug string) (store.Org, error) {
+	const action = "installing the GitHub App"
+	if a.Operator && slug != "" {
+		return c.orgNamed(ctx, slug)
+	}
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, action); err != nil {
+		return store.Org{}, err
+	}
+	if slug != "" && slug != a.OrgSlug {
+		return store.Org{}, errf(apitypes.CodeForbidden, "an organization's admins install the GitHub App for their own organization only; an operator installs it for org %s", slug)
+	}
+	org, err := c.store.GetOrg(ctx, a.OrgID)
+	if store.IsNotFound(err) {
+		return org, notFound("no organization to install the GitHub App for; pass --org")
+	}
+	return org, err
 }
 
 // CompleteGitHubInstall handles GitHub's redirect after the App was
@@ -486,7 +508,7 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 		return "", err
 	}
 	if setupAction == "request" {
-		return fmt.Sprintf("The installation was requested. Once an owner of the GitHub account approves it, assign it with `dock github assign <id> %s`.", f.org.Slug), nil
+		return fmt.Sprintf("The installation was requested. Once an owner of the GitHub account approves it, an operator assigns it with `dock github assign <id> %s`.", f.org.Slug), nil
 	}
 	// The installation ID comes from the redirect, not the state: it may
 	// only be claimed, never moved from another org.
@@ -503,6 +525,9 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 func (c *Core) AssignGitHubInstallation(ctx context.Context, a Actor, id int64, req apitypes.GitHubOrgRequest) error {
 	if err := a.requireOperator("assigning a GitHub App installation"); err != nil {
 		return err
+	}
+	if strings.TrimSpace(req.Org) == "" {
+		return invalid("name the org to assign installation %d to", id)
 	}
 	org, err := c.orgNamed(ctx, req.Org)
 	if err != nil {
@@ -548,26 +573,86 @@ func (c *Core) assignInstallation(ctx context.Context, a Actor, id int64, org st
 }
 
 // UnassignGitHubInstallation stops an org deploying from an installation.
-// Operators only.
+// Operators unassign any; an org's unlimited admins their own org's
+// (another org's is not found for them). Audited in the org's log.
 func (c *Core) UnassignGitHubInstallation(ctx context.Context, a Actor, id int64) error {
-	if err := a.requireOperator("unassigning a GitHub App installation"); err != nil {
-		return err
+	const action = "unassigning a GitHub App installation"
+	if !a.Operator {
+		if err := a.requireUnlimited(apitypes.ScopeAdmin, action); err != nil {
+			return err
+		}
 	}
 	inst, err := c.store.GetGitHubInstallation(ctx, id)
-	if store.IsNotFound(err) {
-		return notFound("installation %d is not assigned to an org; see `dock github status`", id)
-	}
-	if err != nil {
+	if err != nil && !store.IsNotFound(err) {
 		return err
+	}
+	switch {
+	case !a.Operator && (err != nil || inst.OrgID != a.OrgID):
+		return notFound("installation %d is not assigned to this organization; `dock github installations` lists its own", id)
+	case err != nil:
+		return notFound("installation %d is not assigned to an org; see `dock github status`", id)
 	}
 	if err := c.store.DeleteGitHubInstallation(ctx, id); err != nil {
 		return err
 	}
 	c.git.app.forgetTokens(id)
-	in := a.platform()
+	in := a
 	in.OrgID = inst.OrgID
 	c.audit(ctx, in, "github.install_unassign", nil, nil, inst.Account, fmt.Sprintf("stopped deploying from %s's repositories through the GitHub App (installation %d)", inst.Account, id))
 	return nil
+}
+
+// GitHubOrgStatus describes the platform's App and the actor's org's own
+// installations, as GitHub lists them (asked only when the org has
+// some), with the services connected through each. For the org's
+// unlimited admins; operators see every installation in GitHubStatus.
+func (c *Core) GitHubOrgStatus(ctx context.Context, a Actor) (apitypes.GitHubOrg, error) {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "reading the organization's GitHub App installations"); err != nil {
+		return apitypes.GitHubOrg{}, err
+	}
+	out := apitypes.GitHubOrg{Installations: []apitypes.GitHubInstallation{}}
+	app, err := c.store.GetGitHubApp(ctx)
+	if store.IsNotFound(err) {
+		return out, nil
+	}
+	if err != nil {
+		return out, err
+	}
+	out.App = &apitypes.GitHubOrgApp{Slug: app.Slug, Name: app.Name, Owner: app.Owner, URL: app.HtmlUrl}
+	own, err := c.store.ListOrgGitHubInstallations(ctx, a.OrgID)
+	if err != nil || len(own) == 0 {
+		return out, err
+	}
+	counts, err := c.store.CountInstallationConnections(ctx)
+	if err != nil {
+		return out, err
+	}
+	conns := map[int64]int{}
+	for _, n := range counts {
+		conns[n.InstallationID] = int(n.Connections)
+	}
+	listed := map[int64]githubInstallation{}
+	jwt, listErr := c.appJWT(ctx)
+	if listErr == nil {
+		var all []githubInstallation
+		all, listErr = c.git.github.installations(ctx, jwt)
+		for _, i := range all {
+			listed[i.ID] = i
+		}
+	}
+	if listErr != nil {
+		out.InstallationsError = errorLine(listErr)
+	}
+	for _, r := range own {
+		inst := apitypes.GitHubInstallation{ID: r.InstallationID, Account: r.Account, Org: a.OrgSlug, Connections: conns[r.InstallationID]}
+		if i, ok := listed[r.InstallationID]; ok {
+			inst.AccountType, inst.Repositories, inst.Suspended, inst.URL = i.Account.Type, i.RepositorySelection, i.SuspendedAt != nil, i.HTMLURL
+		} else {
+			inst.Missing = listErr == nil
+		}
+		out.Installations = append(out.Installations, inst)
+	}
+	return out, nil
 }
 
 // orgNamed looks an org up by slug.
@@ -624,7 +709,7 @@ func (c *Core) appRepo(ctx context.Context, org store.Org, repo string) (int64, 
 	inst, err := c.git.github.repoInstallation(ctx, jwt, repo)
 	if CodeOf(err) == apitypes.CodeNotFound {
 		owner, _, _ := strings.Cut(repo, "/")
-		return 0, githubRepo{}, notFound("the GitHub App is not installed on %s; an operator installs it with `dock github install %s` (on %s's account), or connect with --mode webhook", repo, org.Slug, owner)
+		return 0, githubRepo{}, notFound("the GitHub App is not installed on %s; an admin of org %s installs it on %s's account with `dock github install`, or connect with --mode webhook", repo, org.Slug, owner)
 	}
 	if err != nil {
 		return 0, githubRepo{}, err

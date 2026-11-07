@@ -1065,7 +1065,10 @@ type CreateUserRequest struct {
 	Email    string `json:"email" format:"email"`
 	Name     string `json:"name" minLength:"1"`
 	Password string `json:"password" minLength:"12"`
-	Role     Scope  `json:"role" enum:"read,deploy,admin"`
+	// Org is the org the account joins with Role; the caller's current
+	// org when empty.
+	Org  string `json:"org,omitempty" doc:"Slug of the organization the account joins; the caller's when empty"`
+	Role Scope  `json:"role" enum:"read,deploy,admin"`
 	// Operator makes the user a platform operator too.
 	Operator bool `json:"operator,omitempty"`
 }

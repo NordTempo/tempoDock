@@ -192,7 +192,8 @@ func (c *Core) failed(ctx context.Context, cc *cfConn, attempts int64, err error
 			return c.failed(ctx, cc, attempts, verr, perm)
 		}
 		if ok && ve.Denied() {
-			reason := fmt.Sprintf("Cloudflare refused the token (%s); give the connection a new one with `dock cloudflare set %s --token-stdin`", ve.Message, cc.row.Name)
+			set := "dock cloudflare set " + cc.row.Name + cfFlag(cc.row.OrgID) + " --token-stdin"
+			reason := fmt.Sprintf("Cloudflare refused the token (%s); give the connection a new one with `%s`", ve.Message, set)
 			if err := c.store.SetCloudflareConnectionStatus(ctx, store.SetCloudflareConnectionStatusParams{
 				Status: string(apitypes.CloudflareInvalid), StatusReason: reason, ID: cc.row.ID,
 			}); err != nil {
@@ -200,12 +201,17 @@ func (c *Core) failed(ctx context.Context, cc *cfConn, attempts int64, err error
 			}
 			cc.row.Status = string(apitypes.CloudflareInvalid)
 			c.log.Warn("Cloudflare refused a connection's token", "connection", cc.row.Name)
-			c.connectionFailed(ctx, cloudflareAlertKey(cc.row.ID), "cloudflare:"+cc.row.Name, "Cloudflare connection "+cc.row.Name+" is failing",
-				reason+". Its tunnels and records wait until then.", "dock cloudflare set "+cc.row.Name+" --token-stdin")
+			c.cloudflareFailed(ctx, cc.row, reason+". Its tunnels and records wait until then.", set)
 			return cfOutcome{status: "pending", reason: "waiting for a working token for Cloudflare connection " + cc.row.Name, attempts: attempts}, nil
 		}
-		reason := fmt.Sprintf("Cloudflare refused (%s); the token of connection %s needs %s, then retry", e.Message, cc.row.Name, perm)
-		c.connectionFailed(ctx, cloudflareAlertKey(cc.row.ID), "cloudflare:"+cc.row.Name, "Cloudflare connection "+cc.row.Name+" is failing", reason+".", "dock cloudflare retry")
+		// An org's admins can't retry everything, as operators do; a
+		// refresh retries their connection's failed domains.
+		retry := "dock cloudflare retry"
+		if cc.row.OrgID != nil {
+			retry = "dock cloudflare refresh " + cc.row.Name
+		}
+		reason := fmt.Sprintf("Cloudflare refused (%s); the token of connection %s needs %s, then `%s`", e.Message, cc.row.Name, perm, retry)
+		c.cloudflareFailed(ctx, cc.row, reason+".", retry)
 		return cfOutcome{status: "error", reason: reason}, nil
 	}
 	return cfOutcome{status: "error", reason: e.Error()}, nil
@@ -488,7 +494,9 @@ func (c *Core) SetServerTunnel(ctx context.Context, a Actor, name string, req ap
 // so a domain from conn's zones can go through it: the one it has, the
 // one the server runs already (adopted), or a new one (created in the
 // background). The tunnel and the zone must be in one Cloudflare
-// account: a CNAME can't point at another account's tunnel.
+// account: a CNAME can't point at another account's tunnel. Tunnels are
+// the platform's, so for a zone of an org's own connection a new one is
+// made with a platform connection in the same account.
 func (c *Core) serverTunnelFor(ctx context.Context, a Actor, srv store.Server, conn store.CloudflareConnection) error {
 	t, err := c.store.GetCloudflareTunnelByServer(ctx, &srv.ID)
 	switch {
@@ -507,11 +515,32 @@ func (c *Core) serverTunnelFor(ctx context.Context, a Actor, srv store.Server, c
 	case !store.IsNotFound(err):
 		return err
 	}
+	if conn.OrgID != nil {
+		if conn, err = c.platformConnectionIn(ctx, srv, conn.AccountID, conn.AccountName); err != nil {
+			return err
+		}
+	}
 	ing := c.ingressOf(srv)
 	if ing.tunnel != "" {
 		return c.adoptTunnel(ctx, a, srv, ing, conn)
 	}
 	return c.createTunnel(ctx, a, srv, conn)
+}
+
+// platformConnectionIn is a working platform connection in Cloudflare
+// account accountID, to make srv's tunnel with for a domain in an org's
+// own zone there.
+func (c *Core) platformConnectionIn(ctx context.Context, srv store.Server, accountID, accountName string) (store.CloudflareConnection, error) {
+	rows, err := c.store.ListCloudflareConnectionsOf(ctx, 0)
+	if err != nil {
+		return store.CloudflareConnection{}, err
+	}
+	for _, r := range rows {
+		if r.AccountID == accountID && r.Status == string(apitypes.CloudflareOK) {
+			return r, nil
+		}
+	}
+	return store.CloudflareConnection{}, invalid("server %s has no Cloudflare tunnel, and the platform has no connection in account %s to make one with; a domain can only go through a tunnel in its zone's account. Ask the platform's operator, or use a zone the platform shares", srv.Name, accountName)
 }
 
 // createTunnel has Dock create a tunnel for a server that can take one, in
