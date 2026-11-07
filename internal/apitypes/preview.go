@@ -16,11 +16,14 @@ type PreviewSettings struct {
 	MaxPreviews int    `json:"max_previews" doc:"Most open previews at once; a pull request beyond it gets no preview until one closes"`
 	// CopyVariables are the base's variables whose literal values
 	// previews copy; no other literal value is ever copied.
-	CopyVariables []string   `json:"copy_variables" doc:"Base variables whose literal values previews copy, as web.KEY or shared.KEY; no other literal value is copied"`
-	AllowForks    bool       `json:"allow_forks" doc:"Also preview pull requests from forks (off by default)"`
-	UpdatedBy     string     `json:"updated_by,omitempty"`
-	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
-	Previews      []Preview  `json:"previews" doc:"Open previews, newest first"`
+	CopyVariables []string `json:"copy_variables" doc:"Base variables whose literal values previews copy, as web.KEY or shared.KEY; no other literal value is copied"`
+	AllowForks    bool     `json:"allow_forks" doc:"Also preview pull requests from forks (off by default)"`
+	// SeedFromSnapshot are the base's services whose volumes a new
+	// preview fills from their latest snapshot.
+	SeedFromSnapshot []string   `json:"seed_from_snapshot" doc:"Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty"`
+	UpdatedBy        string     `json:"updated_by,omitempty"`
+	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
+	Previews         []Preview  `json:"previews" doc:"Open previews, newest first"`
 }
 
 // SetPreviewsRequest turns previews on, or changes their settings.
@@ -29,6 +32,8 @@ type SetPreviewsRequest struct {
 	MaxPreviews   int      `json:"max_previews,omitempty" minimum:"0" maximum:"20" doc:"Most open previews at once (default 3)"`
 	CopyVariables []string `json:"copy_variables,omitempty" maxItems:"100" doc:"Base variables whose literal values previews copy, as web.KEY or shared.KEY"`
 	AllowForks    bool     `json:"allow_forks,omitempty" doc:"Also preview pull requests from forks"`
+	// SeedFromSnapshot names base services seeded in each new preview.
+	SeedFromSnapshot []string `json:"seed_from_snapshot,omitempty" maxItems:"20" doc:"Base services whose volumes a new preview fills from their latest snapshot, e.g. db"`
 }
 
 // PreviewStatus sums up a preview's services.

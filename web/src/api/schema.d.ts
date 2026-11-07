@@ -6981,6 +6981,8 @@ export interface components {
             max_previews: number;
             /** @description Open previews, newest first */
             previews: components["schemas"]["Preview"][] | null;
+            /** @description Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty */
+            seed_from_snapshot: string[] | null;
             /** Format: date-time */
             updated_at?: string;
             updated_by?: string;
@@ -7921,6 +7923,8 @@ export interface components {
              * @description Most open previews at once (default 3)
              */
             max_previews?: number;
+            /** @description Base services whose volumes a new preview fills from their latest snapshot, e.g. db */
+            seed_from_snapshot?: string[] | null;
         };
         SetRegistryCredentialRequest: {
             password: string;

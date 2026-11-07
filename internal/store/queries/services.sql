@@ -57,6 +57,10 @@ UPDATE volumes SET pending = 0 WHERE id = +?;
 -- Only for discarding staged (never created) volumes.
 DELETE FROM volumes WHERE id = +? AND pending = 1;
 
+-- name: DeleteRemovedVolume :exec
+-- A volume whose Docker volume was removed with its archived preview.
+DELETE FROM volumes WHERE id = +?;
+
 -- name: ListVariables :many
 -- All variables of an environment: shared ones (service_id NULL) and every
 -- service's own, live and staged.

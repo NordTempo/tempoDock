@@ -252,7 +252,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		reg:        o.Registry,
 		stats:      newStatsState(),
 		alerts:     newAlertEngine(),
-		logDrains:  newDrainManager(),
+		logDrains:  newDrainManager(o.Config.Network.AllowPrivate),
 		retention:  newRetention(),
 		log:        o.Logger,
 		bus:        newBus(),

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -204,13 +205,15 @@ func (c *Core) releaseLogSource(rel store.Release, project, env, service, server
 	return src, nil
 }
 
-func newDrainManager() *drainManager {
+// newDrainManager starts the drains' state; allow is the private CIDRs
+// apps may reach, which drains may then reach too (egressGuard.allow).
+func newDrainManager(allow []netip.Prefix) *drainManager {
 	m := &drainManager{
 		envs: map[int64]*drainEnv{}, byID: map[int64]*drain{},
 		follows: map[string]*follower{}, perServer: map[int64]int{}, last: map[string]time.Time{},
 		restart: map[string]drainRestart{},
 	}
-	m.guard.what, m.guard.private = "logs", true
+	m.guard.what, m.guard.private, m.guard.allow = "logs", true, allow
 	m.client = newDrainClient(&m.guard)
 	return m
 }

@@ -158,9 +158,11 @@ func TestSnapshotPausesTheServiceForTheCopy(t *testing.T) {
 		!slices.Contains(spec.Mounts, node.Mount{Volume: h.c.snapshotVolume(), Path: snapshotsPath}):
 		t.Errorf("mounts = %+v", spec.Mounts)
 	}
-	if evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "snapshot.created"}); err != nil || len(evs) != 1 {
-		t.Error("not audited")
-	}
+	// The snapshot reads as ready just before its audit event is written.
+	eventually(t, "the snapshot.created audit event", func() bool {
+		evs, err := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "snapshot.created"})
+		return err == nil && len(evs) == 1
+	})
 
 	// Read scope lists, but doesn't take one.
 	reader := h.token(testSystem, apitypes.CreateTokenRequest{Name: "r", Scope: apitypes.ScopeRead})

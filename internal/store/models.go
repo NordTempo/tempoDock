@@ -570,6 +570,7 @@ type PreviewSetting struct {
 	AllowForks        bool
 	UpdatedBy         string
 	UpdatedAt         time.Time
+	SeedFromSnapshot  string
 }
 
 type Project struct {

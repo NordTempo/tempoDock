@@ -181,6 +181,16 @@ func (q *Queries) CreateVolume(ctx context.Context, arg CreateVolumeParams) (Vol
 	return i, err
 }
 
+const deleteRemovedVolume = `-- name: DeleteRemovedVolume :exec
+DELETE FROM volumes WHERE id = +?
+`
+
+// A volume whose Docker volume was removed with its archived preview.
+func (q *Queries) DeleteRemovedVolume(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteRemovedVolume, id)
+	return err
+}
+
 const deleteVariable = `-- name: DeleteVariable :exec
 DELETE FROM variables WHERE id = +?
 `

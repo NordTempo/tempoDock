@@ -74,7 +74,7 @@ func (c *Core) GetPreviews(ctx context.Context, a Actor, project string) (apityp
 // previewSettings is the answer of GetPreviews: a fixed number of
 // queries whatever the number of previews.
 func (c *Core) previewSettings(ctx context.Context, a Actor, p store.Project) (apitypes.PreviewSettings, error) {
-	out := apitypes.PreviewSettings{MaxPreviews: defaultMaxPreviews, CopyVariables: []string{}, Previews: []apitypes.Preview{}}
+	out := apitypes.PreviewSettings{MaxPreviews: defaultMaxPreviews, CopyVariables: []string{}, SeedFromSnapshot: []string{}, Previews: []apitypes.Preview{}}
 	set, err := c.store.GetPreviewSettings(ctx, p.ID)
 	switch {
 	case err == nil:
@@ -85,6 +85,7 @@ func (c *Core) previewSettings(ctx context.Context, a Actor, p store.Project) (a
 		t := set.UpdatedAt
 		out.Enabled, out.Base, out.MaxPreviews, out.AllowForks = true, base.Name, int(set.MaxPreviews), set.AllowForks
 		out.CopyVariables, out.UpdatedBy, out.UpdatedAt = copyList(set.CopyVariables), set.UpdatedBy, &t
+		out.SeedFromSnapshot = copyList(set.SeedFromSnapshot)
 	case !store.IsNotFound(err):
 		return out, err
 	}
@@ -145,6 +146,10 @@ func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req api
 	} else if !store.IsNotFound(err) {
 		return apitypes.PreviewSettings{}, err
 	}
+	seedList, seeds, err := c.previewSeeds(ctx, es, req.SeedFromSnapshot)
+	if err != nil {
+		return apitypes.PreviewSettings{}, err
+	}
 	list, _ := json.Marshal(vars)
 	c.previews.mu.Lock()
 	defer c.previews.mu.Unlock()
@@ -155,7 +160,7 @@ func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req api
 	}
 	if err := c.store.UpsertPreviewSettings(ctx, store.UpsertPreviewSettingsParams{
 		ProjectID: p.ID, BaseEnvironmentID: es.env.ID, MaxPreviews: int64(max), CopyVariables: string(list),
-		AllowForks: req.AllowForks, UpdatedBy: a.Name, UpdatedAt: now(),
+		AllowForks: req.AllowForks, SeedFromSnapshot: seedList, UpdatedBy: a.Name, UpdatedAt: now(),
 	}); err != nil {
 		return apitypes.PreviewSettings{}, err
 	}
@@ -169,6 +174,9 @@ func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req api
 	}
 	if req.AllowForks {
 		summary += "; forks too"
+	}
+	if len(seeds) > 0 {
+		summary += "; seeded from snapshots: " + strings.Join(seeds, ", ")
 	}
 	c.audit(ctx, a, action, &p, &es.env, es.String(), summary)
 	return c.previewSettings(ctx, a, p)
@@ -650,7 +658,8 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 		return "", err
 	}
 	allowed := copyList(set.CopyVariables)
-	rules := cloneRules{literal: func(v apitypes.VariableRef) bool { return slices.Contains(allowed, v.String()) }, orgRefsLiteral: true}
+	seeded := seedLiterals(svcs, set)
+	rules := cloneRules{literal: func(v apitypes.VariableRef) bool { return slices.Contains(allowed, v.String()) || seeded(v) }, orgRefsLiteral: true}
 	clone := apitypes.CloneResult{Services: []string{}, Generated: []apitypes.VariableRef{}, Skipped: []apitypes.VariableRef{}, CopiedAcrossKinds: []apitypes.VariableRef{}}
 	var dst envScope
 	var pv store.Preview
@@ -725,6 +734,7 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 			promoted = append(promoted, s.Name)
 		}
 	}
+	promoted = c.seedPreview(a, base, dst, pv.ID, set, svcs, promoted)
 	if len(promoted) > 0 {
 		if _, err := c.promote(ctx, a, base, dst, promoted, true); err != nil {
 			c.setPreviewEvent(pv.ID, "the base's images weren't deployed: "+errorLine(err))
@@ -974,8 +984,10 @@ func (c *Core) archivePreview(ctx context.Context, es envScope, pv store.Preview
 
 // removePreviewVolumes removes an archived preview's volumes in the
 // background, once stopped is done (its containers are gone): a preview's
-// data is thrown away with it, unlike any other volume (ADR 0056). A
-// server that can't be reached keeps them; they are logged.
+// data is thrown away with it, unlike any other volume (ADR 0056). Each
+// volume's row goes once its Docker volume is gone; a row left (a
+// restart cut the removal short, the server couldn't be reached, the
+// removal failed) is tried again at the next start (resumePreviews).
 func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []store.Volume, stopped *sync.WaitGroup) {
 	if len(vols) == 0 {
 		return
@@ -995,11 +1007,17 @@ func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []
 				ss = svcScope{es, store.Service{ID: v.ServiceID}}
 			}
 			if rt == nil {
-				c.log.Warn("a closed preview's volume stays: its server is offline", "volume", v.DockerName, "server", es.env.ServerID)
+				c.log.Warn("a closed preview's volume stays until the next start: its server is offline", "volume", v.DockerName, "server", es.env.ServerID)
 				continue
 			}
 			if err := rt.RemoveVolume(c.ctx, v.DockerName, c.labels(ss, 0)); err != nil && !errors.Is(err, node.ErrNotFound) {
-				c.log.Warn("remove a closed preview's volume", "volume", v.DockerName, "err", err)
+				if c.ctx.Err() == nil {
+					c.log.Warn("remove a closed preview's volume; the next start tries again", "volume", v.DockerName, "err", err)
+				}
+				continue
+			}
+			if err := c.store.DeleteRemovedVolume(c.ctx, v.ID); err != nil && c.ctx.Err() == nil {
+				c.log.Error("forget a closed preview's removed volume", "volume", v.DockerName, "err", err)
 			}
 		}
 	}()
@@ -1025,8 +1043,30 @@ func (c *Core) previewReleaseDone(ss svcScope) {
 	c.refreshPreview(pv.ID)
 }
 
-// resumePreviews archives closed previews left unarchived by a restart.
+// resumePreviews finishes what a restart cut short: archived previews'
+// volumes that weren't removed yet are removed (their containers went in
+// recovery), and closed previews left unarchived are archived.
 func (c *Core) resumePreviews(ctx context.Context) error {
+	// Listed before the archives below start removing their own.
+	kept, err := c.store.ListArchivedPreviewVolumes(ctx)
+	if err != nil {
+		return err
+	}
+	byEnv := map[int64][]store.Volume{}
+	for _, r := range kept {
+		byEnv[r.EnvironmentID] = append(byEnv[r.EnvironmentID], r.Volume)
+	}
+	for id, vols := range byEnv {
+		e, err := c.store.GetEnvironment(ctx, id)
+		if err != nil {
+			return err
+		}
+		p, err := c.store.GetProject(ctx, e.ProjectID)
+		if err != nil {
+			return err
+		}
+		c.removePreviewVolumes(envScope{p, e}, nil, vols, &sync.WaitGroup{})
+	}
 	left, err := c.store.ListClosedPreviewsLeft(ctx)
 	if err != nil {
 		return err

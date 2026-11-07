@@ -4,11 +4,12 @@
 SELECT * FROM preview_settings WHERE project_id = +?;
 
 -- name: UpsertPreviewSettings :exec
-INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET
     base_environment_id = excluded.base_environment_id, max_previews = excluded.max_previews,
     copy_variables = excluded.copy_variables, allow_forks = excluded.allow_forks,
+    seed_from_snapshot = excluded.seed_from_snapshot,
     updated_by = excluded.updated_by, updated_at = excluded.updated_at;
 
 -- name: DeletePreviewSettings :execrows
@@ -135,3 +136,24 @@ UPDATE environments SET archived_at = ?, name = ? WHERE id = +? AND archived_at 
 -- The pull request behind each of a project's preview environments, open
 -- or closed, for annotating environments.
 SELECT environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?;
+
+-- name: ListArchivedPreviewVolumes :many
+-- The volumes archived previews still have: their removal was cut short
+-- by a restart, or their server couldn't be reached. Each row goes once
+-- its Docker volume is gone (DeleteRemovedVolume), so this is empty in
+-- the steady state. Read once at start: it scans volumes (one row per
+-- volume), like ListClosedPreviewsLeft scans previews.
+SELECT sqlc.embed(volumes), services.environment_id FROM previews
+JOIN environments ON environments.id = previews.environment_id
+JOIN services ON services.environment_id = environments.id
+JOIN volumes ON volumes.service_id = services.id
+WHERE environments.archived_at IS NOT NULL;
+
+-- name: GetLatestReadySnapshot :one
+-- A service's newest ready snapshot on a server, which a new preview's
+-- seeded service is filled from. Seeks volume_snapshots_service backwards
+-- (+server_id keeps the planner off the server's index, which holds every
+-- service's snapshots).
+SELECT * FROM volume_snapshots
+WHERE service_id = +? AND +server_id = ? AND status = 'ready'
+ORDER BY id DESC LIMIT 1;

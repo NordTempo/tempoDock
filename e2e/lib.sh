@@ -4,6 +4,12 @@
 
 : "${DOCK_URL:?set DOCK_URL, e.g. http://192.168.10.50:7070}"
 : "${DOCK_TOKEN:?set DOCK_TOKEN to an admin API token}"
+# Scenarios create and archive projects: never against production by
+# accident. The CLI below always runs with DOCK_URL, so no context applies.
+case "$DOCK_URL" in
+*100.95.4.67*)
+	[[ ${E2E_ALLOW_PROD:-} == 1 ]] || { echo "refusing to run e2e against production ($DOCK_URL); set E2E_ALLOW_PROD=1 if you mean it" >&2; exit 1; } ;;
+esac
 API="${DOCK_URL%/}/api/v1"
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_NAME="${DOCK_ENV:-production}"
@@ -89,8 +95,26 @@ set_vars() {
 
 apply_changes() { api POST "/projects/$1/environments/$ENV_NAME/changes/apply" '{}'; }
 
-# http_get HOST PATH prints the body via the proxy on port 80.
-http_get() { curl -sS --max-time 10 "http://$1$2"; }
+# http_get HOST PATH prints the body via the proxy on port 80. With
+# E2E_PROXY=ADDR:PORT the request goes there whatever HOST resolves to
+# (servers without DNS, like e2e/vm's).
+http_get() { curl -sS --max-time 10 ${E2E_PROXY:+--connect-to "$1:80:$E2E_PROXY"} "http://$1$2"; }
+
+# use_proxy_of PROJECT points E2E_PROXY at port 80 of the server running
+# PROJECT's environment, from E2E_SERVER_IPS ("name=ip name=ip", written
+# by e2e/vm/up.sh). Without E2E_SERVER_IPS it changes nothing.
+use_proxy_of() {
+	[[ -n ${E2E_SERVER_IPS:-} ]] || return 0
+	local srv kv
+	srv=$(api GET "/projects/$1/environments" | jq -r --arg e "$ENV_NAME" '.[] | select(.name == $e) | .server')
+	for kv in $E2E_SERVER_IPS; do
+		[[ ${kv%%=*} == "$srv" ]] && E2E_PROXY=${kv#*=}:80
+	done
+	return 0
+}
+
+# http_code HOST PATH prints only the status code (000 when unreachable).
+http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 ${E2E_PROXY:+--connect-to "$1:80:$E2E_PROXY"} "http://$1$2"; }
 
 # wait_http HOST PATH WANT [TIMEOUT_S]: until the body contains WANT.
 wait_http() {
@@ -100,4 +124,52 @@ wait_http() {
 		sleep 1
 	done
 	return 1
+}
+
+# dk runs the dock CLI against DOCK_URL with DOCK_TOKEN (or TOKEN_OVERRIDE),
+# never a context from the user's config.
+dk() { DOCK_TOKEN="${TOKEN_OVERRIDE:-$DOCK_TOKEN}" "${DOCK_BIN:-$E2E_DIR/../bin/dock}" "$@"; }
+
+# check DESC CMD...: pass when CMD succeeds, fail otherwise.
+check() {
+	local d=$1
+	shift
+	if "$@" >/dev/null; then pass "$d"; else fail "$d"; fi
+}
+
+# wait_for TIMEOUT_S CMD...: until CMD succeeds.
+wait_for() {
+	local t=$1
+	shift
+	for ((i = 0; i < t; i++)); do
+		"$@" && return 0
+		sleep 1
+	done
+	return 1
+}
+
+# body_has HOST PATH WANT: the body via the proxy contains WANT.
+body_has() { http_get "$1" "$2" 2>/dev/null | grep -q -- "$3"; }
+
+# code_is HOST PATH CODE: the status code via the proxy is CODE.
+code_is() { [[ $(http_code "$1" "$2") == "$3" ]]; }
+
+# ui_login signs in as E2E_ADMIN_EMAIL with E2E_ADMIN_PASSWORD into a
+# cookie jar, for what only a UI session may do (approving access requests).
+ui_login() {
+	UI_JAR=${UI_JAR:-$(mktemp)}
+	curl -sS -o /dev/null -c "$UI_JAR" -H 'Content-Type: application/json' -H "Origin: ${DOCK_URL%/}" \
+		--data "$(jq -nc --arg e "${E2E_ADMIN_EMAIL:?}" --arg p "${E2E_ADMIN_PASSWORD:?}" '{email: $e, password: $p}')" \
+		"$API/auth/login"
+}
+
+# ui_api METHOD PATH [JSON] is api with the UI session instead of a token.
+ui_api() {
+	local method=$1 path=$2 body=${3:-} out code
+	out=$(mktemp)
+	code=$(curl -sS -o "$out" -w '%{http_code}' -X "$method" -b "$UI_JAR" -H "Origin: ${DOCK_URL%/}" \
+		${body:+-H 'Content-Type: application/json' --data "$body"} "$API$path")
+	cat "$out"
+	rm -f "$out"
+	[[ $code -lt 400 ]]
 }

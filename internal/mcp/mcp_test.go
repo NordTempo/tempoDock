@@ -712,7 +712,11 @@ func TestSnapshotTools(t *testing.T) {
 		t.Errorf("list_snapshots = %q", c.summary)
 	}
 	var res apitypes.SnapshotRestoreResult
-	c = call(t, s, "restore_snapshot", map[string]any{"service": "pg", "snapshot": snap.ID, "as": "pg-old"})
+	// The backup scheduler's first backup of pg may hold it for a moment.
+	waitFor(t, func() bool {
+		c = call(t, s, "restore_snapshot", map[string]any{"service": "pg", "snapshot": snap.ID, "as": "pg-old"})
+		return !strings.Contains(c.summary, "is running; wait for it to finish")
+	})
 	c.decode(t, &res)
 	if c.isError || res.Restore.InPlace || res.Restore.To != "pg-old" || res.Restore.Status != apitypes.BackupSucceeded {
 		t.Fatalf("restore_snapshot = %q %+v", c.summary, res.Restore)

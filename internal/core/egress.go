@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -25,6 +26,10 @@ type egressGuard struct {
 	// for log drains, which any environment admin adds. Alert channels,
 	// which only operators configure, may reach a homelab's LAN (ADR 0020).
 	private bool
+	// allow are the private CIDRs the operator lets apps reach
+	// (`[network] allow_private`); private doesn't refuse them, as the
+	// firewall doesn't: any deployer reaches them with an app already.
+	allow []netip.Prefix
 	// loopback lets connections reach this server, for tests only.
 	loopback atomic.Bool
 }
@@ -34,7 +39,8 @@ type egressGuard struct {
 // the registry) past the app firewall; link-local holds cloud metadata
 // (169.254.169.254). Private, CGNAT and tailnet addresses are fine for
 // alerts, where a homelab's ntfy or chat bridge lives (ADR 0020), and
-// refused for log drains (g.private, ADR 0046). Uptime probes refuse the
+// refused for log drains (g.private, ADR 0046) unless the operator allows
+// them for apps (g.allow). Uptime probes refuse the
 // same addresses (httpkit.IsSelfAddr, IsInternalAddr).
 func (g *egressGuard) addrErr(ip netip.Addr) error {
 	ip = ip.Unmap()
@@ -46,7 +52,7 @@ func (g *egressGuard) addrErr(ip netip.Addr) error {
 		return fmt.Errorf("%s is this server itself; %s go to other hosts (use the receiver's LAN, tailnet or public address)", ip, g.what)
 	case httpkit.IsInternalAddr(ip):
 		return fmt.Errorf("%s is a link-local, multicast or cloud metadata address; %s can't go there", ip, g.what)
-	case g.private && firewall.Blocked(ip):
+	case g.private && firewall.Blocked(ip) && !slices.ContainsFunc(g.allow, func(p netip.Prefix) bool { return p.Contains(ip) }):
 		return fmt.Errorf("%s is a private address (LAN, tailnet or container network); %s go only to public addresses, so use the receiver's public address", ip, g.what)
 	}
 	return nil

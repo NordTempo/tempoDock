@@ -49,6 +49,7 @@ export default function PreviewsForm({
     String(settings.enabled ? settings.max_previews : PREVIEW_DEFAULT_MAX),
   );
   const [copy, setCopy] = useState(settings.copy_variables.join("\n"));
+  const [seed, setSeed] = useState(settings.seed_from_snapshot.join("\n"));
   const [forks, setForks] = useState(settings.allow_forks);
 
   const maxN = Number(max);
@@ -71,6 +72,7 @@ export default function PreviewsForm({
           base,
           max_previews: maxN,
           copy_variables: list,
+          seed_from_snapshot: entries(seed),
           allow_forks: forks,
         },
       },
@@ -148,6 +150,24 @@ export default function PreviewsForm({
           <span className="text-xs text-mut">
             One per line, as service.KEY or shared.KEY. References and database
             credentials are always set; other values only when listed here.
+          </span>
+        </dd>
+        <dt>
+          <label htmlFor="preview-seed">Seeded services</label>
+        </dt>
+        <dd className="flex flex-col gap-1">
+          <textarea
+            id="preview-seed"
+            rows={2}
+            value={seed}
+            placeholder="db"
+            onChange={(e) => setSeed(e.target.value)}
+            spellCheck={false}
+            className="field max-w-[420px] py-1 font-mono text-xs"
+          />
+          <span className="text-xs text-mut">
+            One service per line. Each new preview fills its copy from the
+            service's latest snapshot; other volumes start empty.
           </span>
         </dd>
         <dt>Forks</dt>

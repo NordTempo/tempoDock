@@ -232,9 +232,14 @@ func TestMoveEnvironmentRollsBack(t *testing.T) {
 	}
 	p.rt.FailHealthCheck(nil)
 	assertStayed(t, p, lab, db, data)
-	if evs, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "environment.move_failed"}); err != nil || len(evs) != 1 {
-		t.Errorf("audit = %+v, %v", evs, err)
-	}
+	// The move reads as failed just before its audit event is written.
+	eventually(t, "the move_failed audit event", func() bool {
+		evs, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Action: "environment.move_failed"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(evs) == 1
+	})
 }
 
 // A daemon that dies at any step of a move finishes it on start: before
