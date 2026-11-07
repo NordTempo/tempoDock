@@ -323,6 +323,11 @@ func (c *Core) startInterrupted(ctx context.Context, serverID int64, rt node.Run
 		if err != nil {
 			return err
 		}
+		if c.restoreWriting(ss, "start it") != nil {
+			// A restore writes its volumes and starts it again itself
+			// once done; the row stays for the next pass.
+			continue
+		}
 		active, err := c.store.GetActiveRelease(ctx, id)
 		switch {
 		case err == nil:

@@ -12,7 +12,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -100,34 +99,6 @@ echo "dock-snapshot: restored"
 const snapshotDeleteScript = `set -eu
 for s in $SNAPSHOTS; do rm -rf "` + snapshotsPath + `/$s" "` + snapshotsPath + `/$s.part"; done
 `
-
-// snapshotState is the in-memory side of snapshots.
-type snapshotState struct {
-	mu sync.Mutex
-	// inPlace holds the services an in-place restore is replacing the
-	// data of: deploys to them are refused until it ends.
-	inPlace map[int64]bool
-}
-
-func newSnapshotState() snapshotState { return snapshotState{inPlace: map[int64]bool{}} }
-
-// restoringInPlace reports whether an in-place restore runs for a
-// service.
-func (c *Core) restoringInPlace(serviceID int64) bool {
-	c.snapshots.mu.Lock()
-	defer c.snapshots.mu.Unlock()
-	return c.snapshots.inPlace[serviceID]
-}
-
-func (c *Core) setRestoringInPlace(serviceID int64, on bool) {
-	c.snapshots.mu.Lock()
-	defer c.snapshots.mu.Unlock()
-	if on {
-		c.snapshots.inPlace[serviceID] = true
-	} else {
-		delete(c.snapshots.inPlace, serviceID)
-	}
-}
 
 // snapshotVolume is the volume holding a server's snapshots, named after
 // the install so control planes sharing a Docker host keep their own.
@@ -551,6 +522,11 @@ func snapshotMounts(snap store.VolumeSnapshot, vols []store.Volume, target strin
 	return mounts, nil
 }
 
+// snapshotRestore names a restore of snapshot id for lockForRestore.
+func snapshotRestore(id int64) volumeRestore {
+	return volumeRestore{what: fmt.Sprintf("the restore of snapshot %d", id), watch: "`dock volume snapshot list`"}
+}
+
 // restoreInPlace starts an in-place restore.
 func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap store.VolumeSnapshot) (apitypes.SnapshotRestoreResult, error) {
 	vols, err := c.appliedVolumes(ctx, ss)
@@ -566,22 +542,18 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 	if err != nil {
 		return apitypes.SnapshotRestoreResult{}, err
 	}
-	// Marked before the deploy check, which startRelease makes in its
-	// transaction too: a deploy and an in-place restore never both go
-	// ahead on one volume.
-	c.setRestoringInPlace(ss.svc.ID, true)
-	if r, err := c.store.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
-		c.setRestoringInPlace(ss.svc.ID, false)
-		c.failSafety(ctx, safety, "a deploy started first, so nothing was restored")
+	// No deploy, stop or writing run goes ahead on the volumes from here.
+	if err := c.lockForRestore(ctx, ss, snapshotRestore(snap.ID)); err != nil {
+		c.failSafety(ctx, safety, "something else writes the volumes, so nothing was restored")
 		c.releaseService(ss.svc.ID)
-		return apitypes.SnapshotRestoreResult{}, deployInProgress(ss, r)
+		return apitypes.SnapshotRestoreResult{}, err
 	}
 	// Read the service again now that StopService refuses to run: a stop
 	// that went ahead after ss was loaded is seen here, so the restore
 	// leaves the service stopped instead of starting it again.
 	svc, err := c.store.GetService(ctx, ss.svc.ID)
 	if err != nil {
-		c.setRestoringInPlace(ss.svc.ID, false)
+		c.unlockVolumes(ss.svc.ID)
 		c.failSafety(ctx, safety, "the service couldn't be read")
 		c.releaseService(ss.svc.ID)
 		return apitypes.SnapshotRestoreResult{}, err
@@ -592,7 +564,7 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 		CreatedBy: a.Name, StartedAt: now(),
 	})
 	if err != nil {
-		c.setRestoringInPlace(ss.svc.ID, false)
+		c.unlockVolumes(ss.svc.ID)
 		c.releaseService(ss.svc.ID)
 		return apitypes.SnapshotRestoreResult{}, err
 	}
@@ -602,7 +574,7 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 		defer c.releaseService(ss.svc.ID)
 		err := c.runRestoreInPlace(c.ctx, ss, snap, safety, safetyVols, mounts)
 		// Deploys and stops may go ahead once the restore reads as done.
-		c.setRestoringInPlace(ss.svc.ID, false)
+		c.unlockVolumes(ss.svc.ID)
 		c.finishSnapshotRestore(c.ctx, ss, row, ss.svc.Name, err)
 		if c.ctx.Err() == nil {
 			c.pruneSnapshots(c.ctx, ss)
@@ -707,17 +679,25 @@ func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTem
 		c.releaseService(ss.svc.ID)
 		return apitypes.SnapshotRestoreResult{}, err
 	}
+	// The new service isn't deployed until its volume is filled.
+	if err := c.lockForRestore(ctx, to, snapshotRestore(snap.ID)); err != nil {
+		c.releaseService(ss.svc.ID)
+		return apitypes.SnapshotRestoreResult{}, err
+	}
 	row, err := c.store.CreateSnapshotRestore(ctx, store.CreateSnapshotRestoreParams{
 		SnapshotID: &snap.ID, ServiceID: ss.svc.ID, ToServiceID: to.svc.ID, CreatedBy: a.Name, StartedAt: now(),
 	})
 	if err != nil {
+		c.unlockVolumes(to.svc.ID)
 		c.releaseService(ss.svc.ID)
 		return apitypes.SnapshotRestoreResult{}, err
 	}
 	c.audit(ctx, a, "snapshot.restore", &ss.project, &ss.env, ss.String(), fmt.Sprintf("restoring snapshot %d into new service %s", snap.ID, name))
 	c.wg.Go(func() {
 		err := c.fillFromSnapshot(c.ctx, to, snap)
-		c.releaseService(ss.svc.ID) // the copy is done; the deploy is the new service's
+		// The copy is done; the deploy is the new service's.
+		c.unlockVolumes(to.svc.ID)
+		c.releaseService(ss.svc.ID)
 		if err != nil {
 			c.finishSnapshotRestore(c.ctx, ss, row, name, err)
 			return

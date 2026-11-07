@@ -179,8 +179,9 @@ type Core struct {
 	// backups is the backup scheduler's kick and the runs in flight
 	// (backups.go).
 	backups backupState
-	// snapshots holds the in-place snapshot restores in flight (ADR 0047).
-	snapshots snapshotState
+	// volumes keeps restores apart from the other writers of a service's
+	// volumes (volume_writers.go).
+	volumes volumeWriters
 	// runs counts one-off commands in flight (runs.go).
 	runs runState
 	// uptime is the uptime checks' scheduler kick and state (uptime.go).
@@ -256,9 +257,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		ceremonies: newCeremonies(),
 		sso:        newSSOState(),
 		backups:    newBackupState(),
-		snapshots:  newSnapshotState(),
+		volumes:    newVolumeWriters(),
 		uptime:     newUptimeState(),
-		runs:       runState{running: map[int64]int{}, writing: map[int64]bool{}, ended: map[int64]chan struct{}{}},
+		runs:       runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
 		jobs:       newJobState(),
 		moves:      newMoveState(),
 		drain:      DefaultCutoverDrain,
