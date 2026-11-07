@@ -20,7 +20,7 @@ func newServerCmd(g *globals) *cobra.Command {
 		Short: "Servers environments run on, and what may be placed on them",
 	})
 	cmd.AddCommand(newServerListCmd(g), newServerShowCmd(g), newServerDiskCmd(g), newServerPruneCmd(g), newServerAddCmd(g),
-		newServerUpdateCmd(g), newServerRenameCmd(g), newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g), newServerTunnelCmd(g))
+		newServerUpdateCmd(g), newServerRenameCmd(g), newServerRevokeCmd(g), newServerRotateKeyCmd(g), newServerRemoveCmd(g), newServerTunnelCmd(g), newServerDrainCmd(g))
 	return cmd
 }
 

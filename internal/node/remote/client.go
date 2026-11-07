@@ -237,6 +237,11 @@ func (c *Client) ReleaseContainers(ctx context.Context, want node.Labels) ([]str
 // jobProtocol is the first node protocol that serves run-job.
 const jobProtocol = 2
 
+// MoveSyncProtocol is the first protocol whose nodes mount dock-sync in
+// jobs (JobSpec.Sync), hold routes and forward connections: what a move
+// without downtime needs of both servers (ADR 0063).
+const MoveSyncProtocol = 21
+
 // SnapshotProtocol is the first protocol whose nodes pause containers
 // while a job runs (JobSpec.Pause), as snapshots need (ADR 0047).
 const SnapshotProtocol = 15
@@ -255,6 +260,11 @@ func (c *Client) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult,
 	}
 	if err := c.needProtocol(ctx, jobProtocol, "run backup jobs"); err != nil {
 		return node.JobResult{}, err
+	}
+	if spec.Sync {
+		if err := c.needProtocol(ctx, MoveSyncProtocol, "copy volumes while their service runs"); err != nil {
+			return node.JobResult{}, err
+		}
 	}
 	// An older node would ignore pause and copy volumes in use.
 	if len(spec.Pause) > 0 {

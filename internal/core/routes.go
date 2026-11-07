@@ -6,6 +6,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // applyRoutes renders the server's complete routing table from the DB and
@@ -37,6 +38,17 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	rows, err := c.store.ListRoutableDomains(ctx, serverID)
 	if err != nil {
 		return err
+	}
+	// Services that moved away are forwarded from their old port (ADR
+	// 0063), and those of a move in its hold wait for their upstream.
+	fwd, err := c.store.ListForwardedDomains(ctx, serverID)
+	if err != nil {
+		return err
+	}
+	held := c.heldServices()
+	for _, f := range fwd {
+		held[f.ServiceID] = true
+		rows = append(rows, store.ListRoutableDomainsRow(f))
 	}
 	viaTunnel, err := c.tunnelOnlyHosts(ctx, serverID)
 	if err != nil {
@@ -83,7 +95,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 				}
 				i = len(routes)
 				bySvc[key] = i
-				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly})
+				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID]})
 				if stopped {
 					routes[i].Stopped = d.ServiceName
 				}

@@ -72,8 +72,11 @@ const (
 	// (`dock run`, ADR 0048); 17 adds the routes' stopped service,
 	// answered with a 503 page (ADR 0050); 18 adds the pull's registry
 	// username and password (ADR 0051); 19 added probe (ADR 0055); 20
-	// adds remove-volume, for a closed preview's volumes (ADR 0056).
-	Protocol = 20
+	// adds remove-volume, for a closed preview's volumes (ADR 0056); 21
+	// adds run-job's sync (dock-sync mounted in the job), the routes'
+	// hold, and forward-listen and forward-accept, connections a server
+	// forwards to the server its environment moved to (ADR 0063).
+	Protocol = 21
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -164,6 +167,10 @@ const (
 	opAckSpool        = "ack-spool"
 	opEnsureAnalytics = "ensure-analytics-store"
 	opDialAnalytics   = "dial-analytics" // raw bytes, like dial
+	// Forwarding a moved environment's connections (ADR 0063), protocol
+	// 21: see forward.go.
+	opForwardListen = "forward-listen"
+	opForwardAccept = "forward-accept" // raw bytes, like dial
 	// Protocol 11.
 	opRunAnalytics       = "run-analytics-store"
 	opPutAnalyticsBinary = "put-analytics-binary"

@@ -4,6 +4,7 @@ import { currentOrg, setOrg } from "../api/client";
 import { useLiveUpdates } from "../data/live";
 import { useLogout } from "../data/mutations";
 import { useSession } from "../data/queries";
+import { DrainStrip } from "../features/servers/DrainStrip";
 import { type SSOChoice, useStartSSO } from "../features/sso/data";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
@@ -39,6 +40,7 @@ function OrgShell() {
         Skip to content
       </a>
       {mode === "console" && <ConsoleBar />}
+      {mode === "console" && <DrainStrip />}
       <div className="flex min-h-screen flex-col lg:flex-row">
         <Sidebar mode={mode} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">

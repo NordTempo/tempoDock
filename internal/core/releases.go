@@ -570,9 +570,7 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	if err := c.restoreWriting(ss, "deploy"); err != nil {
 		return store.Release{}, err
 	}
-	if err := c.notMoving(ctx, ss.envScope, "deploy"); err != nil {
-		return store.Release{}, err
-	}
+	// A deploy during a move waits for it (deployment.waitForMove).
 	var rel store.Release
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error

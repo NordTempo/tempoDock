@@ -34,6 +34,9 @@ func (noProxy) ApplyRoutes(context.Context, []node.Route) error { return nil }
 func (noProxy) CheckDomain(context.Context, string) (node.DomainCheck, error) {
 	return node.DomainCheck{}, nil
 }
+func (noProxy) Forward(context.Context, int) (net.Listener, error) {
+	return nil, errors.New("no forwarding in this test")
+}
 func (noProxy) EnsureTunnel(context.Context, *node.TunnelSpec) error { return nil }
 
 // noStats keeps the minute statistics tick from sampling (and from calling

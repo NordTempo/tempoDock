@@ -331,6 +331,8 @@ type EnvironmentMove struct {
 	Step          string
 	DowntimeFrom  *time.Time
 	DowntimeTo    *time.Time
+	MaxHoldS      int64
+	DrainID       *int64
 	Error         string
 	Notes         string
 	CreatedBy     string
@@ -347,6 +349,8 @@ type EnvironmentMoveService struct {
 	ContainerID string
 	Status      string
 	CopiedBytes int64
+	Passes      int64
+	LastPassMs  int64
 	Error       string
 }
 
@@ -622,6 +626,36 @@ type Server struct {
 	ConnectedAt          *time.Time
 	DisconnectReason     string
 	PlainHttp            bool
+}
+
+type ServerDrain struct {
+	ID         int64
+	ServerID   int64
+	Kind       string
+	Status     string
+	MaxHoldS   int64
+	Error      string
+	CreatedBy  string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+}
+
+type ServerDrainItem struct {
+	DrainID       int64
+	EnvironmentID int64
+	ToServerID    int64
+	Position      int64
+	Status        string
+	MoveID        *int64
+	Error         string
+}
+
+type ServerForward struct {
+	ServerID  int64
+	HostPort  int64
+	ServiceID int64
+	MoveID    int64
+	CreatedAt time.Time
 }
 
 type ServerStat struct {

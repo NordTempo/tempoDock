@@ -140,7 +140,7 @@ func newPool(t *testing.T, local poolServer, remotes ...poolServer) *pool {
 		rt := fake.New()
 		rt.SetHostStats(node.HostStats{CPUs: 4, MemoryTotal: uint64(s.memGiB * gib)})
 		p.rts[srv.ID] = rt
-		p.nodes.add(srv.ID, rt, remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect}})
+		p.nodes.add(srv.ID, rt, remote.Hello{Protocol: remote.Protocol, Facts: remote.Facts{Ingress: remote.IngressDirect}})
 		p.configure(srv.ID, s)
 	}
 	h.nodes = p.nodes

@@ -13,6 +13,7 @@ import { registryKey } from "../features/registry/data";
 import { applyAccessRequestEvent } from "../features/requests/data";
 import { applyRunEvent } from "../features/runs/data";
 import { diskKey } from "../features/servers/disk";
+import { applyDrainEvent } from "../features/servers/drain";
 import { storageKey } from "../features/storage/data";
 import { applyUpdateEvent } from "../features/update/data";
 import { applyUptimeEvent } from "../features/uptime/data";
@@ -66,6 +67,7 @@ const busEvents = [
   "uptime",
   "job",
   "environment_move",
+  "server_drain",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -316,6 +318,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // A move went a step further or ended; the event has all of it.
       if (event.move) applyMoveEvent(queryClient, event.move);
       return;
+    case "server_drain":
+      // Only operators get these: a drain went an environment further.
+      if (event.drain) applyDrainEvent(queryClient, event.drain);
+      return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":
@@ -366,7 +372,10 @@ function applyServer(
   // A server added elsewhere isn't in the list yet.
   queryClient.setQueryData<Server[]>(keys.servers, (list) =>
     list?.some((s) => s.id === server.id)
-      ? list.map((s) => (s.id === server.id ? { ...s, ...server } : s))
+      ? list.map((s) =>
+          // A drain that ended is left out of the event, not null.
+          s.id === server.id ? { ...s, ...server, drain: server.drain } : s,
+        )
       : list && [...list, server],
   );
   // Connectors are read from Cloudflare for the server page only; an
@@ -379,6 +388,7 @@ function applyServer(
         server: {
           ...d.server,
           ...server,
+          drain: server.drain,
           ...(server.tunnel &&
             d.server.tunnel?.connectors && {
               tunnel: {

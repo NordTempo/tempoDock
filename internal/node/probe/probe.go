@@ -1,7 +1,9 @@
 // Package probe embeds dock-probe (cmd/dock-probe), the health probe
 // Docker runs inside app containers for their ongoing health check (ADR
-// 0043), and installs it on the server. `make build` builds the probe into
-// bin/ before building dock; a plain `go build` embeds none.
+// 0043), and dock-sync (cmd/dock-sync), which copies volumes between
+// servers inside job containers (ADR 0063), and installs them on the
+// server. `make build` builds both into bin/ before building dock; a plain
+// `go build` embeds none.
 package probe
 
 import (
@@ -18,13 +20,18 @@ import (
 	"time"
 )
 
-// bin holds bin/dock-probe for the target's GOOS/GOARCH, or only .gitkeep.
+// bin holds bin/dock-probe and bin/dock-sync for the target's
+// GOOS/GOARCH, or only .gitkeep.
 //
 //go:embed all:bin
 var bin embed.FS
 
 // ErrNotBuilt is Install's error for a dock built without the probe.
 var ErrNotBuilt = errors.New("this dock binary has no dock-probe embedded, so containers get no ongoing health checks: build it with `make build`")
+
+// ErrSyncNotBuilt is InstallSync's error for a dock built without
+// dock-sync.
+var ErrSyncNotBuilt = errors.New("this dock binary has no dock-sync embedded, so environments can't move without downtime: build it with `make build`")
 
 // Install writes the embedded probe to <dataDir>/probe/dock-probe and
 // checks that it runs on this server, returning its absolute path for
@@ -34,22 +41,34 @@ var ErrNotBuilt = errors.New("this dock binary has no dock-probe embedded, so co
 // an error, as is a binary without one (ErrNotBuilt). Callers log it and
 // run without ongoing checks; start-up never fails on it.
 func Install(dataDir string) (string, error) {
-	data, err := bin.ReadFile("bin/dock-probe")
+	return install(dataDir, "dock-probe", ErrNotBuilt)
+}
+
+// InstallSync writes the embedded dock-sync next to the probe, like
+// Install, returning its path for docker.Runtime.Sync. Without it, moves
+// fall back to nothing: core refuses them with ErrSyncNotBuilt's words.
+func InstallSync(dataDir string) (string, error) {
+	return install(dataDir, "dock-sync", ErrSyncNotBuilt)
+}
+
+// install writes bin/<name> to <dataDir>/probe/<name> and checks it runs.
+func install(dataDir, name string, notBuilt error) (string, error) {
+	data, err := bin.ReadFile("bin/" + name)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", ErrNotBuilt
+		return "", notBuilt
 	}
 	if err != nil {
-		return "", fmt.Errorf("read the embedded dock-probe: %w", err)
+		return "", fmt.Errorf("read the embedded %s: %w", name, err)
 	}
 	dir, err := filepath.Abs(filepath.Join(dataDir, "probe"))
 	if err != nil {
-		return "", fmt.Errorf("install dock-probe: %w", err)
+		return "", fmt.Errorf("install %s: %w", name, err)
 	}
-	path := filepath.Join(dir, "dock-probe")
+	path := filepath.Join(dir, name)
 	if err := write(path, data); err != nil {
-		return "", fmt.Errorf("install dock-probe in %s: %w", dir, err)
+		return "", fmt.Errorf("install %s in %s: %w", name, dir, err)
 	}
-	if err := check(path); err != nil {
+	if err := check(path, name); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -64,7 +83,7 @@ func write(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".dock-probe-*")
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
 	}
@@ -84,16 +103,16 @@ func write(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// check runs `dock-probe version` on the host, which fails on a noexec
+// check runs `<name> version` on the host, which fails on a noexec
 // mount or a binary of another architecture.
-func check(path string) error {
+func check(path, name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, path, "version").Output()
 	if err != nil {
 		return fmt.Errorf("run %s: %w (is the data dir mounted noexec, or the probe built for another architecture?)", path, err)
 	}
-	if !strings.HasPrefix(string(out), "dock-probe ") {
+	if !strings.HasPrefix(string(out), name+" ") {
 		return fmt.Errorf("run %s: unexpected output %q", path, strings.TrimSpace(string(out)))
 	}
 	return nil

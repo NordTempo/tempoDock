@@ -1117,11 +1117,14 @@ const (
 // Server is a machine running a node runtime. A server that is still
 // joining (a pending join token) has ID 0 and no facts yet.
 type Server struct {
-	ID      int64        `json:"id"`
-	Name    string       `json:"name"`
-	Builder bool         `json:"builder" doc:"Source builds may run here"`
-	Local   bool         `json:"local" doc:"Runs the control plane"`
-	Status  ServerStatus `json:"status" enum:"online,offline,incompatible,joining,revoked"`
+	// Drain is the server's running or paused drain (ADR 0063), for
+	// operators.
+	Drain   *DrainProgress `json:"drain,omitempty"`
+	ID      int64          `json:"id"`
+	Name    string         `json:"name"`
+	Builder bool           `json:"builder" doc:"Source builds may run here"`
+	Local   bool           `json:"local" doc:"Runs the control plane"`
+	Status  ServerStatus   `json:"status" enum:"online,offline,incompatible,joining,revoked"`
 	// Version is the dock version the server runs (reported when it
 	// connects).
 	Version    string     `json:"version"`
@@ -1620,11 +1623,14 @@ const (
 	// EventEnvironmentMove: an environment move went a step further, or
 	// ended (ADR 0053). Move is the move.
 	EventEnvironmentMove EventType = "environment_move"
+	// EventServerDrain: a server drain went an environment further, or
+	// ended (ADR 0063). Drain is the drain. Operators only.
+	EventServerDrain EventType = "server_drain"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move"`
+	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain"`
 	Time           time.Time        `json:"time"`
 	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
 	Project        string           `json:"project,omitempty"`
@@ -1648,6 +1654,7 @@ type Event struct {
 	Uptime         *UptimeUpdate    `json:"uptime,omitempty"`
 	Job            *Job             `json:"job,omitempty"`
 	Move           *EnvironmentMove `json:"move,omitempty"`
+	Drain          *ServerDrain     `json:"drain,omitempty"`
 	Message        string           `json:"message,omitempty"`
 }
 

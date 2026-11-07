@@ -49,6 +49,10 @@ type Runtime struct {
 	// which Start bind-mounts into containers with a spec.Health; ""
 	// starts them without an ongoing health check.
 	Probe string
+	// Sync is the host path of the installed dock-sync
+	// (probe.InstallSync), which RunJob bind-mounts for a spec.Sync; ""
+	// fails those jobs with node.ErrNoSync.
+	Sync string
 }
 
 var _ node.Containers = (*Runtime)(nil)

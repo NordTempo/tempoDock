@@ -292,7 +292,18 @@ type JobSpec struct {
 	// (`dock run`, ADR 0048): output as it is written, and optionally a
 	// terminal and input. Not together with Stdin.
 	Stream *JobStream
+	// Sync bind-mounts the server's dock-sync read-only at SyncPath, for
+	// the passes that copy a volume to another server (ADR 0063). A
+	// server without one fails the job with ErrNoSync (wrapped).
+	Sync bool
 }
+
+// SyncPath is where JobSpec.Sync mounts dock-sync in a job.
+const SyncPath = "/.dock-sync"
+
+// ErrNoSync means a server's dock has no dock-sync to run (a build
+// without `make build`).
+var ErrNoSync = errors.New("this server's dock has no dock-sync (build it with `make build`)")
 
 // JobStream connects a running job to its caller. JobResult.Output still
 // holds the tail of the output.
@@ -444,6 +455,12 @@ type Proxy interface {
 	// CheckDomain reports whether hostname's DNS points at this server and
 	// whether a valid certificate is being served for it.
 	CheckDomain(ctx context.Context, hostname string) (DomainCheck, error)
+	// Forward listens on 127.0.0.1:port, where this server's Caddy sends
+	// the requests of an environment that moved away (ADR 0063): the
+	// control plane accepts each connection and pipes it to the
+	// service's container on the server it is on now. Closing the
+	// listener stops it; on a remote server, so does the link dropping.
+	Forward(ctx context.Context, port int) (net.Listener, error)
 }
 
 // Stats reads resource usage straight from the kernel (/proc and cgroup
@@ -921,7 +938,16 @@ type Route struct {
 	// so instead of proxying, after its access check. Upstream stays set
 	// for nodes that predate it. Redirect routes ignore it.
 	Stopped string
+	// Hold makes Caddy wait for the upstream, trying it again for up to
+	// HoldFor, instead of answering 502 when it refuses connections: a
+	// moving environment's services are stopped on one server and not
+	// yet started on the other for a few seconds (ADR 0063), and a
+	// forwarded route's listener only accepts once the target serves.
+	Hold bool
 }
+
+// HoldFor is how long a Hold route waits for its upstream.
+const HoldFor = 60 * time.Second
 
 // AnalyticsHosts are hostnames of a route that collect analytics, and the
 // tag the ingest gets with their events: "site.service.release", the IDs

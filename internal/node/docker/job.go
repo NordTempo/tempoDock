@@ -15,6 +15,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -39,6 +40,9 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 	case spec.Stream != nil && len(spec.Pause) > 0:
 		return node.JobResult{}, errors.New("a streamed job can't pause containers")
 	}
+	if spec.Sync && r.Sync == "" {
+		return node.JobResult{}, fmt.Errorf("job %s: %w", spec.Name, node.ErrNoSync)
+	}
 	if err := r.checkDeps(ctx, node.ContainerSpec{Network: spec.Network, Mounts: spec.Mounts, Labels: spec.Labels}); err != nil {
 		return node.JobResult{}, err
 	}
@@ -46,7 +50,11 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (_ node.JobResu
 	if err != nil {
 		return node.JobResult{}, err
 	}
-	created, err := r.cli.ContainerCreate(ctx, jobOptions(spec, pause, r.owner()))
+	opts := jobOptions(spec, pause, r.owner())
+	if spec.Sync {
+		opts.HostConfig.Mounts = append(opts.HostConfig.Mounts, mount.Mount{Type: mount.TypeBind, Source: r.Sync, Target: node.SyncPath, ReadOnly: true})
+	}
+	created, err := r.cli.ContainerCreate(ctx, opts)
 	if cerrdefs.IsConflict(err) {
 		return node.JobResult{}, fmt.Errorf("container name %q is already in use", spec.Name)
 	}

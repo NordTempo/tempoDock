@@ -47,6 +47,11 @@ func (c *Client) streamJob(ctx context.Context, spec node.JobSpec) (node.JobResu
 	if err := c.needProtocol(ctx, StreamJobProtocol, "run commands (`dock run`)"); err != nil {
 		return node.JobResult{}, err
 	}
+	if spec.Sync {
+		if err := c.needProtocol(ctx, MoveSyncProtocol, "copy volumes while their service runs"); err != nil {
+			return node.JobResult{}, err
+		}
+	}
 	s, err := c.session(ctx)
 	if err != nil {
 		return node.JobResult{}, err

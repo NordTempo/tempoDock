@@ -9,8 +9,9 @@ import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { envPath, keys } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
+import { elapsed } from "../../ui/format";
 
-// An environment's move to another server (ADR 0053): the running move or
+// An environment's move to another server (ADRs 0053, 0063): the running move or
 // the latest one, null when it never moved. environment_move events carry
 // the whole move and set it here (data/live.ts); nothing polls. The key
 // sits outside the environment's, so the audits of other changes in it
@@ -43,6 +44,14 @@ export const useMove = (e: EnvRef) => useQuery(moveQuery(e)).data ?? null;
 
 export const moveRunning = (m: EnvironmentMove | null) =>
   m?.status === "running" || m?.status === "rolling_back";
+
+/** The hold's length, "2.8s", or "" while it lasts or never was. */
+export function heldFor(move: EnvironmentMove) {
+  const { downtime_from: from, downtime_to: to } = move;
+  if (!from || !to) return "";
+  const ms = Date.parse(to) - Date.parse(from);
+  return ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : elapsed(ms);
+}
 
 /**
  * Starts a move; it runs in the background. The answer is the move at its

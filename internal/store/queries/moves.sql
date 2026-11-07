@@ -1,6 +1,6 @@
 -- name: CreateEnvironmentMove :one
-INSERT INTO environment_moves (environment_id, from_server_id, to_server_id, created_by, started_at)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO environment_moves (environment_id, from_server_id, to_server_id, max_hold_s, drain_id, created_by, started_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: AddEnvironmentMoveService :exec
@@ -37,6 +37,12 @@ UPDATE environment_moves SET status = ?, step = ?, error = ?, notes = ?, finishe
 -- name: SetEnvironmentMoveService :exec
 UPDATE environment_move_services SET status = ?, container_id = ?, copied_bytes = ?, error = ? WHERE move_id = +? AND service_id = +?;
 
+-- name: SetEnvironmentMovePass :exec
+-- Records a service's live pass: how many so far, how long the last one
+-- took and what it copied in all.
+UPDATE environment_move_services SET status = 'syncing', passes = ?, last_pass_ms = ?, copied_bytes = ?
+WHERE move_id = +? AND service_id = +?;
+
 -- name: SetEnvironmentServer :exec
 UPDATE environments SET server_id = ? WHERE id = +?;
 
@@ -68,3 +74,20 @@ WHERE services.environment_id = +? AND cloudflare_records.want = 'present';
 SELECT count(*) FROM volume_snapshots
 JOIN services ON services.id = volume_snapshots.service_id
 WHERE services.environment_id = +sqlc.arg(environment_id) AND volume_snapshots.server_id = +sqlc.arg(server_id);
+
+-- name: ListEnvironmentSnapshotsOn :many
+-- An environment's finished volume snapshots on a server, which a move
+-- copies to its target.
+SELECT volume_snapshots.* FROM volume_snapshots
+JOIN services ON services.id = volume_snapshots.service_id
+WHERE services.environment_id = +sqlc.arg(environment_id) AND volume_snapshots.server_id = +sqlc.arg(server_id)
+  AND volume_snapshots.status = 'ready'
+ORDER BY volume_snapshots.id;
+
+-- name: MoveEnvironmentSnapshots :exec
+-- Points an environment's snapshots on one server at the server the move
+-- copied them to.
+UPDATE volume_snapshots SET server_id = +sqlc.arg(to_server_id)
+WHERE server_id = +sqlc.arg(from_server_id) AND status = 'ready' AND service_id IN (
+    SELECT id FROM services WHERE environment_id = +sqlc.arg(environment_id)
+);

@@ -354,6 +354,7 @@ func (o offlineRuntime) ApplyRoutes(context.Context, []node.Route) error        
 func (o offlineRuntime) CheckDomain(context.Context, string) (node.DomainCheck, error) {
 	return node.DomainCheck{}, o.err
 }
+func (o offlineRuntime) Forward(context.Context, int) (net.Listener, error) { return nil, o.err }
 func (o offlineRuntime) HostStats(context.Context) (node.HostStats, error) {
 	return node.HostStats{}, o.err
 }

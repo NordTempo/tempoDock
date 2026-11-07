@@ -2,7 +2,7 @@
 # Builds every release artifact into dist/ from the built UIs (web/dist and
 # web/tempobase/dist):
 #
-#   dock-linux-{amd64,arm64}            server binary with the UI and dock-probe embedded
+#   dock-linux-{amd64,arm64}            server binary with the UI, dock-probe and dock-sync embedded
 #   dock-cli-{darwin,linux}-{arm64,amd64}  CLI only (-tags dockcli)
 #   dock-install-VERSION.tar.gz         deploy/ (install.sh, systemd units, VERSION)
 #   install-cli.sh                      CLI installer for laptops and CI
@@ -40,16 +40,19 @@ build() {
   echo "dist/$1"
   GOOS="$2" GOARCH="$3" go build -trimpath -tags "${4:-}" -ldflags "$ldflags" -o "dist/$1" "${5:-./cmd/dock}"
 }
-# dock embeds dock-probe (internal/node/probe, ADR 0043) for its own
-# architecture: build the probe right before each server binary, and remove
-# it after, so no binary embeds another architecture's probe.
+# dock embeds dock-probe (ADR 0043) and dock-sync (ADR 0063) from
+# internal/node/probe for its own architecture: build them right before
+# each server binary, and remove them after, so no binary embeds another
+# architecture's.
 probe=internal/node/probe/bin/dock-probe
-trap 'rm -f "$probe"' EXIT
+sync=internal/node/probe/bin/dock-sync
+trap 'rm -f "$probe" "$sync"' EXIT
 for arch in amd64 arm64; do
   GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -buildid=" -o "$probe" ./cmd/dock-probe
+  GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -buildid=" -o "$sync" ./cmd/dock-sync
   build "dock-linux-$arch" linux "$arch"
 done
-rm -f "$probe"
+rm -f "$probe" "$sync"
 for platform in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
   build "dock-cli-${platform%/*}-${platform#*/}" "${platform%/*}" "${platform#*/}" dockcli
 done
@@ -61,7 +64,7 @@ fi
 
 echo "dist/dock-install-$version.tar.gz"
 stage="$(mktemp -d)"
-trap 'rm -rf "$stage" "$probe"' EXIT
+trap 'rm -rf "$stage" "$probe" "$sync"' EXIT
 cp -R deploy "$stage/deploy"
 rm -rf "$stage/deploy/tempobase" # tempoBase's image and examples, not Dock's install
 # install.sh downloads this version when DOCK_BINARY isn't given.

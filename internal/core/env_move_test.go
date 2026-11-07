@@ -3,9 +3,12 @@ package core
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"net"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -90,8 +93,10 @@ func assertMoved(t *testing.T, p *pool, lab *fake.Runtime, db, web ServiceRef, d
 	if !slices.ContainsFunc(p.rt.Routes(), func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") }) {
 		t.Errorf("cp doesn't route shop.example.com: %+v", p.rt.Routes())
 	}
-	if slices.ContainsFunc(lab.Routes(), func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") }) {
-		t.Error("homelab still routes shop.example.com")
+	// homelab forwards what still reaches it, holding requests until
+	// the forward listens.
+	if i := slices.IndexFunc(lab.Routes(), func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") }); i < 0 || !lab.Routes()[i].Hold {
+		t.Errorf("homelab doesn't forward shop.example.com: %+v", lab.Routes())
 	}
 	// The next deploy happens on cp.
 	if rel := p.deploy(web, "app:2"); rel.Status != apitypes.ReleaseActive || !slices.Contains(p.rt.Running(), p.ctr(web, 2)) {
@@ -190,7 +195,7 @@ func TestMoveEnvironmentRefused(t *testing.T) {
 		t.Errorf("offline: %v", err)
 	}
 	p.setOffline("homelab", false)
-	// While a move runs: no second one, and no deploy.
+	// While a move runs: no second one and no snapshot; a deploy waits.
 	release := make(chan struct{})
 	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
 		if s == apitypes.MoveCopy {
@@ -203,9 +208,6 @@ func TestMoveEnvironmentRefused(t *testing.T) {
 	}
 	if err := move(testSystem, p.ids2name("cp")); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("second move: %v", err)
-	}
-	if _, err := p.c.Restart(p.ctx, testSystem, db); CodeOf(err) != apitypes.CodeConflict {
-		t.Errorf("deploy during a move: %v", err)
 	}
 	if _, err := p.c.CreateSnapshot(p.ctx, testSystem, db, apitypes.CreateSnapshotRequest{}); CodeOf(err) != apitypes.CodeConflict {
 		t.Errorf("snapshot during a move: %v", err)
@@ -339,4 +341,98 @@ func TestMoveEnvironmentKeepsAStoppedServiceStopped(t *testing.T) {
 	if r := p.wait(db, rel.Number); r.Status != apitypes.ReleaseActive || !slices.Contains(p.rt.Running(), p.ctr(db, rel.Number)) {
 		t.Errorf("started again: %s, running %v", r.Status, p.rt.Running())
 	}
+}
+
+// TestMoveWithoutDowntime: a write that lands while the move copies is
+// on the target, requests are held during the switch and forwarded from
+// the source after it, and a deploy during the move waits for it and
+// runs on the target (ADR 0063).
+func TestMoveWithoutDowntime(t *testing.T) {
+	p, lab, db, web, _ := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	ss, err := p.c.serviceFor(p.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := p.store.GetActiveRelease(p.ctx, ss.svc.ID)
+	if err != nil || old.HostPort == 0 {
+		t.Fatalf("web's release: %+v, %v", old, err)
+	}
+	echo, _ := echoServer(t)
+	p.rt.DialTo(echo) // web's container on cp
+
+	written := []byte("rows written while the copy ran")
+	var held bool
+	var restarted error
+	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
+		switch s {
+		case apitypes.MoveStop: // after the live passes, before the fence
+			lab.SetVolumeData(p.volume(db, "data"), written)
+		case apitypes.MoveCopy: // in the hold
+			i := slices.IndexFunc(lab.Routes(), func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") })
+			held = i >= 0 && lab.Routes()[i].Hold
+			_, restarted = p.c.Restart(p.ctx, testSystem, web)
+		}
+	}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	m := p.waitMove(staging)
+	if m.Status != apitypes.MoveSucceeded || m.Services[0].Passes < 1 {
+		t.Fatalf("move = %+v", m)
+	}
+	if got := p.rt.VolumeData(p.volume(db, "data")); !bytes.Equal(got, written) {
+		t.Errorf("db's data on cp = %q, want the write made during the move", got)
+	}
+	if !held {
+		t.Error("homelab didn't hold shop.example.com's requests during the switch")
+	}
+	if restarted != nil {
+		t.Errorf("deploy during the move: %v", restarted)
+	}
+	if r := p.wait(web, 2); r.Status != apitypes.ReleaseActive || !slices.Contains(p.rt.Running(), p.ctr(web, 2)) {
+		t.Errorf("the deploy made during the move: %s, on cp: %v", r.Status, p.rt.Running())
+	}
+
+	// A connection that still reaches homelab's old port reaches web on cp.
+	var addr string
+	eventually(t, "homelab to forward web's old port", func() bool { addr = lab.ForwardAddr(int(old.HostPort)); return addr != "" })
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.Write([]byte("GET /")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 5)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "GET /" {
+		t.Fatalf("through the forward: %q, %v", buf, err)
+	}
+}
+
+// TestMoveRefusesALongHold: data that keeps changing faster than the
+// copy catches up fails the move before anything stops, instead of
+// holding requests for longer than the budget.
+func TestMoveRefusesALongHold(t *testing.T) {
+	p, lab, db, _, data := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	lab.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if spec.Script == moveSizeScript {
+			return node.JobResult{Output: "dock-move: kib 4\n"}, nil
+		}
+		if strings.Contains(spec.Script, "send --live") {
+			time.Sleep(400 * time.Millisecond) // a pass this slow, every time
+		}
+		return node.JobResult{}, fake.ErrDefault
+	})
+	p.c.moves.holdUnit = 100 * time.Millisecond // a hold of 5 is half a second
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp"), MaxHold: 5}); err != nil {
+		t.Fatal(err)
+	}
+	m := p.waitMove(staging)
+	if m.Status != apitypes.MoveFailed || m.Step != apitypes.MoveSync || !strings.Contains(m.Error, "--max-hold") || m.DowntimeFrom != nil {
+		t.Fatalf("move = %+v", m)
+	}
+	assertStayed(t, p, lab, db, data)
 }
