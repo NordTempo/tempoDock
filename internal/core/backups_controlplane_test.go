@@ -192,7 +192,10 @@ func TestAfterRestoreOldServerBecomesNode(t *testing.T) {
 	h.nodes = newFakeNodes()
 	h.restart()
 	web := h.service("web", apitypes.CreateServiceRequest{})
-	old := h.c.local
+	old, err := h.store.GetServer(h.ctx, h.c.localID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := h.store.StartControlPlaneBackup(h.ctx, store.StartControlPlaneBackupParams{
 		Trigger: "schedule", Repository: "", CreatedBy: "system", StartedAt: now(), ScheduledAt: ptr(now()),
 	}); err != nil {
@@ -208,8 +211,8 @@ func TestAfterRestoreOldServerBecomesNode(t *testing.T) {
 		t.Errorf("the running control plane backup is still there: %v", err)
 	}
 	h.c = h.start()
-	if h.c.local.ID == old.ID || h.c.local.Name != old.Name+"-2" || !h.c.local.Local {
-		t.Fatalf("new local server = %+v (old %d %s)", h.c.local, old.ID, old.Name)
+	if h.c.localID == old.ID || h.c.localName() != old.Name+"-2" {
+		t.Fatalf("new local server = %d %s (old %d %s)", h.c.localID, h.c.localName(), old.ID, old.Name)
 	}
 	ss, err := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
 	if err != nil || ss.env.ServerID != old.ID {
@@ -228,14 +231,17 @@ func TestAfterRestoreOldServerBecomesNode(t *testing.T) {
 // Restored in the old server's place, the local server stays as it was.
 func TestAfterRestoreReplaces(t *testing.T) {
 	h := newHarness(t)
-	old := h.c.local
+	old, err := h.store.GetServer(h.ctx, h.c.localID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h.c.Close()
 	if name, err := AfterRestore(h.ctx, h.store, "a test backup", false); err != nil || name != "" {
 		t.Fatalf("AfterRestore = %q, %v", name, err)
 	}
 	h.c = h.start()
-	if h.c.local.ID != old.ID {
-		t.Fatalf("local server %d, want %d", h.c.local.ID, old.ID)
+	if h.c.localID != old.ID {
+		t.Fatalf("local server %d, want %d", h.c.localID, old.ID)
 	}
 }
 

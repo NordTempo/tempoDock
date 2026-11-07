@@ -15,7 +15,7 @@ import (
 // first). Times are in the future, like the stats tests'.
 func (h *harness) trafficTick(col *collector, at time.Time, hosts ...node.HostTraffic) {
 	h.t.Helper()
-	srv, err := h.store.GetServer(h.ctx, h.c.local.ID)
+	srv, err := h.store.GetServer(h.ctx, h.c.localID)
 	if err != nil {
 		h.t.Fatal(err)
 	}

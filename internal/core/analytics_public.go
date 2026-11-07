@@ -158,7 +158,7 @@ func (c *Core) publicSitesChanged(ctx context.Context) {
 	if old != nil && maps.Equal(*old, hosts) {
 		return
 	}
-	if err := c.applyRoutes(ctx, c.local.ID); err != nil {
+	if err := c.applyRoutes(ctx, c.localID); err != nil {
 		c.log.Error("analytics: route the public dashboards", "err", err)
 	}
 }

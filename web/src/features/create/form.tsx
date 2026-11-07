@@ -29,7 +29,7 @@ const reserved = {
  * is fine or still empty. `taken` holds the names already in use.
  */
 export function nameProblem(
-  kind: "org" | "project" | "environment" | "service",
+  kind: "org" | "project" | "environment" | "service" | "server",
   name: string,
   taken: readonly string[] = [],
 ) {
@@ -44,6 +44,7 @@ export function nameProblem(
     return `${name} is a page in Dock. Pick another name.`;
   }
   if (taken.includes(name)) {
+    if (kind === "server") return `Another server is named ${name}.`;
     const where = {
       org: "Dock",
       project: "organization",

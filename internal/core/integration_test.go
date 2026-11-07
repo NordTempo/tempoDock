@@ -98,7 +98,7 @@ func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	id := 1_000_000 + rand.Int64N(1_000_000)*10
 	for _, q := range []string{
 		fmt.Sprintf(`INSERT INTO projects (id, org_id, name) VALUES (%d, 1, 'seed')`, id),
-		fmt.Sprintf(`INSERT INTO environments (id, project_id, name, server_id) VALUES (%d, %d, 'seed', %d)`, id, id, c.local.ID),
+		fmt.Sprintf(`INSERT INTO environments (id, project_id, name, server_id) VALUES (%d, %d, 'seed', %d)`, id, id, c.localID),
 		fmt.Sprintf(`INSERT INTO services (id, environment_id, name) VALUES (%d, %d, 'seed')`, id, id),
 		fmt.Sprintf(`INSERT INTO releases (id, service_id, number, status, source, config, created_by) VALUES (%d, %d, 1, 'failed', 'image', x'00', 'seed')`, id, id),
 	} {

@@ -80,7 +80,7 @@ func (c *Client) streamJob(ctx context.Context, spec node.JobSpec) (node.JobResu
 			if ctx.Err() != nil {
 				return node.JobResult{Output: tail.String()}, ctx.Err()
 			}
-			return node.JobResult{Output: tail.String()}, offline(ctx, s.name, err)
+			return node.JobResult{Output: tail.String()}, offline(ctx, s.name(), err)
 		}
 		var werr error
 		switch t {
@@ -91,7 +91,7 @@ func (c *Client) streamJob(ctx context.Context, spec node.JobSpec) (node.JobResu
 		case runframe.Exit:
 			var end jobStreamEnd
 			if err := json.Unmarshal(p, &end); err != nil {
-				return node.JobResult{Output: tail.String()}, fmt.Errorf("server %s: bad job end: %w", s.name, err)
+				return node.JobResult{Output: tail.String()}, fmt.Errorf("server %s: bad job end: %w", s.name(), err)
 			}
 			res := node.JobResult{ExitCode: end.ExitCode, Output: tail.String()}
 			if end.Error != nil {

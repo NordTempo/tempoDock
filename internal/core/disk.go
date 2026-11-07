@@ -146,7 +146,7 @@ func (c *Core) readDisk(ctx context.Context, srv store.Server) (apitypes.ServerD
 		return apitypes.ServerDisk{}, c.nodeErr(srv.ID, err)
 	}
 	var registry int64
-	if srv.ID == c.local.ID && c.reg != nil {
+	if srv.ID == c.localID && c.reg != nil {
 		if id, err := c.registryStorageID(ctx); err == nil && id == nil {
 			registry, _ = c.reg.Stored(ctx)
 		}

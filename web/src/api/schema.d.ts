@@ -4012,7 +4012,7 @@ export interface paths {
         head?: never;
         /**
          * Update a server
-         * @description Which environment kinds the server accepts, whether it takes new placements and builds, and its base domain. Environments already there stay. Operators only.
+         * @description Renames the server, or changes which environment kinds it accepts, whether it takes new placements and builds, and its base domain. Environments already there stay; a rename keeps everything but the name. Operators only.
          */
         patch: operations["update-server"];
         trace?: never;
@@ -7789,6 +7789,7 @@ export interface components {
             base_domain?: string;
             builder?: boolean;
             disabled_for_placement?: boolean;
+            name?: string;
         };
         UpdateServiceRequest: {
             /** @description Also apply all staged changes in the environment */

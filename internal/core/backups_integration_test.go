@@ -136,7 +136,7 @@ func TestIntegrationControlPlaneBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := c.runResticJob(ctx, c.local.ID, c.rt, repo, node.JobSpec{
+	out, err := c.runResticJob(ctx, c.localID, c.rt, repo, node.JobSpec{
 		Name: fmt.Sprintf("dock_it_cp_dump_%d", time.Now().UnixNano()), Image: c.cfg.Backup.ResticImage,
 		Labels: node.Labels{ControlPlane: c.install}, Env: repo.Env(),
 		Script: backup.BinDir + "/restic dump --tag " + backup.ControlPlaneTag + " latest /" + backup.ControlPlaneFile + " | tar -xOf - " + cpbackup.ManifestName,

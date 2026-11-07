@@ -21,6 +21,8 @@ type Nodes interface {
 	Events(ctx context.Context, serverID int64) (<-chan node.ContainerEvent, error)
 	// Disconnect drops a server's live connection.
 	Disconnect(serverID int64)
+	// Rename has the link's messages and logs use a server's new name.
+	Rename(serverID int64, name string)
 	// RotateKey has an online server switch to a new key.
 	RotateKey(ctx context.Context, serverID int64) (string, error)
 	// MintJoinToken creates a one-time join token.

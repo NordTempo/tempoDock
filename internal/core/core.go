@@ -106,7 +106,10 @@ type Core struct {
 	bus        *bus
 	// renameMu keeps committed renames and their live events in order.
 	renameMu sync.Mutex
-	local    store.Server
+	// localID is the control plane's own server. Its name is read with
+	// localName (a rename changes it), anything else from the store.
+	localID  int64
+	localNow atomic.Pointer[string]
 	drain    time.Duration
 	// install is this control plane's install ID, the dock.control_plane
 	// label on everything it creates (see labels and foreign).
@@ -326,9 +329,13 @@ func (c *Core) registerLocalServer(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("register local server: %w", err)
 	}
-	c.local = srv
+	c.localID = srv.ID
+	c.localNow.Store(&srv.Name)
 	return nil
 }
+
+// localName is the control plane's own server's current name.
+func (c *Core) localName() string { return *c.localNow.Load() }
 
 // createLocalServer registers this server, named after its host. The
 // first server takes every kind of environment; once a second one joins,
@@ -381,10 +388,10 @@ func (c *Core) Start(ctx context.Context) error {
 		// Backups keep using the URL as before; the next start tries again.
 		c.log.Error("turn the backup repository into a storage connection", "err", err)
 	}
-	if err := c.reconcileServer(ctx, c.local.ID, c.rt, true); err != nil {
+	if err := c.reconcileServer(ctx, c.localID, c.rt, true); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
-	if err := c.applyRoutes(ctx, c.local.ID); err != nil {
+	if err := c.applyRoutes(ctx, c.localID); err != nil {
 		// Caddy keeps its previous config; deploys will retry.
 		c.log.Error("apply routes on start", "err", err)
 	}
@@ -416,8 +423,10 @@ func (c *Core) Start(ctx context.Context) error {
 	// In the background: running the tunnel may pull an image.
 	go func() {
 		defer c.wg.Done()
-		c.runServerTunnel(c.ctx, c.local.ID, c.rt)
-		c.syncServerRecords(c.ctx, c.local)
+		c.runServerTunnel(c.ctx, c.localID, c.rt)
+		if srv, err := c.store.GetServer(c.ctx, c.localID); err == nil {
+			c.syncServerRecords(c.ctx, srv)
+		}
 	}()
 	if err := c.resumeGit(ctx); err != nil {
 		return fmt.Errorf("resume queued pushes: %w", err)

@@ -375,7 +375,7 @@ func TestDataConnection(t *testing.T) {
 	// handled, which can trail the release going live.
 	eventually(t, "the database to run", func() bool { _, err := conn(); return !errors.Is(err, errNotRunning) })
 	got, err := conn()
-	if err != nil || got.owner.User != "app" || got.owner.Password != "pw" || got.database != "app" || got.port != 5432 || got.containerID == "" || got.serverID != h.c.local.ID {
+	if err != nil || got.owner.User != "app" || got.owner.Password != "pw" || got.database != "app" || got.port != 5432 || got.containerID == "" || got.serverID != h.c.localID {
 		t.Fatalf("from POSTGRES_*: %+v %v", got, err)
 	}
 	if info, _ := h.c.DataInfo(h.ctx, testSystem, db); info.Status != apitypes.DataSetupNeeded {
@@ -659,12 +659,12 @@ func TestContainerEventForget(t *testing.T) {
 		return len(eng.forgot)
 	}
 	before := forgot()
-	h.c.onContainerEvent(h.ctx, h.c.local.ID, node.ContainerEvent{ContainerID: "not-the-container", Labels: labels, Action: "die"})
-	h.c.onContainerEvent(h.ctx, h.c.local.ID+1, node.ContainerEvent{ContainerID: rel.ContainerID, Labels: labels, Action: "die"})
+	h.c.onContainerEvent(h.ctx, h.c.localID, node.ContainerEvent{ContainerID: "not-the-container", Labels: labels, Action: "die"})
+	h.c.onContainerEvent(h.ctx, h.c.localID+1, node.ContainerEvent{ContainerID: rel.ContainerID, Labels: labels, Action: "die"})
 	if forgot() != before {
 		t.Fatal("a die event that isn't the release's container dropped the connections")
 	}
-	h.c.onContainerEvent(h.ctx, h.c.local.ID, node.ContainerEvent{ContainerID: rel.ContainerID, Labels: labels, Action: "die"})
+	h.c.onContainerEvent(h.ctx, h.c.localID, node.ContainerEvent{ContainerID: rel.ContainerID, Labels: labels, Action: "die"})
 	if forgot() != before+1 || eng.forgot[len(eng.forgot)-1] != ss.svc.ID {
 		t.Fatalf("the release container's die: forgot %v", eng.forgot)
 	}

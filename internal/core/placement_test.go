@@ -129,8 +129,8 @@ func newPool(t *testing.T, local poolServer, remotes ...poolServer) *pool {
 	// The local server reports its memory through the runtime; make the
 	// collector agree with what the test sets.
 	h.rt.SetHostStats(node.HostStats{CPUs: 4, MemoryTotal: uint64(local.memGiB * gib)})
-	p.ids[local.name] = h.c.local.ID
-	p.configure(h.c.local.ID, local)
+	p.ids[local.name] = h.c.localID
+	p.configure(h.c.localID, local)
 	for _, s := range remotes {
 		srv, err := h.store.CreateServer(h.ctx, store.CreateServerParams{Name: s.name})
 		if err != nil {
@@ -197,7 +197,7 @@ func TestPlacementKeepsProjectsTogether(t *testing.T) {
 		poolServer{"homelab", false, true, 32},
 		poolServer{"lab2", false, true, 32},
 	)
-	cpName := p.c.local.Name
+	cpName := p.c.localName()
 
 	// A project's production environment goes where there is most room.
 	p.project("shop")
@@ -348,7 +348,7 @@ func TestOfflineServerRuntime(t *testing.T) {
 
 func TestUpdateServerNeedsUnlimitedAdmin(t *testing.T) {
 	h := newHarness(t)
-	name := h.c.local.Name
+	name := h.c.localName()
 	for _, a := range []Actor{
 		{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeDeploy},
 		{Kind: "token", OrgID: 1, Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"},

@@ -237,7 +237,7 @@ func (c *Core) online(serverID int64) bool { return c.connected(serverID) != nil
 // A revoked server never can, even while the hub still has its link: no
 // secrets or deploys go to a key the admin took back.
 func (c *Core) connected(serverID int64) node.Runtime {
-	if serverID == c.local.ID {
+	if serverID == c.localID {
 		return c.rt
 	}
 	if c.nodes != nil && !c.isRevoked(serverID) {

@@ -96,8 +96,8 @@ func (c *Core) ensureAnalyticsStore(serverID int64) {
 		}
 		c.wakeForwarders()
 		c.updateGeoIP()
-		if serverID != c.local.ID {
-			c.removeStrayStore(c.local.ID, true)
+		if serverID != c.localID {
+			c.removeStrayStore(c.localID, true)
 		}
 	})
 }
@@ -137,7 +137,7 @@ func (c *Core) startStore(ctx context.Context, serverID int64, token string) err
 // (downloaded now, the first time), the token and the memory limit.
 func (c *Core) storeSpec(ctx context.Context, serverID int64, token string) (node.AnalyticsStoreSpec, error) {
 	arch := runtime.GOARCH
-	if serverID != c.local.ID {
+	if serverID != c.localID {
 		h := c.nodes.State(serverID).Hello
 		if h.Protocol < remote.AnalyticsBinaryProtocol || h.Arch == "" {
 			return node.AnalyticsStoreSpec{}, fmt.Errorf("the server runs dock %s, which can't run the analytics store; update it with `dock update`", h.Version)
@@ -189,7 +189,7 @@ func (c *Core) removeStrayStore(serverID int64, wait bool) {
 	if cl == nil || serverID == storeServer {
 		return
 	}
-	if serverID != c.local.ID && c.nodes.State(serverID).Hello.Protocol < remote.AnalyticsBinaryProtocol {
+	if serverID != c.localID && c.nodes.State(serverID).Hello.Protocol < remote.AnalyticsBinaryProtocol {
 		return // too old to have run one from a binary, or to remove it
 	}
 	c.wg.Go(func() {
@@ -263,14 +263,14 @@ func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.Analytics
 	c.analytics.mu.Unlock()
 	st, err := c.store.GetAnalyticsSettings(ctx)
 	if store.IsNotFound(err) {
-		out.Server = c.local.Name
+		out.Server = c.localName()
 		return out, nil
 	}
 	if err != nil {
 		return out, err
 	}
 	out.Enabled = st.Enabled
-	serverID := c.local.ID
+	serverID := c.localID
 	if st.ServerID != nil {
 		serverID = *st.ServerID
 	}
@@ -320,16 +320,15 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 	if err := a.requireOperator("choosing the analytics server"); err != nil {
 		return apitypes.AnalyticsStatus{}, err
 	}
-	target := c.local
-	if req.Server != "" && req.Server != c.local.Name {
-		s, err := c.store.GetServerByName(ctx, req.Server)
-		if store.IsNotFound(err) {
-			return apitypes.AnalyticsStatus{}, notFound("server %q not found; see `dock server list`", req.Server)
-		}
-		if err != nil {
-			return apitypes.AnalyticsStatus{}, err
-		}
-		target = s
+	var target store.Server
+	var err error
+	if req.Server == "" {
+		target, err = c.store.GetServer(ctx, c.localID)
+	} else if target, err = c.store.GetServerByName(ctx, req.Server); store.IsNotFound(err) {
+		return apitypes.AnalyticsStatus{}, notFound("server %q not found; see `dock server list`", req.Server)
+	}
+	if err != nil {
+		return apitypes.AnalyticsStatus{}, err
 	}
 	var id *int64
 	if !target.Local {

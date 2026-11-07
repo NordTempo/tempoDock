@@ -69,7 +69,7 @@ func (p *registryPool) fill() {
 // the registry. Any failure stops the pool: the session ended, or the
 // node doesn't serve the registry (an older node answers 404).
 func (p *registryPool) wait() {
-	lc, err := openConn(p.s.ctx, p.s, opRegistry, empty{}, p.s.name+"/registry", p.release)
+	lc, err := openConn(p.s.ctx, p.s, opRegistry, empty{}, p.s.name()+"/registry", p.release)
 	p.mu.Lock()
 	p.waiting--
 	if err != nil {
@@ -77,7 +77,7 @@ func (p *registryPool) wait() {
 		p.stopped = true
 		p.mu.Unlock()
 		if !already && p.s.ctx.Err() == nil {
-			p.h.log.Warn("registry tunnels to node stopped", "server", p.s.name, "err", err)
+			p.h.log.Warn("registry tunnels to node stopped", "server", p.s.name(), "err", err)
 		}
 		return
 	}

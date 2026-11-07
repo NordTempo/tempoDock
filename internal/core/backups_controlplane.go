@@ -162,7 +162,7 @@ func (c *Core) controlPlaneJob(ctx context.Context, row store.ControlPlaneBackup
 		Env:    backup.ControlPlaneEnv(repo, backup.Retention{Daily: int(set.KeepDaily), Weekly: int(set.KeepWeekly), Monthly: int(set.KeepMonthly)}),
 		Script: backup.ControlPlaneScript(), Stdin: pr,
 	}
-	out, jobErr := c.runResticJob(ctx, c.local.ID, c.rt, repo, spec)
+	out, jobErr := c.runResticJob(ctx, c.localID, c.rt, repo, spec)
 	_ = pr.CloseWithError(errJobEnded) // the writer stops if the job didn't read it all
 	if werr := <-written; werr != nil && !errors.Is(werr, errJobEnded) {
 		return backup.Result{}, fmt.Errorf("write the control plane archive: %w", werr)
@@ -185,7 +185,11 @@ func (c *Core) controlPlaneBackupDue(ctx context.Context) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	since := c.local.CreatedAt
+	local, err := c.store.GetServer(ctx, c.localID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	since := local.CreatedAt
 	row, err := c.store.GetControlPlaneBackup(ctx)
 	switch {
 	case err == nil && row.ScheduledAt != nil:

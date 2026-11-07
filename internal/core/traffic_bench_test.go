@@ -55,7 +55,7 @@ func BenchmarkTrafficTick50(b *testing.B) {
 		}
 		hosts[i] = node.HostTraffic{Host: host, Requests: 5000, Status: [4]uint64{4900, 50, 40, 10}, Bytes: 5 << 20, Duration: time.Minute, Paths: paths}
 	}
-	srv, err := st.GetServer(ctx, c.local.ID)
+	srv, err := st.GetServer(ctx, c.localID)
 	if err != nil {
 		b.Fatal(err)
 	}

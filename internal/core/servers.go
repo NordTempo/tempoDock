@@ -171,10 +171,11 @@ func (c *Core) serverServices(ctx context.Context, serverID int64, link serverLi
 	return out, nil
 }
 
-// UpdateServer changes which environment kinds a server accepts, whether
-// it takes new placements, whether it builds and its base domain.
-// Environments already there stay; existing generated domains keep their
-// hostnames. The local server's builder setting follows [buildkit]
+// UpdateServer renames a server, or changes which environment kinds it
+// accepts, whether it takes new placements, whether it builds and its base
+// domain. Environments already there stay; existing generated domains keep
+// their hostnames. A rename changes only the name: everything refers to a
+// server by ID. The local server's builder setting follows [buildkit]
 // enabled on every start, and its base domain falls back to the config's
 // base_domain while unset.
 func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apitypes.UpdateServerRequest) (apitypes.Server, error) {
@@ -184,6 +185,12 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	srv, err := c.loadServer(ctx, name)
 	if err != nil {
 		return apitypes.Server{}, err
+	}
+	rename := req.Name != nil && *req.Name != srv.Name
+	if rename {
+		if err := validName("server", *req.Name); err != nil {
+			return apitypes.Server{}, err
+		}
 	}
 	settings := store.UpdateServerSettingsParams{BaseDomain: srv.BaseDomain, Builder: srv.Builder, ID: srv.ID}
 	if req.BaseDomain != nil {
@@ -219,8 +226,13 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	if settings.BaseDomain != srv.BaseDomain {
 		changes = append(changes, fmt.Sprintf("base domain %q", settings.BaseDomain))
 	}
-	if len(changes) > 0 {
+	if len(changes) > 0 || rename {
 		err := c.store.Tx(ctx, func(q *store.Queries) error {
+			if rename {
+				if err := renameServer(ctx, q, srv, *req.Name); err != nil {
+					return err
+				}
+			}
 			if placement {
 				if _, err := q.UpdateServerPlacement(ctx, params); err != nil {
 					return err
@@ -232,13 +244,51 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 		if err != nil {
 			return apitypes.Server{}, err
 		}
-		c.audit(ctx, a.platform(), "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
+		if rename {
+			c.audit(ctx, a.platform(), "server.rename", nil, nil, "server "+*req.Name, fmt.Sprintf("renamed server %s to %s", srv.Name, *req.Name))
+			if srv.Local {
+				c.localNow.Store(req.Name)
+			}
+			if c.nodes != nil {
+				c.nodes.Rename(srv.ID, *req.Name)
+			}
+			srv.Name = *req.Name
+		}
+		if len(changes) > 0 {
+			c.audit(ctx, a.platform(), "server.update", nil, nil, "server "+srv.Name, fmt.Sprintf("server %s %s", srv.Name, strings.Join(changes, ", ")))
+		}
 		c.publishServer(ctx, srv.ID)
 		if srv.Local && settings.BaseDomain != srv.BaseDomain {
 			c.publicSitesChanged(ctx) // stats-<site>.<base domain> moved
 		}
 	}
 	return c.serverDetail(ctx, srv.ID)
+}
+
+// renameServer renames srv in q's transaction. It refuses a name another
+// server has, or one still joining has; and a server with a join token
+// waiting to re-join it keeps its name until it has, as the token joins
+// by name. Reading the tokens in the transaction orders it with a token
+// minted at the same time.
+func renameServer(ctx context.Context, q *store.Queries, srv store.Server, to string) error {
+	pending, err := q.ListPendingJoinTokens(ctx, now())
+	if err != nil {
+		return err
+	}
+	for _, t := range pending {
+		switch t.ServerName {
+		case to:
+			return conflict("server %s is joining; pick another name, or remove it with `dock server remove %s` first", to, to)
+		case srv.Name:
+			return conflict("server %s has a join token waiting to re-join it; rename it once it has joined", srv.Name)
+		}
+	}
+	if _, err := q.RenameServer(ctx, store.RenameServerParams{Name: to, ID: srv.ID}); store.IsUnique(err) {
+		return conflict("server %s already exists; pick another name", to)
+	} else if err != nil {
+		return err
+	}
+	return q.RenameServerTunnel(ctx, store.RenameServerTunnelParams{Name: to, ServerID: &srv.ID})
 }
 
 // serverDetail returns one server with its usage.
@@ -459,7 +509,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		if err := q.ClearArchivedHostPorts(ctx, srv.ID); err != nil {
 			return err
 		}
-		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.local.ID, ServerID: srv.ID}); err != nil {
+		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.localID, ServerID: srv.ID}); err != nil {
 			return err
 		}
 		removed, err := q.DeleteServer(ctx, srv.ID)

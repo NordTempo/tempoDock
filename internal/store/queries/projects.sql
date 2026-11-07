@@ -24,6 +24,18 @@ UPDATE servers SET accepts_production = ?, accepts_non_production = ?, disabled_
 WHERE id = +?
 RETURNING *;
 
+-- name: RenameServer :one
+-- Renames a server. Everything else refers to it by ID; the unique index
+-- on name refuses a name another server has.
+UPDATE servers SET name = sqlc.arg(name) WHERE id = +sqlc.arg(id)
+RETURNING *;
+
+-- name: RenameServerTunnel :exec
+-- Keeps the name a server's Cloudflare tunnel row shows in messages in
+-- step with a rename, once the tunnel exists: until then makeTunnel
+-- finds an interrupted creation by a name made from server_name.
+UPDATE cloudflare_tunnels SET server_name = sqlc.arg(name) WHERE server_id = +sqlc.arg(server_id) AND tunnel_id != '';
+
 -- name: SetServerMemory :exec
 UPDATE servers SET memory_bytes = ? WHERE id = +? AND memory_bytes != +?;
 

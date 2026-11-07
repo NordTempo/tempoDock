@@ -44,7 +44,7 @@ func (h *Hub) UpdateNode(ctx context.Context, serverID int64, u NodeUpdate) (Hel
 		return Hello{}, offline(ctx, h.name(serverID), err)
 	}
 	if s.hello.Protocol < UpdateProtocol || s.hello.Arch == "" {
-		return Hello{}, fmt.Errorf("server %s runs dock %s: %w", s.name, s.hello.Version, ErrNoUpdateCall)
+		return Hello{}, fmt.Errorf("server %s runs dock %s: %w", s.name(), s.hello.Version, ErrNoUpdateCall)
 	}
 	req := updateRequest{Version: u.Version, RequestedBy: u.RequestedBy}
 	var files []*os.File
@@ -64,7 +64,7 @@ func (h *Hub) UpdateNode(ctx context.Context, serverID int64, u NodeUpdate) (Hel
 			ok = err == nil
 		}
 		if !ok {
-			return Hello{}, fmt.Errorf("release %s has no %s for server %s", u.Version, name, s.name)
+			return Hello{}, fmt.Errorf("release %s has no %s for server %s", u.Version, name, s.name())
 		}
 		f, err := os.Open(path)
 		if err != nil {
@@ -82,21 +82,21 @@ func (h *Hub) UpdateNode(ctx context.Context, serverID int64, u NodeUpdate) (Hel
 	err = call(callCtx, s, opUpdate, req, io.MultiReader(readers...), nil, nil, &empty{})
 	cancel()
 	if err != nil {
-		return Hello{}, fmt.Errorf("send %s to server %s: %w", u.Version, s.name, err)
+		return Hello{}, fmt.Errorf("send %s to server %s: %w", u.Version, s.name(), err)
 	}
 	// Its updater restarts it: this session ends, and the next one says
 	// which version it runs.
 	select {
 	case <-s.done:
 	case <-ctx.Done():
-		return Hello{}, fmt.Errorf("server %s didn't restart for its update (see journalctl -u dock-update on it): %w", s.name, ctx.Err())
+		return Hello{}, fmt.Errorf("server %s didn't restart for its update (see journalctl -u dock-update on it): %w", s.name(), ctx.Err())
 	}
 	next, err := h.waitNext(ctx, serverID, s)
 	if err != nil {
-		return Hello{}, fmt.Errorf("server %s didn't come back after its update: %w", s.name, err)
+		return Hello{}, fmt.Errorf("server %s didn't come back after its update: %w", s.name(), err)
 	}
 	if next.hello.Version != u.Version {
-		return next.hello, fmt.Errorf("server %s came back on %s: its update failed and was rolled back; see journalctl -u dock-update on it", s.name, next.hello.Version)
+		return next.hello, fmt.Errorf("server %s came back on %s: its update failed and was rolled back; see journalctl -u dock-update on it", s.name(), next.hello.Version)
 	}
 	return next.hello, nil
 }

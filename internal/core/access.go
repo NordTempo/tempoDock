@@ -151,7 +151,7 @@ func accessPasswordHash(password string, cur store.ServiceAccess) (string, error
 // loginSupported checks that a server can check Dock logins: the control
 // plane's own always can, a node from protocol 5 on (as it last said).
 func (c *Core) loginSupported(ctx context.Context, serverID int64) error {
-	if serverID == c.local.ID || c.nodes == nil {
+	if serverID == c.localID || c.nodes == nil {
 		return nil
 	}
 	h := c.nodes.State(serverID).Hello

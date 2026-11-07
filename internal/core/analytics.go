@@ -134,7 +134,7 @@ func (c *Core) runAnalytics(ctx context.Context, st store.AnalyticsSetting) erro
 	if err != nil {
 		return fmt.Errorf("open the analytics token: %w", err)
 	}
-	serverID := c.local.ID
+	serverID := c.localID
 	if st.ServerID != nil {
 		serverID = *st.ServerID
 	}
@@ -147,7 +147,7 @@ func (c *Core) runAnalytics(ctx context.Context, st store.AnalyticsSetting) erro
 	c.analytics.client = c.storeClient(serverID, string(token))
 	c.analytics.mu.Unlock()
 	c.ensureAnalyticsStore(serverID)
-	c.forwardFrom(c.local.ID)
+	c.forwardFrom(c.localID)
 	if c.nodes != nil {
 		servers, err := c.store.ListServers(ctx)
 		if err != nil {
@@ -338,7 +338,7 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 	c.analytics.mu.Unlock()
 	c.updateGeoIP()
 	c.pruneAnalytics()
-	c.pushSalts(c.local.ID)
+	c.pushSalts(c.localID)
 	if c.nodes == nil {
 		return
 	}
@@ -437,7 +437,7 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 // routes the public dashboards anew.
 func (c *Core) analyticsSitesChanged(ctx context.Context) {
 	c.publicSitesChanged(ctx)
-	c.pushSalts(c.local.ID)
+	c.pushSalts(c.localID)
 	if c.nodes == nil {
 		return
 	}
@@ -524,7 +524,7 @@ var errTailEnded = errors.New("the server's spool stopped streaming; see its dae
 // the replay spool isn't ready for its forwarder until it is updated.
 func (c *Core) forwardOnce(sp spoolOf) error {
 	serverID := sp.server
-	if serverID != c.local.ID {
+	if serverID != c.localID {
 		// Removed servers end their forwarder, offline or not.
 		if _, err := c.store.GetServer(c.ctx, serverID); err != nil {
 			return err
@@ -545,7 +545,7 @@ func (c *Core) forwardOnce(sp spoolOf) error {
 	if held || cl == nil || !c.online(serverID) || !c.online(storeServer) {
 		return errNotReady
 	}
-	if sp.spool == node.SpoolReplay && serverID != c.local.ID && c.nodes.State(serverID).Hello.Protocol < remote.ReplayProtocol {
+	if sp.spool == node.SpoolReplay && serverID != c.localID && c.nodes.State(serverID).Hello.Protocol < remote.ReplayProtocol {
 		return errNotReady
 	}
 	source := analyticsSource(sp)

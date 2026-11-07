@@ -95,9 +95,10 @@ func (c *Core) retentionTick(ctx context.Context, now time.Time, servers []store
 		// This server's log archives are pruned in process (a few
 		// directory reads); remote servers answer in the background, so
 		// the tick never waits on one.
-		remote := slices.DeleteFunc(slices.Clone(servers), func(s store.Server) bool { return s.ID == c.local.ID })
-		if len(remote) < len(servers) {
-			c.pruneLogs(ctx, []store.Server{c.local})
+		remote := slices.Clone(servers)
+		if i := slices.IndexFunc(servers, func(s store.Server) bool { return s.ID == c.localID }); i >= 0 {
+			c.pruneLogs(ctx, servers[i:i+1])
+			remote = slices.Delete(remote, i, i+1)
 		}
 		if len(remote) > 0 {
 			c.wg.Go(func() { c.pruneLogs(c.ctx, remote) })

@@ -223,7 +223,10 @@ func TestDiskAlertEscalatesAndResolves(t *testing.T) {
 	if len(created.Secret) != 64 || created.Channel.Target != k.srv.URL {
 		t.Fatalf("created = %+v (the secret is generated, the target has no path)", created)
 	}
-	srv := h.c.local
+	srv, err := h.store.GetServer(h.ctx, h.c.localID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	usage := func(pct int64) apitypes.ServerUsage {
 		return apitypes.ServerUsage{Disks: []apitypes.DiskUsage{{Paths: []string{"/var/lib/docker"}, UsedBytes: pct << 30, TotalBytes: 100 << 30}}}
 	}
@@ -573,7 +576,7 @@ func TestFullDiskIsPruned(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	h.openAlert("disk:"+itoa(h.c.local.ID), true)
+	h.openAlert("disk:"+itoa(h.c.localID), true)
 }
 
 // Archiving a service resolves its open alerts at once.

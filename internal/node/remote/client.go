@@ -73,7 +73,7 @@ func (c *Client) session(ctx context.Context) (*session, error) {
 	case s == nil:
 		return nil, offline(ctx, c.hub.name(c.id), nil)
 	case s.status != StatusOnline:
-		return nil, fmt.Errorf("server %s: %w", s.name, ErrIncompatible)
+		return nil, fmt.Errorf("server %s: %w", s.name(), ErrIncompatible)
 	}
 	return s, nil
 }
@@ -124,7 +124,7 @@ func (c *Client) needProtocol(ctx context.Context, min int, what string) error {
 		return err
 	}
 	if s.hello.Protocol < min {
-		return fmt.Errorf("server %s runs dock %s, which can't %s; upgrade dock on it", s.name, s.hello.Version, what)
+		return fmt.Errorf("server %s runs dock %s, which can't %s; upgrade dock on it", s.name(), s.hello.Version, what)
 	}
 	return nil
 }
@@ -550,7 +550,7 @@ func callWithLogs[R any](ctx context.Context, c *Client, op string, timeout time
 	}
 	err = call(callCtx, s, op, args, body, onLog, nil, &r)
 	if err != nil && ctx.Err() == nil && errors.Is(callCtx.Err(), context.DeadlineExceeded) {
-		err = fmt.Errorf("server %s didn't answer %s within %s: %w", s.name, op, timeout, context.DeadlineExceeded)
+		err = fmt.Errorf("server %s didn't answer %s within %s: %w", s.name(), op, timeout, context.DeadlineExceeded)
 	}
 	return r, err
 }
@@ -620,18 +620,18 @@ func open(ctx context.Context, s *session, op string, args any, body io.Reader) 
 	}
 	resp, err := s.cc.RoundTrip(req)
 	if err != nil {
-		return nil, offline(ctx, s.name, err)
+		return nil, offline(ctx, s.name(), err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxMessage))
 		if err != nil {
-			return nil, offline(ctx, s.name, err)
+			return nil, offline(ctx, s.name(), err)
 		}
 		var e Error
 		if json.Unmarshal(raw, &e) != nil || e.Code == "" {
 			// An op the node doesn't know (an older node) is a plain 404.
-			return nil, fmt.Errorf("server %s: %s: status %d", s.name, op, resp.StatusCode)
+			return nil, fmt.Errorf("server %s: %s: status %d", s.name(), op, resp.StatusCode)
 		}
 		e.Message = truncate(e.Message, maxErrorMessage)
 		return nil, &e
@@ -647,17 +647,17 @@ func read(ctx context.Context, s *session, frames io.ReadCloser, onLog func(stri
 		line, err := lr.next()
 		if errors.Is(err, errTooLarge) {
 			// A hostile or broken node; closing the body resets the call.
-			return fmt.Errorf("server %s: %w", s.name, err)
+			return fmt.Errorf("server %s: %w", s.name(), err)
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				err = errNoEnd
 			}
-			return offline(ctx, s.name, err)
+			return offline(ctx, s.name(), err)
 		}
 		var f frame
 		if err := json.Unmarshal(line, &f); err != nil {
-			return fmt.Errorf("server %s: bad frame: %w", s.name, err)
+			return fmt.Errorf("server %s: bad frame: %w", s.name(), err)
 		}
 		switch {
 		case f.End && f.Error != nil:
@@ -817,9 +817,9 @@ func (c *Client) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
 	}
 	if s.dials.Add(1) > maxDials {
 		s.dials.Add(-1)
-		return nil, fmt.Errorf("server %s: %w", s.name, errTooManyDials)
+		return nil, fmt.Errorf("server %s: %w", s.name(), errTooManyDials)
 	}
-	lc, err := openConn(ctx, s, opDialAnalytics, empty{}, s.name+"/analytics", func() { s.dials.Add(-1) })
+	lc, err := openConn(ctx, s, opDialAnalytics, empty{}, s.name()+"/analytics", func() { s.dials.Add(-1) })
 	if err != nil {
 		s.dials.Add(-1)
 		return nil, err

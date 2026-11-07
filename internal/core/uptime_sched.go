@@ -228,9 +228,10 @@ func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server) {
 		rt = offlineRuntime{errf(apitypes.CodeServerOffline, "server %s is offline", srv.Name)}
 	}
 	res, err := rt.Probe(ctx, req)
+	prober := srv.Name
 	if err != nil && !srv.Local {
 		c.log.Warn("uptime: probe on another server failed; the control plane probes", "check", chk.ID, "server", srv.Name, "err", err)
-		srv = c.local
+		prober = c.localName()
 		res, err = c.rt.Probe(ctx, req)
 	}
 	if c.ctx.Err() != nil {
@@ -240,7 +241,7 @@ func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server) {
 		c.log.Warn("uptime: probe", "check", chk.ID, "err", err)
 		return
 	}
-	c.recordProbe(c.ctx, chk, srv.Name, res, at)
+	c.recordProbe(c.ctx, chk, prober, res, at)
 }
 
 // uptimeProber picks the server that probes a check: among the online
@@ -248,9 +249,9 @@ func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server) {
 // a protocol with the probe op, the check ID modulo their number, so
 // checks spread over them. The control plane's own server is always a
 // candidate (it probes in process) and the fallback when there is no
-// other. servers is sorted by ID.
+// other. servers is sorted by ID and holds the local server.
 func (c *Core) uptimeProber(servers []store.Server, checkID, envServer int64) store.Server {
-	local := c.local
+	var local store.Server
 	cands := make([]store.Server, 0, len(servers))
 	for _, s := range servers {
 		if s.Local {

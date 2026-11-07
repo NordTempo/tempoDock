@@ -732,7 +732,7 @@ func (c *Core) serverLabel(name string, operator bool) string {
 	switch {
 	case operator:
 		return name
-	case name == c.local.Name:
+	case name == c.localName():
 		return "the control plane"
 	}
 	return "another server"

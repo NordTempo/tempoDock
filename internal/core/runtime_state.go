@@ -144,7 +144,7 @@ func (c *Core) scopeOf(ctx context.Context, serviceID int64) (svcScope, error) {
 func (c *Core) watchRuntime(events <-chan node.ContainerEvent) {
 	defer c.wg.Done()
 	for ev := range events {
-		c.onContainerEvent(c.ctx, c.local.ID, ev)
+		c.onContainerEvent(c.ctx, c.localID, ev)
 	}
 }
 
@@ -280,7 +280,7 @@ func (c *Core) recover(ctx context.Context) error {
 		c.restage(ctx, ss, r, msg)
 		c.gitDeployInterrupted(ctx, ss, r, msg)
 	}
-	return c.startInterrupted(ctx, c.local.ID, c.rt)
+	return c.startInterrupted(ctx, c.localID, c.rt)
 }
 
 // ensureLater records that a service's active release must be started

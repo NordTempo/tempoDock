@@ -82,6 +82,8 @@ func (n *fakeNodes) Disconnect(id int64) {
 	n.disconnects[id]++
 }
 
+func (n *fakeNodes) Rename(int64, string) {}
+
 func (n *fakeNodes) RotateKey(context.Context, int64) (string, error) {
 	return "sha256:" + strings.Repeat("ab", 32), nil
 }
