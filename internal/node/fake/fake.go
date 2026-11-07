@@ -891,15 +891,21 @@ func (r *Runtime) DialTo(addr string) { r.mu.Lock(); r.dialAddr = addr; r.mu.Unl
 // Dial implements node.Containers. Like the real runtime it only dials
 // running service containers; the connection goes to the DialTo address.
 func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, error) {
+	// The container's fields are read under the lock: Stop changes them.
 	r.mu.Lock()
 	c, ok := r.containers[req.ContainerID]
+	var service string
+	var state node.ContainerState
+	if ok {
+		service, state = c.Labels.Service, c.State
+	}
 	addr := r.dialAddr
 	r.mu.Unlock()
 	switch {
-	case !ok || c.Labels.Service == "":
+	case !ok || service == "":
 		return nil, fmt.Errorf("container %s: %w", req.ContainerID, node.ErrNotFound)
-	case c.State != node.StateRunning:
-		return nil, fmt.Errorf("container %s is %s", req.ContainerID, c.State)
+	case state != node.StateRunning:
+		return nil, fmt.Errorf("container %s is %s", req.ContainerID, state)
 	case addr == "":
 		return nil, errors.New("fake: no dial target; call DialTo")
 	}
