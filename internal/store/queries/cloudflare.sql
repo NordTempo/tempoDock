@@ -39,18 +39,17 @@ DELETE FROM cloudflare_connections WHERE id = +?;
 -- name: ListCloudflareZones :many
 -- Every connection's zones with whose they are (org 0: the platform's)
 -- and whether orgs may use them; few, kept in memory to match hostnames.
+-- A zone on several connections is listed once for each.
 SELECT sqlc.embed(cloudflare_zones), CAST(coalesce(cloudflare_connections.org_id, 0) AS INTEGER) AS org_id, cloudflare_connections.shared
 FROM cloudflare_zones JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_zones.connection_id
-ORDER BY cloudflare_zones.name;
+ORDER BY cloudflare_zones.name, cloudflare_zones.connection_id;
 
 -- name: DeleteCloudflareZones :exec
 DELETE FROM cloudflare_zones WHERE connection_id = +?;
 
 -- name: SaveCloudflareZone :exec
--- A zone another connection reached before moves to this one; core
--- refuses a zone another owner's connection has (saveZones).
-INSERT INTO cloudflare_zones (connection_id, zone_id, name) VALUES (?, ?, ?)
-ON CONFLICT (name) DO UPDATE SET connection_id = excluded.connection_id, zone_id = excluded.zone_id;
+-- One of a connection's zones; other connections may hold it too.
+INSERT INTO cloudflare_zones (connection_id, zone_id, name) VALUES (?, ?, ?);
 
 -- name: ListCloudflareTunnels :many
 -- Every tunnel row, with its connection's name; one per tunnel server.
@@ -109,10 +108,12 @@ JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_tunnels.co
 WHERE cloudflare_tunnels.status = 'pending' AND cloudflare_connections.status = 'ok' AND cloudflare_tunnels.retry_at IS NOT NULL
 ORDER BY cloudflare_tunnels.retry_at LIMIT 1;
 
--- name: SaveCloudflareRecord :exec
+-- name: SaveCloudflareRecord :execrows
 -- Routes hostname through its server's tunnel, pending. A row being
--- deleted (absent) comes back; what it made is kept when the zone is the
--- same.
+-- deleted (absent, or its domain gone) comes back; what it made is kept
+-- when the zone is the same. A live domain's row stays with its
+-- connection: another connection's save affects no row, so one org's
+-- connection never takes over another's record.
 INSERT INTO cloudflare_records (hostname, domain_id, server_id, connection_id, zone_id, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (hostname) DO UPDATE SET
@@ -120,7 +121,9 @@ ON CONFLICT (hostname) DO UPDATE SET
     record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
     connection_id = excluded.connection_id, zone_id = excluded.zone_id,
     want = 'present', status = 'pending', reason = '',
-    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at;
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.connection_id = excluded.connection_id
+   OR cloudflare_records.want = 'absent' OR cloudflare_records.domain_id IS NULL;
 
 -- name: GetCloudflareRecord :one
 SELECT * FROM cloudflare_records WHERE hostname = +?;
@@ -199,6 +202,39 @@ JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.co
 LEFT JOIN servers ON servers.id = cloudflare_records.server_id
 ORDER BY CASE cloudflare_records.status WHEN 'error' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, cloudflare_records.hostname
 LIMIT +sqlc.arg(max);
+
+-- name: ListStrandedCloudflareRecords :many
+-- Records whose connection no longer holds their zone (its token lost
+-- it, or the connection is being removed), with the org they serve: the
+-- domain's, or once it is gone the connection's (0: the platform's).
+-- Every record is looked at; there are as many as domains through
+-- tunnels, and this runs only when a connection changes.
+SELECT sqlc.embed(cloudflare_records),
+    CAST(coalesce(projects.org_id, cloudflare_connections.org_id, 0) AS INTEGER) AS org_id
+FROM cloudflare_records
+JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
+LEFT JOIN domains ON domains.id = cloudflare_records.domain_id
+LEFT JOIN services ON services.id = domains.service_id
+LEFT JOIN environments ON environments.id = services.environment_id
+LEFT JOIN projects ON projects.id = environments.project_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM cloudflare_zones
+    WHERE cloudflare_zones.connection_id = cloudflare_records.connection_id AND cloudflare_zones.zone_id = cloudflare_records.zone_id
+)
+ORDER BY cloudflare_records.id;
+
+-- name: MoveCloudflareRecord :exec
+-- A record goes to another connection that holds its zone, to be worked
+-- on again there: the record Dock made is found again by its comment.
+UPDATE cloudflare_records
+SET connection_id = ?, status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE id = +?;
+
+-- name: FailCloudflareRecord :exec
+-- A record no connection may work on: failed, saying what to do.
+UPDATE cloudflare_records
+SET status = 'error', reason = ?, attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE id = +?;
 
 -- name: CountConnectionUse :one
 -- Tunnels Dock keeps with a connection; it can't be removed while any.

@@ -325,11 +325,37 @@ activity within those limits.
 - **Zones:** an org's hostname looks in the org's own zones first, then
   in shared platform zones, never another org's; a name under a server's
   base domain uses any platform zone. `GET /cloudflare/zones` lists only
-  those. A zone belongs to one owner: a token reaching a zone connected
-  elsewhere is refused (409). An org's own connection takes only zones
-  Cloudflare serves (active): a zone added to an account but not
-  delegated proves nothing, and domains from Cloudflare need no TXT proof
+  those, each once. An org's own connection takes only zones Cloudflare
+  serves (active): a zone added to an account but not delegated proves
+  nothing, and domains from Cloudflare need no TXT proof
   ([0042](0042-domain-verification.md)).
+- **A zone may be on several connections** (amended by the owner,
+  2026-11-07): the platform's and any number of orgs' own, so a zone can
+  run the platform's tunnels and names and serve one org's domains
+  without the other orgs seeing it, and two orgs may both hold it.
+  Migration 0076 makes zone names unique per connection. Of one owner's
+  connections holding a zone, the oldest is used. `shared` stays all
+  orgs or none; an org adds the zone itself instead of the platform
+  sharing it with chosen orgs.
+- **A hostname is still one org's:** a domain from Cloudflare is
+  verified at once, and a verified hostname is unique across orgs
+  ([0042](0042-domain-verification.md)), so the second org is refused
+  (`hostname_taken`). Its record (`cloudflare_records`, one per
+  hostname) stays with the connection that made it: saving one with
+  another connection changes nothing while the domain lives. All
+  connections share the install's `dock:<install>` comment, so this row
+  is what keeps one org's connection off another's records.
+- **When a zone leaves a connection** (a new token or a refresh no
+  longer reaches it, or the connection is removed), its records move to
+  another connection holding the same zone that the domain's org may
+  use, and are routed again with it (the CNAME is found by its comment).
+  With none they fail saying what to do, and move once a connection
+  gets the zone or a platform one is shared. A failed record is never
+  retried with a connection that lacks its zone. A new token or a
+  refresh reports the zones added and dropped and the domains that
+  failed. A connection a server tunnel uses can't be removed; Change
+  token (`dock cloudflare set NAME --platform --token-stdin`) narrows
+  its zones instead.
 - **Tunnels stay the platform's:** a domain in an org's zone goes through
   the server's tunnel, which must be in the zone's Cloudflare account. A
   server without one gets it made with a platform connection in that

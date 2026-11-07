@@ -41,6 +41,8 @@ export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
   const connections = useCloudflare(scope);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string>();
+  // The answer to the last new token: what it changed in the zones.
+  const [saved, setSaved] = useState<Cloudflare>();
   const edited = connections.find((c) => c.name === editing);
   const actions = (
     <>
@@ -88,6 +90,7 @@ export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
                     <ConnectionRow
                       key={c.name}
                       connection={c}
+                      saved={saved?.name === c.name ? saved : undefined}
                       onEdit={() => {
                         setAdding(false);
                         setEditing(c.name);
@@ -111,6 +114,7 @@ export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
             <TokenForm
               key={edited.name}
               connection={edited}
+              onSaved={setSaved}
               onClose={() => setEditing(undefined)}
             />
           )}
@@ -121,6 +125,31 @@ export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
 }
 
 const faint = <span className="text-faint">·</span>;
+
+/**
+ * What a new token or a refresh changed: the zones added and dropped, and
+ * the domains no other connection could take.
+ */
+function ZoneChange({ change: c }: { change: Cloudflare }) {
+  const added = c.zones_added ?? [];
+  const dropped = c.zones_dropped ?? [];
+  const failed = c.domains_failed ?? [];
+  if (added.length + dropped.length === 0)
+    return <div className="text-mut">zones unchanged</div>;
+  return (
+    <div className="text-mut">
+      {added.length > 0 && `added ${added.join(", ")}`}
+      {added.length > 0 && dropped.length > 0 && " · "}
+      {dropped.length > 0 && `dropped ${dropped.join(", ")}`}
+      {failed.length > 0 && (
+        <div className="text-fail">
+          no longer routed, no other connection has their zone:{" "}
+          {failed.join(", ")}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Tries every failed tunnel and domain again, and says how many. */
 function RetryFailed() {
@@ -148,9 +177,12 @@ function RetryFailed() {
 
 function ConnectionRow({
   connection: c,
+  saved,
   onEdit,
 }: {
   connection: Cloudflare;
+  /** The answer to this connection's new token, when just saved. */
+  saved?: Cloudflare;
   onEdit: () => void;
 }) {
   const scope = useContext(Scope);
@@ -160,12 +192,20 @@ function ConnectionRow({
   const [confirming, setConfirming] = useState(false);
   const zones = c.zones ?? [];
   const tunnels = c.used_by ?? [];
+  // The later of a refresh and a new token.
+  const change =
+    refresh.data &&
+    (!saved ||
+      Date.parse(refresh.data.updated_at) >= Date.parse(saved.updated_at))
+      ? refresh.data
+      : saved;
   return (
     <tr>
       <td className="py-2 font-mono">{c.name}</td>
       <td className="py-2">{c.account_name || c.account_id}</td>
       <td className="py-2 font-mono whitespace-normal">
         {zones.length > 0 ? zones.join(", ") : faint}
+        {change && <ZoneChange change={change} />}
       </td>
       <td className="py-2">
         {tunnels.length > 0 ? tunnels.join(", ") : faint}
@@ -216,7 +256,7 @@ function ConnectionRow({
             danger
             small
             disabled={tunnels.length > 0}
-            reason="a server's tunnel uses it"
+            reason="a server's tunnel uses it; to take zones off it, give it a token that reaches fewer with Change token"
             onClick={() => setConfirming(true)}
           >
             Remove
@@ -236,7 +276,8 @@ function ConnectionRow({
                 setConfirming(false);
               }}
             >
-              Dock forgets this Cloudflare token. DNS records it made stay in
+              Dock forgets this Cloudflare token. Its domains move to another
+              connection that has their zone; DNS records of the rest stay in
               Cloudflare.
             </Confirm>
           )}
@@ -252,9 +293,12 @@ function ConnectionRow({
  */
 function TokenForm({
   connection,
+  onSaved,
   onClose,
 }: {
   connection?: Cloudflare;
+  /** Gets the answer to a new token, with the zones it changed. */
+  onSaved?: (saved: Cloudflare) => void;
   onClose: () => void;
 }) {
   const scope = useContext(Scope);
@@ -291,7 +335,12 @@ function TokenForm({
         name: connection.name,
         change: { token: token.trim(), ...(acct && { account_id: acct }) },
       },
-      { onSuccess: onClose },
+      {
+        onSuccess: (saved) => {
+          onSaved?.(saved);
+          onClose();
+        },
+      },
     );
   };
 

@@ -274,11 +274,17 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		if zone == nil {
 			return nil
 		}
-		// Dock routes it through the server's tunnel (ADR 0036).
-		return q.SaveCloudflareRecord(ctx, store.SaveCloudflareRecordParams{
+		// Dock routes it through the server's tunnel (ADR 0036). A
+		// live domain's record with another connection, maybe another
+		// org's, is never taken over.
+		saved, err := q.SaveCloudflareRecord(ctx, store.SaveCloudflareRecordParams{
 			Hostname: host, DomainID: &d.ID, ServerID: &ss.env.ServerID,
 			ConnectionID: zone.ConnectionID, ZoneID: zone.ZoneID, UpdatedAt: now(),
 		})
+		if err == nil && saved == 0 {
+			return errf(apitypes.CodeHostnameTaken, "Dock routes %s through Cloudflare for another domain already; use another hostname", host)
+		}
+		return err
 	})
 	if store.IsUnique(err) {
 		return apitypes.DomainChange{}, errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)

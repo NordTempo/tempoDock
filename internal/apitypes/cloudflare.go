@@ -6,7 +6,8 @@ import "time"
 // which Dock runs tunnels for tunnel servers and routes domains added
 // from its zones through them. The token is never returned. A connection
 // is the platform's (it runs server tunnels) or an org's own, whose
-// zones only that org's domains use (ADR 0062).
+// zones only that org's domains use (ADR 0062). A zone may be on several
+// connections.
 type Cloudflare struct {
 	Name string `json:"name" example:"home"`
 	// Shared is set on a platform connection whose zones org domains may
@@ -25,6 +26,13 @@ type Cloudflare struct {
 	UsedBy    []string  `json:"used_by"`
 	UpdatedAt time.Time `json:"updated_at"`
 	UpdatedBy string    `json:"updated_by"`
+	// ZonesAdded, ZonesDropped and DomainsFailed are set only in the
+	// answer to a new token or a refresh: the zones it reaches now and
+	// didn't before, those it no longer reaches, and the domains in
+	// those that no other connection could take, which no longer route.
+	ZonesAdded    []string `json:"zones_added,omitempty"`
+	ZonesDropped  []string `json:"zones_dropped,omitempty"`
+	DomainsFailed []string `json:"domains_failed,omitempty"`
 }
 
 // CloudflareStatus is whether a Cloudflare connection's token works.

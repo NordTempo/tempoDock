@@ -166,6 +166,24 @@ func (q *Queries) DeleteCloudflareZones(ctx context.Context, connectionID int64)
 	return err
 }
 
+const failCloudflareRecord = `-- name: FailCloudflareRecord :exec
+UPDATE cloudflare_records
+SET status = 'error', reason = ?, attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE id = +?
+`
+
+type FailCloudflareRecordParams struct {
+	Reason    string
+	UpdatedAt time.Time
+	ID        int64
+}
+
+// A record no connection may work on: failed, saying what to do.
+func (q *Queries) FailCloudflareRecord(ctx context.Context, arg FailCloudflareRecordParams) error {
+	_, err := q.db.ExecContext(ctx, failCloudflareRecord, arg.Reason, arg.UpdatedAt, arg.ID)
+	return err
+}
+
 const getCloudflareConnection = `-- name: GetCloudflareConnection :one
 SELECT id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) AND name = +?2
 `
@@ -470,7 +488,7 @@ func (q *Queries) ListCloudflareTunnels(ctx context.Context) ([]ListCloudflareTu
 const listCloudflareZones = `-- name: ListCloudflareZones :many
 SELECT cloudflare_zones.id, cloudflare_zones.connection_id, cloudflare_zones.zone_id, cloudflare_zones.name, CAST(coalesce(cloudflare_connections.org_id, 0) AS INTEGER) AS org_id, cloudflare_connections.shared
 FROM cloudflare_zones JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_zones.connection_id
-ORDER BY cloudflare_zones.name
+ORDER BY cloudflare_zones.name, cloudflare_zones.connection_id
 `
 
 type ListCloudflareZonesRow struct {
@@ -481,6 +499,7 @@ type ListCloudflareZonesRow struct {
 
 // Every connection's zones with whose they are (org 0: the platform's)
 // and whether orgs may use them; few, kept in memory to match hostnames.
+// A zone on several connections is listed once for each.
 func (q *Queries) ListCloudflareZones(ctx context.Context) ([]ListCloudflareZonesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCloudflareZones)
 	if err != nil {
@@ -704,6 +723,92 @@ func (q *Queries) ListServiceCloudflareRecords(ctx context.Context, serviceID in
 	return items, nil
 }
 
+const listStrandedCloudflareRecords = `-- name: ListStrandedCloudflareRecords :many
+SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at,
+    CAST(coalesce(projects.org_id, cloudflare_connections.org_id, 0) AS INTEGER) AS org_id
+FROM cloudflare_records
+JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
+LEFT JOIN domains ON domains.id = cloudflare_records.domain_id
+LEFT JOIN services ON services.id = domains.service_id
+LEFT JOIN environments ON environments.id = services.environment_id
+LEFT JOIN projects ON projects.id = environments.project_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM cloudflare_zones
+    WHERE cloudflare_zones.connection_id = cloudflare_records.connection_id AND cloudflare_zones.zone_id = cloudflare_records.zone_id
+)
+ORDER BY cloudflare_records.id
+`
+
+type ListStrandedCloudflareRecordsRow struct {
+	CloudflareRecord CloudflareRecord
+	OrgID            int64
+}
+
+// Records whose connection no longer holds their zone (its token lost
+// it, or the connection is being removed), with the org they serve: the
+// domain's, or once it is gone the connection's (0: the platform's).
+// Every record is looked at; there are as many as domains through
+// tunnels, and this runs only when a connection changes.
+func (q *Queries) ListStrandedCloudflareRecords(ctx context.Context) ([]ListStrandedCloudflareRecordsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStrandedCloudflareRecords)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStrandedCloudflareRecordsRow
+	for rows.Next() {
+		var i ListStrandedCloudflareRecordsRow
+		if err := rows.Scan(
+			&i.CloudflareRecord.ID,
+			&i.CloudflareRecord.Hostname,
+			&i.CloudflareRecord.DomainID,
+			&i.CloudflareRecord.ServerID,
+			&i.CloudflareRecord.ConnectionID,
+			&i.CloudflareRecord.ZoneID,
+			&i.CloudflareRecord.RecordID,
+			&i.CloudflareRecord.Content,
+			&i.CloudflareRecord.RouteTunnel,
+			&i.CloudflareRecord.Want,
+			&i.CloudflareRecord.Status,
+			&i.CloudflareRecord.Reason,
+			&i.CloudflareRecord.Attempts,
+			&i.CloudflareRecord.RetryAt,
+			&i.CloudflareRecord.Gen,
+			&i.CloudflareRecord.UpdatedAt,
+			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const moveCloudflareRecord = `-- name: MoveCloudflareRecord :exec
+UPDATE cloudflare_records
+SET connection_id = ?, status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE id = +?
+`
+
+type MoveCloudflareRecordParams struct {
+	ConnectionID int64
+	UpdatedAt    time.Time
+	ID           int64
+}
+
+// A record goes to another connection that holds its zone, to be worked
+// on again there: the record Dock made is found again by its comment.
+func (q *Queries) MoveCloudflareRecord(ctx context.Context, arg MoveCloudflareRecordParams) error {
+	_, err := q.db.ExecContext(ctx, moveCloudflareRecord, arg.ConnectionID, arg.UpdatedAt, arg.ID)
+	return err
+}
+
 const nextCloudflareRecordRetry = `-- name: NextCloudflareRecordRetry :many
 SELECT cloudflare_records.retry_at FROM cloudflare_records
 JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
@@ -840,7 +945,7 @@ func (q *Queries) RetryFailedCloudflareTunnels(ctx context.Context, updatedAt ti
 	return result.RowsAffected()
 }
 
-const saveCloudflareRecord = `-- name: SaveCloudflareRecord :exec
+const saveCloudflareRecord = `-- name: SaveCloudflareRecord :execrows
 INSERT INTO cloudflare_records (hostname, domain_id, server_id, connection_id, zone_id, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (hostname) DO UPDATE SET
@@ -849,6 +954,8 @@ ON CONFLICT (hostname) DO UPDATE SET
     connection_id = excluded.connection_id, zone_id = excluded.zone_id,
     want = 'present', status = 'pending', reason = '',
     attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.connection_id = excluded.connection_id
+   OR cloudflare_records.want = 'absent' OR cloudflare_records.domain_id IS NULL
 `
 
 type SaveCloudflareRecordParams struct {
@@ -861,10 +968,12 @@ type SaveCloudflareRecordParams struct {
 }
 
 // Routes hostname through its server's tunnel, pending. A row being
-// deleted (absent) comes back; what it made is kept when the zone is the
-// same.
-func (q *Queries) SaveCloudflareRecord(ctx context.Context, arg SaveCloudflareRecordParams) error {
-	_, err := q.db.ExecContext(ctx, saveCloudflareRecord,
+// deleted (absent, or its domain gone) comes back; what it made is kept
+// when the zone is the same. A live domain's row stays with its
+// connection: another connection's save affects no row, so one org's
+// connection never takes over another's record.
+func (q *Queries) SaveCloudflareRecord(ctx context.Context, arg SaveCloudflareRecordParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, saveCloudflareRecord,
 		arg.Hostname,
 		arg.DomainID,
 		arg.ServerID,
@@ -872,12 +981,14 @@ func (q *Queries) SaveCloudflareRecord(ctx context.Context, arg SaveCloudflareRe
 		arg.ZoneID,
 		arg.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const saveCloudflareZone = `-- name: SaveCloudflareZone :exec
 INSERT INTO cloudflare_zones (connection_id, zone_id, name) VALUES (?, ?, ?)
-ON CONFLICT (name) DO UPDATE SET connection_id = excluded.connection_id, zone_id = excluded.zone_id
 `
 
 type SaveCloudflareZoneParams struct {
@@ -886,8 +997,7 @@ type SaveCloudflareZoneParams struct {
 	Name         string
 }
 
-// A zone another connection reached before moves to this one; core
-// refuses a zone another owner's connection has (saveZones).
+// One of a connection's zones; other connections may hold it too.
 func (q *Queries) SaveCloudflareZone(ctx context.Context, arg SaveCloudflareZoneParams) error {
 	_, err := q.db.ExecContext(ctx, saveCloudflareZone, arg.ConnectionID, arg.ZoneID, arg.Name)
 	return err

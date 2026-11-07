@@ -26,7 +26,9 @@ import (
 // manage the platform's: they run server tunnels and serve Dock's own
 // address, and a shared one's zones are open to every org's domains. An
 // org's unlimited admins manage its own, whose zones only its domains
-// use. A zone belongs to one connection.
+// use. A zone may be on several connections, the platform's and any
+// number of orgs' (pickZone decides which one a hostname uses); a
+// hostname is still routed by one of them only (cloudflare_records).
 //
 // What Dock wants in Cloudflare is rows in cloudflare_tunnels and
 // cloudflare_records; a worker (cloudflare_queue.go) makes Cloudflare
@@ -49,9 +51,8 @@ type cfState struct {
 	kick chan struct{}
 
 	mu sync.Mutex
-	// zones are every connection's zones, longest name first, so the
-	// first that matches a hostname is its zone. Bounded by the zones the
-	// tokens reach.
+	// zones are every connection's zones in pickZone's order. Bounded by
+	// the zones the tokens reach.
 	zones []cfZone
 	// conns are the connections' names, by ID.
 	conns map[int64]string
@@ -119,10 +120,7 @@ func (c *Core) loadCloudflareZones(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	zones := make([]cfZone, len(rows))
-	for i, r := range rows {
-		zones[i] = cfZone{CloudflareZone: r.CloudflareZone, org: r.OrgID, shared: r.Shared}
-	}
+	zones := toZones(rows)
 	conns, err := c.store.ListCloudflareConnections(ctx)
 	if err != nil {
 		return err
@@ -131,11 +129,52 @@ func (c *Core) loadCloudflareZones(ctx context.Context) error {
 	for _, r := range conns {
 		names[r.ID] = r.Name
 	}
-	slices.SortFunc(zones, func(a, b cfZone) int { return cmp.Compare(len(b.Name), len(a.Name)) })
 	c.cf.mu.Lock()
 	c.cf.zones, c.cf.conns = zones, names
 	c.cf.mu.Unlock()
 	return nil
+}
+
+// toZones are the zones ListCloudflareZones lists (by name, then
+// connection) in pickZone's order: longest name first, so the first that
+// matches a hostname is its zone, and of a zone on several connections
+// the oldest connection's first.
+func toZones(rows []store.ListCloudflareZonesRow) []cfZone {
+	zones := make([]cfZone, len(rows))
+	for i, r := range rows {
+		zones[i] = cfZone{CloudflareZone: r.CloudflareZone, org: r.OrgID, shared: r.Shared}
+	}
+	slices.SortStableFunc(zones, func(a, b cfZone) int { return cmp.Compare(len(b.Name), len(a.Name)) })
+	return zones
+}
+
+// pickZone is the zone, of those that match, org's domains use: the
+// org's own first, then a shared platform one, never another org's (org
+// 0, the platform's own names, uses any platform zone). zones are in
+// toZones' order, so the closest match of the owner wins and a zone on
+// several of one owner's connections is the oldest connection's.
+func pickZone(zones []cfZone, org int64, match func(cfZone) bool) (cfZone, bool) {
+	var platform *cfZone
+	for i, z := range zones {
+		if !z.usableBy(org) || !match(z) {
+			continue
+		}
+		if z.org != 0 {
+			return z, true
+		}
+		if platform == nil {
+			platform = &zones[i]
+		}
+	}
+	if platform == nil {
+		return cfZone{}, false
+	}
+	return *platform, true
+}
+
+// inZone reports whether hostname is zone or under it.
+func inZone(hostname, zone string) bool {
+	return hostname == zone || strings.HasSuffix(hostname, "."+zone)
 }
 
 // connectionName names a connection, from memory.
@@ -146,27 +185,21 @@ func (c *Core) connectionName(id int64) string {
 }
 
 // zoneFor returns the managed zone hostname is in that org's domains may
-// use: the org's own first, then the platform's shared ones; never
-// another org's. Org 0 asks for the platform's own names (usableBy).
+// use (pickZone). Org 0 asks for the platform's own names (usableBy).
 func (c *Core) zoneFor(org int64, hostname string) (store.CloudflareZone, bool) {
 	c.cf.mu.Lock()
 	defer c.cf.mu.Unlock()
-	var platform *cfZone
-	for i, z := range c.cf.zones {
-		if hostname != z.Name && !strings.HasSuffix(hostname, "."+z.Name) || !z.usableBy(org) {
-			continue
-		}
-		if z.org != 0 {
-			return z.CloudflareZone, true
-		}
-		if platform == nil {
-			platform = &c.cf.zones[i]
-		}
-	}
-	if platform == nil {
-		return store.CloudflareZone{}, false
-	}
-	return platform.CloudflareZone, true
+	z, ok := pickZone(c.cf.zones, org, func(z cfZone) bool { return inZone(hostname, z.Name) })
+	return z.CloudflareZone, ok
+}
+
+// holdsZone reports whether a connection has the zone with Cloudflare ID
+// zoneID, from memory: the worker works on a record only with a
+// connection that does.
+func (c *Core) holdsZone(connID int64, zoneID string) bool {
+	c.cf.mu.Lock()
+	defer c.cf.mu.Unlock()
+	return slices.ContainsFunc(c.cf.zones, func(z cfZone) bool { return z.ConnectionID == connID && z.ZoneID == zoneID })
 }
 
 // zoneName returns the name of the managed zone with Cloudflare ID id.
@@ -333,7 +366,11 @@ func (c *Core) AddCloudflare(ctx context.Context, a Actor, platform bool, req ap
 		if err != nil {
 			return err
 		}
-		return saveZones(ctx, q, row, zones)
+		if _, _, err := saveZones(ctx, q, row, zones); err != nil {
+			return err
+		}
+		_, err = c.rehomeRecords(ctx, q, 0) // domains failed for want of their zone may use it now
+		return err
 	})
 	if err != nil {
 		return apitypes.Cloudflare{}, err
@@ -361,7 +398,8 @@ func zonesFor(org int64, zones []cloudflare.Zone) []cloudflare.Zone {
 // one, and lists its zones again: a connection whose token Cloudflare
 // refused works again, and what waited for it resumes. A platform
 // connection may be shared or stop being shared, with or without a new
-// token; domains that use its zones already keep them.
+// token; domains that use its zones already keep them, and domains that
+// failed when their connection lost a zone it has move to it.
 func (c *Core) UpdateCloudflare(ctx context.Context, a Actor, platform bool, name string, req apitypes.UpdateCloudflareRequest) (apitypes.Cloudflare, error) {
 	org, err := connectionsIn(a, platform, "changing Cloudflare connections")
 	if err != nil {
@@ -372,6 +410,7 @@ func (c *Core) UpdateCloudflare(ctx context.Context, a Actor, platform bool, nam
 		return apitypes.Cloudflare{}, err
 	}
 	token := strings.TrimSpace(req.Token)
+	var changed *zoneChange
 	switch {
 	case req.Shared != nil && org != 0:
 		return apitypes.Cloudflare{}, invalid("only the platform's Cloudflare connections are shared; an organization's own serve its domains only")
@@ -392,16 +431,24 @@ func (c *Core) UpdateCloudflare(ctx context.Context, a Actor, platform bool, nam
 				return apitypes.Cloudflare{}, conflict("Cloudflare connection %s runs tunnels in account %s; it can't move to another account while it does", name, row.AccountName)
 			}
 		}
-		zones, err := c.recheckCloudflare(ctx, a, row, token, accountID)
+		ch, err := c.recheckCloudflare(ctx, a, row, token, accountID)
 		if err != nil {
 			return apitypes.Cloudflare{}, err
 		}
-		c.audit(ctx, cfAudit(a, org), "cloudflare.connection_update", nil, nil, name, fmt.Sprintf("gave Cloudflare connection %s a new token (%d zones)", name, zones))
+		c.audit(ctx, cfAudit(a, org), "cloudflare.connection_update", nil, nil, name, "gave Cloudflare connection "+name+" a new token"+ch.summary())
+		changed = &ch
 	}
 	if req.Shared != nil && *req.Shared != row.Shared {
-		if err := c.store.SetCloudflareConnectionShared(ctx, store.SetCloudflareConnectionSharedParams{
-			Shared: *req.Shared, UpdatedAt: now(), UpdatedBy: a.Name, ID: row.ID,
-		}); err != nil {
+		err := c.store.Tx(ctx, func(q *store.Queries) error {
+			if err := q.SetCloudflareConnectionShared(ctx, store.SetCloudflareConnectionSharedParams{
+				Shared: *req.Shared, UpdatedAt: now(), UpdatedBy: a.Name, ID: row.ID,
+			}); err != nil {
+				return err
+			}
+			_, err := c.rehomeRecords(ctx, q, 0) // domains failed for want of a zone may use its now
+			return err
+		})
+		if err != nil {
 			return apitypes.Cloudflare{}, err
 		}
 		summary := "shared Cloudflare connection " + name + " with organizations: their domains may use its zones"
@@ -411,7 +458,9 @@ func (c *Core) UpdateCloudflare(ctx context.Context, a Actor, platform bool, nam
 		c.audit(ctx, a.platform(), "cloudflare.connection_share", nil, nil, name, summary)
 		c.cloudflareChanged(ctx)
 	}
-	return c.cloudflareView(ctx, org, name)
+	out, err := c.cloudflareView(ctx, org, name)
+	changed.into(&out)
+	return out, err
 }
 
 // RefreshCloudflare checks one of the org's connections (with platform,
@@ -430,26 +479,69 @@ func (c *Core) RefreshCloudflare(ctx context.Context, a Actor, platform bool, na
 	if err != nil {
 		return apitypes.Cloudflare{}, err
 	}
-	if _, err := c.recheckCloudflare(ctx, a, row, cl.Token, row.AccountID); err != nil {
+	ch, err := c.recheckCloudflare(ctx, a, row, cl.Token, row.AccountID)
+	if err != nil {
 		return apitypes.Cloudflare{}, err
 	}
-	return c.cloudflareView(ctx, org, name)
+	if len(ch.added)+len(ch.dropped) > 0 {
+		c.audit(ctx, cfAudit(a, org), "cloudflare.connection_refresh", nil, nil, name, "refreshed Cloudflare connection "+name+ch.summary())
+	}
+	out, err := c.cloudflareView(ctx, org, name)
+	ch.into(&out)
+	return out, err
+}
+
+// zoneChange is what a new token or a refresh changed in a connection's
+// zones, and the domains that failed for it.
+type zoneChange struct {
+	zones          int
+	added, dropped []string
+	// failed are the hostnames that were routed with the connection in
+	// a zone it dropped, and that no other connection their org may use
+	// holds (rehomeRecords).
+	failed []string
+}
+
+// summary describes the change for the audit log: ": 3 zones, added a,
+// dropped b".
+func (ch zoneChange) summary() string {
+	s := fmt.Sprintf(": %d zones", ch.zones)
+	if len(ch.added) > 0 {
+		s += ", added " + strings.Join(ch.added, ", ")
+	}
+	if len(ch.dropped) > 0 {
+		s += ", dropped " + strings.Join(ch.dropped, ", ")
+	}
+	if len(ch.failed) > 0 {
+		s += fmt.Sprintf("; %d domains in them no longer route (%s)", len(ch.failed), strings.Join(ch.failed, ", "))
+	}
+	return s
+}
+
+// into puts the change in the connection the API returns; nil leaves it.
+func (ch *zoneChange) into(cf *apitypes.Cloudflare) {
+	if ch == nil {
+		return
+	}
+	cf.ZonesAdded, cf.ZonesDropped, cf.DomainsFailed = ch.added, ch.dropped, ch.failed
 }
 
 // recheckCloudflare checks token, then saves it and the zones it reaches
 // for connection row, which works again, and has its failed domains
-// tried again. It returns the number of zones.
-func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.CloudflareConnection, token, accountID string) (int, error) {
+// tried again. Domains in zones it no longer reaches move to another
+// connection (rehomeRecords).
+func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.CloudflareConnection, token, accountID string) (zoneChange, error) {
 	account, zones, err := c.checkCloudflare(ctx, token, accountID)
 	if err != nil {
-		return 0, err
+		return zoneChange{}, err
 	}
 	zones = zonesFor(cfOwner(row), zones)
 	sealed, err := c.box.Seal([]byte(token), cloudflareAAD(row.OrgID, row.Name))
 	if err != nil {
-		return 0, err
+		return zoneChange{}, err
 	}
 	t := now()
+	ch := zoneChange{zones: len(zones)}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.UpdateCloudflareConnection(ctx, store.UpdateCloudflareConnectionParams{
 			AccountID: account.ID, AccountName: account.Name, Token: sealed, UpdatedAt: t, UpdatedBy: a.Name, ID: row.ID,
@@ -459,19 +551,25 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 		if err := q.RetryConnectionRecords(ctx, store.RetryConnectionRecordsParams{UpdatedAt: t, ConnectionID: row.ID}); err != nil {
 			return err
 		}
-		return saveZones(ctx, q, row, zones)
+		if ch.added, ch.dropped, err = saveZones(ctx, q, row, zones); err != nil {
+			return err
+		}
+		ch.failed, err = c.rehomeRecords(ctx, q, row.ID)
+		return err
 	})
 	if err != nil {
-		return 0, err
+		return zoneChange{}, err
 	}
 	c.connectionWorks(ctx, cloudflareAlertKey(row.ID))
 	c.cloudflareChanged(ctx)
-	return len(zones), nil
+	c.publishRecords(ctx, ch.failed)
+	return ch, nil
 }
 
 // RemoveCloudflare deletes one of the org's connections (with platform,
-// the platform's) that no tunnel uses. Dock forgets the records it kept
-// with it; they stay in Cloudflare.
+// the platform's) that no tunnel uses. Its domains move to another
+// connection that holds their zone (rehomeRecords); Dock forgets the
+// rest, whose records stay in Cloudflare.
 func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, platform bool, name string) error {
 	org, err := connectionsIn(a, platform, "removing Cloudflare connections")
 	if err != nil {
@@ -486,13 +584,22 @@ func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, platform bool, nam
 		return err
 	}
 	if used > 0 {
-		return conflict("Cloudflare connection %s runs server tunnels; remove those servers first (`dock cloudflare --platform` lists them)", name)
+		return conflict("Cloudflare connection %s runs server tunnels, so it can't be removed; to take zones off it, give it a token that reaches only the zones it should keep (`dock cloudflare set %s%s --token-stdin`)", name, name, cfFlag(row.OrgID))
 	}
-	if err := c.store.DeleteCloudflareConnection(ctx, row.ID); err != nil {
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.DeleteCloudflareZones(ctx, row.ID); err != nil {
+			return err
+		}
+		if _, err := c.rehomeRecords(ctx, q, row.ID); err != nil {
+			return err
+		}
+		return q.DeleteCloudflareConnection(ctx, row.ID)
+	})
+	if err != nil {
 		return err
 	}
 	c.connectionWorks(ctx, cloudflareAlertKey(row.ID))
-	c.audit(ctx, cfAudit(a, org), "cloudflare.connection_remove", nil, nil, name, "removed Cloudflare connection "+name+"; the records of its domains stay in Cloudflare")
+	c.audit(ctx, cfAudit(a, org), "cloudflare.connection_remove", nil, nil, name, "removed Cloudflare connection "+name+"; its domains moved to another connection with their zone, or their records stay in Cloudflare")
 	c.cloudflareChanged(ctx)
 	return nil
 }
@@ -553,45 +660,98 @@ func (c *Core) pickCloudflare(ctx context.Context, name string) (store.Cloudflar
 	return store.CloudflareConnection{}, invalid("the platform has several Cloudflare connections (%s); name one with --cloudflare", strings.Join(names, ", "))
 }
 
-// saveZones replaces a connection's zones. A zone another connection of
-// the same owner had moves to this one; one another org's or the
-// platform's connection has is refused: a zone belongs to one owner.
-func saveZones(ctx context.Context, q *store.Queries, conn store.CloudflareConnection, zones []cloudflare.Zone) error {
+// saveZones replaces a connection's zones and returns the names added
+// and dropped. Other connections, the platform's or any org's, may hold
+// the same zones.
+func saveZones(ctx context.Context, q *store.Queries, conn store.CloudflareConnection, zones []cloudflare.Zone) (added, dropped []string, err error) {
 	held, err := q.ListCloudflareZones(ctx)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	owner := map[string]int64{}
+	before := map[string]bool{}
 	for _, h := range held {
-		owner[h.CloudflareZone.Name] = h.OrgID
-	}
-	var elsewhere []string
-	for _, z := range zones {
-		if org, ok := owner[strings.ToLower(z.Name)]; ok && org != cfOwner(conn) {
-			elsewhere = append(elsewhere, strings.ToLower(z.Name))
+		if h.CloudflareZone.ConnectionID == conn.ID {
+			before[h.CloudflareZone.Name] = true
 		}
-	}
-	if len(elsewhere) > 0 {
-		return conflict("%s already connected to Dock elsewhere; take %s off this token in Cloudflare, or have whoever connected it remove it first",
-			plural(len(elsewhere), "zone "+elsewhere[0]+" is", "zones "+strings.Join(elsewhere, ", ")+" are"), plural(len(elsewhere), "it", "them"))
 	}
 	if err := q.DeleteCloudflareZones(ctx, conn.ID); err != nil {
-		return err
+		return nil, nil, err
 	}
 	for _, z := range zones {
-		if err := q.SaveCloudflareZone(ctx, store.SaveCloudflareZoneParams{ConnectionID: conn.ID, ZoneID: z.ID, Name: strings.ToLower(z.Name)}); err != nil {
-			return err
+		name := strings.ToLower(z.Name)
+		if err := q.SaveCloudflareZone(ctx, store.SaveCloudflareZoneParams{ConnectionID: conn.ID, ZoneID: z.ID, Name: name}); err != nil {
+			return nil, nil, err
 		}
+		if !before[name] {
+			added = append(added, name)
+		}
+		delete(before, name)
 	}
-	return nil
+	for name := range before {
+		dropped = append(dropped, name)
+	}
+	slices.Sort(added)
+	slices.Sort(dropped)
+	return added, dropped, nil
 }
 
-// plural picks one or many by n.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
+// rehomeRecords moves the records whose connection no longer holds their
+// zone, in q's transaction, after a connection's zones changed: each goes
+// to another connection that holds the same zone and that its domain's
+// org may use (pickZone; under a server's base domain, the platform's),
+// to be routed with that one. A record no connection may take fails,
+// saying what to do. It returns the hostnames that failed now and were
+// routed with connection from (0: any).
+func (c *Core) rehomeRecords(ctx context.Context, q *store.Queries, from int64) ([]string, error) {
+	stranded, err := q.ListStrandedCloudflareRecords(ctx)
+	if err != nil || len(stranded) == 0 {
+		return nil, err
 	}
-	return many
+	rows, err := q.ListCloudflareZones(ctx)
+	if err != nil {
+		return nil, err
+	}
+	zones := toZones(rows)
+	servers, err := q.ListServers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	base := make(map[int64]string, len(servers))
+	for _, srv := range servers {
+		base[srv.ID] = c.ingressOf(srv).baseDomain
+	}
+	var failed []string
+	t := now()
+	for _, s := range stranded {
+		r, org := s.CloudflareRecord, s.OrgID
+		if r.ServerID != nil && atOrUnderBase(r.Hostname, base[*r.ServerID]) {
+			org = 0
+		}
+		if z, ok := pickZone(zones, org, func(z cfZone) bool { return z.ZoneID == r.ZoneID }); ok {
+			if err := q.MoveCloudflareRecord(ctx, store.MoveCloudflareRecordParams{ConnectionID: z.ConnectionID, UpdatedAt: t, ID: r.ID}); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		reason := strandedReason(c.connectionName(r.ConnectionID), r.Hostname)
+		if r.Status == "error" && r.Reason == reason {
+			continue // failed for this already
+		}
+		if err := q.FailCloudflareRecord(ctx, store.FailCloudflareRecordParams{Reason: reason, UpdatedAt: t, ID: r.ID}); err != nil {
+			return nil, err
+		}
+		if from == 0 || r.ConnectionID == from {
+			failed = append(failed, r.Hostname)
+		}
+	}
+	return failed, nil
+}
+
+// strandedReason is why a record whose connection lost its zone, and no
+// other connection may take, fails.
+func strandedReason(conn, host string) string {
+	return fmt.Sprintf("Cloudflare connection %s no longer reaches the zone of %s, and no other connection this domain may use has it; "+
+		"give a connection's token that zone in Cloudflare, then refresh the connection (`dock cloudflare refresh <name>`)", conn, host)
 }
 
 // checkCloudflare checks a token the way Cloudflare lets it be checked:

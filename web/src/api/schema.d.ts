@@ -5410,6 +5410,7 @@ export interface components {
         Cloudflare: {
             account_id: string;
             account_name: string;
+            domains_failed?: string[] | null;
             /** @example home */
             name: string;
             shared: boolean;
@@ -5421,6 +5422,8 @@ export interface components {
             updated_by: string;
             used_by: string[] | null;
             zones: string[] | null;
+            zones_added?: string[] | null;
+            zones_dropped?: string[] | null;
         };
         CloudflareRecord: {
             connection: string;

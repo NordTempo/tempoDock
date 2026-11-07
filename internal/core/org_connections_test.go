@@ -63,8 +63,8 @@ func (p *pool) dnsOf(ref ServiceRef, host string) *apitypes.DomainDNS {
 }
 
 // An org's admins add its own Cloudflare connection; its zones serve that
-// org's domains only. Another org can't see it, use its zones or take
-// them, and members below admin can't add one (ADR 0062). The server's
+// org's domains only. Another org can't see it or use its zones, and
+// members below admin can't add one (ADR 0062). The server's
 // tunnel for the org's domain is made with the platform's connection.
 func TestOrgCloudflareConnections(t *testing.T) {
 	p, cf, admin := cfOrgPool(t, "tempo.run", "acme.dev")
@@ -83,9 +83,6 @@ func TestOrgCloudflareConnections(t *testing.T) {
 	own, err := p.addCF(cf, admin, false, apitypes.CreateCloudflareRequest{Name: "own"}, "acme.dev")
 	if err != nil || own.Shared || !slices.Equal(own.Zones, []string{"acme.dev"}) {
 		t.Fatalf("own = %+v, %v", own, err)
-	}
-	if _, err := p.addCF(cf, other, false, apitypes.CreateCloudflareRequest{Name: "mine"}, "acme.dev"); CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "acme.dev is already connected") {
-		t.Fatalf("another org took the zone: %v", err)
 	}
 	if _, err := p.addCF(cf, other, false, apitypes.CreateCloudflareRequest{Name: "mine"}); err != nil {
 		t.Fatal(err)
@@ -129,6 +126,126 @@ func TestOrgCloudflareConnections(t *testing.T) {
 	}
 	if tun, err := p.store.GetCloudflareTunnelByServer(p.ctx, &lab.ID); err != nil || tun.ConnectionID != edge.ID {
 		t.Fatalf("homelab's tunnel = %+v, %v; want it made with the platform's edge", tun, err)
+	}
+}
+
+// One zone may be on the platform's connection and on several orgs' own
+// (ADR 0062): each org lists and uses its own, and a third the shared
+// platform one. A hostname is still one org's: the second org to add it
+// is refused, and the record stays with the first org's connection, which
+// another org's can't take over even past the claims check.
+func TestZoneOnSeveralConnections(t *testing.T) {
+	p, cf, admin := cfOrgPool(t, "tempo.run")
+	bob := p.in(p.member("bob@x", map[string]apitypes.Scope{"acme": apitypes.ScopeAdmin}), "acme")
+	carol := p.in(p.member("carol@x", map[string]apitypes.Scope{"other": apitypes.ScopeAdmin}), "other")
+	if _, err := p.addCF(cf, testSystem, true, apitypes.CreateCloudflareRequest{Name: "edge", Shared: true}, "tempo.run"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.addCF(cf, admin, false, apitypes.CreateCloudflareRequest{Name: "own"}, "tempo.run"); err != nil {
+		t.Fatalf("an org adds a zone the platform has: %v", err)
+	}
+	if _, err := p.addCF(cf, bob, false, apitypes.CreateCloudflareRequest{Name: "mine"}, "tempo.run"); err != nil {
+		t.Fatalf("a second org adds the same zone: %v", err)
+	}
+	for a, want := range map[*Actor]apitypes.CloudflareZone{
+		&admin: {Name: "tempo.run", Connection: "own"},
+		&bob:   {Name: "tempo.run", Connection: "mine"},
+		&carol: {Name: "tempo.run", Connection: "edge", Platform: true},
+	} {
+		if zones, err := p.c.ListCloudflareZones(p.ctx, *a); err != nil || !slices.Equal(zones, []apitypes.CloudflareZone{want}) {
+			t.Fatalf("%s's zones = %+v, %v; want %+v", a.Name, zones, err, want)
+		}
+	}
+
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	if _, err := p.c.CreateProject(p.ctx, bob, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
+		t.Fatal(err)
+	}
+	if e, err := p.c.CreateEnvironment(p.ctx, bob, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil || e.Server != "homelab" {
+		t.Fatalf("acme's environment = %+v, %v", e, err)
+	}
+	if _, err := p.c.CreateService(p.ctx, bob, web.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.fromCloudflare(web, "shop.tempo.run"); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.record("shop.tempo.run"); r.Status != apitypes.DNSReady || r.Connection != "own" {
+		t.Fatalf("record = %+v; want it routed with the org's own", r)
+	}
+	if _, err := p.c.AddDomain(p.ctx, bob, web, apitypes.AddDomainRequest{Hostname: "shop.tempo.run", Cloudflare: true}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Fatalf("a second org adds the hostname: %v, want hostname_taken", err)
+	}
+	if _, err := p.c.AddDomain(p.ctx, bob, web, apitypes.AddDomainRequest{Hostname: "api.tempo.run", Cloudflare: true}); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.record("api.tempo.run"); r.Status != apitypes.DNSReady || r.Connection != "mine" {
+		t.Fatalf("acme's record = %+v", r)
+	}
+
+	mine, err := p.store.GetCloudflareConnection(p.ctx, store.GetCloudflareConnectionParams{Org: bob.OrgID, Name: "mine"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := p.store.GetCloudflareRecord(p.ctx, "shop.tempo.run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := p.store.SaveCloudflareRecord(p.ctx, store.SaveCloudflareRecordParams{
+		Hostname: "shop.tempo.run", ConnectionID: mine.ID, ZoneID: before.ZoneID, UpdatedAt: before.UpdatedAt,
+	})
+	if after, _ := p.store.GetCloudflareRecord(p.ctx, "shop.tempo.run"); err != nil || saved != 0 || after.ConnectionID != before.ConnectionID || after.Gen != before.Gen {
+		t.Fatalf("another org's connection saved over a live domain's record: %d, %v; record %+v", saved, err, after)
+	}
+}
+
+// When a zone leaves a connection (a new token or a refresh no longer
+// reaches it), its domains move to another connection holding the zone
+// that their org may use; with none they fail saying what to do, and move
+// once one may (here: the platform's is shared). The answer names the
+// zones dropped and added, and the domains that failed.
+func TestDroppedZoneMovesRecords(t *testing.T) {
+	p, cf, admin := cfOrgPool(t, "tempo.run", "acme.dev")
+	if _, err := p.addCF(cf, testSystem, true, apitypes.CreateCloudflareRequest{Name: "edge"}, "tempo.run"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.addCF(cf, admin, false, apitypes.CreateCloudflareRequest{Name: "own"}, "tempo.run"); err != nil {
+		t.Fatal(err)
+	}
+	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
+	if err := p.fromCloudflare(web, "shop.tempo.run"); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.record("shop.tempo.run"); r.Status != apitypes.DNSReady || r.Connection != "own" {
+		t.Fatalf("record = %+v", r)
+	}
+
+	undo := reach(cf, "acme.dev")
+	got, err := p.c.RefreshCloudflare(p.ctx, admin, false, "own")
+	undo()
+	if err != nil || !slices.Equal(got.ZonesAdded, []string{"acme.dev"}) || !slices.Equal(got.ZonesDropped, []string{"tempo.run"}) ||
+		!slices.Equal(got.DomainsFailed, []string{"shop.tempo.run"}) {
+		t.Fatalf("refresh = %+v, %v", got, err)
+	}
+	if r := p.record("shop.tempo.run"); r.Status != apitypes.DNSError || r.Connection != "own" || !strings.Contains(r.Reason, "no longer reaches the zone of shop.tempo.run") {
+		t.Fatalf("record with no connection to go to = %+v", r)
+	}
+	if _, err := p.c.RetryCloudflare(p.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.record("shop.tempo.run"); r.Status != apitypes.DNSError || r.Connection != "own" {
+		t.Fatalf("retried with a connection that lost its zone = %+v", r)
+	}
+
+	on := true
+	if _, err := p.c.UpdateCloudflare(p.ctx, testSystem, true, "edge", apitypes.UpdateCloudflareRequest{Shared: &on}); err != nil {
+		t.Fatal(err)
+	}
+	if r := p.record("shop.tempo.run"); r.Status != apitypes.DNSReady || r.Connection != "edge" {
+		t.Fatalf("record once the platform's zone is shared = %+v; want it moved to edge", r)
+	}
+	if n := len(cf.Named("shop.tempo.run")); n != 1 {
+		t.Fatalf("%d records for shop.tempo.run in Cloudflare; want the one Dock made, kept", n)
 	}
 }
 
