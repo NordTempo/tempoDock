@@ -82,7 +82,7 @@ export function AnalyticsConsole() {
               status.geoip
                 ? "DB-IP's database, updated monthly"
                 : status.enabled
-                  ? "countries read unknown until the store downloads DB-IP's database; it tries daily"
+                  ? "Visitor countries show as unknown until Dock has downloaded a free location database. It tries again daily."
                   : "downloaded when the store starts"
             }
           >

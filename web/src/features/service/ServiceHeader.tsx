@@ -789,9 +789,11 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         disabled={!canDeploy}
         title={
           blocked ??
-          (mayDeploy
-            ? "A folder, an image or the GitHub branch; or drop a folder here"
-            : "Needs the deploy scope")
+          (!mayDeploy
+            ? "Needs the deploy scope"
+            : waiting
+              ? "Apply is the next step; a deploy also takes the changes waiting to apply live"
+              : "A folder, an image or the GitHub branch; or drop a folder here")
         }
         onClick={onDeploy}
       >

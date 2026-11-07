@@ -506,6 +506,9 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
+/** A field's label above it, as in the invite form. */
+const fieldLabel = "flex flex-col gap-1";
+
 /**
  * The add form. While the URL typed is one an existing check probes (any
  * status or interval), it says so before adding, and an exact repeat (same
@@ -561,9 +564,11 @@ function AddCheck({
         });
       }}
     >
-      <span className="flex flex-wrap items-center gap-2.5">
-        <label className="flex items-center gap-1.5 text-mut">
-          URL
+      {/* Labelled fields in a row, like the invite form: each says what
+          it is, the status one what it means. */}
+      <span className="flex flex-wrap items-end gap-2.5">
+        <label className={fieldLabel}>
+          <span className="text-xs text-sec">URL</span>
           <input
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -571,14 +576,13 @@ function AddCheck({
             className="field w-[320px] py-[7px] font-mono"
           />
         </label>
-        <label className="flex items-center gap-1.5 text-mut">
-          expects
+        <label className={fieldLabel} title="The answer that counts as up">
+          <span className="text-xs text-sec">Up when it answers</span>
           <input
-            aria-label="Expected status"
             value={status}
             onChange={(e) => setStatus(e.target.value.trim())}
             list="uptime-statuses"
-            className="field w-[64px] py-[7px] font-mono"
+            className="field w-[96px] py-[7px] font-mono"
           />
           <datalist id="uptime-statuses">
             <option value="200" />
@@ -586,13 +590,12 @@ function AddCheck({
             <option value="3xx" />
           </datalist>
         </label>
-        <label className="flex items-center gap-1.5 text-mut">
-          every
+        <label className={fieldLabel}>
+          <span className="text-xs text-sec">Every</span>
           <select
-            aria-label="Interval"
             value={intervalS}
             onChange={(e) => setIntervalS(Number(e.target.value))}
-            className="field py-[7px]"
+            className="field min-w-[96px] py-[7px]"
           >
             {intervals.map(([s, label]) => (
               <option key={s} value={s}>
@@ -601,18 +604,16 @@ function AddCheck({
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-1.5 text-mut">
-          timeout
+        <label className={fieldLabel}>
+          <span className="text-xs text-sec">Timeout, seconds</span>
           <input
-            aria-label="Timeout in seconds"
             type="number"
             min={1}
             max={30}
             value={timeoutS}
             onChange={(e) => setTimeoutS(Number(e.target.value))}
-            className="field w-[56px] py-[7px] font-mono"
+            className="field w-[96px] py-[7px] font-mono"
           />
-          s
         </label>
         <Act
           primary

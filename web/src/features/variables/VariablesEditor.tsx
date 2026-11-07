@@ -165,15 +165,18 @@ export function VariablesEditor({
                 </span>
               )}
               <span className="flex-1 truncate">{name}</span>
-              <span className="text-2xs text-faint">
-                {ownCount} + {sharedCount} shared
+              <span
+                className="text-2xs text-faint"
+                title={`${ownCount} of its own, and the ${sharedCount} shared`}
+              >
+                {ownCount}
               </span>
             </Link>
           );
         })}
         <p className="px-2 pt-3 text-2xs leading-relaxed text-faint">
-          Grey lines come from Shared. A line in a service with the same name
-          wins.
+          Numbers count each one's own variables. Every service also sees
+          Shared's, in grey; its own line with the same name wins.
         </p>
       </nav>
 
@@ -230,9 +233,9 @@ export function VariablesEditor({
           <span className="text-fail">−</span> removed ·{" "}
           <span className="font-mono text-info">
             {"$"}
-            {"{{ }}"}
+            {"{{db.DATABASE_URL}}"}
           </span>{" "}
-          points at another service, → resolved
+          reads another service's variable; → shows what it reads
         </p>
 
         {/* A service's tab has the strip in its header; shared variables

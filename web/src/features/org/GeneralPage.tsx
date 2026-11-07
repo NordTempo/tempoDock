@@ -292,6 +292,8 @@ function LockSettings() {
  */
 function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
   const set = useSetOrgTwoFactor();
+  // Turning it on can lock members out of acting, so that asks first.
+  const [asking, setAsking] = useState(false);
   if (!admin) {
     return on ? "Two-factor sign-in required" : "Password alone is enough";
   }
@@ -306,11 +308,29 @@ function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
             label="Require two-factor sign-in"
             checked={on}
             disabled={set.isPending}
-            onChange={(require) => set.mutate(require)}
+            onChange={(require) =>
+              require ? setAsking(true) : set.mutate(false)
+            }
           />
         </CliHint>
         <Saved ok={set.isSuccess} />
       </span>
+      {asking && (
+        <Confirm
+          action="Require two-factor sign-in"
+          cli="dock org two-factor on"
+          pending={set.isPending}
+          error={set.error}
+          onConfirm={() =>
+            set.mutate(true, { onSuccess: () => setAsking(false) })
+          }
+          onCancel={() => setAsking(false)}
+        >
+          Members who signed in without a second factor can't act in this
+          organization until they add one in their account. API tokens keep
+          working.
+        </Confirm>
+      )}
       <span className="text-xs text-mut">
         Members who signed in without a second factor can't act here until they
         add one. API tokens are not affected.

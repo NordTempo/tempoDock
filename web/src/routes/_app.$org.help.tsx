@@ -1,7 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useIsOperator } from "../data/queries";
 import { openKeyHelp } from "../shell/KeyHelp";
 import { modKey } from "../shell/keys";
+import { useOrg } from "../shell/location";
 import { Button, Page, PageBar } from "../ui/kit";
 
 // What Dock's words mean, in one place: the page the sidebar's Help opens
@@ -10,14 +12,19 @@ export const Route = createFileRoute("/_app/$org/help")({
   component: Help,
 });
 
-/** One concept: a heading with an anchor, and a few plain sentences. */
+/**
+ * One concept: a heading with an anchor, a few plain sentences, and links
+ * to the screens where it lives.
+ */
 function Topic({
   id,
   title,
+  go,
   children,
 }: {
   id: string;
   title: string;
+  go?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -31,12 +38,15 @@ function Topic({
       </h2>
       <div className="flex max-w-[720px] flex-col gap-2 text-sec">
         {children}
+        {go && <p className="flex flex-wrap gap-2">{go}</p>}
       </div>
     </section>
   );
 }
 
 function Help() {
+  const org = useOrg();
+  const operator = useIsOperator();
   return (
     <>
       <PageBar
@@ -48,7 +58,15 @@ function Help() {
         }
       />
       <Page gap="gap-5">
-        <Topic id="projects" title="Projects, environments and services">
+        <Topic
+          id="projects"
+          title="Projects, environments and services"
+          go={
+            <Link to="/$org" params={{ org }} className="lnk">
+              Projects
+            </Link>
+          }
+        >
           <p>
             A project holds environments, like production and staging. Each
             environment runs services: apps from an image or a repository, and
@@ -77,7 +95,15 @@ function Help() {
             Discard drops them.
           </p>
         </Topic>
-        <Topic id="locks" title="Locks and access requests">
+        <Topic
+          id="locks"
+          title="Locks and access requests"
+          go={
+            <Link to="/$org/requests" params={{ org }} className="lnk">
+              Requests
+            </Link>
+          }
+        >
           <p>
             Locking an environment makes changes by tokens (CI, scripts, agents)
             wait for an admin's approval as access requests. People signed in
@@ -100,7 +126,24 @@ function Help() {
             that read the old one over to it.
           </p>
         </Topic>
-        <Topic id="access" title="Members, roles and tokens">
+        <Topic
+          id="access"
+          title="Members, roles and tokens"
+          go={
+            <>
+              <Link
+                to="/$org/settings/members"
+                params={{ org }}
+                className="lnk"
+              >
+                Members
+              </Link>
+              <Link to="/$org/settings/tokens" params={{ org }} className="lnk">
+                Tokens
+              </Link>
+            </>
+          }
+        >
           <p>
             Members are people with a role: read, deploy or admin. Tokens act
             for CI, scripts and agents, with a role of their own, and can be
@@ -115,7 +158,17 @@ function Help() {
             runs, for people allowed to deploy there.
           </p>
         </Topic>
-        <Topic id="servers" title="Servers, placement and reserved memory">
+        <Topic
+          id="servers"
+          title="Servers, placement and reserved memory"
+          go={
+            operator && (
+              <Link to="/console/servers" className="lnk">
+                Servers
+              </Link>
+            )
+          }
+        >
           <p>
             Servers run environments. Placement decides which server a new
             environment lands on; a server can take production, other
