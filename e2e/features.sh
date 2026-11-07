@@ -278,8 +278,9 @@ scenario_lock() {
 	check "a rejected change isn't staged" bash -c "! '${DOCK_BIN:-$E2E_DIR/../bin/dock}' changes $(pe $p) 2>&1 | grep -q never"
 
 	# A source upload into the locked environment is kept and built on approval.
+	# Through a UI session: the lock refuses the admin token too.
 	local sh
-	sh=$(generate_domain $p site)
+	sh=$(ui_api POST "$(svc_path $p site)/domains/generate" | jq -r .domain.hostname)
 	TOKEN_OVERRIDE=$tok deploy_source $p site "$APPS/static-site" >/dev/null 2>&1 &&
 		fail "a token's source deploy into a locked env was accepted" || pass "a token's source deploy waits"
 	req=$(pending_request $p)
@@ -378,6 +379,60 @@ scenario_snapshot() {
 	check "db is active after the in-place restore" wait_for 180 newest_active $p db
 	check "db has the snapshot's three rows again" wait_for 60 out_has '^3$' psql_in $p db "select count(*) from t"
 	check "the in-place restore left a safety snapshot" test "$(api GET "$(svc_path $p db)/snapshots" | jq 'if type == "array" then . else .snapshots end | length')" -ge 2
+}
+
+# env_containers SERVER P prints the containers of P's environment on
+# SERVER's Docker (e2e/vm names the server containers as the servers).
+env_containers() {
+	local id
+	id=$(api GET "/projects/$2/environments" | jq -r --arg e "$ENV_NAME" '.[] | select(.name == $e) | .id')
+	docker exec "$1" docker ps -q --filter label=dock.managed=true --filter "label=dock.env=$id"
+}
+
+# move_status P prints the status of P's environment's latest move.
+move_status() { api GET "/projects/$1/environments/$ENV_NAME/move" | jq -r .status; }
+
+# scenario_move moves an environment with a Postgres database and a web
+# service from the control plane to the node and back (ADR 0053): each
+# time the data, the domain and `dock run` work on the new server, and
+# nothing of it runs on the old one.
+scenario_move() {
+	local p=e2e2-move-$RUN h n from to out
+	fresh $p || return
+	from=$(env_server $p)
+	h=$(pg_web $p) || return
+	n=$(deploy_source $p web "$APPS/pg-web" 2>/dev/null) || { fail "$p: upload rejected"; return; }
+	expect_release $p web "$n" active
+	check "$h serves v1 on $from" wait_for 30 body_has "$h" / "web v1"
+	sleep 3
+	psql_in $p db "create table t (n int); insert into t select generate_series(1, 5)" >/dev/null
+	check "five rows before the move" out_has '^5$' psql_in $p db "select count(*) from t"
+	# To the other server and back; placement decides where it starts.
+	local other
+	other=$(api GET /servers | jq -r --arg f "$from" '[.[] | select(.name != $f and .status == "online")][0].name')
+	for to in "$other" "$from"; do
+		local old
+		old=$(env_server $p)
+		out=$(dk env move "$ENV_NAME" -p $p --to "$to" --yes 2>&1)
+		if [[ $(move_status $p) == succeeded ]]; then pass "moved $old -> $to"; else fail "move $old -> $to: $(move_status $p): $out"; continue; fi
+		check "the move printed its downtime" out_has 'down|downtime' echo "$out"
+		check "the environment runs on $to" test "$(env_server $p)" = "$to"
+		use_proxy_of $p
+		# A generated domain takes the new server's base domain; the move
+		# says so.
+		h=$(generate_domain $p web)
+		check "the move named the domain's new name $h" out_has "is now $h" echo "$out"
+		check "$h serves v1 from $to" wait_for 60 body_has "$h" / "web v1"
+		check "db kept its five rows on $to" wait_for 60 out_has '^5$' psql_in $p db "select count(*) from t"
+		check "web reaches db on $to" out_has '^5$' dk run web $(pe $p) -- 'psql "$DATABASE_URL" -tAc "select count(*) from t"'
+		check "db takes writes on $to" psql_in $p db "insert into t values (100)"
+		psql_in $p db "delete from t where n = 100" >/dev/null
+		check "nothing of $p runs on $old" test -z "$(env_containers "$old" $p)"
+		check "a restart after the move goes live" dk restart -s web $(pe $p)
+		check "web's container runs on $to" test -n "$(service_containers $p web)"
+		check "$h still serves after the restart on $to" wait_for 60 body_has "$h" / "web v1"
+	done
+	check "dock env move --status shows the latest move" out_has "$from" dk env move "$ENV_NAME" -p $p --status
 }
 
 scenario_apply() {
@@ -488,7 +543,7 @@ scenario_nodedown() {
 }
 
 # on_node P: put P's staging environment on the node (pinned before it
-# exists) and use it as ENV_NAME in the caller (declare `local ENV_NAME`).
+# exists) and use it as ENV_NAME in the caller (declare `local ENV_NAME=$ENV_NAME`).
 on_node() {
 	local node=${E2E_NODE_CONTAINER:-e2e2-node1}
 	ENV_NAME=staging
@@ -500,7 +555,7 @@ on_node() {
 
 # Stop and start on the node: its Caddy must answer 503 too (node protocol 17).
 scenario_stopnode() {
-	local p=e2e2-stopn-$RUN h code ENV_NAME
+	local p=e2e2-stopn-$RUN h code ENV_NAME=$ENV_NAME
 	fresh $p || return
 	on_node $p || return
 	h=$(busybox_web $p web on-node) || return
@@ -517,7 +572,7 @@ scenario_stopnode() {
 # A backup on the node that runs well past the node link's 30 s call
 # timeout (ADR 0045 lifted it for jobs). E2E_BACKUP_ROWS sizes it.
 scenario_backup() {
-	local p=e2e2-bak-$RUN rows=${E2E_BACKUP_ROWS:-20000000} t0 took out ENV_NAME
+	local p=e2e2-bak-$RUN rows=${E2E_BACKUP_ROWS:-20000000} t0 took out ENV_NAME=$ENV_NAME
 	fresh $p || return
 	on_node $p || return
 	dk service create db $(pe $p) --template postgres >/dev/null || { fail "$p: db not created"; return; }
@@ -537,7 +592,7 @@ scenario_backup() {
 }
 
 main() {
-	local all=(predeploy stopstart stopnode run lock logs snapshot apply health nodedown backup)
+	local all=(predeploy stopstart stopnode run lock logs snapshot move apply health nodedown backup)
 	for s in "${@:-${all[@]}}"; do
 		log "scenario $s"
 		"scenario_$s"
