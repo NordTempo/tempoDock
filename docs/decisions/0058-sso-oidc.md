@@ -1,6 +1,9 @@
 # 0058: Single sign-on with OpenID Connect
 
-Status: accepted (asked by Saile, 2026-11-04; designed by the agent)
+Status: accepted (asked by Saile, 2026-11-04; designed by the agent).
+Amended by [0065](0065-sign-in-is-the-platforms.md): providers are the
+platform's, with a button each on the sign-in page; no org providers,
+domains, just-in-time roles or sso-only.
 
 ## Context
 

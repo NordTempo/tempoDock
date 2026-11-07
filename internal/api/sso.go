@@ -13,9 +13,9 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// Single sign-on with OpenID Connect (ADR 0058): an org's providers and
-// sso-only switch under /org, and signing in through them under
-// /auth/sso.
+// Single sign-on (ADR 0058, 0065): the platform's identity providers and
+// sign-in switches under /platform, what the sign-in page offers at
+// /auth/methods, and signing in through a provider under /auth/sso.
 
 // ssoCookie binds a single sign-on in flight to the browser that started
 // it. SameSite=Lax: the provider sends the browser back with a cross-site
@@ -91,29 +91,42 @@ func (c client) ssoLanding(res core.SSOResult) *ssoCallbackOutput {
 	return out
 }
 
+// blockedLanding is where an invite-only Dock sends a person a provider
+// signed in who has no account and no invite: a page that says so.
+func blockedLanding(b *core.SSOBlocked) string {
+	return "/invite-only?" + url.Values{"provider": {b.Provider}, "email": {b.Email}}.Encode()
+}
+
 func registerSSO(s *Server, a huma.API) {
 	public(a, huma.Operation{
+		OperationID: "sign-in-methods", Method: http.MethodGet, Path: Prefix + "/auth/methods",
+		Summary:     "How people sign in",
+		Description: "The sign-in page's buttons, one per identity provider, and whether it takes passwords.",
+		Tags:        []string{"auth"},
+	}, func(ctx context.Context, _ *struct{}) (*out[apitypes.SignInMethods], error) {
+		res, err := s.core.SignInMethods(ctx)
+		if err != nil {
+			return nil, s.problem(err)
+		}
+		return &out[apitypes.SignInMethods]{Body: res}, nil
+	})
+	public(a, huma.Operation{
 		OperationID: "sso-start", Method: http.MethodPost, Path: Prefix + "/auth/sso/start",
-		Summary: "Start signing in with single sign-on",
-		Description: "Finds the organization's identity provider by the email's domain (or the org and provider named) and returns its sign-in URL to send the browser to, " +
-			"with a cookie binding the sign-in to this browser. When several organizations sign that domain in, returns them to choose from instead; start again naming one.",
-		Tags: []string{"auth"}, Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
+		Summary:     "Start signing in through an identity provider",
+		Description: "Returns the provider's sign-in URL to send the browser to, with a cookie binding the sign-in to this browser.",
+		Tags:        []string{"auth"}, Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}, func(ctx context.Context, in *ssoStartInput) (*ssoStartOutput, error) {
 		res, err := s.core.StartSSO(ctx, in.Body, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
-		out := &ssoStartOutput{Body: res.SSOStart}
-		if res.Binding != "" {
-			out.SetCookie = []http.Cookie{in.client.ssoCookie(res.Binding)}
-		}
-		return out, nil
+		return &ssoStartOutput{Body: res.SSOStart, SetCookie: []http.Cookie{in.client.ssoCookie(res.Binding)}}, nil
 	})
 	public(a, huma.Operation{
 		OperationID: "sso-callback", Method: http.MethodGet, Path: core.SSOCallbackPath,
-		Summary: "Finish signing in with single sign-on",
+		Summary: "Finish signing in through an identity provider",
 		Description: "The identity provider sends the browser here (the redirect URL to register at it). Redirects to the page the sign-in started from with the session cookie, " +
-			"to /login?second=1 when the user has a second factor, or to /login?error=<reason>.",
+			"to /login?second=1 when the user has a second factor, to /invite-only when this Dock has no account for them and they have no invite, or to /login?error=<reason>.",
 		Tags: []string{"auth"}, DefaultStatus: http.StatusSeeOther,
 	}, func(ctx context.Context, in *ssoCallbackInput) (*ssoCallbackOutput, error) {
 		res, err := s.core.FinishSSO(ctx, core.SSOCallback{State: in.State, Code: in.Code, Error: in.Error, Binding: in.Binding}, in.client.ip)
@@ -127,22 +140,26 @@ func registerSSO(s *Server, a huma.API) {
 				SetCookie: []http.Cookie{in.client.ssoCookie("")},
 			}, nil
 		}
+		if res.Blocked != nil {
+			return &ssoCallbackOutput{Status: http.StatusSeeOther, Location: blockedLanding(res.Blocked), SetCookie: []http.Cookie{in.client.ssoCookie("")}}, nil
+		}
 		return in.client.ssoLanding(res), nil
 	})
 
-	tags := []string{"organizations"}
-	path := Prefix + "/org/sso-providers"
+	tags := []string{"platform"}
+	path := Prefix + "/platform/sso-providers"
 	authed(s, a, huma.Operation{
 		OperationID: "list-sso-providers", Method: http.MethodGet, Path: path,
-		Summary: "List the organization's single sign-on providers", Description: "Client secrets are never returned. Scope: admin, unlimited.", Tags: tags,
-	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.SSOProvider], error) {
+		Summary:     "List the identity providers",
+		Description: "With the redirect URL to register at each. Client secrets are never returned. Operators only.", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.SSOProviders], error) {
 		return reply(s.core.ListSSOProviders(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "create-sso-provider", Method: http.MethodPost, Path: path,
-		Summary: "Add a single sign-on provider",
-		Description: "An OpenID Connect provider for people with the allowed email domains. Its issuer must answer discovery. " +
-			"Register the returned redirect_url at the provider. Scope: admin, unlimited, recently confirmed.",
+		Summary: "Add an identity provider",
+		Description: "Google, GitHub, or any OpenID Connect provider by its issuer, which must answer discovery. " +
+			"Register the redirect URL at the provider. Operators only, recently confirmed.",
 		Tags: tags, DefaultStatus: http.StatusCreated,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Body apitypes.CreateSSOProviderRequest
@@ -151,7 +168,7 @@ func registerSSO(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "update-sso-provider", Method: http.MethodPatch, Path: path + "/{name}",
-		Summary: "Change a single sign-on provider", Description: "Fields left out stay. Scope: admin, unlimited, recently confirmed.", Tags: tags,
+		Summary: "Change an identity provider", Description: "Fields left out stay. Operators only, recently confirmed.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Name string `path:"name"`
 		Body apitypes.UpdateSSOProviderRequest
@@ -160,9 +177,9 @@ func registerSSO(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "delete-sso-provider", Method: http.MethodDelete, Path: path + "/{name}",
-		Summary: "Remove a single sign-on provider",
-		Description: "With the identities linked through it; people keep their accounts and memberships. The last provider of an sso-only organization stays until that is off. " +
-			"Scope: admin, unlimited, recently confirmed.",
+		Summary: "Remove an identity provider",
+		Description: "With the identities linked through it and the sessions signed in through it; people keep their accounts and memberships. " +
+			"The last provider stays while password sign-in is off. Operators only, recently confirmed.",
 		Tags: tags, DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		Name string `path:"name"`
@@ -170,12 +187,20 @@ func registerSSO(s *Server, a huma.API) {
 		return nil, s.core.DeleteSSOProvider(ctx, actor, in.Name)
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "set-org-sso-only", Method: http.MethodPut, Path: Prefix + "/org/sso-only",
-		Summary: "Require members to sign in with single sign-on",
-		Description: "Members act in the organization only with a sign-in through one of its providers; API tokens are not affected. " +
-			"Turning it on needs your own sign-in to have gone through one. Scope: admin, unlimited, recently confirmed.",
+		OperationID: "get-sign-in-settings", Method: http.MethodGet, Path: Prefix + "/platform/sign-in",
+		Summary: "The platform's sign-in switches", Description: "Password sign-in and invite only. Operators only.", Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.SignInSettings], error) {
+		return reply(s.core.SignInSettings(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-sign-in-settings", Method: http.MethodPatch, Path: Prefix + "/platform/sign-in",
+		Summary: "Change the platform's sign-in switches",
+		Description: "Fields left out stay. Turning password sign-in off needs an identity provider and your own sign-in to have gone through one. " +
+			"Operators only, recently confirmed.",
 		Tags: tags,
-	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.SetSSOOnlyRequest }) (*out[apitypes.Org], error) {
-		return reply(s.core.SetOrgSSOOnly(ctx, actor, in.Body))
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.SignInSettingsRequest
+	}) (*out[apitypes.SignInSettings], error) {
+		return reply(s.core.SetSignInSettings(ctx, actor, in.Body))
 	})
 }

@@ -1,8 +1,10 @@
 // Package oidctest is a fake OpenID Connect provider for tests of single
-// sign-on (ADR 0058): discovery, an RSA key set, and a token endpoint
-// that checks the client and the PKCE verifier and returns the ID token a
-// test describes. Tests play the browser: they read the authorization
-// URL Dock built and Authorize a code for it themselves.
+// sign-on (ADR 0058, 0065): discovery, an RSA key set, and a token
+// endpoint that checks the client and the PKCE verifier and returns the
+// ID token a test describes; and a fake GitHub (NewGitHub): its OAuth
+// token endpoint and the API's /user and /user/emails. Tests play the
+// browser: they read the authorization URL Dock built and Authorize a
+// code for it themselves.
 package oidctest
 
 import (
@@ -16,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -167,4 +170,120 @@ func oauthError(w http.ResponseWriter, status int, code string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": code})
+}
+
+// GitHub is a running fake of GitHub's OAuth and API, for the github
+// kind: AuthURL, TokenURL and API are where Dock finds it.
+type GitHub struct {
+	AuthURL, TokenURL, API string
+
+	mu     sync.Mutex
+	codes  map[string]githubGrant
+	tokens map[string]GitHubUser
+}
+
+// GitHubUser is a GitHub account as the API describes it.
+type GitHubUser struct {
+	ID     int64
+	Login  string
+	Emails []GitHubEmail
+}
+
+// GitHubEmail is one of an account's emails.
+type GitHubEmail struct {
+	Email             string
+	Primary, Verified bool
+}
+
+type githubGrant struct {
+	challenge, redirectURI string
+	user                   GitHubUser
+}
+
+// NewGitHub starts a fake GitHub for the test's lifetime.
+func NewGitHub(t testing.TB) *GitHub {
+	t.Helper()
+	g := &GitHub{codes: map[string]githubGrant{}, tokens: map[string]GitHubUser{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /login/oauth/access_token", g.token)
+	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
+		if u, ok := g.user(r); ok {
+			writeJSON(w, map[string]any{"id": u.ID, "login": u.Login, "name": nil})
+		} else {
+			http.Error(w, "bad credentials", http.StatusUnauthorized)
+		}
+	})
+	mux.HandleFunc("GET /user/emails", func(w http.ResponseWriter, r *http.Request) {
+		u, ok := g.user(r)
+		if !ok {
+			http.Error(w, "bad credentials", http.StatusUnauthorized)
+			return
+		}
+		out := make([]map[string]any, len(u.Emails))
+		for i, e := range u.Emails {
+			out[i] = map[string]any{"email": e.Email, "primary": e.Primary, "verified": e.Verified}
+		}
+		writeJSON(w, out)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	g.AuthURL, g.TokenURL, g.API = srv.URL+"/login/oauth/authorize", srv.URL+"/login/oauth/access_token", srv.URL
+	return g
+}
+
+// ReadGitHub parses Dock's GitHub authorization URL, failing the test
+// unless it asks for a code with PKCE S256 and the user:email scope.
+func ReadGitHub(t testing.TB, authURL string) Request {
+	t.Helper()
+	u, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	if q.Get("response_type") != "code" || q.Get("client_id") != ClientID || q.Get("code_challenge_method") != "S256" ||
+		q.Get("code_challenge") == "" || q.Get("state") == "" || q.Get("scope") != "read:user user:email" {
+		t.Fatalf("authorization URL %s", authURL)
+	}
+	return Request{State: q.Get("state"), Challenge: q.Get("code_challenge"), RedirectURI: q.Get("redirect_uri")}
+}
+
+// Authorize returns a code for req whose exchange gives a token for user.
+func (g *GitHub) Authorize(req Request, user GitHubUser) string {
+	code := rand.Text()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.codes[code] = githubGrant{challenge: req.Challenge, redirectURI: req.RedirectURI, user: user}
+	return code
+}
+
+// token exchanges a code once, like GitHub: client credentials in the
+// form, the PKCE verifier, and a form-encoded answer.
+func (g *GitHub) token(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	gr, found := g.codes[r.PostForm.Get("code")]
+	delete(g.codes, r.PostForm.Get("code"))
+	sum := sha256.Sum256([]byte(r.PostForm.Get("code_verifier")))
+	if r.PostForm.Get("client_id") != ClientID || r.PostForm.Get("client_secret") != ClientSecret || !found ||
+		r.PostForm.Get("redirect_uri") != gr.redirectURI || b64(sum[:]) != gr.challenge {
+		w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+		_, _ = w.Write([]byte("error=bad_verification_code"))
+		return
+	}
+	tok := rand.Text()
+	g.tokens[tok] = gr.user
+	w.Header().Set("Content-Type", "application/x-www-form-urlencoded")
+	_, _ = w.Write([]byte(url.Values{"access_token": {tok}, "token_type": {"bearer"}, "scope": {"read:user,user:email"}}.Encode()))
+}
+
+// user is the account a request's bearer token is for.
+func (g *GitHub) user(r *http.Request) (GitHubUser, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	u, ok := g.tokens[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
+	return u, ok
 }

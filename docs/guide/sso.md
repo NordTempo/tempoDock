@@ -1,115 +1,113 @@
 # Single sign-on
 
-An organization can let its members sign in through the identity
-provider it already runs: Google Workspace, Microsoft Entra ID, Okta,
-Keycloak, Authentik, or anything else that speaks OpenID Connect. The
-provider checks the password and MFA; Dock trusts what it says, for that
-organization only. The design is [ADR 0058](../decisions/0058-sso-oidc.md).
+People can sign in to Dock with Google, GitHub, or any identity provider
+that speaks OpenID Connect (Microsoft Entra ID, Okta, Keycloak,
+Authentik). The sign-in page shows a **Continue with** button for each,
+next to the email and password form. Providers are the platform's:
+operators set them up once for the whole Dock, and organizations still
+decide who is a member. The design is [ADR 0065](../decisions/0065-sign-in-is-the-platforms.md),
+amending [ADR 0058](../decisions/0058-sso-oidc.md).
 
-## Connecting a provider
+## Adding a provider
 
-You need to be an admin of the organization with access to every
-project.
+You need to be an operator. In the browser it's **Console → Sign-in**;
+the CLI is `dock sso`.
 
-In the browser it's **Organization settings → Single sign-on**; the
-CLI is `dock org sso`.
+Every provider sends people back to the same redirect URL,
+`https://<your Dock address>/api/v1/auth/sso/callback` (the Sign-in
+page and `dock sso list` show it). Register it at the provider:
 
-1. At the provider, register Dock as a web application (an "OAuth
-   client" or "OIDC app"):
-   - redirect URL: `https://<your Dock address>/api/v1/auth/sso/callback`
-     (the Single sign-on page and `dock org sso list` show it),
-   - scopes: `openid email profile`,
-   - grant type: authorization code (Dock uses PKCE).
-2. Add it to Dock with the issuer URL, the client ID and the client
-   secret, and the email domains it signs people in for:
+| Provider | Where | What Dock needs |
+|---|---|---|
+| Google | Google Cloud, APIs & Services, Credentials, Create OAuth client ID, Web application, Authorized redirect URI | Client ID and secret |
+| GitHub | Settings, Developer settings, OAuth Apps, New OAuth App, Authorization callback URL | Client ID and secret. Dock reads the account's primary verified email |
+| Any OpenID Connect provider | A web application ("OAuth client", "OIDC app") with the scopes `openid email profile` and the authorization code grant (Dock uses PKCE) | Issuer URL, client ID and secret, and a label for its button |
 
 ```
-$ printf %s "$CLIENT_SECRET" | dock org sso add google \
-    --issuer https://accounts.google.com \
-    --client-id 1234.apps.googleusercontent.com \
-    --client-secret-stdin --domain example.com
-✓ Added single sign-on provider google for example.com
+$ printf %s "$CLIENT_SECRET" | dock sso add google --client-id 1234.apps.googleusercontent.com --client-secret-stdin
+✓ Added identity provider google: the sign-in page shows Continue with Google
   Redirect URL to register at the provider: https://dock.example.com/api/v1/auth/sso/callback
-  New members: invite only
+
+$ printf %s "$CLIENT_SECRET" | dock sso add github --client-id Ov23li... --client-secret-stdin
+
+$ printf %s "$CLIENT_SECRET" | dock sso add corp --kind oidc \
+    --issuer https://id.example.com/realms/staff --label "Example ID" \
+    --client-id dock --client-secret-stdin
 ```
 
-Dock reads the issuer's discovery document
-(`<issuer>/.well-known/openid-configuration`) right away, so a wrong
-URL fails here. The client secret is stored encrypted and never shown
-again; replace it with `dock org sso set google --client-secret-stdin`.
+Named `google` or `github`, a provider is that kind; any other name needs
+`--kind`. Dock reads an OpenID Connect issuer's discovery document
+(`<issuer>/.well-known/openid-configuration`) right away, so a wrong URL
+fails here. The client secret is stored encrypted and never shown again;
+replace it with `dock sso set <name> --client-secret-stdin`.
 
 ### Issuer URLs
 
 | Provider | Issuer |
 |---|---|
-| Google | `https://accounts.google.com` |
 | Microsoft Entra ID | `https://login.microsoftonline.com/<tenant ID>/v2.0` |
 | Okta | `https://<your org>.okta.com` (or an authorization server's URL) |
 | Keycloak | `https://<host>/realms/<realm>` |
 | Authentik | `https://<host>/application/o/<application slug>/` (with the trailing slash) |
-| GitHub | Not OpenID Connect. Put Dex or Authentik in front of it and use their issuer |
 
 The issuer must match what the provider puts in its tokens exactly,
 trailing slash included.
 
 ## Who gets in
 
-People sign in from the sign-in page with **Sign in with SSO** and
-their email; Dock finds the provider by the email's domain and sends
-them there (when several organizations sign that domain in, they pick
-one). The provider must
-say the email is verified, and it must be in one of the provider's
-domains.
+The provider must say the email is verified.
 
-- **A member** of the organization signs in.
-- **Someone with an invite** (`dock org invite`) joins with the invite's
-  role on their first sign-in, with a new Dock account if they had none.
-  The invite link's **Create an account** makes a password account
-  instead, except in an organization that requires single sign-on
-  ([ADR 0060](../decisions/0060-invite-links-signed-out.md)).
-- **Anyone else** is refused and told to ask an admin for an invite,
-  unless the provider has a just-in-time role:
-  `dock org sso set google --jit-role read` (or `deploy`) lets anyone
-  with an allowed, verified email join with that role. Admins are always
-  made by an admin.
+- **Someone with a Dock account** signs in: the first time Dock finds
+  the account by its email and links it to the provider's identity;
+  after that the identity finds it, whatever email the provider sends.
+- **Someone with an open invite** gets an account on their first sign-in,
+  and their invites are accepted.
+- **Anyone else**, while sign-up is **invite only** (the default), gets
+  no account: Dock says they signed in with the provider but this Dock is
+  invite only, and to ask an admin for an invite.
+
+With invite only off (`dock sso invite-only off`), anyone a provider
+signs in gets an account, in no organization until an admin invites or
+adds them. Like any account, it may create an organization of its own,
+so turn invite only off only with providers that sign in your own people.
 
 Accounts created this way have no password: their owners sign in through
-the provider.
+the provider. An operator can give them one from the console's Users.
 
-## What an SSO sign-in can do
+## What a provider's sign-in can do
 
-- It acts in its organization only. For your other organizations, and
-  for operating the platform, sign in with your password.
-- It counts as two-factor where the organization requires it, so turn on
-  MFA at the provider. If you also have an authenticator app in Dock,
-  Dock asks for its code after the provider.
-- Your second factors and recovery codes are managed from a password
-  sign-in.
-- `dock login` approved from an SSO sign-in gives a token bound the same
-  way.
+- Everything a password sign-in can: every organization the person
+  belongs to, the console for operators, their own second factors.
+- It counts as two-factor where an organization or the platform
+  requires it, so turn on MFA at the provider. If you also have an
+  authenticator app or passkey in Dock, Dock asks for it after the
+  provider.
+- When Dock asks you to confirm it's you, you sign in through the same
+  provider again (or use your Dock second factor).
 
-## Requiring single sign-on
+## Turning passwords off
 
 ```
-$ dock org sso-only on
-✓ Members act in Acme only after signing in with its single sign-on
+$ dock sso password-sign-in off
+  password sign-in  off
+  invite only       on
 ```
 
-Members who signed in another way stay signed in but can't act in the
-organization until they sign in through its provider. API tokens are
-not affected. Turning it on needs your own sign-in to have gone through
-the organization's provider, so you know it works.
+The sign-in page then shows only the providers and passkeys, and invite
+links make no password accounts. Sessions already signed in stay until
+they end. Turning it off needs a provider and your own sign-in to have
+gone through one, so you know it works.
 
-If the provider is down, an operator turns the requirement off on the
-server:
+If every provider breaks, turn passwords back on from the server:
 
 ```sh
-sudo dock admin sso-only acme off
+sudo dock admin password-sign-in on
+sudo dock admin password-sign-in on --password-for ops@example.com   # also a new password, shown once
 ```
 
 ## Removing a provider
 
-`dock org sso remove google` removes it and the links between people and
-their identities there. People keep their accounts and memberships. The
-last provider of an organization that requires single sign-on stays
-until that's turned off.
+`dock sso remove google` removes it, the links between people and their
+identities there, and the sessions signed in through it. People keep
+their accounts and memberships. The last provider stays while password
+sign-in is off.

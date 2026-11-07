@@ -245,7 +245,7 @@ func describeTwoFactor(me apitypes.Me) string {
 	case "recovery":
 		return "yes: a recovery code"
 	case "sso":
-		return "yes: single sign-on (the organization's identity provider enforces it)"
+		return "yes: single sign-on (the identity provider enforces it)"
 	}
 	return "yes: " + factorKind(me.TwoFactor)
 }
@@ -275,7 +275,7 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 					"organization", me.Org,
 					"access", describeMe(me),
 					"two-factor", describeTwoFactor(me),
-					"single sign-on", me.SSO,
+					"single sign-on", me.SSOLabel,
 					"server", s.server.Server,
 					"context", ctxName,
 				); err != nil {
@@ -283,9 +283,6 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 				}
 				if me.TwoFactorRequired != "" {
 					g.io.Warnf("%s", me.TwoFactorRequired)
-				}
-				if me.SSORequired != "" {
-					g.io.Warnf("%s", me.SSORequired)
 				}
 				return nil
 			})

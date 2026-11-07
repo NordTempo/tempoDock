@@ -311,6 +311,9 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if err := c.resealSecrets(ctx); err != nil {
 		return nil, fmt.Errorf("bind sealed values to where they are stored (ADR 0041): %w", err)
 	}
+	if err := c.resealSSOSecrets(ctx); err != nil {
+		return nil, fmt.Errorf("reseal identity providers' client secrets (ADR 0065): %w", err)
+	}
 	if err := c.registerLocalServer(ctx); err != nil {
 		return nil, err
 	}

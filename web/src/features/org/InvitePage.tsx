@@ -13,6 +13,8 @@ import { keys, queries, useSession } from "../../data/queries";
 import { day } from "../../ui/format";
 import { Act, Button, ErrorText } from "../../ui/kit";
 import { useValidation } from "../create/form";
+import { useSignInMethods, useStartSSO } from "../sso/data";
+import { ProviderMark } from "../sso/ProviderMark";
 import { orgQueries, roleNote, useAcceptInvite, useInviteSignUp } from "./data";
 
 type InviteInfo = components["schemas"]["InviteInfo"];
@@ -138,22 +140,58 @@ function Accept({ code, invite }: { code: string; invite: InviteInfo }) {
 }
 
 /**
- * The choices of someone signed out: sign in with the invited email and
- * come back, or create the account for it right here.
+ * The choices of someone signed out: continue with an identity provider
+ * (a new account accepts its invites, ADR 0065), sign in with the invited
+ * email and come back, or create the account for it right here. While
+ * password sign-in is off, only the providers.
  */
 function SignedOut({ code, invite }: { code: string; invite: InviteInfo }) {
   const [creating, setCreating] = useState(false);
+  const methods = useSignInMethods();
+  const start = useStartSSO();
   const back = window.location.pathname;
+  const passwords = methods.data?.password ?? true;
+  const providers = methods.data?.providers ?? [];
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-2">
-        <Link to="/login" search={{ redirect: back }} className="btn pri">
-          Sign in to accept
-        </Link>
-        {!creating && (
-          <Button onClick={() => setCreating(true)}>Create an account</Button>
-        )}
-      </div>
+      {providers.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sec">
+            Sign in as <span className="font-mono">{invite.email}</span> to
+            accept.
+          </p>
+          {providers.map((p) => (
+            <button
+              key={p.name}
+              type="button"
+              disabled={start.isPending || start.isSuccess}
+              onClick={() => start.mutate({ provider: p.name, to: back })}
+              className="btn justify-center gap-2.5 px-3.5 py-2.5 text-md"
+            >
+              <ProviderMark kind={p.kind} />
+              Continue with {p.label}
+            </button>
+          ))}
+          <ErrorText error={start.error} />
+          <p className="text-xs text-mut">
+            Signing in with another email doesn't accept the invite.
+          </p>
+        </div>
+      )}
+      {passwords && (
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/login"
+            search={{ redirect: back }}
+            className={providers.length ? "btn" : "btn pri"}
+          >
+            Sign in {providers.length ? "with a password" : "to accept"}
+          </Link>
+          {!creating && (
+            <Button onClick={() => setCreating(true)}>Create an account</Button>
+          )}
+        </div>
+      )}
       {creating && <CreateAccount code={code} invite={invite} back={back} />}
     </div>
   );

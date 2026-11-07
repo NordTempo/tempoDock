@@ -62,7 +62,7 @@ func validName(kind, name string) error {
 // of an org, nor an environment (/<org>/<project>/<environment>) like a
 // page of a project.
 var (
-	reservedOrgSlugs         = []string{"access", "account", "api", "assets", "cli-login", "console", "fonts", "invite", "login", "no-org"}
+	reservedOrgSlugs         = []string{"access", "account", "api", "assets", "cli-login", "console", "fonts", "invite", "invite-only", "login", "no-org"}
 	reservedProjectNames     = []string{"analytics", "audit", "requests", "settings", "tokens"}
 	reservedEnvironmentNames = []string{"compare", "settings"}
 )

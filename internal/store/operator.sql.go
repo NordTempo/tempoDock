@@ -77,7 +77,7 @@ func (q *Queries) ListExpiredOrgMembers(ctx context.Context) ([]ListExpiredOrgMe
 
 const listOperatorOrgs = `-- name: ListOperatorOrgs :many
 
-SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at,
+SELECT orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at,
     CAST((SELECT count(*) FROM org_members WHERE org_members.org_id = orgs.id AND org_members.expires_at IS NULL) AS INTEGER) AS members,
     CAST((SELECT count(*) FROM projects WHERE projects.org_id = orgs.id AND projects.archived_at IS NULL) AS INTEGER) AS projects,
     CAST((SELECT count(*) FROM projects
@@ -116,7 +116,6 @@ func (q *Queries) ListOperatorOrgs(ctx context.Context) ([]ListOperatorOrgsRow, 
 			&i.Org.LockProduction,
 			&i.Org.RequestTtlHours,
 			&i.Org.RequireTwoFactor,
-			&i.Org.SsoOnly,
 			&i.Org.SuspendedAt,
 			&i.Org.SuspendedBy,
 			&i.Org.DeletedAt,
@@ -391,7 +390,7 @@ func (q *Queries) SumOrgTraffic(ctx context.Context, sinceAt int64) ([]SumOrgTra
 }
 
 const suspendOrg = `-- name: SuspendOrg :one
-UPDATE orgs SET suspended_at = ?, suspended_by = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
+UPDATE orgs SET suspended_at = ?, suspended_by = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, suspended_at, suspended_by, deleted_at
 `
 
 type SuspendOrgParams struct {
@@ -411,7 +410,6 @@ func (q *Queries) SuspendOrg(ctx context.Context, arg SuspendOrgParams) (Org, er
 		&i.LockProduction,
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
-		&i.SsoOnly,
 		&i.SuspendedAt,
 		&i.SuspendedBy,
 		&i.DeletedAt,

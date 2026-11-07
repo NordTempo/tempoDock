@@ -13,15 +13,15 @@ SELECT * FROM users WHERE id = +?;
 SELECT * FROM users WHERE email = +?;
 
 -- name: CreateSession :one
-INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at, sso_org_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO sessions (user_id, hash, expires_at, factor, pending, verified_at, sso_provider_id) VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- GetSessionUser is a session with its user, pending or not: callers
--- check. sso_org_slug names the org whose single sign-on it went through.
+-- check, with the name and label of the provider it signed in through.
 -- name: GetSessionUser :one
-SELECT sqlc.embed(users), sqlc.embed(sessions), sso_orgs.slug AS sso_org_slug
+SELECT sqlc.embed(users), sqlc.embed(sessions), sso_providers.name AS sso_name, sso_providers.label AS sso_label
 FROM sessions JOIN users ON users.id = sessions.user_id
-LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = sessions.sso_org_id
+LEFT JOIN sso_providers ON sso_providers.id = sessions.sso_provider_id
 WHERE sessions.hash = +?;
 
 -- name: DeleteSession :exec
@@ -35,24 +35,21 @@ INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
--- GetTokenByHash also returns the user a `dock login` token acts for, a
--- manual token's org and the org whose single sign-on a `dock login`
--- token's approval went through, in the same query, since authentication
--- checks them on every request.
+-- GetTokenByHash also returns the user a `dock login` token acts for and
+-- a manual token's org in the same query, since authentication checks
+-- them on every request.
 -- name: GetTokenByHash :one
 SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
-    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at, sso_orgs.slug AS sso_org_slug
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
-LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = tokens.sso_org_id
 WHERE tokens.hash = +?;
 
 -- GetTokenByIDWithOwner is GetTokenByHash by ID: an approved access
 -- request acts as the token that asked, checked as it is now.
 -- name: GetTokenByIDWithOwner :one
 SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
-    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at, sso_orgs.slug AS sso_org_slug
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
-LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = tokens.sso_org_id
 WHERE tokens.id = +?;
 
 -- name: GetToken :one

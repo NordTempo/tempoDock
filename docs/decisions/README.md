@@ -65,13 +65,14 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted |
 | [0056](0056-preview-environments.md) | Preview environments per pull request | accepted |
 | [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
-| [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | accepted |
+| [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | amended by 0065 |
 | [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings, auto uptime checks | accepted |
 | [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted |
 | [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
 | [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | accepted |
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
+| [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's: provider buttons, GitHub, invite only, passwords off | accepted |
 
 ## Template
 

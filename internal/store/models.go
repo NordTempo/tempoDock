@@ -201,7 +201,6 @@ type CliLogin struct {
 	Status     string
 	UserID     *int64
 	TwoFactor  bool
-	SsoOrgID   *int64
 }
 
 type CloudflareConnection struct {
@@ -482,7 +481,6 @@ type Org struct {
 	LockProduction   int64
 	RequestTtlHours  int64
 	RequireTwoFactor bool
-	SsoOnly          bool
 	SuspendedAt      *time.Time
 	SuspendedBy      string
 	DeletedAt        *time.Time
@@ -545,6 +543,8 @@ type PlatformSetting struct {
 	UpdatedAt          time.Time
 	RegistryStorageID  *int64
 	OperatorsTwoFactor bool
+	PasswordSignIn     bool
+	InviteOnly         bool
 }
 
 type Preview struct {
@@ -822,16 +822,16 @@ type ServiceStat struct {
 }
 
 type Session struct {
-	ID         int64
-	UserID     int64
-	Hash       string
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-	Factor     string
-	Pending    bool
-	Attempts   int64
-	VerifiedAt *time.Time
-	SsoOrgID   *int64
+	ID            int64
+	UserID        int64
+	Hash          string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	Factor        string
+	Pending       bool
+	Attempts      int64
+	VerifiedAt    *time.Time
+	SsoProviderID *int64
 }
 
 type Site struct {
@@ -889,19 +889,20 @@ type SsoIdentity struct {
 
 type SsoProvider struct {
 	ID           int64
-	OrgID        int64
 	Name         string
+	Kind         string
+	Label        string
 	Issuer       string
 	ClientID     string
 	ClientSecret []byte
-	JitRole      string
 	CreatedAt    time.Time
 	CreatedBy    string
 }
 
-type SsoProviderDomain struct {
-	Domain     string
+type SsoReseal struct {
 	ProviderID int64
+	OrgID      int64
+	Name       string
 }
 
 type StagedDomain struct {
@@ -947,7 +948,6 @@ type Token struct {
 	OrgID             *int64
 	Operator          bool
 	TwoFactor         bool
-	SsoOrgID          *int64
 }
 
 type TrafficPath struct {

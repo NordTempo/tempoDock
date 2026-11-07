@@ -101,9 +101,6 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 		if t.TwoFactor {
 			a.Factor = factorLogin
 		}
-		if t.SsoOrgID != nil && row.SsoOrgSlug != nil {
-			a.SSOOrgID, a.SSOOrg = *t.SsoOrgID, *row.SsoOrgSlug
-		}
 		return c.actIn(ctx, c.gateOperator(a), org, apitypes.Scope(t.Scope))
 	}
 	if t.OrgID == nil || row.OrgSlug == nil { // manual tokens always have one
@@ -155,8 +152,8 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Act
 	}
 	a := userActor(row.User)
 	a.SessionID, a.Factor = s.ID, s.Factor
-	if s.SsoOrgID != nil && row.SsoOrgSlug != nil {
-		a.SSOOrgID, a.SSOOrg = *s.SsoOrgID, *row.SsoOrgSlug
+	if s.SsoProviderID != nil && row.SsoName != nil && row.SsoLabel != nil {
+		a.SSOProviderID, a.SSOProvider, a.SSOLabel = *s.SsoProviderID, *row.SsoName, *row.SsoLabel
 	}
 	if s.VerifiedAt != nil {
 		a.VerifiedAt = *s.VerifiedAt
@@ -173,21 +170,10 @@ func userActor(u store.User) Actor {
 // named by slug, or with none in the user's only org (a single sign-on's
 // org, for one); a user with several and no slug gets no org, and
 // org-scoped operations say to choose one. The actor's scope is the user's
-// role there, capped at most. An org that requires a second factor or a
-// single sign-on the actor didn't use leaves it in none, and org-scoped
-// operations say so (ADR 0057, 0058).
+// role there, capped at most. An org that requires a second factor the
+// actor didn't use leaves it in none, and org-scoped operations say so
+// (ADR 0057).
 func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Scope) (Actor, error) {
-	if slug == "" && a.SSOOrg != "" {
-		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: a.SSOOrg})
-		if store.IsNotFound(err) {
-			a.ssoGate, a.orgs = fmt.Sprintf("you signed in through the single sign-on of organization %s and aren't a member of it any more; sign in with your password, or ask an admin of %s for an invite", a.SSOOrg, a.SSOOrg), 1
-			return a, nil
-		}
-		if err != nil {
-			return Actor{}, err
-		}
-		return a.gatedMember(m.Org, m.Role, most), nil
-	}
 	if slug != "" {
 		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: slug})
 		if store.IsNotFound(err) {
@@ -217,23 +203,15 @@ func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Sc
 	return a, nil
 }
 
-// gatedMember is member, unless a sign-in rule keeps the actor out of
-// org: a single sign-on through another org's provider (it vouches only
-// there), an org that requires its single sign-on, or one that requires a
-// second factor the actor didn't use. Then it acts in no org and says why.
+// gatedMember is member, unless org requires a second factor the actor
+// didn't use: then it acts in no org and says why. A sign-in through an
+// identity provider counts as one (ADR 0065).
 func (a Actor) gatedMember(org store.Org, role string, most apitypes.Scope) Actor {
-	switch {
-	case a.SSOOrgID != 0 && a.SSOOrgID != org.ID:
-		a.ssoGate = fmt.Sprintf("you signed in through the single sign-on of organization %s, which vouches for you only there; to act in %s, sign in with your password or through its single sign-on", a.SSOOrg, org.Slug)
-	case org.SsoOnly && a.SSOOrgID != org.ID:
-		a.ssoGate = fmt.Sprintf("organization %s requires signing in through its single sign-on; sign out and sign in with SSO", org.Slug)
-	case org.RequireTwoFactor && a.Factor == "":
-		a.needs2FAOrg = org.Slug
-	default:
-		return a.member(org, role, most)
+	if org.RequireTwoFactor && a.Factor == "" {
+		a.needs2FAOrg, a.orgs = org.Slug, 1
+		return a
 	}
-	a.orgs = 1
-	return a
+	return a.member(org, role, most)
 }
 
 // member is the actor acting in org with role, capped at most.
@@ -251,6 +229,7 @@ var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password"
 
 // Login checks a user's password and starts a session, or, when they
 // have a second factor, a pending sign-in for LoginSecondFactor to finish.
+// Refused while the platform's password sign-in is off (ADR 0065).
 // Attempts are rate limited per client IP and email
 // (httpkit.LoginLimiter), so a guesser can't lock the owner out; failures
 // are logged and audited (never the password).
@@ -259,6 +238,13 @@ func (c *Core) Login(ctx context.Context, email, password, clientIP string) (Log
 	if !c.loginLimit.Allow(email, clientIP, t) {
 		c.log.Warn("login rate limited", "email", email, "ip", clientIP)
 		return LoginResult{}, errf(apitypes.CodeRateLimited, "too many login attempts; wait a minute and try again")
+	}
+	set, err := signInSettings(ctx, c.store.Queries)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if !set.PasswordSignIn {
+		return LoginResult{}, errf(apitypes.CodeForbidden, "password sign-in is off on this Dock; continue with an identity provider or a passkey")
 	}
 	u, err := c.checkPassword(ctx, email, password)
 	if err == nil && u.DisabledAt != nil {
@@ -311,14 +297,14 @@ func (c *Core) newSession(ctx context.Context, u store.User, via signInVia) (sec
 	secret, hash := newSecret(sessionPrefix)
 	t := now()
 	expires = t.Add(SessionTTL)
-	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &t, SsoOrgID: via.ssoOrgIDPtr()})
+	id, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Factor: via.factor, VerifiedAt: &t, SsoProviderID: via.ssoProviderIDPtr()})
 	if err != nil {
 		return "", time.Time{}, Actor{}, err
 	}
 	_ = c.store.DeleteExpiredSessions(ctx, now())
 	a = userActor(u)
 	a.SessionID, a.Factor, a.VerifiedAt = id, via.factor, t
-	a.SSOOrgID, a.SSOOrg = via.ssoOrgID, via.ssoOrg
+	a.SSOProviderID, a.SSOProvider, a.SSOLabel = via.ssoProviderID, via.ssoProvider, via.ssoLabel
 	return secret, expires, c.gateOperator(a), nil
 }
 
@@ -361,7 +347,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 		return "", time.Time{}, err
 	}
 	if a.Kind == "user" {
-		if secret, expires, _, err = c.newSession(ctx, u, signInVia{factor: a.Factor, ssoOrgID: a.SSOOrgID, ssoOrg: a.SSOOrg}); err != nil {
+		if secret, expires, _, err = c.newSession(ctx, u, signInVia{factor: a.Factor, ssoProviderID: a.SSOProviderID, ssoProvider: a.SSOProvider, ssoLabel: a.SSOLabel}); err != nil {
 			return "", time.Time{}, err
 		}
 	}

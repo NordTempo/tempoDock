@@ -47,8 +47,9 @@ const (
 	// factorLogin marks a `dock login` token approved from a session with a
 	// second factor.
 	factorLogin = "login"
-	// factorSSO is a sign-in through an org's single sign-on (ADR 0058). It
-	// counts as two-factor: the org enforces MFA at its provider.
+	// factorSSO is a sign-in through one of the platform's identity
+	// providers (ADR 0065). It counts as two-factor: enforce MFA at the
+	// provider.
 	factorSSO = "sso"
 )
 
@@ -68,20 +69,20 @@ type LoginResult struct {
 
 // signInVia is how a sign-in proved who it is besides (or instead of) a
 // password: the second factor ("" for none), and for a single sign-on
-// (ADR 0058) the org whose provider vouched and that provider's name.
+// (ADR 0065) the identity provider that vouched: its ID, name and label.
 type signInVia struct {
-	factor   string
-	ssoOrgID int64
-	ssoOrg   string
-	provider string
+	factor        string
+	ssoProviderID int64
+	ssoProvider   string
+	ssoLabel      string
 }
 
-// ssoOrgIDPtr is ssoOrgID for the store, nil for none.
-func (v signInVia) ssoOrgIDPtr() *int64 {
-	if v.ssoOrgID == 0 {
+// ssoProviderIDPtr is ssoProviderID for the store, nil for none.
+func (v signInVia) ssoProviderIDPtr() *int64 {
+	if v.ssoProviderID == 0 {
 		return nil
 	}
-	return &v.ssoOrgID
+	return &v.ssoProviderID
 }
 
 // signIn starts u's session, signed in via, and audits it.
@@ -106,8 +107,8 @@ func (c *Core) signIn(ctx context.Context, u store.User, via signInVia, clientIP
 	}
 	summary := "logged in from " + clientIP
 	switch {
-	case via.provider != "":
-		summary += fmt.Sprintf(" with single sign-on (%s/%s)", via.ssoOrg, via.provider)
+	case via.ssoProvider != "":
+		summary += fmt.Sprintf(" with %s (single sign-on, %s)", via.ssoLabel, via.ssoProvider)
 	case via.factor != "":
 		summary += " with " + factorName(via.factor)
 	}
@@ -158,7 +159,7 @@ func (c *Core) startSecondFactor(ctx context.Context, u store.User, via signInVi
 	}
 	secret, hash := newSecret(sessionPrefix)
 	expires := now().Add(pendingTTL)
-	if _, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Pending: true, SsoOrgID: via.ssoOrgIDPtr()}); err != nil {
+	if _, err := c.store.CreateSession(ctx, store.CreateSessionParams{UserID: u.ID, Hash: hash, ExpiresAt: expires, Pending: true, SsoProviderID: via.ssoProviderIDPtr()}); err != nil {
 		return LoginResult{}, err
 	}
 	return LoginResult{Secret: secret, Expires: expires, Pending: true, Factors: kinds}, nil
@@ -212,8 +213,8 @@ func (c *Core) LoginSecondFactor(ctx context.Context, pendingSecret string, v ap
 		return LoginResult{}, err
 	}
 	via := signInVia{factor: kind}
-	if s.SsoOrgID != nil && row.SsoOrgSlug != nil {
-		via.ssoOrgID, via.ssoOrg = *s.SsoOrgID, *row.SsoOrgSlug
+	if s.SsoProviderID != nil && row.SsoName != nil && row.SsoLabel != nil {
+		via.ssoProviderID, via.ssoProvider, via.ssoLabel = *s.SsoProviderID, *row.SsoName, *row.SsoLabel
 	}
 	return c.signIn(ctx, u, via, clientIP)
 }
@@ -374,15 +375,10 @@ func (a Actor) requireRecent(action string) error {
 }
 
 // sessionUser loads the user of a UI session for managing their own
-// second factors, which needs a browser and a recent confirmation. A
-// single sign-on session can't: an org's provider vouches for the person
-// only in that org, not for their account (ADR 0058).
+// second factors, which needs a browser and a recent confirmation.
 func (c *Core) sessionUser(ctx context.Context, a Actor, action string) (store.User, error) {
 	if a.SessionID == 0 {
 		return store.User{}, errf(apitypes.CodeForbidden, "%s is done in the browser, on your account page", action)
-	}
-	if a.SSOOrgID != 0 {
-		return store.User{}, errf(apitypes.CodeSSORequired, "%s needs a sign-in with your password; you signed in through the single sign-on of organization %s, which vouches for you only there", action, a.SSOOrg)
 	}
 	if err := a.requireRecent(action); err != nil {
 		return store.User{}, err
@@ -428,8 +424,8 @@ func (c *Core) Reauth(ctx context.Context, a Actor, v apitypes.Verification, cli
 		err = invalid("confirm with your passkey or authenticator app")
 	case n > 0:
 		factor, err = c.checkFactor(ctx, ceremonyReauth, u, a.SessionID, v, false)
-	case a.SSOOrgID != 0:
-		err = errf(apitypes.CodeSSORequired, "you signed in through the single sign-on of organization %s: confirm by signing in through it again", a.SSOOrg)
+	case a.SSOProviderID != 0:
+		err = errf(apitypes.CodeSSORequired, "you signed in with %s: confirm by signing in with it again", a.SSOLabel)
 	case v.Password == "":
 		err = invalid("confirm with your password")
 	default:
@@ -722,15 +718,11 @@ func (c *Core) ResetTwoFactor(ctx context.Context, a Actor, email string) error 
 }
 
 // gateOperator takes operating the platform away from a user's session or
-// `dock login` token that signed in through an org's single sign-on (it
-// vouches only in that org, ADR 0058), or that used no second factor while
-// the platform requires one of operators.
+// `dock login` token that used no second factor while the platform
+// requires one of operators. A sign-in through an identity provider
+// counts as one (ADR 0065).
 func (c *Core) gateOperator(a Actor) Actor {
-	switch {
-	case !a.Operator:
-	case a.SSOOrgID != 0:
-		a.Operator, a.operatorSSO = false, true
-	case a.Factor == "" && c.operators2FA.Load():
+	if a.Operator && a.Factor == "" && c.operators2FA.Load() {
 		a.Operator, a.operatorNeeds2FA = false, true
 	}
 	return a

@@ -112,5 +112,5 @@ func (c *Core) orgBySlug(ctx context.Context, slug string) (store.Org, error) {
 }
 
 func toOrg(o store.Org, role apitypes.Scope) apitypes.Org {
-	return apitypes.Org{Slug: o.Slug, Name: o.Name, Role: role, CreatedAt: o.CreatedAt, RequireTwoFactor: o.RequireTwoFactor, SSOOnly: o.SsoOnly}
+	return apitypes.Org{Slug: o.Slug, Name: o.Name, Role: role, CreatedAt: o.CreatedAt, RequireTwoFactor: o.RequireTwoFactor}
 }

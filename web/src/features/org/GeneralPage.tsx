@@ -3,7 +3,7 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { setOrg } from "../../api/client";
 import { queries, useIsAdmin, useSession } from "../../data/queries";
@@ -136,20 +136,6 @@ export function GeneralPage() {
                 <td className="py-2.5 text-faint">Sign-in</td>
                 <td className="py-2.5">
                   <RequireTwoFactor on={org.require_two_factor} admin={admin} />
-                </td>
-              </tr>
-              <tr>
-                <td className="py-2.5 text-faint">Single sign-on</td>
-                <td className="py-2.5">
-                  {org.sso_only ? "Required for members" : "Not required"}
-                  {admin && (
-                    <>
-                      {" · "}
-                      <Link to="/$org/settings/sso" params={{ org: org.slug }}>
-                        manage providers
-                      </Link>
-                    </>
-                  )}
                 </td>
               </tr>
               <tr>

@@ -1,19 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
-import { ApiError, api, body, setOrg } from "../api/client";
+import { ApiError, api, body } from "../api/client";
 import type { components } from "../api/schema";
 import { useLogin, useLoginVerify } from "../data/mutations";
 import { currentMe, keys, queries } from "../data/queries";
-import { type SSOChoice, useStartSSO } from "../features/sso/data";
+import { useSignInMethods, useStartSSO } from "../features/sso/data";
+import { ProviderMark } from "../features/sso/ProviderMark";
 import { CodeInput } from "../ui/CodeInput";
 import { ErrorText } from "../ui/kit";
 
 /**
- * The sign-in page's query: where to go afterwards, and where a single
- * sign-on comes back to (ADR 0058): `error` says why it failed, `second`
- * that it needs the Dock second factor (the pending sign-in's cookie is
- * already set).
+ * The sign-in page's query: where to go afterwards, and where a sign-in
+ * through an identity provider comes back to (ADR 0065): `error` says why
+ * it failed, `second` that it needs the Dock second factor (the pending
+ * sign-in's cookie is already set).
  */
 type LoginSearch = { redirect?: string; error?: string; second?: true };
 
@@ -25,8 +26,8 @@ export const Route = createFileRoute("/login")({
       second: true,
     }),
   }),
-  // A single sign-on started from a session (an org requiring it) comes
-  // back here too: its second step or error is shown, not skipped.
+  // A provider's sign-in started from a session (a step-up) comes back
+  // here too: its second step or error is shown, not skipped.
   beforeLoad: async ({ context, search }) => {
     if (search.second || search.error) return;
     const session = await context.queryClient.ensureQueryData(
@@ -173,9 +174,11 @@ function Login() {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const ids = useId();
-  // Signing in with SSO instead of a password; where a failed one comes
-  // back to.
-  const [sso, setSSO] = useState(!!error);
+  // The buttons, one per identity provider, and whether passwords work.
+  const methods = useSignInMethods();
+  const start = useStartSSO();
+  const passwords = methods.data?.password ?? true;
+  const providers = methods.data?.providers ?? [];
   // Set while the password (or single sign-on) was right and a second
   // factor is due.
   const [factors, setFactors] = useState<SecondFactor[] | null>(
@@ -219,18 +222,47 @@ function Login() {
               if (second) void fresh();
             }}
           />
-        ) : sso ? (
-          <SSOForm
-            email={email}
-            onEmail={setEmail}
-            to={to}
-            error={error}
-            onPassword={() => {
-              setSSO(false);
-              if (error) void fresh();
-            }}
-          />
         ) : (
+          <div className="flex flex-col gap-3.5">
+            {error && (
+              <p
+                role="alert"
+                className="rounded-ctl border border-fail-edge bg-fail-bg px-3 py-2 text-fail"
+              >
+                {sentence(error)}
+              </p>
+            )}
+            {providers.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {providers.map((p) => (
+                  <button
+                    key={p.name}
+                    type="button"
+                    disabled={start.isPending || start.isSuccess}
+                    onClick={() => {
+                      if (error) void fresh();
+                      start.mutate({ provider: p.name, to });
+                    }}
+                    className="btn justify-center gap-2.5 px-3.5 py-2.5 text-md"
+                  >
+                    <ProviderMark kind={p.kind} />
+                    Continue with {p.label}
+                  </button>
+                ))}
+                <ErrorText error={start.error} />
+              </div>
+            )}
+            {passwords && providers.length > 0 && (
+              <div
+                aria-hidden
+                className="flex items-center gap-2.5 text-xs text-faint before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line"
+              >
+                or
+              </div>
+            )}
+          </div>
+        )}
+        {!factors && passwords && (
           <form
             className="flex flex-col gap-3.5"
             noValidate
@@ -333,19 +365,29 @@ function Login() {
                 Sign in with a passkey
               </button>
             )}
-            <button
-              type="button"
-              className="btn justify-center px-3.5 py-2.5 text-md"
-              onClick={() => {
-                login.reset();
-                passkeyLogin.reset();
-                setEnded(null);
-                setSSO(true);
-              }}
-            >
-              Sign in with SSO
-            </button>
           </form>
+        )}
+        {!factors && !passwords && (
+          <div className="flex flex-col gap-3.5">
+            {passkeys && (
+              <button
+                type="button"
+                disabled={passkeyLogin.isPending}
+                onClick={() =>
+                  passkeyLogin.mutate(undefined, { onSuccess: done })
+                }
+                className="btn justify-center px-3.5 py-2.5 text-md"
+              >
+                Sign in with a passkey
+              </button>
+            )}
+            <ErrorText error={passkeyLogin.error} />
+            <p className="text-xs text-mut">
+              This Dock signs in only through
+              {providers.length === 1 ? " the provider" : " the providers"}{" "}
+              above.
+            </p>
+          </div>
         )}
         <div className="flex flex-col gap-1 border-t border-line pt-4">
           <span className="text-mut">From a terminal</span>
@@ -508,112 +550,6 @@ function SecondStep({
         <p className="text-xs text-mut">Each recovery code works once.</p>
       )}
       <ErrorText error={passkey.error ?? verify.error} />
-    </form>
-  );
-}
-
-/**
- * Signing in with SSO (ADR 0058): the email's domain finds the
- * organization's identity provider and the browser goes there. When
- * several organizations or providers sign that domain in, the person
- * picks one. `error` is why the last single sign-on failed.
- */
-function SSOForm({
-  email,
-  onEmail,
-  to,
-  error,
-  onPassword,
-}: {
-  email: string;
-  onEmail: (email: string) => void;
-  to: string | undefined;
-  error: string | undefined;
-  onPassword: () => void;
-}) {
-  const start = useStartSSO();
-  const [choices, setChoices] = useState<SSOChoice[]>([]);
-  const leaving = start.isPending || (start.isSuccess && start.data === null);
-  // Set by a submit without a usable email; cleared as it is typed.
-  const [invalid, setInvalid] = useState<string>();
-  // The session lands in the organization it signed in through.
-  const go = (req: { email: string } | SSOChoice) => {
-    setOrg("org" in req ? req.org : undefined);
-    start.mutate(
-      "org" in req
-        ? { org: req.org, provider: req.provider, to }
-        : { email: req.email, to },
-      { onSuccess: (c) => setChoices(c ?? []) },
-    );
-  };
-  return (
-    <form
-      className="flex flex-col gap-3.5"
-      noValidate
-      onSubmit={(e) => {
-        e.preventDefault();
-        const problem = check(email, "-").email;
-        setInvalid(problem);
-        if (problem) {
-          e.currentTarget.querySelector("input")?.focus();
-          return;
-        }
-        go({ email: email.trim() });
-      }}
-    >
-      <label className="flex flex-col gap-1.5">
-        <span>Work email</span>
-        <input
-          // biome-ignore lint/a11y/noAutofocus: the only thing to do in this step
-          autoFocus
-          type="email"
-          autoComplete="username"
-          value={email}
-          onChange={(e) => {
-            onEmail(e.target.value);
-            setChoices([]);
-            setInvalid(undefined);
-          }}
-          aria-invalid={!!invalid || undefined}
-          className={field}
-        />
-        <FieldError id="sso-email" text={invalid} />
-      </label>
-      {choices.length > 0 ? (
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="mb-1.5">Sign in through</legend>
-          {choices.map((c) => (
-            <button
-              key={`${c.org}/${c.provider}`}
-              type="button"
-              disabled={leaving}
-              onClick={() => go(c)}
-              className="btn justify-between px-3.5 py-2.5 text-md"
-            >
-              <span>{c.org_name}</span>
-              <span className="font-mono text-xs text-mut">{c.provider}</span>
-            </button>
-          ))}
-        </fieldset>
-      ) : (
-        <button
-          type="submit"
-          disabled={leaving}
-          className="btn pri justify-center px-3.5 py-2.5 text-md"
-        >
-          Continue with SSO{" "}
-          <span className="font-mono text-2xs opacity-70">↵</span>
-        </button>
-      )}
-      <ErrorText error={start.error} />
-      {!start.error && error && <span className="text-fail">{error}</span>}
-      <button
-        type="button"
-        className="self-start text-info hover:underline"
-        onClick={onPassword}
-      >
-        Use your password
-      </button>
     </form>
   );
 }
