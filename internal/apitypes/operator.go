@@ -82,3 +82,32 @@ type StoppedOrgServices struct {
 	// Failed lists the services that didn't stop, with why.
 	Failed []string `json:"failed,omitempty"`
 }
+
+// Account is a user account as the platform console's Users page shows
+// it: the account itself (the platform's) and the orgs it belongs to
+// (each org's own business, shown here so operators see who owns what).
+type Account struct {
+	ID         int64        `json:"id"`
+	Email      string       `json:"email"`
+	Name       string       `json:"name"`
+	Operator   bool         `json:"operator"`
+	TwoFactor  bool         `json:"two_factor"`
+	CreatedAt  time.Time    `json:"created_at"`
+	DisabledAt *time.Time   `json:"disabled_at,omitempty"`
+	Orgs       []AccountOrg `json:"orgs"`
+}
+
+// AccountOrg is one org an account belongs to.
+type AccountOrg struct {
+	Org  string `json:"org"`
+	Role Scope  `json:"role" enum:"read,deploy,admin"`
+	// Owner: the org's first admin of its own.
+	Owner bool `json:"owner,omitempty"`
+	// ExpiresAt: an operator's membership from Join as operator.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+// SetOperatorRequest makes a user a platform operator, or not.
+type SetOperatorRequest struct {
+	Operator bool `json:"operator"`
+}

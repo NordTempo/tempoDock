@@ -910,6 +910,7 @@
           "policy": {
             "enum": [
               "built_in",
+              "platform",
               "default",
               "project",
               "environment",
@@ -1005,6 +1006,7 @@
           "from": {
             "enum": [
               "built_in",
+              "platform",
               "default",
               "project",
               "environment",

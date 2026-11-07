@@ -507,12 +507,27 @@ type OrgMember struct {
 	ExpiresAt *int64
 }
 
+type OrgSiteDefault struct {
+	OrgID     int64
+	Settings  string
+	UpdatedBy string
+	UpdatedAt time.Time
+}
+
 type OrgVariable struct {
 	OrgID     int64
 	Key       string
 	Value     []byte
 	UpdatedAt time.Time
 	UpdatedBy string
+}
+
+type PlatformDataPolicy struct {
+	Rule      string
+	Subject   string
+	Kind      string
+	Level     string
+	Sensitive string
 }
 
 type PlatformSetting struct {

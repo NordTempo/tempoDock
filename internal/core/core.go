@@ -110,7 +110,10 @@ type Core struct {
 	// localName (a rename changes it), anything else from the store.
 	localID  int64
 	localNow atomic.Pointer[string]
-	drain    time.Duration
+	// platformPolicy is the platform's data access default and ceiling
+	// (platform_policy.go), loaded on start and after each change.
+	platformPolicy atomic.Pointer[platformPolicy]
+	drain          time.Duration
 	// install is this control plane's install ID, the dock.control_plane
 	// label on everything it creates (see labels and foreign).
 	install string
@@ -408,6 +411,9 @@ func (c *Core) Start(ctx context.Context) error {
 	events, err := c.rt.Events(c.ctx)
 	if err != nil {
 		return fmt.Errorf("runtime events: %w", err)
+	}
+	if err := c.loadPlatformPolicy(ctx); err != nil {
+		return err
 	}
 	if err := c.startAlerts(ctx); err != nil {
 		return err

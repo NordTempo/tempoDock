@@ -562,3 +562,12 @@ type PublicAddress struct {
 	// DNSRecords point the hostname at Dock; any one of them is enough.
 	DNSRecords []DNSRecord `json:"dns_records"`
 }
+
+// OrgSiteDefaults are an org's defaults for its new analytics sites (ADR
+// 0062): Own is what the org set, Effective that over the platform's
+// defaults. A new site starts with Own as its settings; existing sites
+// keep theirs.
+type OrgSiteDefaults struct {
+	Own       SiteSettings `json:"own"`
+	Effective SiteSettings `json:"effective"`
+}

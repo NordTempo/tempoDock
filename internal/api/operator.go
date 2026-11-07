@@ -31,6 +31,39 @@ const consoleOrgT = Prefix + "/console/orgs/{org}"
 func registerOperator(s *Server, a huma.API) {
 	tags := []string{"console"}
 	authed(s, a, huma.Operation{
+		OperationID: "list-accounts", Method: http.MethodGet, Path: Prefix + "/console/users",
+		Summary: "List user accounts", Tags: tags,
+		Description: "Every user account with whether it operates the platform, has a second factor or is disabled, and the organizations it belongs to and owns. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Account], error) {
+		return reply(s.core.ListAccounts(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-operator", Method: http.MethodPut, Path: Prefix + "/console/users/{id}/operator",
+		Summary: "Make a user a platform operator, or not", Tags: tags,
+		Description: "The platform keeps at least one operator who can sign in. A person signed in recently, not a token. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID   int64 `path:"id"`
+		Body apitypes.SetOperatorRequest
+	}) (*out[apitypes.Account], error) {
+		return reply(s.core.SetOperator(ctx, actor, in.ID, in.Body.Operator))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-platform-data-policy", Method: http.MethodGet, Path: Prefix + "/console/data-policy",
+		Summary: "The platform's data access default and ceiling", Tags: tags,
+		Description: "What applies where an organization set nothing (in place of Dock's built-in rules), and the most any organization's rule or token gives a subject in an environment kind. Organizations set their own rules within it. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.PlatformDataPolicy], error) {
+		return reply(s.core.PlatformDataPolicy(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-platform-data-policy", Method: http.MethodPut, Path: Prefix + "/console/data-policy",
+		Summary: "Set the platform's data access default and ceiling", Tags: tags,
+		Description: "Replaces both lists. A default above its ceiling is refused; organization rules above a new ceiling are capped where they apply. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.PlatformDataPolicy
+	}) (*out[apitypes.PlatformDataPolicy], error) {
+		return reply(s.core.SetPlatformDataPolicy(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-console-orgs", Method: http.MethodGet, Path: Prefix + "/console/orgs",
 		Summary: "List every organization", Tags: tags,
 		Description: "Every organization with its owner and admins, members, projects and services, status and resource use (CPU, memory, volumes, backups, registry images, bandwidth), biggest first. Volumes come from the servers' last disk readings; with read_disks, servers not read in the last minute are read again in the background, and the result arrives as `disk` events. Operators only.",

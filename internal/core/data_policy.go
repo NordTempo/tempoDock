@@ -74,6 +74,8 @@ type permissionInput struct {
 	creator *apitypes.Scope
 	rules   policyRules
 	kind    apitypes.EnvironmentKind
+	// platform is the platform's default and ceiling (nil: none).
+	platform *platformPolicy
 	// project and env name the environment, for the explanation.
 	project, env string
 }
@@ -90,7 +92,7 @@ func decidePermission(in permissionInput) apitypes.DataPermission {
 	agent := isAgent(a)
 	pin := datapanel.PolicyInput{
 		Kind: in.kind, Admin: rank(a.Scope) >= rank(apitypes.ScopeAdmin), Agent: agent, Subject: subjectOf(a.Scope),
-		Rules: in.rules.scoped(), BuiltIn: dockBuiltIn,
+		Rules: in.rules.scoped(), BuiltIn: in.platform.builtIn,
 		ScopeName: func(s apitypes.DataPolicyScope) string {
 			switch s {
 			case apitypes.PolicyProject:
@@ -118,14 +120,18 @@ func decidePermission(in permissionInput) apitypes.DataPermission {
 		}
 		pin.Token = tok
 	}
-	return datapanel.Decide(pin)
+	subject := subjectOf(a.Scope)
+	if agent {
+		subject = apitypes.SubjectTokens
+	}
+	return in.platform.capPermission(datapanel.Decide(pin), pin.Admin, subject, in.kind)
 }
 
 // dataPermission loads what decides the actor's data permission in an
 // environment (at most three queries: the token, its creator and the
 // rules) and decides it. Admins need none.
 func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apitypes.DataPermission, error) {
-	in := permissionInput{actor: a, kind: apitypes.EnvironmentKind(es.env.Kind), project: es.project.Name, env: es.env.Name}
+	in := permissionInput{actor: a, kind: apitypes.EnvironmentKind(es.env.Kind), project: es.project.Name, env: es.env.Name, platform: c.platformPolicy.Load()}
 	if rank(a.Scope) < rank(apitypes.ScopeAdmin) {
 		if a.Kind == "token" {
 			t, err := c.store.GetToken(ctx, a.TokenID)
@@ -240,7 +246,7 @@ func (c *Core) loadPolicy(ctx context.Context, orgID int64, pol apitypes.DataPol
 	if e != nil {
 		kinds = []apitypes.EnvironmentKind{apitypes.EnvironmentKind(e.Kind)}
 	}
-	pol.Effective = datapanel.Effective(all.scoped(), kinds, dockBuiltIn)
+	pol.Effective = datapanel.Effective(all.scoped(), kinds, c.platformPolicy.Load().builtIn)
 	return pol, nil
 }
 
@@ -258,6 +264,9 @@ func (c *Core) SetDataPolicy(ctx context.Context, a Actor, ref EnvRef, req apity
 		only, scope = apitypes.EnvironmentKind(e.Kind), "environment "+p.Name+"/"+e.Name
 	}
 	if err := datapanel.ValidateRules(req.Rules, only, scope); err != nil {
+		return pol, err
+	}
+	if err := c.checkCeiling(req.Rules); err != nil {
 		return pol, err
 	}
 	pid, eid := scopeIDs(p, e)

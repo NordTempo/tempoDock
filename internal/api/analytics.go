@@ -349,6 +349,20 @@ func registerSites(s *Server, a huma.API) {
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.UpdateSiteRequest }) (*out[apitypes.SiteSettings], error) {
 		return reply(s.core.SetSiteDefaults(ctx, actor, in.Body.Settings, in.Body.Reset))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-org-analytics-defaults", Method: http.MethodGet, Path: Prefix + "/org/analytics/defaults",
+		Summary: "The organization's defaults for new sites", Tags: tags,
+		Description: "What the organization set for its new analytics sites, and that over the platform's defaults. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.OrgSiteDefaults], error) {
+		return reply(s.core.OrgSiteDefaults(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-org-analytics-defaults", Method: http.MethodPatch, Path: Prefix + "/org/analytics/defaults",
+		Summary: "Change the organization's defaults for new sites", Tags: tags,
+		Description: "New sites start with these settings; existing sites keep theirs. reset puts settings back to the platform's default. Scope: admin, unlimited.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.UpdateSiteRequest }) (*out[apitypes.OrgSiteDefaults], error) {
+		return reply(s.core.SetOrgSiteDefaults(ctx, actor, in.Body.Settings, in.Body.Reset))
+	})
 }
 
 // registerSiteLive registers a site's live view (ADR 0037).

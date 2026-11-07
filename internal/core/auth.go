@@ -729,8 +729,9 @@ func generatePassword() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// CreateUser creates a user account and adds it to the actor's org.
-// Accounts are the platform's, so only operators create them.
+// CreateUser creates a user account and adds it to an org with a role:
+// req.Org, or the actor's org. Accounts are the platform's, so only
+// operators create them.
 func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserRequest) (apitypes.User, error) {
 	if err := a.requireAccountManager("creating user accounts"); err != nil {
 		return apitypes.User{}, err
@@ -738,10 +739,21 @@ func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserR
 	if err := a.requireRecent("creating user accounts"); err != nil {
 		return apitypes.User{}, err
 	}
-	if a.OrgID == 0 {
+	orgID, slug := a.OrgID, a.OrgSlug
+	if req.Org != "" {
+		o, err := c.store.GetOrgBySlug(ctx, req.Org)
+		if store.IsNotFound(err) || err == nil && o.DeletedAt != nil {
+			return apitypes.User{}, notFound("organization %q not found; the console's Organizations page lists them", req.Org)
+		}
+		if err != nil {
+			return apitypes.User{}, err
+		}
+		orgID, slug = o.ID, o.Slug
+	}
+	if orgID == 0 {
 		return apitypes.User{}, a.noOrg("creating a user")
 	}
-	u, err := c.createUser(ctx, req, a.OrgID)
+	u, err := c.createUser(ctx, req, orgID)
 	if err != nil {
 		return apitypes.User{}, err
 	}
@@ -749,8 +761,92 @@ func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserR
 	if u.Operator {
 		kind = "operator"
 	}
-	c.audit(ctx, a.platform(), "user.create", nil, nil, u.Email, fmt.Sprintf("created %s %s with role %s in %s", kind, u.Email, req.Role, a.OrgSlug))
+	c.audit(ctx, a.platform(), "user.create", nil, nil, u.Email, fmt.Sprintf("created %s %s with role %s in %s", kind, u.Email, req.Role, slug))
 	return toUser(u, string(req.Role)), nil
+}
+
+// ListAccounts lists every user account with the orgs it belongs to and
+// which it owns, in two queries. Operators only.
+func (c *Core) ListAccounts(ctx context.Context, a Actor) ([]apitypes.Account, error) {
+	if err := a.requireOperator("listing user accounts"); err != nil {
+		return nil, err
+	}
+	users, err := c.store.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	members, err := c.store.ListAccountMemberships(ctx)
+	if err != nil {
+		return nil, err
+	}
+	orgs := map[int64][]apitypes.AccountOrg{}
+	for _, m := range members {
+		o := apitypes.AccountOrg{Org: m.Slug, Role: apitypes.Scope(m.Role), Owner: m.Owner}
+		if m.ExpiresAt != nil {
+			o.ExpiresAt = ptr(time.Unix(*m.ExpiresAt, 0).UTC())
+		}
+		orgs[m.UserID] = append(orgs[m.UserID], o)
+	}
+	out := make([]apitypes.Account, len(users))
+	for i, r := range users {
+		u := r.User
+		out[i] = apitypes.Account{
+			ID: u.ID, Email: u.Email, Name: u.Name, Operator: u.Operator, TwoFactor: r.TwoFactor,
+			CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt, Orgs: orgs[u.ID],
+		}
+		if out[i].Orgs == nil {
+			out[i].Orgs = []apitypes.AccountOrg{}
+		}
+	}
+	return out, nil
+}
+
+// SetOperator makes a user a platform operator or takes it away. The
+// platform keeps at least one operator who can sign in. A person, not a
+// token, and recently signed in.
+func (c *Core) SetOperator(ctx context.Context, a Actor, id int64, operator bool) (apitypes.Account, error) {
+	if err := a.requireAccountManager("choosing platform operators"); err != nil {
+		return apitypes.Account{}, err
+	}
+	if err := a.requireRecent("choosing platform operators"); err != nil {
+		return apitypes.Account{}, err
+	}
+	u, err := c.store.GetUser(ctx, id)
+	if store.IsNotFound(err) {
+		return apitypes.Account{}, notFound("user %d not found; the console's Users page lists them", id)
+	}
+	if err != nil {
+		return apitypes.Account{}, err
+	}
+	if u.Operator != operator {
+		if !operator {
+			n, err := c.store.CountOtherOperators(ctx, id)
+			if err != nil {
+				return apitypes.Account{}, err
+			}
+			if n == 0 {
+				return apitypes.Account{}, conflict("%s is the platform's last operator who can sign in; make someone else one first", u.Email)
+			}
+		}
+		if err := c.store.SetUserOperator(ctx, store.SetUserOperatorParams{Operator: operator, ID: id}); err != nil {
+			return apitypes.Account{}, err
+		}
+		what := "made " + u.Email + " a platform operator"
+		if !operator {
+			what = u.Email + " is no longer a platform operator"
+		}
+		c.audit(ctx, a.platform(), "user.operator", nil, nil, u.Email, what)
+	}
+	all, err := c.ListAccounts(ctx, a)
+	if err != nil {
+		return apitypes.Account{}, err
+	}
+	for _, acc := range all {
+		if acc.ID == id {
+			return acc, nil
+		}
+	}
+	return apitypes.Account{}, notFound("user %d not found", id)
 }
 
 // createUser creates a user and makes them a member of org with req.Role.
