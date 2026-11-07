@@ -21,7 +21,7 @@ import { useOrg } from "../../shell/location";
 import { ago, plural } from "../../ui/format";
 import { Icon } from "../../ui/icons";
 import { Act, Button, Menu, menuItem, Panel, StateText } from "../../ui/kit";
-import { serviceState } from "../../ui/status";
+import { domainState, serviceState, toneText } from "../../ui/status";
 import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
@@ -486,15 +486,24 @@ const ServiceRow = memo(function ServiceRow({
         {primary ? (
           <>
             {primary.hostname}
-            {primary.status !== "active" && (
-              <span className="text-warn"> ▲</span>
-            )}
             {rest.length > 0 && (
-              <span className={attention ? "text-warn" : "text-mut"}>
-                {" "}
-                +{rest.length}
-                {attention > 0 && " ▲"}
-              </span>
+              <span className="text-mut"> +{rest.length}</span>
+            )}
+            {/* What a domain waits for, in words, not a bare mark. */}
+            {primary.status !== "active" ? (
+              <div
+                className={`font-sans text-2xs ${toneText[domainState(primary).tone]}`}
+              >
+                {domainState(primary).label}
+              </div>
+            ) : (
+              attention > 0 && (
+                <div className="font-sans text-2xs text-warn">
+                  {attention === 1
+                    ? "1 domain needs attention"
+                    : `${attention} domains need attention`}
+                </div>
+              )
             )}
           </>
         ) : (

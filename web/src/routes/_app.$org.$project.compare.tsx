@@ -295,6 +295,10 @@ function CompareTable({
 
   return (
     <>
+      <p className="text-sec">
+        Promote moves only the <span className="text-warn">image</span>.
+        Variables, volumes and settings stay as each environment has them.
+      </p>
       <Panel>
         <table className="table-fixed">
           <thead>
@@ -307,9 +311,7 @@ function CompareTable({
               <th className="w-[24%] border-l border-line pl-4">
                 {to.environment.name} <EnvServer name={to.environment.server} />
               </th>
-              <th className="border-l border-line pl-4">
-                What promoting changes in {to.environment.name}
-              </th>
+              <th className="border-l border-line pl-4">Differences</th>
             </tr>
           </thead>
           <tbody>
@@ -333,7 +335,13 @@ function CompareTable({
                     <dl className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-3 gap-y-1">
                       {diffs.map((d) => (
                         <div key={d.kind} className="contents">
-                          <dt className="text-warn">{d.kind}</dt>
+                          <dt
+                            className={
+                              d.kind === "image" ? "text-warn" : "text-mut"
+                            }
+                          >
+                            {d.kind}
+                          </dt>
                           <dd className="min-w-0 break-words text-sec">
                             {d.detail}
                           </dd>
@@ -406,7 +414,7 @@ type Diff = { kind: string; detail?: ReactNode };
 
 /**
  * What differs between one service in two environments, each as the
- * target's value now → the value promoting would give it.
+ * target's value now → the source's. Promote moves only the image.
  */
 function differences(
   a: ServiceView | undefined,

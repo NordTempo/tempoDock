@@ -367,6 +367,11 @@ function InviteForm({
         </span>
       )}
       <ErrorText error={create.error} />
+      {/* Before they press it, not after: no email goes out. */}
+      <p className="basis-full text-xs text-mut">
+        Dock doesn't send email. You get a link to copy and send them; it works
+        once, for this address.
+      </p>
     </form>
   );
 }
@@ -514,6 +519,7 @@ function InviteRow({
 }) {
   const { id, email, role, expires_at } = invite;
   const revoke = useRevokeInvite();
+  const [revoking, setRevoking] = useState(false);
   const renew = useRenewInvite();
   const [renewing, setRenewing] = useState(false);
   return (
@@ -545,13 +551,28 @@ function InviteRow({
             small
             cli={`dock org invites revoke ${id}`}
             disabled={revoke.isPending}
-            onClick={() => revoke.mutate(id)}
+            onClick={() => setRevoking(true)}
           >
             Revoke
           </Act>
         </span>
-        <ErrorText error={revoke.error} />
         <div className="contents text-left whitespace-normal">
+          {revoking && (
+            <Confirm
+              danger
+              action="Revoke invite"
+              title={`Revoke the invite for ${email}?`}
+              cli={`dock org invites revoke ${id}`}
+              pending={revoke.isPending}
+              error={revoke.error}
+              onConfirm={() =>
+                revoke.mutate(id, { onSuccess: () => setRevoking(false) })
+              }
+              onCancel={() => setRevoking(false)}
+            >
+              Their link stops working. You can invite them again.
+            </Confirm>
+          )}
           {renewing && (
             <Confirm
               action="Make a new link"

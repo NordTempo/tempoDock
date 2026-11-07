@@ -137,9 +137,9 @@ function WithoutAnalytics({ counted }: { counted: Set<string> }) {
                         to="/$org/$project/$environment/$service/domains"
                         params={{ org, ...serviceRef(withDomain.service) }}
                         className="btn sm"
-                        title="Turn counting on for a domain"
+                        title={`Opens the domains of ${withDomain.service.name}, ${p.name}'s service with a domain; turn counting on there`}
                       >
-                        Turn on in {withDomain.service.name}'s domains
+                        Turn on for {p.name}
                       </Link>
                     ) : (
                       <span className="text-xs text-mut">

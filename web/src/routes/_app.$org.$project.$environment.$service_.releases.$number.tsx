@@ -273,7 +273,9 @@ function ReleasePage() {
                 </Link>
               ))}
             <Act
-              primary={!fix}
+              // The next step only while it is building or after it failed;
+              // on a healthy release, reading its log is just one option.
+              primary={!fix && (failed || inFlight(release.status))}
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
@@ -785,7 +787,7 @@ function LastLines({ release }: { release: Release }) {
               {"  "}… same {plural(row.size, "line")} × {row.repeat}
             </div>
           ) : (
-            <LogRow key={row.key} line={row} />
+            <LogRow key={row.key} line={row} quiet={failed} />
           ),
         )}
       </div>

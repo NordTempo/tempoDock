@@ -455,13 +455,16 @@ function NewLine({
       { onSuccess: () => setText("") },
     );
   };
-  // Focused (Add variable, N), the row is ringed, its Enter hint turns
-  // white and a line under it says what to type, so the jump is plain.
+  // Focused (Add variable, N), the row turns blue and ringed, its Enter
+  // hint turns white and the line under it says what to type, so the jump
+  // shows even though the row was already on screen.
   return (
     <div
-      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-panel focus-within:outline-2 focus-within:outline-info`}
+      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-info-bg focus-within:outline-2 focus-within:outline-info`}
     >
-      <span className="text-right text-faint">{n}</span>
+      <span className="text-right text-faint group-focus-within:text-info">
+        {n}
+      </span>
       <span />
       <input
         ref={inputRef}
@@ -474,7 +477,7 @@ function NewLine({
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-h-[24px] min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
+        className="col-span-2 min-h-[24px] min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-page"
       />
       <span className="flex items-center gap-1.5 font-sans text-2xs text-faint group-focus-within:text-fg">
         <ErrorText error={stage.error} />
@@ -490,7 +493,7 @@ function NewLine({
       </span>
       {/* Always there (brighter while the row has focus), so nothing moves
           when focus leaves: a click on Apply right after typing lands. */}
-      <span className="col-span-full pb-1 pl-[68px] font-sans text-xs text-faint group-focus-within:text-sec">
+      <span className="col-span-full pb-1 pl-[68px] font-sans text-xs text-faint group-focus-within:text-fg">
         Type a name and value, like LOG_LEVEL=debug, then Enter. Several lines
         add several. They wait for Apply below.
       </span>

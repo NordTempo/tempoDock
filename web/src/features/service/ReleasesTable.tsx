@@ -181,11 +181,11 @@ export function ReleasesTable({
 }
 
 /**
- * Asks before rolling back: which service, from which release to which,
- * what changes against the serving release, and whether the service is
- * briefly unreachable. Changes that lose data or features (a volume no
- * longer mounted, variables removed) get a warning line each. One style
- * wherever it opens: the header, the releases table and a release's page.
+ * Asks before rolling back. What the service loses (a volume no longer
+ * mounted, variables removed) leads in red; then the new release and any
+ * downtime, every change against the serving release, and why this
+ * release. One style wherever it opens: the header, the releases table
+ * and a release's page.
  */
 export function RollbackConfirm({
   serviceRef: ref,
@@ -241,12 +241,18 @@ export function RollbackConfirm({
         onDone();
       }}
     >
-      {/* Why this release, first: the one before that differs and served. */}
-      {passed.length > 0 && (
-        <p className="mb-2 text-mut">
-          r{target.number} is the last release that served and differs from{" "}
-          {from}: {passed.join(", ")}.
-        </p>
+      {/* What it takes away comes first, in red: the reason to stop. */}
+      {losses.length > 0 && (
+        <div className="mb-3 rounded-[6px] border border-fail-edge bg-fail-bg px-3 py-2">
+          <p className="font-semibold text-fail">
+            {ref.service} loses {losses.length === 1 ? "this" : "these"}
+          </p>
+          <ul className="mt-1 flex flex-col gap-1 text-fg">
+            {losses.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </div>
       )}
       <p>
         A new release of <b>{ref.service}</b> in {ref.environment} with r
@@ -263,7 +269,7 @@ export function RollbackConfirm({
       </p>
       {serving && (
         <div className="mt-3 flex flex-col gap-0.5 text-xs">
-          <span className="text-mut">What changes from {from}</span>
+          <span className="text-mut">Every change from {from}</span>
           {changes.length === 0 ? (
             <span className="text-mut">
               Same image, settings and variable names; variable values return to
@@ -288,12 +294,14 @@ export function RollbackConfirm({
               </span>
             ))
           )}
-          {losses.map((text) => (
-            <span key={text} className="mt-1 text-warn-text">
-              ▲ {text}
-            </span>
-          ))}
         </div>
+      )}
+      {/* Why this release: the last one before that differs and served. */}
+      {passed.length > 0 && (
+        <p className="mt-3 text-xs text-mut">
+          Why r{target.number}: it is the last release that served and differs
+          from {from}; {passed.join(", ")}.
+        </p>
       )}
       <p className="mt-2 font-mono text-2xs text-faint">
         {copiedConfig(target)}

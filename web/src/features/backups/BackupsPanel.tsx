@@ -224,6 +224,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   key={p.key}
                   point={p}
                   latest={p.key === latest}
+                  intoNew={intoNew}
                   restore={
                     restorable(p)
                       ? () => setOpen({ what: "restore", point: p })
@@ -403,6 +404,7 @@ function PointRow({
   point: p,
   latest,
   restore,
+  intoNew,
   why,
   onLog,
   onRetry,
@@ -412,6 +414,8 @@ function PointRow({
   latest: boolean;
   /** Opens the restore dialog; unset where the point can't be restored. */
   restore?: () => void;
+  /** Restoring makes a new service beside this one; the button says so. */
+  intoNew?: boolean;
   /** Why Restore waits, when it does. */
   why?: string;
   onLog?: () => void;
@@ -487,7 +491,7 @@ function PointRow({
               reason={why}
               onClick={restore}
             >
-              Restore
+              {intoNew ? "Restore as new service" : "Restore"}
             </Button>
           )}
         </span>

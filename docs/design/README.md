@@ -143,16 +143,28 @@ for everything.
   secondary.
 - **Changes wait to apply.** Variables, settings, domains and volumes are
   saved first ("waiting to apply") and go live together with Apply; the
-  bar at the foot of the page stays one line until opened.
+  strip under a service's tabs stays one line until opened.
 - **Settings rows.** A label with a short line under it, the values as
   text, and one Edit per row that opens a small form; Save, Cancel, Esc.
 - **Tables and lists** sit on the page under a hairline, with no box; status in tables and headers is a tinted chip; the page header is two lines, the way up over the title (chosen in blind direction trials, 2026-11).
 - **Rows that open something** show a pointer, a hover and a chevron in
   their last cell; the whole row is the target.
+- **One component vocabulary.** An action in a row or list (Reveal, Edit,
+  Retry, "Show all") is a small bordered button like every other button;
+  only inside running text is it a link. Segmented choices (ranges,
+  views) are underlined like the section tabs. Key hints stay on buttons
+  (a blind trial that hid them lost discoverability).
+- **A fresh failure** on a service's overview is a red-tinted strip with
+  a ruled left edge under the status line, the way to the cause as a
+  button; elsewhere it is said once, in the project's problems.
 - **Destructive buttons** are red outlined on pages and filled red in the
-  confirmation that runs them.
+  confirmation that runs them; every removal that can't be undone asks
+  first, saying what stops working. A confirmation leads with what is
+  lost.
 - **Disabled** looks the same on every button: outlined, faint text, with
-  the reason next to it where there is one.
+  the reason next to it where there is one. A destructive one stays dim
+  red, so it still reads as dangerous.
+- **Fields** (inputs, selects, checkboxes) have a 3:1 edge on black.
 - **Targets** are at least 24px: buttons, inputs, selects and standalone
   links (by padding taken back with a negative margin).
 - **Words.** Plain words over product terms: replaced (not superseded),

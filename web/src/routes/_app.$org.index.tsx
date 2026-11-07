@@ -100,7 +100,7 @@ function Home() {
                     )}
                   </td>
                   <td className="w-[10%] text-right font-mono">
-                    {h ? `${h.running}/${h.total}` : "·"}
+                    {h ? `${h.running} of ${h.total}` : "·"}
                   </td>
                   <td className="w-[24%] truncate">
                     {h?.environments.map((e, i) => (

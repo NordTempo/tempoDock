@@ -65,13 +65,13 @@ export function RoutePending() {
   return (
     <div aria-busy="true" className="flex flex-1 flex-col">
       <div className="flex h-[52px] items-center border-b border-line px-5">
-        <span className="h-[12px] w-40 rounded-[3px] bg-edge" />
+        <span className="h-[12px] w-40 rounded-[3px] bg-dash" />
       </div>
       <div className="flex w-full max-w-[1400px] flex-col gap-3 px-4 pt-6 sm:px-7">
-        <p role="status" className="text-mut">
+        <p role="status" className="text-sec">
           Loading…
         </p>
-        <span className="h-[12px] w-32 rounded-[3px] bg-edge" />
+        <span className="h-[12px] w-32 rounded-[3px] bg-dash" />
         {/* A table's frame with a few still rows, like most pages. */}
         <div className="flex flex-col rounded-panel border border-dash">
           {[0, 1, 2, 3].map((i) => (
@@ -79,9 +79,9 @@ export function RoutePending() {
               key={i}
               className="flex gap-6 border-b border-line px-3.5 py-3 last:border-b-0"
             >
-              <span className="h-[10px] w-28 rounded-[3px] bg-edge" />
-              <span className="h-[10px] w-20 rounded-[3px] bg-edge" />
-              <span className="h-[10px] w-48 rounded-[3px] bg-edge" />
+              <span className="h-[10px] w-28 rounded-[3px] bg-dash" />
+              <span className="h-[10px] w-20 rounded-[3px] bg-dash" />
+              <span className="h-[10px] w-48 rounded-[3px] bg-dash" />
             </div>
           ))}
         </div>

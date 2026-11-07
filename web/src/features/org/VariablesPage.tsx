@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useRevealedQuery } from "../../data/queries";
 import { since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, Panel } from "../../ui/kit";
+import { Act, Button, Confirm, ErrorText, Page, Panel } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import {
   orgQueries,
@@ -210,6 +210,7 @@ function VariableRow({
 }) {
   const set = useSetOrgVariable();
   const remove = useDeleteOrgVariable();
+  const [asking, setAsking] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   return (
@@ -284,11 +285,26 @@ function VariableRow({
               reason={
                 uses.length > 0 ? "Remove the references first" : undefined
               }
-              onClick={() => remove.mutate(name)}
+              onClick={() => setAsking(true)}
             >
               Remove
             </Act>
           </span>
+        )}
+        {asking && (
+          <Confirm
+            danger
+            action={`Remove ${name}`}
+            cli={`dock org env unset ${name}`}
+            pending={remove.isPending}
+            error={remove.error}
+            onConfirm={() =>
+              remove.mutate(name, { onSuccess: () => setAsking(false) })
+            }
+            onCancel={() => setAsking(false)}
+          >
+            Its value is gone for good. Nothing uses it now.
+          </Confirm>
         )}
         <ErrorText error={remove.error} />
       </td>

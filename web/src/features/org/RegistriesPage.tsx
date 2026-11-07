@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import { useIsAdmin } from "../../data/queries";
 import { useShortcuts } from "../../shell/keys";
 import { since } from "../../ui/format";
-import { Act, Button, ErrorText, Page, Panel } from "../../ui/kit";
+import { Act, Button, Confirm, ErrorText, Page, Panel } from "../../ui/kit";
 import { useValidation } from "../create/form";
 import {
   orgQueries,
@@ -127,6 +127,7 @@ function CredentialRow({
   onReplace: () => void;
 }) {
   const remove = useDeleteRegistryCredential();
+  const [asking, setAsking] = useState(false);
   return (
     <tr>
       <td className="py-2 font-mono">{host}</td>
@@ -144,12 +145,27 @@ function CredentialRow({
             small
             cli={`dock registry logout ${host}`}
             disabled={remove.isPending}
-            onClick={() => remove.mutate(host)}
+            onClick={() => setAsking(true)}
           >
             Remove
           </Act>
         </span>
-        <ErrorText error={remove.error} />
+        {asking && (
+          <Confirm
+            danger
+            action={`Remove the login for ${host}`}
+            cli={`dock registry logout ${host}`}
+            pending={remove.isPending}
+            error={remove.error}
+            onConfirm={() =>
+              remove.mutate(host, { onSuccess: () => setAsking(false) })
+            }
+            onCancel={() => setAsking(false)}
+          >
+            Deploys of private images from {host} fail until a login is added
+            again. Services already running keep running.
+          </Confirm>
+        )}
       </td>
     </tr>
   );

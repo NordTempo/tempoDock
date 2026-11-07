@@ -154,7 +154,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
  */
 export function ShellPending() {
   const bar = (w: string) => (
-    <span className={`block h-[10px] rounded-[3px] bg-edge ${w}`} />
+    <span className={`block h-[10px] rounded-[3px] bg-dash ${w}`} />
   );
   return (
     <div className="flex min-h-screen" aria-busy="true">
@@ -173,7 +173,7 @@ export function ShellPending() {
           {bar("w-40")}
         </div>
         <div className="flex flex-col gap-3 px-7 py-6">
-          <p role="status" className="text-mut">
+          <p role="status" className="text-sec">
             Loading Dock…
           </p>
           {/* A table's frame with still rows, like most pages. */}

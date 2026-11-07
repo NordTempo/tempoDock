@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { ErrorBlock } from "../../ui/ErrorBlock";
-import { Act, Button, ErrorText } from "../../ui/kit";
+import { Act, Button, Confirm, ErrorText } from "../../ui/kit";
 import {
   type Filter,
   type Funnel,
@@ -42,6 +42,7 @@ export function FunnelsView({
   } = useQuery(siteFunnelsQuery(project, site));
   const [editing, setEditing] = useState<Funnel | "new">();
   const remove = useRemoveFunnel();
+  const [asking, setAsking] = useState(false);
   if (error) return <ErrorBlock error={error} onRetry={() => refetch()} />;
   if (!funnels) return <p className="text-mut">Loading…</p>;
   const current = funnels.find((f) => f.name === selected) ?? funnels[0];
@@ -95,16 +96,34 @@ export function FunnelsView({
                 danger
                 cli={`dock analytics funnels remove ${site} ${JSON.stringify(current.name)}`}
                 disabled={remove.isPending}
-                onClick={() =>
-                  remove.mutate(
-                    { project, site, funnel: current.name },
-                    { onSuccess: () => onSelect(undefined) },
-                  )
-                }
+                onClick={() => setAsking(true)}
               >
                 Remove
               </Act>
             </div>
+          )}
+          {asking && (
+            <Confirm
+              danger
+              action={`Remove ${current.name}`}
+              cli={`dock analytics funnels remove ${site} ${JSON.stringify(current.name)}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(
+                  { project, site, funnel: current.name },
+                  {
+                    onSuccess: () => {
+                      setAsking(false);
+                      onSelect(undefined);
+                    },
+                  },
+                )
+              }
+              onCancel={() => setAsking(false)}
+            >
+              Its steps go. The visits and events it counted stay in analytics.
+            </Confirm>
           )}
           <ErrorText error={remove.error} />
         </>

@@ -37,7 +37,8 @@ export function PrMark({ preview }: { preview: PullRequest | undefined }) {
 }
 
 /**
- * "● production ▾": the environment in view, and a menu of the others. On
+ * "● production ▾": the environment in view (the dot only off a service
+ * page), and a menu of the others. On
  * a service page it lists the environments that have the same service and
  * keeps you on it; elsewhere it goes to each environment's variables.
  * Preview environments come last, marked with their pull request; on one,
@@ -63,9 +64,13 @@ export function EnvSwitch({
   const pr = here?.environment.preview;
   const pill = (
     <span className="flex items-center gap-[7px] rounded-ctl border border-edge px-[9px] py-1 text-xs hover:border-dash hover:bg-hover">
-      <span className={toneText[envTone(here?.services ?? [])]}>
-        <span className="dot" />
-      </span>
+      {/* On a service page the service's own chip says its state; an
+          environment-wide dot beside it would read as the service's. */}
+      {!service && (
+        <span className={toneText[envTone(here?.services ?? [])]}>
+          <span className="dot" />
+        </span>
+      )}
       {environment}
       <LockMark lock={here?.environment.lock} />
       {others.length > 0 && (

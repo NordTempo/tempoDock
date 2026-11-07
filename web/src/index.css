@@ -56,7 +56,9 @@
   --color-line: #1f1f22;
   --color-soft: #161618;
   --color-edge: #2c2c30;
-  --color-field: #2c2c30;
+  /* Input and checkbox edges: 3:1 on black, so a field reads as a field
+     (WCAG 1.4.11). Buttons keep the quieter edge; their label says what they are. */
+  --color-field: #5e5e66;
   --color-dash: #3a3a40;
 
   /* Text: primary, secondary, muted, faint. */
@@ -229,7 +231,7 @@
     flex: none;
     width: 16px;
     height: 16px;
-    border: 1px solid var(--color-dash);
+    border: 1px solid var(--color-field);
     border-radius: 4px;
     background: var(--color-page) center / 12px 12px no-repeat;
     cursor: pointer;
@@ -445,10 +447,11 @@
     border-color: var(--color-fail);
   }
 
-  /* A destructive button that can't run looks like any disabled one. */
+  /* A destructive button that can't run stays red, dimmed, so it still
+     reads as dangerous next to its reason. */
   .btn.danger:disabled {
-    color: var(--color-faint);
-    border-color: var(--color-line);
+    color: color-mix(in srgb, var(--color-fail) 55%, black);
+    border-color: var(--color-fail-edge);
   }
 
   /*
@@ -506,15 +509,32 @@
     text-underline-offset: 3px;
   }
 
+  /* On the page, an action in a row or list is a small bordered button,
+     like every other button; only inside running text is it a link. */
+  main .lnk:not(p .lnk) {
+    padding: 2px 9px;
+    border: 1px solid var(--color-edge);
+    border-radius: var(--radius-ctl);
+    color: var(--color-fg);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  main .lnk:not(p .lnk):hover {
+    background: var(--color-hover);
+    border-color: var(--color-dash);
+    text-decoration: none;
+  }
+
   .field {
     background-color: var(--color-panel);
-    border: 1px solid var(--color-edge);
+    border: 1px solid var(--color-field);
     border-radius: var(--radius-ctl);
     padding: 6px 9px;
   }
 
   .field:hover {
-    border-color: var(--color-dash);
+    border-color: var(--color-mut);
   }
 
   .field:focus {
@@ -634,13 +654,12 @@
     color: var(--color-mut);
   }
 
-  /* Segmented control: links or buttons in one bordered row. */
+  /* Segmented control: links or buttons in a row, the picked one
+     underlined like the section tabs. */
   .seg {
     display: inline-flex;
     flex-wrap: wrap;
-    border: 1px solid var(--color-edge);
-    border-radius: var(--radius-ctl);
-    overflow: hidden;
+    gap: 2px;
     font-size: 12px;
   }
 
@@ -656,15 +675,14 @@
 
   .seg > *:hover {
     color: var(--color-fg);
-    background: var(--color-hover);
   }
 
   .seg > [aria-pressed="true"],
   .seg > [aria-selected="true"],
   .seg > [aria-current="page"],
   .seg > label:has(input:checked) {
-    background: var(--color-chip);
     color: var(--color-fg);
+    box-shadow: inset 0 -2px 0 var(--color-fg);
   }
 
   /* Section tabs: quiet links, the current one on a chip. */

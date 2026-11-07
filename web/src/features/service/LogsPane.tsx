@@ -329,10 +329,18 @@ export function LogsPane({
 /**
  * One log line, with WARN and ERROR words colored. A line the Errors only
  * filter keeps (stderr, or error words) gets a red rule and tint, so
- * errors stand out without the filter.
+ * errors stand out without the filter. Quiet drops the tint, for a block
+ * that is already about a failure (a failed release's last lines).
  */
-export const LogRow = memo(function LogRow({ line }: { line: LogLine }) {
-  const error = line.stream === "stderr" || errorWords.test(line.text);
+export const LogRow = memo(function LogRow({
+  line,
+  quiet,
+}: {
+  line: LogLine;
+  quiet?: boolean;
+}) {
+  const error =
+    !quiet && (line.stream === "stderr" || errorWords.test(line.text));
   const parts = line.text.split(/\b(WARN(?:ING)?|ERROR|FATAL|PANIC)\b/);
   return (
     <div

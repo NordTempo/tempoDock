@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
-import { useRollback, useStageSettings } from "../../data/mutations";
+import { useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -235,7 +235,14 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           {running?.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, "@sha256:$1…") ||
             "built from source"}
         </span>
-        {image.differs && <NextImage serviceRef={ref} image={image} />}
+        {/* After a failed new tag, the status line says it once and the
+            Deploy dialog offers the serving image; nothing more here. */}
+        {image.differs && !image.failed && (
+          <span className="font-sans break-words text-mut" title={image.next}>
+            Next deploy uses{" "}
+            <span className="font-mono text-sec">{shortImage(image.next)}</span>
+          </span>
+        )}
       </span>,
     ],
     [
@@ -340,56 +347,6 @@ function LongCommand({ text }: { text: string }) {
   );
 }
 
-/**
- * The image the next deploy uses, when it isn't what serves (after a
- * rollback, or a failed deploy of a new tag): its failed try links to its
- * page, and one click stages the serving image back as the setting.
- */
-function NextImage({
-  serviceRef: ref,
-  image,
-}: {
-  serviceRef: ServiceRef;
-  image: ReturnType<typeof imageSetting>;
-}) {
-  const mayDeploy = useCanDeploy(ref);
-  const changes = useChanges(ref);
-  const stage = useStageSettings();
-  const servingRef = image.serving?.image_ref ?? "";
-  const staged = changes.settings.some(
-    (c) => c.service === ref.service && c.field === "image",
-  );
-  return (
-    <span className="font-sans break-words text-mut" title={image.next}>
-      Next deploy uses{" "}
-      <span className="font-mono text-sec">{shortImage(image.next)}</span>
-      {/* The failure itself is the status line's; here, only the way back. */}
-      {image.failed && (
-        <>
-          {mayDeploy && servingRef && !staged && (
-            <>
-              {" · "}
-              <button
-                type="button"
-                className="lnk text-info"
-                disabled={stage.isPending}
-                title={`Stage ${shortImage(servingRef)} as the image setting: dock service update ${ref.service} --image ${servingRef} -e ${ref.environment}`}
-                onClick={() =>
-                  stage.mutate({ ref, patch: { image: servingRef } })
-                }
-              >
-                Use {shortImage(image.now)} instead
-              </button>
-            </>
-          )}
-          {staged && <span> · change staged</span>}
-        </>
-      )}
-      <ErrorText error={stage.error} />
-    </span>
-  );
-}
-
 /** One sentence on what the service is doing and what happens next. */
 export function StatusSentence({ view }: { view: ServiceView }) {
   const org = useOrg();
@@ -410,7 +367,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   const mut = (text: string) => <span className="text-mut">{text}</span>;
   // The failed deploy, while it matters: the overview's last_failed_deploy
   // survives a rollback and clears once a new image or config deploys;
-  // else the latest attempt when it failed. Its own line under the
+  // else the latest attempt when it failed. Its own strip under the
   // headline, in the releases table's red.
   const lastFailed =
     view.last_failed_deploy ??
@@ -424,10 +381,20 @@ export function StatusSentence({ view }: { view: ServiceView }) {
     lastFailed &&
     serving !== lastFailed.number &&
     (fresh ? (
-      <p className="text-sm text-fail">
-        ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
-        {ago(lastFailed.created_at)} ·{" "}
-        {releaseLink(lastFailed.number, "See why")}
+      // A problem row like the project page's: a tinted strip, with the
+      // way to the cause as a button, so it isn't lost under the headline.
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-fail bg-fail-bg py-1.5 pr-1.5 pl-3 text-sm">
+        <span className="flex-1 text-fail">
+          ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
+          {ago(lastFailed.created_at)}
+        </span>
+        <Link
+          to="/$org/$project/$environment/$service/releases/$number"
+          params={{ org, ...refOf(service), number: String(lastFailed.number) }}
+          className="btn sm"
+        >
+          See why
+        </Link>
       </p>
     ) : (
       <p className="text-xs text-mut">
@@ -505,7 +472,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           mayDeploy && (
             <button
               type="button"
-              className="lnk text-md text-info"
+              className="lnk"
               onClick={() => openDeploy(refOf(service))}
             >
               Deploy it
@@ -806,7 +773,10 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Act
           cli={`dock rollback ${target.number} ${flags}`}
           disabled={!canRollback}
-          title={busy}
+          title={
+            busy ??
+            `r${target.number} is the last release that served and differs from the one serving now`
+          }
           onClick={() => setConfirming("rollback")}
         >
           {/* Why this release is the dialog's first line. */}
