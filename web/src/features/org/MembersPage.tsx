@@ -16,6 +16,7 @@ import {
   ErrorText,
   Page,
   Panel,
+  StateText,
 } from "../../ui/kit";
 import { addressQuery } from "../address/data";
 import { Saved, useValidation } from "../create/form";
@@ -529,8 +530,14 @@ function InviteRow({
           <Avatar />
           <span className="text-mut">
             {email}
-            <span className="block text-2xs text-warn">
-              {invite.expired ? "invite expired" : "invited"}
+            <span className="mt-0.5 block">
+              <StateText
+                state={
+                  invite.expired
+                    ? { tone: "mut", label: "invite expired" }
+                    : { tone: "warn", label: "invited" }
+                }
+              />
             </span>
           </span>
         </span>
