@@ -451,6 +451,8 @@ func TestOffline(t *testing.T) {
 	if st := h.hub.State(h.id); st.Status != StatusOffline || st.Server != "homelab" {
 		t.Fatalf("state = %+v", st)
 	}
+	// The hub drops the session before it reports the status change.
+	waitFor(t, "offline reported", func() bool { return h.disconnects.Load() >= 1 })
 	if h.disconnects.Load() != 1 {
 		t.Fatalf("offline reported %d times", h.disconnects.Load())
 	}
