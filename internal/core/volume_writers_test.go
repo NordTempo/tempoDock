@@ -74,10 +74,15 @@ func TestInPlaceRestoreWaitsForAWritingRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = h.c.RestoreSnapshot(h.ctx, testSystem, app, s.ID, apitypes.RestoreSnapshotRequest{InPlace: true})
-	if CodeOf(err) != apitypes.CodeConflict || !strings.Contains(err.Error(), "dock run") {
-		t.Fatalf("restore while a run writes the volumes: %v", err)
-	}
+	// The backup scheduler's first backup of the service may hold it for
+	// a moment (untilFree); past that, the run is what refuses.
+	eventually(t, "the restore refused for the run", func() bool {
+		_, err = h.c.RestoreSnapshot(h.ctx, testSystem, app, s.ID, apitypes.RestoreSnapshotRequest{InPlace: true})
+		if CodeOf(err) != apitypes.CodeConflict {
+			t.Fatalf("restore while a run writes the volumes: %v", err)
+		}
+		return strings.Contains(err.Error(), "dock run")
+	})
 	w.Wait(h.ctx, nil)
 	res := h.restoreSnapshot(app, s.ID, apitypes.RestoreSnapshotRequest{InPlace: true})
 	if r := h.waitRestore(app, res.Restore.ID); r.Status != apitypes.BackupSucceeded {
