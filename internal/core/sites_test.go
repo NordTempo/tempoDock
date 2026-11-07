@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -160,13 +161,27 @@ func TestSiteStats(t *testing.T) {
 		st, err = h.c.SiteStats(h.ctx, testSystem, "shop", "shop.example.com", StatsQuery{Range: "24h"})
 		return err == nil && st.StoreOnline && st.Overview.Visitors == 2 && st.Overview.Pageviews == 2 && st.Bucket == "hour"
 	})
-	// The organization's list carries the same 24 hours; another org's
-	// actor sees none of it.
-	if list, err := h.c.ListOrgSites(h.ctx, testSystem); err != nil || len(list) != 1 || list[0].Project != "shop" ||
-		list[0].Site.Name != "shop.example.com" || list[0].Last24h == nil || list[0].Last24h.Visitors != 2 {
-		t.Errorf("org sites = %+v, %v", list, err)
+	// The organization's list carries the same 24 hours, with an hourly
+	// series that has every hour; another org's actor sees none of it.
+	list, err := h.c.ListOrgSites(h.ctx, testSystem, "24h")
+	if err != nil || len(list) != 1 || list[0].Project != "shop" || list[0].Site.Name != "shop.example.com" ||
+		list[0].Overview == nil || list[0].Overview.Visitors != 2 || list[0].Previous == nil || list[0].Previous.Visitors != 0 {
+		t.Fatalf("org sites = %+v, %v", list, err)
 	}
-	if list, err := h.c.ListOrgSites(h.ctx, Actor{Name: "other-org", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 2}); err != nil || len(list) != 0 {
+	var views int64
+	for i, p := range list[0].Series {
+		views += p.Pageviews
+		if i > 0 && p.T-list[0].Series[i-1].T != time.Hour.Milliseconds() {
+			t.Errorf("series step at %d = %d", i, p.T-list[0].Series[i-1].T)
+		}
+	}
+	if n := len(list[0].Series); n < 24 || n > 25 || views != 2 {
+		t.Errorf("series = %d points with %d page views, want 24-25 and 2", n, views)
+	}
+	if _, err := h.c.ListOrgSites(h.ctx, testSystem, "1y"); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("range 1y = %v, want a validation error", err)
+	}
+	if list, err := h.c.ListOrgSites(h.ctx, Actor{Name: "other-org", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 2}, "24h"); err != nil || len(list) != 0 {
 		t.Errorf("another org's sites = %+v, %v", list, err)
 	}
 	// Services and releases are labelled; their values stay what filters take.

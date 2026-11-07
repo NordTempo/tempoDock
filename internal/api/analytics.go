@@ -76,9 +76,11 @@ func registerSites(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "list-org-sites", Method: http.MethodGet, Path: Prefix + "/sites",
 		Summary: "List the organization's analytics sites", Tags: tags,
-		Description: "Live sites in every project you can read, by project, with each site's visitors and page views over the last 24 hours (absent while the analytics store can't be reached). At most 200.",
-	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.OrgSite], error) {
-		return reply(s.core.ListOrgSites(ctx, actor))
+		Description: "Live sites in every project you can read, by project, with each site's visitors and page views over the range, the range before it and per hour (per day over 30d); the numbers are absent while the analytics store can't be reached. At most 200.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Range string `query:"range" enum:"24h,7d,30d" default:"24h" doc:"How far back to count"`
+	}) (*out[[]apitypes.OrgSite], error) {
+		return reply(s.core.ListOrgSites(ctx, actor, in.Range))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-site", Method: http.MethodGet, Path: sitesPath + "/{site}",

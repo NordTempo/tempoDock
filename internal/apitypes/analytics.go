@@ -64,13 +64,17 @@ type Site struct {
 }
 
 // OrgSite is a site in the organization's list (the Analytics area),
-// with its project and its last 24 hours.
+// with its project and its numbers over the list's range.
 type OrgSite struct {
 	Project string `json:"project"`
 	Site    Site   `json:"site"`
-	// Last24h is its visitors and page views over the last 24 hours;
-	// absent while the analytics store can't be reached.
-	Last24h *AnalyticsOverview `json:"last_24h,omitempty"`
+	// Overview is its totals over the range and Previous over the range
+	// before it; both absent while the analytics store can't be reached.
+	Overview *AnalyticsOverview `json:"overview,omitempty"`
+	Previous *AnalyticsOverview `json:"previous,omitempty"`
+	// Series is its visitors and page views per hour (per day over 30d),
+	// every bucket of the range, zero where nothing was counted.
+	Series []AnalyticsPoint `json:"series,omitempty"`
 }
 
 // SiteHostname is one of a site's hostnames and the service it serves

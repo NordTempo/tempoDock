@@ -41,14 +41,20 @@ export const sitesQuery = (project: string) =>
       ),
   });
 
+/** The ranges the organization's site list takes. */
+export const orgSitesRanges = ["24h", "7d", "30d"] as const;
+export type OrgSitesRange = (typeof orgSitesRanges)[number];
+
 /**
- * The organization's sites with their last 24 hours: the Analytics area's
- * list, and the service Overview's visitors line.
+ * The organization's sites with their numbers over a range, the range
+ * before it and a series: the Analytics area's list, and (over 24h) the
+ * service Overview's visitors line.
  */
-export const orgSitesQuery = () =>
+export const orgSitesQuery = (range: OrgSitesRange = "24h") =>
   queryOptions({
-    queryKey: orgSitesKey,
-    queryFn: () => list(api.GET("/api/v1/sites")),
+    queryKey: [...orgSitesKey, range],
+    queryFn: () =>
+      list(api.GET("/api/v1/sites", { params: { query: { range } } })),
   });
 export const orgSitesKey = ["analytics", "org-sites"] as const;
 

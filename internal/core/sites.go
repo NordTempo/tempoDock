@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -222,13 +223,20 @@ const (
 	orgSitesQueries = 4
 )
 
+// OrgSitesRanges are the ranges the organization's site list takes.
+var OrgSitesRanges = []string{"24h", "7d", "30d"}
+
 // ListOrgSites returns the organization's live sites the actor may read,
-// by project, each with its last 24 hours' visitors and page views: the
-// Analytics area's list. Four SQLite queries however many sites, and one
-// small store query per site, at most four at once.
-func (c *Core) ListOrgSites(ctx context.Context, a Actor) ([]apitypes.OrgSite, error) {
+// by project, each with its totals over rng (one of OrgSitesRanges), the
+// range before it and a series: the Analytics area's list. Four SQLite
+// queries however many sites, and one store request per site, at most
+// four at once.
+func (c *Core) ListOrgSites(ctx context.Context, a Actor, rng string) ([]apitypes.OrgSite, error) {
 	if err := a.require(apitypes.ScopeRead, "listing sites"); err != nil {
 		return nil, err
+	}
+	if !slices.Contains(OrgSitesRanges, rng) {
+		return nil, invalid("range %q isn't one of %s", rng, strings.Join(OrgSitesRanges, ", "))
 	}
 	rows, err := c.store.ListOrgSites(ctx, a.OrgID)
 	if err != nil {
@@ -258,20 +266,50 @@ func (c *Core) ListOrgSites(ctx context.Context, a Actor) ([]apitypes.OrgSite, e
 	if cl == nil {
 		return out, nil
 	}
-	to := now().UnixMilli()
+	from, to, err := StatsQuery{Range: rng}.span(now())
+	if err != nil {
+		return nil, err
+	}
+	// Hours draw a line with some shape up to a week; 30 days by day.
+	bucket, step := analytics.BucketHour, time.Hour.Milliseconds()
+	if rng == "30d" {
+		bucket, step = analytics.BucketDay, 24*time.Hour.Milliseconds()
+	}
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(orgSitesQueries)
 	for i, s := range sites {
 		g.Go(func() error {
-			o, err := cl.Overview(gctx, analytics.Query{Site: s.ID, From: to - 24*time.Hour.Milliseconds(), To: to})
-			if err == nil {
-				out[i].Last24h = ptr(toOverview(o))
+			d, err := cl.Dashboard(gctx, analytics.DashboardQuery{Query: analytics.Query{Site: s.ID, From: from, To: to}, Bucket: bucket})
+			if err != nil {
+				return nil // a store that can't answer leaves the numbers out
 			}
-			return nil // a store that can't answer leaves the numbers out
+			out[i].Overview, out[i].Previous = ptr(toOverview(d.Overview)), ptr(toOverview(d.Previous))
+			out[i].Series = denseSeries(d.Series, from, to, step)
+			return nil
 		})
 	}
 	_ = g.Wait()
 	return out, nil
+}
+
+// denseSeries is pts with every step-wide bucket from the one holding
+// from up to to, zero where the store counted nothing (it leaves those
+// out), so a sparkline's x axis is time.
+func denseSeries(pts []analytics.Point, from, to, step int64) []apitypes.AnalyticsPoint {
+	start := from - from%step
+	out := make([]apitypes.AnalyticsPoint, 0, (to-start+step-1)/step)
+	j := 0
+	for t := start; t < to; t += step {
+		for j < len(pts) && pts[j].T < t {
+			j++
+		}
+		p := apitypes.AnalyticsPoint{T: t}
+		if j < len(pts) && pts[j].T == t {
+			p = apitypes.AnalyticsPoint(pts[j])
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // GetSite returns one site.
