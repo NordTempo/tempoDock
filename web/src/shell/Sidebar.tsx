@@ -330,8 +330,8 @@ function PendingRequestCount() {
   return (
     // A filled count: something waits on the reader.
     <span className="min-w-5 rounded-[5px] bg-warn px-1.5 text-center text-2xs leading-[18px] font-semibold text-side">
-      {pending}
-      <span className="sr-only"> pending</span>
+      {/* In words, so it reads as requests waiting, not a bare count. */}
+      {pending} waiting
     </span>
   );
 }

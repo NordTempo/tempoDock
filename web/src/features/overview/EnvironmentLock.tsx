@@ -112,13 +112,12 @@ export function LockStrip({
   const admin = useIsAdmin();
   const lockNow = useLock();
   const unlock = useUnlock();
-  const pending = useRequestsIfAdmin().filter(isPending);
-  const waiting = pending.filter(
-    (r) => r.project === ref.project && r.environment === ref.environment,
+  const waiting = useRequestsIfAdmin().filter(
+    (r) =>
+      r.project === ref.project &&
+      r.environment === ref.environment &&
+      isPending(r),
   );
-  // None here yet: still point at the ones waiting elsewhere, so the
-  // strip always leads to what the lock is for.
-  const elsewhere = pending.filter((r) => !waiting.includes(r));
   const [asking, setAsking] = useState(false);
   const error = lockNow.error ?? (asking ? null : unlock.error);
   const busy = lockNow.isPending || unlock.isPending;
@@ -132,7 +131,20 @@ export function LockStrip({
           </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
-            {lock.reason && <> · {lock.reason}</>} · {lockEffect}
+            {lock.reason && <> · {lock.reason}</>} · {lockEffect}{" "}
+            {/* Where they wait, as a link: the place to look after locking. */}
+            {admin && (
+              <>
+                in{" "}
+                <Link
+                  to="/$org/requests"
+                  params={{ org }}
+                  className="text-sec underline underline-offset-3 hover:text-fg"
+                >
+                  Requests
+                </Link>
+              </>
+            )}
           </span>
         </>
       ) : (
@@ -151,25 +163,6 @@ export function LockStrip({
           >
             Review {plural(waiting.length, "waiting request")}
           </Link>
-        )}
-        {/* Not this lock's: said as elsewhere, so it isn't read as tied
-            to this environment. */}
-        {!waiting[0] && elsewhere[0] && (
-          <span className="flex items-center gap-2">
-            <span className="text-mut">
-              {elsewhere.length === 1
-                ? `None here; 1 request waits in ${elsewhere[0].project}/${elsewhere[0].environment}`
-                : `None here; ${elsewhere.length} requests wait elsewhere`}
-            </span>
-            <Link
-              to="/$org/requests"
-              params={{ org }}
-              search={{ id: elsewhere[0].id }}
-              className={`btn sm ${warnBtn}`}
-            >
-              Review
-            </Link>
-          </span>
         )}
         {admin &&
           (lockHolds(lock) ? (
