@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -310,10 +311,10 @@ func TestLogDrainsNeverReachTheServer(t *testing.T) {
 }
 
 // A name that resolves to a private address is refused when connecting,
-// for drains; alert channels, which only operators configure, may still
-// reach the LAN.
+// for drains, unless apps may reach it; alert channels, which only
+// operators configure, may still reach the LAN.
 func TestLogDrainGuardRefusesPrivateAddresses(t *testing.T) {
-	drains := newDrainManager()
+	drains := newDrainManager([]netip.Prefix{netip.MustParsePrefix("10.9.0.0/16")})
 	for _, addr := range []string{"10.0.0.5:80", "192.168.1.1:443", "100.64.1.1:3100", "[fd00::1]:514", "[::ffff:10.0.0.5]:80"} {
 		if err := drains.guard.control("tcp", addr, nil); err == nil || !strings.Contains(err.Error(), "private address") {
 			t.Errorf("drain connection to %s: %v", addr, err)
@@ -321,6 +322,10 @@ func TestLogDrainGuardRefusesPrivateAddresses(t *testing.T) {
 	}
 	if err := drains.guard.control("tcp", "203.0.113.7:443", nil); err != nil {
 		t.Errorf("drain connection to a public address: %v", err)
+	}
+	// What the operator lets apps reach (`[network] allow_private`).
+	if err := drains.guard.control("tcp", "10.9.4.2:3100", nil); err != nil {
+		t.Errorf("drain connection to an allowed private address: %v", err)
 	}
 	alerts := egressGuard{what: "alerts"}
 	if err := alerts.control("tcp", "192.168.1.1:443", nil); err != nil {

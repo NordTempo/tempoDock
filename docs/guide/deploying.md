@@ -137,9 +137,12 @@ dock logs drain remove http
   auth, `--token` as a bearer token. Lines are masked of the release's
   secret values, as `dock logs` shows them to someone who can't reveal
   variables.
-- **Never this server.** A drain can't send to the server's own addresses,
-  link-local or cloud metadata addresses, checked again on every
-  connection. Use the receiver's LAN, tailnet or public address.
+- **Public addresses.** A drain can't send to the server's own addresses,
+  link-local or cloud metadata addresses, or private ones (LAN, tailnet,
+  container networks), checked again on every connection. A private
+  address the operator lets apps reach (`[network] allow_private` in
+  `config.toml`, see [App firewall](install.md#app-firewall)) is allowed
+  too.
 - **From now on.** A drain gets what services write after it is added, and
   after a restart of the daemon; a container that restarts resumes after
   the last line sent.
