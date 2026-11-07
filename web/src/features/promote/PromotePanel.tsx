@@ -81,7 +81,7 @@ export function PromotePanel({
       aria-labelledby="promote"
       className="flex flex-col gap-3 border-y border-line py-3"
     >
-      <h2 id="promote" className="text-sm font-semibold">
+      <h2 id="promote" className="text-md font-semibold">
         Promote {services.length} {servicesWord(services.length)} from {source}{" "}
         to {target}
       </h2>
@@ -218,7 +218,7 @@ function Progress({
       aria-labelledby="promote"
       className="flex flex-col gap-3 border-y border-line py-3"
     >
-      <h2 id="promote" className="text-sm font-semibold">
+      <h2 id="promote" className="text-md font-semibold">
         {busy ? "Promoting" : failed ? "Promote stopped" : "Promoted"}{" "}
         {rows.length} {servicesWord(rows.length)} from {from} to {target}
       </h2>

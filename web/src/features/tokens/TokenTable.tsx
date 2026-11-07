@@ -156,8 +156,8 @@ function TokenRow({
               right
               className="inline-flex"
               button={
-                <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
-                  <Icon name="more" size={14} />
+                <span className="btn sm">
+                  Actions <Icon name="chevronDown" size={11} />
                 </span>
               }
             >

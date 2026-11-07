@@ -136,6 +136,7 @@ function StorageRow({
             Change
           </Button>
           <Button
+            danger
             small
             disabled={used}
             reason="in use; move the registry's images first"

@@ -67,7 +67,9 @@ export function TablesView({
     enabled: counting,
     staleTime: Number.POSITIVE_INFINITY,
   });
-  useShortcuts([{ key: "f", label: "filter", run: () => setAdding(true) }]);
+  useShortcuts([
+    { key: "/", label: "filter rows", run: () => setAdding(true) },
+  ]);
 
   const pages = rows.data?.pages ?? [];
   const columns = pages[0]?.columns ?? [];
@@ -198,7 +200,7 @@ export function TablesView({
                 {rowsCli}
               </span>
               <Btn aria-pressed={adding} onClick={() => setAdding(!adding)}>
-                Filter <Kbd>F</Kbd>
+                Filter <Kbd>/</Kbd>
               </Btn>
               {/* Edit mode's row actions, beside the keys that do the same. */}
               {canEdit && (

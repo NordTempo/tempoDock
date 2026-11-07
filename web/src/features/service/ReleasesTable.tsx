@@ -66,7 +66,7 @@ export function ReleasesTable({
             <col className="w-[68px]" />
             <col className="w-[100px]" />
             <col />
-            <col className="w-[100px]" />
+            <col className="w-[150px]" />
             <col className="w-[44px]" />
             <col className="w-[124px]" />
           </colgroup>
@@ -181,11 +181,11 @@ export function ReleasesTable({
 }
 
 /**
- * Asks before rolling back: which service, from which release to which,
- * what changes against the serving release, and whether the service is
- * briefly unreachable. Changes that lose data or features (a volume no
- * longer mounted, variables removed) get a warning line each. One style
- * wherever it opens: the header, the releases table and a release's page.
+ * Asks before rolling back: why this release in one line, then what the
+ * service loses (a volume no longer mounted, variables removed) in red,
+ * the new release and any downtime, and every change against the serving
+ * release (folded when losses lead). One style wherever it opens: the header, the releases table
+ * and a release's page.
  */
 export function RollbackConfirm({
   serviceRef: ref,
@@ -214,8 +214,20 @@ export function RollbackConfirm({
   const from = serving ? `r${serving.number}` : undefined;
   const changes = serving ? releaseDiff(serving, target) : [];
   const losses = serving ? rollbackLosses(serving, target) : [];
+  // Failed releases between the target and the serving one: never served.
+  const failed = useReleases(ref).filter(
+    (r) =>
+      r.status === "failed" &&
+      r.number > target.number &&
+      r.number < (serving?.number ?? 0),
+  );
+  const passed = [
+    ...skipped.map((r) => `r${r.number} is the same as ${from}`),
+    ...failed.map((r) => `r${r.number} failed`),
+  ];
   return (
     <Confirm
+      danger={losses.length > 0}
       title={`Roll back ${ref.service} to r${target.number}?`}
       action={`Roll back to r${target.number}`}
       cli={`dock rollback ${target.number} -s ${ref.service} -e ${ref.environment}`}
@@ -229,61 +241,76 @@ export function RollbackConfirm({
         onDone();
       }}
     >
-      <p>
-        A new release of <b>{ref.service}</b> in {ref.environment} with r
-        {target.number}'s image and config.
-        {skipped.map((r) => (
-          <span key={r.number} className="text-mut">
-            {" "}
-            r{r.number} is skipped: {from} already runs its image and config.
-          </span>
-        ))}
-      </p>
-      {from && (
-        <p className="mt-2">
-          {stateful ? (
-            <b>
-              {ref.service} is down for a few seconds while {from} stops and the
-              new release starts: a volume allows one writer.
-            </b>
-          ) : (
-            `${from} keeps serving until the new release passes its health check, so ${ref.service} stays reachable.`
-          )}
+      {/* Why this release, first and short: the header button names no
+          release, so the dialog says which and why before anything else. */}
+      {passed.length > 0 && (
+        <p className="mb-3 text-mut">
+          r{target.number} is the last release that served and differs from{" "}
+          {from}: {passed.join(", ")}.
         </p>
       )}
-      {losses.map((text) => (
-        <p key={text} className="mt-2 text-warn-text">
-          ▲ {text}
-        </p>
-      ))}
-      {serving && (
-        <div className="mt-3 flex flex-col gap-0.5 text-xs">
-          <span className="text-mut">Changes from {from}</span>
-          {changes.length === 0 ? (
-            <span className="text-mut">
-              Same image, settings and variable names; variable values return to
-              r{target.number}'s.
-            </span>
-          ) : (
-            changes.map((c) => (
-              <span key={c.what} className="font-mono break-all">
-                {c.what === "added" ? (
-                  <>
-                    <span className="text-ok">+ back</span> {c.text}
-                  </>
-                ) : c.what === "removed" ? (
-                  <>
-                    <span className="text-fail">− removed</span> {c.text}
-                  </>
-                ) : (
-                  <>
-                    <span className="text-warn">~</span> {c.text}
-                  </>
-                )}
-              </span>
-            ))
-          )}
+      {/* What it takes away comes first, in red: the reason to stop. */}
+      {losses.length > 0 && (
+        <div className="mb-3 rounded-[6px] border border-fail-edge bg-fail-bg px-3 py-2">
+          <p className="font-semibold text-fail">
+            {ref.service} loses {losses.length === 1 ? "this" : "these"}
+          </p>
+          <ul className="mt-1 flex flex-col gap-1 text-fg">
+            {losses.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
         </div>
+      )}
+      <p>
+        A new release of <b>{ref.service}</b> in {ref.environment} with r
+        {target.number}'s image and settings.{" "}
+        {from &&
+          (stateful ? (
+            <b>
+              {ref.service} is down for a few seconds while {from} stops and the
+              new one starts: only one copy can use its volume at a time.
+            </b>
+          ) : (
+            `${from} keeps serving until the new release passes its health check.`
+          ))}
+      </p>
+      {/* Every change, folded when the losses above already say the part
+          that matters, so the dialog stays short. */}
+      {serving && (
+        <details open={losses.length === 0} className="mt-3 text-xs">
+          <summary className="cursor-pointer text-mut">
+            {changes.length === 0
+              ? `Same as ${from}`
+              : `All ${changes.length} ${changes.length === 1 ? "change" : "changes"} from ${from}`}
+          </summary>
+          <div className="mt-1 flex flex-col gap-0.5">
+            {changes.length === 0 ? (
+              <span className="text-mut">
+                Same image, settings and variable names; variable values return
+                to r{target.number}'s.
+              </span>
+            ) : (
+              changes.map((c) => (
+                <span key={c.what + c.text} className="font-mono break-words">
+                  {c.what === "added" ? (
+                    <>
+                      <span className="text-ok">+ back</span> {c.text}
+                    </>
+                  ) : c.what === "removed" ? (
+                    <>
+                      <span className="text-fail">− removed</span> {c.text}
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-warn">~ changed</span> {c.text}
+                    </>
+                  )}
+                </span>
+              ))
+            )}
+          </div>
+        </details>
       )}
       <p className="mt-2 font-mono text-2xs text-faint">
         {copiedConfig(target)}

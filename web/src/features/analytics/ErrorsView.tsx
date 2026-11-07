@@ -264,7 +264,11 @@ function Row({
           <span className="flex items-baseline gap-2">
             <span className="text-faint">{open ? "▾" : "▸"}</span>
             <span className="font-semibold">{g.type}</span>
-            <span className="truncate" title={g.message}>
+            {/* Two lines before it clips: the message is the point. */}
+            <span
+              className="line-clamp-2 min-w-0 break-words"
+              title={g.message}
+            >
               {g.message}
             </span>
             {isNew && (
@@ -320,6 +324,7 @@ function Spark({
   const bars = filled(series, from, to, step);
   const most = Math.max(1, ...bars.map((b) => b.v));
   const w = 100 / Math.max(1, bars.length);
+  // The numbers are in the row's columns; the tooltip gives the peak.
   return (
     <svg
       viewBox="0 0 100 20"
@@ -327,6 +332,7 @@ function Spark({
       className="h-5 w-24 text-fail"
       aria-hidden
     >
+      <title>{`Peak ${most} in one ${step >= 86_400_000 ? "day" : "hour"}`}</title>
       {bars.map((b, i) =>
         b.v > 0 ? (
           <rect

@@ -7,6 +7,7 @@ import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
+import { Icon } from "../ui/icons";
 import {
   Button,
   CopyButton,
@@ -66,16 +67,19 @@ function Home() {
                 <th className="text-right">Running</th>
                 <th>Environments</th>
                 <th>Last deploy</th>
+                <th>
+                  <span className="sr-only">Open</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ project, health: h }) => (
-                <tr key={project.id} className="hover:bg-hover">
+                <tr key={project.id} className="row-link">
                   <td className="w-[22%]">
                     <Link
                       to="/$org/$project"
                       params={{ org, project: project.name }}
-                      className="font-medium hover:underline"
+                      className="row-main font-medium hover:underline"
                     >
                       {project.name}
                     </Link>
@@ -96,7 +100,7 @@ function Home() {
                     )}
                   </td>
                   <td className="w-[10%] text-right font-mono">
-                    {h ? `${h.running}/${h.total}` : "·"}
+                    {h ? `${h.running} of ${h.total}` : "·"}
                   </td>
                   <td className="w-[24%] truncate">
                     {h?.environments.map((e, i) => (
@@ -127,6 +131,9 @@ function Home() {
                       <span className="text-faint">never</span>
                     )}
                   </td>
+                  <td className="row-go" aria-hidden>
+                    <Icon name="chevronRight" size={14} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -150,9 +157,14 @@ function health(o: ProjectOverview | undefined) {
   const environments = (o.environments ?? []).map((e) => e.environment);
   const services = (o.environments ?? []).flatMap((e) => e.services ?? []);
   const failing = services.filter(isFailing).length;
-  const failedDeploys = services.filter(
-    (s) => !s.deploying && s.latest_release?.status === "failed",
-  ).length;
+  // A failed deploy counts while it is the news: the latest release, or
+  // the one a rollback answered (the overview's rule).
+  const failedDeploys = services.filter((s) => {
+    if (s.deploying) return false;
+    if (s.latest_release?.status === "failed") return true;
+    const f = s.last_failed_deploy;
+    return !!f && (s.service.active_release ?? 0) <= f.number + 1;
+  }).length;
   const deploying = services.filter((s) => s.deploying).length;
   const running = services.filter(
     (s) => s.service.status.state === "running",

@@ -133,7 +133,7 @@ function SSO() {
             aria-labelledby="add-provider"
             className="flex flex-col gap-4 rounded-panel border border-line p-4"
           >
-            <h2 id="add-provider" className="text-sm font-semibold">
+            <h2 id="add-provider" className="text-md font-semibold">
               Add a provider
             </h2>
             <ProviderForm onDone={() => setAdding(false)} />
@@ -225,6 +225,7 @@ function ProviderRow({
             Edit
           </Act>
           <Act
+            danger
             small
             cli={`dock org sso remove ${p.name}`}
             onClick={() => setMode("remove")}

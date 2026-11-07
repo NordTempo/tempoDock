@@ -33,7 +33,10 @@ export function StateText({
   className?: string;
 }) {
   return (
-    <span className={`${toneText[state.tone]} ${className}`}>
+    <span
+      data-tone={state.tone}
+      className={`state ${toneText[state.tone]} ${className}`}
+    >
       {state.glyph && (
         <>
           <Glyph char={state.glyph} />{" "}
@@ -185,6 +188,29 @@ export function CopyButton({
   );
 }
 
+/**
+ * A quiet "Copy command" for a dialog's `dock` equivalent: the command is
+ * its tooltip and goes to the clipboard on click.
+ */
+function CopyCommand({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="lnk"
+      title={text}
+      aria-label={`Copy command: ${text}`}
+      onClick={async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? "Copied" : "Copy command"}
+    </button>
+  );
+}
+
 /** A labeled checkbox for an on/off setting. */
 export function Check({
   label,
@@ -236,8 +262,8 @@ export function Check({
  * The app's one confirmation: a small modal that asks before a change that
  * is hard to take back. The title asks the question ("Roll back to r7?",
  * from `action` unless `title` is given), `children` say in plain words what
- * will happen, and the button names the action. The CLI equivalent sits in
- * the footer. `typed` asks the person to type a name first; keep it for
+ * will happen, and the button names the action. Copy command in the
+ * footer gives the CLI equivalent. `typed` asks the person to type a name first; keep it for
  * destructive changes that can't be undone (deleting an organization).
  * Render it only while asking: Esc, the backdrop and Cancel call onCancel.
  * The safe button has focus, so Enter never destroys by accident.
@@ -319,10 +345,10 @@ export function Confirm({
 }
 
 /**
- * Every dialog's footer, edge to edge under a line: the CLI equivalent on
- * top, then a row with `note` (why it can't go on yet, or the error) on
- * the left and the buttons, Cancel first and the named action last, on the
- * right. Put it last in a Dialog's body (it bleeds into the body's
+ * Every dialog's footer, edge to edge under a line: one row with Copy
+ * command (the CLI equivalent) and `note` (why it can't go on yet, or the
+ * error) on the left and the buttons, Cancel first and the named action
+ * last, on the right. Put it last in a Dialog's body (it bleeds into the body's
  * padding). `className` sets the space above it: 16px by default, less
  * where the form's own gap already spaces it.
  */
@@ -342,14 +368,9 @@ export function DialogFoot({
     <div
       className={`-mx-5 -mb-4 flex flex-col gap-2.5 border-t border-line px-5 py-3 ${className}`}
     >
-      {lines.length > 0 && (
-        <div className="flex flex-col gap-0.5 font-mono text-2xs break-all text-faint">
-          {lines.map((line) => (
-            <code key={line}>{line}</code>
-          ))}
-        </div>
-      )}
       <div className="flex flex-wrap items-center gap-2">
+        {/* The CLI equivalent one click away, not a second line of text. */}
+        {lines.length > 0 && <CopyCommand text={lines.join("\n")} />}
         <span className="min-w-0 flex-1 text-xs">{note}</span>
         {children}
       </div>
@@ -369,11 +390,12 @@ export function ErrorText({ error }: { error: Error | null | undefined }) {
 
 /**
  * A page's content column under its PageBar: 24px 28px padding, left
- * aligned, 24px between sections, at most 1100px wide. Pages of tables
- * keep the default width; a page that is one form uses 760px.
+ * aligned, 24px between sections, at most 1400px wide. Every page of
+ * tables uses that one width, so edges line up from page to page; a page
+ * that is one form uses 760px.
  */
 export function Page({
-  width = "max-w-[1100px]",
+  width = "max-w-[1400px]",
   gap = "gap-6",
   children,
 }: {
@@ -383,7 +405,7 @@ export function Page({
 }) {
   return (
     <div
-      className={`flex w-full flex-1 flex-col px-4 pt-6 pb-10 sm:px-7 ${width} ${gap}`}
+      className={`page flex w-full flex-1 flex-col px-4 pt-6 pb-10 sm:px-7 ${width} ${gap}`}
     >
       {children}
     </div>
@@ -407,19 +429,26 @@ export function PageBar({
   actions?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-10 flex min-h-[52px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-5">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
-        {parent && (
-          <>
-            <span className="text-mut">{parent}</span>
-            <span aria-hidden className="text-faint">
-              /
-            </span>
-          </>
+    <header className="page-bar sticky top-0 z-10 flex min-h-[64px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-7">
+      {/* Two lines (chosen in the 2026-11 trial): the way up, small, over a
+          large title with what follows it. */}
+      <div className="flex min-w-0 flex-col">
+        {/* The line is kept when there is no way up, so every title sits
+            at the same height. */}
+        {parent ? (
+          <nav aria-label="Breadcrumb" className="text-xs text-mut">
+            {parent}
+          </nav>
+        ) : (
+          <span aria-hidden className="h-[18px]" />
         )}
-        <h1 className="text-lg font-semibold">{title}</h1>
-      </nav>
-      {after}
+        <div className="flex flex-wrap items-center gap-x-2.5">
+          <h1 className="text-[24px] leading-7 font-semibold tracking-[-0.01em]">
+            {title}
+          </h1>
+          {after}
+        </div>
+      </div>
       {actions && (
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {actions}
@@ -468,7 +497,7 @@ export function SectionHead({
 }) {
   return (
     <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-      <h2 id={id} className="text-sm font-semibold">
+      <h2 id={id} className="text-[16px] font-semibold">
         {children}
       </h2>
       {aside && <span className="text-xs text-faint">{aside}</span>}
@@ -621,7 +650,7 @@ export function Menu({
         onClick={(e) =>
           setAt(at ? null : e.currentTarget.getBoundingClientRect())
         }
-        className="flex w-full items-center rounded-ctl"
+        className="flex min-h-[24px] w-full min-w-[24px] items-center rounded-ctl"
       >
         {button}
       </button>

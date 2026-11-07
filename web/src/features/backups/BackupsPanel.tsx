@@ -121,7 +121,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           >
             <input
               aria-label="Snapshot note"
-              placeholder="note, optional"
+              placeholder="Snapshot note, optional"
               maxLength={200}
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -135,7 +135,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               reason={why}
               title={`${ref.service} pauses while its volume is copied`}
             >
-              Take snapshot
+              Snapshot the volume
             </Act>
             <Act
               small
@@ -224,6 +224,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   key={p.key}
                   point={p}
                   latest={p.key === latest}
+                  intoNew={intoNew}
                   restore={
                     restorable(p)
                       ? () => setOpen({ what: "restore", point: p })
@@ -403,6 +404,7 @@ function PointRow({
   point: p,
   latest,
   restore,
+  intoNew,
   why,
   onLog,
   onRetry,
@@ -412,6 +414,8 @@ function PointRow({
   latest: boolean;
   /** Opens the restore dialog; unset where the point can't be restored. */
   restore?: () => void;
+  /** Restoring makes a new service beside this one; the button says so. */
+  intoNew?: boolean;
   /** Why Restore waits, when it does. */
   why?: string;
   onLog?: () => void;
@@ -487,7 +491,7 @@ function PointRow({
               reason={why}
               onClick={restore}
             >
-              Restore
+              {intoNew ? "Restore as new service" : "Restore"}
             </Button>
           )}
         </span>
@@ -558,33 +562,50 @@ function RestoreStatus({
           </>
         ) : (
           <>
-            <span className="text-ok">✓</span> Restored {r.from} {into}{" "}
+            <span className="text-ok">✓</span>{" "}
+            {target && canSwitch && (
+              <b className="font-semibold">Step 1 of 2 done: </b>
+            )}
+            Restored {r.from} {into}{" "}
             <span className="text-mut">{ago(r.at)}</span>
             {r.safety ? (
               <span className="text-mut">
                 . Undo: restore snapshot {r.safety}.
               </span>
             ) : null}
+            {/* A copy changes nothing yet: say what still runs, and the step that switches. */}
+            {target && (
+              <span className="mt-1 block text-warn-text">
+                {canSwitch && <b className="font-semibold">Step 2: </b>}
+                {ref.service} still holds the old data, and the services that
+                use it still read {ref.service}.
+                {canSwitch &&
+                  ` Use ${target} points them at the restored copy.`}
+              </span>
+            )}
           </>
         )}
       </span>
+      {r.status === "succeeded" && target && canSwitch && (
+        <Button primary small onClick={() => onUse(target)}>
+          Use {target}
+        </Button>
+      )}
       {target && (
         <Link
           to="/$org/$project/$environment/$service"
           params={{ org, ...ref, service: target }}
-          className="btn sm pri"
+          className={`btn sm ${r.status === "succeeded" && canSwitch ? "" : "pri"}`}
         >
           Open {target}
         </Link>
       )}
-      {r.status === "succeeded" && target && canSwitch && (
-        <Button small onClick={() => onUse(target)}>
-          Use {target}
-        </Button>
-      )}
       {r.status !== "running" && (
-        <Button small onClick={dismiss} aria-label="Dismiss">
-          Dismiss
+        <Button small onClick={dismiss}>
+          {/* Before step 2, closing it means keeping the old data. */}
+          {r.status === "succeeded" && target && canSwitch
+            ? `Keep using ${ref.service}`
+            : "Dismiss"}
         </Button>
       )}
     </div>

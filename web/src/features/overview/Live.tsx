@@ -7,6 +7,7 @@ import { useOrg } from "../../shell/location";
 import { clockSec } from "../../ui/format";
 import { Actor, Glyph, SectionHead } from "../../ui/kit";
 import { pastLabel } from "../audit/AuditTable";
+import { AuditLogLink } from "../audit/LogLink";
 
 type Entry = { id: string; time: string; body: ReactNode };
 
@@ -20,8 +21,13 @@ function auditEntry(e: AuditEvent, project: string): Entry {
     time: e.created_at,
     body: (
       <>
-        <Actor name={e.actor} kind={e.actor_kind} /> {pastLabel(e.action)}{" "}
-        <span className="font-mono">{local(e.target, project)}</span>
+        <Actor name={e.actor} kind={e.actor_kind} />{" "}
+        {/* A failure reads as one, in the failure colour. */}
+        <span className={/fail/.test(e.action) ? "text-fail" : undefined}>
+          {pastLabel(e.action)}
+        </span>{" "}
+        <span className="font-mono">{local(e.target, project)}</span>{" "}
+        <AuditLogLink event={e} />
       </>
     ),
   };
@@ -62,10 +68,27 @@ function feedEntry(item: FeedItem): Entry {
  * What people, agents and the platform did in the project, newest first:
  * the audit log merged with live deploy and container events.
  */
-export function Activity({ project }: { project: string }) {
+export function Activity({
+  project,
+  environment,
+}: {
+  project: string;
+  /** Only what happened in this environment. */
+  environment?: string;
+}) {
   const org = useOrg();
-  const audit = useAuditLog({ project });
-  const feed = useFeed(project);
+  const prefix = `${project}/${environment}`;
+  const audit = useAuditLog({ project }).filter(
+    (e) =>
+      !environment || e.target === prefix || e.target.startsWith(`${prefix}/`),
+  );
+  // Outcomes only (live, failed, crashes): each deploy step ("Stopping
+  // release 3") is the Deploy view's business, not the activity's.
+  const feed = useFeed(project).filter(
+    (item) =>
+      item.kind !== "progress" &&
+      (!environment || item.ref.environment === environment),
+  );
   const entries = [
     ...feed.map(feedEntry),
     ...audit.map((e) => auditEntry(e, project)),
@@ -78,7 +101,11 @@ export function Activity({ project }: { project: string }) {
       <SectionHead
         id="activity"
         right={
-          <Link to="/$org/audit" params={{ org }} search={{ project }}>
+          <Link
+            to="/$org/audit"
+            params={{ org }}
+            search={{ project, environment }}
+          >
             All activity
           </Link>
         }

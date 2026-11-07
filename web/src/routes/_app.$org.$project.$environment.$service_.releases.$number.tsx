@@ -41,6 +41,7 @@ import {
   Actor,
   actorKind,
   Button,
+  Confirm,
   ErrorText,
   Glyph,
   Page,
@@ -194,7 +195,7 @@ function ReleasePage() {
           </span>
         }
       />
-      <Page width="max-w-[1040px]">
+      <Page>
         <section aria-labelledby="release" className="flex flex-col gap-3.5">
           <h2 id="release" className="text-xl leading-tight font-semibold">
             <Title release={release} />
@@ -207,7 +208,7 @@ function ReleasePage() {
                   <b className="font-semibold">
                     {/* Said as it was then; a later release may serve now. */}
                     {previous && previous.number !== serving
-                      ? `r${previous.number} kept serving; r${serving} serves now.`
+                      ? `r${previous.number} kept serving then; since, r${serving} took over.`
                       : `r${serving} is still serving.`}
                   </b>{" "}
                   <span className="text-mut">
@@ -272,7 +273,9 @@ function ReleasePage() {
                 </Link>
               ))}
             <Act
-              primary={!fix}
+              // The next step only while it is building or after it failed;
+              // on a healthy release, reading its log is just one option.
+              primary={!fix && (failed || inFlight(release.status))}
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
@@ -558,7 +561,8 @@ const useDeployImage = () =>
  * The likely fix, edited in place: the new port or health check path is
  * staged and the failed release's own image (or commit) deploys again
  * with it, so the retry is the release that failed, not the serving one.
- * An upload has nothing to redeploy; it stages and opens Deploy.
+ * An upload has nothing to redeploy; it stages and opens Deploy. Save only
+ * stages it without deploying, to apply later.
  */
 function FixAndDeploy({
   release,
@@ -572,6 +576,7 @@ function FixAndDeploy({
   onDeployed: () => void;
 }) {
   const ref = servicePath(Route.useParams());
+  const { service } = useService(ref);
   const changes = useChanges(ref);
   const stage = useStageSettings();
   const deployImage = useDeployImage();
@@ -610,8 +615,12 @@ function FixAndDeploy({
   const pending =
     stage.isPending || deployImage.isPending || gitDeploy.isPending;
 
+  // Production-affecting like any deploy: asked first, in the one Confirm.
+  const [asking, setAsking] = useState(false);
   const submit = () => {
     if (!v.check(!problem)) return;
+    if ((commit || image) && !asking) return setAsking(true);
+    setAsking(false);
     const patch = port ? { port: Number(typed) } : { health_check_path: typed };
     stage.mutate(
       { ref, patch },
@@ -624,6 +633,12 @@ function FixAndDeploy({
         },
       },
     );
+  };
+  // Or only save it, to apply later with other changes (no deploy now).
+  const saveOnly = () => {
+    if (!v.check(!problem)) return;
+    const patch = port ? { port: Number(typed) } : { health_check_path: typed };
+    stage.mutate({ ref, patch }, { onSuccess: onClose });
   };
   return (
     <form
@@ -658,11 +673,18 @@ function FixAndDeploy({
           />
         </label>
         <button type="submit" className="btn pri" disabled={pending}>
-          {commit || image
-            ? `Save and deploy ${what}`
-            : "Save and choose a folder"}{" "}
+          {commit || image ? "Save and deploy" : "Save and choose a folder"}{" "}
           <kbd>↵</kbd>
         </button>
+        {(commit || image) && (
+          <Button
+            disabled={pending}
+            title="Saves it as a change waiting to apply; nothing deploys now"
+            onClick={saveOnly}
+          >
+            Save only
+          </Button>
+        )}
         <Button onClick={onClose}>
           Cancel <kbd>Esc</kbd>
         </Button>
@@ -676,6 +698,40 @@ function FixAndDeploy({
           )}
         </span>
       </div>
+      {asking && (
+        <Confirm
+          title={`Deploy ${what} with ${port ? `port ${typed}` : `health check ${typed}`}?`}
+          action={`Deploy ${what}`}
+          cli={`dock service update ${ref.service} ${setFlag} -e ${ref.environment}`}
+          pending={pending}
+          onConfirm={submit}
+          onCancel={() => setAsking(false)}
+        >
+          <p>
+            Saves the {port ? "port" : "health check path"} and deploys {what}{" "}
+            to {ref.environment} again as a new release.
+          </p>
+          {service.stateful && service.active_release ? (
+            <p className="mt-2 font-semibold">
+              {ref.service} is down for a few seconds while r
+              {service.active_release} stops and the new release starts: only
+              one copy can use its volume at a time.
+            </p>
+          ) : (
+            service.active_release && (
+              <p className="mt-2 text-mut">
+                r{service.active_release} keeps serving until the new release
+                passes its health check.
+              </p>
+            )
+          )}
+        </Confirm>
+      )}
+      {(commit || image) && (
+        <p className="text-xs text-mut">
+          Asks before it deploys {what} to {ref.environment} again.
+        </p>
+      )}
       {others > 0 && (
         <p className="text-xs text-mut">
           {ref.service}'s {others} other staged{" "}
@@ -747,7 +803,7 @@ function LastLines({ release }: { release: Release }) {
               {"  "}… same {plural(row.size, "line")} × {row.repeat}
             </div>
           ) : (
-            <LogRow key={row.key} line={row} />
+            <LogRow key={row.key} line={row} quiet={failed} />
           ),
         )}
       </div>

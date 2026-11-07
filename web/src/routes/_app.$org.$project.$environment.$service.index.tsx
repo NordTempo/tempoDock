@@ -11,7 +11,6 @@ import {
 import type { ServiceRef } from "../data/types";
 import { RestoredFrom } from "../features/backups/Restored";
 import { ConnectHint } from "../features/connect/ConnectHint";
-import { LogsPane, noFilter } from "../features/service/LogsPane";
 import { ReleasesTable } from "../features/service/ReleasesTable";
 import { imageLabel } from "../features/service/releases";
 import {
@@ -26,8 +25,7 @@ import { Act, Actor, actorKind, ErrorText, SectionHead } from "../ui/kit";
 
 // A service at a glance (A2): status, facts, uptime and visitors, the
 // deploy in flight and the release history (ADR 0059: the Releases tab
-// was folded in; G R and …/releases come here, #releases), with live
-// logs beside them.
+// was folded in; G R and …/releases come here, #releases).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/",
 )({
@@ -37,45 +35,29 @@ export const Route = createFileRoute(
 function ServiceOverview() {
   const ref = servicePath(Route.useParams());
   const service = useService(ref);
-  const [filter, setFilter] = useState(noFilter);
   const current = service.deploying;
 
+  // One column: status, facts, signals, the deploy in flight and the
+  // release history. Logs have their own tab; a database's connection
+  // lines are on its Data tab.
   return (
-    <div className="flex flex-1 flex-wrap">
-      <div className="@container flex min-w-0 flex-[1_1_480px] flex-col gap-7 px-4 pt-6 pb-10 sm:px-7">
-        <StatusSentence view={service} />
-        <ServiceFacts serviceRef={ref} />
-        {service.service.template && <RestoredFrom serviceRef={ref} />}
-        <Signals serviceRef={ref} />
-        {/* `dock connect` reaches a set port, or a database's own. */}
-        {(service.service.port > 0 || !!service.service.template) && (
-          <ConnectHint serviceRef={ref} />
-        )}
-        {current && (
-          <DeployProgress
-            key={current.number}
-            serviceRef={ref}
-            number={current.number}
-          />
-        )}
-        <ReleaseHistory serviceRef={ref} deploying={!!current} />
-      </div>
-      <section
-        aria-labelledby="logs"
-        className="flex min-w-0 flex-[1_1_440px] flex-col gap-2.5 border-t border-line px-4 pt-4 pb-6 min-[1000px]:border-t-0 min-[1000px]:border-l"
-      >
-        <h2 id="logs" className="text-sm font-semibold">
-          Logs
-        </h2>
-        <LogsPane
-          // A fresh stream per deploy step: the container may not exist yet.
-          key={`${current?.number}:${current?.status}`}
+    <div className="@container flex min-w-0 flex-col gap-7">
+      <StatusSentence view={service} />
+      <ServiceFacts serviceRef={ref} />
+      {service.service.template && <RestoredFrom serviceRef={ref} />}
+      <Signals serviceRef={ref} />
+      {/* `dock connect` reaches an app's set port. */}
+      {service.service.port > 0 && !service.service.template && (
+        <ConnectHint serviceRef={ref} />
+      )}
+      {current && (
+        <DeployProgress
+          key={current.number}
           serviceRef={ref}
-          filter={filter}
-          onFilter={setFilter}
-          height="h-[max(320px,calc(100vh-240px))]"
+          number={current.number}
         />
-      </section>
+      )}
+      <ReleaseHistory serviceRef={ref} deploying={!!current} />
     </div>
   );
 }

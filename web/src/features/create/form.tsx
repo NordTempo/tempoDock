@@ -282,7 +282,7 @@ export function Footer({
   problem?: string;
   error: Error | null | undefined;
   cli: readonly string[];
-  /** A second way to submit, before the named one ("Create only"). */
+  /** A second way to submit, before the named one ("Create, don't deploy"). */
   alt?: ReactNode;
   /** The space above it, as DialogFoot's. */
   className?: string;

@@ -21,7 +21,12 @@ import {
   useSession,
   useVolumes,
 } from "../../data/queries";
-import type { Service, ServiceRef, SettingChange } from "../../data/types";
+import type {
+  Service,
+  ServiceRef,
+  SettingChange,
+  SettingsPatch,
+} from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { Act, Button, Check, ErrorText, SectionHead } from "../../ui/kit";
@@ -29,7 +34,6 @@ import { SourceSection } from "../git/SourceSection";
 import { EnvServer } from "../servers/parts";
 import { imageSetting } from "../service/releases";
 import { limitText } from "../service/Usage";
-import { ApplyBox } from "../variables/ApplyBox";
 import {
   editPlaceholder,
   editText,
@@ -67,124 +71,153 @@ export function SettingsPanel({
   );
 
   const change = (key: SettingKey) => changes.find((c) => c.key === key);
-  const field = (key: TextSettingKey, shown?: string) => (
-    <Editable
+  // One row of settings: its fields edit together in one small form.
+  const row = (
+    label: string,
+    hint: string,
+    parts: Part[],
+    extra?: ReactNode,
+  ) => (
+    <SettingRow
+      key={label}
       serviceRef={ref}
-      settingKey={key}
-      value={service[key]}
-      shown={shown}
-      change={change(key)}
-      open={edit === key}
+      label={label}
+      hint={hint}
+      parts={parts}
+      changes={changes}
+      service={service}
+      open={!!edit && parts.some((p) => p.key === edit)}
+      extra={extra}
     />
   );
 
   return (
     <>
-      <dl className="props max-w-[860px]">
-        <Item label="Image">
-          <ImageValue serviceRef={ref} field={field("image")} />
-        </Item>
-        <Item label="Port">
-          {field("port")}
-          <span className="font-mono text-mut">
-            {" "}
-            · private {service.name}:{listenPort(service)}
-          </span>
-        </Item>
-        <Item label="Start command">{field("start_command")}</Item>
-        <Item label="Pre-deploy">
-          {field("pre_deploy_command")}{" "}
-          <span className="text-mut">timeout</span>{" "}
-          {field("pre_deploy_timeout_seconds")}{" "}
-          <PreDeploySnapshot
-            serviceRef={ref}
-            live={service.pre_deploy_snapshot}
-            change={change("pre_deploy_snapshot")}
-          />
-          <span className="block text-xs text-mut">
-            Runs with the new image before it gets traffic, e.g. migrations. A
-            non-zero exit fails the release. With snapshots on, the
-            environment's stateful services are snapshotted first.
-          </span>
-        </Item>
-        <Item label="Health check">
-          {field("health_check_path")} <span className="text-mut">timeout</span>{" "}
-          {field("health_check_timeout_seconds")}
-        </Item>
-        <Item label="Ongoing check">
-          <span className="text-mut">every</span>{" "}
-          {field("health_check_interval_seconds")}
-          {service.health_check_interval_seconds >= 0 && (
-            <>
-              {" "}
-              <span className="text-mut">timeout</span>{" "}
-              {field("health_check_probe_timeout_seconds")}{" "}
-              <span className="text-mut">retries</span>{" "}
-              {field("health_check_retries")}{" "}
-              <span className="text-mut">start period</span>{" "}
-              {field("health_check_start_period_seconds")}
-            </>
+      <section aria-labelledby="set-image">
+        <SectionHead id="set-image">Image and build</SectionHead>
+        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+          {row(
+            "Image",
+            "What Deploy runs.",
+            [{ key: "image" }],
+            <ImageNote serviceRef={ref} />,
           )}
-        </Item>
-        <Item label="Strategy">
-          {service.stateful
-            ? "stop old, then start new (a volume allows one writer)"
-            : "start new next to old, then cut over"}
-        </Item>
-        <Item label="Limits">
-          {/* Limits in the wording every tab uses (limitText). */}
-          <span className="text-mut">CPU</span>{" "}
-          {field("cpus", limitText(service, "cpu"))}{" "}
-          <span className="text-mut">memory</span>{" "}
-          {field("memory_mb", limitText(service, "memory"))}
-        </Item>
-        <Item label="Build">
-          {field("dockerfile_path")} <span className="text-mut">command</span>{" "}
-          {field("build_command")}
-        </Item>
-        <Item label="Volumes">
-          {volumes.length === 0 ? (
-            <span className="mr-4 text-mut">none</span>
-          ) : (
-            volumes.map((v) => (
-              <span key={v.name} className="mr-4 font-mono">
-                {v.name} at {v.mount_path}
-                {v.pending && (
-                  <>
-                    <span className="text-warn"> staged</span>{" "}
-                    <button
-                      type="button"
-                      className="lnk font-sans"
-                      disabled={discard.isPending}
-                      onClick={() =>
-                        discard.mutate({
-                          env: envPath(ref),
-                          selection: {
-                            volumes: [{ service: ref.service, name: v.name }],
-                          },
-                        })
-                      }
-                    >
-                      Discard
-                    </button>
-                  </>
-                )}
-              </span>
-            ))
+          {row("Build", "For deploys from source.", [
+            { key: "dockerfile_path", word: "Dockerfile" },
+            { key: "build_command", word: "build command" },
+          ])}
+        </dl>
+      </section>
+
+      <section aria-labelledby="set-run">
+        <SectionHead id="set-run">Running</SectionHead>
+        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+          {row(
+            "Port",
+            "Where the app listens.",
+            [{ key: "port" }],
+            <span className="font-mono text-xs text-mut">
+              private address {service.name}:{listenPort(service)}
+            </span>,
           )}
-          <AddVolume serviceRef={ref} />
-        </Item>
-        <Item label="Server">
-          <EnvServer name={environment.server} />{" "}
-          <span className="text-mut">from {environment.name}</span>
-        </Item>
-      </dl>
-      <ApplyBox
-        env={envPath(ref)}
-        reveal={false}
-        service={ref.service}
-        sticky
-      />
+          {row("Start command", "Instead of the image's own.", [
+            { key: "start_command" },
+          ])}
+          {row("Limits", "The most it may use.", [
+            { key: "cpus", word: "CPU", shown: limitText(service, "cpu") },
+            {
+              key: "memory_mb",
+              word: "memory",
+              shown: limitText(service, "memory"),
+            },
+          ])}
+          <Item label="Volumes" hint="Disk that outlives releases.">
+            {volumes.length === 0 ? (
+              <span className="mr-4 text-mut">none</span>
+            ) : (
+              volumes.map((v) => (
+                <span key={v.name} className="mr-4 font-mono">
+                  {v.name} at {v.mount_path}
+                  {v.pending && (
+                    <>
+                      <span className="text-warn"> saved, not applied</span>{" "}
+                      <button
+                        type="button"
+                        className="lnk font-sans"
+                        disabled={discard.isPending}
+                        onClick={() =>
+                          discard.mutate({
+                            env: envPath(ref),
+                            selection: {
+                              volumes: [{ service: ref.service, name: v.name }],
+                            },
+                          })
+                        }
+                      >
+                        Discard
+                      </button>
+                    </>
+                  )}
+                </span>
+              ))
+            )}
+            <AddVolume serviceRef={ref} />
+          </Item>
+          <Item label="Server" hint="Set by the environment.">
+            <EnvServer name={environment.server} />{" "}
+            <span className="text-mut">from {environment.name}</span>
+          </Item>
+        </dl>
+      </section>
+
+      <section aria-labelledby="set-release">
+        <SectionHead id="set-release">
+          {/* Plain names chosen in a blind trial (2026-11). */}
+          Going live
+        </SectionHead>
+        <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
+          {row(
+            "Before it goes live",
+            "Runs with the new image first, like migrations.",
+            [
+              { key: "pre_deploy_command", word: "command" },
+              { key: "pre_deploy_timeout_seconds", word: "timeout" },
+            ],
+            <PreDeploySnapshot
+              serviceRef={ref}
+              live={service.pre_deploy_snapshot}
+              change={change("pre_deploy_snapshot")}
+            />,
+          )}
+          {row("Health check", "Traffic moves once this answers.", [
+            { key: "health_check_path", word: "path" },
+            { key: "health_check_timeout_seconds", word: "timeout" },
+          ])}
+          {row(
+            "Checks while running",
+            "Restarts the service when every try fails.",
+            service.health_check_interval_seconds >= 0
+              ? [
+                  { key: "health_check_interval_seconds", word: "every" },
+                  {
+                    key: "health_check_probe_timeout_seconds",
+                    word: "timeout",
+                  },
+                  { key: "health_check_retries", word: "tries" },
+                  {
+                    key: "health_check_start_period_seconds",
+                    word: "wait after start",
+                  },
+                ]
+              : [{ key: "health_check_interval_seconds", word: "every" }],
+          )}
+          <Item label="Downtime" hint="When a new release takes over.">
+            {service.stateful
+              ? "A few seconds: the old release stops before the new one starts, since only one copy can use the volume at a time."
+              : "None: the new release starts beside the old one, then traffic moves over."}
+          </Item>
+        </dl>
+      </section>
 
       <SourceSection serviceRef={ref} />
 
@@ -230,9 +263,9 @@ function AddVolume({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const [apply, setApply] = useState(false);
   if (!open) {
     return (
-      <button type="button" className="lnk" onClick={() => setOpen(true)}>
-        + Add volume
-      </button>
+      <Button small onClick={() => setOpen(true)}>
+        Add volume
+      </Button>
     );
   }
   const cli = `dock volume add ${name.trim() || "<name>"} ${path.trim() || "<path>"}${apply ? " --deploy" : ""} -s ${ref.service} -e ${ref.environment}`;
@@ -295,10 +328,22 @@ function AddVolume({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-function Item({ label, children }: { label: string; children: ReactNode }) {
+/** A settings row's label, with a short line under it saying what it is. */
+function Item({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <>
-      <dt>{label}</dt>
+      <dt>
+        <span className="block text-sec">{label}</span>
+        {hint && <span className="block text-2xs text-faint">{hint}</span>}
+      </dt>
       <dd>{children}</dd>
     </>
   );
@@ -328,7 +373,7 @@ function PreDeploySnapshot({
         className="act"
       >
         <Check
-          label="snapshot first"
+          label="Snapshot volumes first"
           title="Snapshot the environment's stateful services before the command runs"
           checked={on}
           disabled={stage.isPending}
@@ -374,17 +419,12 @@ function Shown({ text }: { text: string }) {
 }
 
 /**
- * The image row: the image setting, and when it isn't what serves (a
- * failed deploy of a new tag, a rollback), the serving image above it,
- * so it is plain which one Apply keeps and which one Deploy runs.
+ * Under the image: when it isn't what serves (a failed deploy of a new
+ * tag, a rollback), the serving image, so it is plain which one Apply
+ * keeps and which one Deploy runs; and a link to a release that failed
+ * with it.
  */
-function ImageValue({
-  serviceRef: ref,
-  field,
-}: {
-  serviceRef: ServiceRef;
-  field: ReactNode;
-}) {
+function ImageNote({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const { service } = useService(ref);
   const image = imageSetting(service, useReleases(ref));
@@ -397,192 +437,197 @@ function ImageValue({
       failed as r{image.failed.number}
     </Link>
   );
-  if (!image.differs) {
-    return (
-      <span className="inline-flex flex-wrap items-center gap-x-2">
-        {field}
-        {failed}
-      </span>
-    );
-  }
+  if (!image.differs) return failed || null;
   return (
-    <span className="flex flex-col gap-1">
-      <span className="font-mono break-all">
-        {image.now}{" "}
-        <span className="font-sans text-ok">
-          serving as r{image.serving?.number}
-        </span>
-      </span>
-      <span className="inline-flex flex-wrap items-center gap-x-2">
-        <span className="text-mut">next deploy</span>
-        {field}
-        {failed}
-      </span>
-      <span className="text-xs text-mut">
-        Deploy runs the next deploy image. Applying staged changes keeps the
-        serving one.
+    <span className="flex flex-col gap-0.5 text-xs">
+      {failed}
+      <span className="text-mut">
+        Serving now: <span className="font-mono text-ok">{image.now}</span> as r
+        {image.serving?.number}. Deploy runs the image above; applying saved
+        changes keeps the serving one.
       </span>
     </span>
   );
 }
 
-/**
- * A value that edits in place, drawn like the inputs of Source below it
- * with a pencil, so it reads as editable at a glance.
- */
-// A value that edits: a box with a hover border and a pointer across all
-// of it, in the regular weight, so it reads as a control, not a label.
-const editableBox =
-  "inline-flex min-h-[24px] cursor-pointer items-center gap-1.5 rounded-ctl border px-1.5 text-left font-mono font-normal break-all hover:border-dash hover:bg-hover [&_*]:cursor-pointer";
-
-/** The pencil inside an editable value. */
-function Pencil() {
-  return (
-    <svg
-      aria-hidden
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="flex-none text-faint"
-    >
-      <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />
-    </svg>
-  );
-}
+/** One field in a settings row: its key, the word before it, and how to show it. */
+type Part = { key: TextSettingKey; word?: string; shown?: string };
 
 /**
- * A setting value in a field with a pencil: click to edit, then Stage (or
- * Enter) stages it and Cancel (or Esc) leaves it. Staged values show
- * old → new until Apply in the staged-changes bar makes them live.
- * `open` starts in the editor.
+ * A row of settings that edit together: the values as text, and Edit,
+ * which opens a small form with one field per setting. Save stages the
+ * change (it goes live with Apply in the bar under the page, like
+ * variables); Cancel or Esc leaves it. Saved values show old → new until
+ * applied, with Discard. `open` starts in the form (?edit=port).
  */
-function Editable({
+function SettingRow({
   serviceRef: ref,
-  settingKey: key,
-  value,
-  shown,
-  change,
+  label,
+  hint,
+  parts,
+  changes,
+  service,
   open,
+  extra,
 }: {
   serviceRef: ServiceRef;
-  settingKey: TextSettingKey;
-  value: string | number;
-  /** The value as shown, when it reads better than formatSetting's. */
-  shown?: string;
-  change: KeyedChange | undefined;
-  open?: boolean;
+  label: string;
+  hint: string;
+  parts: Part[];
+  changes: KeyedChange[];
+  service: Service;
+  open: boolean;
+  extra?: ReactNode;
 }) {
   const stage = useStageSettings();
   const discard = useDiscardChanges();
-  const [draft, setDraft] = useState<string | null>(() =>
-    open ? editText(key, change ? change.new : value) : null,
+  const change = (key: SettingKey) => changes.find((c) => c.key === key);
+  const start = () =>
+    Object.fromEntries(
+      parts.map(({ key }) => [
+        key,
+        editText(key, change(key)?.new ?? service[key]),
+      ]),
+    ) as Record<TextSettingKey, string>;
+  const [draft, setDraft] = useState<Record<TextSettingKey, string> | null>(
+    () => (open ? start() : null),
   );
   const [error, setError] = useState<Error | null>(null);
-  const label = settingLabel[key];
+  const saved = parts.filter(({ key }) => change(key));
 
-  const submit = (raw: string) => {
-    const patch = parseSetting(key, raw);
-    if (patch instanceof Error) return setError(patch);
-    setError(null);
-    stage.mutate({ ref, patch }, { onSuccess: () => setDraft(null) });
-  };
   const cancel = () => {
     setError(null);
     stage.reset();
     setDraft(null);
   };
+  const submit = (values: Record<TextSettingKey, string>) => {
+    const before = start();
+    let patch: SettingsPatch = {};
+    for (const { key } of parts) {
+      if (values[key] === before[key]) continue;
+      const one = parseSetting(key, values[key]);
+      if (one instanceof Error) return setError(one);
+      patch = { ...patch, ...one };
+    }
+    setError(null);
+    if (Object.keys(patch).length === 0) return setDraft(null);
+    stage.mutate({ ref, patch }, { onSuccess: () => setDraft(null) });
+  };
 
-  if (draft !== null) {
-    return (
-      <form
-        aria-label={`Edit ${label}`}
-        className="inline-flex max-w-full flex-col gap-1 align-top"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit(draft);
-        }}
-        onKeyDown={(e) => e.key === "Escape" && cancel()}
-      >
-        <span className="inline-flex max-w-full flex-wrap items-center gap-2">
-          <input
-            // biome-ignore lint/a11y/noAutofocus: opened by clicking the value
-            autoFocus
-            value={draft}
-            aria-label={label}
-            placeholder={editPlaceholder(key)}
-            onChange={(e) => setDraft(e.target.value)}
-            // As wide as the value, so a long command isn't cut while typed.
-            style={{ width: `${Math.max(draft.length, 18) + 3}ch` }}
-            className="field min-h-[24px] max-w-full py-0.5 font-mono text-xs"
-          />
-          <Button small primary type="submit" disabled={stage.isPending}>
-            Stage
-          </Button>
-          <Button small onClick={cancel}>
-            Cancel
-          </Button>
+  const value = ({ key, shown }: Part) => {
+    const c = change(key);
+    if (c) {
+      return (
+        <span className="rounded-ctl bg-stage-bg px-1">
+          <span className="text-mut line-through">
+            {formatSetting(key, c.old)}
+          </span>{" "}
+          <span className="text-warn-text">{formatSetting(key, c.new)}</span>
         </span>
-        <span className="text-xs text-mut">
-          A staged change goes live when you press Apply in the bar.
-        </span>
-        <ErrorText error={error ?? stage.error} />
-      </form>
-    );
-  }
+      );
+    }
+    return <Shown text={shown ?? formatSetting(key, service[key])} />;
+  };
 
   return (
-    <span className="inline-flex items-baseline gap-2">
-      <button
-        type="button"
-        title={`Edit ${label}`}
-        aria-label={`Edit ${label}: ${change ? formatSetting(key, change.new) : (shown ?? formatSetting(key, value).replace(" (default)", " default"))}`}
-        onClick={() => {
-          setError(null);
-          setDraft(editText(key, change ? change.new : value));
-        }}
-        className={`${editableBox} ${change ? "border-warn-edge bg-stage-bg" : "border-edge bg-panel"}`}
-      >
-        {/* One inline box, so the spaces between its parts survive. */}
-        <span>
-          {change ? (
-            <>
-              <span className="text-warn">~</span>{" "}
-              <span className="text-mut line-through">
-                {formatSetting(key, change.old)}
-              </span>{" "}
-              {formatSetting(key, change.new)}
-            </>
-          ) : (
-            <Shown text={shown ?? formatSetting(key, value)} />
+    <Item label={label} hint={hint}>
+      {draft ? (
+        <form
+          aria-label={`Edit ${label.toLowerCase()}`}
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit(draft);
+          }}
+          onKeyDown={(e) => e.key === "Escape" && cancel()}
+        >
+          <span className="flex flex-wrap items-end gap-x-3 gap-y-2">
+            {parts.map(({ key, word }, i) => (
+              <label key={key} className="flex min-w-0 flex-col gap-1">
+                <span className="text-xs text-mut">
+                  {word ?? settingLabel[key]}
+                </span>
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: opened by Edit
+                  autoFocus={i === 0}
+                  value={draft[key]}
+                  placeholder={editPlaceholder(key)}
+                  onChange={(e) =>
+                    setDraft({ ...draft, [key]: e.target.value })
+                  }
+                  style={{
+                    width: `${Math.max(draft[key].length, parts.length > 1 ? 10 : 24) + 3}ch`,
+                  }}
+                  className="field max-w-full py-1 font-mono text-xs"
+                />
+              </label>
+            ))}
+            <span className="flex gap-2">
+              <Button small primary type="submit" disabled={stage.isPending}>
+                Save
+              </Button>
+              <Button small onClick={cancel}>
+                Cancel
+              </Button>
+            </span>
+          </span>
+          <span className="text-xs text-mut">
+            Saved changes go live together when you apply them in the strip at
+            the top of the page. Empty means the default.
+          </span>
+          <ErrorText error={error ?? stage.error} />
+        </form>
+      ) : (
+        // Edit sits at the end of a 760px line, not the far edge of a wide
+        // window, so it stays near what it edits.
+        <span className="flex max-w-[760px] items-start gap-3">
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono break-all">
+              {parts.map((part) => (
+                <span key={part.key}>
+                  {part.word && (
+                    <span className="font-sans text-mut">{part.word} </span>
+                  )}
+                  {value(part)}
+                </span>
+              ))}
+            </span>
+            {extra}
+          </span>
+          {saved.length > 0 && (
+            <button
+              type="button"
+              className="lnk"
+              disabled={discard.isPending}
+              onClick={() =>
+                discard.mutate({
+                  env: envPath(ref),
+                  selection: {
+                    settings: saved.map(({ key }) => ({
+                      service: ref.service,
+                      field: key,
+                    })),
+                  },
+                })
+              }
+            >
+              Discard
+            </button>
           )}
-        </span>
-        <Pencil />
-      </button>
-      {change && (
-        <>
-          <span className="text-xs text-warn">staged</span>
-          <button
-            type="button"
-            className="lnk"
-            disabled={discard.isPending}
-            onClick={() =>
-              discard.mutate({
-                env: envPath(ref),
-                selection: { settings: [{ service: ref.service, field: key }] },
-              })
-            }
+          <Button
+            small
+            aria-label={`Edit ${label.toLowerCase()}`}
+            onClick={() => {
+              setError(null);
+              setDraft(start());
+            }}
           >
-            Discard
-          </button>
-        </>
+            Edit
+          </Button>
+          <ErrorText error={discard.error} />
+        </span>
       )}
-      <ErrorText error={error ?? discard.error} />
-    </span>
+    </Item>
   );
 }
 
@@ -649,7 +694,7 @@ function DatabaseSettings({
   return (
     <section aria-labelledby="database" className="flex flex-col">
       <SectionHead id="database">Database</SectionHead>
-      <dl className="props max-w-[860px]">
+      <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
         <Item label="Detection">
           <span className="inline-flex flex-wrap items-baseline gap-3">
             {canEdit ? (
@@ -696,19 +741,22 @@ function DatabaseSettings({
               className="field min-h-[24px] w-56 py-0.5 font-mono text-xs"
             />
           ) : canEdit ? (
-            <button
-              type="button"
-              title="Edit the database URL variable"
-              onClick={() => setDraft(urlVariable)}
-              className={`${editableBox} cursor-text border-edge bg-panel`}
-            >
-              {urlVariable || (
-                <span className="text-mut">
-                  default: DATABASE_URL, then POSTGRES_*
-                </span>
-              )}
-              <Pencil />
-            </button>
+            <span className="flex max-w-[760px] items-start gap-3">
+              <span className="min-w-0 flex-1 font-mono">
+                {urlVariable || (
+                  <span className="font-sans text-mut">
+                    default: DATABASE_URL, then POSTGRES_*
+                  </span>
+                )}
+              </span>
+              <Button
+                small
+                aria-label="Edit the database URL variable"
+                onClick={() => setDraft(urlVariable)}
+              >
+                Edit
+              </Button>
+            </span>
           ) : (
             <span className="font-mono">
               {urlVariable || (

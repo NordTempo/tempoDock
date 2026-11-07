@@ -89,7 +89,7 @@ export function NotFound() {
   return (
     <>
       <Bar title="Not found" />
-      <div className="flex w-full max-w-[1100px] flex-col items-start gap-2 px-4 py-8 sm:px-7">
+      <div className="flex w-full max-w-[1400px] flex-col items-start gap-2 px-4 py-8 sm:px-7">
         <p className="text-md">
           There's nothing called <b className="font-mono">{missing}</b> here.
         </p>
@@ -132,7 +132,7 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   return (
     <>
       <Bar title="This page didn't load" />
-      <div className="flex w-full max-w-[1100px] flex-col gap-1 px-4 py-8 sm:px-7">
+      <div className="flex w-full max-w-[1400px] flex-col gap-1 px-4 py-8 sm:px-7">
         <ErrorBlock
           error={error}
           onRetry={() => {
@@ -149,12 +149,12 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
 
 /**
  * The shell's frame while its first data loads (a cold start): the
- * sidebar's column with still placeholder rows, the header bar and a
- * quiet line. Static on purpose (no shimmer).
+ * sidebar's column with still placeholder rows, the header bar, a
+ * Loading line and a table's frame. Static on purpose (no shimmer).
  */
 export function ShellPending() {
   const bar = (w: string) => (
-    <span className={`block h-[10px] rounded-[3px] bg-sel ${w}`} />
+    <span className={`block h-[10px] rounded-[3px] bg-dash ${w}`} />
   );
   return (
     <div className="flex min-h-screen" aria-busy="true">
@@ -172,9 +172,24 @@ export function ShellPending() {
         <div className="flex h-[52px] items-center border-b border-line px-5">
           {bar("w-40")}
         </div>
-        <p role="status" className="px-7 py-6 text-mut">
-          Loading Dock…
-        </p>
+        <div className="flex flex-col gap-3 px-7 py-6">
+          <p role="status" className="text-sec">
+            Loading Dock…
+          </p>
+          {/* A table's frame with still rows, like most pages. */}
+          <div className="flex max-w-[1400px] flex-col rounded-panel border border-edge">
+            {[0, 1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="flex gap-6 border-b border-line px-3.5 py-3 last:border-b-0"
+              >
+                {bar("w-28")}
+                {bar("w-20")}
+                {bar("w-48")}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

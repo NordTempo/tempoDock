@@ -152,7 +152,7 @@ function DrainRow({
                 </Button>
               </>
             ) : (
-              <Button small onClick={() => setConfirming(true)}>
+              <Button danger small onClick={() => setConfirming(true)}>
                 Remove
               </Button>
             )}

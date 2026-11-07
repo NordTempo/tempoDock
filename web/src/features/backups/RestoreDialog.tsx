@@ -73,7 +73,11 @@ export default function RestoreDialog({
 
   return (
     <Dialog
-      title={`Restore ${ref.service} from ${pointName(point)}?`}
+      title={
+        intoNew
+          ? `Restore ${pointName(point)} into a new service?`
+          : `Restore ${ref.service} from ${pointName(point)}?`
+      }
       onClose={onClose}
     >
       <form
@@ -94,16 +98,22 @@ export default function RestoreDialog({
         </p>
         {intoNew ? (
           <>
-            <p className="text-sec">
-              It restores into a new service, and the live {ref.service} is not
-              touched.{" "}
-              {point.kind === "backup"
-                ? "The new service gets its own credentials."
-                : "The new service keeps the snapshot's credentials."}{" "}
-              Once it runs and the data checks out,{" "}
-              <b className="text-fg">Use {as || "it"}</b> switches the services
-              that use {ref.service} to it, and back again if needed.
-            </p>
+            {/* Two steps, said before the first: nothing live changes yet. */}
+            <ol className="flex list-decimal flex-col gap-1 pl-5 text-sec">
+              <li>
+                This restores into a new service; the live {ref.service} is not
+                touched.{" "}
+                {point.kind === "backup"
+                  ? "The new service gets its own credentials."
+                  : "The new service keeps the snapshot's credentials."}
+              </li>
+              <li>
+                Once the data checks out,{" "}
+                <b className="text-fg">Use {as || "it"}</b> switches the
+                services that use {ref.service} over to it (and back, if
+                needed).
+              </li>
+            </ol>
             <Fields>
               <Field label="New service" error={nameError}>
                 <input

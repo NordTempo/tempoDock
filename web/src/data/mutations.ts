@@ -9,6 +9,7 @@ import { api, body, done, setOrg } from "../api/client";
 import type { components } from "../api/schema";
 import { type NoticeTone, notify } from "../ui/notice";
 import { currentMe, envPath, keys, servicePath } from "./queries";
+import { rememberTyped } from "./typed";
 import type {
   DiscardSelection,
   EnvironmentKind,
@@ -129,6 +130,7 @@ type VariableEdit = {
 };
 
 function setVariables({ env, service, ...edit }: VariableEdit) {
+  rememberTyped(env, service, edit.set);
   return body(
     api.PATCH(
       "/api/v1/projects/{project}/environments/{environment}/variables",

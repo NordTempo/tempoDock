@@ -45,9 +45,10 @@ export function day(iso: string) {
 /** "2026-12-01" */
 export const isoDay = (iso: string) => iso.slice(0, 10);
 
-/** A duration in ms as "4s", "1m 12s", "2h 3m". */
+/** A duration in ms as "<1s", "4s", "1m 12s", "2h 3m". */
 export function elapsed(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 1) return "<1s";
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;

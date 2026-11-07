@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useApplyChanges, useDiscardChanges } from "../../data/mutations";
 import {
   useChanges,
@@ -7,6 +8,7 @@ import {
   useEnvironment,
   useRevealedChanges,
 } from "../../data/queries";
+import { typedValue } from "../../data/typed";
 import type {
   DiscardSelection,
   EnvRef,
@@ -19,7 +21,6 @@ import { modKey, useKeydown } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
 import { Act, ErrorText, Glyph } from "../../ui/kit";
-import { notify } from "../../ui/notice";
 import { failurePhrase, stepPhrase } from "../../ui/status";
 import { imageLabel, shortImage } from "../service/releases";
 import {
@@ -38,7 +39,8 @@ const marks: Record<VariableChange["action"], string> = {
 /**
  * An environment's staged changes, what applying them does, and the
  * buttons. Applying is all or nothing, like the API. ⌘↵ applies. With
- * `sticky` it stays in view above the command line while anything is
+ * `bar` it is a strip under the service's tabs, in the sticky header: it
+ * pushes the page down instead of covering it, and stays in view while anything is
  * staged, so the way to apply is never scrolled away.
  */
 export function ApplyBox({
@@ -46,7 +48,7 @@ export function ApplyBox({
   reveal,
   variables = [],
   service,
-  sticky,
+  bar,
 }: {
   env: EnvRef;
   /** Show old and new values (admin, on request). */
@@ -55,8 +57,13 @@ export function ApplyBox({
   variables?: Variable[];
   /** The service on screen: its own changes can be discarded alone. */
   service?: string | null;
-  sticky?: boolean;
+  /** A strip in the service header instead of a panel in the page. */
+  bar?: boolean;
 }) {
+  const org = useOrg();
+  // As the header's strip it is one line until opened, so it
+  // covers as little of the page as it can.
+  const [open, setOpen] = useState(!bar);
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
   const { services } = useEnvironment(env);
@@ -76,7 +83,7 @@ export function ApplyBox({
     );
     return serving && setting && serving !== setting && !staged
       ? [
-          `${s.service.name} keeps serving ${shortImage(serving)}; ${shortImage(setting)} waits for the next deploy.`,
+          `${s.service.name}'s new release runs ${shortImage(serving)}, the image serving now.`,
         ]
       : [];
   });
@@ -85,24 +92,13 @@ export function ApplyBox({
   const downtimes = affected.flatMap((s) =>
     s.service.stateful && s.service.active_release && !s.service.stopped_at
       ? [
-          `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: a volume allows one writer.`,
+          `${s.service.name} is down for a few seconds while r${s.service.active_release} stops and the new release starts: only one copy can use its volume at a time.`,
         ]
       : [],
   );
-  const applyNow = () =>
-    apply.mutate(env, {
-      onSuccess: (r) => {
-        const started = (r.releases ?? []).map(
-          (x) => `${x.service} r${x.number}`,
-        );
-        notify(
-          started.length > 0
-            ? `Applied: started ${started.join(", ")}`
-            : "Applied",
-          started.length > 0 ? "info" : undefined,
-        );
-      },
-    });
+  // The result shows in place (Applied, and each release as it goes), so
+  // no toast repeats it over the page.
+  const applyNow = () => apply.mutate(env);
   // Releases can't start on an unreachable server.
   const blocked = useDeployBlock(env);
   const applyBlocked = releases.length > 0 ? blocked : undefined;
@@ -121,7 +117,9 @@ export function ApplyBox({
     const skipped = applied.skipped ?? [];
     const failed = applied.failed ?? [];
     return (
-      <div className="flex flex-col gap-1 text-mut">
+      <div
+        className={`flex flex-col gap-1 text-mut ${bar ? "border-b border-line px-5 py-2" : ""}`}
+      >
         <p>
           <span className="text-ok">✓</span> Applied.{" "}
           {skipped.length > 0 &&
@@ -136,7 +134,7 @@ export function ApplyBox({
         ))}
         {failed.map((f) => (
           <p key={f} className="text-warn">
-            ▲ Still staged: {f}
+            ▲ Still waiting to apply: {f}
           </p>
         ))}
       </div>
@@ -216,8 +214,10 @@ export function ApplyBox({
                 <span className="text-fail">{v.old}</span> →{" "}
                 <span className="text-ok">{v.new}</span>
               </>
-            ) : c.action === "add" ? (
-              <span className="text-ok">{v?.new ?? "••••"}</span>
+            ) : c.action === "add" || c.action === "update" ? (
+              <span className="text-ok">
+                {v?.new ?? typedValue(env, c.service, c.key) ?? "••••"}
+              </span>
             ) : c.action === "remove" ? (
               <span className="text-fail line-through">{v?.old ?? "••••"}</span>
             ) : (
@@ -268,45 +268,66 @@ export function ApplyBox({
   return (
     <section
       aria-labelledby="staged"
-      className={`flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3.5 ${sticky ? "sticky bottom-[64px] z-10 shadow-lg shadow-black/60" : ""}`}
+      className={`flex flex-col border-warn-edge bg-stage-bg ${bar ? "border-b px-5" : "rounded-panel border px-4"} ${open ? "gap-3 py-3" : "gap-2 py-2"}`}
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
           <span className="text-warn">
             <span className="dot" />
           </span>{" "}
-          {plural(changes.count, "change")} staged
+          {plural(changes.count, "change")} waiting to apply
         </h2>
         <span className="text-xs text-mut">
           · nothing changes until you apply. Each affected service gets a new
-          release, health checked as usual.
+          release, health checked as usual.{" "}
+          <Link
+            to="/$org/help"
+            params={{ org }}
+            hash="apply"
+            className="underline underline-offset-3"
+          >
+            What's this?
+          </Link>
         </span>
+        {bar && (
+          <button
+            type="button"
+            className="lnk ml-auto"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? "Hide the list" : `Show ${plural(changes.count, "change")}`}
+          </button>
+        )}
       </div>
-      {changes.last_failure && (
+      {open && changes.last_failure && (
         <p className="text-fail">
-          The last apply failed, so its changes are staged again:{" "}
+          The last apply failed, so its changes wait to apply again:{" "}
           {changes.last_failure}
         </p>
       )}
-      <div
-        className={`overflow-x-auto font-mono text-xs leading-[1.9] ${sticky ? "max-h-[30vh] overflow-y-auto" : ""}`}
-      >
-        {lines.map((line) => (
-          <div key={line.id} className="whitespace-nowrap">
-            <span className="text-warn">{line.mark}</span>{" "}
-            <span className="inline-block w-[9ch] text-faint">
-              {line.scope}
-            </span>
-            {line.body}
-            {line.note && <span className="text-mut"> {line.note}</span>}
-          </div>
+      {open && (
+        <div
+          className={`overflow-x-auto font-mono text-xs leading-[1.9] ${bar ? "max-h-[30vh] overflow-y-auto" : ""}`}
+        >
+          {lines.map((line) => (
+            <div key={line.id} className="whitespace-nowrap">
+              <span className="text-warn">{line.mark}</span>{" "}
+              <span className="inline-block w-[9ch] text-faint">
+                {line.scope}
+              </span>
+              {line.body}
+              {line.note && <span className="text-mut"> {line.note}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {open &&
+        keptImages.map((text) => (
+          <p key={text} className="text-xs text-mut">
+            {text}
+          </p>
         ))}
-      </div>
-      {keptImages.map((text) => (
-        <p key={text} className="text-xs text-mut">
-          {text}
-        </p>
-      ))}
       {downtimes.map((text) => (
         <p key={text} className="text-xs text-warn-text">
           ▲ {text}

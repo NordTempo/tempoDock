@@ -60,6 +60,11 @@ function nextStep(error: unknown) {
   if (status === 403) return "Ask an admin of this organization for access.";
   if (status === 404) return "It may have been renamed or removed.";
   if (status >= 500)
-    return "Try again in a moment. If it keeps failing, the Dock server's log says why.";
+    return (
+      <>
+        Try again in a moment. If it keeps failing, Dock's log on the server
+        says why: <code className="font-mono text-sec">journalctl -u dock</code>
+      </>
+    );
   return undefined;
 }

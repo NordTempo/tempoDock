@@ -1,21 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { memo, type ReactNode, useState } from "react";
+import { memo, useState } from "react";
 import { queries, useServers } from "../data/queries";
 import type { Server } from "../data/types";
 import { AddServer } from "../features/servers/AddServer";
 import { Ingress, statusTitle, Version } from "../features/servers/parts";
-import { useServerSwitches } from "../features/servers/switches";
 import { useShortcuts } from "../shell/keys";
 import { pct, since, size, until } from "../ui/format";
-import {
-  Act,
-  ErrorText,
-  Glyph,
-  Page,
-  PageBar,
-  Panel,
-  StateText,
-} from "../ui/kit";
+import { Act, Glyph, Page, PageBar, Panel, StateText } from "../ui/kit";
 import { serverState } from "../ui/status";
 
 // Every server: link status, version, ingress, what it accepts, how loaded
@@ -35,7 +26,7 @@ function Servers() {
   const servers = useServers();
   const [adding, setAdding] = useState(false);
 
-  useShortcuts([{ key: "a", label: "add server", run: () => setAdding(true) }]);
+  useShortcuts([{ key: "n", label: "add server", run: () => setAdding(true) }]);
 
   return (
     <>
@@ -48,7 +39,7 @@ function Servers() {
             disabled={adding}
             onClick={() => setAdding(true)}
           >
-            Add server <kbd>A</kbd>
+            Add server <kbd>N</kbd>
           </Act>
         }
       />
@@ -62,17 +53,15 @@ function Servers() {
                 <th>Server</th>
                 <th>Status</th>
                 <th>Version</th>
-                <th>Ingress</th>
-                <th>Builds</th>
-                <th>Accepts</th>
-                <th>Placement</th>
+                <th>Reached at</th>
+                <th>Runs</th>
                 <th>CPU</th>
                 <th>Memory</th>
                 <th title="Memory limits of the services placed here">
-                  Reserved
+                  Memory reserved
                 </th>
                 <th>Disk</th>
-                <th>Placed</th>
+                <th>Hosts</th>
               </tr>
             </thead>
             <tbody>
@@ -86,8 +75,6 @@ function Servers() {
     </>
   );
 }
-
-const COLUMNS = 12;
 
 /**
  * Where each kind of environment can go (B1's pools), as one line: how
@@ -143,32 +130,23 @@ function Kinds({ servers, onAdd }: { servers: Server[]; onAdd: () => void }) {
   );
 }
 
-/** A server's row with its switches, and a row holding the confirm or error. */
-const ServerRow = memo(function ServerRow({ server }: { server: Server }) {
-  const { accepts, placement, builder, confirm, error } =
-    useServerSwitches(server);
-  return (
-    <>
-      <Row
-        server={server}
-        accepts={accepts}
-        placement={placement}
-        builder={builder}
-      />
-      {(confirm || error) && (
-        // The confirm is a modal; the row only holds it (or the error).
-        <tr>
-          <td
-            colSpan={COLUMNS}
-            className={confirm ? "border-0 p-0" : "border-0 pb-3"}
-          >
-            {confirm ?? <ErrorText error={error} />}
-          </td>
-        </tr>
-      )}
-    </>
-  );
-});
+/**
+ * What a server takes, in words: the kinds of environment, new projects
+ * and builds. Its page (Console, Servers, the server) changes them.
+ */
+function takes(s: Server): string {
+  const kinds = [
+    s.accepts_production && "production",
+    s.accepts_non_production && "non-production",
+  ].filter(Boolean);
+  return [
+    kinds.length ? kinds.join(" and ") : "no environments",
+    s.disabled_for_placement ? "closed to new projects" : "new projects",
+    s.builder && "builds",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
 
 /** Under the status word: what the status means right now. */
 function statusNote(s: Server) {
@@ -191,17 +169,7 @@ function statusNote(s: Server) {
   }
 }
 
-const Row = memo(function Row({
-  server: s,
-  accepts,
-  placement,
-  builder,
-}: {
-  server: Server;
-  accepts: ReactNode;
-  placement: ReactNode;
-  builder: ReactNode;
-}) {
+const ServerRow = memo(function ServerRow({ server: s }: { server: Server }) {
   const offline = s.status === "offline";
   const usage = s.usage;
   const dash = <span className="text-faint">·</span>;
@@ -228,9 +196,7 @@ const Row = memo(function Row({
       <td className="py-2.5">
         <Ingress server={s} />
       </td>
-      <td className={`py-2.5 ${s.builder ? "" : "text-mut"}`}>{builder}</td>
-      <td className="min-w-32 py-2.5 whitespace-normal">{accepts}</td>
-      <td className="min-w-32 py-2.5 whitespace-normal">{placement}</td>
+      <td className="min-w-48 py-2.5 whitespace-normal text-sec">{takes(s)}</td>
       <td className="py-2.5 font-mono">
         {usage ? pct(usage.cpu_percent) : dash}
         {usage && (

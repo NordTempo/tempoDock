@@ -301,8 +301,15 @@ function Login() {
               <FieldError id={`${ids}-password`} text={invalid.password} />
             </label>
             <Forgot />
-            {/* One line kept for the answer, so nothing moves when it shows. */}
-            <p role="alert" className="min-h-[1lh] text-fail">
+            {/* A line kept for the answer; a failed sign-in shows as a red box above the button. */}
+            <p
+              role="alert"
+              className={
+                failed
+                  ? "rounded-ctl border border-fail-edge bg-fail-bg px-3 py-2 text-fail"
+                  : "min-h-[1lh]"
+              }
+            >
               {failed && loginMessage(failed)}
             </p>
             <button

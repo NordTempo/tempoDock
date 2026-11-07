@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import {
+  envPath,
   findService,
   queries,
   servicePath,
@@ -17,6 +18,7 @@ import {
   useDropTarget,
 } from "../features/deploy/start";
 import { ServiceBar, ServiceTabs } from "../features/service/ServiceHeader";
+import { ApplyBox } from "../features/variables/ApplyBox";
 import { rememberProject } from "../shell/location";
 import { Page } from "../ui/kit";
 
@@ -47,10 +49,8 @@ export const Route = createFileRoute(
 function ServiceLayout() {
   const ref = servicePath(Route.useParams());
   const tab = useMatches({ select: (matches) => matches.at(-1)?.routeId });
-  // These lay out their own columns: logs beside the Overview, the scope
-  // list beside Variables.
+  // Variables lays out its own columns: the scope list beside the table.
   const ownLayout =
-    tab === "/_app/$org/$project/$environment/$service/" ||
     tab === "/_app/$org/$project/$environment/$service/variables";
   useEffect(() => rememberProject(ref.project), [ref.project]);
   // Each drop opens a fresh Deploy window (hosted by the shell).
@@ -63,12 +63,14 @@ function ServiceLayout() {
       <div className="sticky top-0 z-10 bg-page">
         <ServiceBar serviceRef={ref} />
         <ServiceTabs serviceRef={ref} />
+        {/* Changes waiting to apply, in view on every tab, in one place. */}
+        <ApplyBox env={envPath(ref)} reveal={false} service={ref.service} bar />
       </div>
       {/* Every tab uses the same full width, so the edges don't jump between tabs. */}
       {ownLayout ? (
         <Outlet />
       ) : (
-        <Page width="max-w-none">
+        <Page>
           <Outlet />
         </Page>
       )}

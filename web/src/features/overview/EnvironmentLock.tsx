@@ -131,7 +131,20 @@ export function LockStrip({
           </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
-            {lock.reason && <> · {lock.reason}</>} · {lockEffect}
+            {lock.reason && <> · {lock.reason}</>} · {lockEffect}{" "}
+            {/* Where they wait, as a link: the place to look after locking. */}
+            {admin && (
+              <>
+                in{" "}
+                <Link
+                  to="/$org/requests"
+                  params={{ org }}
+                  className="text-sec underline underline-offset-3 hover:text-fg"
+                >
+                  Requests
+                </Link>
+              </>
+            )}
           </span>
         </>
       ) : (
@@ -146,9 +159,9 @@ export function LockStrip({
             to="/$org/requests"
             params={{ org }}
             search={{ id: waiting[0].id }}
-            className="hover:underline"
+            className={`btn sm ${warnBtn}`}
           >
-            {plural(waiting.length, "request")} waiting
+            Review {plural(waiting.length, "waiting request")}
           </Link>
         )}
         {admin &&

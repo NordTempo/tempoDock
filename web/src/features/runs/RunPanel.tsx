@@ -214,7 +214,7 @@ function RunForm({
         {writes && (
           <>
             <Check
-              label="snapshot first"
+              label="Snapshot volumes first"
               title="Snapshot the volumes before the run; a failed snapshot refuses it"
               checked={snapshot}
               disabled={!!reason}

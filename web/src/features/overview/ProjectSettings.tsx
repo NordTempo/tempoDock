@@ -66,35 +66,36 @@ export function Export({
 }) {
   const path = `/api/v1/projects/${encodeURIComponent(project)}/export`;
   return (
-    <p className="flex flex-wrap items-baseline gap-x-3 text-xs text-faint">
-      Export config
+    // Buttons, not inline links: downloading and applying are actions.
+    <div className="flex flex-wrap items-center gap-2 text-xs text-mut">
+      <span className="mr-1">Config as a file</span>
       <a
         href={withOrg(`${path}.toml`)}
         download
-        className="lnk font-mono"
+        className="btn sm"
         title={`dock project export ${project} > ${project}.dock.toml`}
       >
-        {project}.dock.toml
+        Download .toml
       </a>
       <a
         href={withOrg(path)}
         download={`${project}.dock.json`}
-        className="lnk font-mono"
+        className="btn sm"
         title={`dock project export ${project} --format json`}
       >
-        {project}.dock.json
+        Download .json
       </a>
       {onApply && (
         <button
           type="button"
-          className="lnk"
+          className="btn sm"
           title={`dock apply ${project}.dock.toml -p ${project}`}
           onClick={onApply}
         >
-          Apply file
+          Apply a file…
         </button>
       )}
-    </p>
+    </div>
   );
 }
 
@@ -111,7 +112,9 @@ export function ArchiveProject({ project }: { project: string }) {
         Archiving stops every service and removes its routes. Volumes and
         history are kept.
       </span>
-      <Button onClick={() => setConfirming(true)}>Archive {project}</Button>
+      <Button danger onClick={() => setConfirming(true)}>
+        Archive {project}
+      </Button>
       {confirming && (
         <Confirm
           danger

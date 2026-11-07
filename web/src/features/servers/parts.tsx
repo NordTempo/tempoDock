@@ -68,11 +68,11 @@ export function Ingress({ server }: { server: Server }) {
   if (server.status === "joining") return <span className="text-faint">·</span>;
   switch (server.ingress) {
     case "direct":
-      return <span>direct</span>;
+      return <span>its own address</span>;
     case "cloudflare_tunnel":
       return (
         <span>
-          tunnel
+          Cloudflare tunnel
           {server.tunnel_hostname && (
             <div className="font-mono text-xs text-mut">
               {server.tunnel_hostname}

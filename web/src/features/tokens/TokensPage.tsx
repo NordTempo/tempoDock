@@ -7,6 +7,7 @@ import {
   useTokens,
 } from "../../data/queries";
 import type { Scope } from "../../data/types";
+import { useShortcuts } from "../../shell/keys";
 import { Dialog } from "../../ui/Dialog";
 import {
   Button,
@@ -35,13 +36,16 @@ export function TokensPage() {
     project?: string;
   }>();
 
+  useShortcuts([
+    { key: "n", label: "create token", run: () => setCreating(true) },
+  ]);
   return (
     <>
       <OrgSettingsBar
         actions={
           !creating && (
             <Button primary onClick={() => setCreating(true)}>
-              Create token
+              Create token <kbd>N</kbd>
             </Button>
           )
         }

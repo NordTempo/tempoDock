@@ -48,8 +48,8 @@ export default function AddDomainDialog({
   // A missing hostname marks its field on submit (the one validation pattern).
   const v = useValidation();
   const hostError = v.required(!host, "Enter a hostname.");
-  const option = (on: boolean) =>
-    `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"}`;
+  const option = (on: boolean, off = false) =>
+    `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"} ${off ? "text-faint" : ""}`;
   return (
     <Dialog title={`Add a domain to ${ref.service}`} onClose={onClose} wide>
       <form
@@ -101,14 +101,16 @@ export default function AddDomainDialog({
                   placeholder="app.example.com"
                   className={`field min-w-0 flex-[1_1_220px] py-[7px] font-mono ${invalid(hostError)}`}
                 />
-                <input
-                  aria-label="Redirect to, optional"
-                  title="Permanently redirect to this hostname instead of serving the service"
-                  value={redirect}
-                  onChange={(e) => setRedirect(e.target.value)}
-                  placeholder="redirect to, optional"
-                  className="field min-w-0 flex-[1_1_160px] py-[7px] font-mono"
-                />
+                <label className="flex min-w-0 basis-full items-center gap-2 text-mut">
+                  Redirect to
+                  <input
+                    title="Permanently redirect to this hostname instead of serving the service"
+                    value={redirect}
+                    onChange={(e) => setRedirect(e.target.value)}
+                    placeholder="optional, like example.com"
+                    className="field min-w-0 flex-1 py-[7px] font-mono"
+                  />
+                </label>
                 {hostError && (
                   <span role="alert" className="basis-full text-xs text-fail">
                     {hostError}
@@ -118,7 +120,7 @@ export default function AddDomainDialog({
             )}
           </span>
         </label>
-        <label className={option(fromCloudflare)}>
+        <label className={option(fromCloudflare, zones.length === 0)}>
           <input
             type="radio"
             name="mode"
@@ -177,10 +179,9 @@ export default function AddDomainDialog({
         </label>
         {!target && (
           <Check
-            label="Start a new analytics site if this hostname was counted before"
-            title="Otherwise its site, with its history, moves here with it"
-            checked={newSite}
-            onChange={setNewSite}
+            label="Keep this hostname's earlier analytics, if it has any"
+            checked={!newSite}
+            onChange={(keep) => setNewSite(!keep)}
           />
         )}
         <Footer

@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useIsOperator, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
+import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
 import { day, plural } from "../../ui/format";
@@ -15,6 +16,7 @@ import {
   ErrorText,
   Page,
   Panel,
+  StateText,
 } from "../../ui/kit";
 import { addressQuery } from "../address/data";
 import { Saved, useValidation } from "../create/form";
@@ -115,20 +117,24 @@ function Members() {
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<InviteLinkInfo>();
   const invite = useInviteBase(inviting || !!link);
+  useShortcuts([
+    { key: "n", label: "invite people", run: () => setInviting(true) },
+  ]);
   return (
     <>
       <OrgSettingsBar
         actions={
           !inviting && (
             <Button primary onClick={() => setInviting(true)}>
-              Invite people
+              Invite people <kbd>N</kbd>
             </Button>
           )
         }
       />
       <Page>
-        <div className="flex flex-wrap items-start gap-8">
-          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5">
+        {/* The roles sit beside the table on wide windows, under it below 1400px. */}
+        <div className="grid items-start gap-8 min-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex min-w-0 flex-col gap-5">
             {without > 0 && (
               <p className="text-warn-text">
                 {plural(without, "person", "people")} without two-factor
@@ -216,7 +222,7 @@ function Roles() {
   return (
     <aside
       aria-labelledby="roles"
-      className="flex max-w-[360px] min-w-0 flex-[1_1_280px] flex-col gap-3"
+      className="flex max-w-[640px] min-w-0 flex-col gap-3"
     >
       <h2 id="roles" className="font-semibold">
         What each role can do
@@ -249,6 +255,7 @@ function InviteLink({
   note: ReactNode;
   onDone: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   return (
     <section
       aria-labelledby="invite-link"
@@ -260,16 +267,21 @@ function InviteLink({
       </h2>
       {note}
       <p className="text-mut">
-        Send them this link. It works once, for 7 days, and only signed in as{" "}
-        {link.email}. It isn't shown again; New link on their row makes another.
+        Dock doesn't send email: copy this link and send it to them yourself. It
+        works once, for 7 days, and only signed in as {link.email}. It isn't
+        shown again; New link on their row makes another.
       </p>
-      <div className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5">
+      {/* Copying is noticed, so closing before it says what is lost. */}
+      <div
+        onClickCapture={() => setCopied(true)}
+        className="flex flex-wrap items-center gap-2.5 rounded-ctl border border-line bg-side px-3 py-2.5"
+      >
         <code className="min-w-0 flex-1 font-mono break-all">{url}</code>
         <CopyButton text={url} primary />
       </div>
       <div>
         <Button small onClick={onDone}>
-          Done
+          {copied ? "Done" : "Close without copying"}
         </Button>
       </div>
     </section>
@@ -343,7 +355,7 @@ function InviteForm({
         cli={`dock org invite ${email.trim() || "<email>"} --role ${role}`}
         disabled={create.isPending}
       >
-        Invite
+        Create invite link
       </Act>
       <Button onClick={onCancel}>Cancel</Button>
       {emailError && (
@@ -356,6 +368,11 @@ function InviteForm({
         </span>
       )}
       <ErrorText error={create.error} />
+      {/* Before they press it, not after: no email goes out. */}
+      <p className="basis-full text-xs text-mut">
+        Dock doesn't send email. You get a link to copy and send them; it works
+        once, for this address.
+      </p>
     </form>
   );
 }
@@ -461,7 +478,7 @@ function MemberRow({
       <td className="py-2 text-faint">{day(member.created_at)}</td>
       <td className="w-full py-1.5 text-right">
         {!you && (
-          <Button small onClick={() => setAsking(true)}>
+          <Button danger small onClick={() => setAsking(true)}>
             Remove
           </Button>
         )}
@@ -503,6 +520,7 @@ function InviteRow({
 }) {
   const { id, email, role, expires_at } = invite;
   const revoke = useRevokeInvite();
+  const [revoking, setRevoking] = useState(false);
   const renew = useRenewInvite();
   const [renewing, setRenewing] = useState(false);
   return (
@@ -512,8 +530,14 @@ function InviteRow({
           <Avatar />
           <span className="text-mut">
             {email}
-            <span className="block text-2xs text-warn">
-              {invite.expired ? "invite expired" : "invited"}
+            <span className="mt-0.5 block">
+              <StateText
+                state={
+                  invite.expired
+                    ? { tone: "mut", label: "invite expired" }
+                    : { tone: "warn", label: "invited" }
+                }
+              />
             </span>
           </span>
         </span>
@@ -530,16 +554,32 @@ function InviteRow({
             New link
           </Button>
           <Act
+            danger
             small
             cli={`dock org invites revoke ${id}`}
             disabled={revoke.isPending}
-            onClick={() => revoke.mutate(id)}
+            onClick={() => setRevoking(true)}
           >
             Revoke
           </Act>
         </span>
-        <ErrorText error={revoke.error} />
         <div className="contents text-left whitespace-normal">
+          {revoking && (
+            <Confirm
+              danger
+              action="Revoke invite"
+              title={`Revoke the invite for ${email}?`}
+              cli={`dock org invites revoke ${id}`}
+              pending={revoke.isPending}
+              error={revoke.error}
+              onConfirm={() =>
+                revoke.mutate(id, { onSuccess: () => setRevoking(false) })
+              }
+              onCancel={() => setRevoking(false)}
+            >
+              Their link stops working. You can invite them again.
+            </Confirm>
+          )}
           {renewing && (
             <Confirm
               action="Make a new link"

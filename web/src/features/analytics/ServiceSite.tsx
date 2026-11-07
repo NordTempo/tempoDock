@@ -108,7 +108,7 @@ export function Hostnames({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }
   return (
     <section aria-labelledby="hostnames" className="flex flex-col gap-2">
-      <h2 id="hostnames" className="text-sm font-semibold">
+      <h2 id="hostnames" className="text-md font-semibold">
         Analytics
       </h2>
       <Panel>

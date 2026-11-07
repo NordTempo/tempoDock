@@ -62,7 +62,7 @@ export function Dashboard({
         <p className="text-warn-text">{stats.store_error}</p>
       )}
       {stats?.notice && <p className="text-mut">{stats.notice}</p>}
-      <div className="grid gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid gap-x-8 gap-y-6 min-[1400px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="flex min-w-0 flex-col gap-6">
           {stats ? (
             <Main
@@ -118,8 +118,8 @@ function Main({
   const panel = { project, site, stats, range, filters, onPick };
   return (
     <>
-      {/* Six tiles in one row from a medium width; three under it. */}
-      <div className="grid grid-cols-3 gap-x-4 gap-y-3 tabular-nums md:grid-cols-6">
+      {/* Six tiles in one row on wide windows; two rows of three below 1400px. */}
+      <div className="grid grid-cols-3 gap-x-4 gap-y-3 tabular-nums min-[1400px]:grid-cols-6">
         <Kpi
           label="Visitors"
           value={count(o.visitors)}
@@ -159,6 +159,11 @@ function Main({
           change={delta(o.events, p.events, range)}
         />
       </div>
+      {p && (
+        <p className="-mt-2 text-xs text-faint">
+          Changes compare with the previous {range}.
+        </p>
+      )}
       <Chart stats={stats} metric={metric} />
       <div className="grid gap-x-6 gap-y-6 lg:grid-cols-2">
         <Breakdown
@@ -307,20 +312,23 @@ function Breakdown({
   const most = Math.max(1, ...(rows ?? []).map((r) => r.visitors));
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex flex-wrap items-baseline gap-x-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 className="text-sm font-semibold">{title}</h3>
-        {tabs.length > 1 &&
-          tabs.map(([label], i) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={i === tab}
-              className={`text-xs ${i === tab ? "text-fg" : "text-mut"}`}
-              onClick={() => setTab(i)}
-            >
-              {label}
-            </button>
-          ))}
+        {/* The app's one segmented control, as everywhere else. */}
+        {tabs.length > 1 && (
+          <span className="seg">
+            {tabs.map(([label], i) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={i === tab}
+                onClick={() => setTab(i)}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       <Panel>
         <table className="tabular-nums">
@@ -343,7 +351,7 @@ function Breakdown({
                   />
                   <button
                     type="button"
-                    className="relative truncate text-left"
+                    className="relative -my-[3px] min-h-[24px] min-w-[24px] max-w-full truncate text-left"
                     title={`Filter by ${shown(dimension, r)}`}
                     onClick={() => onPick(dimension, r)}
                   >

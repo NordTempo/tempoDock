@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
-import { useRollback, useStageSettings } from "../../data/mutations";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
@@ -173,37 +173,40 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       aria-label="Service"
       className="tabs flex gap-0.5 overflow-x-auto border-b border-line px-4 py-2 whitespace-nowrap [scrollbar-width:thin]"
     >
-      {shown.map((tab) => (
-        <Link
-          key={tab.to}
-          to={tab.to}
-          params={{ org, ...ref }}
-          activeOptions={{ exact: true, includeSearch: false }}
-          title={`${tab.label} (${tab.key.toUpperCase()})`}
-        >
-          {tab.label}
-          {staged[tab.label] && (
-            <span
-              className="ml-1.5 text-warn"
-              role="img"
-              aria-label="changes staged, not applied"
-              title="Changes staged, not applied"
-            >
-              <span className="dot" />
-            </span>
+      {shown.map((tab, i) => (
+        <Fragment key={tab.to}>
+          {i > 0 && shown[i - 1]?.group !== tab.group && (
+            <span aria-hidden className="mx-1.5 my-1 w-px flex-none bg-edge" />
           )}
-          {warnings[tab.label] && (
-            <span
-              className="text-warn"
-              role="img"
-              aria-label={warnings[tab.label]}
-              title={warnings[tab.label]}
-            >
-              {" "}
-              ▲
-            </span>
-          )}
-        </Link>
+          <Link
+            to={tab.to}
+            params={{ org, ...ref }}
+            activeOptions={{ exact: true, includeSearch: false }}
+            title={`${tab.label} (${tab.key.toUpperCase()})`}
+          >
+            {tab.label}
+            {staged[tab.label] && (
+              <span
+                className="ml-1.5 text-warn"
+                role="img"
+                aria-label="changes waiting to apply"
+                title="Changes waiting to apply"
+              >
+                <span className="dot" />
+              </span>
+            )}
+            {warnings[tab.label] && (
+              <span
+                className="ml-1 text-warn"
+                role="img"
+                aria-label={warnings[tab.label]}
+                title={warnings[tab.label]}
+              >
+                ▲
+              </span>
+            )}
+          </Link>
+        </Fragment>
       ))}
     </nav>
   );
@@ -227,10 +230,19 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       // What runs now; the image setting only when the next deploy differs
       // (after a rollback, or a failed deploy of a new tag).
       <span key="s" className="flex flex-col font-mono">
-        <span className="truncate" title={running}>
-          {running ? shortImage(running) : "built from source"}
+        <span className="break-all" title={running}>
+          {/* The full name, but a digest only as long as it needs to be. */}
+          {running?.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, "@sha256:$1…") ||
+            "built from source"}
         </span>
-        {image.differs && <NextImage serviceRef={ref} image={image} />}
+        {/* After a failed new tag, the status line says it once and the
+            Deploy dialog offers the serving image; nothing more here. */}
+        {image.differs && !image.failed && (
+          <span className="font-sans break-words text-mut" title={image.next}>
+            Next deploy uses{" "}
+            <span className="font-mono text-sec">{shortImage(image.next)}</span>
+          </span>
+        )}
       </span>,
     ],
     [
@@ -269,27 +281,27 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </Link>,
     ],
     [
-      "Port · server",
+      "Port and server",
       <span key="p">
-        <span className="font-mono">:{listenPort(service)}</span> ·{" "}
-        <EnvServer name={server} />
+        <span className="font-mono">:{listenPort(service)}</span>{" "}
+        <span className="text-mut">on server</span> <EnvServer name={server} />
       </span>,
     ],
     // How it starts, a full row: the One-off command tab runs a command
     // once; this is where the start command changes.
     [
       "Start command",
-      <span key="c" className="flex flex-wrap items-baseline gap-x-2">
-        <span className="font-mono break-all">
-          {service.start_command || (
-            <span className="font-sans text-mut">the image's default</span>
-          )}
-        </span>
+      <span key="c" className="flex flex-wrap items-center gap-x-3">
+        {service.start_command ? (
+          <LongCommand text={service.start_command} />
+        ) : (
+          <span className="text-mut">the image's default</span>
+        )}
         <Link
           to="/$org/$project/$environment/$service/build"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
-          className="text-info underline underline-offset-2"
+          className="btn sm"
         >
           Edit
         </Link>
@@ -297,11 +309,11 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     ],
   ];
   return (
-    <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line @4xl:grid-cols-4">
+    <dl className="facts grid grid-cols-2 gap-x-6 border-t border-line @4xl:grid-cols-4">
       {facts.map(([term, value]) => (
         <div
           key={term}
-          className={`flex flex-col gap-1 bg-page px-3.5 py-3 ${term === "Start command" ? "col-span-full" : ""}`}
+          className={`flex flex-col gap-1 border-b border-soft py-3 ${term === "Start command" ? "col-span-full" : ""}`}
         >
           <dt className="text-2xs text-faint">{term}</dt>
           <dd className="min-w-0 break-words text-xs">{value}</dd>
@@ -312,60 +324,25 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 }
 
 /**
- * The image the next deploy uses, when it isn't what serves (after a
- * rollback, or a failed deploy of a new tag): its failed try links to its
- * page, and one click stages the serving image back as the setting.
+ * A command that can run long (a database's dozens of -c options): two
+ * lines, wrapped at spaces, with Show all when there is more.
  */
-function NextImage({
-  serviceRef: ref,
-  image,
-}: {
-  serviceRef: ServiceRef;
-  image: ReturnType<typeof imageSetting>;
-}) {
-  const org = useOrg();
-  const mayDeploy = useCanDeploy(ref);
-  const changes = useChanges(ref);
-  const stage = useStageSettings();
-  const servingRef = image.serving?.image_ref ?? "";
-  const staged = changes.settings.some(
-    (c) => c.service === ref.service && c.field === "image",
-  );
+function LongCommand({ text }: { text: string }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > 140;
   return (
-    <span className="font-sans break-words text-mut" title={image.next}>
-      Next deploy uses{" "}
-      <span className="font-mono text-sec">{shortImage(image.next)}</span>
-      {image.failed && (
-        <>
-          {" ("}
-          <Link
-            to="/$org/$project/$environment/$service/releases/$number"
-            params={{ org, ...ref, number: String(image.failed.number) }}
-            className="underline decoration-faint underline-offset-2 hover:decoration-current"
-          >
-            failed as r{image.failed.number}
-          </Link>
-          {")"}
-          {mayDeploy && servingRef && !staged && (
-            <>
-              {" · "}
-              <button
-                type="button"
-                className="lnk text-info"
-                disabled={stage.isPending}
-                title={`Stage ${shortImage(servingRef)} as the image setting: dock service update ${ref.service} --image ${servingRef} -e ${ref.environment}`}
-                onClick={() =>
-                  stage.mutate({ ref, patch: { image: servingRef } })
-                }
-              >
-                Use {shortImage(image.now)}
-              </button>
-            </>
-          )}
-          {staged && <span> · change staged</span>}
-        </>
+    <span className="flex min-w-0 flex-col items-start gap-1">
+      <code
+        title={text}
+        className={`font-mono break-words ${long && !all ? "line-clamp-2" : ""}`}
+      >
+        {text}
+      </code>
+      {long && (
+        <button type="button" className="lnk" onClick={() => setAll(!all)}>
+          {all ? "Show less" : "Show all"}
+        </button>
       )}
-      <ErrorText error={stage.error} />
     </span>
   );
 }
@@ -390,19 +367,41 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   const mut = (text: string) => <span className="text-mut">{text}</span>;
   // The failed deploy, while it matters: the overview's last_failed_deploy
   // survives a rollback and clears once a new image or config deploys;
-  // else the latest attempt when it failed. Its own line under the
+  // else the latest attempt when it failed. Its own strip under the
   // headline, in the releases table's red.
   const lastFailed =
     view.last_failed_deploy ??
     (latest?.status === "failed" && latest.number > (serving ?? 0)
       ? latest
       : undefined);
-  const failedLine = lastFailed && serving !== lastFailed.number && (
-    <p className="text-sm text-fail">
-      ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
-      {ago(lastFailed.created_at)} · {releaseLink(lastFailed.number, "See why")}
-    </p>
-  );
+  // Red while it is the news (the latest release, or the one before the
+  // rollback that answered it); quiet once more releases came after.
+  const fresh = !!lastFailed && (serving ?? 0) <= lastFailed.number + 1;
+  const failedLine =
+    lastFailed &&
+    serving !== lastFailed.number &&
+    (fresh ? (
+      // A problem row like the project page's: a tinted strip, with the
+      // way to the cause as a button, so it isn't lost under the headline.
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-fail bg-fail-bg py-1.5 pr-1.5 pl-3 text-sm">
+        <span className="flex-1 text-fail">
+          ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
+          {ago(lastFailed.created_at)}
+        </span>
+        <Link
+          to="/$org/$project/$environment/$service/releases/$number"
+          params={{ org, ...refOf(service), number: String(lastFailed.number) }}
+          className="btn sm"
+        >
+          See why
+        </Link>
+      </p>
+    ) : (
+      <p className="text-xs text-mut">
+        Last failed deploy: r{lastFailed.number}, {ago(lastFailed.created_at)} ·{" "}
+        {releaseLink(lastFailed.number, "See why")}
+      </p>
+    ));
   const mono = (text: string) => (
     <b className="font-mono font-medium">{text}</b>
   );
@@ -421,7 +420,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           : serving
             ? mut(
                 service.stateful
-                  ? `r${serving} was stopped first: a volume allows one writer.`
+                  ? `r${serving} was stopped first: only one copy can use its volume at a time.`
                   : `r${serving} keeps serving until cutover. If the check fails, ${r} is stopped.`,
               )
             : mut("Nothing served yet.")}
@@ -473,7 +472,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           mayDeploy && (
             <button
               type="button"
-              className="lnk text-md text-info"
+              className="lnk"
               onClick={() => openDeploy(refOf(service))}
             >
               Deploy it
@@ -535,8 +534,12 @@ export function StatusSentence({ view }: { view: ServiceView }) {
     );
   }
   return (
+    // The overview's focal point (chosen in a blind trial, 2026-11): what
+    // serves and since when, larger than everything under it.
     <div className="flex flex-col gap-1">
-      <p className="text-md leading-normal">{sentence}</p>
+      <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
+        {sentence}
+      </p>
       {failedLine}
     </div>
   );
@@ -559,6 +562,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const production = useEnvironment(ref).environment.kind === "production";
   const releases = useReleases(ref);
   const mayDeploy = useCanDeploy(ref);
+  // One primary per view: while changes wait, Apply in the bar is it.
+  const waiting = useChanges(ref).count > 0;
   const restart = useRestartService();
   // The release a restart started, until it serves or fails.
   const [restarting, setRestarting] = useState<number | null>(null);
@@ -688,7 +693,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               {ref.service} is down for a few seconds while r
               {service.active_release} stops
             </b>
-            : a volume allows one writer.
+            : only one copy can use its volume at a time.
           </>
         ) : (
           <>
@@ -732,6 +737,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       {asking}
       {stopped ? (
         <Act
+          // Stopped, starting it is the next step: it is the primary.
+          primary={!waiting}
           cli={`dock service start ${ref.service} -e ${ref.environment}`}
           disabled={!canStart}
           title={busy ?? "Start a copy of the active release"}
@@ -766,21 +773,28 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Act
           cli={`dock rollback ${target.number} ${flags}`}
           disabled={!canRollback}
-          title={busy}
+          title={
+            busy ??
+            `r${target.number} is the last release that served and differs from the one serving now`
+          }
           onClick={() => setConfirming("rollback")}
         >
-          Roll back to r{target.number} <kbd>B</kbd>
+          {/* The target and why it is that one open in the dialog: a
+              release number here read as "the one before" (it may not be). */}
+          Roll back <kbd>B</kbd>
         </Act>
       )}
       <Act
-        primary
+        primary={!waiting && !stopped}
         cli={`dock deploy [dir | --image ${service.image || "<image>"}] ${flags}`}
         disabled={!canDeploy}
         title={
           blocked ??
-          (mayDeploy
-            ? "A folder, an image or the GitHub branch; or drop a folder here"
-            : "Needs the deploy scope")
+          (!mayDeploy
+            ? "Needs the deploy scope"
+            : waiting
+              ? "Apply is the next step; a deploy also takes the changes waiting to apply live"
+              : "A folder, an image or the GitHub branch; or drop a folder here")
         }
         onClick={onDeploy}
       >

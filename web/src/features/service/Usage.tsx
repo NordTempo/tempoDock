@@ -42,7 +42,26 @@ export function limitText(s: Limited, what: "cpu" | "memory") {
           s.memory_from_default,
         ];
   if (!value) return "no limit";
-  return `${value} ${fromDefault ? "default" : "limit"}`;
+  return fromDefault ? `${value} (default)` : value;
+}
+
+/**
+ * A limit in a table cell, where "(default)" on every row is noise (a
+ * blind trial, 2026-11): the value alone, dimmer when it is the server's
+ * default, with the tooltip saying which.
+ */
+function LimitCell({ s, what }: { s: Limited; what: "cpu" | "memory" }) {
+  const fromDefault =
+    what === "cpu" ? s.cpus_from_default : s.memory_from_default;
+  const text = limitText(s, what).replace(" (default)", "");
+  return (
+    <span
+      className={fromDefault ? "text-faint" : "text-sec"}
+      title={text === "no limit" ? undefined : limitTitle(fromDefault)}
+    >
+      {text}
+    </span>
+  );
 }
 
 /** Share of the memory limit in use, 0 to 1, or null without a sample. */
@@ -55,9 +74,7 @@ export const memoryShare = (s: Limited) =>
 export function MemoryUsage({ service: s }: { service: Limited }) {
   const limit = s.effective_memory_mb ? size(s.effective_memory_mb * MiB) : "";
   const share = memoryShare(s);
-  if (!s.usage) {
-    return <span className="text-mut">{limitText(s, "memory")}</span>;
-  }
+  if (!s.usage) return <LimitCell s={s} what="memory" />;
   return (
     <span>
       <span className={share !== null && share >= HIGH ? "text-warn" : ""}>
@@ -76,9 +93,7 @@ export function MemoryUsage({ service: s }: { service: Limited }) {
 /** "12% of 1 CPU": usage as a share of the CPU limit. */
 export function CpuUsage({ service: s }: { service: Limited }) {
   const limit = s.effective_cpus;
-  if (!s.usage) {
-    return <span className="text-mut">{limitText(s, "cpu")}</span>;
-  }
+  if (!s.usage) return <LimitCell s={s} what="cpu" />;
   // cpu_percent is relative to one core; the limit may be more or less.
   const share = limit ? s.usage.cpu_percent / limit : s.usage.cpu_percent;
   return (

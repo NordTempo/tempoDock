@@ -43,7 +43,8 @@ const sinces = ["", "10m", "1h", "6h", "24h"];
 /** Rendered lines are capped; the stream keeps more for filtering. */
 const VISIBLE = 500;
 
-const errorWords = /\b(error|fatal|panic|exception)\b/i;
+// Error words, or an HTTP 5xx status between spaces ("POST /api 502 31ms").
+const errorWords = /\b(error|fatal|panic|exception)\b|\s5\d\d\s/i;
 
 function matcher(query: string): (text: string) => boolean {
   const regex = /^\/(.+)\/([a-z]*)$/.exec(query);
@@ -278,6 +279,9 @@ export function LogsPane({
       <div
         ref={box}
         role="log"
+        // Focusable, so keyboard users can scroll it with the arrow keys.
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region
+        tabIndex={0}
         aria-label={`${filter.build ? "build" : `r${release}`} logs`}
         className={`overflow-auto rounded-panel border border-line bg-side py-2.5 font-mono text-xs leading-[1.7] ${height}`}
       >
@@ -322,12 +326,27 @@ export function LogsPane({
   );
 }
 
-/** One log line, with WARN and ERROR words colored and errors tinted. */
-export const LogRow = memo(function LogRow({ line }: { line: LogLine }) {
-  const error = /\b(ERROR|FATAL|PANIC)\b/.test(line.text);
+/**
+ * One log line, with WARN and ERROR words colored. A line the Errors only
+ * filter keeps (stderr, or error words) gets a red rule and tint, so
+ * errors stand out without the filter. Quiet drops the tint, for a block
+ * that is already about a failure (a failed release's last lines).
+ */
+export const LogRow = memo(function LogRow({
+  line,
+  quiet,
+}: {
+  line: LogLine;
+  quiet?: boolean;
+}) {
+  const error =
+    !quiet && (line.stream === "stderr" || errorWords.test(line.text));
   const parts = line.text.split(/\b(WARN(?:ING)?|ERROR|FATAL|PANIC)\b/);
   return (
-    <div className={`px-3.5 whitespace-pre ${error ? "bg-fail-bg" : ""}`}>
+    <div
+      // Long lines wrap (under their time) instead of running off the edge.
+      className={`border-l-2 pr-3 pl-[calc(0.75rem+9ch)] -indent-[9ch] break-words whitespace-pre-wrap ${error ? "border-fail bg-fail-bg" : "border-transparent"}`}
+    >
       {line.time && <span className="text-faint">{clockSec(line.time)} </span>}
       {parts.map((part, i) =>
         i % 2 === 1 ? (

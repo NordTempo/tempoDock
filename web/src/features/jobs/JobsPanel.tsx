@@ -87,7 +87,7 @@ export function JobsPanel({
       )}
       {selection === "new" ? (
         <section aria-label="New job" className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">New job</h2>
+          <h2 className="text-md font-semibold">New job</h2>
           <Editor
             serviceRef={ref}
             onSaved={(name) => setPicked({ job: name, run: null })}
@@ -301,7 +301,7 @@ function JobDetail({
         </span>
         {job.source === "api" && canDeploy && (
           <span className="ml-auto">
-            <Act small cli={cli} onClick={() => setConfirming(true)}>
+            <Act danger small cli={cli} onClick={() => setConfirming(true)}>
               Remove
             </Act>
           </span>

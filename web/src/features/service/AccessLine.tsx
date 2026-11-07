@@ -36,6 +36,7 @@ export function AccessLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   }
   return (
     <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
+      <span className="text-mut">Who can open these domains:</span>
       <span className="font-medium">{accessText(access.data)}</span>
       <span className="text-faint">{note(access.data.mode, ref)}</span>
       <Button small className="ml-auto" onClick={() => setEditing(true)}>
@@ -53,7 +54,7 @@ function note(mode: AccessMode, ref: ServiceRef) {
     case "login":
       return `members who can read ${ref.environment} sign in to Dock; the app gets their email in X-Dock-User`;
     default:
-      return "every domain below, generated ones too";
+      return "no sign-in, on every domain below";
   }
 }
 

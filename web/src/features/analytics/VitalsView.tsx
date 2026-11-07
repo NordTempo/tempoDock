@@ -167,9 +167,17 @@ export function VitalsView({
         <span className="text-faint">
           <span className="text-ok">●</span> good ·{" "}
           <span className="text-warn">▲</span> needs improvement ·{" "}
-          <span className="text-fail">■</span> poor · p75: 3 in 4 of{" "}
-          {count(data.all.loads)} page loads are this fast or faster ·
-          thresholds from web.dev
+          <span className="text-fail">■</span> poor · p75 is the 75th
+          percentile: 3 in 4 of {count(data.all.loads)} page loads were this
+          fast or faster ·{" "}
+          <a
+            href="https://web.dev/articles/vitals"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-3"
+          >
+            what each vital measures
+          </a>
         </span>
       </div>
       <div
@@ -302,18 +310,20 @@ function Breakdown({
         ) : (
           <h3 className="text-sm font-semibold">{title}</h3>
         )}
-        {sortable &&
-          (["Worst", "Most loads"] as const).map((label) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={(label === "Worst") === worst}
-              className={`text-xs ${(label === "Worst") === worst ? "text-fg" : "text-mut"}`}
-              onClick={() => setWorst(label === "Worst")}
-            >
-              {label}
-            </button>
-          ))}
+        {sortable && (
+          <span className="seg">
+            {(["Worst", "Most loads"] as const).map((label) => (
+              <button
+                key={label}
+                type="button"
+                aria-pressed={(label === "Worst") === worst}
+                onClick={() => setWorst(label === "Worst")}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       <Panel>
         <table className="tabular-nums">
@@ -361,14 +371,18 @@ function Split({ stat }: { stat: VitalStat }) {
   if (!stat.samples) return null;
   const good = (stat.good / stat.samples) * 100;
   const poor = (stat.poor / stat.samples) * 100;
+  // The bar, and the good share in words: not colour alone.
   return (
     <span
-      className="flex h-1.5 w-24 overflow-hidden rounded-full bg-line"
+      className="flex items-center gap-2"
       title={`${Math.round(good)}% good · ${Math.round(100 - good - poor)}% needs improvement · ${Math.round(poor)}% poor`}
     >
-      <span className="bg-ok" style={{ width: `${good}%` }} />
-      <span className="bg-warn" style={{ width: `${100 - good - poor}%` }} />
-      <span className="bg-fail" style={{ width: `${poor}%` }} />
+      <span className="flex h-1.5 w-24 overflow-hidden rounded-full bg-line">
+        <span className="bg-ok" style={{ width: `${good}%` }} />
+        <span className="bg-warn" style={{ width: `${100 - good - poor}%` }} />
+        <span className="bg-fail" style={{ width: `${poor}%` }} />
+      </span>
+      <span className="text-2xs text-mut">{Math.round(good)}% good</span>
     </span>
   );
 }

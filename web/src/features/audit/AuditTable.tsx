@@ -3,6 +3,7 @@ import type { AuditEvent } from "../../data/types";
 import { clockSec, day } from "../../ui/format";
 import { Actor, Panel, Scroll } from "../../ui/kit";
 import { AuditDetail } from "./AuditDetail";
+import { AuditLogLink } from "./LogLink";
 
 /**
  * Each audit action in plain words: the label for the log's Action column
@@ -362,7 +363,7 @@ export function AuditTable({
                       type="button"
                       aria-expanded={opened}
                       title={new Date(e.created_at).toLocaleString()}
-                      className="hover:text-fg"
+                      className="-my-[2px] min-h-[24px] hover:text-fg"
                       onClick={() => setOpen(opened ? null : e.id)}
                     >
                       <span aria-hidden className="text-faint">
@@ -379,7 +380,7 @@ export function AuditTable({
                   </td>
                   <td className="font-mono">{e.target}</td>
                   <td className="whitespace-normal wrap-anywhere text-mut">
-                    {e.summary}
+                    {e.summary} <AuditLogLink event={e} />
                   </td>
                 </tr>
                 {opened && (

@@ -8,14 +8,15 @@ import { type SSOChoice, useStartSSO } from "../features/sso/data";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
 import { Notices } from "../ui/notice";
-import { CommandLine } from "./CommandLine";
+import { KeyHelpHost, NotLive } from "./KeyHelp";
 import { PaletteProvider } from "./palette";
 import { Sidebar, useShellMode } from "./Sidebar";
 
 /**
- * Everything behind login: the sidebar, the page (which brings its own
- * PageBar), and the command line at the bottom. The platform console
- * (servers) gets an amber bar across the top. A person whose org needs a
+ * Everything behind login: the sidebar and the page (which brings its own
+ * PageBar). One command surface, the palette (Cmd+K or the sidebar's
+ * search), finds pages and runs commands; ? lists the keys. The platform
+ * console gets an amber bar across the top. A person whose org needs a
  * second factor (ADR 0057) or single sign-on (ADR 0058) they didn't sign
  * in with acts in none: they get their account page alone, with the way
  * back.
@@ -33,7 +34,7 @@ function OrgShell() {
     <PaletteProvider>
       <a
         href="#main"
-        className="sr-only z-50 rounded-ctl bg-fg px-3 py-1.5 text-side focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+        className="fixed top-2 left-2 z-50 -translate-y-16 rounded-ctl bg-fg px-3 py-1.5 text-side focus:translate-y-0"
       >
         Skip to content
       </a>
@@ -41,33 +42,49 @@ function OrgShell() {
       <div className="flex min-h-screen flex-col lg:flex-row">
         <Sidebar mode={mode} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">
+          <NotLive />
           <TwoFactorNotice />
           <div className="flex flex-1 flex-col">
             <Outlet />
           </div>
-          <CommandLine />
         </main>
       </div>
+      <KeyHelpHost />
       <Notices />
     </PaletteProvider>
   );
 }
 
 /**
- * A page still loading, inside the shell: the sidebar and command line
- * stay, the page gets an empty header bar and a few still placeholder
- * rows (no shimmer). The org and console routes use it, so a slow page
+ * A page still loading, inside the shell: the sidebar stays, the page
+ * says Loading over a header bar and a table's frame with still rows (no
+ * shimmer). The org and console routes use it, so a slow page
  * never blanks the navigation.
  */
 export function RoutePending() {
   return (
     <div aria-busy="true" className="flex flex-1 flex-col">
-      <div className="h-[52px] border-b border-line" />
-      <div className="flex w-full max-w-[1100px] flex-col gap-2.5 px-4 pt-6 sm:px-7">
-        <span className="sr-only">Loading</span>
-        <div className="h-4 w-40 rounded-ctl bg-panel" />
-        <div className="h-[120px] rounded-panel border border-line" />
-        <div className="h-[80px] rounded-panel border border-line" />
+      <div className="flex h-[52px] items-center border-b border-line px-5">
+        <span className="h-[12px] w-40 rounded-[3px] bg-dash" />
+      </div>
+      <div className="flex w-full max-w-[1400px] flex-col gap-3 px-4 pt-6 sm:px-7">
+        <p role="status" className="text-sec">
+          Loading…
+        </p>
+        <span className="h-[12px] w-32 rounded-[3px] bg-dash" />
+        {/* A table's frame with a few still rows, like most pages. */}
+        <div className="flex flex-col rounded-panel border border-dash">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="flex gap-6 border-b border-line px-3.5 py-3 last:border-b-0"
+            >
+              <span className="h-[10px] w-28 rounded-[3px] bg-dash" />
+              <span className="h-[10px] w-20 rounded-[3px] bg-dash" />
+              <span className="h-[10px] w-48 rounded-[3px] bg-dash" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -82,7 +99,10 @@ function ConsoleBar() {
       <span className="text-warn-text">
         Changes here affect every project on this Dock.
       </span>
-      <Link to="/" className="ml-auto text-warn-text underline">
+      <Link
+        to="/"
+        className="ml-auto inline-flex min-h-[24px] items-center text-warn-text underline"
+      >
         Back to projects
       </Link>
     </div>

@@ -8,6 +8,7 @@ import {
   useRevealedVariables,
   useVariables,
 } from "../../data/queries";
+import { typedValue } from "../../data/typed";
 import type { EnvRef, Variable } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
@@ -26,6 +27,21 @@ import { parseDotenv } from "./dotenv";
 import { hasReference, maskUrlPasswords, resolve } from "./references";
 
 const MASK = "••••••••••••";
+
+/**
+ * A value this session typed (data/typed.ts): the new value of a staged
+ * line, so it can be checked before Apply, and the live value once
+ * applied, so it can be checked after. The rest stays masked.
+ */
+function typedOnly(env: EnvRef, v: Variable) {
+  const value = typedValue(
+    env,
+    v.scope === "service" ? v.service : null,
+    v.key,
+  );
+  if (value === undefined || v.pending === "remove") return undefined;
+  return v.pending ? { new: value } : { live: value };
+}
 
 /** The CLI's flags for a service's variables, or the shared ones. */
 const scopeFlags = (env: EnvRef, service: string | null) =>
@@ -75,7 +91,7 @@ export function VariablesEditor({
   const revealedChanges = useRevealedChanges(env, reveal);
 
   useShortcuts([
-    { key: "p", label: "paste .env", run: () => setPasting(true) },
+    { key: "v", label: "paste .env", run: () => setPasting(true) },
     { key: "n", label: "add variable", run: () => focusNewLine() },
   ]);
 
@@ -106,7 +122,7 @@ export function VariablesEditor({
         </Button>
       )}
       <Button onClick={() => setPasting(!pasting)}>
-        Paste .env <kbd>P</kbd>
+        Paste .env <kbd>V</kbd>
       </Button>
       <Button onClick={focusNewLine}>
         Add variable <kbd>N</kbd>
@@ -149,19 +165,22 @@ export function VariablesEditor({
                 </span>
               )}
               <span className="flex-1 truncate">{name}</span>
-              <span className="text-2xs text-faint">
-                {ownCount} + {sharedCount} shared
+              <span
+                className="text-2xs text-faint"
+                title={`${ownCount} of its own, and the ${sharedCount} shared`}
+              >
+                {ownCount}
               </span>
             </Link>
           );
         })}
         <p className="px-2 pt-3 text-2xs leading-relaxed text-faint">
-          Grey lines come from Shared. A line in a service with the same name
-          wins.
+          Numbers count each one's own variables. Every service also sees
+          Shared's, in grey; its own line with the same name wins.
         </p>
       </nav>
 
-      <div className="flex w-full max-w-[1100px] min-w-0 flex-1 flex-col gap-4 px-4 pt-5 pb-10 sm:px-6">
+      <div className="flex w-full max-w-[1400px] min-w-0 flex-1 flex-col gap-4 px-4 pt-6 pb-10 sm:px-7">
         <SectionHead id="vars" right={actions}>
           {service
             ? `${service} sees at runtime`
@@ -192,7 +211,7 @@ export function VariablesEditor({
                 overridden={
                   !!service && v.scope === "environment" && ownKeys.has(v.key)
                 }
-                values={shown(v) ? values.get(idOf(v)) : undefined}
+                values={shown(v) ? values.get(idOf(v)) : typedOnly(env, v)}
                 all={revealed.data ?? []}
                 canReveal={isAdmin && !shown(v)}
                 onReveal={() =>
@@ -214,17 +233,16 @@ export function VariablesEditor({
           <span className="text-fail">−</span> removed ·{" "}
           <span className="font-mono text-info">
             {"$"}
-            {"{{ }}"}
+            {"{{db.DATABASE_URL}}"}
           </span>{" "}
-          points at another service, → resolved
+          reads another service's variable; → shows what it reads
         </p>
 
-        <ApplyBox
-          env={env}
-          reveal={revealAll}
-          variables={all}
-          service={service}
-        />
+        {/* A service's tab has the strip in its header; shared variables
+            (no service header) get the panel here. */}
+        {service === null && (
+          <ApplyBox env={env} reveal={revealAll} variables={all} />
+        )}
         {footer}
       </div>
     </div>
@@ -440,13 +458,16 @@ function NewLine({
       { onSuccess: () => setText("") },
     );
   };
-  // Focused (Add variable, N), the row is ringed at full contrast and its
-  // Enter hint turns white, so the jump to it is plain to see.
+  // Focused (Add variable, N), the row turns blue and ringed, its Enter
+  // hint turns white and the line under it says what to type, so the jump
+  // shows even though the row was already on screen.
   return (
     <div
-      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-panel focus-within:outline-2 focus-within:outline-fg`}
+      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-info-bg focus-within:outline-2 focus-within:outline-info`}
     >
-      <span className="text-right text-faint">{n}</span>
+      <span className="text-right text-faint group-focus-within:text-info">
+        {n}
+      </span>
       <span />
       <input
         ref={inputRef}
@@ -459,7 +480,7 @@ function NewLine({
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-w-0 rounded-[4px] border border-line bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-panel"
+        className="col-span-2 min-h-[24px] min-w-0 rounded-[4px] border border-field bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-page"
       />
       <span className="flex items-center gap-1.5 font-sans text-2xs text-faint group-focus-within:text-fg">
         <ErrorText error={stage.error} />
@@ -472,6 +493,12 @@ function NewLine({
           Add
         </button>
         ↵
+      </span>
+      {/* Always there (brighter while the row has focus), so nothing moves
+          when focus leaves: a click on Apply right after typing lands. */}
+      <span className="col-span-full pb-1 pl-[68px] font-sans text-xs text-faint group-focus-within:text-fg">
+        Type a name and value, like LOG_LEVEL=debug, then Enter. Several lines
+        add several. They wait for Apply below.
       </span>
     </div>
   );
@@ -543,7 +570,7 @@ function PasteEnv({
         </Act>
         <span className="self-center">
           <Check
-            label="apply now, with everything staged"
+            label="apply now, with everything waiting to apply"
             checked={apply}
             onChange={setApply}
           />

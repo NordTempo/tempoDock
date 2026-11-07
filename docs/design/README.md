@@ -68,9 +68,10 @@ variables once, not as literals in components.
 | Links, info | `#93c5fd` |
 | Sans | Inter (weights 400, 500, 600) |
 | Mono | JetBrains Mono (ids, hashes, images, logs, values) |
-| Sizes | 12px body, 11px meta, 13px emphasis, 14 to 20px titles |
+| Sizes | 24px page titles, 16px section headings, 14px body, 13.5px meta and hints, 13px table heads |
 | Radius | 6px controls and rows, 8 to 10px panels, 999px dots and badges |
-| Layout | sidebar `flex: 1 1 248px` with a workspace switcher and project tree; main column with a 10px 20px header bar and 24px 28px content, max width 1100px |
+| Layout | sidebar 248px with the organization switcher, search, project tree and the organization's pages; main column with a 52px header bar and 24px 28px content, one width for every page (max 1400px) |
+| Root size | 14px, so Tailwind's spacing scale is 14/16 of the usual: a size that must be exact (24px targets) is written in px |
 
 ### G: data panel and tempoBase
 
@@ -108,6 +109,70 @@ for everything.
   gone after a few seconds. Dialogs end in one footer: the error or why it
   can't submit on the left, Cancel and the named action on the right.
 - Keyboard first: every action reachable without a mouse, visible focus.
+
+## Structure (2026-11 redesign)
+
+- **Navigation.** The sidebar holds the organization switcher, one search
+  (the palette, Cmd+K: pages and `dock` commands in one list), the project
+  tree with its environment, then Analytics, Activity, Requests, Members,
+  Organization settings, Help, the account and the console. There is no
+  second command bar.
+- **Pages.** An organization lists its projects; a project page shows its
+  problems, one table per environment and its activity; an environment's
+  address (`/org/project/env`) is that environment's own page. A service
+  has one header (name, environment, state, actions) and its tabs in four
+  groups with a line between them: watching it (Overview, Logs,
+  Resources, Errors, Traffic, Uptime), operating it (Jobs, One-off
+  command, Data, Backups), configuring it (Domains, Variables, Build &
+  run), its history (Audit). Tabs every service has come first.
+- **Overview.** One column: status, facts, uptime and visitors, how to
+  connect, the deploy in flight, releases. Logs have their own tab.
+- **Width.** Every page uses the one content width. Below 1400px, side
+  columns (members' roles, analytics' side panel) move under the main one.
+- **Help.** `/org/help` explains Dock's words; "What's this?" links point
+  into it from where a concept appears.
+
+## Patterns
+
+- **Keys mean one thing everywhere.** N adds to the page's list (service,
+  variable, domain, member, token, server), S opens settings, / filters,
+  D deploys, R restarts, B rolls back, digits pick the nth item or view, G
+  then a letter switches tabs, ? lists the keys, Cmd+K searches.
+- **One primary per view.** The header's Deploy is primary until changes
+  wait to apply; then Apply in the bar is. Page actions next to it are
+  secondary.
+- **Changes wait to apply.** Variables, settings, domains and volumes are
+  saved first ("waiting to apply") and go live together with Apply; the
+  strip under a service's tabs stays one line until opened.
+- **Settings rows.** A label with a short line under it, the values as
+  text, and one Edit per row that opens a small form; Save, Cancel, Esc.
+- **Tables and lists** sit on the page under a hairline, with no box; status in tables and headers is a tinted chip; the page header is two lines, the way up over the title (chosen in blind direction trials, 2026-11).
+- **Rows that open something** show a pointer, a hover and a chevron in
+  their last cell; the whole row is the target.
+- **One component vocabulary.** An action in a row or list (Reveal, Edit,
+  Retry, "Show all") is a small bordered button like every other button;
+  only inside running text is it a link. Segmented choices (ranges,
+  views) are underlined like the section tabs. Key hints stay on buttons
+  (a blind trial that hid them lost discoverability).
+- **A fresh failure** on a service's overview is a red-tinted strip with
+  a ruled left edge under the status line, the way to the cause as a
+  button; elsewhere it is said once, in the project's problems.
+- **Destructive buttons** are red outlined on pages and filled red in the
+  confirmation that runs them; every removal that can't be undone asks
+  first, saying what stops working. A confirmation leads with what is
+  lost.
+- **Disabled** looks the same on every button: outlined, faint text, with
+  the reason next to it where there is one. A destructive one stays dim
+  red, so it still reads as dangerous.
+- **Fields** (inputs, selects, checkboxes) have a 3:1 edge on black.
+- **Targets** are at least 24px: buttons, inputs, selects and standalone
+  links (by padding taken back with a negative margin).
+- **Defaults** are said where they are chosen (Build & run reads "1 CPU
+  (default)"); in tables the value alone, dimmer, with a tooltip.
+- **Words.** Plain words over product terms ("Going live", "Before it goes
+  live", "Checks while running"): replaced (not superseded),
+  traffic moved, downtime, waiting to apply, reached at, memory reserved,
+  "1 CPU (default)".
 
 ## Fonts and performance
 

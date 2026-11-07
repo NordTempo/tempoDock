@@ -38,7 +38,7 @@ const releaseStates: Record<ReleaseStatus, State> = {
   health_checking: { tone: "prog", glyph: "◐", label: "health checking" },
   active: { tone: "ok", glyph: "●", label: "active" },
   failed: { tone: "fail", glyph: "✕", label: "failed" },
-  superseded: { tone: "mut", label: "superseded" },
+  superseded: { tone: "mut", label: "replaced" },
 };
 
 export const releaseState = (s: ReleaseStatus) => releaseStates[s];
@@ -191,7 +191,7 @@ export function releaseWhat(r: Release | ReleaseSummary) {
     case "image":
       return "deploy";
     case "config":
-      return "config change";
+      return "settings change";
     case "rollback":
       return `roll back to${from || " an earlier release"}`;
     case "restart":

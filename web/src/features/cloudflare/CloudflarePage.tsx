@@ -183,6 +183,7 @@ function ConnectionRow({
             Change token
           </Button>
           <Button
+            danger
             small
             disabled={tunnels.length > 0}
             reason="a server's tunnel uses it"

@@ -315,6 +315,13 @@ export default function SqlView({
               {result && result.columns.length > 0 && (
                 <Grid columns={result.columns} rows={result.rows} />
               )}
+              {/* Before the first run: what goes here, and how to get it. */}
+              {!result && (
+                <p className="p-4 text-(--g-mut)">
+                  Rows appear here. Write a query above and press{" "}
+                  <Kbd>{`${modKey}↵`}</Kbd> or Run.
+                </p>
+              )}
             </div>
           </>
         )}

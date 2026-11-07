@@ -9,11 +9,14 @@ import {
   Actor,
   actorKind,
   Button,
+  Confirm,
   ErrorText,
   Page,
   PageBar,
   Panel,
+  StateText,
 } from "../../ui/kit";
+import type { Tone } from "../../ui/status";
 import { isPending, requestQueries, useDecideRequest } from "./data";
 
 // The access request inbox (ADR 0044): a table of requests, the selected
@@ -22,13 +25,14 @@ import { isPending, requestQueries, useDecideRequest } from "./data";
 
 type Status = AccessRequest["status"];
 
-const statusText: Record<Status, string> = {
-  pending: "text-warn",
-  approved: "text-prog",
-  done: "text-ok",
-  failed: "text-fail",
-  rejected: "text-mut",
-  expired: "text-faint",
+/** A status's tone: its chip, like statuses everywhere else. */
+const statusTone: Record<Status, Tone> = {
+  pending: "warn",
+  approved: "prog",
+  done: "ok",
+  failed: "fail",
+  rejected: "mut",
+  expired: "mut",
 };
 
 /** The status in the list's words: "waiting", "running", "failed". */
@@ -147,7 +151,9 @@ function RequestRow({
           {ago(r.created_at)}
         </td>
         <td className="truncate">
-          <span className={statusText[status]}>{statusWord[status]}</span>
+          <StateText
+            state={{ tone: statusTone[status], label: statusWord[status] }}
+          />
           {status === "pending" && (
             <span
               className="text-mut"
@@ -256,13 +262,17 @@ function Detail({ id, item }: { id: number; item?: AccessRequest }) {
           status === "done" ||
           status === "failed") && (
           <Row label="Run">
-            <span className={statusText[status]}>
-              {status === "approved"
-                ? "Running"
-                : status === "done"
-                  ? "Done"
-                  : "Failed"}
-            </span>
+            <StateText
+              state={{
+                tone: statusTone[status],
+                label:
+                  status === "approved"
+                    ? "running"
+                    : status === "done"
+                      ? "done"
+                      : "failed",
+              }}
+            />
             {r.error && (
               <span className="block whitespace-pre-wrap text-sec">
                 {sentence(r.error)}
@@ -387,6 +397,7 @@ function Decide({ request: r }: { request: AccessRequest }) {
   const org = useOrg();
   const decide = useDecideRequest();
   const [comment, setComment] = useState("");
+  const [asking, setAsking] = useState(false);
   const admin = session?.kind === "user" && session.scope === "admin";
   // The server's dry run of this request, asked when it is shown.
   const check = useQuery({ ...requestQueries.check(id), enabled: admin }).data;
@@ -400,6 +411,8 @@ function Decide({ request: r }: { request: AccessRequest }) {
   }
   const run = (approve: boolean) =>
     decide.mutate({ id, approve, comment: comment.trim() });
+  // Approving runs the call at once in a locked environment: asked first,
+  // in the one Confirm, like every other change that affects what runs.
   return (
     <div className="flex flex-col gap-2">
       <textarea
@@ -452,11 +465,31 @@ function Decide({ request: r }: { request: AccessRequest }) {
           primary
           disabled={decide.isPending || !!doomed}
           reason={doomed ? "Fix the cause first, or reject." : undefined}
-          onClick={() => run(true)}
+          onClick={() => setAsking(true)}
         >
-          Approve and run
+          Approve and run…
         </Button>
       </div>
+      {asking && (
+        <Confirm
+          title={`Run "${r.title}" in ${r.project}/${r.environment}?`}
+          action="Approve and run"
+          pending={decide.isPending}
+          error={decide.error}
+          onConfirm={() =>
+            decide.mutate(
+              { id, approve: true, comment: comment.trim() },
+              { onSuccess: () => setAsking(false) },
+            )
+          }
+          onCancel={() => setAsking(false)}
+        >
+          <p>
+            It runs once now, as {r.requested_by}, and {r.environment} stays
+            locked.
+          </p>
+        </Confirm>
+      )}
       <ErrorText error={decide.error} />
     </div>
   );

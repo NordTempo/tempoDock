@@ -25,7 +25,7 @@ export function useKeydown(handler: (event: KeyboardEvent) => void) {
 /**
  * A page's keyboard shortcut. `key` is one key ("d", "1", "?") or a
  * g-sequence ("g l": press g, then l). Shortcuts with a `label` show in the
- * command line legend and the ? help.
+ * ? help.
  */
 export type Shortcut = {
   key: string;

@@ -50,12 +50,31 @@ function useAllProblems(project: string): Problem[] {
   return [...problems.slice(0, at), ...extra, ...problems.slice(at)];
 }
 
+/** The environment a problem is in; "" for servers and alerts. */
+function problemEnvironment(p: Problem): string {
+  if ("service" in p) return serviceRef(p.service.service).environment;
+  if (p.kind === "staged") return p.environment.environment.name;
+  return "";
+}
+
 /**
  * The overview's numbered "needs a human" list, worst first. Keys 1 to 9
  * open (or focus) a problem's action.
  */
-export function Problems({ project }: { project: string }) {
-  const problems = useAllProblems(project);
+export function Problems({
+  project,
+  environment,
+}: {
+  project: string;
+  /** Only this environment's problems, and those of no environment (servers, alerts). */
+  environment?: string;
+}) {
+  const problems = fold(
+    useAllProblems(project).filter((p) => {
+      const where = problemEnvironment(p);
+      return !environment || where === environment || where === "";
+    }),
+  );
   useShortcuts(
     problems.slice(0, 9).map((_, i) => ({
       key: String(i + 1),
@@ -74,11 +93,12 @@ export function Problems({ project }: { project: string }) {
     <section aria-labelledby="problems">
       <SectionHead id="problems">{plural(n, "problem")}</SectionHead>
       <ol className="panel">
-        {problems.map((problem, i) => (
+        {problems.map(({ problem, more }, i) => (
           <ProblemRow
             key={problemKey(problem)}
             n={i + 1}
             problem={problem}
+            more={more}
             project={project}
           />
         ))}
@@ -102,9 +122,41 @@ function problemKey(p: Problem) {
   }
 }
 
-type RowProps = { n: number; problem: Problem; project: string };
+type RowProps = {
+  n: number;
+  problem: Problem;
+  /** How many more alerts like this one were folded into its row. */
+  more: number;
+  project: string;
+};
 
-function ProblemRow({ n, problem: p, project }: RowProps) {
+/**
+ * Folds alerts of one kind on one service ("New error" on web, three
+ * times) into the first one's row, which says how many more there are.
+ */
+function fold(problems: Problem[]) {
+  const rows: { problem: Problem; more: number }[] = [];
+  const seen = new Map<string, { problem: Problem; more: number }>();
+  for (const problem of problems) {
+    if (problem.kind === "alert") {
+      const a = problem.alert;
+      const id = `${alertLabel(a)}|${a.environment ?? ""}|${a.service ?? ""}`;
+      const row = seen.get(id);
+      if (row) {
+        row.more += 1;
+        continue;
+      }
+      const fresh = { problem, more: 0 };
+      seen.set(id, fresh);
+      rows.push(fresh);
+    } else {
+      rows.push({ problem, more: 0 });
+    }
+  }
+  return rows;
+}
+
+function ProblemRow({ n, problem: p, more, project }: RowProps) {
   const org = useOrg();
   const key = n <= 9 ? String(n) : undefined;
   const operator = useIsOperator();
@@ -334,6 +386,9 @@ function ProblemRow({ n, problem: p, project }: RowProps) {
           }
         >
           {a.title}.{text && <span className="text-mut"> {text}</span>}
+          {more > 0 && (
+            <span className="text-warn-text"> And {more} more like it.</span>
+          )}
         </Row>
       );
     }
@@ -399,7 +454,7 @@ function StagedRow({
         </Link>
       }
     >
-      {plural(changes.count, "staged change")}.{" "}
+      {plural(changes.count, "change")} waiting to apply.{" "}
       {releases.length > 0 ? (
         <>
           Applying creates{" "}
@@ -445,7 +500,7 @@ function ApplyStaged({
         disabled={apply.isPending}
         onClick={() => apply.mutate({ project, environment })}
       >
-        Apply staged changes
+        Apply changes
       </Button>
     </span>
   );
@@ -471,7 +526,7 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft px-3.5 py-2.5 last:border-0">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-soft py-2.5 last:border-0">
       <span className="flex w-[172px] items-baseline gap-2.5 whitespace-nowrap">
         {n ? <kbd>{n}</kbd> : <span className="w-[15px]" />}
         <span className={toneText[tone]}>

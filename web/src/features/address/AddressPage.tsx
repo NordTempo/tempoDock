@@ -29,7 +29,7 @@ export function AddressPage() {
   return (
     <>
       <PageBar title="Address" />
-      <Page width="max-w-[760px]">
+      <Page>
         <Panel>
           <table>
             {/* Labels sit level with their controls. */}

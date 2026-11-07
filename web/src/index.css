@@ -33,11 +33,13 @@
   --font-mono:
     "JetBrains Mono", "Inter", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --text-2xs: 11px;
-  --text-xs: 12px;
-  --text-sm: 13px;
-  --text-base: 13px;
-  --text-md: 14px;
+  /* Meta and hints share one size, 13.5px (a blind trial, 2026-11: the
+     two smaller sizes read as small grey text). */
+  --text-2xs: 13.5px;
+  --text-xs: 13.5px;
+  --text-sm: 14px;
+  --text-base: 14px;
+  --text-md: 15px;
   --text-lg: 16px;
   --text-xl: 20px;
 
@@ -56,7 +58,9 @@
   --color-line: #1f1f22;
   --color-soft: #161618;
   --color-edge: #2c2c30;
-  --color-field: #2c2c30;
+  /* Input and checkbox edges: 3:1 on black, so a field reads as a field
+     (WCAG 1.4.11). Buttons keep the quieter edge; their label says what they are. */
+  --color-field: #5e5e66;
   --color-dash: #3a3a40;
 
   /* Text: primary, secondary, muted, faint. */
@@ -110,7 +114,7 @@
     color-scheme: dark;
     background: var(--color-page);
     color: var(--color-fg);
-    font: 13px / 1.45 var(--font-sans);
+    font: 14px / 1.45 var(--font-sans);
     font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     scrollbar-color: var(--color-edge) transparent;
@@ -215,9 +219,42 @@
     cursor: not-allowed;
   }
 
-  input[type="checkbox"],
   input[type="radio"] {
     accent-color: var(--color-fg);
+  }
+
+  /*
+   * One checkbox everywhere: a dark 16px box with the control border, white
+   * with a black tick when checked, dimmed when disabled. No bright native
+   * box on black.
+   */
+  input[type="checkbox"] {
+    appearance: none;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--color-field);
+    border-radius: 4px;
+    background: var(--color-page) center / 12px 12px no-repeat;
+    cursor: pointer;
+    transition:
+      background-color 0.1s,
+      border-color 0.1s;
+  }
+
+  input[type="checkbox"]:hover:not(:disabled) {
+    border-color: var(--color-mut);
+  }
+
+  input[type="checkbox"]:checked {
+    background-color: var(--color-fg);
+    border-color: var(--color-fg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5'/%3E%3C/svg%3E");
+  }
+
+  input[type="checkbox"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* Radios are 16px with a margin: a 24px target. */
@@ -227,14 +264,53 @@
     margin: 4px;
   }
 
-  /* Darker than any typed value, so an example never reads as filled in. */
+  /*
+   * Darker than any typed value, so an example never reads as filled in,
+   * and still 4.5:1 on the field.
+   */
   ::placeholder {
-    color: #5f5f68;
+    color: #7b7b85;
+  }
+
+  /*
+   * Targets are at least 24px (WCAG 2.5.8) without changing the layout:
+   * a standalone link gets 4px of padding taken back by a negative margin,
+   * and a 24px minimum width. Links in running text are exempt and stay
+   * inline; links that lay themselves out (flex, grid, block) size
+   * themselves. Note: 1rem is 14px here, so Tailwind's spacing scale is
+   * 14/16 of the usual; sizes that must be 24px are written in px.
+   */
+  a:not(
+    .btn,
+    .lnk,
+    .nav-row,
+    p a,
+    .prose a,
+    [class*="flex"],
+    [class*="grid"],
+    [class*="block"]
+  ) {
+    display: inline-block;
+    min-width: 24px;
+    padding-block: 5px;
+    margin-block: -5px;
+  }
+
+  select,
+  summary,
+  input:not([type="checkbox"], [type="radio"], [type="range"]) {
+    min-height: 24px;
+  }
+
+  /* Every button is a 24px target, text and icon buttons included. */
+  button {
+    min-height: 24px;
+    min-width: 24px;
   }
 
   kbd {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
     line-height: 15px;
     color: var(--color-mut);
     border: 1px solid var(--color-edge);
@@ -250,7 +326,7 @@
 
   th {
     font-weight: 500;
-    font-size: 11px;
+    font-size: 13px;
     text-align: left;
     color: var(--color-mut);
     padding: 8px 14px 8px 0;
@@ -343,9 +419,20 @@
     border-color: var(--color-side);
   }
 
-  /* A primary that can't run yet keeps its shape, dimmed. */
+  /*
+   * One disabled look for every button: outlined, faint text. A primary
+   * that can't run yet looks like any other button that can't.
+   */
   .btn.pri:disabled {
-    opacity: 0.35;
+    background: transparent;
+    color: var(--color-faint);
+    border-color: var(--color-line);
+  }
+
+  .btn.pri:disabled kbd {
+    background: transparent;
+    color: var(--color-faint);
+    border-color: var(--color-line);
   }
 
   .btn.sm {
@@ -360,6 +447,13 @@
   .btn.danger:hover:not(:disabled) {
     background: var(--color-fail-bg);
     border-color: var(--color-fail);
+  }
+
+  /* A destructive button that can't run stays red, dimmed, so it still
+     reads as dangerous next to its reason. */
+  .btn.danger:disabled {
+    color: color-mix(in srgb, var(--color-fail) 55%, black);
+    border-color: var(--color-fail-edge);
   }
 
   /*
@@ -404,7 +498,9 @@
   .lnk {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     min-height: 24px;
+    min-width: 24px;
     color: var(--color-mut);
     font-size: 12px;
   }
@@ -415,15 +511,32 @@
     text-underline-offset: 3px;
   }
 
+  /* On the page, an action in a row or list is a small bordered button,
+     like every other button; only inside running text is it a link. */
+  main .lnk:not(p .lnk) {
+    padding: 2px 9px;
+    border: 1px solid var(--color-edge);
+    border-radius: var(--radius-ctl);
+    color: var(--color-fg);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  main .lnk:not(p .lnk):hover {
+    background: var(--color-hover);
+    border-color: var(--color-dash);
+    text-decoration: none;
+  }
+
   .field {
     background-color: var(--color-panel);
-    border: 1px solid var(--color-edge);
+    border: 1px solid var(--color-field);
     border-radius: var(--radius-ctl);
     padding: 6px 9px;
   }
 
   .field:hover {
-    border-color: var(--color-dash);
+    border-color: var(--color-mut);
   }
 
   .field:focus {
@@ -432,38 +545,35 @@
   }
 
   /* A bordered panel: tables, lists and cards sit in one. */
+  /*
+   * Tables and lists sit on the page with no box around them (chosen in a
+   * blind trial of directions, 2026-11-06): a hairline above, one between
+   * rows, text flush with the section heading.
+   */
   .panel {
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-panel);
-    overflow: hidden;
+    border-top: 1px solid var(--color-line);
   }
 
   .panel th:first-child,
   .panel td:first-child {
-    padding-left: 14px;
+    padding-left: 0;
   }
 
   .panel th:last-child,
   .panel td:last-child {
-    padding-right: 14px;
-  }
-
-  .panel tr:last-child > td {
-    border-bottom: 0;
+    padding-right: 0;
   }
 
   /* A property list in a panel: label on the left, value on the right. */
   .props {
     display: grid;
     grid-template-columns: 180px minmax(0, 1fr);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-panel);
-    overflow: hidden;
+    border-top: 1px solid var(--color-line);
   }
 
   .props > dt,
   .props > dd {
-    padding: 8px 14px;
+    padding: 9px 14px 9px 0;
     border-bottom: 1px solid var(--color-soft);
   }
 
@@ -473,9 +583,36 @@
     line-height: 19px;
   }
 
-  .props > dt:nth-last-child(2),
-  .props > dd:last-child {
-    border-bottom: 0;
+  /*
+   * Status is a tinted chip wherever StateText shows it, so the state
+   * reads before its word (the trial's clearest status, H1).
+   */
+  .state {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+
+  .state[data-tone="ok"] {
+    background: rgb(74 222 128 / 0.12);
+  }
+
+  .state[data-tone="fail"] {
+    background: rgb(248 113 113 / 0.14);
+  }
+
+  .state:is([data-tone="warn"], [data-tone="prog"]) {
+    background: rgb(251 191 36 / 0.14);
+  }
+
+  .state[data-tone="mut"] {
+    background: rgb(255 255 255 / 0.06);
   }
 
   /* Status dots: running (filled), stopped (ring), in progress (half). */
@@ -511,7 +648,7 @@
     align-items: center;
     gap: 5px;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 16px;
     padding: 1px 8px;
     border-radius: 999px;
@@ -519,13 +656,12 @@
     color: var(--color-mut);
   }
 
-  /* Segmented control: links or buttons in one bordered row. */
+  /* Segmented control: links or buttons in a row, the picked one
+     underlined like the section tabs. */
   .seg {
     display: inline-flex;
     flex-wrap: wrap;
-    border: 1px solid var(--color-edge);
-    border-radius: var(--radius-ctl);
-    overflow: hidden;
+    gap: 2px;
     font-size: 12px;
   }
 
@@ -541,15 +677,14 @@
 
   .seg > *:hover {
     color: var(--color-fg);
-    background: var(--color-hover);
   }
 
   .seg > [aria-pressed="true"],
   .seg > [aria-selected="true"],
   .seg > [aria-current="page"],
   .seg > label:has(input:checked) {
-    background: var(--color-chip);
     color: var(--color-fg);
+    box-shadow: inset 0 -2px 0 var(--color-fg);
   }
 
   /* Section tabs: quiet links, the current one on a chip. */
@@ -560,15 +695,15 @@
     text-decoration: none;
   }
 
-  /* Hover lifts the text only; the current tab alone gets the chip. */
+  /* Hover lifts the text only; the current tab alone gets the underline. */
   .tabs > a:hover {
     color: var(--color-fg);
   }
 
+  /* The current tab: white text over a white underline, no chip. */
   .tabs > a[aria-current="page"] {
     color: var(--color-fg);
     font-weight: 500;
-    background: var(--color-chip);
     box-shadow: inset 0 -2px 0 var(--color-fg);
   }
 
@@ -588,13 +723,15 @@
     color: var(--color-fg);
   }
 
-  /* The current row: a stronger fill and a left bar, so it never reads as hover. */
+  /*
+   * The current row: a stronger fill and weight, no ring or bar, so it
+   * never reads as hover or as the blue keyboard focus ring.
+   */
   .nav-row[aria-current="page"],
   .nav-row[aria-current="true"] {
     background: var(--color-chip);
     color: var(--color-fg);
     font-weight: 500;
-    box-shadow: inset 2px 0 0 var(--color-fg);
   }
 
   /* A deploy step: glyph, name, duration, detail. */
@@ -619,7 +756,41 @@
     background: var(--color-side);
     white-space: normal;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 12px;
     color: var(--color-faint);
+  }
+}
+
+@layer components {
+  /*
+   * A table row that opens something: its main link covers the whole row,
+   * the row shows a pointer and hover, and a chevron in its last cell says
+   * it goes somewhere. Other controls in the row stay on top and clickable.
+   */
+  tr.row-link {
+    position: relative;
+    cursor: pointer;
+  }
+
+  tr.row-link a.row-main::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  tr.row-link :is(button, a:not(.row-main), input, select, label) {
+    position: relative;
+    z-index: 1;
+  }
+
+  tr.row-link > td.row-go {
+    width: 1px;
+    padding-right: 12px;
+    color: var(--color-faint);
+    text-align: right;
+  }
+
+  tr.row-link:hover > td.row-go {
+    color: var(--color-fg);
   }
 }

@@ -19,7 +19,7 @@ import {
 } from "./api";
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
-import { Act, ErrorText, Kbd } from "./kit";
+import { Act, ErrorText } from "./kit";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
@@ -101,11 +101,11 @@ export function DataPanel({
   ).length;
 
   const tabs = [
-    { tab: "tables", label: "Tables", key: "t" },
-    { tab: "sql", label: "SQL", key: "q" },
-    { tab: "schema", label: "Schema", key: "s" },
+    { tab: "tables", label: "Tables", key: "1" },
+    { tab: "sql", label: "SQL", key: "2" },
+    { tab: "schema", label: "Schema", key: "3" },
     ...(showChanges
-      ? [{ tab: "changes", label: "Changes", key: "c" } as const]
+      ? [{ tab: "changes", label: "Changes", key: "4" } as const]
       : []),
   ] as const;
 
@@ -166,13 +166,15 @@ export function DataPanel({
               key={t.tab}
               type="button"
               aria-pressed={view.tab === t.tab}
+              // The digit is the key; shown on hover and in the ? help, not
+              // on the tab, where it read as a count.
+              title={`${t.label} (${t.key})`}
               onClick={() => onView({ ...view, tab: t.tab })}
             >
               {t.label}
               {t.tab === "changes" && pending > 0 && (
                 <span className="text-(--g-warn)">{pending}</span>
               )}
-              <Kbd>{t.key.toUpperCase()}</Kbd>
             </button>
           ))}
         </nav>

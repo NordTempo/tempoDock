@@ -21,7 +21,7 @@ import { useOrg } from "../../shell/location";
 import { ago, plural } from "../../ui/format";
 import { Icon } from "../../ui/icons";
 import { Act, Button, Menu, menuItem, Panel, StateText } from "../../ui/kit";
-import { serviceState } from "../../ui/status";
+import { domainState, serviceState, toneText } from "../../ui/status";
 import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
@@ -33,7 +33,7 @@ import {
   PullRequestLink,
 } from "../previews/PreviewParts";
 import { EnvServer } from "../servers/parts";
-import { imageLabel } from "../service/releases";
+import { imageLabel, shortImage } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
@@ -49,11 +49,11 @@ const MovePanel = lazy(() => import("../move/MovePanel"));
  */
 export function EnvironmentTable({
   env,
-  current = false,
+  scoped = false,
 }: {
   env: EnvironmentView;
-  /** The environment the URL names (#env-<name>): its section is marked. */
-  current?: boolean;
+  /** On the environment's own page, whose title already names it. */
+  scoped?: boolean;
 }) {
   const org = useOrg();
   const { environment, services, pending_changes: staged } = env;
@@ -81,19 +81,23 @@ export function EnvironmentTable({
   const head = `env-head-${environment.id}`;
   const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;
   return (
-    // The environment's anchor: /org/project/environment lands here.
-    <section
-      id={`env-${environment.name}`}
-      aria-labelledby={head}
-      aria-current={current ? "location" : undefined}
-      className={`scroll-mt-[64px] ${current ? "-ml-3 border-l-2 border-fg pl-2.5" : ""}`}
-    >
+    <section id={`env-${environment.name}`} aria-labelledby={head}>
       {/* The name, what needs a look (staged changes, a server that's
           down, the preview's pull request) and the rest in one menu, so
           the service table outweighs its toolbar. */}
       <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h2 id={head} className="text-sm font-semibold">
-          {environment.name}
+        <h2 id={head} className={scoped ? "sr-only" : "text-md font-semibold"}>
+          {scoped ? (
+            `${environment.name} services`
+          ) : (
+            <Link
+              to="/$org/$project/$environment"
+              params={{ org, ...ref }}
+              className="hover:underline"
+            >
+              {environment.name}
+            </Link>
+          )}
         </h2>
         {pr && <PullRequestLink pr={pr} />}
         {server && server.status !== "online" && (
@@ -107,7 +111,7 @@ export function EnvironmentTable({
             params={{ org, ...ref }}
             className="text-xs text-warn hover:text-warn-text"
           >
-            ▲ {plural(staged, "staged change")}
+            ▲ {plural(staged, "change")} waiting to apply
           </Link>
         )}
         {admin && !environment.lock && (
@@ -121,13 +125,16 @@ export function EnvironmentTable({
             <Icon name="lock" size={12} /> Lock
           </Act>
         )}
+        {/* The same actions on the project and the environment page: Lock,
+            and the rest in one named menu. */}
         <Menu
           label={`${environment.name}: more actions`}
           right
           className={admin && !environment.lock ? "" : "ml-auto"}
           button={
-            <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
-              <Icon name="more" size={14} />
+            // Named, so its contents can be guessed before opening it.
+            <span className="btn sm">
+              More <Icon name="chevronDown" size={12} />
             </span>
           }
         >
@@ -275,6 +282,7 @@ export function EnvironmentTable({
               <col className="w-[20%]" />
               <col className="w-[16%]" />
               <col className="w-[12%]" />
+              <col className="w-8" />
             </colgroup>
             <thead>
               <tr>
@@ -284,6 +292,9 @@ export function EnvironmentTable({
                 <th>Domain</th>
                 <th>CPU · memory</th>
                 <th>Volume</th>
+                <th>
+                  <span className="sr-only">Open</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -346,12 +357,12 @@ const ServiceRow = memo(function ServiceRow({
   const newImage = deploying ? imageLabel(deploying) : "";
 
   return (
-    <tr className={deploying ? "bg-prog-bg" : "hover:bg-hover"}>
+    <tr className={`row-link ${deploying ? "bg-prog-bg" : ""}`}>
       <td className="py-2.5">
         <Link
           to="/$org/$project/$environment/$service"
           params={{ org, ...ref }}
-          className="font-medium hover:underline"
+          className="row-main font-medium hover:underline"
         >
           {service.name}
         </Link>
@@ -359,11 +370,11 @@ const ServiceRow = memo(function ServiceRow({
           className="truncate font-mono text-2xs text-faint"
           title={newImage || oldImage || service.image || undefined}
         >
-          {oldImage || (!deploying && service.image) || ""}
+          {shortImage(oldImage || (!deploying && service.image) || "")}
           {deploying && newImage !== oldImage && (
             <span className="text-prog">
               {oldImage && " → "}
-              {newImage}
+              {shortImage(newImage)}
             </span>
           )}
           {(oldImage || service.image || newImage) && " · "}:
@@ -412,28 +423,40 @@ const ServiceRow = memo(function ServiceRow({
         {primary ? (
           <>
             {primary.hostname}
-            {primary.status !== "active" && (
-              <span className="text-warn"> ▲</span>
-            )}
             {rest.length > 0 && (
-              <span className={attention ? "text-warn" : "text-mut"}>
-                {" "}
-                +{rest.length}
-                {attention > 0 && " ▲"}
-              </span>
+              <span className="text-mut"> +{rest.length}</span>
+            )}
+            {/* What a domain waits for, in words, not a bare mark. */}
+            {primary.status !== "active" ? (
+              <div
+                className={`font-sans text-2xs ${toneText[domainState(primary).tone]}`}
+              >
+                {domainState(primary).label}
+              </div>
+            ) : (
+              attention > 0 && (
+                <div className="font-sans text-2xs text-warn">
+                  {attention === 1
+                    ? "1 domain needs attention"
+                    : `${attention} domains need attention`}
+                </div>
+              )
             )}
           </>
         ) : (
           <span className="text-faint">·</span>
         )}
+        {/* A labelled way to the site's analytics, under its domain. */}
         {site && (
-          <Link
-            to="/$org/analytics/$project/$site"
-            params={{ org, project: ref.project, site }}
-            className="ml-2 inline-flex align-[-2px] text-mut hover:text-fg"
-          >
-            <Icon name="bars" size={13} label={`Analytics for ${site}`} />
-          </Link>
+          <div className="text-2xs">
+            <Link
+              to="/$org/analytics/$project/$site"
+              params={{ org, project: ref.project, site }}
+              className="text-mut underline decoration-dash underline-offset-3 hover:text-fg"
+            >
+              Analytics
+            </Link>
+          </div>
         )}
       </td>
       <td className="py-2.5 text-xs">
@@ -450,12 +473,15 @@ const ServiceRow = memo(function ServiceRow({
           volumes.map((v) => (
             <span key={v.name} title={v.mount_path} className="mr-2">
               {v.name}
-              {v.pending && <span className="text-warn"> staged</span>}
+              {v.pending && <span className="text-warn"> not applied</span>}
             </span>
           ))
         ) : (
           <span className="text-faint">·</span>
         )}
+      </td>
+      <td className="row-go" aria-hidden>
+        <Icon name="chevronRight" size={14} />
       </td>
     </tr>
   );

@@ -46,7 +46,7 @@ export function GeneralPage() {
   return (
     <>
       <OrgSettingsBar />
-      <Page width="max-w-[760px]">
+      <Page>
         <Panel>
           <table>
             <tbody>
@@ -74,17 +74,19 @@ export function GeneralPage() {
                         aria-invalid={!!nameError}
                         className={`field min-w-0 flex-[1_1_220px] py-[5px] ${nameError ? "border-fail" : ""}`}
                       />
-                      {name.trim() !== org.name && (
-                        <Act
-                          small
-                          primary
-                          type="submit"
-                          cli={`dock org rename ${JSON.stringify(name.trim())}`}
-                          disabled={rename.isPending}
-                        >
-                          Save
-                        </Act>
-                      )}
+                      {/* Always there, so the field reads as one that saves. */}
+                      <Act
+                        small
+                        primary
+                        type="submit"
+                        cli={`dock org rename ${JSON.stringify(name.trim())}`}
+                        disabled={rename.isPending || name.trim() === org.name}
+                        reason={
+                          rename.isSuccess ? undefined : "nothing changed yet"
+                        }
+                      >
+                        Save
+                      </Act>
                       {name.trim() !== org.name && (
                         <Button
                           small
@@ -136,7 +138,7 @@ export function GeneralPage() {
                     <>
                       {" · "}
                       <Link to="/$org/settings/sso" params={{ org: org.slug }}>
-                        providers
+                        manage providers
                       </Link>
                     </>
                   )}
@@ -181,9 +183,10 @@ function LockSettings() {
   const valid = Number.isInteger(n) && n >= TTL_MIN && n <= TTL_MAX;
   return (
     <section aria-labelledby="locks" className="flex flex-col gap-2">
-      <h2 id="locks" className="text-sm font-semibold">
+      <h2 id="locks" className="text-md font-semibold">
         Locked environments
       </h2>
+      <p className="-mt-1 text-xs text-mut">These save as you change them.</p>
       <Panel>
         <table>
           <tbody>
@@ -292,6 +295,8 @@ function LockSettings() {
  */
 function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
   const set = useSetOrgTwoFactor();
+  // Turning it on can lock members out of acting, so that asks first.
+  const [asking, setAsking] = useState(false);
   if (!admin) {
     return on ? "Two-factor sign-in required" : "Password alone is enough";
   }
@@ -306,11 +311,29 @@ function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
             label="Require two-factor sign-in"
             checked={on}
             disabled={set.isPending}
-            onChange={(require) => set.mutate(require)}
+            onChange={(require) =>
+              require ? setAsking(true) : set.mutate(false)
+            }
           />
         </CliHint>
         <Saved ok={set.isSuccess} />
       </span>
+      {asking && (
+        <Confirm
+          action="Require two-factor sign-in"
+          cli="dock org two-factor on"
+          pending={set.isPending}
+          error={set.error}
+          onConfirm={() =>
+            set.mutate(true, { onSuccess: () => setAsking(false) })
+          }
+          onCancel={() => setAsking(false)}
+        >
+          Members who signed in without a second factor can't act in this
+          organization until they add one in their account. API tokens keep
+          working.
+        </Confirm>
+      )}
       <span className="text-xs text-mut">
         Members who signed in without a second factor can't act here until they
         add one. API tokens are not affected.
@@ -372,6 +395,7 @@ function Leave({ name, admin }: { name: string; admin: boolean }) {
       note="You lose access to its projects. An admin can invite you again."
     >
       <Act
+        danger
         small
         cli="dock org leave"
         disabled={last}
@@ -420,6 +444,7 @@ function Delete({ name, slug }: { name: string; slug: string }) {
       note="Its members, invites, variables and tokens go. Only an organization without projects can be deleted."
     >
       <Act
+        danger
         small
         cli="dock org delete"
         disabled={!!reason}

@@ -233,7 +233,7 @@ function FactorRow({
         {f.last_used_at ? `, used ${ago(f.last_used_at)}` : ", never used"}
       </span>
       {!readOnly && (
-        <Button small onClick={() => setAsking(true)}>
+        <Button danger small onClick={() => setAsking(true)}>
           Remove
         </Button>
       )}
