@@ -369,6 +369,10 @@ func TestMoveWithoutDowntime(t *testing.T) {
 	written := []byte("rows written while the copy ran")
 	var held bool
 	var restarted error
+	// The deploy made during the move starts only once the move ended:
+	// the order in which its environment as it was made is stale.
+	moved := make(chan struct{})
+	p.c.moves.deployHook = func() { <-moved }
 	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
 		switch s {
 		case apitypes.MoveStop: // after the live passes, before the fence
@@ -383,6 +387,7 @@ func TestMoveWithoutDowntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := p.waitMove(staging)
+	close(moved)
 	if m.Status != apitypes.MoveSucceeded || m.Services[0].Passes < 1 {
 		t.Fatalf("move = %+v", m)
 	}

@@ -193,16 +193,20 @@ func (d *deployment) run(ctx context.Context) error {
 // waitForMove holds a deploy while its environment moves to another
 // server (ADR 0063), so a deploy during server maintenance isn't
 // refused: it goes on once the move ended, on the server the environment
-// is on then, with a host port there.
+// is on then, with a host port there. The environment is read again even
+// when no move is open any more: one may have ended between the release
+// being made and its deploy getting here.
 func (d *deployment) waitForMove(ctx context.Context) error {
 	c := d.c
-	if _, err := c.store.GetOpenEnvironmentMove(ctx, d.ss.env.ID); store.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		return err
+	if hook := c.moves.deployHook; hook != nil {
+		hook()
 	}
-	d.event(ctx, "Waiting for server maintenance: the environment is moving to another server, and the deploy goes on once it is there")
-	if _, err := c.waitForMove(ctx, d.ss.env.ID); err != nil {
+	if _, err := c.store.GetOpenEnvironmentMove(ctx, d.ss.env.ID); err == nil {
+		d.event(ctx, "Waiting for server maintenance: the environment is moving to another server, and the deploy goes on once it is there")
+		if _, err := c.waitForMove(ctx, d.ss.env.ID); err != nil {
+			return err
+		}
+	} else if !store.IsNotFound(err) {
 		return err
 	}
 	env, err := c.store.GetEnvironment(ctx, d.ss.env.ID)
