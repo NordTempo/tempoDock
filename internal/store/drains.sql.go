@@ -624,6 +624,34 @@ func (q *Queries) ListServerForwards(ctx context.Context, serverID int64) ([]Ser
 	return items, nil
 }
 
+const listServiceForwardServers = `-- name: ListServiceForwardServers :many
+SELECT server_id FROM server_forwards WHERE service_id = +? ORDER BY server_id
+`
+
+// The servers that forward a service that moved away from them.
+func (q *Queries) ListServiceForwardServers(ctx context.Context, serviceID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listServiceForwardServers, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var server_id int64
+		if err := rows.Scan(&server_id); err != nil {
+			return nil, err
+		}
+		items = append(items, server_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setServerDrainItem = `-- name: SetServerDrainItem :exec
 UPDATE server_drain_items SET status = ?, move_id = ?, error = ? WHERE drain_id = +? AND environment_id = +?
 `

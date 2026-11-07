@@ -143,3 +143,7 @@ SELECT server_drains.id, server_drains.server_id, server_drains.status, server_d
        CAST((SELECT count(*) FROM server_drain_items WHERE server_drain_items.drain_id = server_drains.id
                 AND server_drain_items.status IN ('moved', 'skipped')) AS INTEGER) AS done
 FROM server_drains WHERE server_drains.status IN ('running', 'paused');
+
+-- name: ListServiceForwardServers :many
+-- The servers that forward a service that moved away from them.
+SELECT server_id FROM server_forwards WHERE service_id = +? ORDER BY server_id;

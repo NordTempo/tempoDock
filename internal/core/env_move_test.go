@@ -436,3 +436,68 @@ func TestMoveRefusesALongHold(t *testing.T) {
 	}
 	assertStayed(t, p, lab, db, data)
 }
+
+// TestMoveKeepsOneGeneratedDomainPerServer: moving back and forth keeps
+// one generated domain per server that serves the service (the one it is
+// on, and the one forwarding it) instead of piling up new ones, moving
+// back needs no DNS change for its own name, and removing a server drops
+// the name under its base domain (ADR 0063).
+func TestMoveKeepsOneGeneratedDomainPerServer(t *testing.T) {
+	p, _, _, web, _ := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	cp := p.ids2name("cp")
+	for name, base := range map[string]string{"homelab": "lab.example.dev", cp: "cp.example.dev"} {
+		if _, err := p.c.UpdateServer(p.ctx, testSystem, name, apitypes.UpdateServerRequest{BaseDomain: ptr(base)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := p.c.GenerateDomain(p.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	ss, err := p.c.serviceFor(p.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated := func() []string {
+		t.Helper()
+		doms, err := p.store.ListDomainsByService(p.ctx, ss.svc.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range doms {
+			if d.Generated {
+				out = append(out, d.Hostname)
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	move := func(to string) apitypes.EnvironmentMove {
+		t.Helper()
+		if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: to}); err != nil {
+			t.Fatal(err)
+		}
+		m := p.waitMove(staging)
+		if m.Status != apitypes.MoveSucceeded {
+			t.Fatalf("move to %s = %+v", to, m)
+		}
+		return m
+	}
+	both := []string{"web-shop-staging.cp.example.dev", "web-shop-staging.lab.example.dev"}
+	for i, to := range []string{cp, "homelab", cp} {
+		m := move(to)
+		if got := generated(); !slices.Equal(got, both) {
+			t.Fatalf("after move %d (to %s): generated domains %v, want %v", i+1, to, got, both)
+		}
+		if notes := strings.Join(m.Notes, "\n"); strings.Contains(notes, "point the DNS of web-shop-staging") {
+			t.Errorf("move %d asks to repoint a generated domain: %s", i+1, notes)
+		}
+	}
+	if err := p.c.RemoveServer(p.ctx, testSystem, "homelab"); err != nil {
+		t.Fatal(err)
+	}
+	if got := generated(); !slices.Equal(got, both[:1]) {
+		t.Fatalf("after removing homelab: generated domains %v, want %v", got, both[:1])
+	}
+}
