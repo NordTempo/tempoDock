@@ -14,10 +14,10 @@ a small server, so a runner's core count doesn't move their memory.
 
 | What | Budget | Measured (8-core Ryzen VM) |
 |---|---|---|
-| Daemon idle memory | ≤ 30 MB anonymous RSS | 22-25 MB (analytics on; 11-12 MB before it) |
+| Daemon idle memory | ≤ 32 MB anonymous RSS | 27.5-31 MB (analytics on; median 28.9 MB over 10 runs on a 2-CPU slot) |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00-0.03/s; 1.0-2.1/s with 20 streams |
-| Daemon memory with 20 SSE clients | ≤ 30 MB | 23-26 MB |
+| Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (35 MB with 20) | 29.4-33.1 MB with 20 streams (median 30.8 MB) |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.4-6 ms; with a staged change, overview 6-8 ms and changes 3-4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 128 KB (13 files) |
@@ -31,6 +31,16 @@ a small server, so a runner's core count doesn't move their memory.
 Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
+
+The idle number moves with GC timing: the daemon's last collection runs
+during start-up, and whatever it allocates after that (the first
+statistics ticks, each SSE handshake) stays in RSS until the next one, as
+do stream handlers' stacks. On a 2-CPU, 8 GB slot like a CI runner's, ten
+runs of v0.34.0 read 27.5-31.0 MB idle and 29.4-33.1 MB with 20 streams;
+the commit before it (808e9b93) 25.5-28.5 and 29.3-32.4. A forced GC
+leaves the sampled live heap at about 10 MB with or without the streams:
+nothing is kept per stream beyond its goroutine. The live heap is mostly
+Huma's schemas of the API types and compiled regexps.
 
 ### tempoBase
 

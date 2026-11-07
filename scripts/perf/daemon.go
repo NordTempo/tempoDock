@@ -340,7 +340,7 @@ type idleBudgets struct {
 // dockIdle is Dock's idle budget with clients SSE streams open.
 func dockIdle(clients int) idleBudgets {
 	return idleBudgets{
-		anon:    idleAnonBudget,
+		anon:    idleAnonBudget + int64(clients)*sseClientAnonBudget,
 		ticks:   idleTicksBudget,
 		wakeups: idleWakeupsBudget + float64(clients)*sseClientWakeupsBudget,
 	}

@@ -33,9 +33,15 @@ const measuredProcs = "GOMAXPROCS=4"
 // Budgets. Absolute ones are product targets (docs/experience.md) with
 // headroom; relative ones compare against baseline.json.
 const (
-	cliBudget       = 20 * time.Millisecond
-	idleAnonBudget  = 30 << 20
-	idleTicksBudget = 2 // clock ticks (usually 10 ms each) per idle window
+	cliBudget = 20 * time.Millisecond
+	// Anonymous RSS of the idle daemon, plus each open SSE stream's share:
+	// mostly its handler goroutine's stack, about 0.11 MB, which the
+	// runtime keeps after the handshake. Measured on a 2-CPU, 8 GB slot
+	// like a CI runner's, where GC timing moves the idle number by up to
+	// 3 MB between runs (docs/performance.md).
+	idleAnonBudget      = 32 << 20
+	sseClientAnonBudget = 150 << 10
+	idleTicksBudget     = 2 // clock ticks (usually 10 ms each) per idle window
 	// Wake-ups (voluntary context switches) per second: what a forgotten
 	// ticker shows up as long before it costs measurable CPU. Each SSE
 	// client adds a heartbeat every 25 s.
