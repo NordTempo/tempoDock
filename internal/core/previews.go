@@ -974,8 +974,10 @@ func (c *Core) archivePreview(ctx context.Context, es envScope, pv store.Preview
 
 // removePreviewVolumes removes an archived preview's volumes in the
 // background, once stopped is done (its containers are gone): a preview's
-// data is thrown away with it, unlike any other volume (ADR 0056). A
-// server that can't be reached keeps them; they are logged.
+// data is thrown away with it, unlike any other volume (ADR 0056). Each
+// volume's row goes once its Docker volume is gone; a row left (a
+// restart cut the removal short, the server couldn't be reached, the
+// removal failed) is tried again at the next start (resumePreviews).
 func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []store.Volume, stopped *sync.WaitGroup) {
 	if len(vols) == 0 {
 		return
@@ -995,11 +997,17 @@ func (c *Core) removePreviewVolumes(es envScope, done []archivedService, vols []
 				ss = svcScope{es, store.Service{ID: v.ServiceID}}
 			}
 			if rt == nil {
-				c.log.Warn("a closed preview's volume stays: its server is offline", "volume", v.DockerName, "server", es.env.ServerID)
+				c.log.Warn("a closed preview's volume stays until the next start: its server is offline", "volume", v.DockerName, "server", es.env.ServerID)
 				continue
 			}
 			if err := rt.RemoveVolume(c.ctx, v.DockerName, c.labels(ss, 0)); err != nil && !errors.Is(err, node.ErrNotFound) {
-				c.log.Warn("remove a closed preview's volume", "volume", v.DockerName, "err", err)
+				if c.ctx.Err() == nil {
+					c.log.Warn("remove a closed preview's volume; the next start tries again", "volume", v.DockerName, "err", err)
+				}
+				continue
+			}
+			if err := c.store.DeleteRemovedVolume(c.ctx, v.ID); err != nil && c.ctx.Err() == nil {
+				c.log.Error("forget a closed preview's removed volume", "volume", v.DockerName, "err", err)
 			}
 		}
 	}()
@@ -1025,8 +1033,30 @@ func (c *Core) previewReleaseDone(ss svcScope) {
 	c.refreshPreview(pv.ID)
 }
 
-// resumePreviews archives closed previews left unarchived by a restart.
+// resumePreviews finishes what a restart cut short: archived previews'
+// volumes that weren't removed yet are removed (their containers went in
+// recovery), and closed previews left unarchived are archived.
 func (c *Core) resumePreviews(ctx context.Context) error {
+	// Listed before the archives below start removing their own.
+	kept, err := c.store.ListArchivedPreviewVolumes(ctx)
+	if err != nil {
+		return err
+	}
+	byEnv := map[int64][]store.Volume{}
+	for _, r := range kept {
+		byEnv[r.EnvironmentID] = append(byEnv[r.EnvironmentID], r.Volume)
+	}
+	for id, vols := range byEnv {
+		e, err := c.store.GetEnvironment(ctx, id)
+		if err != nil {
+			return err
+		}
+		p, err := c.store.GetProject(ctx, e.ProjectID)
+		if err != nil {
+			return err
+		}
+		c.removePreviewVolumes(envScope{p, e}, nil, vols, &sync.WaitGroup{})
+	}
 	left, err := c.store.ListClosedPreviewsLeft(ctx)
 	if err != nil {
 		return err
