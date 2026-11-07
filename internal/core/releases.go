@@ -567,8 +567,8 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	if err := c.canDeploy(ss.env); err != nil {
 		return store.Release{}, err
 	}
-	if c.restoringInPlace(ss.svc.ID) {
-		return store.Release{}, conflict("a snapshot is being restored into %s in place; deploy once it finishes", ss)
+	if err := c.restoreWriting(ss, "deploy"); err != nil {
+		return store.Release{}, err
 	}
 	if err := c.notMoving(ctx, ss.envScope, "deploy"); err != nil {
 		return store.Release{}, err
@@ -608,10 +608,10 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 	if r, err := q.GetInFlightRelease(ctx, ss.svc.ID); err == nil {
 		return ss, rel, deployInProgress(ss, r)
 	}
-	// Again inside the transaction: an in-place restore marks the service
-	// before it checks for a deploy (restoreInPlace).
-	if c.restoringInPlace(ss.svc.ID) {
-		return ss, rel, conflict("a snapshot is being restored into %s in place; deploy once it finishes", ss)
+	// Again inside the transaction: a restore marks the service and checks
+	// for a deploy in its own (lockForRestore), so one sees the other.
+	if err := c.restoreWriting(ss, "deploy"); err != nil {
+		return ss, rel, err
 	}
 	// Re-checked in the transaction: ArchiveService may have won a race.
 	svc, err := q.GetService(ctx, ss.svc.ID)

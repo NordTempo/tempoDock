@@ -88,12 +88,13 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	c.audit(ctx, a, "backup.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring snapshot %s into new service %s", from.SnapshotID[:8], name))
 	if t.backup == apitypes.BackupRedis {
-		// Redis: fill the new volume first, then deploy.
-		c.wg.Add(1)
-		go func() {
-			defer c.wg.Done()
-			r.fillVolume(c.ctx, a)
-		}()
+		// Redis: fill the new volume first, then deploy. The new service
+		// isn't deployed meanwhile.
+		if err := c.lockForRestore(ctx, r.to, volumeRestore{what: "the restore of backup " + from.SnapshotID[:8], watch: "`dock backup list`"}); err != nil {
+			r.finish(c.ctx, err)
+		} else {
+			c.wg.Go(func() { r.fillVolume(c.ctx, a) })
+		}
 	} else if err := c.deployTemplate(ctx, a, r.to, r.deployed); err != nil {
 		r.finish(c.ctx, err)
 	}
@@ -150,28 +151,33 @@ func (r *restore) pgRestore(ctx context.Context) error {
 	return r.run(ctx, to, target, nil)
 }
 
-// fillVolume writes a Redis snapshot into the new service's volume, then
-// deploys it.
+// fillVolume writes a Redis snapshot into the new service's volume, which
+// RestoreBackup locked for it, then deploys it.
 func (r *restore) fillVolume(ctx context.Context, a Actor) {
 	c := r.c
-	rt, err := c.runtimeFor(r.to.env.ServerID)
+	err := r.fill(ctx)
+	c.unlockVolumes(r.to.svc.ID)
 	if err != nil {
-		r.finish(ctx, err)
-		return
-	}
-	vol := volumeName(r.to, templateVolume)
-	if err := rt.EnsureVolume(ctx, vol, c.labels(r.to, 0)); err != nil {
-		r.finish(ctx, fmt.Errorf("create volume: %w", c.nodeErr(r.to.env.ServerID, err)))
-		return
-	}
-	mounts := []node.Mount{{Volume: vol, Path: r.t.mountPath}}
-	if err := r.run(ctx, r.to, backup.Source{}, mounts); err != nil {
 		r.finish(ctx, err)
 		return
 	}
 	if err := c.deployTemplate(ctx, a, r.to, r.deployed); err != nil {
 		r.finish(ctx, err)
 	}
+}
+
+// fill runs the restore job into the new service's volume.
+func (r *restore) fill(ctx context.Context) error {
+	c := r.c
+	rt, err := c.runtimeFor(r.to.env.ServerID)
+	if err != nil {
+		return err
+	}
+	vol := volumeName(r.to, templateVolume)
+	if err := rt.EnsureVolume(ctx, vol, c.labels(r.to, 0)); err != nil {
+		return fmt.Errorf("create volume: %w", c.nodeErr(r.to.env.ServerID, err))
+	}
+	return r.run(ctx, r.to, backup.Source{}, []node.Mount{{Volume: vol, Path: r.t.mountPath}})
 }
 
 // run runs the restore job for the new service on its server, in the

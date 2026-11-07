@@ -34,12 +34,12 @@ const (
 	runSnapshotNote = 100
 )
 
-// runState counts the runs in flight per service (by ID), and the ones
-// with their volumes mounted for writing. Entries go when their runs end.
+// runState counts the runs in flight per service (by ID); the ones with
+// their volumes mounted for writing are in volumeWriters. Entries go when
+// their runs end.
 type runState struct {
 	mu      sync.Mutex
 	running map[int64]int
-	writing map[int64]bool
 	// ended holds each run in flight's channel, closed when it ends, by
 	// run ID, for WaitRun.
 	ended map[int64]chan struct{}
@@ -256,8 +256,8 @@ func runVolumes(ss svcScope, cfg releaseConfig, want apitypes.RunVolumes) (apity
 }
 
 // holdRun takes one of the service's run slots (and its one write slot
-// for a run mounting volumes for writing); the returned func gives them
-// back.
+// for a run mounting volumes for writing, holdWritingRun); the returned
+// func gives them back.
 func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes) (func(), error) {
 	id := ss.svc.ID
 	c.runs.mu.Lock()
@@ -265,24 +265,22 @@ func (c *Core) holdRun(ss svcScope, volumes apitypes.RunVolumes) (func(), error)
 	if c.runs.running[id] >= maxRunsPerService {
 		return nil, conflict("%s already runs %d commands, the most at once; wait for one to end", ss.svc.Name, maxRunsPerService)
 	}
-	write := volumes == apitypes.VolumesWrite
-	if write && c.runs.writing[id] {
-		return nil, conflict("another command has %s's volumes open for writing; wait for it to end, or mount them read-only", ss.svc.Name)
+	endWrite := func() {}
+	if volumes == apitypes.VolumesWrite {
+		var err error
+		if endWrite, err = c.holdWritingRun(ss); err != nil {
+			return nil, err
+		}
 	}
 	c.runs.running[id]++
-	if write {
-		c.runs.writing[id] = true
-	}
 	var once sync.Once
 	return func() {
 		once.Do(func() {
+			endWrite()
 			c.runs.mu.Lock()
 			defer c.runs.mu.Unlock()
 			if c.runs.running[id]--; c.runs.running[id] <= 0 {
 				delete(c.runs.running, id)
-			}
-			if write {
-				delete(c.runs.writing, id)
 			}
 		})
 	}, nil
