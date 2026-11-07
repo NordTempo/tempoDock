@@ -55,7 +55,7 @@ func (c *Client) Forward(ctx context.Context, port int) (net.Listener, error) {
 		return nil, err
 	}
 	return &linkListener{s: s, port: port, body: body, lines: bufio.NewReader(body), cancel: cancel,
-		addr: linkAddr(fmt.Sprintf("%s/127.0.0.1:%d", s.name, port))}, nil
+		addr: linkAddr(fmt.Sprintf("%s/127.0.0.1:%d", s.name(), port))}, nil
 }
 
 // linkListener is a node's listener on the control plane.
@@ -79,15 +79,15 @@ func (l *linkListener) Accept() (net.Conn, error) {
 		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 			return nil, net.ErrClosed
 		}
-		return nil, offline(context.Background(), l.s.name, err)
+		return nil, offline(context.Background(), l.s.name(), err)
 	}
 	id, err := strconv.ParseUint(line[:len(line)-1], 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("server %s: bad connection id %q", l.s.name, line)
+		return nil, fmt.Errorf("server %s: bad connection id %q", l.s.name(), line)
 	}
 	if l.s.dials.Add(1) > maxDials {
 		l.s.dials.Add(-1)
-		return nil, fmt.Errorf("server %s: %w", l.s.name, errTooManyDials)
+		return nil, fmt.Errorf("server %s: %w", l.s.name(), errTooManyDials)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 	defer cancel()

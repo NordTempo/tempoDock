@@ -444,7 +444,7 @@ func (c *Core) Start(ctx context.Context) error {
 	c.resumeMoves(ctx, true)
 	// This server's forwards of services that moved away listen again,
 	// and drains go on (ADR 0062).
-	c.ensureForwards(ctx, c.local.ID)
+	c.ensureForwards(ctx, c.localID)
 	c.resumeServerDrains(ctx)
 	// Remote servers are reconciled as they connect (NodeStatus); ones a
 	// hub that already serves has connected are reconciled now.
