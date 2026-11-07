@@ -107,6 +107,15 @@ export function PreviewsSection({ project }: { project: string }) {
                   <span className="text-mut">none</span>
                 )}
               </Item>
+              <Item label="Seeded">
+                {s.seed_from_snapshot.length > 0 ? (
+                  <span className="font-mono">
+                    {s.seed_from_snapshot.join(", ")}
+                  </span>
+                ) : (
+                  <span className="text-mut">none, volumes start empty</span>
+                )}
+              </Item>
               <Item label="Forks">
                 {s.allow_forks ? (
                   <span className="text-warn">previewed</span>

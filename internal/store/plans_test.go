@@ -19,6 +19,7 @@ func TestQueryPlansUseIndexes(t *testing.T) {
 		{"PruneGitDeliveries", pruneGitDeliveries, []any{now}},
 		{"ListProjectReleaseHeads", listProjectReleaseHeads, []any{1}},
 		{"DeleteRemovedVolume", deleteRemovedVolume, []any{1}},
+		{"GetLatestReadySnapshot", getLatestReadySnapshot, []any{1, 1}},
 	})
 }
 
