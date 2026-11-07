@@ -9,9 +9,12 @@ build: probe
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/dock ./cmd/dock
 
 ## probe: dock-probe, the health probe dock embeds and Docker runs inside
-## app containers (ADR 0043), for GOOS/GOARCH from the environment
+## app containers (ADR 0043), and dock-sync, which copies volumes between
+## servers in job containers (ADR 0062), for GOOS/GOARCH from the
+## environment
 probe:
 	CGO_ENABLED=0 go build -trimpath -ldflags '-s -w -buildid=' -o internal/node/probe/bin/dock-probe ./cmd/dock-probe
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags '-s -w -buildid=' -o internal/node/probe/bin/dock-sync ./cmd/dock-sync
 
 ## build-cli: the client alone (`-tags dockcli`: no serve/admin/openapi or
 ## daemon dependencies), for this machine and for macOS and Linux

@@ -4352,6 +4352,111 @@
         ],
         "type": "object"
       },
+      "DrainItem": {
+        "additionalProperties": false,
+        "properties": {
+          "data_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "move": {
+            "$ref": "#/components/schemas/EnvironmentMove"
+          },
+          "org": {
+            "type": "string"
+          },
+          "problem": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "stateful": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "waiting",
+              "moving",
+              "moved",
+              "failed",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "org",
+          "environment",
+          "kind",
+          "to",
+          "status",
+          "stateful"
+        ],
+        "type": "object"
+      },
+      "DrainServerRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "production",
+              "non_production"
+            ],
+            "type": "string"
+          },
+          "max_hold": {
+            "format": "int64",
+            "maximum": 600,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/DrainTarget"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "DrainTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "project": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "to": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "to"
+        ],
+        "type": "object"
+      },
       "EnableAnalyticsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4538,6 +4643,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "drain": {
+            "format": "int64",
+            "type": "integer"
+          },
           "environment": {
             "type": "string"
           },
@@ -4552,6 +4661,10 @@
             "type": "string"
           },
           "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_hold": {
             "format": "int64",
             "type": "integer"
           },
@@ -4592,6 +4705,7 @@
           "step": {
             "enum": [
               "prepare",
+              "sync",
               "stop",
               "copy",
               "start",
@@ -4614,6 +4728,7 @@
           "status",
           "step",
           "services",
+          "max_hold",
           "notes",
           "created_by",
           "started_at"
@@ -4888,6 +5003,9 @@
           "domain": {
             "$ref": "#/components/schemas/Domain"
           },
+          "drain": {
+            "$ref": "#/components/schemas/ServerDrain"
+          },
           "environment": {
             "type": "string"
           },
@@ -4957,7 +5075,8 @@
               "run",
               "uptime",
               "job",
-              "environment_move"
+              "environment_move",
+              "server_drain"
             ],
             "type": "string"
           },
@@ -6133,6 +6252,12 @@
       "MoveEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
+          "max_hold": {
+            "format": "int64",
+            "maximum": 600,
+            "minimum": 0,
+            "type": "integer"
+          },
           "to": {
             "minLength": 1,
             "type": "string"
@@ -6153,6 +6278,14 @@
           "error": {
             "type": "string"
           },
+          "last_pass_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "passes": {
+            "format": "int64",
+            "type": "integer"
+          },
           "service": {
             "type": "string"
           },
@@ -6162,6 +6295,8 @@
           "status": {
             "enum": [
               "waiting",
+              "syncing",
+              "synced",
               "stopped",
               "copied",
               "started",
@@ -6175,7 +6310,9 @@
           "service",
           "stateful",
           "status",
-          "copied_bytes"
+          "copied_bytes",
+          "passes",
+          "last_pass_ms"
         ],
         "type": "object"
       },
@@ -7810,6 +7947,15 @@
         },
         "type": "object"
       },
+      "ResumeDrainRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "skip": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "RolloutService": {
         "additionalProperties": false,
         "properties": {
@@ -8266,6 +8412,118 @@
           "parts",
           "reclaimable_bytes",
           "read_at"
+        ],
+        "type": "object"
+      },
+      "ServerDrain": {
+        "additionalProperties": false,
+        "properties": {
+          "created_by": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "finished_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "forwards": {
+            "items": {
+              "$ref": "#/components/schemas/ServerForward"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DrainItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "max_hold": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "server": {
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "paused",
+              "succeeded",
+              "cancelled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "server",
+          "items",
+          "problems",
+          "forwards",
+          "max_hold"
+        ],
+        "type": "object"
+      },
+      "ServerForward": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "now_on": {
+            "type": "string"
+          },
+          "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "service",
+          "port",
+          "now_on",
+          "since"
         ],
         "type": "object"
       },
@@ -27162,7 +27420,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/move": {
       "get": {
-        "description": "The running move, or the latest one: its step, each service's progress, the downtime and what is left to do by hand. 404 if the environment never moved. Scope: read.",
+        "description": "The running move, or the latest one: its step, each service's progress, the hold and what is left to do by hand. 404 if the environment never moved. Scope: read.",
         "operationId": "get-environment-move",
         "parameters": [
           {
@@ -27301,7 +27559,7 @@
         ]
       },
       "post": {
-        "description": "Checks everything first and refuses with the reason: the target accepts the environment's kind, both servers are online, the target has the memory and disk, every active release's image can reach it, and domains routed through Cloudflare have a tunnel on it. Then answers with the move, running, and works in the background: stateful services are down while their volumes copy; the rest keep serving until the switch. A failure before the switch rolls back and leaves the environment where it was. Progress is published as environment_move events; environment.moved or environment.move_failed is audited at the end. Operators only, and the environment's lock applies.",
+        "description": "Checks everything first and refuses with the reason: the target accepts the environment's kind, both servers are online, the target has the memory and disk, every active release's image can reach it, and domains routed through Cloudflare have a tunnel on it. Then answers with the move, running, and works in the background (ADR 0062): volumes copy in passes while their services run; then requests are held for a few seconds while every service stops on the source, the last changes copy and are checked, and the target starts. No write is lost, and the old server forwards what still reaches it. A move whose final copy wouldn't fit max_hold fails before anything stops. A failure before the switch rolls back and leaves the environment where it was. Progress is published as environment_move events; environment.moved or environment.move_failed is audited at the end. Operators only, and the environment's lock applies.",
         "operationId": "move-environment",
         "parameters": [
           {
@@ -47742,6 +48000,544 @@
           }
         ],
         "summary": "Where a server's disk goes",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/drain": {
+      "get": {
+        "description": "The running or latest drain: each environment, its target and how far its move got, and the ports the server forwards for services that moved away. 404 if it never drained and forwards nothing. Operators only.",
+        "operationId": "get-server-drain",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerDrain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "A server's drain",
+        "tags": [
+          "servers"
+        ]
+      },
+      "post": {
+        "description": "Moves every environment on the server (or every one of a kind) to other servers, one at a time, so it can take a kind off, go into maintenance or be removed. Each move copies volumes while their services run, then holds requests for a few seconds while the last changes copy and the target starts: nothing is lost and callers see a slow answer, not an error. The old server forwards what still reaches it. Targets come from placement unless targets names one per project. With dry_run the answer is the plan and its problems, and nothing changes; a plan with problems doesn't start. A move that fails leaves its environment where it was and pauses the drain. Progress is published as server_drain events. Operators only.",
+        "operationId": "drain-server",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrainServerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerDrain"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Drain a server",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/drain/cancel": {
+      "post": {
+        "description": "Stops the drain once the move that runs finished; it isn't cut short. Environments not moved yet stay where they are. Operators only.",
+        "operationId": "cancel-server-drain",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerDrain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Cancel a drain",
+        "tags": [
+          "servers"
+        ]
+      }
+    },
+    "/api/v1/servers/{server}/drain/resume": {
+      "post": {
+        "description": "Tries the environment that failed again, or with skip leaves it where it is, and goes on with the rest. Operators only.",
+        "operationId": "resume-server-drain",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Server name",
+            "in": "path",
+            "name": "server",
+            "required": true,
+            "schema": {
+              "description": "Server name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeDrainRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerDrain"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Resume a paused drain",
         "tags": [
           "servers"
         ]

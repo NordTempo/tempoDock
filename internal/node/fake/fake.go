@@ -7,9 +7,11 @@
 package fake
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -63,8 +65,11 @@ type Runtime struct {
 	stopGate    chan struct{}
 	domainCheck func(hostname string) node.DomainCheck
 	dialAddr    string
-	onJob       func(context.Context, node.JobSpec) (node.JobResult, error)
-	jobs        []node.JobSpec
+	// forwards are Forward's listeners by the port asked for; each
+	// listens on a free loopback port (ForwardAddr).
+	forwards map[int]net.Listener
+	onJob    func(context.Context, node.JobSpec) (node.JobResult, error)
+	jobs     []node.JobSpec
 
 	// imageVolumes are the VOLUMEs images declare (SetImageVolumes);
 	// keptAnon names the containers Remove kept the anonymous volumes of.
@@ -107,6 +112,7 @@ func New() *Runtime {
 		ctrStats:   map[string]node.ContainerStats{},
 		archives:   map[string]map[string]*fakeArchive{},
 		nextPort:   40000,
+		forwards:   map[int]net.Listener{},
 	}
 }
 
@@ -901,6 +907,147 @@ func (r *Runtime) Dial(ctx context.Context, req node.DialRequest) (net.Conn, err
 	return d.DialContext(ctx, "tcp", addr)
 }
 
+// Forward implements node.Proxy, recorded as "forward <port>". It
+// listens on a free loopback port instead of port, which ForwardAddr
+// names; a port already forwarded is an error, as on a real server.
+func (r *Runtime) Forward(_ context.Context, port int) (net.Listener, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if ln, ok := r.forwards[port]; ok && !isClosed(ln) {
+		return nil, fmt.Errorf("forward port %d: address already in use", port)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	r.op("forward %d", port)
+	ln = &fakeListener{Listener: ln}
+	r.forwards[port] = ln
+	return ln, nil
+}
+
+// ForwardAddr is the address Forward(port) listens on, "" when none
+// listens.
+func (r *Runtime) ForwardAddr(port int) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if ln, ok := r.forwards[port]; ok && !isClosed(ln) {
+		return ln.Addr().String()
+	}
+	return ""
+}
+
+// fakeListener remembers being closed, so a port can be forwarded again.
+type fakeListener struct {
+	net.Listener
+	closed atomic.Bool
+}
+
+func (l *fakeListener) Close() error { l.closed.Store(true); return l.Listener.Close() }
+
+func isClosed(ln net.Listener) bool {
+	fl, ok := ln.(*fakeListener)
+	return ok && fl.closed.Load()
+}
+
+// syncJob plays dock-sync (ADR 0062) on a volume's data: `recv ROOT`
+// writes the data it holds ("M", its length, the bytes), then reads "S"
+// (unchanged) or "C" and new data; `send [--live|--check] ROOT` reads that
+// list and answers with its own data where it differs, --check exiting 3
+// instead. Both print dock-sync's report line on standard error. ROOT
+// "/v" is the mounted volume's data; another root is a directory in it,
+// kept as "<volume><root>".
+func (r *Runtime) syncJob(spec node.JobSpec) (node.JobResult, error) {
+	st := spec.Stream
+	fields := strings.Fields(spec.Script)
+	if len(spec.Mounts) != 1 || len(fields) < 3 {
+		return node.JobResult{ExitCode: 2}, nil
+	}
+	root := fields[len(fields)-1]
+	key := spec.Mounts[0].Volume
+	if root != "/v" {
+		key += root
+	}
+	stderr := st.Stderr
+	if stderr == nil {
+		stderr = st.Stdout
+	}
+	r.mu.Lock()
+	data := slices.Clone(r.data[key])
+	r.mu.Unlock()
+	readBlob := func(in io.Reader) ([]byte, error) {
+		var n [8]byte
+		if _, err := io.ReadFull(in, n[:]); err != nil {
+			return nil, err
+		}
+		b := make([]byte, binary.BigEndian.Uint64(n[:]))
+		_, err := io.ReadFull(in, b)
+		return b, err
+	}
+	writeBlob := func(w io.Writer, tag byte, b []byte) error {
+		var n [8]byte
+		binary.BigEndian.PutUint64(n[:], uint64(len(b)))
+		_, err := w.Write(append(append([]byte{tag}, n[:]...), b...))
+		return err
+	}
+	tag := make([]byte, 1)
+	switch {
+	case slices.Contains(fields, "recv"):
+		if err := writeBlob(st.Stdout, 'M', data); err != nil {
+			return node.JobResult{ExitCode: 1}, err
+		}
+		if _, err := io.ReadFull(st.Stdin, tag); err != nil {
+			_, _ = fmt.Fprintln(stderr, "dock-sync: the stream ended before the pass did: the source stopped sending")
+			return node.JobResult{ExitCode: 1}, nil
+		}
+		changed := 0
+		if tag[0] == 'C' {
+			b, err := readBlob(st.Stdin)
+			if err != nil {
+				return node.JobResult{ExitCode: 1}, nil
+			}
+			r.mu.Lock()
+			r.data[key] = b
+			r.mu.Unlock()
+			changed, data = 1, b
+		}
+		_, _ = fmt.Fprintf(stderr, "dock-sync: entries=1 changed=%d bytes=%d deleted=0 racy=0\n", changed, changed*len(data))
+		return node.JobResult{}, nil
+	case slices.Contains(fields, "send"):
+		if _, err := io.ReadFull(st.Stdin, tag); err != nil || tag[0] != 'M' {
+			return node.JobResult{ExitCode: 1}, nil
+		}
+		theirs, err := readBlob(st.Stdin)
+		if err != nil {
+			return node.JobResult{ExitCode: 1}, nil
+		}
+		same := bytes.Equal(theirs, data)
+		changed := 0
+		if !same {
+			changed = 1
+		}
+		if slices.Contains(fields, "--check") {
+			_, _ = st.Stdout.Write([]byte{'S'})
+			_, _ = fmt.Fprintf(stderr, "dock-sync: entries=1 changed=%d bytes=0 deleted=0 racy=0\n", changed)
+			if !same {
+				return node.JobResult{ExitCode: 3, Output: "dock-sync: differs: /"}, nil
+			}
+			return node.JobResult{}, nil
+		}
+		if same {
+			_, err = st.Stdout.Write([]byte{'S'})
+		} else {
+			err = writeBlob(st.Stdout, 'C', data)
+		}
+		if err != nil {
+			return node.JobResult{ExitCode: 1}, err
+		}
+		_, _ = fmt.Fprintf(stderr, "dock-sync: entries=1 changed=%d bytes=%d deleted=0 racy=0\n", changed, changed*len(data))
+		return node.JobResult{}, nil
+	}
+	return node.JobResult{ExitCode: 2}, nil
+}
+
 // ErrDefault, returned by OnJob's function, lets RunJob answer a job as
 // it does without one.
 var ErrDefault = errors.New("fake: answer as by default")
@@ -983,6 +1130,9 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 		if res, err := fn(ctx, spec); !errors.Is(err, ErrDefault) {
 			return res, err
 		}
+	}
+	if st := spec.Stream; st != nil && spec.Sync {
+		return r.syncJob(spec)
 	}
 	if st := spec.Stream; st != nil {
 		if vol, ok := tarVolume(spec, "tar -cf"); ok && st.Stdout != nil {

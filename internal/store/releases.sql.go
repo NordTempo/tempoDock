@@ -647,6 +647,8 @@ SELECT environment_move_services.host_port FROM environment_move_services
 JOIN environment_moves ON environment_moves.id = environment_move_services.move_id
 WHERE environment_moves.to_server_id = +?1
   AND environment_moves.status IN ('running', 'rolling_back') AND environment_move_services.host_port > 0
+UNION ALL
+SELECT server_forwards.host_port FROM server_forwards WHERE server_forwards.server_id = +?1
 `
 
 // Host ports held on one server. A release keeps its port until its
@@ -654,6 +656,7 @@ WHERE environment_moves.to_server_id = +?1
 // that is still draining, or failed to stop, never shares it. An open
 // environment move holds the ports it reserved for the services it
 // starts there (ADR 0053).
+// A server forwarding a moved service keeps its old port (ADR 0062).
 func (q *Queries) ListUsedHostPorts(ctx context.Context, serverID int64) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listUsedHostPorts, serverID)
 	if err != nil {

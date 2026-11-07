@@ -478,6 +478,9 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return empty{}, rt.AckSpool(ctx, node.Spool(a.Spool), a.Position, a.Events)
 	}))
 	h(opDialAnalytics, serveDialAnalytics(rt))
+	fw := &forwards{held: map[forwardKey]net.Conn{}}
+	h(opForwardListen, fw.serveForwardListen(rt))
+	h(opForwardAccept, fw.serveForwardAccept())
 }
 
 // unary serves a call with one result.

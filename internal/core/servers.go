@@ -496,6 +496,14 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if st, err := c.store.GetAnalyticsSettings(ctx); err == nil && st.ServerID != nil && *st.ServerID == srv.ID {
 		return conflict("server %s runs the analytics store; move it first with `dock analytics server <another server>`", srv.Name)
 	}
+	if open, err := c.store.ListOpenEnvironmentMoves(ctx); err != nil {
+		return err
+	} else if slices.ContainsFunc(open, func(m store.EnvironmentMove) bool { return m.FromServerID == srv.ID || m.ToServerID == srv.ID }) {
+		return conflict("an environment is moving to or from server %s; remove it once the move ended", srv.Name)
+	}
+	if d, err := c.store.GetOpenServerDrain(ctx, srv.ID); err == nil && d.Status == string(apitypes.DrainRunning) {
+		return conflict("server %s is draining; remove it once the drain ended (`dock server drain %s --status`)", srv.Name, srv.Name)
+	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		// Dock deletes the tunnel it made for it (ADR 0036); the row
 		// outlives the server until then. Its domains went with their
@@ -512,6 +520,30 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.localID, ServerID: srv.ID}); err != nil {
 			return err
 		}
+		// Its forwards end with it, and the history that names it goes:
+		// drains, moves to and from it, and snapshots whose files were
+		// on it (ADR 0062). The audit log keeps the record.
+		if err := q.DeleteServerForwards(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteServerDrainItems(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.UnlinkServerMovesFromDrains(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteServerMoveServices(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteServerMoves(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteServerDrains(ctx, srv.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteServerSnapshots(ctx, srv.ID); err != nil {
+			return err
+		}
 		removed, err := q.DeleteServer(ctx, srv.ID)
 		if err == nil && removed == 0 {
 			return conflict("server %s still has environments; archive their projects first; `dock server show %s` lists them", srv.Name, srv.Name)
@@ -521,6 +553,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if err != nil {
 		return err
 	}
+	c.closeForwards(srv.ID)
 	if _, err := c.cancelJoins(ctx, name); err != nil {
 		c.log.Warn("cancel join tokens of removed server", "server", name, "err", err)
 	}

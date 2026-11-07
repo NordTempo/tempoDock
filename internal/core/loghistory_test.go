@@ -111,6 +111,7 @@ func TestArchiveFailureDoesNotBlockRemoval(t *testing.T) {
 // they are read from there through the node link.
 func TestRemoteServerLogHistory(t *testing.T) {
 	p, lab := labPool(t)
+	p.nodes.add(p.ids["homelab"], lab, remote.Hello{Facts: remote.Facts{Ingress: remote.IngressDirect}}) // an old node
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
 	set := map[string]string{"API_KEY": leakedKey}
 	if _, err := p.c.SetVariables(p.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: set}); err != nil {

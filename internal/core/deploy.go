@@ -103,6 +103,9 @@ func (d *deployment) run(ctx context.Context) error {
 			return step(apitypes.CodeDeployFailed, "not promoted: %s failed first", p.prev.failed())
 		}
 	}
+	if err := d.waitForMove(ctx); err != nil {
+		return err
+	}
 	if d.server, err = c.store.GetServer(ctx, d.ss.env.ServerID); err != nil {
 		return err
 	}
@@ -185,6 +188,39 @@ func (d *deployment) run(ctx context.Context) error {
 	}
 	d.event(ctx, "Health check passed")
 	return d.cutover(ctx)
+}
+
+// waitForMove holds a deploy while its environment moves to another
+// server (ADR 0062), so a deploy during server maintenance isn't
+// refused: it goes on once the move ended, on the server the environment
+// is on then, with a host port there.
+func (d *deployment) waitForMove(ctx context.Context) error {
+	c := d.c
+	if _, err := c.store.GetOpenEnvironmentMove(ctx, d.ss.env.ID); store.IsNotFound(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	d.event(ctx, "Waiting for server maintenance: the environment is moving to another server, and the deploy goes on once it is there")
+	if _, err := c.waitForMove(ctx, d.ss.env.ID); err != nil {
+		return err
+	}
+	env, err := c.store.GetEnvironment(ctx, d.ss.env.ID)
+	if err != nil || env.ServerID == d.ss.env.ServerID {
+		return err
+	}
+	d.ss.env, d.rt = env, c.runtime(env.ServerID)
+	if d.rel.HostPort == 0 {
+		return nil
+	}
+	return c.store.Tx(ctx, func(q *store.Queries) error {
+		port, err := c.allocateHostPort(ctx, q, env.ServerID)
+		if err != nil {
+			return err
+		}
+		d.rel.HostPort = port
+		return q.MoveReleaseServing(ctx, store.MoveReleaseServingParams{HostPort: port, ContainerID: d.rel.ContainerID, ID: d.rel.ID})
+	})
 }
 
 // healthCheckOf is the check a release's new container must pass before

@@ -320,3 +320,14 @@ func (p *Proxy) admin(ctx context.Context, method, path string, body []byte) (*h
 		}
 	}
 }
+
+// Forward implements node.Proxy: a plain loopback listener, which Caddy
+// on this host dials as a route's upstream.
+func (p *Proxy) Forward(ctx context.Context, port int) (net.Listener, error) {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return nil, fmt.Errorf("forward port %d: %w", port, err)
+	}
+	return ln, nil
+}

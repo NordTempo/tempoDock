@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -14,16 +15,25 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Moving an environment to another server (ADR 0053). A move is a state
-// machine in environment_moves: prepare, stop, copy, start, switch,
-// cleanup. Until the switch the environment is on its source in every
-// sense, and a failure (or a restart) rolls back; the switch is one
+// Moving an environment to another server (ADRs 0053 and 0062). A move is
+// a state machine in environment_moves: prepare, sync, stop, copy, start,
+// switch, cleanup. Until the switch the environment is on its source in
+// every sense, and a failure (or a restart) rolls back; the switch is one
 // transaction, and after it the clean-up only goes forward. A move that
 // needs a server that is offline waits for it: the server reconnecting,
 // or the daemon starting, picks it up again (resumeMoves).
+//
+// No write is lost and nothing is refused: volumes copy in live passes
+// while the source serves (sync); then the hold starts (stop): Caddy
+// holds the environment's requests, every container of it stops cleanly
+// on the source, which is the fence after which nothing writes there,
+// and the last changes copy and are checked (copy). The target starts,
+// the switch points everything at it, and the source forwards what still
+// reaches it to the target (forwards.go).
 
 // moveState is the in-memory side of moves.
 type moveState struct {
@@ -36,29 +46,82 @@ type moveState struct {
 	// short; until then a server reconnecting doesn't resume any, or it
 	// could drive one forward that must roll back.
 	recovered bool
+	// held are the services of moves in their hold, by ID: their routes
+	// wait for the upstream (Route.Hold) instead of answering 502.
+	held map[int64]bool
+	// ended is closed and replaced whenever a move ends, for deploys and
+	// drains waiting on one (moveEnded).
+	ended chan struct{}
+	// holdUnit is what a move's max_hold_s counts: a second, which tests
+	// shrink.
+	holdUnit time.Duration
 }
 
-func newMoveState() moveState { return moveState{driving: map[int64]bool{}} }
+func newMoveState() moveState {
+	return moveState{driving: map[int64]bool{}, held: map[int64]bool{}, ended: make(chan struct{}), holdUnit: time.Second}
+}
+
+// heldServices returns a copy of the services in a hold.
+func (c *Core) heldServices() map[int64]bool {
+	c.moves.mu.Lock()
+	defer c.moves.mu.Unlock()
+	return maps.Clone(c.moves.held)
+}
+
+// hold starts or ends the hold of a move's services.
+func (c *Core) hold(svcs []movingService, on bool) {
+	c.moves.mu.Lock()
+	defer c.moves.mu.Unlock()
+	for _, s := range svcs {
+		if on {
+			c.moves.held[s.ss.svc.ID] = true
+		} else {
+			delete(c.moves.held, s.ss.svc.ID)
+		}
+	}
+}
+
+// moveEnded returns a channel closed when the next move ends.
+func (c *Core) moveEnded() <-chan struct{} {
+	c.moves.mu.Lock()
+	defer c.moves.mu.Unlock()
+	return c.moves.ended
+}
+
+// signalMoveEnded wakes whoever waits for a move to end.
+func (c *Core) signalMoveEnded() {
+	c.moves.mu.Lock()
+	defer c.moves.mu.Unlock()
+	close(c.moves.ended)
+	c.moves.ended = make(chan struct{})
+}
+
+// waitForMove blocks while es has an open move, so a deploy made during
+// one runs once it ended, on the server the environment is on then.
+// It reports whether it waited.
+func (c *Core) waitForMove(ctx context.Context, envID int64) (bool, error) {
+	waited := false
+	for {
+		ended := c.moveEnded()
+		_, err := c.store.GetOpenEnvironmentMove(ctx, envID)
+		if store.IsNotFound(err) {
+			return waited, nil
+		}
+		if err != nil {
+			return waited, err
+		}
+		waited = true
+		select {
+		case <-ended:
+		case <-ctx.Done():
+			return waited, ctx.Err()
+		}
+	}
+}
 
 // errMoveWaits means a move needs a server that is offline; it goes on
 // when the server reconnects.
 var errMoveWaits = errors.New("waiting for a server to be back")
-
-// moveExportScript archives /v to standard output, saying on standard
-// error how many entries it holds.
-const moveExportScript = `set -eu
-cd /v
-echo "dock-move: entries $(find . | wc -l)" >&2
-tar -cf - .
-`
-
-// moveImportScript empties /v and unpacks standard input into it, saying
-// how many entries it holds after.
-const moveImportScript = `set -eu
-rm -rf /v/* /v/.[!.]* /v/..?*
-tar -xf - -C /v
-echo "dock-move: entries $(cd /v && find . | wc -l)"
-`
 
 // moveSizeScript prints the size of each volume mounted under /volumes,
 // in KiB, and their total.
@@ -66,10 +129,7 @@ const moveSizeScript = `set -eu
 echo "dock-move: kib $(du -sk /volumes | cut -f1)"
 `
 
-var (
-	moveEntries = regexp.MustCompile(`dock-move: entries (\d+)`)
-	moveKiB     = regexp.MustCompile(`dock-move: kib (\d+)`)
-)
+var moveKiB = regexp.MustCompile(`dock-move: kib (\d+)`)
 
 // movingService is a service of a move: its scope (on the source), its
 // active release (nil: nothing to start), its applied volumes and its row.
@@ -112,36 +172,46 @@ func (c *Core) MoveEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 	if err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
+	hold, err := maxHold(req.MaxHold)
+	if err != nil {
+		return apitypes.EnvironmentMove{}, err
+	}
+	return c.beginMove(ctx, es, to, moveOpts{maxHold: hold, by: a.Name, actor: a})
+}
+
+// maxHold checks a hold budget in seconds; 0 is the default.
+func maxHold(s int) (int, error) {
+	switch {
+	case s == 0:
+		return apitypes.DefaultMaxHold, nil
+	case s < 5 || s > 600:
+		return 0, invalid("the hold budget must be between 5 and 600 seconds")
+	}
+	return s, nil
+}
+
+// moveOpts are what starts a move besides the environment and target.
+type moveOpts struct {
+	maxHold int
+	drainID *int64
+	by      string
+	actor   Actor
+}
+
+// beginMove checks a move of es to server to and starts it: the
+// pre-flight of ADR 0053, then the move's rows, its audit and its
+// goroutine. MoveEnvironment and drains call it, having checked the
+// caller.
+func (c *Core) beginMove(ctx context.Context, es envScope, to store.Server, o moveOpts) (apitypes.EnvironmentMove, error) {
 	from, err := c.store.GetServer(ctx, es.env.ServerID)
 	if err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
-	kind := apitypes.EnvironmentKind(es.env.Kind)
-	switch {
-	case to.ID == from.ID:
-		return apitypes.EnvironmentMove{}, invalid("%s is on server %s already", es, to.Name)
-	case !acceptsKind(to, kind):
-		return apitypes.EnvironmentMove{}, invalid("server %s doesn't accept %s environments; allow them with `dock server update %s --%s`", to.Name, kindWords(kind), to.Name, kindWords(kind))
-	}
-	src, dst := c.connected(from.ID), c.connected(to.ID)
-	for _, s := range []struct {
-		srv store.Server
-		rt  node.Runtime
-	}{{from, src}, {to, dst}} {
-		if s.rt == nil {
-			return apitypes.EnvironmentMove{}, errf(apitypes.CodeServerOffline, "server %s is offline; a move needs both servers online from start to end", s.srv.Name)
-		}
-	}
-	if _, err := c.store.GetOpenEnvironmentMove(ctx, es.env.ID); err == nil {
-		return apitypes.EnvironmentMove{}, conflict("%s is moving already; follow it with `dock env move %s --status`", es, es.env.Name)
-	} else if !store.IsNotFound(err) {
-		return apitypes.EnvironmentMove{}, err
-	}
-	svcs, err := c.moveServices(ctx, es)
+	svcs, src, dst, err := c.preflightMove(ctx, es, from, to)
 	if err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
-	if err := c.checkMove(ctx, es, from, to, src, dst, svcs); err != nil {
+	if _, err := c.checkMove(ctx, es, from, to, src, dst, svcs); err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
 
@@ -149,7 +219,8 @@ func (c *Core) MoveEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
 		row, err = q.CreateEnvironmentMove(ctx, store.CreateEnvironmentMoveParams{
-			EnvironmentID: es.env.ID, FromServerID: from.ID, ToServerID: to.ID, CreatedBy: a.Name, StartedAt: now(),
+			EnvironmentID: es.env.ID, FromServerID: from.ID, ToServerID: to.ID, MaxHoldS: int64(o.maxHold),
+			DrainID: o.drainID, CreatedBy: o.by, StartedAt: now(),
 		})
 		if store.IsUnique(err) {
 			return conflict("%s is moving already", es)
@@ -158,6 +229,10 @@ func (c *Core) MoveEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 			return err
 		}
 		for _, s := range svcs {
+			// Again in the transaction: a deploy that started since.
+			if r, err := q.GetInFlightRelease(ctx, s.ss.svc.ID); err == nil {
+				return deployInProgress(s.ss, r)
+			}
 			var relID *int64
 			var port int64
 			if s.rel != nil {
@@ -180,6 +255,10 @@ func (c *Core) MoveEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 	if err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
+	a := o.actor
+	if a.Name == "" {
+		a = System
+	}
 	c.audit(ctx, a, "environment.move", &es.project, &es.env, es.String(), fmt.Sprintf("moving to server %s from %s", to.Name, from.Name))
 	out, err := c.toMove(ctx, es, row)
 	if err != nil {
@@ -188,6 +267,39 @@ func (c *Core) MoveEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 	c.publishMove(es, out)
 	c.startMove(row.ID)
 	return out, nil
+}
+
+// preflightMove is the part of a move's pre-flight that needs no job:
+// the pair of servers, the kind, both online and new enough, no other
+// move, and the services with nothing of theirs running. It returns the
+// services and both runtimes.
+func (c *Core) preflightMove(ctx context.Context, es envScope, from, to store.Server) ([]movingService, node.Runtime, node.Runtime, error) {
+	kind := apitypes.EnvironmentKind(es.env.Kind)
+	switch {
+	case to.ID == from.ID:
+		return nil, nil, nil, invalid("%s is on server %s already", es, to.Name)
+	case !acceptsKind(to, kind):
+		return nil, nil, nil, invalid("server %s doesn't accept %s environments; allow them with `dock server update %s --%s`", to.Name, kindWords(kind), to.Name, kindWords(kind))
+	}
+	src, dst := c.connected(from.ID), c.connected(to.ID)
+	for _, s := range []struct {
+		srv store.Server
+		rt  node.Runtime
+	}{{from, src}, {to, dst}} {
+		if s.rt == nil {
+			return nil, nil, nil, errf(apitypes.CodeServerOffline, "server %s is offline; a move needs both servers online from start to end", s.srv.Name)
+		}
+		if !s.srv.Local && c.nodes.State(s.srv.ID).Hello.Protocol < remote.MoveSyncProtocol {
+			return nil, nil, nil, invalid("server %s runs a dock too old to move environments without downtime; update the platform first (`dock update apply`)", s.srv.Name)
+		}
+	}
+	if _, err := c.store.GetOpenEnvironmentMove(ctx, es.env.ID); err == nil {
+		return nil, nil, nil, conflict("%s is moving already; follow it with `dock env move %s --status`", es, es.env.Name)
+	} else if !store.IsNotFound(err) {
+		return nil, nil, nil, err
+	}
+	svcs, err := c.moveServices(ctx, es)
+	return svcs, src, dst, err
 }
 
 // EnvironmentMoveStatus returns an environment's running or latest move;
@@ -261,10 +373,26 @@ func (c *Core) notMoving(ctx context.Context, es envScope, what string) error {
 	}
 }
 
+// moveHolds refuses an action on an environment whose move is in its
+// hold, the few seconds it switches servers: commands, whose writes
+// after the fence would be lost.
+func (c *Core) moveHolds(ctx context.Context, es envScope, what string) error {
+	m, err := c.store.GetOpenEnvironmentMove(ctx, es.env.ID)
+	switch {
+	case store.IsNotFound(err):
+		return nil
+	case err != nil:
+		return err
+	case m.Step == string(apitypes.MovePrepare) || m.Step == string(apitypes.MoveSync):
+		return nil
+	}
+	return conflict("%s is switching servers right now; %s again in a few seconds", es, what)
+}
+
 // checkMove is the pre-flight: images the target can get, memory and
 // disk on it, and a tunnel there for domains Dock routes through
-// Cloudflare.
-func (c *Core) checkMove(ctx context.Context, es envScope, from, to store.Server, src, dst node.Runtime, svcs []movingService) error {
+// Cloudflare. It returns the size of the environment's volumes.
+func (c *Core) checkMove(ctx context.Context, es envScope, from, to store.Server, src, dst node.Runtime, svcs []movingService) (int64, error) {
 	var needMB int64
 	var vols []node.Mount
 	for _, s := range svcs {
@@ -276,61 +404,61 @@ func (c *Core) checkMove(ctx context.Context, es envScope, from, to store.Server
 			continue
 		}
 		if ok, err := c.imageReaches(ctx, s.rel, dst); err != nil {
-			return c.nodeErr(to.ID, err)
+			return 0, c.nodeErr(to.ID, err)
 		} else if !ok {
-			return invalid("%s's image %s was built on a server without the platform registry, so server %s can't get it; deploy %s with the registry set up, then move", s.ss, s.rel.ImageRef, to.Name, s.ss.svc.Name)
+			return 0, invalid("%s's image %s was built on a server without the platform registry, so server %s can't get it; deploy %s with the registry set up, then move", s.ss, s.rel.ImageRef, to.Name, s.ss.svc.Name)
 		}
 	}
 	loads, err := c.store.ListServerLoads(ctx, int64(c.cfg.Defaults.MemoryMB))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for _, l := range loads {
 		if l.Server.ID != to.ID || l.Server.MemoryBytes == 0 {
 			continue
 		}
 		if free := l.Server.MemoryBytes>>20 - l.ReservedMb; needMB > free {
-			return conflict("server %s has %d MB of memory free and %s's services reserve %d MB; free memory there, or pick another server", to.Name, max(free, 0), es, needMB)
+			return 0, conflict("server %s has %d MB of memory free and %s's services reserve %d MB; free memory there, or pick another server", to.Name, max(free, 0), es, needMB)
 		}
 	}
 	if n, err := c.store.CountEnvironmentCloudflareRecords(ctx, es.env.ID); err != nil {
-		return err
+		return 0, err
 	} else if n > 0 {
 		t, err := c.store.GetCloudflareTunnelByServer(ctx, &to.ID)
 		if store.IsNotFound(err) || (err == nil && (t.Status != "ok" || t.TunnelID == "")) {
-			return invalid("%s has domains Dock routes through Cloudflare, and server %s has no tunnel Dock runs; create one with `dock server tunnel create %s` first", es, to.Name, to.Name)
+			return 0, invalid("%s has domains Dock routes through Cloudflare, and server %s has no tunnel Dock runs; create one with `dock server tunnel create %s` first", es, to.Name, to.Name)
 		}
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if len(vols) == 0 {
-		return nil
+		return 0, nil
 	}
 	out, err := c.runToolJob(ctx, from.ID, src, node.JobSpec{
 		Name:   fmt.Sprintf("dock_p%d_e%d_move_size_%d", es.project.ID, es.env.ID, now().UnixNano()),
 		Labels: node.Labels{ControlPlane: c.install}, Script: moveSizeScript, Mounts: vols,
 	})
 	if err != nil {
-		return fmt.Errorf("measure the volumes on %s: %w", from.Name, err)
+		return 0, fmt.Errorf("measure the volumes on %s: %w", from.Name, err)
 	}
 	m := moveKiB.FindStringSubmatch(out)
 	if m == nil {
-		return fmt.Errorf("measure the volumes on %s: no size%s", from.Name, withOutput(out))
+		return 0, fmt.Errorf("measure the volumes on %s: no size%s", from.Name, withOutput(out))
 	}
 	need, _ := strconv.ParseInt(m[1], 10, 64)
 	need <<= 10
 	host, err := dst.HostStats(ctx)
 	if err != nil {
-		return fmt.Errorf("read server %s's disk: %w", to.Name, c.nodeErr(to.ID, err))
+		return 0, fmt.Errorf("read server %s's disk: %w", to.Name, c.nodeErr(to.ID, err))
 	}
 	if len(host.Disks) > 0 {
 		d := host.Disks[0]
 		if free := int64(d.Total) - int64(d.Used); need > free-int64(d.Total)/10 {
-			return conflict("server %s has %s of disk free and %s's volumes take %s, of which a tenth of the disk stays free; free disk there first", to.Name, humanBytes(max(free, 0)), es, humanBytes(need))
+			return need, conflict("server %s has %s of disk free and %s's volumes take %s, of which a tenth of the disk stays free; free disk there first", to.Name, humanBytes(max(free, 0)), es, humanBytes(need))
 		}
 	}
-	return nil
+	return need, nil
 }
 
 // cmpOr is v unless it is zero or less, else def.
@@ -465,7 +593,9 @@ func (c *Core) driveMove(ctx context.Context, id int64) error {
 	if err := c.store.SetEnvironmentMoveStatus(ctx, store.SetEnvironmentMoveStatusParams{Status: string(apitypes.MoveRollingBack), Error: msg, ID: m.ID}); err != nil {
 		return err
 	}
-	m.Status, m.Error = string(apitypes.MoveRollingBack), msg
+	if m, err = c.store.GetEnvironmentMove(ctx, m.ID); err != nil { // the step it failed on
+		return err
+	}
 	c.publishMoveRow(ctx, es, m)
 	return c.rollbackMove(ctx, es, m)
 }
@@ -539,6 +669,7 @@ func (c *Core) forwardMove(ctx context.Context, es envScope, m store.Environment
 		run  func(context.Context, envScope, store.EnvironmentMove, []movingService) error
 	}{
 		{apitypes.MovePrepare, c.movePrepare},
+		{apitypes.MoveSync, c.moveSync},
 		{apitypes.MoveStop, c.moveStop},
 		{apitypes.MoveCopy, c.moveCopy},
 		{apitypes.MoveStart, c.moveStart},
@@ -655,35 +786,257 @@ func (c *Core) pullForMove(ctx context.Context, ss svcScope, rel *store.Release,
 	return nil
 }
 
-// moveStop stops the stateful services on the source: their data stops
-// changing, and the downtime starts.
-func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
-	if _, _, err := c.moveRuntimes(m); err != nil {
+// Live passes (ADR 0062): a service's volumes copy again and again while
+// it serves, each pass sending only what changed, until a pass is quick
+// (syncQuick), stops getting quicker, or syncMaxPasses ran. The last
+// pass's time is about what the final copy in the hold takes.
+const (
+	syncMaxPasses = 6
+	syncQuick     = 2 * time.Second
+)
+
+// moveSync copies the environment's snapshots, then each stateful
+// service's volumes in live passes while the source serves. It fails
+// the move, before anything stopped, when the final copy wouldn't fit
+// half the hold budget: the other half is for stopping and starting.
+func (c *Core) moveSync(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
+	src, dst, err := c.moveRuntimes(m)
+	if err != nil {
 		return err
 	}
-	stopped := false
+	if err := c.syncSnapshots(ctx, es, m, src, dst, svcs); err != nil {
+		return err
+	}
+	var predicted time.Duration
+	var slowest string
 	for i := range svcs {
 		s := &svcs[i]
-		if !s.stateful() || !s.runs() {
+		if !s.stateful() {
 			continue
 		}
-		if !stopped {
-			stopped = true
-			if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeFrom: ptr(now()), ID: m.ID}); err != nil {
+		mode := syncLive
+		if !s.runs() {
+			mode = syncFinal // nothing writes to it: one exact pass
+		}
+		var prev, took time.Duration
+		for pass := 1; pass <= syncMaxPasses; pass++ {
+			start := time.Now()
+			for _, v := range s.vols {
+				rep, err := c.syncVolume(ctx, s.ss, m, src, dst, v.DockerName, syncVolRoot, mode)
+				s.row.CopiedBytes += rep.bytes
+				if err != nil {
+					c.setMoveService(ctx, es, m, s, "failed", "", s.row.CopiedBytes, err.Error())
+					return fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
+				}
+			}
+			took = time.Since(start)
+			s.row.Passes, s.row.LastPassMs = int64(pass), took.Milliseconds()
+			if err := c.store.SetEnvironmentMovePass(ctx, store.SetEnvironmentMovePassParams{
+				Passes: s.row.Passes, LastPassMs: s.row.LastPassMs, CopiedBytes: s.row.CopiedBytes, MoveID: m.ID, ServiceID: s.ss.svc.ID,
+			}); err != nil {
 				return err
 			}
+			s.row.Status = "syncing"
+			c.publishMoveRow(ctx, es, m)
+			if mode == syncFinal || took <= syncQuick || (pass > 1 && took > prev*9/10) {
+				break
+			}
+			prev = took
 		}
-		if err := c.removeReleaseContainers(ctx, s.ss, s.rel.ID, keepData); err != nil {
-			return fmt.Errorf("stop %s: %w", s.ss.svc.Name, c.nodeErr(m.FromServerID, err))
+		if took > predicted/2 {
+			slowest = s.ss.svc.Name
 		}
-		c.setStatus(s.ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
-		c.setMoveService(ctx, es, m, s, "stopped", "", 0, "")
+		predicted += took
+		c.setMoveService(ctx, es, m, s, "synced", "", s.row.CopiedBytes, "")
+	}
+	if budget := time.Duration(m.MaxHoldS) * c.moves.holdUnit; predicted > budget/2 {
+		return fmt.Errorf("%s's data keeps changing faster than the copy catches up: the final copy would take about %s, and the hold may take at most %s; move at a quieter time, or allow a longer hold (--max-hold)",
+			slowest, predicted.Round(100*time.Millisecond), budget)
 	}
 	return nil
 }
 
-// moveCopy streams each stateful service's volumes from the source to the
-// target.
+// syncMode is a pass's dock-sync send mode.
+type syncMode string
+
+const (
+	syncLive  syncMode = "--live"
+	syncFinal syncMode = ""
+	syncCheck syncMode = "--check"
+)
+
+// syncVolRoot is where a pass mounts the volume, and copies from and to.
+const syncVolRoot = "/v"
+
+// syncReport is a pass as dock-sync's sender reports it.
+type syncReport struct {
+	changed, bytes, racy int64
+}
+
+var syncReportLine = regexp.MustCompile(`dock-sync: entries=\d+ changed=(\d+) bytes=(\d+) deleted=\d+ racy=(\d+)`)
+
+// syncVolume runs one dock-sync pass of a volume (or of root inside it)
+// from the source to the target: `recv` in a job on the target, `send`
+// in one on the source, the target's output piped into the source's
+// input and back through here (JobSpec.Stream). A check pass changes
+// nothing and fails when the copies differ.
+func (c *Core) syncVolume(ctx context.Context, ss svcScope, m store.EnvironmentMove, src, dst node.Runtime, volume, root string, mode syncMode) (syncReport, error) {
+	manR, manW := io.Pipe() // the target's list, to the source
+	opsR, opsW := io.Pipe() // the changes, to the target
+	name := fmt.Sprintf("dock_p%d_e%d_s%d_move%d_%d", ss.project.ID, ss.env.ID, ss.svc.ID, m.ID, time.Now().UnixNano())
+	recvScript := "exec " + node.SyncPath + " recv " + root
+	if root != syncVolRoot {
+		recvScript = "mkdir -p " + root + " && " + recvScript
+	}
+	sendScript := strings.Join(strings.Fields("exec "+node.SyncPath+" send "+string(mode)+" "+root), " ")
+	type result struct {
+		stderr string
+		err    error
+	}
+	received := make(chan result, 1)
+	go func() {
+		var stderr tail
+		err := c.runSyncJob(ctx, m.ToServerID, dst, node.JobSpec{
+			Name: name + "_in", Labels: c.labels(ss, 0), Script: recvScript, Sync: true,
+			Mounts: []node.Mount{{Volume: volume, Path: syncVolRoot}},
+			Stream: &node.JobStream{Stdin: opsR, Stdout: manW, Stderr: &stderr},
+		}, &stderr)
+		_ = manW.CloseWithError(err) // nil: the source reads the end
+		_ = opsR.CloseWithError(errors.New("the target stopped reading"))
+		received <- result{stderr.String(), err}
+	}()
+	var stderr tail
+	err := c.runSyncJob(ctx, m.FromServerID, src, node.JobSpec{
+		Name: name + "_out", Labels: c.labels(ss, 0), Script: sendScript, Sync: true,
+		Mounts: []node.Mount{{Volume: volume, Path: syncVolRoot, ReadOnly: true}},
+		Stream: &node.JobStream{Stdin: manR, Stdout: opsW, Stderr: &stderr},
+	}, &stderr)
+	_ = opsW.CloseWithError(err) // nil: the target reads the end
+	_ = manR.CloseWithError(errors.New("the source stopped reading"))
+	got := <-received
+	var rep syncReport
+	if mm := syncReportLine.FindStringSubmatch(stderr.String()); mm != nil {
+		rep.changed, _ = strconv.ParseInt(mm[1], 10, 64)
+		rep.bytes, _ = strconv.ParseInt(mm[2], 10, 64)
+		rep.racy, _ = strconv.ParseInt(mm[3], 10, 64)
+	}
+	switch {
+	case mode == syncCheck && err != nil:
+		return rep, fmt.Errorf("the copy on the target differs from the source after the final pass: %w", err)
+	case err != nil:
+		return rep, fmt.Errorf("read it on the source: %w", err)
+	case got.err != nil:
+		return rep, fmt.Errorf("write it on the target: %w", got.err)
+	}
+	return rep, nil
+}
+
+// runSyncJob runs a dock-sync job and turns a failure into an error with
+// its standard error (its standard output is the binary stream).
+func (c *Core) runSyncJob(ctx context.Context, serverID int64, rt node.Runtime, spec node.JobSpec, stderr *tail) error {
+	spec.Image = c.cfg.Backup.ResticImage
+	spec.Resources = node.Resources{MemoryBytes: jobMemoryMB << 20, NanoCPUs: 1e9}
+	res, err := rt.RunJob(ctx, spec)
+	if err != nil {
+		return c.nodeErr(serverID, err)
+	}
+	if res.ExitCode != 0 {
+		out := stderr.String()
+		if out == "" {
+			out = res.Output // the fake's answer, or a shell error
+		}
+		return fmt.Errorf("exit code %d%s", res.ExitCode, withOutput(out))
+	}
+	return nil
+}
+
+// syncSnapshots copies the environment's finished volume snapshots on
+// the source into the target's snapshot volume, one exact pass each
+// (a snapshot never changes), so restores keep working after the move;
+// the switch points their rows at the target.
+func (c *Core) syncSnapshots(ctx context.Context, es envScope, m store.EnvironmentMove, src, dst node.Runtime, svcs []movingService) error {
+	snaps, err := c.store.ListEnvironmentSnapshotsOn(ctx, store.ListEnvironmentSnapshotsOnParams{EnvironmentID: es.env.ID, ServerID: m.FromServerID})
+	if err != nil || len(snaps) == 0 {
+		return err
+	}
+	vol := c.snapshotVolume()
+	if err := dst.EnsureVolume(ctx, vol, node.Labels{ControlPlane: c.install}); err != nil {
+		return fmt.Errorf("create the snapshot volume on the target: %w", c.nodeErr(m.ToServerID, err))
+	}
+	for _, sn := range snaps {
+		i := slices.IndexFunc(svcs, func(s movingService) bool { return s.ss.svc.ID == sn.ServiceID })
+		if i < 0 {
+			continue // an archived service's
+		}
+		root := fmt.Sprintf("%s/%d", syncVolRoot, sn.ID)
+		if _, err := c.syncVolume(ctx, svcs[i].ss, m, src, dst, vol, root, syncFinal); err != nil {
+			return fmt.Errorf("copy snapshot %d of %s: %w", sn.ID, svcs[i].ss.svc.Name, err)
+		}
+	}
+	return nil
+}
+
+// runningRuns counts the commands running in a move's services.
+func (c *Core) runningRuns(svcs []movingService) int {
+	c.runs.mu.Lock()
+	defer c.runs.mu.Unlock()
+	n := 0
+	for _, s := range svcs {
+		n += c.runs.running[s.ss.svc.ID]
+	}
+	return n
+}
+
+// moveRunsWait bounds how long a move's hold waits for commands that
+// still run in the environment to end.
+const moveRunsWait = 5 * time.Minute
+
+// moveStop starts the hold, the fence after which nothing writes to the
+// source: new commands are refused (moveHolds), the ones running end
+// first, Caddy holds the environment's requests, and every service stops
+// cleanly on the source, stateless ones first so no request is in
+// flight when the databases stop.
+func (c *Core) moveStop(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
+	if _, _, err := c.moveRuntimes(m); err != nil {
+		return err
+	}
+	// A second's tick, only while a move's hold waits for a command.
+	deadline := time.Now().Add(moveRunsWait)
+	for c.runningRuns(svcs) > 0 {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("a command still runs in %s after %s; move once it ended", es, moveRunsWait)
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	c.hold(svcs, true)
+	if err := c.applyRoutes(ctx, m.FromServerID); err != nil {
+		c.log.Warn("hold a moving environment's routes", "move", m.ID, "err", err)
+	}
+	if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeFrom: ptr(now()), ID: m.ID}); err != nil {
+		return err
+	}
+	for _, stateful := range []bool{false, true} {
+		for i := range svcs {
+			s := &svcs[i]
+			if s.stateful() != stateful || !s.runs() {
+				continue
+			}
+			if err := c.removeReleaseContainers(ctx, s.ss, s.rel.ID, keepData); err != nil {
+				return fmt.Errorf("stop %s: %w", s.ss.svc.Name, c.nodeErr(m.FromServerID, err))
+			}
+			c.setStatus(s.ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
+			c.setMoveService(ctx, es, m, s, "stopped", "", s.row.CopiedBytes, "")
+		}
+	}
+	return nil
+}
+
+// moveCopy copies what changed since the last live pass, with every
+// service stopped, and checks that each copy now equals its source.
 func (c *Core) moveCopy(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
 	src, dst, err := c.moveRuntimes(m)
 	if err != nil {
@@ -694,77 +1047,19 @@ func (c *Core) moveCopy(ctx context.Context, es envScope, m store.EnvironmentMov
 		if !s.stateful() {
 			continue
 		}
-		var copied int64
 		for _, v := range s.vols {
-			n, err := c.copyVolume(ctx, s.ss, m, src, dst, v)
-			copied += n
-			if err != nil {
-				c.setMoveService(ctx, es, m, s, "failed", "", copied, err.Error())
-				return fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
+			for _, mode := range []syncMode{syncFinal, syncCheck} {
+				rep, err := c.syncVolume(ctx, s.ss, m, src, dst, v.DockerName, syncVolRoot, mode)
+				s.row.CopiedBytes += rep.bytes
+				if err != nil {
+					c.setMoveService(ctx, es, m, s, "failed", "", s.row.CopiedBytes, err.Error())
+					return fmt.Errorf("copy %s's volume %s: %w", s.ss.svc.Name, v.Name, err)
+				}
 			}
 		}
-		c.setMoveService(ctx, es, m, s, "copied", "", copied, "")
+		c.setMoveService(ctx, es, m, s, "copied", "", s.row.CopiedBytes, "")
 	}
 	return nil
-}
-
-// countingWriter counts what passes through it.
-type countingWriter struct {
-	w io.Writer
-	n int64
-}
-
-func (cw *countingWriter) Write(p []byte) (int, error) {
-	n, err := cw.w.Write(p)
-	cw.n += int64(n)
-	return n, err
-}
-
-// copyVolume streams one volume: a job on the source archives it to its
-// standard output, a job on the target empties the volume and unpacks
-// its standard input, joined by a pipe here (JobSpec.Stream, which the
-// node link carries since protocol 16). Both report how many entries the
-// volume holds, which must match. It returns the archive's size.
-func (c *Core) copyVolume(ctx context.Context, ss svcScope, m store.EnvironmentMove, src, dst node.Runtime, v store.Volume) (int64, error) {
-	pr, pw := io.Pipe()
-	out := &countingWriter{w: pw}
-	type result struct {
-		output string
-		err    error
-	}
-	exported := make(chan result, 1)
-	name := fmt.Sprintf("dock_p%d_e%d_s%d_move%d", ss.project.ID, ss.env.ID, ss.svc.ID, m.ID)
-	go func() {
-		var stderr tail
-		_, err := c.runToolJob(ctx, m.FromServerID, src, node.JobSpec{
-			Name: name + "_out", Labels: c.labels(ss, 0), Script: moveExportScript,
-			Mounts: []node.Mount{{Volume: v.DockerName, Path: "/v", ReadOnly: true}},
-			Stream: &node.JobStream{Stdout: out, Stderr: &stderr},
-		})
-		_ = pw.CloseWithError(err) // nil: the import reads the end
-		exported <- result{stderr.String(), err}
-	}()
-	var stdout tail
-	_, err := c.runToolJob(ctx, m.ToServerID, dst, node.JobSpec{
-		Name: name + "_in", Labels: c.labels(ss, 0), Script: moveImportScript,
-		Mounts: []node.Mount{{Volume: v.DockerName, Path: "/v"}},
-		Stream: &node.JobStream{Stdin: pr, Stdout: &stdout},
-	})
-	_ = pr.CloseWithError(errors.New("the target stopped reading")) // unblocks the export if the import died
-	ex := <-exported
-	switch {
-	case ex.err != nil:
-		return out.n, fmt.Errorf("archive it on the source: %w%s", ex.err, withOutput(ex.output))
-	case err != nil:
-		return out.n, fmt.Errorf("unpack it on the target: %w%s", err, withOutput(stdout.String()))
-	}
-	// Both scripts count; a runtime that doesn't print them (tests) isn't
-	// checked.
-	a, b := moveEntries.FindStringSubmatch(ex.output), moveEntries.FindStringSubmatch(stdout.String())
-	if a != nil && b != nil && a[1] != b[1] {
-		return out.n, fmt.Errorf("the copy has %s entries and the volume %s", b[1], a[1])
-	}
-	return out.n, nil
 }
 
 // tail keeps the last 4 KB written to it: a job's report and errors, safe
@@ -791,8 +1086,7 @@ func (t *tail) String() string {
 }
 
 // moveStart starts every service's active release on the target, the
-// stateful ones first, each through its release's health check. The
-// downtime ends once the stateful ones pass.
+// stateful ones first, each through its release's health check.
 func (c *Core) moveStart(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
 	_, dst, err := c.moveRuntimes(m)
 	if err != nil {
@@ -808,14 +1102,7 @@ func (c *Core) moveStart(ctx context.Context, es envScope, m store.EnvironmentMo
 		}
 		return 1
 	})
-	downtime := slices.ContainsFunc(svcs, func(s movingService) bool { return s.stateful() && s.runs() })
 	for _, s := range order {
-		if !s.stateful() && downtime {
-			downtime = false
-			if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeTo: ptr(now()), ID: m.ID}); err != nil {
-				return err
-			}
-		}
 		if !s.runs() {
 			continue
 		}
@@ -823,9 +1110,6 @@ func (c *Core) moveStart(ctx context.Context, es envScope, m store.EnvironmentMo
 		if err := c.startOnTarget(ctx, es, m, dst, &svcs[i]); err != nil {
 			return err
 		}
-	}
-	if downtime {
-		return c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeTo: ptr(now()), ID: m.ID})
 	}
 	return nil
 }
@@ -881,25 +1165,51 @@ func (c *Core) removeOn(ctx context.Context, serverID int64, rt node.Runtime, wa
 
 // moveSwitch points the environment at the target in one transaction:
 // the environment's server, each active release's container and host
-// port there, the project's placement for the kind and Dock's Cloudflare
-// records; the move goes on to its clean-up. Then both servers' routes
-// are applied and generated domains follow the target's base domain.
+// port there, the project's placement for the kind, Dock's Cloudflare
+// records and the snapshots; the source's old ports become forwards to
+// the target, and forwards the target had of the environment (it moved
+// back) end; the move goes on to its clean-up. Then the forwards listen,
+// both servers' routes are applied and the hold ends: requests it held
+// on the source go through the forward.
 func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentMove, svcs []movingService) error {
 	if _, _, err := c.moveRuntimes(m); err != nil {
 		return err
 	}
+	// Services with domains keep their old port as a forward: that is
+	// what Caddy on the source still sends their requests to.
+	doms, err := c.store.ListEnvironmentDomains(ctx, es.env.ID)
+	if err != nil {
+		return err
+	}
+	routed := map[int64]bool{}
+	for _, d := range doms {
+		routed[d.ServiceID] = true
+	}
 	var retargeted []string
-	err := c.store.Tx(ctx, func(q *store.Queries) error {
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.SetEnvironmentServer(ctx, store.SetEnvironmentServerParams{ServerID: m.ToServerID, ID: es.env.ID}); err != nil {
+			return err
+		}
+		if err := q.DeleteEnvironmentForwardsOn(ctx, store.DeleteEnvironmentForwardsOnParams{ServerID: m.ToServerID, EnvironmentID: es.env.ID}); err != nil {
 			return err
 		}
 		for _, s := range svcs {
 			if s.rel == nil {
 				continue
 			}
+			if s.runs() && s.rel.HostPort > 0 && routed[s.ss.svc.ID] {
+				if err := q.CreateServerForward(ctx, store.CreateServerForwardParams{
+					ServerID: m.FromServerID, HostPort: s.rel.HostPort, ServiceID: s.ss.svc.ID, MoveID: m.ID, CreatedAt: now(),
+				}); err != nil {
+					return err
+				}
+			}
 			if err := q.MoveReleaseServing(ctx, store.MoveReleaseServingParams{HostPort: s.row.HostPort, ContainerID: s.row.ContainerID, ID: s.rel.ID}); err != nil {
 				return err
 			}
+		}
+		if err := q.MoveEnvironmentSnapshots(ctx, store.MoveEnvironmentSnapshotsParams{ToServerID: m.ToServerID, FromServerID: m.FromServerID, EnvironmentID: es.env.ID}); err != nil {
+			return err
 		}
 		pinned := false
 		if pl, err := q.GetPlacement(ctx, store.GetPlacementParams{ProjectID: es.project.ID, Kind: es.env.Kind}); err == nil {
@@ -927,10 +1237,17 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
 		}
 	}
-	for _, id := range []int64{m.ToServerID, m.FromServerID} {
-		if err := c.applyRoutes(ctx, id); err != nil {
-			c.log.Warn("apply routes after a move", "server", id, "err", err)
-		}
+	c.ensureForwards(ctx, m.ToServerID)
+	if err := c.applyRoutes(ctx, m.ToServerID); err != nil {
+		c.log.Warn("apply routes after a move", "server", m.ToServerID, "err", err)
+	}
+	c.ensureForwards(ctx, m.FromServerID)
+	c.hold(svcs, false)
+	if err := c.applyRoutes(ctx, m.FromServerID); err != nil {
+		c.log.Warn("apply routes after a move", "server", m.FromServerID, "err", err)
+	}
+	if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeTo: ptr(now()), ID: m.ID}); err != nil {
+		c.log.Warn("record the end of a move's hold", "move", m.ID, "err", err)
 	}
 	if len(retargeted) > 0 {
 		c.kickCloudflare()
@@ -984,23 +1301,36 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 	if len(old) > 0 {
 		notes = append(notes, fmt.Sprintf("the old volumes stay on %s as a last copy; once the moved environment checks out, remove them there with `docker volume rm %s`", from.Name, strings.Join(old, " ")))
 	}
-	if n, err := c.store.CountEnvironmentSnapshotsOn(ctx, store.CountEnvironmentSnapshotsOnParams{EnvironmentID: es.env.ID, ServerID: from.ID}); err != nil {
+	// The snapshots were copied before the switch and are the target's
+	// now: the source's copies go.
+	if snaps, err := c.store.ListEnvironmentSnapshotsOn(ctx, store.ListEnvironmentSnapshotsOnParams{EnvironmentID: es.env.ID, ServerID: to.ID}); err != nil {
 		return err
-	} else if n > 0 {
-		notes = append(notes, fmt.Sprintf("%d volume snapshots of its services stay on %s, in its snapshot volume; they can't be restored on %s, and retention removes them (or `dock volume snapshot delete`)", n, from.Name, to.Name))
+	} else if len(snaps) > 0 {
+		ids := make([]string, len(snaps))
+		for i, sn := range snaps {
+			ids[i] = strconv.FormatInt(sn.ID, 10)
+		}
+		if _, err := c.runSnapshotJob(ctx, from.ID, src, node.JobSpec{
+			Name:   fmt.Sprintf("dock_snapshot_delete_%d", now().UnixNano()),
+			Labels: node.Labels{ControlPlane: c.install}, Script: snapshotDeleteScript,
+			Env: map[string]string{"SNAPSHOTS": strings.Join(ids, " ")},
+		}); err != nil {
+			notes = append(notes, fmt.Sprintf("the old copies of %d snapshots on %s couldn't be removed (%v); they take disk there until the server goes", len(snaps), from.Name, err))
+		}
 	}
 	if err := c.store.FinishEnvironmentMove(ctx, store.FinishEnvironmentMoveParams{
 		Status: string(apitypes.MoveSucceeded), Step: string(apitypes.MoveDone), Notes: strings.Join(notes, "\n"), FinishedAt: ptr(now()), ID: m.ID,
 	}); err != nil {
 		return err
 	}
+	defer c.signalMoveEnded()
 	m, err = c.store.GetEnvironmentMove(ctx, m.ID)
 	if err != nil {
 		return err
 	}
 	summary := fmt.Sprintf("moved to server %s from %s", to.Name, from.Name)
 	if m.DowntimeFrom != nil && m.DowntimeTo != nil {
-		summary += fmt.Sprintf("; stateful services were down %s", m.DowntimeTo.Sub(*m.DowntimeFrom).Round(time.Second))
+		summary += fmt.Sprintf("; requests were held %s", m.DowntimeTo.Sub(*m.DowntimeFrom).Round(100*time.Millisecond))
 	}
 	if len(notes) > 0 {
 		summary += "; " + strings.Join(notes, "; ")
@@ -1010,10 +1340,11 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 	return nil
 }
 
-// moveDomains follows a moved environment's domains: generated ones under
-// the source's base domain are replaced by ones under the target's, and
-// the others that Dock doesn't route through Cloudflare are listed with
-// the DNS records they need now.
+// moveDomains follows a moved environment's domains: a generated one
+// under the source's base domain stays (the source forwards it while it
+// is there) and the service gets one under the target's too, and the
+// others that Dock doesn't route through Cloudflare are listed with the
+// DNS records they need now.
 func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Server) ([]string, error) {
 	doms, err := c.store.ListEnvironmentDomains(ctx, es.env.ID)
 	if err != nil {
@@ -1036,18 +1367,14 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 			if toIng.baseDomain == fromBase {
 				continue
 			}
-			if err := c.RemoveDomain(ctx, a, ref, d.Hostname); err != nil {
-				notes = append(notes, fmt.Sprintf("generated domain %s couldn't be removed: %v", d.Hostname, err))
-				continue
-			}
 			if toIng.baseDomain == "" {
-				notes = append(notes, fmt.Sprintf("removed generated domain %s: server %s has no base domain", d.Hostname, to.Name))
+				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it; server %s has no base domain for a new one", d.Hostname, from.Name, to.Name))
 				continue
 			}
 			if ch, err := c.GenerateDomain(ctx, a, ref); err != nil {
-				notes = append(notes, fmt.Sprintf("generated domain %s is gone, and a new one couldn't be made: %v", d.Hostname, err))
+				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it, and a new one couldn't be made: %v", d.Hostname, from.Name, err))
 			} else {
-				notes = append(notes, fmt.Sprintf("generated domain %s is now %s", d.Hostname, ch.Domain.Hostname))
+				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it; %s serves it on %s too", d.Hostname, from.Name, ch.Domain.Hostname, to.Name))
 			}
 			continue
 		}
@@ -1073,7 +1400,7 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 		if len(records) > 0 {
 			where = strings.Join(records, " or ")
 		}
-		notes = append(notes, fmt.Sprintf("point the DNS of %s at %s: until then they reach the old server, which no longer serves them", strings.Join(dns, ", "), where))
+		notes = append(notes, fmt.Sprintf("point the DNS of %s at %s: until then server %s forwards them, so they keep working while it is there", strings.Join(dns, ", "), where, from.Name))
 	}
 	return notes, nil
 }
@@ -1106,6 +1433,11 @@ func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.Environmen
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
+	// Requests the hold kept waiting reach the source's services again.
+	c.hold(svcs, false)
+	if err := c.applyRoutes(ctx, m.FromServerID); err != nil {
+		c.log.Warn("end a rolled back move's hold", "move", m.ID, "err", err)
+	}
 	dst := c.connected(m.ToServerID)
 	if dst == nil {
 		return errMoveWaits // the target's containers go when it reconnects
@@ -1136,6 +1468,7 @@ func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.Environmen
 	}); err != nil {
 		return err
 	}
+	defer c.signalMoveEnded()
 	if m, err = c.store.GetEnvironmentMove(ctx, m.ID); err != nil {
 		return err
 	}
@@ -1166,6 +1499,7 @@ func (c *Core) toMove(ctx context.Context, es envScope, m store.EnvironmentMove)
 	}
 	out := apitypes.EnvironmentMove{
 		ID: m.ID, Project: es.project.Name, Environment: es.env.Name, From: names[m.FromServerID], To: names[m.ToServerID],
+		MaxHold: int(m.MaxHoldS), Drain: derefOr(m.DrainID),
 		Status: apitypes.MoveStatus(m.Status), Step: apitypes.MoveStep(m.Step), Services: []apitypes.MoveService{},
 		DowntimeFrom: m.DowntimeFrom, DowntimeTo: m.DowntimeTo, Error: m.Error, Notes: []string{},
 		CreatedBy: m.CreatedBy, StartedAt: m.StartedAt, FinishedAt: m.FinishedAt,
@@ -1176,6 +1510,7 @@ func (c *Core) toMove(ctx context.Context, es envScope, m store.EnvironmentMove)
 	for _, r := range rows {
 		out.Services = append(out.Services, apitypes.MoveService{
 			Service: svcNames[r.ServiceID], Stateful: r.Stateful, Status: r.Status, CopiedBytes: r.CopiedBytes, Error: r.Error,
+			Passes: int(r.Passes), LastPassMS: r.LastPassMs,
 		})
 	}
 	return out, nil
@@ -1191,8 +1526,12 @@ func (c *Core) publishMoveRow(ctx context.Context, es envScope, m store.Environm
 	c.publishMove(es, out)
 }
 
-// publishMove sends an environment_move event.
+// publishMove sends an environment_move event, and the drain the move is
+// part of to operators.
 func (c *Core) publishMove(es envScope, m apitypes.EnvironmentMove) {
+	if m.Drain != 0 {
+		defer c.publishMoveDrain(c.ctx, m.Drain)
+	}
 	c.bus.publish(busEvent{orgID: es.project.OrgID, projectID: es.project.ID, envID: es.env.ID, ev: apitypes.Event{
 		Type: apitypes.EventEnvironmentMove, Project: es.project.Name, Environment: es.env.Name, Move: &m,
 	}})

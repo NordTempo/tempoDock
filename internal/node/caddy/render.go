@@ -158,7 +158,21 @@ type handler struct {
 	Providers *authProviders `json:"providers,omitempty"`
 	// LogSkip keeps the request out of the access log (vars handler).
 	LogSkip bool `json:"log_skip,omitempty"`
+	// LoadBalancing holds requests while the one upstream is down
+	// (Route.Hold).
+	LoadBalancing *loadBalancing `json:"load_balancing,omitempty"`
 }
+
+// loadBalancing is reverse_proxy's retry settings: Caddy tries the
+// upstream again every TryInterval for TryDuration after a refused
+// connection, which is always safe to retry.
+type loadBalancing struct {
+	TryDuration string `json:"try_duration"`
+	TryInterval string `json:"try_interval"`
+}
+
+// holdInterval is how often a held request tries its upstream again.
+const holdInterval = 250 * time.Millisecond
 
 // rewrite changes the request a reverse_proxy sends upstream. With method
 // GET Caddy also leaves the request body out.
@@ -361,6 +375,11 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 			Handler:          "reverse_proxy",
 			Upstreams:        []upstream{{Dial: r.Upstream}},
 			StreamCloseDelay: streamCloseDelay.String(),
+		}
+		if r.Hold {
+			// A refused connection is tried again, every request held
+			// until the upstream answers or HoldFor passes (ADR 0062).
+			h.LoadBalancing = &loadBalancing{TryDuration: node.HoldFor.String(), TryInterval: holdInterval.String()}
 		}
 		// Through the tunnel, visitors are on https://, port 443, at
 		// Cloudflare's edge, whatever this server's own scheme and port.

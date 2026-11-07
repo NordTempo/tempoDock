@@ -442,13 +442,15 @@ type jobRequest struct {
 	NanoCPUs    int64             `json:"nano_cpus,omitempty"`
 	// Pause is node.JobSpec.Pause (protocol 15, SnapshotProtocol).
 	Pause []string `json:"pause,omitempty"`
+	// Sync is node.JobSpec.Sync (protocol 21, MoveSyncProtocol).
+	Sync bool `json:"sync,omitempty"`
 }
 
 func toJobRequest(s node.JobSpec) jobRequest {
 	return jobRequest{
 		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Script: s.Script,
 		Network: s.Network, Mounts: toWireMounts(s.Mounts),
-		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Pause: s.Pause,
+		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Pause: s.Pause, Sync: s.Sync,
 	}
 }
 
@@ -456,7 +458,7 @@ func (w jobRequest) node() node.JobSpec {
 	return node.JobSpec{
 		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Script: w.Script,
 		Network: w.Network, Mounts: fromWireMounts(w.Mounts),
-		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Pause: w.Pause,
+		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Pause: w.Pause, Sync: w.Sync,
 	}
 }
 
@@ -590,6 +592,9 @@ type wireRoute struct {
 	// Stopped is new in protocol 17 (ADR 0050); older nodes ignore it and
 	// proxy to Upstream, the stopped release's port, so they answer 502.
 	Stopped string `json:"stopped,omitempty"`
+	// Hold is new in protocol 21 (ADR 0062); older nodes answer 502 while
+	// the upstream is down instead of waiting.
+	Hold bool `json:"hold,omitempty"`
 }
 
 // wireAnalyticsHosts is node.AnalyticsHosts.
@@ -609,7 +614,7 @@ type wireAccess struct {
 func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
-		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly, Stopped: r.Stopped}
+		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly, Stopped: r.Stopped, Hold: r.Hold}
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -623,7 +628,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
-		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly, Stopped: w.Stopped}
+		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly, Stopped: w.Stopped, Hold: w.Hold}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}

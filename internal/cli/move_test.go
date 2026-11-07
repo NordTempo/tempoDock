@@ -36,7 +36,11 @@ func TestFollowMove(t *testing.T) {
 	ended.Status = apitypes.MoveFailed
 
 	events := make(chan apitypes.Event, 16)
+	sync := at(apitypes.MoveSync, "syncing", "waiting", 600<<20)
+	sync.Move.Services[0].Passes, sync.Move.Services[0].LastPassMS = 1, 1500
 	for _, ev := range []apitypes.Event{
+		sync,
+		sync,
 		at(apitypes.MoveStop, "stopped", "waiting", 0),
 		{Type: apitypes.EventEnvironmentMove, Move: &other},
 		at(apitypes.MoveCopy, "copied", "waiting", 812<<20),
@@ -55,7 +59,7 @@ func TestFollowMove(t *testing.T) {
 		t.Fatalf("followMove: %v %+v", err, got)
 	}
 	out := errOut.String()
-	for _, want := range []string{"stop: stateful services stop on cp", "stop: db stopped", "copy: db 812.0 MB", "start: db failed: health check failed", "Rolling back: db: health check failed"} {
+	for _, want := range []string{"sync: db pass 1 took 1.5s, 600.0 MB so far", "stop: requests are held, and services stop on cp", "stop: db stopped", "copy: db 812.0 MB", "start: db failed: health check failed", "Rolling back: db: health check failed"} {
 		if strings.Count(out, want) != 1 {
 			t.Errorf("want %q once in:\n%s", want, out)
 		}

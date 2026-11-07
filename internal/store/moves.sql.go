@@ -68,15 +68,17 @@ func (q *Queries) CountEnvironmentSnapshotsOn(ctx context.Context, arg CountEnvi
 }
 
 const createEnvironmentMove = `-- name: CreateEnvironmentMove :one
-INSERT INTO environment_moves (environment_id, from_server_id, to_server_id, created_by, started_at)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, error, notes, created_by, started_at, finished_at
+INSERT INTO environment_moves (environment_id, from_server_id, to_server_id, max_hold_s, drain_id, created_by, started_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, max_hold_s, drain_id, error, notes, created_by, started_at, finished_at
 `
 
 type CreateEnvironmentMoveParams struct {
 	EnvironmentID int64
 	FromServerID  int64
 	ToServerID    int64
+	MaxHoldS      int64
+	DrainID       *int64
 	CreatedBy     string
 	StartedAt     time.Time
 }
@@ -86,6 +88,8 @@ func (q *Queries) CreateEnvironmentMove(ctx context.Context, arg CreateEnvironme
 		arg.EnvironmentID,
 		arg.FromServerID,
 		arg.ToServerID,
+		arg.MaxHoldS,
+		arg.DrainID,
 		arg.CreatedBy,
 		arg.StartedAt,
 	)
@@ -99,6 +103,8 @@ func (q *Queries) CreateEnvironmentMove(ctx context.Context, arg CreateEnvironme
 		&i.Step,
 		&i.DowntimeFrom,
 		&i.DowntimeTo,
+		&i.MaxHoldS,
+		&i.DrainID,
 		&i.Error,
 		&i.Notes,
 		&i.CreatedBy,
@@ -134,7 +140,7 @@ func (q *Queries) FinishEnvironmentMove(ctx context.Context, arg FinishEnvironme
 }
 
 const getEnvironmentMove = `-- name: GetEnvironmentMove :one
-SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE id = +?
+SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, max_hold_s, drain_id, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE id = +?
 `
 
 func (q *Queries) GetEnvironmentMove(ctx context.Context, id int64) (EnvironmentMove, error) {
@@ -149,6 +155,8 @@ func (q *Queries) GetEnvironmentMove(ctx context.Context, id int64) (Environment
 		&i.Step,
 		&i.DowntimeFrom,
 		&i.DowntimeTo,
+		&i.MaxHoldS,
+		&i.DrainID,
 		&i.Error,
 		&i.Notes,
 		&i.CreatedBy,
@@ -159,7 +167,7 @@ func (q *Queries) GetEnvironmentMove(ctx context.Context, id int64) (Environment
 }
 
 const getLatestEnvironmentMove = `-- name: GetLatestEnvironmentMove :one
-SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE environment_id = +? ORDER BY id DESC LIMIT 1
+SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, max_hold_s, drain_id, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE environment_id = +? ORDER BY id DESC LIMIT 1
 `
 
 func (q *Queries) GetLatestEnvironmentMove(ctx context.Context, environmentID int64) (EnvironmentMove, error) {
@@ -174,6 +182,8 @@ func (q *Queries) GetLatestEnvironmentMove(ctx context.Context, environmentID in
 		&i.Step,
 		&i.DowntimeFrom,
 		&i.DowntimeTo,
+		&i.MaxHoldS,
+		&i.DrainID,
 		&i.Error,
 		&i.Notes,
 		&i.CreatedBy,
@@ -184,7 +194,7 @@ func (q *Queries) GetLatestEnvironmentMove(ctx context.Context, environmentID in
 }
 
 const getOpenEnvironmentMove = `-- name: GetOpenEnvironmentMove :one
-SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE environment_id = +? AND status IN ('running', 'rolling_back')
+SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, max_hold_s, drain_id, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE environment_id = +? AND status IN ('running', 'rolling_back')
 `
 
 // The move of an environment that hasn't finished, if any.
@@ -200,6 +210,8 @@ func (q *Queries) GetOpenEnvironmentMove(ctx context.Context, environmentID int6
 		&i.Step,
 		&i.DowntimeFrom,
 		&i.DowntimeTo,
+		&i.MaxHoldS,
+		&i.DrainID,
 		&i.Error,
 		&i.Notes,
 		&i.CreatedBy,
@@ -210,7 +222,7 @@ func (q *Queries) GetOpenEnvironmentMove(ctx context.Context, environmentID int6
 }
 
 const listEnvironmentMoveServices = `-- name: ListEnvironmentMoveServices :many
-SELECT move_id, service_id, release_id, stateful, host_port, container_id, status, copied_bytes, error FROM environment_move_services WHERE move_id = +? ORDER BY stateful DESC, service_id
+SELECT move_id, service_id, release_id, stateful, host_port, container_id, status, copied_bytes, passes, last_pass_ms, error FROM environment_move_services WHERE move_id = +? ORDER BY stateful DESC, service_id
 `
 
 func (q *Queries) ListEnvironmentMoveServices(ctx context.Context, moveID int64) ([]EnvironmentMoveService, error) {
@@ -231,6 +243,8 @@ func (q *Queries) ListEnvironmentMoveServices(ctx context.Context, moveID int64)
 			&i.ContainerID,
 			&i.Status,
 			&i.CopiedBytes,
+			&i.Passes,
+			&i.LastPassMs,
 			&i.Error,
 		); err != nil {
 			return nil, err
@@ -246,8 +260,61 @@ func (q *Queries) ListEnvironmentMoveServices(ctx context.Context, moveID int64)
 	return items, nil
 }
 
+const listEnvironmentSnapshotsOn = `-- name: ListEnvironmentSnapshotsOn :many
+SELECT volume_snapshots.id, volume_snapshots.service_id, volume_snapshots.server_id, volume_snapshots."trigger", volume_snapshots.status, volume_snapshots.volumes, volume_snapshots.size_bytes, volume_snapshots.paused_ms, volume_snapshots.note, volume_snapshots.error, volume_snapshots.created_by, volume_snapshots.started_at, volume_snapshots.finished_at, volume_snapshots.log FROM volume_snapshots
+JOIN services ON services.id = volume_snapshots.service_id
+WHERE services.environment_id = +?1 AND volume_snapshots.server_id = +?2
+  AND volume_snapshots.status = 'ready'
+ORDER BY volume_snapshots.id
+`
+
+type ListEnvironmentSnapshotsOnParams struct {
+	EnvironmentID int64
+	ServerID      int64
+}
+
+// An environment's finished volume snapshots on a server, which a move
+// copies to its target.
+func (q *Queries) ListEnvironmentSnapshotsOn(ctx context.Context, arg ListEnvironmentSnapshotsOnParams) ([]VolumeSnapshot, error) {
+	rows, err := q.db.QueryContext(ctx, listEnvironmentSnapshotsOn, arg.EnvironmentID, arg.ServerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VolumeSnapshot
+	for rows.Next() {
+		var i VolumeSnapshot
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.ServerID,
+			&i.Trigger,
+			&i.Status,
+			&i.Volumes,
+			&i.SizeBytes,
+			&i.PausedMs,
+			&i.Note,
+			&i.Error,
+			&i.CreatedBy,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.Log,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenEnvironmentMoves = `-- name: ListOpenEnvironmentMoves :many
-SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE status IN ('running', 'rolling_back') ORDER BY id
+SELECT id, environment_id, from_server_id, to_server_id, status, step, downtime_from, downtime_to, max_hold_s, drain_id, error, notes, created_by, started_at, finished_at FROM environment_moves WHERE status IN ('running', 'rolling_back') ORDER BY id
 `
 
 func (q *Queries) ListOpenEnvironmentMoves(ctx context.Context) ([]EnvironmentMove, error) {
@@ -268,6 +335,8 @@ func (q *Queries) ListOpenEnvironmentMoves(ctx context.Context) ([]EnvironmentMo
 			&i.Step,
 			&i.DowntimeFrom,
 			&i.DowntimeTo,
+			&i.MaxHoldS,
+			&i.DrainID,
 			&i.Error,
 			&i.Notes,
 			&i.CreatedBy,
@@ -285,6 +354,26 @@ func (q *Queries) ListOpenEnvironmentMoves(ctx context.Context) ([]EnvironmentMo
 		return nil, err
 	}
 	return items, nil
+}
+
+const moveEnvironmentSnapshots = `-- name: MoveEnvironmentSnapshots :exec
+UPDATE volume_snapshots SET server_id = +?1
+WHERE server_id = +?2 AND status = 'ready' AND service_id IN (
+    SELECT id FROM services WHERE environment_id = +?3
+)
+`
+
+type MoveEnvironmentSnapshotsParams struct {
+	ToServerID    int64
+	FromServerID  int64
+	EnvironmentID int64
+}
+
+// Points an environment's snapshots on one server at the server the move
+// copied them to.
+func (q *Queries) MoveEnvironmentSnapshots(ctx context.Context, arg MoveEnvironmentSnapshotsParams) error {
+	_, err := q.db.ExecContext(ctx, moveEnvironmentSnapshots, arg.ToServerID, arg.FromServerID, arg.EnvironmentID)
+	return err
 }
 
 const moveReleaseServing = `-- name: MoveReleaseServing :exec
@@ -357,6 +446,32 @@ type SetEnvironmentMoveDowntimeParams struct {
 
 func (q *Queries) SetEnvironmentMoveDowntime(ctx context.Context, arg SetEnvironmentMoveDowntimeParams) error {
 	_, err := q.db.ExecContext(ctx, setEnvironmentMoveDowntime, arg.DowntimeFrom, arg.DowntimeTo, arg.ID)
+	return err
+}
+
+const setEnvironmentMovePass = `-- name: SetEnvironmentMovePass :exec
+UPDATE environment_move_services SET status = 'syncing', passes = ?, last_pass_ms = ?, copied_bytes = ?
+WHERE move_id = +? AND service_id = +?
+`
+
+type SetEnvironmentMovePassParams struct {
+	Passes      int64
+	LastPassMs  int64
+	CopiedBytes int64
+	MoveID      int64
+	ServiceID   int64
+}
+
+// Records a service's live pass: how many so far, how long the last one
+// took and what it copied in all.
+func (q *Queries) SetEnvironmentMovePass(ctx context.Context, arg SetEnvironmentMovePassParams) error {
+	_, err := q.db.ExecContext(ctx, setEnvironmentMovePass,
+		arg.Passes,
+		arg.LastPassMs,
+		arg.CopiedBytes,
+		arg.MoveID,
+		arg.ServiceID,
+	)
 	return err
 }
 

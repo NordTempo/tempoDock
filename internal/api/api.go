@@ -120,6 +120,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerBackups(s, a)
 	registerSnapshots(s, a)
 	registerMoves(s, a)
+	registerServerDrains(s, a)
 	registerRegistry(s, a)
 	registerStorage(s, a)
 	registerCloudflare(s, a)

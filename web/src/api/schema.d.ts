@@ -1967,13 +1967,13 @@ export interface paths {
         };
         /**
          * An environment's move
-         * @description The running move, or the latest one: its step, each service's progress, the downtime and what is left to do by hand. 404 if the environment never moved. Scope: read.
+         * @description The running move, or the latest one: its step, each service's progress, the hold and what is left to do by hand. 404 if the environment never moved. Scope: read.
          */
         get: operations["get-environment-move"];
         put?: never;
         /**
          * Move an environment to another server
-         * @description Checks everything first and refuses with the reason: the target accepts the environment's kind, both servers are online, the target has the memory and disk, every active release's image can reach it, and domains routed through Cloudflare have a tunnel on it. Then answers with the move, running, and works in the background: stateful services are down while their volumes copy; the rest keep serving until the switch. A failure before the switch rolls back and leaves the environment where it was. Progress is published as environment_move events; environment.moved or environment.move_failed is audited at the end. Operators only, and the environment's lock applies.
+         * @description Checks everything first and refuses with the reason: the target accepts the environment's kind, both servers are online, the target has the memory and disk, every active release's image can reach it, and domains routed through Cloudflare have a tunnel on it. Then answers with the move, running, and works in the background (ADR 0062): volumes copy in passes while their services run; then requests are held for a few seconds while every service stops on the source, the last changes copy and are checked, and the target starts. No write is lost, and the old server forwards what still reaches it. A move whose final copy wouldn't fit max_hold fails before anything stops. A failure before the switch rolls back and leaves the environment where it was. Progress is published as environment_move events; environment.moved or environment.move_failed is audited at the end. Operators only, and the environment's lock applies.
          */
         post: operations["move-environment"];
         delete?: never;
@@ -4037,6 +4037,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server}/drain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A server's drain
+         * @description The running or latest drain: each environment, its target and how far its move got, and the ports the server forwards for services that moved away. 404 if it never drained and forwards nothing. Operators only.
+         */
+        get: operations["get-server-drain"];
+        put?: never;
+        /**
+         * Drain a server
+         * @description Moves every environment on the server (or every one of a kind) to other servers, one at a time, so it can take a kind off, go into maintenance or be removed. Each move copies volumes while their services run, then holds requests for a few seconds while the last changes copy and the target starts: nothing is lost and callers see a slow answer, not an error. The old server forwards what still reaches it. Targets come from placement unless targets names one per project. With dry_run the answer is the plan and its problems, and nothing changes; a plan with problems doesn't start. A move that fails leaves its environment where it was and pauses the drain. Progress is published as server_drain events. Operators only.
+         */
+        post: operations["drain-server"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/drain/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a drain
+         * @description Stops the drain once the move that runs finished; it isn't cut short. Environments not moved yet stay where they are. Operators only.
+         */
+        post: operations["cancel-server-drain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server}/drain/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused drain
+         * @description Tries the environment that failed again, or with skip leaves it where it is, and goes on with the rest. Operators only.
+         */
+        post: operations["resume-server-drain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server}/prune": {
         parameters: {
             query?: never;
@@ -5664,6 +5728,33 @@ export interface components {
             redirect_to?: string;
             service: string;
         };
+        DrainItem: {
+            /** Format: int64 */
+            data_bytes?: number;
+            environment: string;
+            error?: string;
+            kind: string;
+            move?: components["schemas"]["EnvironmentMove"];
+            org: string;
+            problem?: string;
+            project: string;
+            stateful: boolean;
+            /** @enum {string} */
+            status: "waiting" | "moving" | "moved" | "failed" | "skipped";
+            to: string;
+        };
+        DrainServerRequest: {
+            dry_run?: boolean;
+            /** @enum {string} */
+            kind?: "production" | "non_production";
+            /** Format: int64 */
+            max_hold?: number;
+            targets?: components["schemas"]["DrainTarget"][] | null;
+        };
+        DrainTarget: {
+            project: string;
+            to: string;
+        };
         EnableAnalyticsRequest: {
             site?: string;
         };
@@ -5713,6 +5804,8 @@ export interface components {
             downtime_from?: string;
             /** Format: date-time */
             downtime_to?: string;
+            /** Format: int64 */
+            drain?: number;
             environment: string;
             error?: string;
             /** Format: date-time */
@@ -5720,6 +5813,8 @@ export interface components {
             from: string;
             /** Format: int64 */
             id: number;
+            /** Format: int64 */
+            max_hold: number;
             notes: string[] | null;
             project: string;
             services: components["schemas"]["MoveService"][] | null;
@@ -5728,7 +5823,7 @@ export interface components {
             /** @enum {string} */
             status: "running" | "rolling_back" | "succeeded" | "failed";
             /** @enum {string} */
-            step: "prepare" | "stop" | "copy" | "start" | "switch" | "cleanup" | "done";
+            step: "prepare" | "sync" | "stop" | "copy" | "start" | "switch" | "cleanup" | "done";
             to: string;
         };
         EnvironmentOverview: {
@@ -5820,6 +5915,7 @@ export interface components {
             build_log?: components["schemas"]["BuildLogLine"];
             disk?: components["schemas"]["ServerDisk"];
             domain?: components["schemas"]["Domain"];
+            drain?: components["schemas"]["ServerDrain"];
             environment?: string;
             job?: components["schemas"]["Job"];
             lock?: components["schemas"]["EnvironmentLock"];
@@ -5837,7 +5933,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -6190,16 +6286,22 @@ export interface components {
             storage: string;
         };
         MoveEnvironmentRequest: {
+            /** Format: int64 */
+            max_hold?: number;
             to: string;
         };
         MoveService: {
             /** Format: int64 */
             copied_bytes: number;
             error?: string;
+            /** Format: int64 */
+            last_pass_ms: number;
+            /** Format: int64 */
+            passes: number;
             service: string;
             stateful: boolean;
             /** @enum {string} */
-            status: "waiting" | "stopped" | "copied" | "started" | "healthy" | "failed";
+            status: "waiting" | "syncing" | "synced" | "stopped" | "copied" | "started" | "healthy" | "failed";
         };
         Org: {
             /** Format: date-time */
@@ -6659,6 +6761,9 @@ export interface components {
             as?: string;
             in_place?: boolean;
         };
+        ResumeDrainRequest: {
+            skip?: boolean;
+        };
         RolloutService: {
             environment: string;
             /** Format: int64 */
@@ -6795,6 +6900,35 @@ export interface components {
             total_bytes: number;
             /** Format: int64 */
             used_bytes: number;
+        };
+        ServerDrain: {
+            created_by?: string;
+            error?: string;
+            /** Format: date-time */
+            finished_at?: string;
+            forwards: components["schemas"]["ServerForward"][] | null;
+            /** Format: int64 */
+            id: number;
+            items: components["schemas"]["DrainItem"][] | null;
+            kind?: string;
+            /** Format: int64 */
+            max_hold: number;
+            problems: string[] | null;
+            server: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** @enum {string} */
+            status?: "running" | "paused" | "succeeded" | "cancelled";
+        };
+        ServerForward: {
+            environment: string;
+            now_on: string;
+            /** Format: int64 */
+            port: number;
+            project: string;
+            service: string;
+            /** Format: date-time */
+            since: string;
         };
         ServerPlacement: {
             environments: string[] | null;
@@ -31815,6 +31949,406 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-server-drain": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDrain"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "drain-server": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DrainServerRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDrain"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "cancel-server-drain": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDrain"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "resume-server-drain": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Server name */
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeDrainRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDrain"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };

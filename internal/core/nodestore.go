@@ -362,6 +362,7 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	if err := c.applyRoutes(ctx, serverID); err != nil {
 		c.log.Error("server reconnected: apply routes", "server", serverID, "err", err)
 	}
+	c.ensureForwards(ctx, serverID) // services that moved away from it
 	c.runServerTunnel(ctx, serverID, rt)
 	if srv, err := c.store.GetServer(ctx, serverID); err == nil {
 		c.syncServerRecords(ctx, srv) // its tunnel may have changed
@@ -371,6 +372,7 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	c.followServerDrains(ctx, serverID)
 	c.kickJobs()              // and overdue jobs
 	c.resumeMoves(ctx, false) // a move may have waited for it
+	c.resumeServerDrains(ctx) // and a drain
 }
 
 // publishServer sends a server's current state to clients.

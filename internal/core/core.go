@@ -194,6 +194,10 @@ type Core struct {
 	jobs jobState
 	// moves holds the environment moves being driven (ADR 0053).
 	moves moveState
+	// fwd holds the listeners of moved services' forwards (ADR 0062).
+	fwd forwardState
+	// drains are the server drains being driven (ADR 0062).
+	drains serverDrainState
 
 	// uploads holds the services with a source upload streaming to disk.
 	uploadsMu sync.Mutex
@@ -265,6 +269,8 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		runs:       runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
 		jobs:       newJobState(),
 		moves:      newMoveState(),
+		fwd:        newForwardState(),
+		drains:     newServerDrainState(),
 		drain:      DefaultCutoverDrain,
 		data:       o.Data,
 		git:        newGitState(o.GitHubAPI),
@@ -436,6 +442,10 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	// A move a restart cut short rolls back, or finishes its clean-up.
 	c.resumeMoves(ctx, true)
+	// This server's forwards of services that moved away listen again,
+	// and drains go on (ADR 0062).
+	c.ensureForwards(ctx, c.local.ID)
+	c.resumeServerDrains(ctx)
 	// Remote servers are reconciled as they connect (NodeStatus); ones a
 	// hub that already serves has connected are reconciled now.
 	if c.nodes != nil {

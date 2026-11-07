@@ -13,14 +13,15 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Moving an environment to another server (ADR 0053): `dock environment
-// move`, also registered under `dock env`.
+// Moving an environment to another server (ADRs 0053 and 0062): `dock
+// environment move`, also registered under `dock env`.
 
 // newEnvironmentMoveCmd is `dock environment move [<environment>] --to
 // <server>`, or `--status` for the running or latest move.
 func newEnvironmentMoveCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var to string
+	var hold int
 	var status, detach, yes bool
 	cmd := &cobra.Command{
 		Use:   "move [<environment>] --to <server> [--detach] [--yes] | --status",
@@ -31,13 +32,18 @@ environment's kind, both servers are online, memory, disk, images and
 Cloudflare tunnels) and a move that can't work is refused before anything
 changes.
 
-Stateless services keep serving on the old server until the switch.
-Stateful services stop while their volumes copy, so they are down for the
-copy plus a start: move at a quiet time. A failure before the switch rolls
-back and leaves the environment where it was. Domains Dock routes through
-Cloudflare follow by themselves; other domains need their DNS pointed at
-the new server, and the move lists them when it ends. The old volumes stay
-on the old server until you remove them.
+Volumes copy while their services keep serving, in passes that each send
+only what changed. Then requests are held for a few seconds (--max-hold,
+default 30) while every service stops on the old server, the last changes
+copy and are checked, and the new server starts: no write is lost, and
+callers see a slow answer rather than an error. A move whose data keeps
+changing too fast for that fails before anything stops. A failure before
+the switch rolls back and leaves the environment where it was.
+
+Domains Dock routes through Cloudflare follow by themselves; the old server
+forwards the rest while it is there, and the move lists the DNS records to
+change. Snapshots move along. The old volumes stay on the old server until
+you remove them, as a last copy.
 
 Waits for the move, printing each step (--detach returns once it started).
 --status shows the running or latest move. Operators only, and the
@@ -64,7 +70,7 @@ environment's lock applies.`,
 				return g.io.Print(m, func() error { return g.printMove(m) })
 			}
 			if !yes {
-				q := fmt.Sprintf("Move %s/%s to %s? Its stateful services stop while their volumes copy; domains not routed through Cloudflare need their DNS changed after.", t.Project, t.Environment, to)
+				q := fmt.Sprintf("Move %s/%s to %s? Requests are held for a few seconds while it switches; domains not routed through Cloudflare need their DNS changed after.", t.Project, t.Environment, to)
 				if err := g.io.Confirm(q, "yes"); err != nil {
 					return err
 				}
@@ -76,7 +82,7 @@ environment's lock applies.`,
 				}
 				defer w.close()
 			}
-			m, err := send[apitypes.EnvironmentMove](ctx, s, http.MethodPost, path, apitypes.MoveEnvironmentRequest{To: to})
+			m, err := send[apitypes.EnvironmentMove](ctx, s, http.MethodPost, path, apitypes.MoveEnvironmentRequest{To: to, MaxHold: hold})
 			if err != nil {
 				return err
 			}
@@ -105,6 +111,7 @@ environment's lock applies.`,
 	}
 	f.add(cmd, needEnvironment)
 	cmd.Flags().StringVar(&to, "to", "", "the server to move to (see dock server list)")
+	cmd.Flags().IntVar(&hold, "max-hold", 0, "longest the move may hold requests, in seconds (default 30)")
 	cmd.Flags().BoolVar(&status, "status", false, "show the running or latest move instead of starting one")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	addDetachFlag(cmd, &detach)
@@ -170,16 +177,22 @@ func (p *moveProgress) show(m apitypes.EnvironmentMove) {
 		}
 	}
 	for _, sv := range m.Services {
-		if p.status[sv.Service] == sv.Status {
+		seen := sv.Status
+		if sv.Status == "syncing" {
+			seen += itoa(int64(sv.Passes)) // each pass once
+		}
+		if p.status[sv.Service] == seen {
 			continue
 		}
-		p.status[sv.Service] = sv.Status
+		p.status[sv.Service] = seen
 		switch sv.Status {
 		case "waiting":
 		case "failed":
 			p.io.Failf("%s: %s failed: %s", m.Step, sv.Service, sv.Error)
 		case "copied":
 			p.io.Progressf("%s: %s %s", m.Step, sv.Service, bytesize(sv.CopiedBytes))
+		case "syncing":
+			p.io.Progressf("%s: %s pass %d took %s, %s so far", m.Step, sv.Service, sv.Passes, time.Duration(sv.LastPassMS)*time.Millisecond, bytesize(sv.CopiedBytes))
 		default:
 			p.io.Progressf("%s: %s %s", m.Step, sv.Service, sv.Status)
 		}
@@ -195,21 +208,23 @@ func moveStepWords(m apitypes.EnvironmentMove) string {
 	switch m.Step {
 	case apitypes.MovePrepare:
 		return "images, network and volumes on " + m.To
+	case apitypes.MoveSync:
+		return "volumes copy to " + m.To + " while " + m.From + " serves"
 	case apitypes.MoveStop:
-		return "stateful services stop on " + m.From + "; the downtime starts"
+		return "requests are held, and services stop on " + m.From
 	case apitypes.MoveCopy:
-		return "volumes stream to " + m.To
+		return "the last changes copy to " + m.To + " and are checked"
 	case apitypes.MoveStart:
 		return "services start on " + m.To
 	case apitypes.MoveSwitch:
-		return "routes, domains and placement point at " + m.To
+		return "routes, domains and placement point at " + m.To + "; " + m.From + " forwards the rest"
 	case apitypes.MoveCleanup:
 		return "old containers go from " + m.From
 	}
 	return ""
 }
 
-// downtimeWords is a move's downtime: "none", "since 14:02:11" while it
+// downtimeWords is a move's hold: "none", "since 14:02:11" while it
 // lasts, or how long it was.
 func downtimeWords(m apitypes.EnvironmentMove) string {
 	switch {
@@ -232,7 +247,7 @@ func (g *globals) printMoveEnd(m apitypes.EnvironmentMove) error {
 	if m.Status != apitypes.MoveSucceeded {
 		return nil
 	}
-	g.io.Successf("Moved %s/%s from %s to %s; downtime %s", m.Project, m.Environment, m.From, m.To, downtimeWords(m))
+	g.io.Successf("Moved %s/%s from %s to %s; requests held %s", m.Project, m.Environment, m.From, m.To, downtimeWords(m))
 	g.printMoveNotes(m)
 	return nil
 }
@@ -247,7 +262,7 @@ func (g *globals) printMove(m apitypes.EnvironmentMove) error {
 		"to", m.To,
 		"status", string(m.Status),
 		"step", string(m.Step),
-		"downtime", downtimeWords(m),
+		"held", downtimeWords(m),
 		"started", ago(m.StartedAt)+" by "+m.CreatedBy,
 		"finished", agoPtr(m.FinishedAt),
 		"error", m.Error,
@@ -256,13 +271,13 @@ func (g *globals) printMove(m apitypes.EnvironmentMove) error {
 	}
 	if len(m.Services) > 0 {
 		_, _ = fmt.Fprintln(g.io.Out)
-		t := g.io.Table("service", "stateful", "status", "copied", "error")
+		t := g.io.Table("service", "stateful", "status", "copied", "passes", "error")
 		for _, sv := range m.Services {
-			stateful, copied := "no", "-"
+			stateful, copied, passes := "no", "-", "-"
 			if sv.Stateful {
-				stateful, copied = "yes", bytesize(sv.CopiedBytes)
+				stateful, copied, passes = "yes", bytesize(sv.CopiedBytes), itoa(int64(sv.Passes))
 			}
-			t.Row(sv.Service, stateful, sv.Status, copied, sv.Error)
+			t.Row(sv.Service, stateful, sv.Status, copied, passes, sv.Error)
 		}
 		if err := t.Flush(); err != nil {
 			return err
