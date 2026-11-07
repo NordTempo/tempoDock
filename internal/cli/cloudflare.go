@@ -112,6 +112,15 @@ func printCloudflare(g *globals, cmd *cobra.Command, cf apitypes.Cloudflare, ver
 	platform, _ := cmd.Flags().GetBool("platform")
 	return g.io.Print(cf, func() error {
 		g.io.Successf("%s Cloudflare connection %s: account %s", verb, cf.Name, cf.AccountName)
+		if len(cf.ZonesAdded) > 0 {
+			g.io.Detail("Zones added: " + strings.Join(cf.ZonesAdded, ", ") + ".")
+		}
+		if len(cf.ZonesDropped) > 0 {
+			g.io.Detail("Zones dropped: " + strings.Join(cf.ZonesDropped, ", ") + ". Their domains move to another connection that has the zone, where there is one.")
+		}
+		if len(cf.DomainsFailed) > 0 {
+			g.io.Detail("No other connection may use the zone of " + strings.Join(cf.DomainsFailed, ", ") + ", so Dock no longer routes these domains: give a connection's token the zone, then `dock cloudflare refresh <name>`.")
+		}
 		switch {
 		case len(cf.Zones) == 0:
 			g.io.Detail("No domains can be added from it yet: give the token Zone › DNS › Edit and Zone › Read on some zones, then `dock cloudflare refresh " + cf.Name + platformFlag(platform) + "`.")
@@ -137,7 +146,8 @@ func newCloudflareAddCmd(g *globals) *cobra.Command {
 platform). Dock checks the token before saving it: it is active, reaches the
 account and its tunnels, and lists zones; zones whose DNS records it can't
 read are left out, and for the organization's own those Cloudflare doesn't
-serve yet. A zone connected to Dock elsewhere is refused. --account-id picks
+serve yet. A zone may be on several connections: the platform's and other
+organizations' have no say in this one's. --account-id picks
 the account when the token reaches several, and is needed for a token owned
 by an account. --shared (with --platform) lets every organization's domains
 use the connection's zones.
@@ -180,8 +190,12 @@ func newCloudflareSetCmd(g *globals) *cobra.Command {
 		Use:   "set <name> [--token-stdin [--account-id <id>]] [--platform --shared[=false]]",
 		Short: "Give a Cloudflare connection a new token, or share it (admin; --platform: operators)",
 		Long: `Give a Cloudflare connection a new token, checked like a new one; its zones
-are listed again. A connection whose token Cloudflare refused (revoked or
-expired) works again, and the tunnels and domains waiting for it resume.
+are listed again, and the zones added and dropped are shown. A connection
+whose token Cloudflare refused (revoked or expired) works again, and the
+tunnels and domains waiting for it resume. Domains in a dropped zone move to
+another connection the organization may use that has it, or fail saying so.
+A token reaching fewer zones is how to take zones off a connection that runs
+server tunnels, which can't be removed.
 
 With --platform, --shared lets every organization's domains use the
 connection's zones, and --shared=false stops that; domains already in them
@@ -231,7 +245,8 @@ func newCloudflareRefreshCmd(g *globals) *cobra.Command {
 		Short: "List a Cloudflare connection's zones again (admin; --platform: operators)",
 		Long: `Check the connection's token again and list its zones, after zones were added
 to (or taken from) the token in Cloudflare, or a permission was fixed. Its
-failed domains are tried again.`,
+failed domains are tried again, and domains in zones it no longer reaches move
+as with ` + "`dock cloudflare set`" + `.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
@@ -253,11 +268,14 @@ func newCloudflareRemoveCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Remove a Cloudflare connection no tunnel uses (admin; --platform: operators)",
-		Long:  `Remove a Cloudflare connection. Dock forgets the domains it routed with it; their records stay in Cloudflare. Refused while a server's tunnel uses it.`,
-		Args:  cobra.ExactArgs(1),
+		Long: `Remove a Cloudflare connection. Its domains move to another connection that
+has their zone; Dock forgets the rest, whose records stay in Cloudflare.
+Refused while a server's tunnel uses it: to take zones off such a connection,
+give it a token that reaches fewer (` + "`dock cloudflare set <name> --platform --token-stdin`" + `).`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
-				if err := g.io.Confirm(fmt.Sprintf("Remove Cloudflare connection %s? The records of its domains stay in Cloudflare, no longer kept by Dock.", args[0]), "yes"); err != nil {
+				if err := g.io.Confirm(fmt.Sprintf("Remove Cloudflare connection %s? Its domains move to another connection with their zone; the records of the rest stay in Cloudflare, no longer kept by Dock.", args[0]), "yes"); err != nil {
 					return err
 				}
 			}

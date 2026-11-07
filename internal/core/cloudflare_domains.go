@@ -38,13 +38,17 @@ func (c *Core) ListCloudflareZones(_ context.Context, a Actor) ([]apitypes.Cloud
 }
 
 // usableZones are the zones org's domains may use (cfZone.usableBy), by
-// name.
+// name. A zone on several connections is listed once, with the one its
+// domains use (pickZone).
 func (c *Core) usableZones(org int64) []apitypes.CloudflareZone {
 	c.cf.mu.Lock()
 	defer c.cf.mu.Unlock()
 	out := make([]apitypes.CloudflareZone, 0, len(c.cf.zones))
 	for _, z := range c.cf.zones {
-		if z.usableBy(org) {
+		if !z.usableBy(org) || slices.ContainsFunc(out, func(o apitypes.CloudflareZone) bool { return o.Name == z.Name }) {
+			continue
+		}
+		if z, ok := pickZone(c.cf.zones, org, func(o cfZone) bool { return o.Name == z.Name }); ok {
 			out = append(out, apitypes.CloudflareZone{Name: z.Name, Connection: c.cf.conns[z.ConnectionID], Platform: z.org == 0})
 		}
 	}
@@ -156,6 +160,17 @@ func (c *Core) cloudflareRecords(ctx context.Context, conns map[int64]*cfConn) e
 			if cc.row.Status != string(apitypes.CloudflareOK) {
 				continue
 			}
+			if !c.holdsZone(r.ConnectionID, r.ZoneID) {
+				// Retried after its connection lost the zone: never worked
+				// on with a connection that doesn't hold it.
+				if err := c.store.FailCloudflareRecord(ctx, store.FailCloudflareRecordParams{
+					Reason: strandedReason(cc.row.Name, r.Hostname), UpdatedAt: now(), ID: r.ID,
+				}); err != nil {
+					return err
+				}
+				c.publishRecord(ctx, r.Hostname)
+				continue
+			}
 			if err := c.recordStep(ctx, cc, r); err != nil {
 				return err
 			}
@@ -179,7 +194,7 @@ func (c *Core) recordStep(ctx context.Context, cc *cfConn, r store.CloudflareRec
 		if err := c.store.DeleteCloudflareRecord(ctx, store.DeleteCloudflareRecordParams{ID: r.ID, Gen: r.Gen}); err != nil {
 			return err
 		}
-		c.publishRecord(ctx, r)
+		c.publishRecord(ctx, r.Hostname)
 		return nil
 	}
 	res, err := c.routeDomain(cctx, cc, r)
@@ -196,7 +211,7 @@ func (c *Core) recordStep(ctx context.Context, cc *cfConn, r store.CloudflareRec
 	if res.Status == "ok" || res.Status == "external" {
 		c.kickDomains() // its DNS check can pass now
 	}
-	c.publishRecord(ctx, r)
+	c.publishRecord(ctx, r.Hostname)
 	return nil
 }
 
@@ -213,7 +228,7 @@ func (c *Core) recordFailed(ctx context.Context, cc *cfConn, r store.CloudflareR
 	}); uerr != nil {
 		return uerr
 	}
-	c.publishRecord(ctx, r)
+	c.publishRecord(ctx, r.Hostname)
 	return err
 }
 
@@ -424,9 +439,17 @@ func (c *Core) syncServerRecords(ctx context.Context, srv store.Server) {
 	}
 }
 
+// publishRecords sends the domains of hostnames, whose routes changed, to
+// clients.
+func (c *Core) publishRecords(ctx context.Context, hostnames []string) {
+	for _, h := range hostnames {
+		c.publishRecord(ctx, h)
+	}
+}
+
 // publishRecord sends a domain whose route changed to clients.
-func (c *Core) publishRecord(ctx context.Context, r store.CloudflareRecord) {
-	d, err := c.store.GetDomainByHostname(ctx, r.Hostname)
+func (c *Core) publishRecord(ctx context.Context, hostname string) {
+	d, err := c.store.GetDomainByHostname(ctx, hostname)
 	if err != nil {
 		return
 	}
