@@ -83,6 +83,14 @@ func session(t *testing.T, h *harness, secret string) signedIn {
 // key and recovery codes.
 func addTOTP(t *testing.T, h *harness, s signedIn) ([]byte, []string) {
 	t.Helper()
+	key, codes, _ := addTOTPStep(t, h, s)
+	return key, codes
+}
+
+// addTOTPStep is addTOTP, also returning the step whose code the setup
+// spent: a later step is a fresh code even across a 30 s boundary.
+func addTOTPStep(t *testing.T, h *harness, s signedIn) ([]byte, []string, int64) {
+	t.Helper()
 	setup, err := h.c.StartTOTP(h.ctx, s.a)
 	if err != nil {
 		t.Fatal(err)
@@ -92,11 +100,12 @@ func addTOTP(t *testing.T, h *harness, s signedIn) ([]byte, []string) {
 		t.Fatal(err)
 	}
 	// The setup's code is spent: sign-ins need a later step.
-	added, err := h.c.AddTOTP(h.ctx, s.a, apitypes.AddTOTPRequest{Ceremony: setup.Ceremony, Code: totpCode(key, totpStep(now())-1)})
+	spent := totpStep(now()) - 1
+	added, err := h.c.AddTOTP(h.ctx, s.a, apitypes.AddTOTPRequest{Ceremony: setup.Ceremony, Code: totpCode(key, spent)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return key, added.RecoveryCodes
+	return key, added.RecoveryCodes, spent
 }
 
 func wantCode(t *testing.T, what string, err error, code apitypes.ErrorCode) {
@@ -109,7 +118,7 @@ func wantCode(t *testing.T, what string, err error, code apitypes.ErrorCode) {
 func TestTOTPSecondFactor(t *testing.T) {
 	h := newHarness(t)
 	first := adaSession(t, h)
-	key, codes := addTOTP(t, h, first)
+	key, codes, spent := addTOTPStep(t, h, first)
 	if len(codes) != recoveryCodeCount {
 		t.Fatalf("recovery codes: %v", codes)
 	}
@@ -129,7 +138,7 @@ func TestTOTPSecondFactor(t *testing.T) {
 
 	_, err = h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: "000000"}, testClient)
 	wantCode(t, "wrong code", err, apitypes.CodeUnauthorized)
-	_, err = h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: totpCode(key, totpStep(now())-1)}, testClient)
+	_, err = h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: totpCode(key, spent)}, testClient)
 	wantCode(t, "the setup's code again", err, apitypes.CodeUnauthorized)
 
 	code := totpCode(key, totpStep(now()))
