@@ -202,7 +202,7 @@ function Detail({ org: o }: { org: ConsoleOrg }) {
       </div>
       {/* Side by side while the column sits under the table (below
           1400px), one column beside it. */}
-      <div className="grid items-start gap-x-10 gap-y-4 sm:grid-cols-[minmax(0,1fr)_320px] min-[1400px]:grid-cols-1">
+      <div className="grid items-start gap-x-10 gap-y-4 sm:max-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[13px] [&_dt]:text-mut">
           <dt>Admins</dt>
           <dd>
