@@ -264,7 +264,11 @@ function Row({
           <span className="flex items-baseline gap-2">
             <span className="text-faint">{open ? "▾" : "▸"}</span>
             <span className="font-semibold">{g.type}</span>
-            <span className="truncate" title={g.message}>
+            {/* Two lines before it clips: the message is the point. */}
+            <span
+              className="line-clamp-2 min-w-0 break-words"
+              title={g.message}
+            >
               {g.message}
             </span>
             {isNew && (

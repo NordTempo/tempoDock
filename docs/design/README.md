@@ -167,7 +167,10 @@ for everything.
 - **Fields** (inputs, selects, checkboxes) have a 3:1 edge on black.
 - **Targets** are at least 24px: buttons, inputs, selects and standalone
   links (by padding taken back with a negative margin).
-- **Words.** Plain words over product terms: replaced (not superseded),
+- **Defaults** are said where they are chosen (Build & run reads "1 CPU
+  (default)"); in tables the value alone, dimmer, with a tooltip.
+- **Words.** Plain words over product terms ("Going live", "Before it goes
+  live", "Checks while running"): replaced (not superseded),
   traffic moved, downtime, waiting to apply, reached at, memory reserved,
   "1 CPU (default)".
 

@@ -169,6 +169,13 @@ function NameField({ name }: { name: string }) {
         type="submit"
         cli={`dock me name "${next || "<name>"}"`}
         disabled={!changed || !next || update.isPending}
+        reason={
+          update.isPending || (update.isSuccess && !changed)
+            ? undefined
+            : !next
+              ? "type a name"
+              : "nothing changed yet"
+        }
       >
         Save
       </Act>

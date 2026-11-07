@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { canDeploy, queries, serviceRef, useSession } from "../../data/queries";
@@ -6,6 +6,7 @@ import { ServerDots } from "../../shell/context";
 import { useShortcuts } from "../../shell/keys";
 import { rememberProject, useOrg } from "../../shell/location";
 import { Act, Button, Glyph, Page, PageBar } from "../../ui/kit";
+import { sitesQuery } from "../analytics/loaders";
 import { canCreateEnvironment } from "../create/access";
 import { openCreate } from "../create/open";
 import { DeployBanner } from "./DeployBanner";
@@ -28,6 +29,16 @@ export function ProjectView({
   environment?: string;
 }) {
   const org = useOrg();
+  // The project's analytics, one click from its page: the site for the
+  // environment in view, else the first one the project has.
+  const site = useQuery({
+    ...sitesQuery(project),
+    select: (sites) => {
+      const live = sites.filter((x) => !x.archived);
+      return (live.find((x) => !only || x.environment === only) ?? live[0])
+        ?.name;
+    },
+  }).data;
   // CPU and memory columns show the latest minute sample; usage events
   // patch it (data/live.ts).
   const overview = useSuspenseQuery(queries.overview(project)).data;
@@ -130,6 +141,15 @@ export function ProjectView({
               >
                 New environment
               </Act>
+            )}
+            {site && (
+              <Link
+                to="/$org/analytics/$project/$site"
+                params={{ org, project, site }}
+                className="btn"
+              >
+                Analytics
+              </Link>
             )}
             {overview.environments.length > 1 && (
               <Link

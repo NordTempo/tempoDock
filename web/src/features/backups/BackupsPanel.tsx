@@ -121,7 +121,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           >
             <input
               aria-label="Snapshot note"
-              placeholder="note, optional"
+              placeholder="Snapshot note, optional"
               maxLength={200}
               value={note}
               onChange={(e) => setNote(e.target.value)}

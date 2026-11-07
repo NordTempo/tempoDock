@@ -171,10 +171,13 @@ export function SettingsPanel({
       </section>
 
       <section aria-labelledby="set-release">
-        <SectionHead id="set-release">Releases</SectionHead>
+        <SectionHead id="set-release">
+          {/* Plain names chosen in a blind trial (2026-11). */}
+          Going live
+        </SectionHead>
         <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
           {row(
-            "Before traffic",
+            "Before it goes live",
             "Runs with the new image first, like migrations.",
             [
               { key: "pre_deploy_command", word: "command" },
@@ -191,7 +194,7 @@ export function SettingsPanel({
             { key: "health_check_timeout_seconds", word: "timeout" },
           ])}
           {row(
-            "While running",
+            "Checks while running",
             "Restarts the service when every try fails.",
             service.health_check_interval_seconds >= 0
               ? [

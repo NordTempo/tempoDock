@@ -112,12 +112,13 @@ export function LockStrip({
   const admin = useIsAdmin();
   const lockNow = useLock();
   const unlock = useUnlock();
-  const waiting = useRequestsIfAdmin().filter(
-    (r) =>
-      r.project === ref.project &&
-      r.environment === ref.environment &&
-      isPending(r),
+  const pending = useRequestsIfAdmin().filter(isPending);
+  const waiting = pending.filter(
+    (r) => r.project === ref.project && r.environment === ref.environment,
   );
+  // None here yet: still point at the ones waiting elsewhere, so the
+  // strip always leads to what the lock is for.
+  const elsewhere = pending.length - waiting.length;
   const [asking, setAsking] = useState(false);
   const error = lockNow.error ?? (asking ? null : unlock.error);
   const busy = lockNow.isPending || unlock.isPending;
@@ -149,6 +150,15 @@ export function LockStrip({
             className="hover:underline"
           >
             {plural(waiting.length, "request")} waiting
+          </Link>
+        )}
+        {!waiting[0] && elsewhere > 0 && (
+          <Link
+            to="/$org/requests"
+            params={{ org }}
+            className="text-warn-text hover:underline"
+          >
+            {plural(elsewhere, "request")} waiting in other environments
           </Link>
         )}
         {admin &&

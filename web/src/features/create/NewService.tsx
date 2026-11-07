@@ -83,7 +83,7 @@ type Done =
  * `dock service create` with every flag: from an image, from source (built
  * on deploy), from a GitHub repository (created, then connected like
  * `dock git connect`), or a database from a template. An image deploys
- * right after it is created ("Create only" skips that). Opens the
+ * right after it is created ("Create, don't deploy" skips that). Opens the
  * service, except where the answer has something to keep: a database's
  * variable reference, a webhook's secret. Submitting with fields missing
  * marks them instead of doing nothing (useValidation). The environment
@@ -548,7 +548,7 @@ function ServiceForm({
               disabled={create.isPending || deploy.isPending}
               onClick={() => submit(false).catch(() => {})}
             >
-              Create only
+              Create, don't deploy
             </Button>
           )
         }

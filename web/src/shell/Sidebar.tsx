@@ -355,9 +355,9 @@ function OpenAlertCount() {
   if (open.length === 0) return null;
   const critical = open.some((a) => a.severity === "critical");
   return (
+    // Said in words, so it isn't read as another requests count.
     <span className={`text-2xs ${critical ? "text-fail" : "text-warn"}`}>
-      {open.length}
-      <span className="sr-only"> open</span>
+      {open.length} {open.length === 1 ? "alert" : "alerts"}
     </span>
   );
 }

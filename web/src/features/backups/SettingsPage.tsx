@@ -318,7 +318,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
               type="submit"
               cli={cli}
               disabled={!dirty || configure.isPending}
-              title={dirty ? undefined : "Change a count first"}
+              reason={configure.isPending ? undefined : "nothing changed yet"}
             >
               Save
             </Act>

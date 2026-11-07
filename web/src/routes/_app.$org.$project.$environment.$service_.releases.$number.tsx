@@ -208,7 +208,7 @@ function ReleasePage() {
                   <b className="font-semibold">
                     {/* Said as it was then; a later release may serve now. */}
                     {previous && previous.number !== serving
-                      ? `r${previous.number} kept serving; r${serving} serves now.`
+                      ? `r${previous.number} kept serving then; since, r${serving} took over.`
                       : `r${serving} is still serving.`}
                   </b>{" "}
                   <span className="text-mut">

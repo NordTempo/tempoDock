@@ -81,6 +81,9 @@ export function GeneralPage() {
                         type="submit"
                         cli={`dock org rename ${JSON.stringify(name.trim())}`}
                         disabled={rename.isPending || name.trim() === org.name}
+                        reason={
+                          rename.isSuccess ? undefined : "nothing changed yet"
+                        }
                       >
                         Save
                       </Act>
