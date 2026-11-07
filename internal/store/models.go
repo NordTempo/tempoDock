@@ -54,10 +54,12 @@ type Alert struct {
 	ServiceID   *int64
 	Command     string
 	Target      string
+	OrgID       *int64
 }
 
 type AlertChannel struct {
 	ID              int64
+	OrgID           *int64
 	Name            string
 	Kind            string
 	Target          string
@@ -69,6 +71,11 @@ type AlertChannel struct {
 	LastError       string
 	LastErrorAt     *time.Time
 	Failures        int64
+}
+
+type AlertChannelCopy struct {
+	ChannelID int64
+	OrgID     int64
 }
 
 type AlertNotice struct {

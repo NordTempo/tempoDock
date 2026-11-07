@@ -265,7 +265,8 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       applyServer(queryClient, event.server, event.message === "removed");
       return;
     case "alert":
-      // Only admins get these; they patch the alert lists.
+      // Org members get their org's, operators the platform's; each
+      // patches its scope's lists.
       if (event.alert) applyAlertEvent(queryClient, event.alert);
       return;
     case "update":

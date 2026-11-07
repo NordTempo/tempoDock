@@ -2,7 +2,10 @@ package apitypes
 
 import "time"
 
-// Alerts and notification channels (ADR 0020).
+// Alerts and notification channels (ADR 0020). An alert about a project
+// or service is its org's; one about a server or Dock itself is the
+// platform's (ADR 0062). Channels belong to an org or to the platform and
+// receive only its alerts.
 
 // AlertSeverity is how urgent an alert is.
 type AlertSeverity string
@@ -57,6 +60,22 @@ const (
 	// AlertUptimeDown: an uptime check failed twice in a row (ADR 0055).
 	// Its next successful probe resolves it.
 	AlertUptimeDown AlertKind = "uptime_down"
+	// AlertMemory: a server's memory has stayed fuller than [alerts]
+	// memory_warning_percent (or memory_critical_percent) for
+	// memory_minutes.
+	AlertMemory AlertKind = "memory"
+	// AlertCPU: a server's CPUs have stayed busier than [alerts]
+	// cpu_percent for cpu_minutes.
+	AlertCPU AlertKind = "cpu"
+	// AlertUpdateFailed: updating Dock, on the control plane or on a
+	// server, failed. The next update that succeeds there resolves it.
+	AlertUpdateFailed AlertKind = "update_failed"
+	// AlertConnection: one of the platform's connections failed when Dock
+	// used it: a Cloudflare token refused, the GitHub App's key or
+	// installation tokens rejected, backup storage unreachable, the
+	// registry's prune or a push failing. The next call that works
+	// resolves it.
+	AlertConnection AlertKind = "connection_failed"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -64,7 +83,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`
@@ -82,6 +101,9 @@ type Alert struct {
 	OpenedAt   time.Time    `json:"opened_at"`
 	UpdatedAt  time.Time    `json:"updated_at"`
 	ResolvedAt *time.Time   `json:"resolved_at,omitempty"`
+	// Platform marks the platform's alerts (servers, connections, Dock
+	// itself); the rest are the organization's.
+	Platform bool `json:"platform,omitempty"`
 }
 
 // AlertTarget is what an alert points at, beyond its project,

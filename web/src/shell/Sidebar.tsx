@@ -26,7 +26,11 @@ import type {
   Org,
   ServiceView,
 } from "../data/types";
-import { useOpenAlertsIfAdmin } from "../features/alerts/data";
+import {
+  type Alert,
+  useOrgOpenAlerts,
+  usePlatformOpenAlerts,
+} from "../features/alerts/data";
 import {
   canCreateEnvironment,
   canCreateProject,
@@ -147,6 +151,10 @@ function AppNav() {
       <NavLink to="/$org/analytics" icon="bars">
         Analytics
       </NavLink>
+      <NavLink to="/$org/alerts" icon="bell">
+        <span className="flex-1">Alerts</span>
+        <OpenAlertCount open={useOrgOpenAlerts()} />
+      </NavLink>
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>
@@ -172,7 +180,7 @@ function AppNav() {
         <Link to="/console" className="nav-row mt-0.5">
           <Icon name="console" size={14} className="text-warn" />
           <span className="flex-1">Platform console</span>
-          <OpenAlertCount />
+          <PlatformAlertCount />
         </Link>
       )}
     </>
@@ -349,9 +357,13 @@ function UpdateBadge() {
   );
 }
 
+/** The platform's open alerts, counted (operators only). */
+function PlatformAlertCount() {
+  return <OpenAlertCount open={usePlatformOpenAlerts()} />;
+}
+
 /** How many alerts are open, in the worst one's colour; nothing when none. */
-function OpenAlertCount() {
-  const open = useOpenAlertsIfAdmin();
+function OpenAlertCount({ open }: { open: Alert[] }) {
   if (open.length === 0) return null;
   const critical = open.some((a) => a.severity === "critical");
   return (
@@ -881,7 +893,7 @@ function ConsoleNav() {
       <div className={groupLabel}>Operations</div>
       <NavLink to="/console/alerts" icon="bell">
         <span className="flex-1">Alerts</span>
-        <OpenAlertCount />
+        <PlatformAlertCount />
       </NavLink>
       <NavLink to="/console/audit" icon="activity">
         Activity

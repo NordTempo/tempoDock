@@ -191,16 +191,32 @@ func (c *Core) installationToken(ctx context.Context, id int64) (string, error) 
 	}
 	jwt, err := c.appJWT(ctx)
 	if err != nil {
+		if CodeOf(err) != apitypes.CodeNotFound { // no App at all is not a failing one
+			c.githubAppFailed(ctx, err)
+		}
 		return "", err
 	}
 	token, expires, err := c.git.github.accessToken(ctx, jwt, id)
 	if err != nil {
+		// A removed installation (404) is the org's, not the App failing.
+		if CodeOf(err) != apitypes.CodeNotFound {
+			c.githubAppFailed(ctx, err)
+		}
 		return "", err
 	}
+	c.connectionWorks(ctx, githubAppAlertKey)
 	s.mu.Lock()
 	s.tokens[id] = installToken{token: token, expires: expires}
 	s.mu.Unlock()
 	return token, nil
+}
+
+// githubAppFailed raises the GitHub App's platform alert: Dock couldn't
+// sign in as the App or get an installation token, so pushes don't
+// deploy and statuses aren't posted until it can.
+func (c *Core) githubAppFailed(ctx context.Context, err error) {
+	c.connectionFailed(ctx, githubAppAlertKey, "The GitHub App is failing",
+		fmt.Sprintf("Dock couldn't get a GitHub token for the App: %v. Deploys from GitHub and commit statuses wait until it can.", err), "dock github status")
 }
 
 // toGitHubApp describes the App for the API.
@@ -407,6 +423,7 @@ func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apity
 	}
 	c.git.app.forgetTokens(0)
 	c.audit(ctx, f.actor.platform(), "github.app_create", nil, nil, row.Slug, fmt.Sprintf("created the GitHub App %s on %s", row.Slug, row.Owner))
+	c.connectionWorks(ctx, githubAppAlertKey)
 	return *toGitHubApp(row), nil
 }
 
@@ -435,6 +452,7 @@ func (c *Core) RemoveGitHubApp(ctx context.Context, a Actor) error {
 	}
 	c.git.app.forgetTokens(0)
 	c.audit(ctx, a.platform(), "github.app_remove", nil, nil, app.Slug, "removed the GitHub App "+app.Slug)
+	c.connectionWorks(ctx, githubAppAlertKey)
 	return nil
 }
 

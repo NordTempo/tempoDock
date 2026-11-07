@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -390,9 +391,12 @@ func (c *Core) UpdateFinished(ctx context.Context) {
 	case update.Succeeded:
 		c.audit(ctx, System, "platform.updated", nil, nil, "dock",
 			fmt.Sprintf("updated dock from %s to %s in %s (asked by %s); backup %s", res.From, res.Version, took, res.RequestedBy, res.Backup))
+		c.signalAlert(ctx, alertSignal{Key: updateAlertKey, Resolve: true})
 	default:
+		how := strings.ReplaceAll(string(res.Status), "_", " ")
 		c.audit(ctx, System, "platform.update_failed", nil, nil, "dock",
-			fmt.Sprintf("updating dock from %s to %s %s after %s: %s", res.From, res.Version, strings.ReplaceAll(string(res.Status), "_", " "), took, res.Error))
+			fmt.Sprintf("updating dock from %s to %s %s after %s: %s", res.From, res.Version, how, took, res.Error))
+		c.signalAlert(ctx, updateFailed(fmt.Sprintf("Updating the control plane from %s to %s %s: %s.", res.From, res.Version, how, strings.TrimRight(res.Error, ". "))))
 	}
 	if res.Status == update.Succeeded && res.Servers && res.Version == version.Version {
 		u.mu.Lock()
@@ -471,6 +475,7 @@ func (c *Core) updateNodes(r update.Request) {
 			if err != nil {
 				c.setNode(s.ID, nodeFailed, "download "+r.Version+": "+err.Error())
 				c.audit(ctx, System, "server.update_failed", nil, nil, "server "+s.Name, fmt.Sprintf("updating server %s to %s failed: %v", s.Name, r.Version, err))
+				c.nodeUpdateAlert(ctx, s, r.Version, "download: "+err.Error())
 				return
 			}
 		}
@@ -482,9 +487,11 @@ func (c *Core) updateNodes(r update.Request) {
 		if err != nil {
 			c.setNode(s.ID, nodeFailed, err.Error())
 			c.audit(ctx, System, "server.update_failed", nil, nil, "server "+s.Name, fmt.Sprintf("updating server %s from %s to %s failed: %v", s.Name, hello.Version, r.Version, err))
+			c.nodeUpdateAlert(ctx, s, r.Version, err.Error())
 			continue
 		}
 		c.setNode(s.ID, nodeUpdated, "")
+		c.nodeUpdateAlert(ctx, s, r.Version, "")
 		c.audit(ctx, System, "server.updated", nil, nil, "server "+s.Name, fmt.Sprintf("updated server %s from %s to %s", s.Name, hello.Version, r.Version))
 	}
 }
@@ -503,10 +510,40 @@ func (c *Core) endUpdate(err error, r update.Request) {
 	if err != nil {
 		c.log.Error("update failed", "version", r.Version, "err", err)
 		c.audit(c.ctx, System, "platform.update_failed", nil, nil, "dock", fmt.Sprintf("updating dock from %s to %s failed: %v", version.Version, r.Version, err))
+		c.signalAlert(c.ctx, updateFailed(fmt.Sprintf("Updating the control plane from %s to %s failed before it changed anything: %v.", version.Version, r.Version, err)))
 	}
 	if st, err := c.updateStatus(c.ctx, false); err == nil {
 		c.publishUpdate(st)
 	}
+}
+
+// updateAlertKey names the control plane's update_failed alert; a
+// server's is "update:<server ID>".
+const updateAlertKey = "update:dock"
+
+// updateFailed is the platform alert for a failed update of the control
+// plane. The next update that succeeds resolves it.
+func updateFailed(msg string) alertSignal {
+	return alertSignal{
+		Key: updateAlertKey, Kind: apitypes.AlertUpdateFailed, Severity: apitypes.SeverityWarning,
+		Title: "Dock update failed", Message: msg + " Dock keeps running the version it had.", Command: "dock update",
+	}
+}
+
+// nodeUpdateAlert raises or resolves a server's update_failed alert as
+// its update ends: msg is why it failed, "" when it updated.
+func (c *Core) nodeUpdateAlert(ctx context.Context, s store.Server, version, msg string) {
+	key := "update:" + strconv.FormatInt(s.ID, 10)
+	if msg == "" {
+		c.signalAlert(ctx, alertSignal{Key: key, Resolve: true})
+		return
+	}
+	c.signalAlert(ctx, alertSignal{
+		Key: key, Kind: apitypes.AlertUpdateFailed, Severity: apitypes.SeverityWarning, Server: s.Name,
+		Title:   "Dock update failed on " + s.Name,
+		Message: fmt.Sprintf("Updating server %s to %s failed: %s. It keeps running its version; the next update tries again.", s.Name, version, strings.TrimRight(msg, ". ")),
+		Command: "dock update",
+	})
 }
 
 func (c *Core) setStage(s apitypes.UpdateStage) {

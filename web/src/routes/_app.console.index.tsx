@@ -9,7 +9,7 @@ import { registryQuery } from "../features/registry/data";
 export const Route = createFileRoute("/_app/console/")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
-      queryClient.ensureQueryData(alertQueries.open()),
+      queryClient.ensureQueryData(alertQueries.open("platform")),
       queryClient.ensureQueryData(backupSettingsQuery()),
       queryClient.ensureQueryData(registryQuery()),
       queryClient.ensureQueryData(queries.users()),

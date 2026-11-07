@@ -15,19 +15,40 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// Alerts and where they are sent (ADR 0020).
+// Alerts and where they are sent (ADR 0020). An org's alerts by default;
+// --platform for the platform's (ADR 0062).
+
+// withPlatform adds platform=true to an alerts API path when the command
+// runs with --platform (a persistent flag of `dock alerts`).
+func withPlatform(cmd *cobra.Command, path string) string {
+	if on, _ := cmd.Flags().GetBool("platform"); on {
+		if strings.Contains(path, "?") {
+			return path + "&platform=true"
+		}
+		return path + "?platform=true"
+	}
+	return path
+}
 
 func newAlertsCmd(g *globals) *cobra.Command {
 	var all bool
 	var limit int
 	cmd := &cobra.Command{
-		Use:   "alerts [--all]",
-		Short: "Open alerts: full disks, offline servers, crash loops, failed deploys (admin)",
-		Long: `List the open alerts, critical first. Alerts open and resolve by themselves
-as conditions come and go; --all also lists resolved ones, newest first.
+		Use:   "alerts [--all] [--platform]",
+		Short: "Open alerts: crash loops, failed deploys, unhealthy services; --platform for servers",
+		Long: `List the organization's open alerts, critical first: failed deploys, crash
+loops, unhealthy services, failed backups and jobs, uptime, domains and
+analytics. Alerts open and resolve by themselves as conditions come and
+go; --all also lists resolved ones, newest first.
 
-Alerts are sent to the channels set up with ` + "`dock alerts channel add`" + `.
-Thresholds are in the control plane's config.toml ([alerts]).`,
+--platform lists the platform's alerts instead (full disks, memory and
+CPU, offline servers, failed Dock updates, the control plane's backup),
+for operators. It works with every subcommand: ` + "`dock alerts channel add --platform`" + `
+adds a channel for the platform's alerts.
+
+Alerts are sent to the channels set up with ` + "`dock alerts channel add`" + `:
+an organization's channels get its alerts, platform channels the
+platform's. Thresholds are in the control plane's config.toml ([alerts]).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
@@ -38,6 +59,7 @@ Thresholds are in the control plane's config.toml ([alerts]).`,
 			if all {
 				path += "?all=true&limit=" + strconv.Itoa(limit)
 			}
+			path = withPlatform(cmd, path)
 			alerts, err := get[[]apitypes.Alert](cmd.Context(), s, path)
 			if err != nil {
 				return err
@@ -56,6 +78,7 @@ Thresholds are in the control plane's config.toml ([alerts]).`,
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "also list resolved alerts")
+	cmd.PersistentFlags().Bool("platform", false, "the platform's alerts and channels instead of the organization's (operators)")
 	cmd.Flags().IntVar(&limit, "limit", 100, "with --all: how many (at most 500)")
 	cmd.AddCommand(newAlertResolveCmd(g), newAlertChannelCmd(g))
 	return cmd
@@ -64,7 +87,7 @@ Thresholds are in the control plane's config.toml ([alerts]).`,
 func newAlertResolveCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "resolve <id>",
-		Short: "Resolve an alert by hand (admin)",
+		Short: "Resolve an alert by hand (deploy; operators for platform alerts)",
 		Long: `Resolve an open alert whose condition won't clear by itself. If the
 condition is still there, a new alert opens.`,
 		Args: cobra.ExactArgs(1),
@@ -92,7 +115,7 @@ condition is still there, a new alert opens.`,
 func newAlertChannelCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "channel",
-		Short: "Where alerts are sent: webhooks, Slack, email (admin)",
+		Short: "Where alerts are sent: webhooks, Slack, email (admin; --platform: operators)",
 	})
 	cmd.AddCommand(newAlertChannelListCmd(g), newAlertChannelAddCmd(g), newAlertChannelRemoveCmd(g), newAlertChannelTestCmd(g))
 	return cmd
@@ -109,7 +132,7 @@ func newAlertChannelListCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			chs, err := get[[]apitypes.AlertChannel](cmd.Context(), s, apiPrefix+"/alerts/channels")
+			chs, err := get[[]apitypes.AlertChannel](cmd.Context(), s, withPlatform(cmd, apiPrefix+"/alerts/channels"))
 			if err != nil {
 				return err
 			}
@@ -215,7 +238,7 @@ shown again.`,
 			if err != nil {
 				return err
 			}
-			created, err := send[apitypes.CreatedAlertChannel](cmd.Context(), s, http.MethodPost, apiPrefix+"/alerts/channels", req)
+			created, err := send[apitypes.CreatedAlertChannel](cmd.Context(), s, http.MethodPost, withPlatform(cmd, apiPrefix+"/alerts/channels"), req)
 			if err != nil {
 				return err
 			}
@@ -277,7 +300,7 @@ func newAlertChannelRemoveCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := del(cmd.Context(), s, apiPrefix+"/alerts/channels/"+url.PathEscape(args[0])); err != nil {
+			if err := del(cmd.Context(), s, withPlatform(cmd, apiPrefix+"/alerts/channels/"+url.PathEscape(args[0]))); err != nil {
 				return err
 			}
 			return g.io.Print(map[string]string{"removed": args[0]}, func() error {
@@ -300,7 +323,7 @@ func newAlertChannelTestCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := send[apitypes.AlertChannelTest](cmd.Context(), s, http.MethodPost, apiPrefix+"/alerts/channels/"+url.PathEscape(args[0])+"/test", nil)
+			res, err := send[apitypes.AlertChannelTest](cmd.Context(), s, http.MethodPost, withPlatform(cmd, apiPrefix+"/alerts/channels/"+url.PathEscape(args[0])+"/test"), nil)
 			if err != nil {
 				return err
 			}

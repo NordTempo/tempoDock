@@ -1,6 +1,6 @@
 # 0027: Organizations and the platform operator
 
-Status: accepted (decided by the agent; direction from the owner)
+Status: accepted (decided by the agent; direction from the owner); alerts amended by [0062](0062-org-alerts-and-operators.md)
 
 ## Context
 

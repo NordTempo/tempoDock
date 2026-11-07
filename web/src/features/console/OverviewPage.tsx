@@ -98,7 +98,7 @@ type Item = { key: string; tone: Tone; text: ReactNode; to: ReactNode };
 function Attention() {
   const servers = useServers();
   const version = useControlPlaneVersion();
-  const alerts = useOpenAlerts();
+  const alerts = useOpenAlerts("platform");
   const backups = useBackupSettings();
   const registry = useRegistry();
   const update = useUpdateNote();
@@ -207,7 +207,7 @@ function Numbers({ online }: { online: number }) {
   const users = useUsers();
   const registry = useRegistry();
   const backups = useBackupSettings();
-  const alerts = useOpenAlerts();
+  const alerts = useOpenAlerts("platform");
   const envs = tree.flatMap((p) => p.environments);
   const services = envs.reduce((n, e) => n + e.services.length, 0);
   const admins = users.filter((u) => u.role === "admin" && !u.disabled_at);
@@ -416,7 +416,7 @@ function ServerTable({ servers }: { servers: Server[] }) {
 }
 
 function OpenAlerts() {
-  const alerts = useOpenAlerts().slice(0, 6);
+  const alerts = useOpenAlerts("platform").slice(0, 6);
   return (
     <section aria-labelledby="alerts">
       <SectionHead

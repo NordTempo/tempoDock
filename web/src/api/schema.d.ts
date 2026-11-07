@@ -61,7 +61,7 @@ export interface paths {
         };
         /**
          * List alerts
-         * @description The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Operators only.
+         * @description The organization's open alerts (its projects and services), critical first, then newest first; with platform, the platform's (servers, Dock itself), for operators. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events.
          */
         get: operations["list-alerts"];
         put?: never;
@@ -81,13 +81,13 @@ export interface paths {
         };
         /**
          * List alert channels
-         * @description Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Operators only.
+         * @description Where the organization's alerts are sent (with platform, the platform's), with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Organization admins; operators for the platform's.
          */
         get: operations["list-alert-channels"];
         put?: never;
         /**
          * Add an alert channel
-         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Operators only.
+         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.
          */
         post: operations["create-alert-channel"];
         delete?: never;
@@ -108,7 +108,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an alert channel
-         * @description Operators only.
+         * @description Organization admins; operators for the platform's.
          */
         delete: operations["remove-alert-channel"];
         options?: never;
@@ -127,7 +127,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test alert
-         * @description Sends a test notification once, without retries, and says whether it went through. Operators only.
+         * @description Sends a test notification once, without retries, and says whether it went through. Organization admins; operators for the platform's.
          */
         post: operations["test-alert-channel"];
         delete?: never;
@@ -147,7 +147,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve an alert
-         * @description Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Operators only.
+         * @description Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. An organization's alert needs deploy there; a platform alert an operator.
          */
         post: operations["resolve-alert"];
         delete?: never;
@@ -4608,11 +4608,12 @@ export interface components {
             environment?: string;
             /** Format: int64 */
             id: number;
-            /** @description disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed; more may be added */
+            /** @description disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added */
             kind: string;
             message?: string;
             /** Format: date-time */
             opened_at: string;
+            platform?: boolean;
             project?: string;
             /** Format: date-time */
             resolved_at?: string;
@@ -8421,6 +8422,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
                 /** @description Include resolved alerts */
                 all?: boolean;
                 /** @description With all: only alerts with a smaller ID (paging) */
@@ -8513,6 +8516,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -8574,6 +8579,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -8590,6 +8604,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -8689,6 +8705,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {
@@ -8785,6 +8803,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {

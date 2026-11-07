@@ -115,9 +115,19 @@ func (h *harness) outboxSent() {
 	})
 }
 
+// channel adds a channel to org 1, for its alerts.
 func (h *harness) channel(req apitypes.CreateAlertChannelRequest) apitypes.CreatedAlertChannel {
+	return h.addChannel(false, req)
+}
+
+// platformChannel adds a channel for the platform's alerts.
+func (h *harness) platformChannel(req apitypes.CreateAlertChannelRequest) apitypes.CreatedAlertChannel {
+	return h.addChannel(true, req)
+}
+
+func (h *harness) addChannel(platform bool, req apitypes.CreateAlertChannelRequest) apitypes.CreatedAlertChannel {
 	h.t.Helper()
-	ch, err := h.c.CreateAlertChannel(h.ctx, testSystem, req)
+	ch, err := h.c.CreateAlertChannel(h.ctx, testSystem, platform, req)
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -148,18 +158,18 @@ func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	if all, _ := h.c.ListAlerts(h.ctx, testSystem, true, 0, 0); len(all) != 1 || all[0].ID != a.ID {
+	if all, _ := h.c.ListAlerts(h.ctx, testSystem, false, true, 0, 0); len(all) != 1 || all[0].ID != a.ID {
 		t.Fatalf("a failure while the alert is open raised another: %+v", all)
 	}
 
 	h.rt.FailPull(nil)
 	h.deploy(web, "app:4")
 	h.openAlert("deploy:service:1", false)
-	all, _ := h.c.ListAlerts(h.ctx, testSystem, true, 0, 0)
+	all, _ := h.c.ListAlerts(h.ctx, testSystem, false, true, 0, 0)
 	if len(all) != 1 || all[0].ResolvedAt == nil {
 		t.Fatalf("alerts after a good deploy = %+v", all)
 	}
-	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 0 {
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); len(open) != 0 {
 		t.Fatalf("open alerts = %+v", open)
 	}
 }
@@ -219,7 +229,7 @@ func TestAlertsReconcileOnStart(t *testing.T) {
 func TestDiskAlertEscalatesAndResolves(t *testing.T) {
 	h := newHarness(t)
 	k := newReceiver(h)
-	created := h.channel(apitypes.CreateAlertChannelRequest{Name: "ops", Kind: apitypes.ChannelWebhook, URL: k.srv.URL + "/hook?token=abc"})
+	created := h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "ops", Kind: apitypes.ChannelWebhook, URL: k.srv.URL + "/hook?token=abc"})
 	if len(created.Secret) != 64 || created.Channel.Target != k.srv.URL {
 		t.Fatalf("created = %+v (the secret is generated, the target has no path)", created)
 	}
@@ -284,7 +294,7 @@ func TestWebhookSignedAtAttempt(t *testing.T) {
 	h := newHarness(t)
 	k := newReceiver(h)
 	created := h.channel(apitypes.CreateAlertChannelRequest{Name: "hook", Kind: apitypes.ChannelWebhook, URL: k.srv.URL})
-	ch, err := h.store.GetAlertChannel(h.ctx, "hook")
+	ch, err := h.store.GetAlertChannel(h.ctx, store.GetAlertChannelParams{Org: 1, Name: "hook"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +344,7 @@ func TestChannelsNeverReachTheServer(t *testing.T) {
 		"http://127.0.0.1:7071/internal/caddy/ask", "http://localhost:5000/v2/", "http://[::1]/", "http://0.0.0.0/",
 		"http://169.254.169.254/latest/meta-data", "http://[fd00:ec2::254]/", "http://[::ffff:127.0.0.1]/",
 	} {
-		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, apitypes.CreateAlertChannelRequest{Name: "x", Kind: apitypes.ChannelWebhook, URL: u}); CodeOf(err) != apitypes.CodeValidation {
+		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, apitypes.CreateAlertChannelRequest{Name: "x", Kind: apitypes.ChannelWebhook, URL: u}); CodeOf(err) != apitypes.CodeValidation {
 			t.Errorf("channel to %s: %v", u, err)
 		}
 	}
@@ -344,7 +354,7 @@ func TestChannelsNeverReachTheServer(t *testing.T) {
 	k := newReceiver(h)
 	h.channel(apitypes.CreateAlertChannelRequest{Name: "self", Kind: apitypes.ChannelSlack, URL: k.srv.URL})
 	h.c.AllowLoopbackAlertChannels(false)
-	res, err := h.c.TestAlertChannel(h.ctx, testSystem, "self")
+	res, err := h.c.TestAlertChannel(h.ctx, testSystem, false, "self")
 	if err != nil || res.OK || !strings.Contains(res.Error, "this server itself") {
 		t.Fatalf("test of a loopback channel = %+v, %v", res, err)
 	}
@@ -434,7 +444,7 @@ func TestDeliveryRetriesAndRecordsFailures(t *testing.T) {
 	h := newHarness(t)
 	k := newReceiver(h)
 	k.fail = 2
-	h.channel(apitypes.CreateAlertChannelRequest{Name: "flaky", Kind: apitypes.ChannelSlack, URL: k.srv.URL})
+	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "flaky", Kind: apitypes.ChannelSlack, URL: k.srv.URL})
 	h.c.signalAlert(h.ctx, alertSignal{Key: "x", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something broke"})
 	k.events(t, 1)
 	k.mu.Lock()
@@ -446,7 +456,7 @@ func TestDeliveryRetriesAndRecordsFailures(t *testing.T) {
 	waitChannel := func(name string, ok func(apitypes.AlertChannel) bool) apitypes.AlertChannel {
 		deadline := time.Now().Add(5 * time.Second)
 		for {
-			chs, err := h.c.ListAlertChannels(h.ctx, testSystem)
+			chs, err := h.c.ListAlertChannels(h.ctx, testSystem, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -471,7 +481,7 @@ func TestDeliveryRetriesAndRecordsFailures(t *testing.T) {
 	if !strings.Contains(ch.LastError, "500") {
 		t.Fatalf("channel = %+v", ch)
 	}
-	test, err := h.c.TestAlertChannel(h.ctx, testSystem, "flaky")
+	test, err := h.c.TestAlertChannel(h.ctx, testSystem, true, "flaky")
 	if err != nil || test.OK || test.Channel.Failures != 2 {
 		t.Fatalf("test = %+v, %v", test, err)
 	}
@@ -483,7 +493,7 @@ func TestSeverityFilterAndReminders(t *testing.T) {
 	h := newHarness(t)
 	k := newReceiver(h)
 	one := 1
-	h.channel(apitypes.CreateAlertChannelRequest{Name: "pager", Kind: apitypes.ChannelWebhook, URL: k.srv.URL, Secret: "x", MinSeverity: apitypes.SeverityCritical, RenotifyMinutes: &one})
+	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "pager", Kind: apitypes.ChannelWebhook, URL: k.srv.URL, Secret: "x", MinSeverity: apitypes.SeverityCritical, RenotifyMinutes: &one})
 	t0 := time.Now()
 	h.c.raiseAlert(h.ctx, alertSignal{Key: "w", Kind: "test", Severity: apitypes.SeverityWarning, Title: "minor"}, t0)
 	h.c.raiseAlert(h.ctx, alertSignal{Key: "c", Kind: "test", Severity: apitypes.SeverityCritical, Title: "major"}, t0)
@@ -499,21 +509,25 @@ func TestSeverityFilterAndReminders(t *testing.T) {
 	}
 }
 
-// Alerts and channels are for unlimited admins; channel secrets are
-// sealed in the DB and never come back.
+// Members read their org's alerts; channels are for its unlimited admins,
+// platform alerts and channels for operators. Channel secrets are sealed
+// in the DB and never come back.
 func TestAlertPermissionsAndSecrets(t *testing.T) {
 	h := newHarness(t)
 	for _, a := range []Actor{
 		{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeDeploy},
 		{Kind: "token", OrgID: 1, Name: "ops", Scope: apitypes.ScopeAdmin, ProjectID: 1, ProjectName: "shop"},
 	} {
-		if _, err := h.c.ListAlerts(h.ctx, a, false, 0, 0); CodeOf(err) != apitypes.CodeForbidden {
-			t.Fatalf("%s listed alerts: %v", a, err)
+		if _, err := h.c.ListAlerts(h.ctx, a, false, false, 0, 0); err != nil {
+			t.Fatalf("%s can't list its org's alerts: %v", a, err)
 		}
-		if _, err := h.c.CreateAlertChannel(h.ctx, a, apitypes.CreateAlertChannelRequest{Name: "x", Kind: apitypes.ChannelSlack, URL: "https://hooks.example/x"}); CodeOf(err) != apitypes.CodeForbidden {
+		if _, err := h.c.ListAlerts(h.ctx, a, true, false, 0, 0); CodeOf(err) != apitypes.CodeForbidden {
+			t.Fatalf("%s listed the platform's alerts: %v", a, err)
+		}
+		if _, err := h.c.CreateAlertChannel(h.ctx, a, false, apitypes.CreateAlertChannelRequest{Name: "x", Kind: apitypes.ChannelSlack, URL: "https://hooks.example/x"}); CodeOf(err) != apitypes.CodeForbidden {
 			t.Fatalf("%s added a channel: %v", a, err)
 		}
-		if _, err := h.c.ListAlertChannels(h.ctx, a); CodeOf(err) != apitypes.CodeForbidden {
+		if _, err := h.c.ListAlertChannels(h.ctx, a, false); CodeOf(err) != apitypes.CodeForbidden {
 			t.Fatalf("%s listed channels: %v", a, err)
 		}
 	}
@@ -522,7 +536,7 @@ func TestAlertPermissionsAndSecrets(t *testing.T) {
 		Host: "smtp.example", Username: "u", Password: "hunter22", From: "dock@example.com", To: []string{"ops@example.com"},
 	}})
 	h.channel(apitypes.CreateAlertChannelRequest{Name: "slack", Kind: apitypes.ChannelSlack, URL: "https://hooks.slack.com/services/T0/B0/XYZSECRET"})
-	chs, err := h.c.ListAlertChannels(h.ctx, testSystem)
+	chs, err := h.c.ListAlertChannels(h.ctx, testSystem, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +544,7 @@ func TestAlertPermissionsAndSecrets(t *testing.T) {
 	if bytes.Contains(out, []byte("XYZSECRET")) || bytes.Contains(out, []byte("hunter22")) {
 		t.Fatalf("channels leak secrets: %s", out)
 	}
-	rows, _ := h.store.ListAlertChannels(h.ctx)
+	rows, _ := h.store.ListAlertChannels(h.ctx, 1)
 	for _, r := range rows {
 		if bytes.Contains(r.Config, []byte("XYZSECRET")) || bytes.Contains(r.Config, []byte("hunter22")) {
 			t.Fatalf("channel %s stored in plain text", r.Name)
@@ -542,7 +556,7 @@ func TestAlertPermissionsAndSecrets(t *testing.T) {
 		{Name: "c", Kind: apitypes.ChannelEmail, SMTP: &apitypes.SMTPSettings{Host: "h", From: "x", To: []string{"y@z"}}},
 		{Name: "slack", Kind: apitypes.ChannelSlack, URL: "https://x"},
 	} {
-		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, bad); err == nil {
+		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, bad); err == nil {
 			t.Fatalf("channel %+v was accepted", bad)
 		}
 	}

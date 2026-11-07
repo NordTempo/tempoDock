@@ -69,6 +69,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings, auto uptime checks | accepted |
 | [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted |
 | [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
+| [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | accepted |
 
 ## Template
 

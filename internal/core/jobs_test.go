@@ -256,16 +256,16 @@ func TestJobAlerts(t *testing.T) {
 		if err != nil || run.Trigger != apitypes.TriggerManual {
 			t.Fatalf("run now: %+v %v", run, err)
 		}
-		settle(func() bool { open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); return len(open) == 1 })
-		open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0)
+		settle(func() bool { open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); return len(open) == 1 })
+		open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0)
 		if len(open) != 1 || open[0].Kind != apitypes.AlertJobFailed || open[0].Target == nil || open[0].Target.Job != "nightly" ||
 			open[0].Target.Run == 0 || strings.Contains(open[0].Message, "`dock") {
 			t.Fatalf("alerts after a failure = %+v", open)
 		}
 		h.rt.OnJob(nil)
 		time.Sleep(time.Hour)
-		settle(func() bool { open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); return len(open) == 0 })
-		if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 0 {
+		settle(func() bool { open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); return len(open) == 0 })
+		if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); len(open) != 0 {
 			t.Fatalf("alerts after a success = %+v", open)
 		}
 		// A stopped service skips its schedule; running it now still works.
@@ -402,7 +402,7 @@ func TestJobRemovedWhileRunning(t *testing.T) {
 	}
 	close(release)
 	eventually(t, "the run to end", func() bool { return !h.c.jobRunning(job.ID) })
-	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 0 {
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); len(open) != 0 {
 		t.Fatalf("alerts for a removed job = %+v", open)
 	}
 }

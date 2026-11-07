@@ -23,12 +23,14 @@ import (
 // sealedColumns is every sealed column of the store, for resealSecrets; a
 // new sealed column goes here, and its AAD is made from its entry.
 var (
-	sealedVariableValue                = secrets.Column{Table: "variables", Name: "value", Key: []string{"environment_id", "coalesce(service_id, 0)", "key"}}
-	sealedVariablePending              = secrets.Column{Table: "variables", Name: "pending_value", Slot: "variables.value", Key: sealedVariableValue.Key}
-	sealedOrgVariable                  = secrets.Column{Table: "org_variables", Name: "value", Key: []string{"org_id", "key"}}
-	sealedRegistrySecret               = secrets.Column{Table: "registry_credentials", Name: "secret", Key: []string{"org_id", "host"}}
-	sealedReleaseConfig                = secrets.Column{Table: "releases", Name: "config", Key: []string{"service_id", "number"}}
-	sealedAlertChannel                 = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"name"}}
+	sealedVariableValue   = secrets.Column{Table: "variables", Name: "value", Key: []string{"environment_id", "coalesce(service_id, 0)", "key"}}
+	sealedVariablePending = secrets.Column{Table: "variables", Name: "pending_value", Slot: "variables.value", Key: sealedVariableValue.Key}
+	sealedOrgVariable     = secrets.Column{Table: "org_variables", Name: "value", Key: []string{"org_id", "key"}}
+	sealedRegistrySecret  = secrets.Column{Table: "registry_credentials", Name: "secret", Key: []string{"org_id", "host"}}
+	sealedReleaseConfig   = secrets.Column{Table: "releases", Name: "config", Key: []string{"service_id", "number"}}
+	// A platform channel is named by its name, an org's by "<org>/<name>"
+	// (channelAAD): platform channels kept the AAD they had before orgs.
+	sealedAlertChannel                 = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"ifnull(org_id || '/', '') || name"}}
 	sealedLogDrain                     = secrets.Column{Table: "log_drains", Name: "config", Key: []string{"environment_id", "name"}}
 	sealedGitSecret                    = secrets.Column{Table: "git_connections", Name: "secret", Key: []string{"service_id"}}
 	sealedGitToken                     = secrets.Column{Table: "git_connections", Name: "token", Key: []string{"service_id"}}

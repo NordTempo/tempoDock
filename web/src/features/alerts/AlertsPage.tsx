@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { api, list } from "../../api/client";
+import { useIsAdmin } from "../../data/queries";
 import { ErrorBlock } from "../../ui/ErrorBlock";
 import { since } from "../../ui/format";
 import {
@@ -20,8 +21,10 @@ import { useValidation } from "../create/form";
 import {
   type Alert,
   type AlertChannel,
+  type AlertScope,
   type NewAlertChannel,
   type Severity,
+  scopeQuery,
   useAlertChannels,
   useAllAlerts,
   useCreateAlertChannel,
@@ -33,35 +36,45 @@ import {
 import { AlertLink, alertText } from "./source";
 
 // The Alerts page: open alerts (worst first), recent history, and the
-// channels alerts are sent to. Admins only; the route says so to others.
+// channels alerts are sent to. One page for both scopes (ADR 0062): an
+// org's, for its members (channels for its admins), and the platform's,
+// on the console for operators.
 
 /** Resolved alerts shown under the open ones, and on request. */
 const HISTORY = 50;
 const MAX = 500;
 
+/** The page's scope, for the rows and dialogs under it. */
+const Scope = createContext<AlertScope>("org");
+
+/** The CLI flag that picks the scope: --platform for the platform's. */
+const flag = (scope: AlertScope) => (scope === "platform" ? " --platform" : "");
+
 /** Up to MAX alerts (`dock alerts --all --limit 500`), fetched on request. */
-const useOlderAlerts = (enabled: boolean) =>
+const useOlderAlerts = (scope: AlertScope, enabled: boolean) =>
   useQuery({
-    queryKey: ["alerts", "all", MAX],
+    queryKey: ["alerts", scope, "all", MAX],
     queryFn: () =>
       list(
         api.GET("/api/v1/alerts", {
-          params: { query: { all: true, limit: MAX } },
+          params: { query: { ...scopeQuery(scope), all: true, limit: MAX } },
         }),
       ),
     enabled,
   });
 
-export function AlertsPage() {
-  const open = useOpenAlerts();
-  const recent = useAllAlerts();
+export function AlertsPage({ scope }: { scope: AlertScope }) {
+  const open = useOpenAlerts(scope);
+  const recent = useAllAlerts(scope);
   const [more, setMore] = useState(false);
-  const older = useOlderAlerts(more);
+  const older = useOlderAlerts(scope, more);
+  // An org's channels are for its admins; operators manage the platform's.
+  const admin = useIsAdmin();
   const resolved = (older.data ?? recent)
     .filter((a) => a.resolved_at)
     .slice(0, more ? MAX : HISTORY);
   return (
-    <>
+    <Scope.Provider value={scope}>
       <PageBar title="Alerts" />
       <Page>
         {open.length > 0 && (
@@ -78,7 +91,7 @@ export function AlertsPage() {
               resolved.length === HISTORY && (
                 <Act
                   small
-                  cli={`dock alerts --all --limit ${MAX}`}
+                  cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
                   onClick={() => setMore(true)}
                 >
                   Show up to {MAX}
@@ -97,10 +110,10 @@ export function AlertsPage() {
             <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
           )}
         </section>
-        <Channels />
-        <p className="font-mono text-2xs text-mut">dock alerts</p>
+        {(scope === "platform" || admin) && <Channels />}
+        <p className="font-mono text-2xs text-mut">dock alerts{flag(scope)}</p>
       </Page>
-    </>
+    </Scope.Provider>
   );
 }
 
@@ -151,6 +164,7 @@ function AlertRow({
   resolvable?: boolean;
 }) {
   const resolve = useResolveAlert();
+  const scope = useContext(Scope);
   const tone = a.resolved_at ? "text-mut" : toneText[severityTone[a.severity]];
   const { text, cli } = alertText(a);
   return (
@@ -173,7 +187,7 @@ function AlertRow({
           {resolvable && (
             <Act
               small
-              cli={`dock alerts resolve ${a.id}`}
+              cli={`dock alerts resolve ${a.id}${flag(scope)}`}
               disabled={resolve.isPending}
               title="Close it by hand; it opens again if the condition is still there"
               onClick={() => resolve.mutate(a.id)}
@@ -188,7 +202,8 @@ function AlertRow({
 }
 
 function Channels() {
-  const channels = useAlertChannels();
+  const scope = useContext(Scope);
+  const channels = useAlertChannels(scope);
   const [adding, setAdding] = useState(false);
   return (
     <section aria-labelledby="channels" className="flex flex-col gap-2">
@@ -230,7 +245,7 @@ function Channels() {
         !adding && (
           <p className="py-2 text-mut">
             No channels: alerts only show here and in{" "}
-            <span className="font-mono">dock alerts</span>.
+            <span className="font-mono">dock alerts{flag(scope)}</span>.
           </p>
         )
       )}
@@ -243,8 +258,9 @@ const renotifyText = (m: number) =>
   m === 0 ? "never" : m % 60 === 0 ? `every ${m / 60} h` : `every ${m} min`;
 
 function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
-  const test = useTestAlertChannel();
-  const remove = useRemoveAlertChannel();
+  const scope = useContext(Scope);
+  const test = useTestAlertChannel(scope);
+  const remove = useRemoveAlertChannel(scope);
   const [confirming, setConfirming] = useState(false);
   const result = test.data;
   return (
@@ -282,7 +298,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
           <ErrorText error={test.error} />
           <Act
             small
-            cli={`dock alerts channel test ${ch.name}`}
+            cli={`dock alerts channel test ${ch.name}${flag(scope)}`}
             disabled={test.isPending}
             onClick={() => test.mutate(ch.name)}
           >
@@ -295,7 +311,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
             <Confirm
               danger
               action={`Remove ${ch.name}`}
-              cli={`dock alerts channel remove ${ch.name}`}
+              cli={`dock alerts channel remove ${ch.name}${flag(scope)}`}
               pending={remove.isPending}
               error={remove.error}
               onConfirm={() =>
@@ -326,7 +342,8 @@ const kinds: Array<{ kind: Kind; note: string }> = [
 ];
 
 function AddChannel({ onClose }: { onClose: () => void }) {
-  const create = useCreateAlertChannel();
+  const scope = useContext(Scope);
+  const create = useCreateAlertChannel(scope);
   const [name, setName] = useState("");
   const v = useValidation();
   const nameError = v.required(!name.trim(), "Name the channel, like ops.");
@@ -374,7 +391,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   }
 
   const cli = [
-    `dock alerts channel add ${name.trim() || "<name>"}`,
+    `dock alerts channel add ${name.trim() || "<name>"}${flag(scope)}`,
     kind === "email"
       ? [
           `--email ${smtp.to.replace(/\s/g, "") || "<to>"}`,

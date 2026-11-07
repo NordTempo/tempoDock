@@ -493,7 +493,7 @@
             "type": "integer"
           },
           "kind": {
-            "description": "disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed; more may be added",
+            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added",
             "type": "string"
           },
           "message": {
@@ -502,6 +502,9 @@
           "opened_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "platform": {
+            "type": "boolean"
           },
           "project": {
             "type": "string"
@@ -12867,7 +12870,7 @@
     },
     "/api/v1/alerts": {
       "get": {
-        "description": "The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Operators only.",
+        "description": "The organization's open alerts (its projects and services), critical first, then newest first; with platform, the platform's (servers, Dock itself), for operators. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events.",
         "operationId": "list-alerts",
         "parameters": [
           {
@@ -12876,6 +12879,16 @@
             "name": "org",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+              "type": "boolean"
             }
           },
           {
@@ -13018,7 +13031,7 @@
     },
     "/api/v1/alerts/channels": {
       "get": {
-        "description": "Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Operators only.",
+        "description": "Where the organization's alerts are sent (with platform, the platform's), with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Organization admins; operators for the platform's.",
         "operationId": "list-alert-channels",
         "parameters": [
           {
@@ -13027,6 +13040,16 @@
             "name": "org",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+              "type": "boolean"
             }
           }
         ],
@@ -13097,6 +13120,16 @@
             },
             "description": "Conflict"
           },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
           "500": {
             "content": {
               "application/problem+json": {
@@ -13122,7 +13155,7 @@
         ]
       },
       "post": {
-        "description": "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Operators only.",
+        "description": "A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.",
         "operationId": "create-alert-channel",
         "parameters": [
           {
@@ -13131,6 +13164,16 @@
             "name": "org",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+              "type": "boolean"
             }
           }
         ],
@@ -13252,7 +13295,7 @@
     },
     "/api/v1/alerts/channels/{channel}": {
       "delete": {
-        "description": "Operators only.",
+        "description": "Organization admins; operators for the platform's.",
         "operationId": "remove-alert-channel",
         "parameters": [
           {
@@ -13271,6 +13314,16 @@
             "schema": {
               "description": "Channel name",
               "type": "string"
+            }
+          },
+          {
+            "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+              "type": "boolean"
             }
           }
         ],
@@ -13375,7 +13428,7 @@
     },
     "/api/v1/alerts/channels/{channel}/test": {
       "post": {
-        "description": "Sends a test notification once, without retries, and says whether it went through. Operators only.",
+        "description": "Sends a test notification once, without retries, and says whether it went through. Organization admins; operators for the platform's.",
         "operationId": "test-alert-channel",
         "parameters": [
           {
@@ -13394,6 +13447,16 @@
             "schema": {
               "description": "Channel name",
               "type": "string"
+            }
+          },
+          {
+            "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only.",
+              "type": "boolean"
             }
           }
         ],
@@ -13505,7 +13568,7 @@
     },
     "/api/v1/alerts/{id}/resolve": {
       "post": {
-        "description": "Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Operators only.",
+        "description": "Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. An organization's alert needs deploy there; a platform alert an operator.",
         "operationId": "resolve-alert",
         "parameters": [
           {

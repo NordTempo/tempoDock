@@ -1,6 +1,6 @@
 -- name: OpenAlert :one
-INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateAlert :exec
@@ -17,22 +17,37 @@ SELECT * FROM alerts WHERE id = +?;
 SELECT * FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC;
 
 -- name: ListAlerts :many
--- Every alert, open or not, newest first; page with before_id.
-SELECT * FROM alerts WHERE id < +sqlc.arg(before_id) ORDER BY id DESC LIMIT +sqlc.arg(max_rows);
+-- An org's alerts (org 0: the platform's), open or not, newest first;
+-- page with before_id.
+SELECT * FROM alerts
+WHERE coalesce(org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER) AND id < +sqlc.arg(before_id)
+ORDER BY id DESC LIMIT +sqlc.arg(max_rows);
+
+-- name: AlertProjectOrg :one
+-- The org of the project an alert is about.
+SELECT org_id FROM projects WHERE id = +?;
+
+-- name: AlertServiceOrg :one
+-- The org of the service an alert is about.
+SELECT projects.org_id FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
+WHERE services.id = +?;
 
 -- name: PruneResolvedAlerts :execrows
 DELETE FROM alerts WHERE resolved_at < +?;
 
 -- name: CreateAlertChannel :one
-INSERT INTO alert_channels (name, kind, target, config, min_severity, renotify_minutes, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO alert_channels (org_id, name, kind, target, config, min_severity, renotify_minutes, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: ListAlertChannels :many
-SELECT * FROM alert_channels ORDER BY name;
+-- An org's channels (org 0: the platform's), by name.
+SELECT * FROM alert_channels WHERE coalesce(org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER) ORDER BY name;
 
 -- name: GetAlertChannel :one
-SELECT * FROM alert_channels WHERE name = +?;
+SELECT * FROM alert_channels WHERE coalesce(org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER) AND name = +sqlc.arg(name);
 
 -- name: GetAlertChannelByID :one
 SELECT * FROM alert_channels WHERE id = +?;
@@ -49,9 +64,11 @@ UPDATE alert_channels SET last_error = ?, last_error_at = ?, failures = failures
 -- name: AddAlertNotice :exec
 INSERT OR REPLACE INTO alert_notices (alert_id, channel_id, notified_at) VALUES (?, ?, ?);
 
--- name: ListAlertNotices :many
--- The channels told about an alert.
-SELECT channel_id FROM alert_notices WHERE alert_id = +?;
+-- name: ListNoticedChannels :many
+-- The channels told about an alert, whichever org they are in now.
+SELECT alert_channels.* FROM alert_notices
+JOIN alert_channels ON alert_channels.id = alert_notices.channel_id
+WHERE alert_notices.alert_id = +?;
 
 -- name: DeleteAlertNotices :exec
 DELETE FROM alert_notices WHERE alert_id = +?;
@@ -59,7 +76,7 @@ DELETE FROM alert_notices WHERE alert_id = +?;
 -- name: ListDueReminders :many
 -- Open alerts a channel was told about longer than its renotify interval
 -- ago. Notices exist only for open alerts, a handful at a time.
-SELECT alert_notices.alert_id, alert_notices.channel_id FROM alert_notices
+SELECT alert_notices.alert_id, sqlc.embed(alert_channels) FROM alert_notices
 JOIN alert_channels ON alert_channels.id = alert_notices.channel_id
 WHERE alert_channels.renotify_minutes > 0
   AND alert_notices.notified_at + alert_channels.renotify_minutes * 60 <= CAST(sqlc.arg(now) AS INTEGER);
@@ -86,3 +103,11 @@ UPDATE alerts SET project = sqlc.arg(name),
     command = replace(command, '-p ' || sqlc.arg(old_name) || ' ', '-p ' || sqlc.arg(name) || ' ')
 WHERE project_id = +sqlc.arg(project_id) AND resolved_at IS NULL
 RETURNING *;
+
+-- name: ListAlertChannelCopies :many
+-- Platform channels still to be copied into an org (0067_org_alerts.sql).
+SELECT sqlc.embed(alert_channels), alert_channel_copies.org_id AS copy_org_id FROM alert_channel_copies
+JOIN alert_channels ON alert_channels.id = alert_channel_copies.channel_id;
+
+-- name: DeleteAlertChannelCopy :exec
+DELETE FROM alert_channel_copies WHERE channel_id = +? AND org_id = +?;
