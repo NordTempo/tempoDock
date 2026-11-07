@@ -20,7 +20,8 @@ import {
 
 /**
  * `dock server rename`: a new name for a server. Its environments, link
- * and history stay; the page moves to the new name. Loads when opened.
+ * and history stay; the page moves to the new name at once (other open
+ * server pages follow it from the live events). Loads when opened.
  */
 export default function RenameServer({
   server,
@@ -51,8 +52,7 @@ export default function RenameServer({
       client.removeQueries({ queryKey: ["stats", "server", server.name] });
       return updated;
     },
-    // Environments name their server.
-    () => [keys.servers, ["project"], ["audit"]],
+    () => [], // The server.rename audit event refreshes what names it.
   );
   const v = useValidation();
   const problem = nameProblem(

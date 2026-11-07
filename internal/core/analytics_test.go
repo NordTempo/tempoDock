@@ -59,7 +59,7 @@ func TestAnalyticsForwardsTheSpool(t *testing.T) {
 	eventually(t, "a live event", func() bool { return storeEvents(h) == 3 })
 
 	st, err := h.c.AnalyticsStatus(h.ctx, testSystem)
-	if err != nil || !st.Enabled || !st.StoreRunning || st.Events != 3 || st.Server != h.c.local.Name {
+	if err != nil || !st.Enabled || !st.StoreRunning || st.Events != 3 || st.Server != h.c.localName() {
 		t.Errorf("status = %+v, %v", st, err)
 	}
 
@@ -188,14 +188,14 @@ func TestAnalyticsMovesWithItsData(t *testing.T) {
 		s := cp.AnalyticsStore()
 		return s != nil && len(s.Events()) == 2
 	})
-	waitStoreStarted(t, p.c, p.c.local.Name)
+	waitStoreStarted(t, p.c, p.c.localName())
 
 	st, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: "homelab"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The fake runtime may finish the move before the status is read.
-	if (st.MovingTo != "homelab" || st.Server != p.c.local.Name) && (st.MovingTo != "" || st.Server != "homelab") {
+	if (st.MovingTo != "homelab" || st.Server != p.c.localName()) && (st.MovingTo != "" || st.Server != "homelab") {
 		t.Errorf("status as the move starts = %+v", st)
 	}
 	lab.AppendSpool(pageview(3))
@@ -217,7 +217,7 @@ func TestAnalyticsMovesWithItsData(t *testing.T) {
 	}
 	events, err := p.c.ListAudit(p.ctx, testSystem, AuditFilter{Platform: true, Action: "analytics.moved"})
 	// 2 or 3 events: homelab's may reach the old store before the copy.
-	if err != nil || len(events) != 1 || !strings.Contains(events[0].Summary, "removed it from "+p.c.local.Name) {
+	if err != nil || len(events) != 1 || !strings.Contains(events[0].Summary, "removed it from "+p.c.localName()) {
 		t.Errorf("audit = %+v, %v", events, err)
 	}
 }
@@ -230,7 +230,7 @@ func TestAnalyticsMoveThatFailsStays(t *testing.T) {
 	if err := p.c.EnableAnalytics(p.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
-	waitStoreStarted(t, p.c, p.c.local.Name)
+	waitStoreStarted(t, p.c, p.c.localName())
 	lab.FailEnsureAnalyticsStore(errors.New("disk full"))
 	if _, err := p.c.SetAnalyticsServer(p.ctx, testSystem, apitypes.SetAnalyticsServerRequest{Server: "homelab"}); err != nil {
 		t.Fatal(err)
@@ -240,7 +240,7 @@ func TestAnalyticsMoveThatFailsStays(t *testing.T) {
 		st, _ = p.c.AnalyticsStatus(p.ctx, testSystem)
 		return st.MovingTo == "" && st.Error != ""
 	})
-	if st.Server != p.c.local.Name || !strings.Contains(st.Error, "disk full") || !strings.Contains(st.Error, "stays on "+p.c.local.Name) {
+	if st.Server != p.c.localName() || !strings.Contains(st.Error, "disk full") || !strings.Contains(st.Error, "stays on "+p.c.localName()) {
 		t.Errorf("status = %+v", st)
 	}
 	if !slices.Contains(lab.Ops(), "remove-analytics-store") {
@@ -270,7 +270,7 @@ func TestAnalyticsMoveFromAnOfflineServer(t *testing.T) {
 	}
 	eventually(t, "the store on the control plane", func() bool {
 		st, _ := p.c.AnalyticsStatus(p.ctx, testSystem)
-		return st.Server == p.c.local.Name && st.StoreRunning && st.MovingTo == ""
+		return st.Server == p.c.localName() && st.StoreRunning && st.MovingTo == ""
 	})
 
 	p.setOffline("homelab", false)

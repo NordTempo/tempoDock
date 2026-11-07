@@ -32,8 +32,9 @@ RETURNING *;
 
 -- name: RenameServerTunnel :exec
 -- Keeps the name a server's Cloudflare tunnel row shows in messages in
--- step with a rename.
-UPDATE cloudflare_tunnels SET server_name = sqlc.arg(name) WHERE server_id = +sqlc.arg(server_id);
+-- step with a rename, once the tunnel exists: until then makeTunnel
+-- finds an interrupted creation by a name made from server_name.
+UPDATE cloudflare_tunnels SET server_name = sqlc.arg(name) WHERE server_id = +sqlc.arg(server_id) AND tunnel_id != '';
 
 -- name: SetServerMemory :exec
 UPDATE servers SET memory_bytes = ? WHERE id = +? AND memory_bytes != +?;

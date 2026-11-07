@@ -84,7 +84,7 @@ func TestMoveBackups(t *testing.T) {
 	}
 	gated = true
 	set, err := h.c.MoveBackups(h.ctx, testSystem, apitypes.MoveBackupsRequest{Storage: "hetzner"})
-	if err != nil || set.Move == nil || !set.Move.Running || set.Move.Path != "dock-backups" || len(set.Move.Sources) != 1 || set.Move.Sources[0].Server != h.c.local.Name {
+	if err != nil || set.Move == nil || !set.Move.Running || set.Move.Path != "dock-backups" || len(set.Move.Sources) != 1 || set.Move.Sources[0].Server != h.c.localName() {
 		t.Fatalf("move = %+v, %v", set.Move, err)
 	}
 	if _, err := h.c.RunBackup(h.ctx, testSystem, db); CodeOf(err) != apitypes.CodeConflict {

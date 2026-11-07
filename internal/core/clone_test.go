@@ -233,7 +233,7 @@ func TestClonePlacement(t *testing.T) {
 		poolServer{"homelab", false, true, 32},
 		poolServer{"lab2", false, true, 16},
 	)
-	cpName := p.c.local.Name
+	cpName := p.c.localName()
 	p.project("shop")
 	p.createService("production", "web", apitypes.CreateServiceRequest{Image: "web:1"})
 	prod := EnvRef{"shop", "production"}
@@ -299,7 +299,7 @@ func TestCloneDeploy(t *testing.T) {
 	if err != nil || res.DeployError != "" || res.Deploy == nil {
 		t.Fatalf("clone: %+v, %v", res, err)
 	}
-	if res.Environment.Server != p.c.local.Name || len(res.Deploy.Promoted) != 2 || len(res.Deploy.Skipped) != 1 || res.Deploy.Skipped[0].Service != "idle" {
+	if res.Environment.Server != p.c.localName() || len(res.Deploy.Promoted) != 2 || len(res.Deploy.Skipped) != 1 || res.Deploy.Skipped[0].Service != "idle" {
 		t.Fatalf("deploy = %+v on %s", res.Deploy, res.Environment.Server)
 	}
 	for _, s := range res.Deploy.Promoted {

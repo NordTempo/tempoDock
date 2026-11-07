@@ -280,7 +280,9 @@ func (c *Core) makeTunnel(ctx context.Context, cc *cfConn, t store.CloudflareTun
 	defer cancel()
 	acct := cc.row.AccountID
 	if t.TunnelID == "" {
-		name := c.tunnelName(srv.Name, t.ID)
+		// The row's name, not the server's: a rename leaves a tunnel
+		// without an ID its first name, so a retry finds what it made.
+		name := c.tunnelName(t.ServerName, t.ID)
 		found, err := cc.client.TunnelNamed(ctx, acct, name)
 		if err != nil {
 			return err

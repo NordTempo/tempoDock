@@ -146,7 +146,7 @@ func (c *Core) storePublicHost(ctx context.Context, a Actor, host string) error 
 		return err
 	}
 	for _, s := range servers {
-		if s.ID != c.local.ID && !c.online(s.ID) {
+		if s.ID != c.localID && !c.online(s.ID) {
 			continue
 		}
 		if err := c.applyRoutes(ctx, s.ID); err != nil {
@@ -228,7 +228,7 @@ func (c *Core) describeAddress(ctx context.Context) (apitypes.Address, error) {
 // with the same hostname (added before the setting) keeps it, and that
 // route is left out.
 func (c *Core) withControlRoutes(serverID int64, routes []node.Route) []node.Route {
-	if serverID != c.local.ID {
+	if serverID != c.localID {
 		return routes
 	}
 	taken := func(host string) bool {

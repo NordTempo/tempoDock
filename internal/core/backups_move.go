@@ -146,14 +146,14 @@ func (c *Core) moveSources(ctx context.Context, set store.BackupSetting, cur bac
 		if from.Name == to.Name && nested(set.StoragePath, toPath) {
 			return nil, invalid("folder %q and %q in bucket %s contain one another; pick a folder outside the current one", set.StoragePath, toPath, to.Name)
 		}
-		return []moveSource{{label: set.Repository, serverID: c.local.ID, server: c.localName(), from: cur, bucket: &from, prefix: set.StoragePath}}, nil
+		return []moveSource{{label: set.Repository, serverID: c.localID, server: c.localName(), from: cur, bucket: &from, prefix: set.StoragePath}}, nil
 	}
 	ids, err := c.store.ListLocalBackupServers(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if cp, err := c.store.GetControlPlaneBackup(ctx); err == nil && cp.Repository == "" && cp.SnapshotID != "" {
-		ids = append(ids, c.local.ID)
+		ids = append(ids, c.localID)
 	} else if err != nil && !store.IsNotFound(err) {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ func (c *Core) move(ctx context.Context, sources []moveSource, target backup.Rep
 	// creates the repository, as it always has.
 	copies := map[string]string{} // original -> ID in the target
 	if len(sources) > 0 {
-		out, err := c.runResticJob(ctx, c.local.ID, c.rt, target, node.JobSpec{
+		out, err := c.runResticJob(ctx, c.localID, c.rt, target, node.JobSpec{
 			Name: fmt.Sprintf("dock_backup_move_check_%d", now().UnixNano()), Image: c.cfg.Backup.ResticImage,
 			Labels: node.Labels{ControlPlane: c.install}, Script: backup.CheckScript, Env: target.Env(),
 		})

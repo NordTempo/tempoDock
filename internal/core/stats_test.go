@@ -79,7 +79,7 @@ func TestStatsTickStoresDownsamplesAndPrunes(t *testing.T) {
 	ref := h.service("web", apitypes.CreateServiceRequest{Image: "app:1", MemoryMB: 256})
 	h.deploy(ref, "app:1")
 	svc, ctr := h.activeContainer(ref)
-	local := h.c.local.ID
+	local := h.c.localID
 
 	base := time.Date(2031, 1, 1, 10, 0, 0, 0, time.UTC)
 	col := newCollector()
@@ -213,7 +213,7 @@ func TestStatsTickPublishesUsage(t *testing.T) {
 	}
 	point := base // the second tick stores the minute that started at base
 	hosts, envs := usage(admin)
-	if len(hosts) != 1 || hosts[0].Usage.Server != h.c.local.Name || hosts[0].Usage.Host.CPUPercent != 50 || !hosts[0].Usage.Point.Equal(point) {
+	if len(hosts) != 1 || hosts[0].Usage.Server != h.c.localName() || hosts[0].Usage.Host.CPUPercent != 50 || !hosts[0].Usage.Point.Equal(point) {
 		t.Fatalf("admin server usage = %+v", hosts)
 	}
 	if len(envs) != 1 {
@@ -243,7 +243,7 @@ func TestServerUsageInListAndDetail(t *testing.T) {
 	svc := apitypes.ServiceUsage{MemoryBytes: 64 << 20}
 	<-h.c.stats.firstTick // the start-up sample would replace what's set below
 	h.c.stats.mu.Lock()
-	h.c.stats.server[h.c.local.ID] = host
+	h.c.stats.server[h.c.localID] = host
 	h.c.stats.service[h.serviceID(ref)] = svc
 	h.c.stats.mu.Unlock()
 
@@ -253,7 +253,7 @@ func TestServerUsageInListAndDetail(t *testing.T) {
 	if list, err := h.c.ListServers(h.ctx, Actor{Kind: "token", OrgID: 1, Name: "r", Scope: apitypes.ScopeRead}); err != nil || list[0].Usage != nil {
 		t.Fatalf("read token list = %+v, %v; want no usage", list, err)
 	}
-	d, err := h.c.GetServer(h.ctx, testSystem, h.c.local.Name)
+	d, err := h.c.GetServer(h.ctx, testSystem, h.c.localName())
 	if err != nil || d.Server.Usage == nil || len(d.Services) != 2 {
 		t.Fatalf("detail = %+v, %v", d, err)
 	}
@@ -304,7 +304,7 @@ func TestLiveStatsStopWhenUnwatched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	host, err := h.c.ServerStatsLive(h.ctx, testSystem, h.c.local.Name)
+	host, err := h.c.ServerStatsLive(h.ctx, testSystem, h.c.localName())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestMemoryPartsNameApps(t *testing.T) {
 		h.rt.SetHostStats(node.HostStats{CPUs: 4, CPUBusy: 50 * n, CPUTotal: 100 * n, MemoryTotal: 8 << 30, MemoryAvailable: 6 << 30, MemoryParts: parts})
 		h.c.statsTick(h.ctx, col, base.Add(time.Duration(i)*time.Minute))
 	}
-	u, ok := h.c.stats.serverUsage(h.c.local.ID)
+	u, ok := h.c.stats.serverUsage(h.c.localID)
 	want := []apitypes.MemoryPart{
 		{Group: apitypes.MemoryApps, Name: "web", Environment: "storefront/production", Bytes: 48 << 20},
 		{Group: apitypes.MemoryApps, Name: "gone-1", Bytes: 8 << 20},

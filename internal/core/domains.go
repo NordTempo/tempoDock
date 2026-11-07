@@ -401,7 +401,7 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	if ss.svc.ArchivedAt != nil || ss.env.ServerID != c.local.ID {
+	if ss.svc.ArchivedAt != nil || ss.env.ServerID != c.localID {
 		return false, nil
 	}
 	// Served to the Cloudflare tunnel only: Cloudflare's edge has its

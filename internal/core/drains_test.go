@@ -117,7 +117,7 @@ func TestLogDrainDeliversLabelledLines(t *testing.T) {
 	k.mu.Lock()
 	got, hdr := k.lines[1], k.headers[0]
 	k.mu.Unlock()
-	want := drainLineJSON{Stream: "stdout", Text: `GET / "200"`, Project: "shop", Environment: "production", Service: "web", Release: 1, Server: h.c.local.Name}
+	want := drainLineJSON{Stream: "stdout", Text: `GET / "200"`, Project: "shop", Environment: "production", Service: "web", Release: 1, Server: h.c.localName()}
 	if got.Time.IsZero() || got.Text != want.Text || got.Stream != want.Stream || got.Project != want.Project ||
 		got.Environment != want.Environment || got.Service != want.Service || got.Release != want.Release || got.Server != want.Server {
 		t.Fatalf("line = %+v, want %+v", got, want)
@@ -182,7 +182,7 @@ func TestLogDrainFollowsQuickRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.c.drainContainerEvent(h.c.local.ID, node.ContainerEvent{ContainerID: ctr, Action: "start", Labels: c.Labels, Time: time.Now()})
+	h.c.drainContainerEvent(h.c.localID, node.ContainerEvent{ContainerID: ctr, Action: "start", Labels: c.Labels, Time: time.Now()})
 
 	// The old stream ends, and the container is running again (without
 	// another event) before the old follower cleans up.
@@ -417,7 +417,7 @@ func TestSyslogDrainFraming(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := strings.SplitN(string(msg), " ", 8)
-		if len(f) != 8 || f[0] != "<14>1" || f[2] != h.c.local.Name || f[3] != "web" || f[4] != "-" || f[5] != "stdout" || f[6] != "-" || f[7] != text {
+		if len(f) != 8 || f[0] != "<14>1" || f[2] != h.c.localName() || f[3] != "web" || f[4] != "-" || f[5] != "stdout" || f[6] != "-" || f[7] != text {
 			t.Fatalf("message = %q", msg)
 		}
 		if _, err := time.Parse(time.RFC3339Nano, f[1]); err != nil {

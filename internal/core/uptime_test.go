@@ -53,7 +53,7 @@ func TestAddUptimeCheckValidates(t *testing.T) {
 		t.Fatal(err)
 	}
 	if chk.URL != "https://shop.example.com/health" || chk.ExpectStatus != "2xx" || chk.IntervalSeconds != 60 || chk.TimeoutSeconds != 10 ||
-		chk.State != apitypes.UptimeUnknown || chk.Server != h.c.local.Name || len(chk.Series) != 48 {
+		chk.State != apitypes.UptimeUnknown || chk.Server != h.c.localName() || len(chk.Series) != 48 {
 		t.Fatalf("check = %+v", chk)
 	}
 	for range uptimeMaxChecks - 1 {
@@ -201,7 +201,7 @@ func TestUptimeDownOpensAnAlertAndRecoveryResolvesIt(t *testing.T) {
 		t.Fatalf("alert = %+v", a)
 	}
 	down := h.waitState(web, chk.ID, apitypes.UptimeDown)
-	if down.LastProbe == nil || down.LastProbe.Status != 502 || down.LastProbe.Server != h.c.local.Name {
+	if down.LastProbe == nil || down.LastProbe.Status != 502 || down.LastProbe.Server != h.c.localName() {
 		t.Fatalf("down check = %+v", down)
 	}
 	ev := <-sub.ch
@@ -297,7 +297,7 @@ func TestUptimeProbesFromAnotherServer(t *testing.T) {
 	// With edge offline the control plane probes its own server.
 	p.setOffline("edge", true)
 	waitProbed("cp", 2)
-	if got := p.waitState(web, chk.ID, apitypes.UptimeUp); got.Server != p.c.local.Name {
+	if got := p.waitState(web, chk.ID, apitypes.UptimeUp); got.Server != p.c.localName() {
 		t.Fatalf("probed from %q with edge offline, want the control plane", got.Server)
 	}
 }

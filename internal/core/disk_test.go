@@ -32,7 +32,7 @@ func TestServerDisk(t *testing.T) {
 		},
 		Containers: gb / 4, DataDir: gb / 4,
 	})
-	srv := h.c.local.Name
+	srv := h.c.localName()
 	if _, err := h.c.ServerDisk(h.ctx, Actor{Kind: "token", OrgID: 1, Name: "ops", Scope: apitypes.ScopeAdmin}, srv); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("an org admin read a server's disk: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestServerDisk(t *testing.T) {
 // reading goes out as a disk event; a prune reads it again too.
 func TestServerDiskKeepsTheLastReading(t *testing.T) {
 	h := newHarness(t)
-	srv := h.c.local.Name
+	srv := h.c.localName()
 	reads := func() int {
 		n := 0
 		for _, op := range h.rt.Ops() {
@@ -114,9 +114,9 @@ func TestServerDiskKeepsTheLastReading(t *testing.T) {
 	sub := h.c.bus.subscribe(func(e busEvent) bool { return e.ev.Type == apitypes.EventDisk })
 	defer sub.close()
 	h.c.disk.mu.Lock()
-	old := h.c.disk.last[h.c.local.ID]
+	old := h.c.disk.last[h.c.localID]
 	old.ReadAt = old.ReadAt.Add(-2 * diskFresh)
-	h.c.disk.last[h.c.local.ID] = old
+	h.c.disk.last[h.c.localID] = old
 	h.c.disk.mu.Unlock()
 	stale, err := h.c.ServerDisk(h.ctx, testSystem, srv)
 	if err != nil || !stale.Refreshing || !stale.ReadAt.Equal(old.ReadAt) {

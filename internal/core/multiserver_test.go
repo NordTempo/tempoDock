@@ -744,7 +744,7 @@ func TestRenameServer(t *testing.T) {
 	if _, err := p.c.AddServer(p.ctx, testSystem, apitypes.AddServerRequest{Name: "lab2"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, to := range []string{p.c.local.Name, "lab2"} {
+	for _, to := range []string{p.c.localName(), "lab2"} {
 		if _, err := rename("homelab", to); CodeOf(err) != apitypes.CodeConflict {
 			t.Errorf("rename to %s: %v", to, err)
 		}
@@ -769,7 +769,7 @@ func TestRenameServer(t *testing.T) {
 	}
 
 	// The control plane's own server can be renamed too.
-	if _, err := rename(p.c.local.Name, "control"); err != nil || p.c.localName() != "control" {
+	if _, err := rename(p.c.localName(), "control"); err != nil || p.c.localName() != "control" {
 		t.Fatalf("local rename: %v, name %s", err, p.c.localName())
 	}
 }
@@ -831,8 +831,8 @@ func TestServerLifecycle(t *testing.T) {
 	if err := p.c.RemoveServer(p.ctx, testSystem, "homelab"); err != nil {
 		t.Fatalf("removing a server with only archived environments: %v", err)
 	}
-	if got := p.server("shop", "staging"); got != p.c.local.Name {
-		t.Fatalf("archived staging moved to %s, want the local server %s", got, p.c.local.Name)
+	if got := p.server("shop", "staging"); got != p.c.localName() {
+		t.Fatalf("archived staging moved to %s, want the local server %s", got, p.c.localName())
 	}
 	if err := p.c.RemoveServer(p.ctx, testSystem, "lab2"); err != nil {
 		t.Fatal(err)

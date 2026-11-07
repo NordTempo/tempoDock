@@ -572,6 +572,17 @@ function invalidateForAudit(
   invalidate(["audit"]);
   if (!audit || auditedReads.has(audit.action)) return;
   if (audit.action === "project.rename") return; // Its typed event moves the cache.
+  if (audit.action === "server.rename") {
+    // The list only: its server event patched it, and an open server
+    // page follows the new name. The old name's detail would be a 404.
+    queryClient.invalidateQueries({ queryKey: keys.servers, exact: true });
+    // Environments name their server, in overviews and placements.
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey: [root, , part] }) =>
+        root === "project" && (part === "overview" || part === "placements"),
+    });
+    return;
+  }
   // Job changes reach the Jobs tab as job and run events, and change
   // nothing else in the environment.
   if (audit.action.startsWith("job.")) return;
@@ -603,8 +614,6 @@ function invalidateForAudit(
   // Servers count what is placed on them; previews are environments.
   if (kind === "server" || kind === "environment" || kind === "preview")
     invalidate(keys.servers);
-  // Environments name their server: open projects show the new name.
-  if (audit.action === "server.rename") invalidate(["project"]);
   if (!audit.project) return;
   // A preview opened, moved to a new commit or closed (its environment
   // appears or leaves with the overview below), or the settings changed.

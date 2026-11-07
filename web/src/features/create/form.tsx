@@ -44,12 +44,12 @@ export function nameProblem(
     return `${name} is a page in Dock. Pick another name.`;
   }
   if (taken.includes(name)) {
+    if (kind === "server") return `Another server is named ${name}.`;
     const where = {
       org: "Dock",
       project: "organization",
       environment: "project",
       service: "environment",
-      server: "Dock",
     }[kind];
     return `${name} is taken in this ${where}. Pick another name.`;
   }

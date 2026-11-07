@@ -188,7 +188,7 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	}
 	rename := req.Name != nil && *req.Name != srv.Name
 	if rename {
-		if err := c.checkServerRename(ctx, srv.Name, *req.Name); err != nil {
+		if err := validName("server", *req.Name); err != nil {
 			return apitypes.Server{}, err
 		}
 	}
@@ -229,13 +229,7 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	if len(changes) > 0 || rename {
 		err := c.store.Tx(ctx, func(q *store.Queries) error {
 			if rename {
-				if _, err := q.RenameServer(ctx, store.RenameServerParams{Name: *req.Name, ID: srv.ID}); err != nil {
-					if store.IsUnique(err) {
-						return conflict("server %s already exists; pick another name", *req.Name)
-					}
-					return err
-				}
-				if err := q.RenameServerTunnel(ctx, store.RenameServerTunnelParams{Name: *req.Name, ServerID: &srv.ID}); err != nil {
+				if err := renameServer(ctx, q, srv, *req.Name); err != nil {
 					return err
 				}
 			}
@@ -271,19 +265,13 @@ func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apity
 	return c.serverDetail(ctx, srv.ID)
 }
 
-// checkServerRename refuses a new name that isn't valid, belongs to another
-// server or to one still joining. A server with a join token waiting to
-// re-join it keeps its name until it has: the token joins by name.
-func (c *Core) checkServerRename(ctx context.Context, from, to string) error {
-	if err := validName("server", to); err != nil {
-		return err
-	}
-	if _, err := c.store.GetServerByName(ctx, to); err == nil {
-		return conflict("server %s already exists; pick another name", to)
-	} else if !store.IsNotFound(err) {
-		return err
-	}
-	pending, err := c.store.ListPendingJoinTokens(ctx, now())
+// renameServer renames srv in q's transaction. It refuses a name another
+// server has, or one still joining has; and a server with a join token
+// waiting to re-join it keeps its name until it has, as the token joins
+// by name. Reading the tokens in the transaction orders it with a token
+// minted at the same time.
+func renameServer(ctx context.Context, q *store.Queries, srv store.Server, to string) error {
+	pending, err := q.ListPendingJoinTokens(ctx, now())
 	if err != nil {
 		return err
 	}
@@ -291,11 +279,16 @@ func (c *Core) checkServerRename(ctx context.Context, from, to string) error {
 		switch t.ServerName {
 		case to:
 			return conflict("server %s is joining; pick another name, or remove it with `dock server remove %s` first", to, to)
-		case from:
-			return conflict("server %s has a join token waiting to re-join it; rename it once it has joined", from)
+		case srv.Name:
+			return conflict("server %s has a join token waiting to re-join it; rename it once it has joined", srv.Name)
 		}
 	}
-	return nil
+	if _, err := q.RenameServer(ctx, store.RenameServerParams{Name: to, ID: srv.ID}); store.IsUnique(err) {
+		return conflict("server %s already exists; pick another name", to)
+	} else if err != nil {
+		return err
+	}
+	return q.RenameServerTunnel(ctx, store.RenameServerTunnelParams{Name: to, ServerID: &srv.ID})
 }
 
 // serverDetail returns one server with its usage.
@@ -516,7 +509,7 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		if err := q.ClearArchivedHostPorts(ctx, srv.ID); err != nil {
 			return err
 		}
-		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.local.ID, ServerID: srv.ID}); err != nil {
+		if err := q.MoveArchivedEnvironments(ctx, store.MoveArchivedEnvironmentsParams{LocalServerID: c.localID, ServerID: srv.ID}); err != nil {
 			return err
 		}
 		removed, err := q.DeleteServer(ctx, srv.ID)

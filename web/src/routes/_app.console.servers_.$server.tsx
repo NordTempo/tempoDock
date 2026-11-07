@@ -1,8 +1,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { lazy, memo, Suspense, useMemo, useState } from "react";
+import { lazy, memo, Suspense, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
-import { queries, useServer } from "../data/queries";
+import { queries, useServer, useServers } from "../data/queries";
 import type {
   Server,
   ServerDetail,
@@ -101,6 +101,13 @@ function ServerPage() {
   const { accepts, placement, builder, confirm, error } =
     useServerSwitches(server);
   const [renaming, setRenaming] = useState(false);
+  // Renamed elsewhere: the list has the new name (by ID); follow it.
+  const listed = useServers().find((s) => s.id === server.id)?.name;
+  useEffect(() => {
+    if (server.id > 0 && listed && listed !== name) {
+      navigate({ params: { server: listed }, search: true, replace: true });
+    }
+  }, [server.id, listed, name, navigate]);
   // What the server is, under its status: "dock 0.27.0 · control plane".
   const facts = [
     server.version && `dock ${server.version}`,

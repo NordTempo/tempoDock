@@ -34,7 +34,7 @@ const (
 // failed releases keep their last lines on the control plane instead
 // (saveContainerLogs).
 func (c *Core) keepsLogs(serverID int64) bool {
-	return serverID == c.local.ID || (c.nodes != nil && c.nodes.State(serverID).Hello.Protocol >= remote.LogsProtocol)
+	return serverID == c.localID || (c.nodes != nil && c.nodes.State(serverID).Hello.Protocol >= remote.LogsProtocol)
 }
 
 // logLimits are [logs]'s limits for a server's archives.

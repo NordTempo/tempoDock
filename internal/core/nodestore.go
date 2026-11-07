@@ -289,7 +289,7 @@ func (c *Core) kickServer(serverID int64) {
 	defer c.serversMu.Unlock()
 	// Close cancels c.ctx under serversMu, so no watcher starts after it
 	// began waiting for them.
-	if c.ctx.Err() != nil || c.nodes == nil || serverID == c.local.ID {
+	if c.ctx.Err() != nil || c.nodes == nil || serverID == c.localID {
 		return
 	}
 	st := c.stateLocked(serverID)

@@ -789,7 +789,7 @@ func (q *Queries) RenameServer(ctx context.Context, arg RenameServerParams) (Ser
 }
 
 const renameServerTunnel = `-- name: RenameServerTunnel :exec
-UPDATE cloudflare_tunnels SET server_name = ?1 WHERE server_id = +?2
+UPDATE cloudflare_tunnels SET server_name = ?1 WHERE server_id = +?2 AND tunnel_id != ''
 `
 
 type RenameServerTunnelParams struct {
@@ -798,7 +798,8 @@ type RenameServerTunnelParams struct {
 }
 
 // Keeps the name a server's Cloudflare tunnel row shows in messages in
-// step with a rename.
+// step with a rename, once the tunnel exists: until then makeTunnel
+// finds an interrupted creation by a name made from server_name.
 func (q *Queries) RenameServerTunnel(ctx context.Context, arg RenameServerTunnelParams) error {
 	_, err := q.db.ExecContext(ctx, renameServerTunnel, arg.Name, arg.ServerID)
 	return err

@@ -416,6 +416,7 @@ func (h *Hub) register(ctx context.Context, s *session) error {
 	if !ok || k.ID != s.id {
 		return fmt.Errorf("node key %s was revoked during hello", s.fingerprint)
 	}
+	s.label.Store(&k.Name) // renamed during hello
 	h.mu.Lock()
 	old := h.sessions[s.id]
 	h.sessions[s.id] = s
@@ -525,8 +526,11 @@ func (h *Hub) session(serverID int64) *session {
 }
 
 // Rename has messages and logs about a server use its new name, while it
-// is connected and after it disconnects.
+// is connected and after it disconnects. Call it once the new name is
+// stored: statusMu orders it with register, which reads the name again.
 func (h *Hub) Rename(serverID int64, name string) {
+	h.statusMu.Lock()
+	defer h.statusMu.Unlock()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if s := h.sessions[serverID]; s != nil {
