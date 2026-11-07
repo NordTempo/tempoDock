@@ -276,23 +276,33 @@ func TestTrafficAndFrontendErrors(t *testing.T) {
 
 // A flood of distinct errors is bounded: the sink keeps 50 fingerprints
 // per service, a tick opens 10 issues per service, and a service has at
-// most three error alerts open.
+// most three error alerts open. The flood goes into a sink of its own and
+// is written as a tick writes it, so the daemon's own statistics tick
+// (once a minute) can't take part of it midway.
 func TestErrorFloodIsBounded(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
 	h.deploy(web, "app:1")
+	var sink errorSink
+	at := time.Now()
 	for i := range 80 {
-		h.sinkError(web, "error "+strconv.Itoa(i), time.Now())
+		title := "error " + strconv.Itoa(i)
+		sink.add(h.serviceID(web), "fp-"+title, pendingError{source: apitypes.ErrorFromLogs, title: title, count: 1, first: at, last: at, release: 1})
 	}
-	h.c.issues.mu.Lock()
-	pending := len(h.c.issues.pending)
-	h.c.issues.mu.Unlock()
-	if pending != maxPendingPerService {
-		t.Fatalf("pending = %d, want %d", pending, maxPendingPerService)
+	batch, dropped := sink.take()
+	if len(batch) != maxPendingPerService || dropped != 80-maxPendingPerService {
+		t.Fatalf("pending = %d, dropped %d; want %d and %d", len(batch), dropped, maxPendingPerService, 80-maxPendingPerService)
 	}
-	list := h.errorsFor(ErrorFilter{}, maxNewIssues)
-	if list.Facets[0].Issues != maxNewIssues {
-		t.Fatalf("facets = %+v", list.Facets)
+	events, err := h.c.writeErrors(h.ctx, batch, at.Add(errorQuiet))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range events {
+		h.c.issueAlert(h.ctx, e, at)
+	}
+	list, err := h.c.ListErrors(h.ctx, testSystem, ErrorFilter{})
+	if err != nil || len(list.Facets) != 1 || list.Facets[0].Issues != maxNewIssues {
+		t.Fatalf("facets = %+v, %v; want %d issues", list.Facets, err, maxNewIssues)
 	}
 	prefix := "errors:" + itoa(h.serviceID(web)) + ":"
 	h.c.alerts.mu.Lock()
