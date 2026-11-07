@@ -120,17 +120,20 @@ func checkBench(o options, t *table) error {
 	if base.CalibrationNs > 0 {
 		speed = calib / base.CalibrationNs
 	}
-	judge := func(name string, r bench) (measured, budget string, pass bool) {
+	// judge compares a benchmark with its baseline. Allocations are the
+	// same on every machine, so allocsOK always gates; nsOK is a timing
+	// budget, which -soft-timing reports as a warning.
+	judge := func(name string, r bench) (measured, budget string, allocsOK, nsOK bool) {
 		b := base.Benchmarks[name]
 		nsDelta := r.NsOp/speed/b.NsOp - 1
-		allocsOK := r.AllocsOp <= b.AllocsOp*(1+o.allocsTol)+2
+		allocsOK = r.AllocsOp <= b.AllocsOp*(1+o.allocsTol)+2
 		measured = fmt.Sprintf("%s (%+.0f%%), %.0f allocs (%+.0f)", nsString(r.NsOp), nsDelta*100, r.AllocsOp, r.AllocsOp-b.AllocsOp)
 		// Parallel benchmarks' time depends on the core count, which
 		// calibration doesn't capture, so only their allocations are gated.
 		if strings.Contains(name, "parallel=") {
-			return measured, fmt.Sprintf("allocs +%.0f%%", o.allocsTol*100), allocsOK
+			return measured, fmt.Sprintf("allocs +%.0f%%", o.allocsTol*100), allocsOK, true
 		}
-		return measured, fmt.Sprintf("ns +%.0f%%, allocs +%.0f%%", o.nsTol*100, o.allocsTol*100), allocsOK && nsDelta <= o.nsTol
+		return measured, fmt.Sprintf("ns +%.0f%%, allocs +%.0f%%", o.nsTol*100, o.allocsTol*100), allocsOK, nsDelta <= o.nsTol
 	}
 
 	// Shared machines (CI runners, a busy laptop) have bursts of noise, and
@@ -141,7 +144,7 @@ func checkBench(o options, t *table) error {
 		if _, ok := base.Benchmarks[name]; !ok {
 			continue
 		}
-		if _, _, pass := judge(name, summarize(rs)); !pass && !slices.Contains(again, runs.dir[name]) {
+		if _, _, allocsOK, nsOK := judge(name, summarize(rs)); (!allocsOK || !nsOK) && !slices.Contains(again, runs.dir[name]) {
 			again = append(again, runs.dir[name])
 		}
 	}
@@ -163,8 +166,12 @@ func checkBench(o options, t *table) error {
 			t.add("bench "+name, fmt.Sprintf("%s, %.0f allocs", nsString(r.NsOp), r.AllocsOp), "not in baseline", warn)
 			continue
 		}
-		measured, budget, pass := judge(name, r)
-		t.withinTiming("bench "+name, measured, budget, pass)
+		measured, budget, allocsOK, nsOK := judge(name, r)
+		if !allocsOK {
+			t.within("bench "+name, measured, budget, false)
+			continue
+		}
+		t.withinTiming("bench "+name, measured, budget, nsOK)
 	}
 	for name := range base.Benchmarks {
 		if _, ok := runs.byName[name]; !ok {
