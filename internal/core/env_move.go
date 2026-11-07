@@ -1370,7 +1370,7 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 	for _, d := range doms {
 		if d.Generated {
 			uses[d.ServiceID] = true
-			hasTo[d.ServiceID] = hasTo[d.ServiceID] || underBase(d.Hostname, toBase)
+			hasTo[d.ServiceID] = hasTo[d.ServiceID] || belowBase(d.Hostname, toBase)
 		}
 	}
 	var notes, dns []string
@@ -1399,7 +1399,7 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 	}
 	for _, d := range doms {
 		if d.Generated {
-			if fromBase != toBase && underBase(d.Hostname, fromBase) {
+			if fromBase != toBase && belowBase(d.Hostname, fromBase) {
 				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it", d.Hostname, from.Name))
 			}
 			continue
@@ -1431,8 +1431,9 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 	return notes, nil
 }
 
-// underBase reports whether host is a hostname under base.
-func underBase(host, base string) bool {
+// belowBase reports whether host is a hostname under base, not base
+// itself (cloudflare_domains.go's underBase counts base too).
+func belowBase(host, base string) bool {
 	return base != "" && strings.HasSuffix(host, "."+base)
 }
 
@@ -1459,7 +1460,7 @@ func (c *Core) pruneGeneratedDomains(ctx context.Context, es envScope, svc store
 	}
 	var notes []string
 	for _, d := range doms {
-		if !d.Generated || slices.ContainsFunc(bases, func(b string) bool { return underBase(d.Hostname, b) }) {
+		if !d.Generated || slices.ContainsFunc(bases, func(b string) bool { return belowBase(d.Hostname, b) }) {
 			continue
 		}
 		ref := ServiceRef{es.project.Name, es.env.Name, svc.Name}
