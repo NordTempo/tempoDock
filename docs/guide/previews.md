@@ -11,6 +11,7 @@ request closes ([ADR 0056](../decisions/0056-preview-environments.md)).
 ```sh
 dock env previews enable staging                          # pull requests into what staging deploys
 dock env previews enable staging --max 5 --copy web.PUBLIC_API_URL --copy shared.SENTRY_DSN
+dock env previews enable staging --seed db                # each preview's db starts from staging's latest snapshot
 dock env previews                                         # settings and open previews
 dock env previews disable                                 # no new previews; open ones stay until they close
 ```
@@ -46,7 +47,15 @@ nobody chose to give it:
   variable (`${{org.KEY}}`) is not: it reads the org's secret, so it is
   copied only when listed.
 - Database templates get new credentials for the preview's own, empty
-  database.
+  database, unless it is seeded.
+- **Seeded services** (`--seed db`, Seeded services in the UI) start with
+  data: before a new preview's copy of the service first starts, its own
+  new volume is filled from the base service's latest snapshot on the
+  same server (`dock volume snapshot -s db`). A seeded template database
+  keeps the base's credentials, which the copied data files need. The
+  base's volume is never mounted. Without a snapshot it starts empty, and
+  the preview's last event says why. Take snapshots of what you seed
+  from: the seed is only as fresh as the newest one.
 - **Every other value is left out**, unless you list it with `--copy`
   (`web.KEY`, or `shared.KEY` for a shared variable). Nothing is listed by
   default. List public, non-secret values (a public URL, a feature flag);

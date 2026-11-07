@@ -235,6 +235,43 @@ func (q *Queries) GetLatestPreview(ctx context.Context, arg GetLatestPreviewPara
 	return i, err
 }
 
+const getLatestReadySnapshot = `-- name: GetLatestReadySnapshot :one
+SELECT id, service_id, server_id, "trigger", status, volumes, size_bytes, paused_ms, note, error, created_by, started_at, finished_at, log FROM volume_snapshots
+WHERE service_id = +? AND +server_id = ? AND status = 'ready'
+ORDER BY id DESC LIMIT 1
+`
+
+type GetLatestReadySnapshotParams struct {
+	ServiceID int64
+	ServerID  int64
+}
+
+// A service's newest ready snapshot on a server, which a new preview's
+// seeded service is filled from. Seeks volume_snapshots_service backwards
+// (+server_id keeps the planner off the server's index, which holds every
+// service's snapshots).
+func (q *Queries) GetLatestReadySnapshot(ctx context.Context, arg GetLatestReadySnapshotParams) (VolumeSnapshot, error) {
+	row := q.db.QueryRowContext(ctx, getLatestReadySnapshot, arg.ServiceID, arg.ServerID)
+	var i VolumeSnapshot
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.ServerID,
+		&i.Trigger,
+		&i.Status,
+		&i.Volumes,
+		&i.SizeBytes,
+		&i.PausedMs,
+		&i.Note,
+		&i.Error,
+		&i.CreatedBy,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.Log,
+	)
+	return i, err
+}
+
 const getOpenPreview = `-- name: GetOpenPreview :one
 SELECT id, project_id, environment_id, base_environment_id, repo, number, title, author, html_url, head_branch, head_sha, fork, pr_updated_at, comment_id, last_event, created_at, updated_at, closed_at FROM previews
 WHERE project_id = +? AND repo = +? AND number = +? AND closed_at IS NULL
@@ -334,7 +371,7 @@ func (q *Queries) GetPreviewByEnvironment(ctx context.Context, environmentID int
 
 const getPreviewSettings = `-- name: GetPreviewSettings :one
 
-SELECT project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at FROM preview_settings WHERE project_id = +?
+SELECT project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at, seed_from_snapshot FROM preview_settings WHERE project_id = +?
 `
 
 // Preview environments per pull request (ADR 0056).
@@ -349,6 +386,7 @@ func (q *Queries) GetPreviewSettings(ctx context.Context, projectID int64) (Prev
 		&i.AllowForks,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
+		&i.SeedFromSnapshot,
 	)
 	return i, err
 }
@@ -820,11 +858,12 @@ func (q *Queries) UpdatePreviewHead(ctx context.Context, arg UpdatePreviewHeadPa
 }
 
 const upsertPreviewSettings = `-- name: UpsertPreviewSettings :exec
-INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET
     base_environment_id = excluded.base_environment_id, max_previews = excluded.max_previews,
     copy_variables = excluded.copy_variables, allow_forks = excluded.allow_forks,
+    seed_from_snapshot = excluded.seed_from_snapshot,
     updated_by = excluded.updated_by, updated_at = excluded.updated_at
 `
 
@@ -834,6 +873,7 @@ type UpsertPreviewSettingsParams struct {
 	MaxPreviews       int64
 	CopyVariables     string
 	AllowForks        bool
+	SeedFromSnapshot  string
 	UpdatedBy         string
 	UpdatedAt         time.Time
 }
@@ -845,6 +885,7 @@ func (q *Queries) UpsertPreviewSettings(ctx context.Context, arg UpsertPreviewSe
 		arg.MaxPreviews,
 		arg.CopyVariables,
 		arg.AllowForks,
+		arg.SeedFromSnapshot,
 		arg.UpdatedBy,
 		arg.UpdatedAt,
 	)

@@ -52,12 +52,18 @@ func newPreviewsEnableCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var req apitypes.SetPreviewsRequest
 	cmd := &cobra.Command{
-		Use:   "enable <base-environment> [--max N] [--copy service.KEY ...] [--forks]",
+		Use:   "enable <base-environment> [--max N] [--copy service.KEY ...] [--seed service ...] [--forks]",
 		Short: "Turn previews on, cloned from an environment, or change their settings",
 		Long: `Give pull requests preview environments cloned from <base-environment>
 (e.g. staging). The settings are replaced as a whole: when changing them,
-pass every setting again (--max, each --copy, --forks); one left out goes
-back to its default.
+pass every setting again (--max, each --copy and --seed, --forks); one left
+out goes back to its default.
+
+A preview's databases and other volumes start empty, unless --seed names
+the service: then each new preview's copy of it is filled from the base
+service's latest snapshot (dock volume snapshot) before it starts, and a
+template database keeps the base's credentials, which its copied data
+needs. Without a snapshot it starts empty.
 
 Previews run a pull request's code, so no literal variable value of the
 base is copied unless --copy names it (web.PUBLIC_API_URL, or
@@ -65,7 +71,8 @@ shared.SENTRY_DSN for a shared one). References are always copied and
 database templates get new credentials. Pull requests from forks get no
 preview unless --forks. Needs admin on the whole project.`,
 		Example: `  dock env previews enable staging
-  dock env previews enable staging --max 5 --copy web.PUBLIC_API_URL --copy shared.SENTRY_DSN`,
+  dock env previews enable staging --max 5 --copy web.PUBLIC_API_URL --copy shared.SENTRY_DSN
+  dock env previews enable staging --seed db`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needProject)
@@ -89,6 +96,7 @@ preview unless --forks. Needs admin on the whole project.`,
 	f.add(cmd, needProject)
 	cmd.Flags().IntVar(&req.MaxPreviews, "max", 0, "most open previews at once, 1-20 (default 3)")
 	cmd.Flags().StringArrayVar(&req.CopyVariables, "copy", nil, "a base variable whose literal value previews copy, as service.KEY or shared.KEY (repeatable)")
+	cmd.Flags().StringArrayVar(&req.SeedFromSnapshot, "seed", nil, "a base service whose volumes each new preview fills from its latest snapshot, e.g. db (repeatable)")
 	cmd.Flags().BoolVar(&req.AllowForks, "forks", false, "also preview pull requests from forks")
 	return cmd
 }
@@ -181,6 +189,7 @@ func (g *globals) printPreviews(project string, set apitypes.PreviewSettings) er
 			"previews", "on, cloned from "+set.Base,
 			"max open", fmt.Sprint(set.MaxPreviews),
 			"copied", copied,
+			"seeded", dash(strings.Join(set.SeedFromSnapshot, ", ")),
 			"forks", onOff(set.AllowForks),
 			"updated", updated,
 		); err != nil {
@@ -212,6 +221,9 @@ func previewRules(set apitypes.PreviewSettings) string {
 	s := fmt.Sprintf("cloned from %s, at most %d open", set.Base, set.MaxPreviews)
 	if len(set.CopyVariables) > 0 {
 		s += ", copying " + strings.Join(set.CopyVariables, ", ")
+	}
+	if len(set.SeedFromSnapshot) > 0 {
+		s += ", seeding " + strings.Join(set.SeedFromSnapshot, ", ") + " from snapshots"
 	}
 	if set.AllowForks {
 		s += ", forks too"

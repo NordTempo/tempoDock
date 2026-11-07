@@ -15,8 +15,12 @@ export type Preview = Omit<Schemas["Preview"], "urls"> & {
 };
 export type PreviewSettings = Omit<
   Schemas["PreviewSettings"],
-  "copy_variables" | "previews"
-> & { copy_variables: string[]; previews: Preview[] };
+  "copy_variables" | "seed_from_snapshot" | "previews"
+> & {
+  copy_variables: string[];
+  seed_from_snapshot: string[];
+  previews: Preview[];
+};
 export type PreviewRequest = Schemas["SetPreviewsRequest"];
 export type PullRequestRef = Schemas["PullRequestRef"];
 
@@ -32,6 +36,7 @@ const toPreview = (p: Schemas["Preview"]): Preview => ({
 const toSettings = (s: Schemas["PreviewSettings"]): PreviewSettings => ({
   ...s,
   copy_variables: s.copy_variables ?? [],
+  seed_from_snapshot: s.seed_from_snapshot ?? [],
   previews: (s.previews ?? []).map(toPreview),
 });
 

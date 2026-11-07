@@ -6678,6 +6678,16 @@
               "null"
             ]
           },
+          "seed_from_snapshot": {
+            "description": "Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -6691,6 +6701,7 @@
           "max_previews",
           "copy_variables",
           "allow_forks",
+          "seed_from_snapshot",
           "previews"
         ],
         "type": "object"
@@ -9586,6 +9597,17 @@
             "maximum": 20,
             "minimum": 0,
             "type": "integer"
+          },
+          "seed_from_snapshot": {
+            "description": "Base services whose volumes a new preview fills from their latest snapshot, e.g. db",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
