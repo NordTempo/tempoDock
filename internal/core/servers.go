@@ -49,9 +49,15 @@ func (c *Core) listServers(ctx context.Context, usage bool) ([]apitypes.Server, 
 	if err != nil {
 		return nil, err
 	}
+	drains, err := c.drainProgress(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]apitypes.Server, 0, len(rows)+len(pending))
 	for _, r := range rows {
-		out = append(out, c.toServer(r, usage, tunnels))
+		s := c.toServer(r, usage, tunnels)
+		s.Drain = drains[s.ID]
+		out = append(out, s)
 	}
 	// Tokens expire in order, so the last one of a name is the newest.
 	for _, t := range pending {
@@ -301,9 +307,15 @@ func (c *Core) serverDetail(ctx context.Context, id int64) (apitypes.Server, err
 	if err != nil {
 		return apitypes.Server{}, err
 	}
+	drains, err := c.drainProgress(ctx)
+	if err != nil {
+		return apitypes.Server{}, err
+	}
 	for _, r := range rows {
 		if r.Server.ID == id {
-			return c.toServer(r, true, tunnels), nil
+			s := c.toServer(r, true, tunnels)
+			s.Drain = drains[id]
+			return s, nil
 		}
 	}
 	return apitypes.Server{}, notFound("server %d not found", id)

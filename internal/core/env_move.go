@@ -1242,12 +1242,13 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 		c.log.Warn("apply routes after a move", "server", m.ToServerID, "err", err)
 	}
 	c.ensureForwards(ctx, m.FromServerID)
+	// The source's held requests go through the forward from here on.
+	if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeTo: ptr(now()), ID: m.ID}); err != nil {
+		c.log.Warn("record the end of a move's hold", "move", m.ID, "err", err)
+	}
 	c.hold(svcs, false)
 	if err := c.applyRoutes(ctx, m.FromServerID); err != nil {
 		c.log.Warn("apply routes after a move", "server", m.FromServerID, "err", err)
-	}
-	if err := c.store.SetEnvironmentMoveDowntime(ctx, store.SetEnvironmentMoveDowntimeParams{DowntimeTo: ptr(now()), ID: m.ID}); err != nil {
-		c.log.Warn("record the end of a move's hold", "move", m.ID, "err", err)
 	}
 	if len(retargeted) > 0 {
 		c.kickCloudflare()
@@ -1330,7 +1331,11 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 	}
 	summary := fmt.Sprintf("moved to server %s from %s", to.Name, from.Name)
 	if m.DowntimeFrom != nil && m.DowntimeTo != nil {
-		summary += fmt.Sprintf("; requests were held %s", m.DowntimeTo.Sub(*m.DowntimeFrom).Round(100*time.Millisecond))
+		held := "under 0.1s"
+		if d := m.DowntimeTo.Sub(*m.DowntimeFrom).Round(100 * time.Millisecond); d > 0 {
+			held = d.String()
+		}
+		summary += "; requests were held " + held
 	}
 	if len(notes) > 0 {
 		summary += "; " + strings.Join(notes, "; ")

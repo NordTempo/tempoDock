@@ -11,6 +11,8 @@ import type {
   StatsRange,
 } from "../data/types";
 import { DiskBreakdown } from "../features/servers/DiskBreakdown";
+import { DrainSection } from "../features/servers/DrainSection";
+import { drainQuery } from "../features/servers/drain";
 import { LinkSection } from "../features/servers/LinkSection";
 import { MemoryBreakdown } from "../features/servers/MemoryBreakdown";
 import { useServerSwitches } from "../features/servers/switches";
@@ -54,6 +56,7 @@ export const Route = createFileRoute("/_app/console/servers_/$server")({
         queryClient.ensureQueryData(
           queries.serverStats(params.server, deps.range),
         ),
+        queryClient.ensureQueryData(drainQuery(params.server)),
       ]);
     } catch (error) {
       // Caught by this route's notFoundComponent, inside the console shell.
@@ -205,6 +208,8 @@ function ServerPage() {
           </p>
           <Placements detail={detail} />
         </section>
+
+        {server.status !== "joining" && <DrainSection detail={detail} />}
 
         <MemoryBreakdown usage={server.usage} />
         {server.status === "online" && <DiskBreakdown server={name} />}

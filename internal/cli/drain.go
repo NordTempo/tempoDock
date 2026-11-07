@@ -236,7 +236,19 @@ func (g *globals) printDrain(d apitypes.ServerDrain) error {
 		}
 		_, _ = fmt.Fprintln(g.io.Out)
 	}
-	if len(d.Items) > 0 {
+	if len(d.Items) > 0 && d.ID == 0 { // a plan
+		t := g.io.Table("environment", "kind", "to", "data", "problem")
+		for _, it := range d.Items {
+			data := "-"
+			if it.Stateful && it.DataBytes > 0 {
+				data = bytesize(it.DataBytes)
+			}
+			t.Row(it.Org+"/"+it.Project+"/"+it.Environment, kindWords(it.Kind), it.To, data, it.Problem)
+		}
+		if err := t.Flush(); err != nil {
+			return err
+		}
+	} else if len(d.Items) > 0 {
 		t := g.io.Table("environment", "kind", "to", "data", "status", "hold", "problem")
 		for _, it := range d.Items {
 			data, held := "-", "-"

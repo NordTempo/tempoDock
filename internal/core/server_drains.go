@@ -241,7 +241,8 @@ func (c *Core) drainTarget(ctx context.Context, req apitypes.DrainServerRequest,
 	}
 	l, err := pickServer(kind, eligible)
 	if err != nil {
-		return store.Server{}, fmt.Errorf("no other server can take it: %w", err)
+		return store.Server{}, conflict("no other online server takes %s environments with %d MB free; let one take them (`dock server update <name> --%s`) or add a server",
+			kindWords(kind), mem, kindWords(kind))
 	}
 	return l.server, nil
 }
@@ -348,6 +349,8 @@ func (c *Core) ResumeServerDrain(ctx context.Context, a Actor, name string, req 
 	if d, err = c.store.GetServerDrain(ctx, d.ID); err != nil {
 		return apitypes.ServerDrain{}, err
 	}
+	c.publishServerDrain(ctx, d)
+	c.publishServer(ctx, srv.ID)
 	return c.serverDrain(ctx, d)
 }
 
@@ -381,6 +384,7 @@ func (c *Core) CancelServerDrain(ctx context.Context, a Actor, name string) (api
 		return apitypes.ServerDrain{}, err
 	}
 	c.publishServerDrain(ctx, d)
+	c.publishServer(ctx, srv.ID)
 	return c.serverDrain(ctx, d)
 }
 
@@ -585,6 +589,7 @@ func (c *Core) setDrainItem(ctx context.Context, d store.ServerDrain, it store.S
 		return err
 	}
 	c.publishServerDrain(ctx, d)
+	c.publishServer(ctx, d.ServerID) // its drain's progress
 	return nil
 }
 
@@ -607,6 +612,7 @@ func (c *Core) pauseServerDrain(ctx context.Context, d store.ServerDrain, it sto
 		fmt.Sprintf("the drain of server %s paused: %s; retry with `dock server drain %s --resume`, or skip it with --resume --skip", name, why, name))
 	d.Status, d.Error = string(apitypes.DrainPaused), why
 	c.publishServerDrain(ctx, d)
+	c.publishServer(ctx, d.ServerID)
 	return nil
 }
 
@@ -719,4 +725,20 @@ func (c *Core) publishMoveDrain(ctx context.Context, drainID int64) {
 	if d, err := c.store.GetServerDrain(ctx, drainID); err == nil {
 		c.publishServerDrain(ctx, d)
 	}
+}
+
+// drainProgress is every running or paused drain's progress by server,
+// in one query.
+func (c *Core) drainProgress(ctx context.Context) (map[int64]*apitypes.DrainProgress, error) {
+	rows, err := c.store.ListOpenServerDrainProgress(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]*apitypes.DrainProgress, len(rows))
+	for _, r := range rows {
+		out[r.ServerID] = &apitypes.DrainProgress{
+			ID: r.ID, Status: apitypes.DrainStatus(r.Status), Done: int(r.Done), Total: int(r.Total), Error: r.Error,
+		}
+	}
+	return out, nil
 }

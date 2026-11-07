@@ -6,16 +6,17 @@ import { Act, Confirm, Panel } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
 import {
   type EnvironmentMove,
+  heldFor,
   type MoveStep,
   moveRunning,
   useMove,
   useMoveEnvironment,
 } from "./data";
 
-// An environment's server and its move (ADR 0053), opened from the
-// environment's heading on the project overview: operators pick another
-// server and move it there; everyone sees the running or latest move's
-// steps, downtime, services and what is left to do. Loaded when opened.
+// An environment's server and its move (ADRs 0053 and 0062), opened from
+// the environment's heading on the project overview: operators pick
+// another server and move it there; everyone sees the running or latest
+// move's steps, hold, services and what is left to do. Loaded when opened.
 
 /**
  * The "Server" row (operators only) and the move's progress. `server` is
@@ -148,9 +149,10 @@ function ServerRow({
         >
           Move <b className="font-semibold">{env.environment}</b> from{" "}
           <span className="font-mono">{server}</span> to{" "}
-          <span className="font-mono">{to}</span>? Stateful services stop while
-          their volumes copy. Domains not routed through Cloudflare need their
-          DNS changed after.
+          <span className="font-mono">{to}</span>? Volumes copy while it serves,
+          then requests wait a few seconds while it switches. Domains not routed
+          through Cloudflare need their DNS changed after; the old server
+          forwards them meanwhile.
         </Confirm>
       )}
     </>
@@ -159,6 +161,7 @@ function ServerRow({
 
 const steps: Exclude<MoveStep, "done">[] = [
   "prepare",
+  "sync",
   "stop",
   "copy",
   "start",
@@ -174,13 +177,13 @@ function stepTone(move: EnvironmentMove, i: number) {
   return move.status === "failed" ? "text-fail" : "text-prog";
 }
 
-/** The stateful services' downtime, without a counter that repaints. */
-function downtime(move: EnvironmentMove) {
+/** How long requests were held, without a counter that repaints. */
+function held(move: EnvironmentMove) {
   const from = move.downtime_from;
-  if (!from) return moveRunning(move) ? "no downtime yet" : "no downtime";
+  if (!from) return moveRunning(move) ? "not held yet" : "never held";
   const to = move.downtime_to;
-  if (!to) return `down since ${clockSec(from)}`;
-  return `down ${elapsed(Date.parse(to) - Date.parse(from))}`;
+  if (!to) return `held since ${clockSec(from)}`;
+  return `held ${heldFor(move)}`;
 }
 
 const serviceTone: Record<string, string> = {
@@ -220,7 +223,7 @@ function MoveProgress({ move }: { move: EnvironmentMove }) {
             </span>
           ))}
         </span>
-        <span className="text-mut">{downtime(move)}</span>
+        <span className="text-mut">{held(move)}</span>
         <span className="text-faint">
           by {move.created_by} at {clockSec(move.started_at)}
         </span>
@@ -240,6 +243,7 @@ function MoveProgress({ move }: { move: EnvironmentMove }) {
                 <th>Stateful</th>
                 <th>Status</th>
                 <th>Copied</th>
+                <th>Passes</th>
                 <th>Error</th>
               </tr>
             </thead>
@@ -258,6 +262,11 @@ function MoveProgress({ move }: { move: EnvironmentMove }) {
                   </td>
                   <td className="font-mono text-mut">
                     {s.stateful ? size(s.copied_bytes) : "·"}
+                  </td>
+                  <td className="font-mono text-mut">
+                    {s.stateful && s.passes > 0
+                      ? `${s.passes}, last ${elapsed(s.last_pass_ms)}`
+                      : "·"}
                   </td>
                   <td className="w-full whitespace-normal text-fail">
                     {s.error}

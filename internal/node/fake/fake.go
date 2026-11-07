@@ -1111,7 +1111,8 @@ func (r *Runtime) Jobs() []node.JobSpec {
 // events), so OnJob's function sees them as node.StatePaused through
 // Inspect; an unknown ID, or one of another control plane, is
 // node.ErrNotFound before anything is paused. A Stream's Stdin is echoed
-// to its Stdout.
+// to its Stdout. A move's size job answers with its volumes' data, and a
+// Sync job plays dock-sync (syncJob).
 func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult, error) {
 	r.mu.Lock()
 	r.op("job %s", spec.Name)
@@ -1133,6 +1134,16 @@ func (r *Runtime) RunJob(ctx context.Context, spec node.JobSpec) (node.JobResult
 	}
 	if st := spec.Stream; st != nil && spec.Sync {
 		return r.syncJob(spec)
+	}
+	if strings.Contains(spec.Script, "dock-move: kib") {
+		// A move measuring the volumes it copies (ADR 0053).
+		r.mu.Lock()
+		var n int
+		for _, m := range spec.Mounts {
+			n += len(r.data[m.Volume])
+		}
+		r.mu.Unlock()
+		return node.JobResult{Output: fmt.Sprintf("dock-move: kib %d\n", (n+1023)/1024)}, nil
 	}
 	if st := spec.Stream; st != nil {
 		if vol, ok := tarVolume(spec, "tar -cf"); ok && st.Stdout != nil {

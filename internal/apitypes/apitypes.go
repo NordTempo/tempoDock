@@ -1117,11 +1117,14 @@ const (
 // Server is a machine running a node runtime. A server that is still
 // joining (a pending join token) has ID 0 and no facts yet.
 type Server struct {
-	ID      int64        `json:"id"`
-	Name    string       `json:"name"`
-	Builder bool         `json:"builder" doc:"Source builds may run here"`
-	Local   bool         `json:"local" doc:"Runs the control plane"`
-	Status  ServerStatus `json:"status" enum:"online,offline,incompatible,joining,revoked"`
+	// Drain is the server's running or paused drain (ADR 0062), for
+	// operators.
+	Drain   *DrainProgress `json:"drain,omitempty"`
+	ID      int64          `json:"id"`
+	Name    string         `json:"name"`
+	Builder bool           `json:"builder" doc:"Source builds may run here"`
+	Local   bool           `json:"local" doc:"Runs the control plane"`
+	Status  ServerStatus   `json:"status" enum:"online,offline,incompatible,joining,revoked"`
 	// Version is the dock version the server runs (reported when it
 	// connects).
 	Version    string     `json:"version"`

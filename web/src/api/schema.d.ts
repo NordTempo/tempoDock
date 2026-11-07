@@ -5733,7 +5733,8 @@ export interface components {
             data_bytes?: number;
             environment: string;
             error?: string;
-            kind: string;
+            /** @enum {string} */
+            kind: "production" | "non_production";
             move?: components["schemas"]["EnvironmentMove"];
             org: string;
             problem?: string;
@@ -5742,6 +5743,17 @@ export interface components {
             /** @enum {string} */
             status: "waiting" | "moving" | "moved" | "failed" | "skipped";
             to: string;
+        };
+        DrainProgress: {
+            /** Format: int64 */
+            done: number;
+            error?: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "running" | "paused";
+            /** Format: int64 */
+            total: number;
         };
         DrainServerRequest: {
             dry_run?: boolean;
@@ -6845,6 +6857,7 @@ export interface components {
             disabled_for_placement: boolean;
             disconnect_reason?: string;
             docker_version?: string;
+            drain?: components["schemas"]["DrainProgress"];
             /** Format: int64 */
             environments: number;
             /** Format: int64 */
@@ -6910,7 +6923,8 @@ export interface components {
             /** Format: int64 */
             id: number;
             items: components["schemas"]["DrainItem"][] | null;
-            kind?: string;
+            /** @enum {string} */
+            kind?: "production" | "non_production";
             /** Format: int64 */
             max_hold: number;
             problems: string[] | null;

@@ -397,6 +397,55 @@ func (q *Queries) ListForwardedDomains(ctx context.Context, serverID int64) ([]L
 	return items, nil
 }
 
+const listOpenServerDrainProgress = `-- name: ListOpenServerDrainProgress :many
+SELECT server_drains.id, server_drains.server_id, server_drains.status, server_drains.error,
+       CAST((SELECT count(*) FROM server_drain_items WHERE server_drain_items.drain_id = server_drains.id) AS INTEGER) AS total,
+       CAST((SELECT count(*) FROM server_drain_items WHERE server_drain_items.drain_id = server_drains.id
+                AND server_drain_items.status IN ('moved', 'skipped')) AS INTEGER) AS done
+FROM server_drains WHERE server_drains.status IN ('running', 'paused')
+`
+
+type ListOpenServerDrainProgressRow struct {
+	ID       int64
+	ServerID int64
+	Status   string
+	Error    string
+	Total    int64
+	Done     int64
+}
+
+// Every running or paused drain with how many of its environments are
+// done (moved or skipped), for the server list.
+func (q *Queries) ListOpenServerDrainProgress(ctx context.Context) ([]ListOpenServerDrainProgressRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenServerDrainProgress)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenServerDrainProgressRow
+	for rows.Next() {
+		var i ListOpenServerDrainProgressRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServerID,
+			&i.Status,
+			&i.Error,
+			&i.Total,
+			&i.Done,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunningServerDrains = `-- name: ListRunningServerDrains :many
 SELECT id, server_id, kind, status, max_hold_s, error, created_by, started_at, finished_at FROM server_drains WHERE status = 'running' ORDER BY id
 `

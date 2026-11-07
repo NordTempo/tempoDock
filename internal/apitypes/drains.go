@@ -62,7 +62,7 @@ type ServerDrain struct {
 	// ID is 0 for a plan (DryRun).
 	ID     int64           `json:"id"`
 	Server string          `json:"server"`
-	Kind   EnvironmentKind `json:"kind,omitempty"`
+	Kind   EnvironmentKind `json:"kind,omitempty" enum:"production,non_production"`
 	// Status is empty for a plan.
 	Status DrainStatus `json:"status,omitempty" enum:"running,paused,succeeded,cancelled"`
 	Error  string      `json:"error,omitempty"`
@@ -85,7 +85,7 @@ type DrainItem struct {
 	Project     string          `json:"project"`
 	Org         string          `json:"org"`
 	Environment string          `json:"environment"`
-	Kind        EnvironmentKind `json:"kind"`
+	Kind        EnvironmentKind `json:"kind" enum:"production,non_production"`
 	To          string          `json:"to"`
 	Status      DrainItemStatus `json:"status" enum:"waiting,moving,moved,failed,skipped"`
 	// Stateful says whether volumes copy; DataBytes is their size, in a
@@ -108,4 +108,14 @@ type ServerForward struct {
 	Port        int64     `json:"port"`
 	NowOn       string    `json:"now_on"`
 	Since       time.Time `json:"since"`
+}
+
+// DrainProgress is how far a server's running or paused drain is.
+type DrainProgress struct {
+	ID     int64       `json:"id"`
+	Status DrainStatus `json:"status" enum:"running,paused"`
+	// Done is how many environments moved or were skipped, of Total.
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+	Error string `json:"error,omitempty"`
 }

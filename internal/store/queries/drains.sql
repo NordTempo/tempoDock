@@ -134,3 +134,12 @@ JOIN projects ON projects.id = environments.project_id
 JOIN orgs ON orgs.id = projects.org_id
 WHERE environments.server_id = +? AND environments.archived_at IS NULL AND projects.archived_at IS NULL
 ORDER BY orgs.slug, projects.name, environments.kind, environments.name;
+
+-- name: ListOpenServerDrainProgress :many
+-- Every running or paused drain with how many of its environments are
+-- done (moved or skipped), for the server list.
+SELECT server_drains.id, server_drains.server_id, server_drains.status, server_drains.error,
+       CAST((SELECT count(*) FROM server_drain_items WHERE server_drain_items.drain_id = server_drains.id) AS INTEGER) AS total,
+       CAST((SELECT count(*) FROM server_drain_items WHERE server_drain_items.drain_id = server_drains.id
+                AND server_drain_items.status IN ('moved', 'skipped')) AS INTEGER) AS done
+FROM server_drains WHERE server_drains.status IN ('running', 'paused');
