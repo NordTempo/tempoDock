@@ -363,6 +363,7 @@ export function useCommands({
           ["Storage", "/console/storage", "dock storage"],
           ["Backups", "/console/backups", "dock backup status"],
           ["Users", "/console/users", "dock user list"],
+          ["Sign-in", "/console/sign-in", "dock sso list"],
           ["Data access policy", "/console/data-access", "dock db policy show"],
           ["Alerts", "/console/alerts", "dock alerts"],
           ["Activity", "/console/audit", "dock audit"],

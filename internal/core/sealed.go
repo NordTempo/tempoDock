@@ -48,8 +48,8 @@ var (
 	// sealedUserFactor is a second factor's key (ADR 0057): one
 	// authenticator app per user, passkeys by credential ID.
 	sealedUserFactor = secrets.Column{Table: "user_factors", Name: "secret", Key: []string{"user_id", "kind", "coalesce(hex(credential_id), '')"}}
-	// sealedSSOSecret is an org's OpenID Connect client secret (ADR 0058).
-	sealedSSOSecret = secrets.Column{Table: "sso_providers", Name: "client_secret", Key: []string{"org_id", "name"}}
+	// sealedSSOSecret is an identity provider's client secret (ADR 0065).
+	sealedSSOSecret = secrets.Column{Table: "sso_providers", Name: "client_secret", Key: []string{"name"}}
 
 	sealedColumns = []secrets.Column{
 		sealedVariableValue, sealedVariablePending, sealedOrgVariable, sealedReleaseConfig,
@@ -86,9 +86,48 @@ func factorAAD(userID int64, kind string, credentialID []byte) secrets.AAD {
 	return sealedUserFactor.AAD(strconv.FormatInt(userID, 10), kind, strings.ToUpper(hex.EncodeToString(credentialID)))
 }
 
-// ssoSecretAAD binds the client secret of an org's provider name.
-func ssoSecretAAD(orgID int64, name string) secrets.AAD {
-	return sealedSSOSecret.AAD(strconv.FormatInt(orgID, 10), name)
+// ssoSecretAAD binds the client secret of provider name.
+func ssoSecretAAD(name string) secrets.AAD {
+	return sealedSSOSecret.AAD(name)
+}
+
+// resealSSOSecrets seals the client secrets of the providers orgs had
+// (ADR 0058), still bound to (org_id, name), again for their platform
+// provider, once: migration 0078 lists them in sso_reseal. New runs it
+// with resealSecrets. Each provider is resealed and unlisted in one
+// transaction, so it is safe to interrupt or to run in two processes.
+// A secret that doesn't open is left as it is, and logged.
+func (c *Core) resealSSOSecrets(ctx context.Context) error {
+	rows, err := c.store.ListSSOReseal(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		err := c.store.Tx(ctx, func(q *store.Queries) error {
+			if err := q.DeleteSSOReseal(ctx, r.SsoReseal.ProviderID); err != nil {
+				return err
+			}
+			old := secrets.Column{Table: sealedSSOSecret.Table, Name: sealedSSOSecret.Name, Key: []string{"org_id", "name"}}
+			secret, err := c.box.Open(r.SsoProvider.ClientSecret, old.AAD(strconv.FormatInt(r.SsoReseal.OrgID, 10), r.SsoReseal.Name))
+			if err != nil {
+				// Resealed by another process first, or unreadable: then
+				// sign-ins through it fail until an operator sets it again.
+				if _, again := c.box.Open(r.SsoProvider.ClientSecret, ssoSecretAAD(r.SsoProvider.Name)); again != nil {
+					c.log.Warn("sso: can't open a client secret to reseal it; set it again with `dock sso set --client-secret`", "provider", r.SsoProvider.Name, "err", err)
+				}
+				return nil
+			}
+			sealed, err := c.box.Seal(secret, ssoSecretAAD(r.SsoProvider.Name))
+			if err != nil {
+				return err
+			}
+			return q.SetSSOProviderSecret(ctx, store.SetSSOProviderSecretParams{ClientSecret: sealed, ID: r.SsoProvider.ID})
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // orgVariableAAD binds an org variable's value.

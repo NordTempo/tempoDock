@@ -20,10 +20,10 @@ import (
 // a name and a password (checkNewPassword). The answer is a session as
 // after a password login: an org that requires a second factor then asks
 // for one to be added before acting in it. Refused when the email has an
-// account already (sign in and accept instead) and when the org requires
-// its single sign-on (sign in through it: the open invite is accepted
-// then). Attempts are rate limited like logins: per client IP, and per
-// IP and email once the code is known.
+// account already (sign in and accept instead) and when password sign-in
+// is off (sign in through an identity provider: a new account's open
+// invites are accepted then, ADR 0065). Attempts are rate limited like
+// logins: per client IP, and per IP and email once the code is known.
 func (c *Core) SignUpWithInvite(ctx context.Context, code string, req apitypes.InviteSignUpRequest, clientIP string) (LoginResult, error) {
 	t := now()
 	row, err := c.openInvite(ctx, code)
@@ -41,8 +41,12 @@ func (c *Core) SignUpWithInvite(ctx context.Context, code string, req apitypes.I
 		return LoginResult{}, err
 	}
 	inv, org := row.OrgInvite, row.Org
-	if org.SsoOnly {
-		return LoginResult{}, errf(apitypes.CodeForbidden, "%s signs in only through its single sign-on, so Dock makes no password account for it; sign in with SSO as %s and the invite is accepted then", org.Name, inv.Email)
+	set, err := signInSettings(ctx, c.store.Queries)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if !set.PasswordSignIn {
+		return LoginResult{}, errf(apitypes.CodeForbidden, "password sign-in is off on this Dock, so it makes no password accounts; continue with an identity provider as %s and the invite is accepted then", inv.Email)
 	}
 	name, err := displayName(req.Name)
 	if err != nil {

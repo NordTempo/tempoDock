@@ -36,9 +36,9 @@ const (
 	// CodeTwoFactorRequired means the org (or the platform, for operators)
 	// requires a second factor this session or token didn't use.
 	CodeTwoFactorRequired ErrorCode = "two_factor_required"
-	// CodeSSORequired means the org requires signing in through its single
-	// sign-on, or the action a sign-in that didn't go through an org's
-	// (ADR 0058).
+	// CodeSSORequired means a session that signed in through an identity
+	// provider confirms who it is by signing in through it again (ADR
+	// 0065).
 	CodeSSORequired ErrorCode = "sso_required"
 	CodeInternal    ErrorCode = "internal"
 )

@@ -13,7 +13,7 @@ SELECT * FROM cli_logins WHERE device_hash = +?;
 SELECT count(*) FROM cli_logins WHERE status = 'pending' AND expires_at > +?;
 
 -- name: DecideCLILogin :execrows
-UPDATE cli_logins SET status = ?, user_id = ?, two_factor = ?, sso_org_id = ?
+UPDATE cli_logins SET status = ?, user_id = ?, two_factor = ?
 WHERE id = +? AND status = 'pending' AND expires_at > +?;
 
 -- name: DeleteCLILogin :execrows
@@ -23,6 +23,6 @@ DELETE FROM cli_logins WHERE id = +? AND status = +?;
 DELETE FROM cli_logins WHERE expires_at < +?;
 
 -- name: CreateCLILoginToken :one
-INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, two_factor, sso_org_id, origin)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cli_login')
+INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, two_factor, origin)
+VALUES (?, ?, ?, ?, ?, ?, ?, 'cli_login')
 RETURNING *;

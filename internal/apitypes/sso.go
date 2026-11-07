@@ -2,77 +2,106 @@ package apitypes
 
 import "time"
 
-// Single sign-on with OpenID Connect (ADR 0058): an org's identity
-// providers, the sso-only switch, and signing in through them.
+// Single sign-on (ADR 0058, 0065): the platform's identity providers, its
+// sign-in switches, and signing in through a provider.
 
-// SSOProvider is an org's OpenID Connect provider. Its client secret is
-// never returned.
+// SSOKind is the protocol a provider speaks: google and oidc are OpenID
+// Connect (google's issuer is fixed), github is GitHub's OAuth, reading
+// the account's primary verified email from its API.
+type SSOKind string
+
+const (
+	SSOGoogle SSOKind = "google"
+	SSOGitHub SSOKind = "github"
+	SSOOIDC   SSOKind = "oidc"
+)
+
+// SSOProvider is one of the platform's identity providers. Its client
+// secret is never returned.
 type SSOProvider struct {
-	// Name addresses the provider within the org.
-	Name     string `json:"name" example:"google"`
-	Issuer   string `json:"issuer" example:"https://accounts.google.com"`
+	// Name addresses the provider in the API and CLI.
+	Name string  `json:"name" example:"google"`
+	Kind SSOKind `json:"kind" enum:"google,github,oidc"`
+	// Label is what the sign-in page's button names: "Continue with <label>".
+	Label string `json:"label" example:"Google"`
+	// Issuer is the OpenID Connect issuer; empty for github.
+	Issuer   string `json:"issuer,omitempty" example:"https://accounts.google.com"`
 	ClientID string `json:"client_id"`
-	// AllowedDomains are the email domains it signs people in for.
-	AllowedDomains []string `json:"allowed_domains"`
-	// JITRole is the role a person gets on their first sign-in when the
-	// org has no invite for them; empty: they need an invite.
-	JITRole Scope `json:"jit_role,omitempty" enum:"read,deploy"`
-	// RedirectURL is the address to register at the provider.
-	RedirectURL string    `json:"redirect_url"`
-	CreatedAt   time.Time `json:"created_at"`
-	CreatedBy   string    `json:"created_by"`
+	// Linked is how many people are linked through the provider.
+	Linked    int64     `json:"linked"`
+	CreatedAt time.Time `json:"created_at"`
+	CreatedBy string    `json:"created_by"`
 }
 
-// CreateSSOProviderRequest adds an OpenID Connect provider to the org.
+// SSOProviders is the platform's providers, with the one redirect URL to
+// register at each of them.
+type SSOProviders struct {
+	Providers   []SSOProvider `json:"providers"`
+	RedirectURL string        `json:"redirect_url" example:"https://dock.example.com/api/v1/auth/sso/callback"`
+}
+
+// CreateSSOProviderRequest adds an identity provider to the platform.
 type CreateSSOProviderRequest struct {
-	Name     string `json:"name" minLength:"1" maxLength:"32" doc:"Lowercase letters, digits and dashes"`
-	Issuer   string `json:"issuer" minLength:"1" doc:"The provider's issuer URL; https, or http on localhost"`
-	ClientID string `json:"client_id" minLength:"1"`
-	// ClientSecret is write-only.
-	ClientSecret   string   `json:"client_secret" minLength:"1"`
-	AllowedDomains []string `json:"allowed_domains" minItems:"1" doc:"Email domains it signs people in for"`
-	// JITRole: "" (the default) needs an invite for every new member;
-	// read or deploy lets anyone with an allowed email domain join with it.
-	JITRole Scope `json:"jit_role,omitempty"`
+	Name string  `json:"name" minLength:"1" maxLength:"32" doc:"Lowercase letters, digits and dashes"`
+	Kind SSOKind `json:"kind" enum:"google,github,oidc"`
+	// Label defaults to Google or GitHub for those kinds; a custom
+	// provider needs one.
+	Label  string `json:"label,omitempty" maxLength:"40"`
+	Issuer string `json:"issuer,omitempty" doc:"oidc only: the issuer URL; https, or http on localhost"`
+	// ClientID and ClientSecret are the app registered for Dock at the
+	// provider; the secret is write-only.
+	ClientID     string `json:"client_id" minLength:"1"`
+	ClientSecret string `json:"client_secret" minLength:"1"`
 }
 
 // UpdateSSOProviderRequest changes a provider; fields left out stay.
 type UpdateSSOProviderRequest struct {
-	Issuer         *string  `json:"issuer,omitempty"`
-	ClientID       *string  `json:"client_id,omitempty"`
-	ClientSecret   *string  `json:"client_secret,omitempty"`
-	AllowedDomains []string `json:"allowed_domains,omitempty"`
-	JITRole        *Scope   `json:"jit_role,omitempty" doc:"\"\" turns just-in-time membership off"`
+	Label        *string `json:"label,omitempty" maxLength:"40"`
+	Issuer       *string `json:"issuer,omitempty" doc:"oidc only"`
+	ClientID     *string `json:"client_id,omitempty"`
+	ClientSecret *string `json:"client_secret,omitempty"`
 }
 
-// SetSSOOnlyRequest turns an org's requirement of signing in through its
-// single sign-on on or off.
-type SetSSOOnlyRequest struct {
-	SSOOnly bool `json:"sso_only"`
+// SignInSettings is the platform's sign-in switches.
+type SignInSettings struct {
+	// PasswordSignIn: the sign-in page takes email and password. Off
+	// only while a provider exists; `dock admin password-sign-in on`
+	// turns it back on from the server.
+	PasswordSignIn bool `json:"password_sign_in"`
+	// InviteOnly: a provider creates an account only for an email with an
+	// open invite; off, for anyone it signs in.
+	InviteOnly bool `json:"invite_only"`
 }
 
-// SSOStartRequest starts signing in through single sign-on: with an email
-// address, whose domain finds the provider, or an explicit org and
-// provider (when several orgs sign that domain in).
+// SignInSettingsRequest changes the platform's sign-in switches; fields
+// left out stay.
+type SignInSettingsRequest struct {
+	PasswordSignIn *bool `json:"password_sign_in,omitempty"`
+	InviteOnly     *bool `json:"invite_only,omitempty"`
+}
+
+// SignInMethods is what the sign-in page offers, for anyone: a button per
+// provider, and whether it takes passwords.
+type SignInMethods struct {
+	Password  bool           `json:"password"`
+	Providers []SignInButton `json:"providers"`
+}
+
+// SignInButton is a provider on the sign-in page.
+type SignInButton struct {
+	Name  string  `json:"name"`
+	Kind  SSOKind `json:"kind" enum:"google,github,oidc"`
+	Label string  `json:"label"`
+}
+
+// SSOStartRequest starts signing in through the provider named.
 type SSOStartRequest struct {
-	Email    string `json:"email,omitempty" maxLength:"254"`
-	Org      string `json:"org,omitempty" maxLength:"32"`
-	Provider string `json:"provider,omitempty" maxLength:"32"`
+	Provider string `json:"provider" minLength:"1" maxLength:"32"`
 	// To is the path to land on after signing in; "/" by default.
 	To string `json:"to,omitempty" maxLength:"512"`
 }
 
-// SSOStart is where signing in goes next: the identity provider's page
-// (URL), or, when several orgs sign the email's domain in, a choice of
-// them to start again with.
+// SSOStart is the identity provider's page to send the browser to.
 type SSOStart struct {
-	URL     string      `json:"url,omitempty"`
-	Choices []SSOChoice `json:"choices,omitempty"`
-}
-
-// SSOChoice is an org and provider a person can sign in through.
-type SSOChoice struct {
-	Org      string `json:"org"`
-	OrgName  string `json:"org_name"`
-	Provider string `json:"provider"`
+	URL string `json:"url"`
 }

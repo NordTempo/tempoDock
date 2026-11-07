@@ -5,120 +5,131 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Single sign-on with OpenID Connect (ADR 0058), the org's side: its
-// identity providers and the sso-only switch. Unlimited admins manage
-// them after a recent step-up; client secrets are sealed and never
+// Single sign-on, the platform's side (ADR 0058, 0065): operators manage
+// the identity providers and the sign-in switches (passwords, invite
+// only) after a recent step-up; client secrets are sealed and never
 // returned. Signing in through a provider is sso_signin.go.
 
 // SSOCallbackPath is where identity providers send the browser back, on
-// Dock's URL; the API serves it.
+// Dock's URL; the API serves it. One for every provider: the flow in
+// flight names its provider.
 const SSOCallbackPath = "/api/" + apitypes.APIVersion + "/auth/sso/callback"
 
-// maxSSODomains bounds a provider's email domains.
-const maxSSODomains = 50
+// googleIssuer is the issuer of the google kind.
+const googleIssuer = "https://accounts.google.com"
 
-// ssoRedirectURL is the redirect URI admins register at their provider.
+// maxSSOLabel bounds a provider's label, in characters.
+const maxSSOLabel = 40
+
+// ssoRedirectURL is the redirect URI operators register at each provider.
 func (c *Core) ssoRedirectURL() string { return c.dockURL() + SSOCallbackPath }
 
-// ListSSOProviders returns the org's identity providers.
-func (c *Core) ListSSOProviders(ctx context.Context, a Actor) ([]apitypes.SSOProvider, error) {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing single sign-on"); err != nil {
-		return nil, err
+// ListSSOProviders returns the platform's identity providers and the
+// redirect URL to register at them.
+func (c *Core) ListSSOProviders(ctx context.Context, a Actor) (apitypes.SSOProviders, error) {
+	if err := a.requireOperator("managing single sign-on"); err != nil {
+		return apitypes.SSOProviders{}, err
 	}
-	rows, err := c.store.ListOrgSSOProviders(ctx, a.OrgID)
+	rows, err := c.store.ListSSOProvidersLinked(ctx)
 	if err != nil {
-		return nil, err
+		return apitypes.SSOProviders{}, err
 	}
-	domains, err := c.store.ListOrgSSODomains(ctx, a.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	byProvider := map[int64][]string{}
-	for _, d := range domains {
-		byProvider[d.ProviderID] = append(byProvider[d.ProviderID], d.Domain)
-	}
-	out := make([]apitypes.SSOProvider, len(rows))
-	for i, p := range rows {
-		out[i] = c.toSSOProvider(p, byProvider[p.ID])
+	out := apitypes.SSOProviders{Providers: make([]apitypes.SSOProvider, len(rows)), RedirectURL: c.ssoRedirectURL()}
+	for i, r := range rows {
+		out.Providers[i] = toSSOProvider(r.SsoProvider, r.Linked)
 	}
 	return out, nil
 }
 
-// CreateSSOProvider adds an identity provider to the org. Its issuer must
-// answer OpenID Connect discovery now, so a typo shows here rather than at
-// someone's first sign-in.
+// CreateSSOProvider adds an identity provider. An OpenID Connect issuer
+// (google's too) must answer discovery now, so a typo shows here rather
+// than at someone's first sign-in.
 func (c *Core) CreateSSOProvider(ctx context.Context, a Actor, req apitypes.CreateSSOProviderRequest) (apitypes.SSOProvider, error) {
-	if err := c.requireSSOAdmin(a); err != nil {
+	if err := requireSSOOperator(a); err != nil {
 		return apitypes.SSOProvider{}, err
 	}
 	if err := validName("provider", req.Name); err != nil {
 		return apitypes.SSOProvider{}, err
 	}
-	issuer, err := validIssuer(req.Issuer)
-	if err != nil {
-		return apitypes.SSOProvider{}, err
+	var issuer, label string
+	switch req.Kind {
+	case apitypes.SSOGoogle:
+		issuer, label = googleIssuer, "Google"
+	case apitypes.SSOGitHub:
+		label = "GitHub"
+	case apitypes.SSOOIDC:
+		var err error
+		if issuer, err = validIssuer(req.Issuer); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
+	default:
+		return apitypes.SSOProvider{}, invalid("kind must be google, github or oidc (any other OpenID Connect provider, by its issuer)")
 	}
-	domains, err := validDomains(req.AllowedDomains)
-	if err != nil {
-		return apitypes.SSOProvider{}, err
+	if req.Issuer != "" && req.Kind != apitypes.SSOOIDC {
+		return apitypes.SSOProvider{}, invalid("only an oidc provider takes an issuer; %s's is built in", label)
 	}
-	if err := validJITRole(req.JITRole); err != nil {
-		return apitypes.SSOProvider{}, err
+	if req.Label != "" || req.Kind == apitypes.SSOOIDC {
+		var err error
+		if label, err = validLabel(req.Label); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
 	}
 	clientID, secret := strings.TrimSpace(req.ClientID), strings.TrimSpace(req.ClientSecret)
 	if clientID == "" || secret == "" {
 		return apitypes.SSOProvider{}, invalid("a provider needs the client ID and client secret of the app registered for Dock at it")
 	}
-	if _, err := c.sso.discover(ctx, c.log, issuer); err != nil {
-		return apitypes.SSOProvider{}, err
+	if issuer != "" {
+		if _, err := c.sso.discover(ctx, c.log, issuer); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
 	}
-	sealed, err := c.box.Seal([]byte(secret), ssoSecretAAD(a.OrgID, req.Name))
+	sealed, err := c.box.Seal([]byte(secret), ssoSecretAAD(req.Name))
 	if err != nil {
 		return apitypes.SSOProvider{}, err
 	}
-	var p store.SsoProvider
-	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		var err error
-		p, err = q.CreateSSOProvider(ctx, store.CreateSSOProviderParams{
-			OrgID: a.OrgID, Name: req.Name, Issuer: issuer, ClientID: clientID, ClientSecret: sealed,
-			JitRole: string(req.JITRole), CreatedAt: now(), CreatedBy: a.Name,
-		})
-		if err != nil {
-			return err
-		}
-		return addSSODomains(ctx, q, p.ID, domains)
+	p, err := c.store.CreateSSOProvider(ctx, store.CreateSSOProviderParams{
+		Name: req.Name, Kind: string(req.Kind), Label: label, Issuer: issuer, ClientID: clientID, ClientSecret: sealed,
+		CreatedAt: now(), CreatedBy: a.Name,
 	})
 	if store.IsUnique(err) {
-		return apitypes.SSOProvider{}, conflict("organization %s has a provider named %s already; pick another name or change that one with `dock org sso set`", a.OrgSlug, req.Name)
+		return apitypes.SSOProvider{}, conflict("there is a provider named %s already; pick another name or change that one with `dock sso set`", req.Name)
 	}
 	if err != nil {
 		return apitypes.SSOProvider{}, err
 	}
-	c.audit(ctx, a, "org.sso_provider_add", nil, nil, "sso "+p.Name,
-		fmt.Sprintf("added single sign-on provider %s (%s) for %s; %s", p.Name, issuer, strings.Join(domains, ", "), jitNote(p.JitRole)))
-	return c.toSSOProvider(p, domains), nil
+	c.audit(ctx, a.platform(), "platform.sso_provider_add", nil, nil, "sso "+p.Name,
+		fmt.Sprintf("added identity provider %s (%s%s): Continue with %s", p.Name, p.Kind, issuerNote(p.Issuer), p.Label))
+	return toSSOProvider(p, 0), nil
 }
 
-// UpdateSSOProvider changes the org's provider name; fields left out of
-// req stay.
+// UpdateSSOProvider changes provider name; fields left out of req stay.
 func (c *Core) UpdateSSOProvider(ctx context.Context, a Actor, name string, req apitypes.UpdateSSOProviderRequest) (apitypes.SSOProvider, error) {
-	if err := c.requireSSOAdmin(a); err != nil {
+	if err := requireSSOOperator(a); err != nil {
 		return apitypes.SSOProvider{}, err
 	}
-	p, err := c.orgSSOProvider(ctx, a, name)
+	p, err := c.ssoProviderNamed(ctx, name)
 	if err != nil {
 		return apitypes.SSOProvider{}, err
 	}
 	var changed []string
-	params := store.UpdateSSOProviderParams{Issuer: p.Issuer, ClientID: p.ClientID, ClientSecret: p.ClientSecret, JitRole: p.JitRole, ID: p.ID}
+	params := store.UpdateSSOProviderParams{Label: p.Label, Issuer: p.Issuer, ClientID: p.ClientID, ClientSecret: p.ClientSecret, ID: p.ID}
+	if req.Label != nil {
+		if params.Label, err = validLabel(*req.Label); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
+		changed = append(changed, "label "+params.Label)
+	}
 	if req.Issuer != nil {
+		if p.Kind != string(apitypes.SSOOIDC) {
+			return apitypes.SSOProvider{}, invalid("only an oidc provider takes an issuer; %s's is built in", p.Label)
+		}
 		if params.Issuer, err = validIssuer(*req.Issuer); err != nil {
 			return apitypes.SSOProvider{}, err
 		}
@@ -140,170 +151,216 @@ func (c *Core) UpdateSSOProvider(ctx context.Context, a Actor, name string, req 
 		if secret == "" {
 			return apitypes.SSOProvider{}, invalid("the client secret can't be empty")
 		}
-		if params.ClientSecret, err = c.box.Seal([]byte(secret), ssoSecretAAD(p.OrgID, p.Name)); err != nil {
+		if params.ClientSecret, err = c.box.Seal([]byte(secret), ssoSecretAAD(p.Name)); err != nil {
 			return apitypes.SSOProvider{}, err
 		}
 		changed = append(changed, "client secret")
 	}
-	if req.JITRole != nil {
-		if err := validJITRole(*req.JITRole); err != nil {
-			return apitypes.SSOProvider{}, err
-		}
-		params.JitRole = string(*req.JITRole)
-		changed = append(changed, jitNote(params.JitRole))
-	}
-	var domains []string
-	if req.AllowedDomains != nil {
-		if domains, err = validDomains(req.AllowedDomains); err != nil {
-			return apitypes.SSOProvider{}, err
-		}
-		changed = append(changed, "domains "+strings.Join(domains, ", "))
-	}
-	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		var err error
-		if p, err = q.UpdateSSOProvider(ctx, params); err != nil || domains == nil {
-			return err
-		}
-		if err := q.DeleteSSOProviderDomains(ctx, p.ID); err != nil {
-			return err
-		}
-		return addSSODomains(ctx, q, p.ID, domains)
-	})
-	if err != nil {
+	if p, err = c.store.UpdateSSOProvider(ctx, params); err != nil {
 		return apitypes.SSOProvider{}, err
 	}
-	if domains == nil {
-		if domains, err = c.store.ListSSOProviderDomains(ctx, p.ID); err != nil {
-			return apitypes.SSOProvider{}, err
-		}
-	}
 	if len(changed) > 0 {
-		c.audit(ctx, a, "org.sso_provider_update", nil, nil, "sso "+p.Name, fmt.Sprintf("changed single sign-on provider %s: %s", p.Name, strings.Join(changed, "; ")))
+		c.audit(ctx, a.platform(), "platform.sso_provider_update", nil, nil, "sso "+p.Name, fmt.Sprintf("changed identity provider %s: %s", p.Name, strings.Join(changed, "; ")))
 	}
-	return c.toSSOProvider(p, domains), nil
+	return toSSOProvider(p, 0), nil
 }
 
-// DeleteSSOProvider removes the org's provider name and the identities
-// linked through it. People keep their accounts and memberships. The
-// last provider of an sso-only org stays until sso-only is off, so nobody
-// is locked out.
+// DeleteSSOProvider removes provider name, the identities linked through
+// it and the sessions that signed in through it. People keep their
+// accounts and memberships. The last provider stays while password
+// sign-in is off, so nobody is locked out.
 func (c *Core) DeleteSSOProvider(ctx context.Context, a Actor, name string) error {
-	if err := c.requireSSOAdmin(a); err != nil {
+	if err := requireSSOOperator(a); err != nil {
 		return err
 	}
-	p, err := c.orgSSOProvider(ctx, a, name)
+	p, err := c.ssoProviderNamed(ctx, name)
 	if err != nil {
 		return err
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		org, err := q.GetOrg(ctx, a.OrgID)
+		set, err := signInSettings(ctx, q)
 		if err != nil {
 			return err
 		}
-		n, err := q.CountOrgSSOProviders(ctx, a.OrgID)
+		n, err := q.CountSSOProviders(ctx)
 		if err != nil {
 			return err
 		}
-		if org.SsoOnly && n <= 1 {
-			return conflict("organization %s signs in only through single sign-on, and %s is its last provider; turn that off first with `dock org sso-only off`", org.Slug, p.Name)
+		if !set.PasswordSignIn && n <= 1 {
+			return conflict("password sign-in is off and %s is the last identity provider; turn passwords on first with `dock sso password-sign-in on`", p.Name)
 		}
 		return q.DeleteSSOProvider(ctx, p.ID)
 	})
 	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "org.sso_provider_remove", nil, nil, "sso "+p.Name, fmt.Sprintf("removed single sign-on provider %s (%s) and the identities linked through it", p.Name, p.Issuer))
+	c.audit(ctx, a.platform(), "platform.sso_provider_remove", nil, nil, "sso "+p.Name,
+		fmt.Sprintf("removed identity provider %s (%s%s), the identities linked through it and its sessions", p.Name, p.Kind, issuerNote(p.Issuer)))
 	return nil
 }
 
-// SetOrgSSOOnly turns on or off the org's requirement that members sign
-// in through its single sign-on. Turning it on needs a provider, and the
-// caller's own sign-in to have gone through one of the org's, so they
-// don't lock themselves out.
-func (c *Core) SetOrgSSOOnly(ctx context.Context, a Actor, req apitypes.SetSSOOnlyRequest) (apitypes.Org, error) {
-	if err := c.requireSSOAdmin(a); err != nil {
-		return apitypes.Org{}, err
+// SignInSettings returns the platform's sign-in switches.
+func (c *Core) SignInSettings(ctx context.Context, a Actor) (apitypes.SignInSettings, error) {
+	if err := a.requireOperator("managing sign-in"); err != nil {
+		return apitypes.SignInSettings{}, err
 	}
-	if req.SSOOnly {
-		n, err := c.store.CountOrgSSOProviders(ctx, a.OrgID)
-		if err != nil {
-			return apitypes.Org{}, err
-		}
-		if n == 0 {
-			return apitypes.Org{}, invalid("add a single sign-on provider first: `dock org sso add`")
-		}
-		if a.UserID != 0 && a.SSOOrgID != a.OrgID {
-			return apitypes.Org{}, invalid("sign in through %s's single sign-on yourself first, so you know it works before it's the only way in", a.OrgSlug)
-		}
+	return signInSettings(ctx, c.store.Queries)
+}
+
+// SetSignInSettings changes the platform's sign-in switches. Turning
+// password sign-in off needs a provider, and a caller who signed in
+// through one, so they know it works before it's the only way in.
+func (c *Core) SetSignInSettings(ctx context.Context, a Actor, req apitypes.SignInSettingsRequest) (apitypes.SignInSettings, error) {
+	if err := requireSSOOperator(a); err != nil {
+		return apitypes.SignInSettings{}, err
 	}
-	o, err := c.store.SetOrgSSOOnly(ctx, store.SetOrgSSOOnlyParams{SsoOnly: req.SSOOnly, ID: a.OrgID})
+	var before, set apitypes.SignInSettings
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		var err error
+		if before, err = signInSettings(ctx, q); err != nil {
+			return err
+		}
+		set = before
+		if req.InviteOnly != nil {
+			set.InviteOnly = *req.InviteOnly
+		}
+		if req.PasswordSignIn != nil {
+			set.PasswordSignIn = *req.PasswordSignIn
+		}
+		if before.PasswordSignIn && !set.PasswordSignIn {
+			n, err := q.CountSSOProviders(ctx)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return invalid("add an identity provider first: `dock sso add`")
+			}
+			if a.UserID != 0 && a.SSOProviderID == 0 {
+				return invalid("sign in through an identity provider yourself first, so you know it works before it's the only way in")
+			}
+		}
+		return q.SetSignInSettings(ctx, store.SetSignInSettingsParams{PasswordSignIn: set.PasswordSignIn, InviteOnly: set.InviteOnly, UpdatedBy: a.Name, UpdatedAt: now()})
+	})
 	if err != nil {
-		return apitypes.Org{}, err
+		return apitypes.SignInSettings{}, err
 	}
-	summary := "members sign in with a password or single sign-on again"
-	if req.SSOOnly {
-		summary = "members act in the organization only after signing in through its single sign-on"
+	if set.PasswordSignIn != before.PasswordSignIn {
+		summary := "turned password sign-in off: people sign in through an identity provider or a passkey"
+		if set.PasswordSignIn {
+			summary = "turned password sign-in on"
+		}
+		c.audit(ctx, a.platform(), "platform.password_sign_in", nil, nil, "password sign-in", summary)
 	}
-	c.audit(ctx, a, "org.sso_only", nil, nil, o.Slug, summary)
-	return toOrg(o, a.Scope), nil
+	if set.InviteOnly != before.InviteOnly {
+		summary := "made sign-up invite only: an identity provider creates accounts only for emails with an open invite"
+		if !set.InviteOnly {
+			summary = "opened sign-up: an identity provider creates an account for anyone it signs in, in no organization"
+		}
+		c.audit(ctx, a.platform(), "platform.invite_only", nil, nil, "sign-up", summary)
+	}
+	return set, nil
 }
 
-// ResetOrgSSOOnly turns the org with slug's sso-only requirement off, for
-// when its identity provider is down: `dock admin sso-only <org> off` on
-// the server. Operators only.
-func (c *Core) ResetOrgSSOOnly(ctx context.Context, a Actor, slug string) error {
-	if err := a.requireOperator("turning off an organization's single sign-on requirement"); err != nil {
-		return err
+// ResetPasswordSignIn turns password sign-in back on, for when every
+// identity provider is down or misconfigured: `dock admin password-sign-in
+// on` on the server. With an email, that account also gets a new
+// generated password, returned once (someone who only ever signed in
+// through a provider has none they know). Operators only.
+func (c *Core) ResetPasswordSignIn(ctx context.Context, a Actor, email string) (password string, err error) {
+	if err := a.requireOperator("turning password sign-in on"); err != nil {
+		return "", err
 	}
-	o, err := c.store.SetOrgSSOOnlyBySlug(ctx, store.SetOrgSSOOnlyBySlugParams{SsoOnly: false, Slug: slug})
-	if store.IsNotFound(err) {
-		return notFound("organization %q not found", slug)
+	var u store.User
+	if email != "" {
+		if u, err = c.store.GetUserByEmail(ctx, email); store.IsNotFound(err) {
+			return "", notFound("no account with email %s", email)
+		} else if err != nil {
+			return "", err
+		}
 	}
+	set, err := signInSettings(ctx, c.store.Queries)
 	if err != nil {
-		return err
+		return "", err
 	}
-	in := a
-	in.OrgID, in.OrgSlug = o.ID, o.Slug
-	c.audit(ctx, in, "org.sso_only", nil, nil, o.Slug, "members sign in with a password or single sign-on again (turned off on the server)")
-	return nil
+	if err := c.store.SetSignInSettings(ctx, store.SetSignInSettingsParams{PasswordSignIn: true, InviteOnly: set.InviteOnly, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
+		return "", err
+	}
+	c.audit(ctx, a.platform(), "platform.password_sign_in", nil, nil, "password sign-in", "turned password sign-in on (on the server)")
+	if email == "" {
+		return "", nil
+	}
+	res, err := c.ResetPassword(ctx, a, u.ID, apitypes.ResetPasswordRequest{})
+	return res.Password, err
 }
 
-// requireSSOAdmin checks the actor may change the org's single sign-on:
-// an unlimited admin, recently confirmed.
-func (c *Core) requireSSOAdmin(a Actor) error {
-	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing single sign-on"); err != nil {
-		return err
+// SignInMethods is what the sign-in page offers anyone: a button per
+// provider and whether passwords sign in.
+func (c *Core) SignInMethods(ctx context.Context) (apitypes.SignInMethods, error) {
+	set, err := signInSettings(ctx, c.store.Queries)
+	if err != nil {
+		return apitypes.SignInMethods{}, err
 	}
-	return a.requireRecent("changing the organization's single sign-on")
+	rows, err := c.store.ListSSOProviders(ctx)
+	if err != nil {
+		return apitypes.SignInMethods{}, err
+	}
+	out := apitypes.SignInMethods{Password: set.PasswordSignIn, Providers: make([]apitypes.SignInButton, len(rows))}
+	for i, p := range rows {
+		out.Providers[i] = apitypes.SignInButton{Name: p.Name, Kind: apitypes.SSOKind(p.Kind), Label: p.Label}
+	}
+	return out, nil
 }
 
-// orgSSOProvider loads the actor's org's provider name.
-func (c *Core) orgSSOProvider(ctx context.Context, a Actor, name string) (store.SsoProvider, error) {
-	p, err := c.store.GetOrgSSOProvider(ctx, store.GetOrgSSOProviderParams{OrgID: a.OrgID, Name: name})
+// signInSettings reads the platform's sign-in switches: both on until an
+// operator first sets them.
+func signInSettings(ctx context.Context, q *store.Queries) (apitypes.SignInSettings, error) {
+	row, err := q.GetSignInSettings(ctx)
 	if store.IsNotFound(err) {
-		return p, notFound("single sign-on provider %q not found; see `dock org sso list`", name)
+		return apitypes.SignInSettings{PasswordSignIn: true, InviteOnly: true}, nil
+	}
+	return apitypes.SignInSettings{PasswordSignIn: row.PasswordSignIn, InviteOnly: row.InviteOnly}, err
+}
+
+// requireSSOOperator checks the actor may change the platform's sign-in:
+// an operator, recently confirmed.
+func requireSSOOperator(a Actor) error {
+	if err := a.requireOperator("managing single sign-on"); err != nil {
+		return err
+	}
+	return a.requireRecent("changing how people sign in")
+}
+
+// ssoProviderNamed loads provider name.
+func (c *Core) ssoProviderNamed(ctx context.Context, name string) (store.SsoProvider, error) {
+	p, err := c.store.GetSSOProviderByName(ctx, name)
+	if store.IsNotFound(err) {
+		return p, notFound("identity provider %q not found; see `dock sso list`", name)
 	}
 	return p, err
 }
 
-// addSSODomains records the email domains of provider id.
-func addSSODomains(ctx context.Context, q *store.Queries, id int64, domains []string) error {
-	for _, d := range domains {
-		if err := q.AddSSOProviderDomain(ctx, store.AddSSOProviderDomainParams{Domain: d, ProviderID: id}); err != nil {
-			return err
-		}
+func toSSOProvider(p store.SsoProvider, linked int64) apitypes.SSOProvider {
+	return apitypes.SSOProvider{
+		Name: p.Name, Kind: apitypes.SSOKind(p.Kind), Label: p.Label, Issuer: p.Issuer, ClientID: p.ClientID,
+		Linked: linked, CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy,
 	}
-	return nil
 }
 
-func (c *Core) toSSOProvider(p store.SsoProvider, domains []string) apitypes.SSOProvider {
-	if domains == nil {
-		domains = []string{}
+// issuerNote is ", <issuer>" for the audit log; "" for none.
+func issuerNote(issuer string) string {
+	if issuer == "" {
+		return ""
 	}
-	return apitypes.SSOProvider{
-		Name: p.Name, Issuer: p.Issuer, ClientID: p.ClientID, AllowedDomains: domains, JITRole: apitypes.Scope(p.JitRole),
-		RedirectURL: c.ssoRedirectURL(), CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy,
+	return ", " + issuer
+}
+
+// validLabel checks the name a provider's button shows.
+func validLabel(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if n := utf8.RuneCountInString(s); n == 0 || n > maxSSOLabel {
+		return "", invalid("a provider needs a label of 1 to %d characters, the button's \"Continue with <label>\"", maxSSOLabel)
 	}
+	return clean(s, maxSSOLabel, s), nil
 }
 
 // validIssuer checks an issuer URL: https, or http on this machine for
@@ -331,48 +388,4 @@ func loopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-// validDomains normalizes a provider's email domains: lowercase, sorted,
-// each once, at least one.
-func validDomains(in []string) ([]string, error) {
-	var out []string
-	for _, d := range in {
-		d = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(d), "@")))
-		if d == "" {
-			continue
-		}
-		if _, err := normalizeHostname(d); err != nil || !strings.Contains(d, ".") {
-			return nil, invalid("%q is not an email domain like example.com", d)
-		}
-		if !slices.Contains(out, d) {
-			out = append(out, d)
-		}
-	}
-	if len(out) == 0 {
-		return nil, invalid("a provider needs at least one email domain it signs people in for, like example.com")
-	}
-	if len(out) > maxSSODomains {
-		return nil, invalid("a provider takes at most %d email domains", maxSSODomains)
-	}
-	slices.Sort(out)
-	return out, nil
-}
-
-// validJITRole checks a provider's just-in-time role: none, read or
-// deploy. Admins are made by admins, never by a provider.
-func validJITRole(r apitypes.Scope) error {
-	switch r {
-	case "", apitypes.ScopeRead, apitypes.ScopeDeploy:
-		return nil
-	}
-	return invalid("the just-in-time role must be read or deploy, or empty for invite only; admins are made by an admin")
-}
-
-// jitNote says in words who may join through a provider.
-func jitNote(role string) string {
-	if role == "" {
-		return "new members need an invite"
-	}
-	return "anyone with an allowed email domain joins as " + role
 }

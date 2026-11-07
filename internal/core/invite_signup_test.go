@@ -83,17 +83,6 @@ func TestInviteSignUp(t *testing.T) {
 		t.Fatalf("signing up with an expired invite: %v", err)
 	}
 
-	// An org that requires its single sign-on gets no password accounts.
-	sso := invite("carol@x")
-	if _, err := h.store.DB.ExecContext(h.ctx, "UPDATE orgs SET sso_only = 1 WHERE slug = 'test'"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.c.SignUpWithInvite(h.ctx, sso, apitypes.InviteSignUpRequest{Name: "Carol", Password: "long enough password"}, ip); CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "single sign-on") {
-		t.Fatalf("an SSO-only org: %v", err)
-	}
-	if _, err := h.store.GetUserByEmail(h.ctx, "carol@x"); err == nil {
-		t.Fatal("the SSO-only org's invite created an account")
-	}
 }
 
 // A user changes their own display name; tokens can't, and the name is

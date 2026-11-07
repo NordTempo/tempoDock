@@ -43,11 +43,10 @@ func TestAdminResetTwoFactor(t *testing.T) {
 	}
 }
 
-// `dock admin sso-only <org> off` is the break-glass for an org whose
-// identity provider is down: on the server it turns the requirement off,
-// which upgraded orgs never have on; only off is done there, and an
-// unknown org is not found.
-func TestAdminSSOOnlyOff(t *testing.T) {
+// `dock admin password-sign-in on` is the break-glass for a platform
+// whose identity providers all fail while passwords are off: on the
+// server it turns them on, and --password-for gives an account a new one.
+func TestAdminPasswordSignInOn(t *testing.T) {
 	setup(t)
 	dir, cfg := controlPlaneDir(t)
 	if code, _, stderr := exec(t, "admin", "bootstrap", "--config", cfg, "--email", "ada@example.com"); code != 0 {
@@ -58,26 +57,23 @@ func TestAdminSSOOnlyOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = st.Close() }()
-	var slug string
-	var on bool
-	if err := st.DB.QueryRow("SELECT slug, sso_only FROM orgs").Scan(&slug, &on); err != nil || on {
-		t.Fatalf("new org %q: sso_only %v (%v)", slug, on, err)
-	}
-	if _, err := st.DB.Exec("UPDATE orgs SET sso_only = 1"); err != nil {
+	if _, err := st.DB.Exec(`INSERT INTO platform_settings (id, password_sign_in, updated_by, updated_at) VALUES (1, 0, 'test', datetime())
+		ON CONFLICT (id) DO UPDATE SET password_sign_in = 0`); err != nil {
 		t.Fatal(err)
 	}
 
-	if code, _, _ := exec(t, "admin", "sso-only", "--config", cfg, slug, "on"); code != int(output.ExitUsage) {
-		t.Errorf("sso-only on: exit %d", code)
+	if code, _, _ := exec(t, "admin", "password-sign-in", "--config", cfg, "off"); code != int(output.ExitUsage) {
+		t.Errorf("password-sign-in off: exit %d", code)
 	}
-	code, stdout, stderr := exec(t, "admin", "sso-only", "--config", cfg, slug, "off")
-	if code != 0 || !strings.Contains(stdout, "no longer requires single sign-on") {
-		t.Fatalf("sso-only off: exit %d\n%s\n%s", code, stdout, stderr)
+	if code, _, _ := exec(t, "admin", "password-sign-in", "--config", cfg, "on", "--password-for", "nobody@example.com"); code != int(output.ExitNotFound) {
+		t.Errorf("unknown email: exit %d", code)
 	}
-	if err := st.DB.QueryRow("SELECT sso_only FROM orgs").Scan(&on); err != nil || on {
-		t.Fatalf("sso_only %v after the break-glass (%v)", on, err)
+	code, stdout, stderr := exec(t, "admin", "password-sign-in", "--config", cfg, "on", "--password-for", "ada@example.com")
+	if code != 0 || !strings.Contains(stdout, "Password sign-in is on") || !strings.Contains(stdout, "New password of ada@example.com") {
+		t.Fatalf("password-sign-in on: exit %d\n%s\n%s", code, stdout, stderr)
 	}
-	if code, _, _ := exec(t, "admin", "sso-only", "--config", cfg, "nope", "off"); code != int(output.ExitNotFound) {
-		t.Errorf("unknown org: exit %d", code)
+	var on bool
+	if err := st.DB.QueryRow("SELECT password_sign_in FROM platform_settings").Scan(&on); err != nil || !on {
+		t.Fatalf("password_sign_in %v after the break-glass (%v)", on, err)
 	}
 }

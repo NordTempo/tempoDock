@@ -18,7 +18,6 @@ type Section = {
     | "/$org/settings/variables"
     | "/$org/settings/members"
     | "/$org/settings/tokens"
-    | "/$org/settings/sso"
     | "/$org/settings/registries"
     | "/$org/settings/github"
     | "/$org/settings/cloudflare"
@@ -43,7 +42,6 @@ export const settingsGroups: { label: string; sections: Section[] }[] = [
     sections: [
       { to: "/$org/settings/members", label: "Members", admin: true },
       { to: "/$org/settings/tokens", label: "Tokens", admin: true },
-      { to: "/$org/settings/sso", label: "Single sign-on", admin: true },
     ],
   },
   {

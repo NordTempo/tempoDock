@@ -1,13 +1,9 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { useState } from "react";
-import { currentOrg, setOrg } from "../api/client";
 import { useLiveUpdates } from "../data/live";
 import { useLogout } from "../data/mutations";
 import { useSession } from "../data/queries";
 import { DrainStrip } from "../features/servers/DrainStrip";
-import { type SSOChoice, useStartSSO } from "../features/sso/data";
 import { Icon } from "../ui/icons";
-import { ErrorText } from "../ui/kit";
 import { Notices } from "../ui/notice";
 import { KeyHelpHost, NotLive } from "./KeyHelp";
 import { PaletteProvider } from "./palette";
@@ -137,81 +133,6 @@ function TwoFactorNotice() {
 }
 
 /**
- * Why a single sign-on rule leaves the person in no organization
- * (Me.sso_required, ADR 0058), and the way in: signing in through the
- * organization's SSO, or for a single sign-on session that wandered into
- * another organization, back to its own.
- */
-function SSONotice() {
-  const me = useSession();
-  const start = useStartSSO();
-  // The organization's providers, when it has several.
-  const [choices, setChoices] = useState<SSOChoice[]>([]);
-  if (!me?.sso_required) return null;
-  const org = currentOrg();
-  const link = "text-warn-text underline disabled:opacity-60";
-  const own = me.sso;
-  let action = null;
-  if (own && own !== org) {
-    action = (
-      <button
-        type="button"
-        className={link}
-        onClick={() => {
-          setOrg(own);
-          window.location.assign("/");
-        }}
-      >
-        Back to {own}
-      </button>
-    );
-  } else if (!own && me.email) {
-    const email = me.email;
-    action =
-      choices.length > 0 ? (
-        choices.map((c) => (
-          <button
-            key={c.provider}
-            type="button"
-            className={link}
-            disabled={start.isPending}
-            onClick={() =>
-              start.mutate({ org: c.org, provider: c.provider, to: "/" })
-            }
-          >
-            Sign in with {c.provider}
-          </button>
-        ))
-      ) : (
-        <button
-          type="button"
-          className={link}
-          disabled={start.isPending}
-          onClick={() =>
-            start.mutate(
-              { email, to: "/", only: org },
-              { onSuccess: (c) => setChoices(c ?? []) },
-            )
-          }
-        >
-          Sign in with SSO
-        </button>
-      );
-  }
-  return (
-    <div
-      role="status"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-warn-edge bg-stage-bg px-5 py-2 text-xs"
-    >
-      <span className="text-warn">Single sign-on required</span>
-      <span className="min-w-0 flex-1 text-warn-text">{me.sso_required}.</span>
-      {action}
-      <ErrorText error={start.error} />
-    </div>
-  );
-}
-
-/**
  * The shell with no organization to act in, because the person's needs
  * a second factor or single sign-on: the notice and their account page,
  * nothing that reads an org (projects, servers, live events).
@@ -221,7 +142,6 @@ function AccountOnly() {
   return (
     <main id="main" className="flex min-h-screen flex-col">
       <TwoFactorNotice />
-      <SSONotice />
       <div className="flex flex-1 flex-col">
         <Outlet />
       </div>

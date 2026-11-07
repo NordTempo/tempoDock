@@ -14,7 +14,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Data](data.md) | Browsing, querying and changing database data; the data access policy |
 | [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service and switch to it |
 | [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
-| [Single sign-on](sso.md) | Signing in through your organization's OpenID Connect provider (Google, Entra ID, Okta, Keycloak, Authentik), invites and just-in-time members, requiring it |
+| [Single sign-on](sso.md) | Continue with Google, GitHub or any OpenID Connect provider, set up by operators; who gets an account, invite only, turning passwords off |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |
 | [API](api.md) | Auth, OpenAPI spec, event stream, errors, curl examples |
 
@@ -45,5 +45,5 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 | Domains | `dock domain add\|list\|remove\|generate` |
 | Databases and backups | `dock service create NAME --template postgres\|redis`, `dock backup list\|run\|restore\|schedule\|status\|configure` |
 | Data | `dock db status\|setup\|tables\|schema\|rows\|query\|history\|saved\|changes\|apply\|policy\|sensitive` |
-| Admin | `dock token list\|create\|update\|revoke`, `dock user list` (accounts are managed in the web UI), `dock audit`, `dock server list\|show\|update`, `dock address`, `dock org two-factor`, `dock org sso\|sso-only`, `dock security` |
-| On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config`, `dock admin backup\|restore`, `dock admin reset-2fa`, `dock admin sso-only`, `dock node set-control-plane` |
+| Admin | `dock token list\|create\|update\|revoke`, `dock user list` (accounts are managed in the web UI), `dock audit`, `dock server list\|show\|update`, `dock address`, `dock org two-factor`, `dock security`, `dock sso` |
+| On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config`, `dock admin backup\|restore`, `dock admin reset-2fa`, `dock admin password-sign-in`, `dock node set-control-plane` |

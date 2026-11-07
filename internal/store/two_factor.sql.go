@@ -290,7 +290,7 @@ func (q *Queries) SetOperatorsTwoFactor(ctx context.Context, arg SetOperatorsTwo
 }
 
 const setOrgRequireTwoFactor = `-- name: SetOrgRequireTwoFactor :one
-UPDATE orgs SET require_two_factor = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
+UPDATE orgs SET require_two_factor = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, suspended_at, suspended_by, deleted_at
 `
 
 type SetOrgRequireTwoFactorParams struct {
@@ -309,7 +309,6 @@ func (q *Queries) SetOrgRequireTwoFactor(ctx context.Context, arg SetOrgRequireT
 		&i.LockProduction,
 		&i.RequestTtlHours,
 		&i.RequireTwoFactor,
-		&i.SsoOnly,
 		&i.SuspendedAt,
 		&i.SuspendedBy,
 		&i.DeletedAt,

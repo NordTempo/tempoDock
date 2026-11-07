@@ -43,11 +43,11 @@ func (f *fixture) ssoCallback(state, code string, binding *http.Cookie) redirect
 	return r
 }
 
-// ssoStart starts a sign-in for email and returns the provider's request
-// and the binding cookie.
-func (f *fixture) ssoStart(email string) (oidctest.Request, *http.Cookie) {
+// ssoStart starts a sign-in through corp and returns the provider's
+// request and the binding cookie.
+func (f *fixture) ssoStart() (oidctest.Request, *http.Cookie) {
 	f.t.Helper()
-	resp, body := f.do("", "POST", "/api/v1/auth/sso/start", apitypes.SSOStartRequest{Email: email, To: "/test/shop"})
+	resp, body := f.do("", "POST", "/api/v1/auth/sso/start", apitypes.SSOStartRequest{Provider: "corp", To: "/test/shop"})
 	var start apitypes.SSOStart
 	cs := resp.Cookies()
 	if err := json.Unmarshal(body, &start); err != nil || resp.StatusCode != 200 || len(cs) != 1 {
@@ -67,12 +67,16 @@ func TestSSOCallbackRedirects(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.core.CreateSSOProvider(ctx, sys, apitypes.CreateSSOProviderRequest{
-		Name: "corp", Issuer: idp.Issuer, ClientID: oidctest.ClientID, ClientSecret: oidctest.ClientSecret, AllowedDomains: []string{"example.com"},
+		Name: "corp", Kind: apitypes.SSOOIDC, Label: "Corp ID", Issuer: idp.Issuer, ClientID: oidctest.ClientID, ClientSecret: oidctest.ClientSecret,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The sign-in page's buttons, for anyone.
+	if _, body := f.do("", "GET", "/api/v1/auth/methods", nil); !strings.Contains(string(body), `"providers":[{"name":"corp","kind":"oidc","label":"Corp ID"}]`) {
+		t.Fatalf("methods: %s", body)
+	}
 
-	req, binding := f.ssoStart("ada@example.com")
+	req, binding := f.ssoStart()
 	code := idp.Authorize(req, idp.Claims(req, "ada-sub", "ada@example.com"))
 	r := f.ssoCallback(req.State, code, binding)
 	session := r.cookies[sessionCookie]
@@ -82,7 +86,7 @@ func TestSSOCallbackRedirects(t *testing.T) {
 	if c := r.cookies[ssoCookie]; c == nil || c.MaxAge >= 0 {
 		t.Fatalf("binding cookie not cleared: %+v", c)
 	}
-	if _, body := f.as(session, "GET", "/api/v1/me", nil); !strings.Contains(string(body), `"sso":"test"`) {
+	if _, body := f.as(session, "GET", "/api/v1/me", nil); !strings.Contains(string(body), `"sso":"corp","sso_label":"Corp ID"`) {
 		t.Fatalf("me: %s", body)
 	}
 
@@ -91,7 +95,7 @@ func TestSSOCallbackRedirects(t *testing.T) {
 	for name, try := range map[string]func() redirect{
 		"replayed": func() redirect { return f.ssoCallback(req.State, code, binding) },
 		"another browser": func() redirect {
-			req, _ := f.ssoStart("ada@example.com")
+			req, _ := f.ssoStart()
 			return f.ssoCallback(req.State, idp.Authorize(req, idp.Claims(req, "ada-sub", "ada@example.com")), nil)
 		},
 	} {
@@ -100,5 +104,13 @@ func TestSSOCallbackRedirects(t *testing.T) {
 		if r.status != http.StatusSeeOther || loc.Path != "/login" || loc.Query().Get("error") == "" {
 			t.Errorf("%s: %+v", name, r)
 		}
+	}
+
+	// Someone with no account and no invite on an invite-only Dock lands
+	// on the page that says so, signed in to nothing.
+	req, binding = f.ssoStart()
+	r = f.ssoCallback(req.State, idp.Authorize(req, idp.Claims(req, "eve-sub", "eve@example.com")), binding)
+	if r.status != http.StatusSeeOther || r.location != "/invite-only?email=eve%40example.com&provider=Corp+ID" || r.cookies[sessionCookie] != nil {
+		t.Fatalf("invite only: %+v", r)
 	}
 }

@@ -10,26 +10,12 @@ import (
 	"time"
 )
 
-const addSSOProviderDomain = `-- name: AddSSOProviderDomain :exec
-INSERT INTO sso_provider_domains (domain, provider_id) VALUES (?, ?)
+const countSSOProviders = `-- name: CountSSOProviders :one
+SELECT count(*) FROM sso_providers
 `
 
-type AddSSOProviderDomainParams struct {
-	Domain     string
-	ProviderID int64
-}
-
-func (q *Queries) AddSSOProviderDomain(ctx context.Context, arg AddSSOProviderDomainParams) error {
-	_, err := q.db.ExecContext(ctx, addSSOProviderDomain, arg.Domain, arg.ProviderID)
-	return err
-}
-
-const countOrgSSOProviders = `-- name: CountOrgSSOProviders :one
-SELECT count(*) FROM sso_providers WHERE org_id = +?
-`
-
-func (q *Queries) CountOrgSSOProviders(ctx context.Context, orgID int64) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countOrgSSOProviders, orgID)
+func (q *Queries) CountSSOProviders(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSSOProviders)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -60,44 +46,44 @@ func (q *Queries) CreateSSOIdentity(ctx context.Context, arg CreateSSOIdentityPa
 
 const createSSOProvider = `-- name: CreateSSOProvider :one
 
-INSERT INTO sso_providers (org_id, name, issuer, client_id, client_secret, jit_role, created_at, created_by)
+INSERT INTO sso_providers (name, kind, label, issuer, client_id, client_secret, created_at, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, name, issuer, client_id, client_secret, jit_role, created_at, created_by
+RETURNING id, name, kind, label, issuer, client_id, client_secret, created_at, created_by
 `
 
 type CreateSSOProviderParams struct {
-	OrgID        int64
 	Name         string
+	Kind         string
+	Label        string
 	Issuer       string
 	ClientID     string
 	ClientSecret []byte
-	JitRole      string
 	CreatedAt    time.Time
 	CreatedBy    string
 }
 
-// Single sign-on with OpenID Connect (ADR 0058): orgs' identity
-// providers, their email domains and the identities they vouch for.
+// Single sign-on (ADR 0058, 0065): the platform's identity providers, the
+// identities they vouch for, and the platform's sign-in switches.
 func (q *Queries) CreateSSOProvider(ctx context.Context, arg CreateSSOProviderParams) (SsoProvider, error) {
 	row := q.db.QueryRowContext(ctx, createSSOProvider,
-		arg.OrgID,
 		arg.Name,
+		arg.Kind,
+		arg.Label,
 		arg.Issuer,
 		arg.ClientID,
 		arg.ClientSecret,
-		arg.JitRole,
 		arg.CreatedAt,
 		arg.CreatedBy,
 	)
 	var i SsoProvider
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
 		&i.Name,
+		&i.Kind,
+		&i.Label,
 		&i.Issuer,
 		&i.ClientID,
 		&i.ClientSecret,
-		&i.JitRole,
 		&i.CreatedAt,
 		&i.CreatedBy,
 	)
@@ -108,136 +94,19 @@ const deleteSSOProvider = `-- name: DeleteSSOProvider :exec
 DELETE FROM sso_providers WHERE id = +?
 `
 
-// Deleting a provider deletes its domains and identities with it.
+// Deleting a provider deletes its identities and sessions with it.
 func (q *Queries) DeleteSSOProvider(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteSSOProvider, id)
 	return err
 }
 
-const deleteSSOProviderDomains = `-- name: DeleteSSOProviderDomains :exec
-DELETE FROM sso_provider_domains WHERE provider_id = +?
+const deleteSSOReseal = `-- name: DeleteSSOReseal :exec
+DELETE FROM sso_reseal WHERE provider_id = +?
 `
 
-func (q *Queries) DeleteSSOProviderDomains(ctx context.Context, providerID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteSSOProviderDomains, providerID)
+func (q *Queries) DeleteSSOReseal(ctx context.Context, providerID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteSSOReseal, providerID)
 	return err
-}
-
-const findSSOProviders = `-- name: FindSSOProviders :many
-SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
-FROM sso_provider_domains
-JOIN sso_providers ON sso_providers.id = sso_provider_domains.provider_id
-JOIN orgs ON orgs.id = sso_providers.org_id
-WHERE sso_provider_domains.domain = +?
-`
-
-type FindSSOProvidersRow struct {
-	SsoProvider SsoProvider
-	Org         Org
-}
-
-// FindSSOProviders is every provider, in any org, that signs people in
-// for an email domain, with its org: where signing in with an email
-// address starts.
-func (q *Queries) FindSSOProviders(ctx context.Context, domain string) ([]FindSSOProvidersRow, error) {
-	rows, err := q.db.QueryContext(ctx, findSSOProviders, domain)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []FindSSOProvidersRow
-	for rows.Next() {
-		var i FindSSOProvidersRow
-		if err := rows.Scan(
-			&i.SsoProvider.ID,
-			&i.SsoProvider.OrgID,
-			&i.SsoProvider.Name,
-			&i.SsoProvider.Issuer,
-			&i.SsoProvider.ClientID,
-			&i.SsoProvider.ClientSecret,
-			&i.SsoProvider.JitRole,
-			&i.SsoProvider.CreatedAt,
-			&i.SsoProvider.CreatedBy,
-			&i.Org.ID,
-			&i.Org.Slug,
-			&i.Org.Name,
-			&i.Org.CreatedAt,
-			&i.Org.LockProduction,
-			&i.Org.RequestTtlHours,
-			&i.Org.RequireTwoFactor,
-			&i.Org.SsoOnly,
-			&i.Org.SuspendedAt,
-			&i.Org.SuspendedBy,
-			&i.Org.DeletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getOpenOrgInviteByEmail = `-- name: GetOpenOrgInviteByEmail :one
-SELECT id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at FROM org_invites
-WHERE org_id = +? AND email = +? AND accepted_at IS NULL AND revoked_at IS NULL
-ORDER BY expires_at DESC LIMIT 1
-`
-
-type GetOpenOrgInviteByEmailParams struct {
-	OrgID int64
-	Email string
-}
-
-// GetOpenOrgInviteByEmail is an org's open invite of an email, the one
-// that lasts longest; it may have expired.
-func (q *Queries) GetOpenOrgInviteByEmail(ctx context.Context, arg GetOpenOrgInviteByEmailParams) (OrgInvite, error) {
-	row := q.db.QueryRowContext(ctx, getOpenOrgInviteByEmail, arg.OrgID, arg.Email)
-	var i OrgInvite
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.Email,
-		&i.Role,
-		&i.Hash,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.ExpiresAt,
-		&i.AcceptedAt,
-		&i.RevokedAt,
-	)
-	return i, err
-}
-
-const getOrgSSOProvider = `-- name: GetOrgSSOProvider :one
-SELECT id, org_id, name, issuer, client_id, client_secret, jit_role, created_at, created_by FROM sso_providers WHERE org_id = +? AND name = +?
-`
-
-type GetOrgSSOProviderParams struct {
-	OrgID int64
-	Name  string
-}
-
-func (q *Queries) GetOrgSSOProvider(ctx context.Context, arg GetOrgSSOProviderParams) (SsoProvider, error) {
-	row := q.db.QueryRowContext(ctx, getOrgSSOProvider, arg.OrgID, arg.Name)
-	var i SsoProvider
-	err := row.Scan(
-		&i.ID,
-		&i.OrgID,
-		&i.Name,
-		&i.Issuer,
-		&i.ClientID,
-		&i.ClientSecret,
-		&i.JitRole,
-		&i.CreatedAt,
-		&i.CreatedBy,
-	)
-	return i, err
 }
 
 const getSSOIdentity = `-- name: GetSSOIdentity :one
@@ -262,114 +131,117 @@ func (q *Queries) GetSSOIdentity(ctx context.Context, arg GetSSOIdentityParams) 
 	return i, err
 }
 
-const getSSOProviderByOrg = `-- name: GetSSOProviderByOrg :one
-SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
-FROM orgs JOIN sso_providers ON sso_providers.org_id = orgs.id
-WHERE orgs.slug = +?1 AND sso_providers.name = +?2
+const getSSOProvider = `-- name: GetSSOProvider :one
+SELECT id, name, kind, label, issuer, client_id, client_secret, created_at, created_by FROM sso_providers WHERE id = +?
 `
 
-type GetSSOProviderByOrgParams struct {
-	Slug string
-	Name string
-}
-
-type GetSSOProviderByOrgRow struct {
-	SsoProvider SsoProvider
-	Org         Org
-}
-
-// GetSSOProviderByOrg is the provider an org's slug and its name pick,
-// with the org.
-func (q *Queries) GetSSOProviderByOrg(ctx context.Context, arg GetSSOProviderByOrgParams) (GetSSOProviderByOrgRow, error) {
-	row := q.db.QueryRowContext(ctx, getSSOProviderByOrg, arg.Slug, arg.Name)
-	var i GetSSOProviderByOrgRow
+func (q *Queries) GetSSOProvider(ctx context.Context, id int64) (SsoProvider, error) {
+	row := q.db.QueryRowContext(ctx, getSSOProvider, id)
+	var i SsoProvider
 	err := row.Scan(
-		&i.SsoProvider.ID,
-		&i.SsoProvider.OrgID,
-		&i.SsoProvider.Name,
-		&i.SsoProvider.Issuer,
-		&i.SsoProvider.ClientID,
-		&i.SsoProvider.ClientSecret,
-		&i.SsoProvider.JitRole,
-		&i.SsoProvider.CreatedAt,
-		&i.SsoProvider.CreatedBy,
-		&i.Org.ID,
-		&i.Org.Slug,
-		&i.Org.Name,
-		&i.Org.CreatedAt,
-		&i.Org.LockProduction,
-		&i.Org.RequestTtlHours,
-		&i.Org.RequireTwoFactor,
-		&i.Org.SsoOnly,
-		&i.Org.SuspendedAt,
-		&i.Org.SuspendedBy,
-		&i.Org.DeletedAt,
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.Label,
+		&i.Issuer,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.CreatedAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
-const getSSOProviderWithOrg = `-- name: GetSSOProviderWithOrg :one
-SELECT sso_providers.id, sso_providers.org_id, sso_providers.name, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.jit_role, sso_providers.created_at, sso_providers.created_by, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.sso_only, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
-FROM sso_providers JOIN orgs ON orgs.id = sso_providers.org_id
-WHERE sso_providers.id = +?
+const getSSOProviderByName = `-- name: GetSSOProviderByName :one
+SELECT id, name, kind, label, issuer, client_id, client_secret, created_at, created_by FROM sso_providers WHERE name = +?
 `
 
-type GetSSOProviderWithOrgRow struct {
-	SsoProvider SsoProvider
-	Org         Org
-}
-
-func (q *Queries) GetSSOProviderWithOrg(ctx context.Context, id int64) (GetSSOProviderWithOrgRow, error) {
-	row := q.db.QueryRowContext(ctx, getSSOProviderWithOrg, id)
-	var i GetSSOProviderWithOrgRow
+func (q *Queries) GetSSOProviderByName(ctx context.Context, name string) (SsoProvider, error) {
+	row := q.db.QueryRowContext(ctx, getSSOProviderByName, name)
+	var i SsoProvider
 	err := row.Scan(
-		&i.SsoProvider.ID,
-		&i.SsoProvider.OrgID,
-		&i.SsoProvider.Name,
-		&i.SsoProvider.Issuer,
-		&i.SsoProvider.ClientID,
-		&i.SsoProvider.ClientSecret,
-		&i.SsoProvider.JitRole,
-		&i.SsoProvider.CreatedAt,
-		&i.SsoProvider.CreatedBy,
-		&i.Org.ID,
-		&i.Org.Slug,
-		&i.Org.Name,
-		&i.Org.CreatedAt,
-		&i.Org.LockProduction,
-		&i.Org.RequestTtlHours,
-		&i.Org.RequireTwoFactor,
-		&i.Org.SsoOnly,
-		&i.Org.SuspendedAt,
-		&i.Org.SuspendedBy,
-		&i.Org.DeletedAt,
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.Label,
+		&i.Issuer,
+		&i.ClientID,
+		&i.ClientSecret,
+		&i.CreatedAt,
+		&i.CreatedBy,
 	)
 	return i, err
 }
 
-const listOrgSSODomains = `-- name: ListOrgSSODomains :many
-SELECT sso_provider_domains.provider_id, sso_provider_domains.domain
-FROM sso_providers JOIN sso_provider_domains ON sso_provider_domains.provider_id = sso_providers.id
-WHERE sso_providers.org_id = +?
-ORDER BY sso_provider_domains.domain
+const getSignInSettings = `-- name: GetSignInSettings :one
+SELECT password_sign_in, invite_only FROM platform_settings WHERE id = 1
 `
 
-type ListOrgSSODomainsRow struct {
-	ProviderID int64
-	Domain     string
+type GetSignInSettingsRow struct {
+	PasswordSignIn bool
+	InviteOnly     bool
 }
 
-// ListOrgSSODomains is the email domains of every provider of an org.
-func (q *Queries) ListOrgSSODomains(ctx context.Context, orgID int64) ([]ListOrgSSODomainsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listOrgSSODomains, orgID)
+// GetSignInSettings is the platform's sign-in switches; no row until an
+// operator first sets something (both on then).
+func (q *Queries) GetSignInSettings(ctx context.Context) (GetSignInSettingsRow, error) {
+	row := q.db.QueryRowContext(ctx, getSignInSettings)
+	var i GetSignInSettingsRow
+	err := row.Scan(&i.PasswordSignIn, &i.InviteOnly)
+	return i, err
+}
+
+const listOpenInvitesByEmail = `-- name: ListOpenInvitesByEmail :many
+SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
+FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id
+WHERE org_invites.email = +?1 AND org_invites.accepted_at IS NULL AND org_invites.revoked_at IS NULL
+    AND org_invites.expires_at > +?2 AND orgs.deleted_at IS NULL
+ORDER BY org_invites.id
+`
+
+type ListOpenInvitesByEmailParams struct {
+	Email string
+	Now   time.Time
+}
+
+type ListOpenInvitesByEmailRow struct {
+	OrgInvite OrgInvite
+	Org       Org
+}
+
+// ListOpenInvitesByEmail is every open, unexpired invite of an email,
+// with its org: what a provider's first sign-in of that person accepts.
+func (q *Queries) ListOpenInvitesByEmail(ctx context.Context, arg ListOpenInvitesByEmailParams) ([]ListOpenInvitesByEmailRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenInvitesByEmail, arg.Email, arg.Now)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListOrgSSODomainsRow
+	var items []ListOpenInvitesByEmailRow
 	for rows.Next() {
-		var i ListOrgSSODomainsRow
-		if err := rows.Scan(&i.ProviderID, &i.Domain); err != nil {
+		var i ListOpenInvitesByEmailRow
+		if err := rows.Scan(
+			&i.OrgInvite.ID,
+			&i.OrgInvite.OrgID,
+			&i.OrgInvite.Email,
+			&i.OrgInvite.Role,
+			&i.OrgInvite.Hash,
+			&i.OrgInvite.CreatedBy,
+			&i.OrgInvite.CreatedAt,
+			&i.OrgInvite.ExpiresAt,
+			&i.OrgInvite.AcceptedAt,
+			&i.OrgInvite.RevokedAt,
+			&i.Org.ID,
+			&i.Org.Slug,
+			&i.Org.Name,
+			&i.Org.CreatedAt,
+			&i.Org.LockProduction,
+			&i.Org.RequestTtlHours,
+			&i.Org.RequireTwoFactor,
+			&i.Org.SuspendedAt,
+			&i.Org.SuspendedBy,
+			&i.Org.DeletedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -383,12 +255,14 @@ func (q *Queries) ListOrgSSODomains(ctx context.Context, orgID int64) ([]ListOrg
 	return items, nil
 }
 
-const listOrgSSOProviders = `-- name: ListOrgSSOProviders :many
-SELECT id, org_id, name, issuer, client_id, client_secret, jit_role, created_at, created_by FROM sso_providers WHERE org_id = +? ORDER BY name
+const listSSOProviders = `-- name: ListSSOProviders :many
+SELECT id, name, kind, label, issuer, client_id, client_secret, created_at, created_by FROM sso_providers ORDER BY id
 `
 
-func (q *Queries) ListOrgSSOProviders(ctx context.Context, orgID int64) ([]SsoProvider, error) {
-	rows, err := q.db.QueryContext(ctx, listOrgSSOProviders, orgID)
+// ListSSOProviders is every provider in the order they were added: the
+// sign-in page's buttons.
+func (q *Queries) ListSSOProviders(ctx context.Context) ([]SsoProvider, error) {
+	rows, err := q.db.QueryContext(ctx, listSSOProviders)
 	if err != nil {
 		return nil, err
 	}
@@ -398,12 +272,12 @@ func (q *Queries) ListOrgSSOProviders(ctx context.Context, orgID int64) ([]SsoPr
 		var i SsoProvider
 		if err := rows.Scan(
 			&i.ID,
-			&i.OrgID,
 			&i.Name,
+			&i.Kind,
+			&i.Label,
 			&i.Issuer,
 			&i.ClientID,
 			&i.ClientSecret,
-			&i.JitRole,
 			&i.CreatedAt,
 			&i.CreatedBy,
 		); err != nil {
@@ -420,23 +294,42 @@ func (q *Queries) ListOrgSSOProviders(ctx context.Context, orgID int64) ([]SsoPr
 	return items, nil
 }
 
-const listSSOProviderDomains = `-- name: ListSSOProviderDomains :many
-SELECT domain FROM sso_provider_domains WHERE provider_id = +? ORDER BY domain
+const listSSOProvidersLinked = `-- name: ListSSOProvidersLinked :many
+SELECT sso_providers.id, sso_providers.name, sso_providers.kind, sso_providers.label, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.created_at, sso_providers.created_by, (SELECT count(*) FROM sso_identities WHERE sso_identities.provider_id = sso_providers.id) AS linked
+FROM sso_providers ORDER BY sso_providers.id
 `
 
-func (q *Queries) ListSSOProviderDomains(ctx context.Context, providerID int64) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listSSOProviderDomains, providerID)
+type ListSSOProvidersLinkedRow struct {
+	SsoProvider SsoProvider
+	Linked      int64
+}
+
+// ListSSOProvidersLinked is every provider with how many people are
+// linked through it, for the console.
+func (q *Queries) ListSSOProvidersLinked(ctx context.Context) ([]ListSSOProvidersLinkedRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSSOProvidersLinked)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items []ListSSOProvidersLinkedRow
 	for rows.Next() {
-		var domain string
-		if err := rows.Scan(&domain); err != nil {
+		var i ListSSOProvidersLinkedRow
+		if err := rows.Scan(
+			&i.SsoProvider.ID,
+			&i.SsoProvider.Name,
+			&i.SsoProvider.Kind,
+			&i.SsoProvider.Label,
+			&i.SsoProvider.Issuer,
+			&i.SsoProvider.ClientID,
+			&i.SsoProvider.ClientSecret,
+			&i.SsoProvider.CreatedAt,
+			&i.SsoProvider.CreatedBy,
+			&i.Linked,
+		); err != nil {
 			return nil, err
 		}
-		items = append(items, domain)
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -447,92 +340,122 @@ func (q *Queries) ListSSOProviderDomains(ctx context.Context, providerID int64) 
 	return items, nil
 }
 
-const setOrgSSOOnly = `-- name: SetOrgSSOOnly :one
-UPDATE orgs SET sso_only = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
+const listSSOReseal = `-- name: ListSSOReseal :many
+SELECT sso_reseal.provider_id, sso_reseal.org_id, sso_reseal.name, sso_providers.id, sso_providers.name, sso_providers.kind, sso_providers.label, sso_providers.issuer, sso_providers.client_id, sso_providers.client_secret, sso_providers.created_at, sso_providers.created_by
+FROM sso_reseal JOIN sso_providers ON sso_providers.id = sso_reseal.provider_id
 `
 
-type SetOrgSSOOnlyParams struct {
-	SsoOnly bool
-	ID      int64
+type ListSSOResealRow struct {
+	SsoReseal   SsoReseal
+	SsoProvider SsoProvider
 }
 
-func (q *Queries) SetOrgSSOOnly(ctx context.Context, arg SetOrgSSOOnlyParams) (Org, error) {
-	row := q.db.QueryRowContext(ctx, setOrgSSOOnly, arg.SsoOnly, arg.ID)
-	var i Org
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.CreatedAt,
-		&i.LockProduction,
-		&i.RequestTtlHours,
-		&i.RequireTwoFactor,
-		&i.SsoOnly,
-		&i.SuspendedAt,
-		&i.SuspendedBy,
-		&i.DeletedAt,
-	)
-	return i, err
+// ListSSOReseal is the client secrets migration 0078 left sealed for
+// their org's provider (ADR 0058), to seal again as the platform's.
+func (q *Queries) ListSSOReseal(ctx context.Context) ([]ListSSOResealRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSSOReseal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSSOResealRow
+	for rows.Next() {
+		var i ListSSOResealRow
+		if err := rows.Scan(
+			&i.SsoReseal.ProviderID,
+			&i.SsoReseal.OrgID,
+			&i.SsoReseal.Name,
+			&i.SsoProvider.ID,
+			&i.SsoProvider.Name,
+			&i.SsoProvider.Kind,
+			&i.SsoProvider.Label,
+			&i.SsoProvider.Issuer,
+			&i.SsoProvider.ClientID,
+			&i.SsoProvider.ClientSecret,
+			&i.SsoProvider.CreatedAt,
+			&i.SsoProvider.CreatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const setOrgSSOOnlyBySlug = `-- name: SetOrgSSOOnlyBySlug :one
-UPDATE orgs SET sso_only = ? WHERE slug = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
+const setSSOProviderSecret = `-- name: SetSSOProviderSecret :exec
+UPDATE sso_providers SET client_secret = ? WHERE id = +?
 `
 
-type SetOrgSSOOnlyBySlugParams struct {
-	SsoOnly bool
-	Slug    string
+type SetSSOProviderSecretParams struct {
+	ClientSecret []byte
+	ID           int64
 }
 
-func (q *Queries) SetOrgSSOOnlyBySlug(ctx context.Context, arg SetOrgSSOOnlyBySlugParams) (Org, error) {
-	row := q.db.QueryRowContext(ctx, setOrgSSOOnlyBySlug, arg.SsoOnly, arg.Slug)
-	var i Org
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.CreatedAt,
-		&i.LockProduction,
-		&i.RequestTtlHours,
-		&i.RequireTwoFactor,
-		&i.SsoOnly,
-		&i.SuspendedAt,
-		&i.SuspendedBy,
-		&i.DeletedAt,
+func (q *Queries) SetSSOProviderSecret(ctx context.Context, arg SetSSOProviderSecretParams) error {
+	_, err := q.db.ExecContext(ctx, setSSOProviderSecret, arg.ClientSecret, arg.ID)
+	return err
+}
+
+const setSignInSettings = `-- name: SetSignInSettings :exec
+INSERT INTO platform_settings (id, password_sign_in, invite_only, updated_by, updated_at) VALUES (1, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    password_sign_in = excluded.password_sign_in, invite_only = excluded.invite_only,
+    updated_by = excluded.updated_by, updated_at = excluded.updated_at
+`
+
+type SetSignInSettingsParams struct {
+	PasswordSignIn bool
+	InviteOnly     bool
+	UpdatedBy      string
+	UpdatedAt      time.Time
+}
+
+func (q *Queries) SetSignInSettings(ctx context.Context, arg SetSignInSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, setSignInSettings,
+		arg.PasswordSignIn,
+		arg.InviteOnly,
+		arg.UpdatedBy,
+		arg.UpdatedAt,
 	)
-	return i, err
+	return err
 }
 
 const updateSSOProvider = `-- name: UpdateSSOProvider :one
-UPDATE sso_providers SET issuer = ?, client_id = ?, client_secret = ?, jit_role = ?
-WHERE id = +? RETURNING id, org_id, name, issuer, client_id, client_secret, jit_role, created_at, created_by
+UPDATE sso_providers SET label = ?, issuer = ?, client_id = ?, client_secret = ?
+WHERE id = +? RETURNING id, name, kind, label, issuer, client_id, client_secret, created_at, created_by
 `
 
 type UpdateSSOProviderParams struct {
+	Label        string
 	Issuer       string
 	ClientID     string
 	ClientSecret []byte
-	JitRole      string
 	ID           int64
 }
 
 func (q *Queries) UpdateSSOProvider(ctx context.Context, arg UpdateSSOProviderParams) (SsoProvider, error) {
 	row := q.db.QueryRowContext(ctx, updateSSOProvider,
+		arg.Label,
 		arg.Issuer,
 		arg.ClientID,
 		arg.ClientSecret,
-		arg.JitRole,
 		arg.ID,
 	)
 	var i SsoProvider
 	err := row.Scan(
 		&i.ID,
-		&i.OrgID,
 		&i.Name,
+		&i.Kind,
+		&i.Label,
 		&i.Issuer,
 		&i.ClientID,
 		&i.ClientSecret,
-		&i.JitRole,
 		&i.CreatedAt,
 		&i.CreatedBy,
 	)

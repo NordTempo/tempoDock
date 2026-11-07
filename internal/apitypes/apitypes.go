@@ -67,12 +67,11 @@ type Me struct {
 	// TwoFactorRequired says what needs a second factor this session
 	// didn't use (an org, or operating the platform), and what to do.
 	TwoFactorRequired string `json:"two_factor_required,omitempty"`
-	// SSO is the org whose single sign-on this session's sign-in went
-	// through (ADR 0058); it acts only there. Empty for none.
-	SSO string `json:"sso,omitempty"`
-	// SSORequired says what needs another sign-in (an org that requires
-	// its single sign-on, or operating the platform), and what to do.
-	SSORequired string `json:"sso_required,omitempty"`
+	// SSO is the name of the identity provider this session signed in
+	// through (ADR 0065) and SSOLabel its label, like "Google"; empty for
+	// a password. Its step-ups sign in through it again.
+	SSO      string `json:"sso,omitempty"`
+	SSOLabel string `json:"sso_label,omitempty"`
 }
 
 // Org is an organization the caller belongs to (ADR 0027). It owns
@@ -86,9 +85,6 @@ type Org struct {
 	// RequireTwoFactor: members act in the org only after signing in
 	// with a second factor (ADR 0057).
 	RequireTwoFactor bool `json:"require_two_factor"`
-	// SSOOnly: members act in the org only after signing in through its
-	// single sign-on (ADR 0058).
-	SSOOnly bool `json:"sso_only"`
 }
 
 // CreateOrgRequest creates an org with the caller as its admin.

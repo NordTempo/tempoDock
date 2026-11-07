@@ -25,7 +25,7 @@ func newAdminCmd() *cobra.Command {
 		Short: "Server-side administration (run on the server)",
 	})
 	cmd.AddCommand(newBootstrapCmd(), newCaddyConfigCmd(), newRegistryConfigCmd(), newRegistryStorageCmd(), newFirewallCmd(),
-		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd(), newResetTwoFactorCmd(), newAdminSSOOnlyCmd())
+		newAdminBackupCmd(), newAdminRestoreCmd(), newAdminUpdateCmd(), newResetTwoFactorCmd(), newAdminPasswordSignInCmd())
 	return cmd
 }
 
@@ -152,26 +152,31 @@ running.`,
 	return cmd
 }
 
-// newAdminSSOOnlyCmd is `dock admin sso-only <org> off`, the break-glass
-// for an organization whose identity provider is down while it requires
-// single sign-on (ADR 0058). Like reset-2fa it opens the state directly:
-// shell access to the server is the proof.
-func newAdminSSOOnlyCmd() *cobra.Command {
+// newAdminPasswordSignInCmd is `dock admin password-sign-in on`, the
+// break-glass for a platform whose identity providers all fail while
+// password sign-in is off (ADR 0065). Like reset-2fa it opens the state
+// directly: shell access to the server is the proof.
+func newAdminPasswordSignInCmd() *cobra.Command {
 	configPath := config.DefaultPath
+	var passwordFor string
 	cmd := &cobra.Command{
-		Use:   "sso-only <org> off",
-		Short: "Turn off an organization's single sign-on requirement, when its provider is down",
-		Long: `Members of the organization act in it again after signing in with a password.
-Its providers stay; an admin turns the requirement back on with
-` + "`dock org sso-only on`" + `. The audit log records it (org.sso_only).
+		Use:   "password-sign-in on",
+		Short: "Turn password sign-in back on, when no identity provider works",
+		Long: `People sign in with email and password again; the identity providers stay.
+An operator turns passwords off again with ` + "`dock sso password-sign-in off`" + `.
+The audit log records it (platform.password_sign_in).
+
+With --password-for, that account also gets a new generated password,
+printed once: for an operator who only ever signed in through a provider
+and has no password they know. Their sessions end.
 
 Run it on the server, as root or the service user. Safe to run while the
 daemon is running.`,
-		Example: "  sudo dock admin sso-only acme off",
-		Args:    cobra.ExactArgs(2),
+		Example: "  sudo dock admin password-sign-in on\n  sudo dock admin password-sign-in on --password-for ops@example.com",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if args[1] != "off" {
-				return usageError("only off is done on the server", "Turn single sign-on on from a sign-in through it: `dock org sso-only on`.")
+			if args[0] != "on" {
+				return usageError("only on is done on the server", "Turn passwords off from the console or `dock sso password-sign-in off`, signed in through an identity provider.")
 			}
 			cfg, err := config.Load(configPath)
 			if err != nil {
@@ -186,17 +191,23 @@ daemon is running.`,
 			if err != nil {
 				return err
 			}
-			if err := c.ResetOrgSSOOnly(cmd.Context(), core.System, args[0]); err != nil {
-				if core.CodeOf(err) == apitypes.CodeNotFound {
-					return &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Check the organization's slug: the audit log and `dock org list` show it."}
-				}
+			pw, err := c.ResetPasswordSignIn(cmd.Context(), core.System, passwordFor)
+			if core.CodeOf(err) == apitypes.CodeNotFound {
+				return &output.Error{Exit: output.ExitNotFound, Err: err, Hint: "Check the email: the console's Users page and `dock user list` show it."}
+			}
+			if err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Organization %s no longer requires single sign-on: its members sign in with a password again.\n", args[0])
+			out := cmd.OutOrStdout()
+			_, err = fmt.Fprintln(out, "Password sign-in is on: people sign in with email and password again.")
+			if pw != "" && err == nil {
+				_, err = fmt.Fprintf(out, "New password of %s (shown once): %s\n", passwordFor, pw)
+			}
 			return err
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", configPath, "path to the daemon config file")
+	cmd.Flags().StringVar(&passwordFor, "password-for", "", "also give this account a new generated password")
 	return cmd
 }
 

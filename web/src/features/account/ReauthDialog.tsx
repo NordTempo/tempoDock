@@ -16,7 +16,7 @@ type Verification = components["schemas"]["Verification"];
  * "Confirm it's you" before a sensitive action (ADR 0057): a passkey or
  * the code from the authenticator app when the person has one, else their
  * password, or for a single sign-on session signing in through it again
- * (ADR 0058), which leaves the page. Loaded by ui/ReauthHost when a call
+ * (ADR 0065), which leaves the page. Loaded by ui/ReauthHost when a call
  * answers reauth_required; onDone says whether to retry it.
  */
 export default function ReauthDialog({
@@ -142,39 +142,31 @@ export default function ReauthDialog({
 }
 
 /**
- * A single sign-on session without a Dock second factor confirms by
- * signing in through its organization's provider again, landing back on
- * this page; the action is then tried again by hand.
+ * A session that signed in through an identity provider, without a Dock
+ * second factor, confirms by signing in through that provider again,
+ * landing back on this page; the action is then tried again by hand.
  */
 function SSOAgain({ onCancel }: { onCancel: () => void }) {
   const me = useSession();
   const start = useStartSSO();
-  const leaving = start.isPending || (start.isSuccess && start.data === null);
+  const provider = me?.sso;
   return (
     <Dialog title="Confirm it's you" onClose={onCancel}>
       <div className="flex flex-col gap-3">
         <p className="text-mut">
-          You signed in with the single sign-on of{" "}
-          <span className="font-mono text-fg">{me?.sso}</span> more than 15
-          minutes ago. Sign in through it again, then try once more.
+          You signed in with {me?.sso_label} more than 15 minutes ago. Sign in
+          with it again, then try once more.
         </p>
-        {start.isSuccess && start.data?.length === 0 && (
-          <p className="text-fail">
-            {me?.sso} has no provider for your email any more.
-          </p>
-        )}
         <ErrorText error={start.error} />
         <DialogFoot className="mt-1">
           <Button onClick={onCancel}>Cancel</Button>
           <Button
             primary
             data-autofocus
-            disabled={leaving || !me?.email}
-            onClick={() =>
-              start.mutate({ email: me?.email, to: here(), only: me?.sso })
-            }
+            disabled={start.isPending || start.isSuccess || !provider}
+            onClick={() => provider && start.mutate({ provider, to: here() })}
           >
-            Sign in with SSO
+            Continue with {me?.sso_label}
           </Button>
         </DialogFoot>
       </div>

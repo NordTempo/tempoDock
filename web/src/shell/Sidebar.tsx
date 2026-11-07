@@ -891,6 +891,9 @@ function ConsoleNav() {
       <NavLink to="/console/users" icon="users">
         Users
       </NavLink>
+      <NavLink to="/console/sign-in" icon="key">
+        Sign-in
+      </NavLink>
       <NavLink to="/console/data-access" icon="shield">
         Data access
       </NavLink>

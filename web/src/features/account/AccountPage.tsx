@@ -72,25 +72,7 @@ export function AccountPage() {
           {me.kind === "user" && (
             <>
               <dt>This sign-in</dt>
-              <dd>
-                {me.sso ? (
-                  <>
-                    single sign-on of{" "}
-                    <span className="font-mono">{me.sso}</span>{" "}
-                    <span className="text-mut">
-                      acts only in {me.sso}, never runs the platform, and can't
-                      change your second factors
-                    </span>
-                  </>
-                ) : (
-                  "password"
-                )}
-                {me.sso_required && (
-                  <span className="block text-xs text-warn">
-                    {me.sso_required}
-                  </span>
-                )}
-              </dd>
+              <dd>{me.sso_label ?? "password"}</dd>
             </>
           )}
           {me.operator && (

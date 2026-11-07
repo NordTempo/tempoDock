@@ -29,7 +29,7 @@ organization it was linked in.`,
 	})
 	cmd.AddCommand(newOrgListCmd(g), newOrgCreateCmd(g), newOrgUseCmd(g), newOrgLocksCmd(g),
 		newOrgMembersCmd(g), newOrgMemberCmd(g), newOrgInviteCmd(g), newOrgInvitesCmd(g), newOrgJoinCmd(g),
-		newOrgEnvCmd(g), newOrgRenameCmd(g), newOrgTwoFactorCmd(g), newOrgSSOCmd(g), newOrgSSOOnlyCmd(g),
+		newOrgEnvCmd(g), newOrgRenameCmd(g), newOrgTwoFactorCmd(g), newOrgSSOMovedCmd("sso"), newOrgSSOMovedCmd("sso-only"),
 		newOrgGoneCmd(g, "leave", "Leave the organization; the last admin can't", "POST", "/leave",
 			"Leave %s? You lose access to its projects.", "Left %s"),
 		newOrgGoneCmd(g, "delete", "Delete an organization without projects (admin)", "DELETE", "",

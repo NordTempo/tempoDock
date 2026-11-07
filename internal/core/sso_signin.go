@@ -4,12 +4,14 @@ import (
 	"cmp"
 	"context"
 	"crypto/subtle"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,22 +23,24 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Signing in through an org's single sign-on (ADR 0058): OpenID
-// Connect's authorization code flow with PKCE (S256), state and nonce.
+// Signing in through one of the platform's identity providers (ADR 0058,
+// 0065): the OAuth 2.0 authorization code flow with PKCE (S256) and
+// state; OpenID Connect providers (google, oidc) add a nonce and an ID
+// token, GitHub's OAuth (github) has none, so Dock reads the account and
+// its primary verified email from GitHub's API instead.
 //
-//  1. StartSSO finds the provider by the email's domain (or the org and
-//     provider named) and returns its authorization URL. The flow waits in
-//     memory (ceremonies, SSOTTL), bound to the browser by a random value
-//     the API keeps in a cookie.
+//  1. StartSSO returns the authorization URL of the provider named. The
+//     flow waits in memory (ceremonies, SSOTTL), bound to the browser by
+//     a random value the API keeps in a cookie.
 //  2. The provider sends the browser back to SSOCallbackPath. FinishSSO
 //     takes the flow out by its state (once), checks the browser's value,
-//     exchanges the code with the PKCE verifier, verifies the ID token
-//     (signature, issuer, audience, expiry, nonce) and requires a verified
-//     email in one of the provider's domains.
-//  3. ssoUser maps the person to a Dock user (see there). The session
-//     then starts as after a password, with factor sso and the org
-//     recorded: it acts only in that org, and a user with an authenticator
-//     app still gives a code.
+//     exchanges the code with the PKCE verifier and learns who the person
+//     is: for OpenID Connect the verified ID token (signature, issuer,
+//     audience, expiry, nonce), for GitHub its API. Either way it needs a
+//     verified email.
+//  3. ssoUser maps the person to a Dock account (see there). The session
+//     then starts as after a password, with factor sso and the provider
+//     recorded, and a user with an authenticator app still gives a code.
 
 const (
 	// ssoTimeout bounds each request to an identity provider.
@@ -46,16 +50,19 @@ const (
 )
 
 // ssoState is single sign-on's in-memory side: the flows waiting for a
-// provider's answer, and the client that talks to providers.
+// provider's answer, the client that talks to providers, and where GitHub
+// is (tests point it at a fake).
 type ssoState struct {
 	flows  *ceremonies
 	client *http.Client
+	github githubEndpoints
 }
 
 func newSSOState() ssoState {
 	return ssoState{
 		flows:  newCeremonies(),
 		client: &http.Client{Timeout: ssoTimeout, Transport: limitedTransport{http.DefaultTransport}},
+		github: githubDotCom,
 	}
 }
 
@@ -80,9 +87,12 @@ type limitedBody struct {
 // ssoFlow is a single sign-on waiting for the provider's answer.
 type ssoFlow struct {
 	providerID int64
-	issuer     string
-	// provider is the issuer's discovery, reused for the code exchange
-	// and the ID token's keys.
+	// kind and issuer are the provider's when the flow started; a change
+	// meanwhile ends it.
+	kind   string
+	issuer string
+	// provider is an OpenID Connect issuer's discovery, reused for the
+	// code exchange and the ID token's keys; nil for GitHub.
 	provider *oidc.Provider
 	nonce    string
 	verifier string
@@ -104,21 +114,24 @@ func (s ssoState) discover(ctx context.Context, log *slog.Logger, issuer string)
 	return p, nil
 }
 
-// ssoProvider is a provider with its org.
-type ssoProvider struct {
-	store.SsoProvider
-	org store.Org
+// githubEndpoints is where Dock finds GitHub: its OAuth pages and its API.
+type githubEndpoints struct {
+	AuthURL, TokenURL, API string
 }
 
-// SSOStart is where StartSSO sends the browser: the provider's page, with
-// Binding for the browser's cookie, or a choice of orgs.
+var githubDotCom = githubEndpoints{
+	AuthURL: "https://github.com/login/oauth/authorize", TokenURL: "https://github.com/login/oauth/access_token", API: "https://api.github.com",
+}
+
+// SSOStart is where StartSSO sends the browser, with Binding for the
+// browser's cookie.
 type SSOStart struct {
 	apitypes.SSOStart
 	Binding string
 }
 
-// StartSSO starts signing in through single sign-on. Unauthenticated, so
-// it is rate limited per client IP.
+// StartSSO starts signing in through the provider req names.
+// Unauthenticated, so it is rate limited per client IP.
 func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clientIP string) (SSOStart, error) {
 	if !c.loginLimit.AllowIP(clientIP, now()) {
 		return SSOStart{}, errf(apitypes.CodeRateLimited, "too many sign-ins from %s; wait a minute and try again", clientIP)
@@ -127,79 +140,49 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 	if err != nil {
 		return SSOStart{}, err
 	}
-	p, choices, err := c.ssoProviderFor(ctx, req)
-	if err != nil || choices != nil {
-		return SSOStart{SSOStart: apitypes.SSOStart{Choices: choices}}, err
+	p, err := c.store.GetSSOProviderByName(ctx, req.Provider)
+	if store.IsNotFound(err) {
+		return SSOStart{}, notFound("this Dock has no identity provider %q; reload the sign-in page", req.Provider)
 	}
-	prov, err := c.sso.discover(ctx, c.log, p.Issuer)
 	if err != nil {
-		return SSOStart{}, errf(apitypes.CodeServerOffline, "the identity provider of %s isn't answering; try again in a minute, or sign in with your password", p.org.Name)
+		return SSOStart{}, err
+	}
+	var prov *oidc.Provider
+	if p.Kind != string(apitypes.SSOGitHub) {
+		if prov, err = c.sso.discover(ctx, c.log, p.Issuer); err != nil {
+			return SSOStart{}, errf(apitypes.CodeServerOffline, "%s isn't answering; try again in a minute, or sign in another way", p.Label)
+		}
 	}
 	nonce, _ := newSecret("")
 	binding, bindingHash := newSecret("")
 	verifier := oauth2.GenerateVerifier()
 	state, err := c.sso.flows.put(&ceremony{purpose: ceremonySSO, sso: &ssoFlow{
-		providerID: p.ID, issuer: p.Issuer, provider: prov, nonce: nonce, verifier: verifier, binding: bindingHash, to: to,
+		providerID: p.ID, kind: p.Kind, issuer: p.Issuer, provider: prov, nonce: nonce, verifier: verifier, binding: bindingHash, to: to,
 	}})
 	if err != nil {
 		return SSOStart{}, err
 	}
-	authURL := c.oauthConfig(p, prov, "").AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier))
+	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
+	if prov != nil {
+		opts = append(opts, oidc.Nonce(nonce))
+	}
+	authURL := c.oauthConfig(p, prov, "").AuthCodeURL(state, opts...)
 	return SSOStart{SSOStart: apitypes.SSOStart{URL: authURL}, Binding: binding}, nil
 }
 
-// ssoProviderFor finds the provider a sign-in starts with: the org and
-// provider named, or the one whose domains include the email's. Several
-// orgs' providers for that domain come back as choices.
-func (c *Core) ssoProviderFor(ctx context.Context, req apitypes.SSOStartRequest) (ssoProvider, []apitypes.SSOChoice, error) {
-	if req.Org != "" || req.Provider != "" {
-		if req.Org == "" || req.Provider == "" {
-			return ssoProvider{}, nil, invalid("name both the organization and its provider, or give your email address")
-		}
-		row, err := c.store.GetSSOProviderByOrg(ctx, store.GetSSOProviderByOrgParams{Slug: req.Org, Name: req.Provider})
-		if store.IsNotFound(err) {
-			// An org's old slug still names it (ADR 0064).
-			if to, ok, merr := c.movedSlug(ctx, req.Org); merr != nil {
-				return ssoProvider{}, nil, merr
-			} else if ok {
-				row, err = c.store.GetSSOProviderByOrg(ctx, store.GetSSOProviderByOrgParams{Slug: to, Name: req.Provider})
-			}
-		}
-		if store.IsNotFound(err) {
-			return ssoProvider{}, nil, notFound("organization %s has no single sign-on provider %s", req.Org, req.Provider)
-		}
-		return ssoProvider{row.SsoProvider, row.Org}, nil, err
+// oauthConfig is the OAuth 2.0 client Dock is at provider p; prov is its
+// discovery, nil for GitHub.
+func (c *Core) oauthConfig(p store.SsoProvider, prov *oidc.Provider, secret string) *oauth2.Config {
+	cfg := &oauth2.Config{ClientID: p.ClientID, ClientSecret: secret, RedirectURL: c.ssoRedirectURL()}
+	if prov == nil {
+		gh := c.sso.github
+		cfg.Endpoint = oauth2.Endpoint{AuthURL: gh.AuthURL, TokenURL: gh.TokenURL, AuthStyle: oauth2.AuthStyleInParams}
+		cfg.Scopes = []string{"read:user", "user:email"}
+		return cfg
 	}
-	domain := emailDomain(req.Email)
-	if domain == "" {
-		return ssoProvider{}, nil, invalid("enter your email address to sign in with single sign-on")
-	}
-	rows, err := c.store.FindSSOProviders(ctx, domain)
-	if err != nil {
-		return ssoProvider{}, nil, err
-	}
-	switch len(rows) {
-	case 0:
-		return ssoProvider{}, nil, notFound("single sign-on isn't set up for %s; sign in with your password", domain)
-	case 1:
-		return ssoProvider{rows[0].SsoProvider, rows[0].Org}, nil, nil
-	}
-	choices := make([]apitypes.SSOChoice, len(rows))
-	for i, r := range rows {
-		choices[i] = apitypes.SSOChoice{Org: r.Org.Slug, OrgName: r.Org.Name, Provider: r.SsoProvider.Name}
-	}
-	slices.SortFunc(choices, func(x, y apitypes.SSOChoice) int {
-		return cmp.Or(cmp.Compare(x.Org, y.Org), cmp.Compare(x.Provider, y.Provider))
-	})
-	return ssoProvider{}, choices, nil
-}
-
-// oauthConfig is the OAuth 2.0 client Dock is at provider p.
-func (c *Core) oauthConfig(p ssoProvider, prov *oidc.Provider, secret string) *oauth2.Config {
-	return &oauth2.Config{
-		ClientID: p.ClientID, ClientSecret: secret, Endpoint: prov.Endpoint(), RedirectURL: c.ssoRedirectURL(),
-		Scopes: []string{oidc.ScopeOpenID, "email", "profile"},
-	}
+	cfg.Endpoint = prov.Endpoint()
+	cfg.Scopes = []string{oidc.ScopeOpenID, "email", "profile"}
+	return cfg
 }
 
 // SSOCallback is what a provider sent the browser back with, and the
@@ -213,16 +196,27 @@ type SSOCallback struct {
 }
 
 // SSOResult is a finished single sign-on: a session or a pending second
-// factor, and the path to land on.
+// factor and the path to land on, or, on an invite-only Dock, Blocked:
+// the person has no account and no invite.
 type SSOResult struct {
 	LoginResult
-	To string
+	To      string
+	Blocked *SSOBlocked
 }
 
+// SSOBlocked is a person a provider signed in whom an invite-only Dock
+// has no account for: the provider's label and their email.
+type SSOBlocked struct {
+	Provider, Email string
+}
+
+// errInviteOnly is ssoUser's refusal of a person with no account and no
+// invite on an invite-only Dock.
+var errInviteOnly = errf(apitypes.CodeForbidden, "this Dock is invite only, and you have no account and no open invite; ask an organization's admin for an invite")
+
 // FinishSSO finishes a single sign-on the provider sent the browser back
-// from. Every refusal after the flow is found is audited in the
-// provider's org; error messages are for the person and never carry what
-// the provider answered.
+// from. Every refusal after the flow is found is audited; error messages
+// are for the person and never carry what the provider answered.
 func (c *Core) FinishSSO(ctx context.Context, cb SSOCallback, clientIP string) (SSOResult, error) {
 	cer, err := c.sso.flows.take(cb.State, ceremonySSO, 0, 0)
 	if err != nil {
@@ -230,104 +224,98 @@ func (c *Core) FinishSSO(ctx context.Context, cb SSOCallback, clientIP string) (
 		return SSOResult{}, errf(apitypes.CodeExpired, "this sign-in expired or was used already; start again")
 	}
 	f := cer.sso
-	row, err := c.store.GetSSOProviderWithOrg(ctx, f.providerID)
-	if store.IsNotFound(err) || err == nil && row.SsoProvider.Issuer != f.issuer {
-		return SSOResult{}, errf(apitypes.CodeExpired, "the organization's single sign-on changed during the sign-in; start again")
+	p, err := c.store.GetSSOProvider(ctx, f.providerID)
+	if store.IsNotFound(err) || err == nil && (p.Issuer != f.issuer || p.Kind != f.kind) {
+		return SSOResult{}, errf(apitypes.CodeExpired, "the identity provider changed during the sign-in; start again")
 	}
 	if err != nil {
 		return SSOResult{}, err
 	}
-	p := ssoProvider{row.SsoProvider, row.Org}
 	email := ""
 	res, err := c.finishSSO(ctx, p, f, cb, clientIP, &email)
+	if errors.Is(err, errInviteOnly) {
+		c.audit(ctx, Actor{Kind: "user", Name: email}, "user.sso_refused", nil, nil, "sso "+p.Name,
+			fmt.Sprintf("refused a sign-in through %s from %s: no account and no open invite, and sign-up is invite only", p.Name, clientIP))
+		return SSOResult{Blocked: &SSOBlocked{Provider: p.Label, Email: email}}, nil
+	}
 	if err != nil {
 		reason := err.Error()
 		if CodeOf(err) == apitypes.CodeInternal {
 			reason = "internal error"
 		}
-		who := Actor{Kind: "user", Name: cmp.Or(email, "unknown"), OrgID: p.OrgID}
-		c.audit(ctx, who, "org.sso_refused", nil, nil, "sso "+p.Name, fmt.Sprintf("refused a single sign-on from %s: %s", clientIP, reason))
+		c.audit(ctx, Actor{Kind: "user", Name: cmp.Or(email, "unknown")}, "user.sso_refused", nil, nil, "sso "+p.Name,
+			fmt.Sprintf("refused a sign-in through %s from %s: %s", p.Name, clientIP, reason))
 		return SSOResult{}, err
 	}
-	return SSOResult{LoginResult: res, To: f.to}, nil
+	return SSOResult{LoginResult: res, To: c.ssoLanding(ctx, f.to)}, nil
 }
 
-// errSSOAnswer is the refusal for an answer from the provider that
+// ssoLanding is where a finished sign-in lands: where it started, unless
+// that is an invite link the sign-in just used up (a new account accepts
+// its invites), which would only say it doesn't work; then the start.
+func (c *Core) ssoLanding(ctx context.Context, to string) string {
+	code, ok := strings.CutPrefix(to, "/invite/")
+	if !ok {
+		return to
+	}
+	if _, err := c.openInvite(ctx, code); err != nil {
+		return "/"
+	}
+	return to
+}
+
+// errSSOAnswer is the refusal for an answer from provider label that
 // doesn't check out; the details go to the log.
-func errSSOAnswer(org string) error {
-	return errf(apitypes.CodeUnauthorized, "the identity provider's answer didn't check out; try again, or ask an admin of %s to check the single sign-on settings", org)
+func errSSOAnswer(label string) error {
+	return errf(apitypes.CodeUnauthorized, "%s's answer didn't check out; try again, or ask an operator to check the %s provider in the console", label, label)
+}
+
+// ssoPerson is who a provider says signed in.
+type ssoPerson struct {
+	subject, email, name string
 }
 
 // finishSSO checks the provider's answer for flow f and signs the person
-// in; email is set once the ID token names them.
-func (c *Core) finishSSO(ctx context.Context, p ssoProvider, f *ssoFlow, cb SSOCallback, clientIP string, email *string) (LoginResult, error) {
-	log := c.log.With("org", p.org.Slug, "provider", p.Name, "ip", clientIP)
+// in; email is set once the provider names them.
+func (c *Core) finishSSO(ctx context.Context, p store.SsoProvider, f *ssoFlow, cb SSOCallback, clientIP string, email *string) (LoginResult, error) {
+	log := c.log.With("provider", p.Name, "ip", clientIP)
 	if cb.Binding == "" || subtle.ConstantTimeCompare([]byte(hashSecret(cb.Binding)), []byte(f.binding)) != 1 {
 		return LoginResult{}, errf(apitypes.CodeUnauthorized, "this sign-in was started in another browser, or its cookie was lost; start again here")
 	}
 	switch {
 	case cb.Error == "access_denied":
-		return LoginResult{}, errf(apitypes.CodeDenied, "the sign-in was cancelled at the identity provider")
+		return LoginResult{}, errf(apitypes.CodeDenied, "the sign-in was cancelled at %s", p.Label)
 	case cb.Error != "":
 		log.Warn("sso: provider refused", "error", cb.Error)
-		return LoginResult{}, errf(apitypes.CodeDenied, "the identity provider refused the sign-in; ask an admin of %s to check the single sign-on settings", p.org.Name)
+		return LoginResult{}, errf(apitypes.CodeDenied, "%s refused the sign-in; ask an operator to check the %s provider in the console", p.Label, p.Label)
 	case cb.Code == "":
-		return LoginResult{}, invalid("the identity provider sent no sign-in code; start again")
+		return LoginResult{}, invalid("%s sent no sign-in code; start again", p.Label)
 	}
-	secret, err := c.box.Open(p.ClientSecret, ssoSecretAAD(p.OrgID, p.Name))
+	secret, err := c.box.Open(p.ClientSecret, ssoSecretAAD(p.Name))
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("open client secret of %s/%s: %w", p.org.Slug, p.Name, err)
+		return LoginResult{}, fmt.Errorf("open client secret of %s: %w", p.Name, err)
 	}
 	hctx := oidc.ClientContext(ctx, c.sso.client)
 	tok, err := c.oauthConfig(p, f.provider, string(secret)).Exchange(hctx, cb.Code, oauth2.VerifierOption(f.verifier))
 	if err != nil {
 		log.Warn("sso: code exchange failed", "err", err)
-		return LoginResult{}, errf(apitypes.CodeUnauthorized, "the identity provider didn't accept the sign-in; start again, or ask an admin of %s to check the provider's client ID and secret", p.org.Name)
+		return LoginResult{}, errf(apitypes.CodeUnauthorized, "%s didn't accept the sign-in; start again, or ask an operator to check the %s provider's client ID and secret", p.Label, p.Label)
 	}
-	raw, _ := tok.Extra("id_token").(string)
-	if raw == "" {
-		log.Warn("sso: no id_token in the token response")
-		return LoginResult{}, errSSOAnswer(p.org.Name)
+	var who ssoPerson
+	if f.provider == nil {
+		who, err = c.githubPerson(hctx, log, p, tok)
+	} else {
+		who, err = oidcPerson(hctx, log, p, f, tok)
 	}
-	idt, err := f.provider.Verifier(&oidc.Config{ClientID: p.ClientID, Now: now}).Verify(hctx, raw)
-	if err != nil {
-		log.Warn("sso: ID token rejected", "err", err)
-		return LoginResult{}, errSSOAnswer(p.org.Name)
-	}
-	if subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(f.nonce)) != 1 {
-		log.Warn("sso: ID token nonce mismatch")
-		return LoginResult{}, errSSOAnswer(p.org.Name)
-	}
-	var claims struct {
-		Email             string `json:"email"`
-		EmailVerified     any    `json:"email_verified"`
-		Name              string `json:"name"`
-		PreferredUsername string `json:"preferred_username"`
-	}
-	if err := idt.Claims(&claims); err != nil {
-		log.Warn("sso: ID token claims", "err", err)
-		return LoginResult{}, errSSOAnswer(p.org.Name)
-	}
-	*email = strings.TrimSpace(claims.Email)
-	if *email == "" {
-		return LoginResult{}, errf(apitypes.CodeForbidden, "the identity provider sent no email address; ask an admin of %s to let Dock read it (the email scope)", p.org.Name)
-	}
-	if !emailVerified(claims.EmailVerified) {
-		return LoginResult{}, errf(apitypes.CodeForbidden, "your identity provider hasn't verified %s; verify it there and try again", *email)
-	}
-	domains, err := c.store.ListSSOProviderDomains(ctx, p.ID)
+	*email = who.email
 	if err != nil {
 		return LoginResult{}, err
 	}
-	if !slices.Contains(domains, emailDomain(*email)) {
-		return LoginResult{}, errf(apitypes.CodeForbidden, "%s isn't an address %s signs in with single sign-on; sign in with your password", *email, p.org.Name)
-	}
-	name := cmp.Or(strings.TrimSpace(claims.Name), strings.TrimSpace(claims.PreferredUsername), strings.Split(*email, "@")[0])
-	u, err := c.ssoUser(ctx, p, idt.Subject, *email, clean(name, 100, *email))
+	u, err := c.ssoUser(ctx, p, who)
 	if err != nil {
 		return LoginResult{}, err
 	}
-	via := signInVia{factor: factorSSO, ssoOrgID: p.OrgID, ssoOrg: p.org.Slug, provider: p.Name}
+	via := signInVia{factor: factorSSO, ssoProviderID: p.ID, ssoProvider: p.Name, ssoLabel: p.Label}
 	n, err := c.store.CountUserFactors(ctx, u.ID)
 	if err != nil {
 		return LoginResult{}, err
@@ -338,28 +326,120 @@ func (c *Core) finishSSO(ctx context.Context, p ssoProvider, f *ssoFlow, cb SSOC
 	return c.signIn(ctx, u, via, clientIP)
 }
 
-// ssoUser maps the person a provider vouched for to a Dock user:
+// oidcPerson reads who an OpenID Connect provider's ID token names: it
+// must be signed by the issuer for Dock's client, fresh, carry the flow's
+// nonce, and name a verified email.
+func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *ssoFlow, tok *oauth2.Token) (ssoPerson, error) {
+	raw, _ := tok.Extra("id_token").(string)
+	if raw == "" {
+		log.Warn("sso: no id_token in the token response")
+		return ssoPerson{}, errSSOAnswer(p.Label)
+	}
+	idt, err := f.provider.Verifier(&oidc.Config{ClientID: p.ClientID, Now: now}).Verify(ctx, raw)
+	if err != nil {
+		log.Warn("sso: ID token rejected", "err", err)
+		return ssoPerson{}, errSSOAnswer(p.Label)
+	}
+	if subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(f.nonce)) != 1 {
+		log.Warn("sso: ID token nonce mismatch")
+		return ssoPerson{}, errSSOAnswer(p.Label)
+	}
+	var claims struct {
+		Email             string `json:"email"`
+		EmailVerified     any    `json:"email_verified"`
+		Name              string `json:"name"`
+		PreferredUsername string `json:"preferred_username"`
+	}
+	if err := idt.Claims(&claims); err != nil {
+		log.Warn("sso: ID token claims", "err", err)
+		return ssoPerson{}, errSSOAnswer(p.Label)
+	}
+	who := ssoPerson{subject: idt.Subject, email: strings.TrimSpace(claims.Email)}
+	if who.email == "" {
+		return who, errf(apitypes.CodeForbidden, "%s sent no email address; ask an operator to let Dock read it (the email scope)", p.Label)
+	}
+	if !emailVerified(claims.EmailVerified) {
+		return who, errf(apitypes.CodeForbidden, "%s hasn't verified %s; verify it there and try again", p.Label, who.email)
+	}
+	who.name = cmp.Or(strings.TrimSpace(claims.Name), strings.TrimSpace(claims.PreferredUsername))
+	return who, nil
+}
+
+// githubPerson reads who signed in at GitHub from its API: the account
+// (its numeric id is the subject; logins can be renamed) and its primary
+// email, which must be verified.
+func (c *Core) githubPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, tok *oauth2.Token) (ssoPerson, error) {
+	var user struct {
+		ID    int64  `json:"id"`
+		Login string `json:"login"`
+		Name  string `json:"name"`
+	}
+	var emails []struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	if err := c.githubGet(ctx, tok, "/user", &user); err != nil || user.ID == 0 {
+		log.Warn("sso: github user", "err", err)
+		return ssoPerson{}, errSSOAnswer(p.Label)
+	}
+	if err := c.githubGet(ctx, tok, "/user/emails", &emails); err != nil {
+		log.Warn("sso: github emails", "err", err)
+		return ssoPerson{}, errSSOAnswer(p.Label)
+	}
+	who := ssoPerson{subject: strconv.FormatInt(user.ID, 10), name: cmp.Or(strings.TrimSpace(user.Name), user.Login)}
+	for _, e := range emails {
+		if e.Primary {
+			who.email = strings.TrimSpace(e.Email)
+			if !e.Verified {
+				return who, errf(apitypes.CodeForbidden, "GitHub hasn't verified %s, your primary email; verify it at GitHub and try again", who.email)
+			}
+		}
+	}
+	if who.email == "" {
+		return who, errf(apitypes.CodeForbidden, "GitHub sent no primary email address; ask an operator to check the %s provider asks for the user:email scope", p.Label)
+	}
+	return who, nil
+}
+
+// githubGet reads path of GitHub's API with the person's token into v.
+func (c *Core) githubGet(ctx context.Context, tok *oauth2.Token, path string, v any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.sso.github.API+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+	resp, err := c.sso.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: %s", path, resp.Status)
+	}
+	return json.NewDecoder(resp.Body).Decode(v)
+}
+
+// ssoUser maps the person provider p vouched for to a Dock account:
 //
 //  1. by their identity (provider, subject), linked on an earlier sign-in;
-//  2. else by their verified email to an existing user;
-//  3. else a new user, when the org invited that email or the provider
-//     has a just-in-time role.
+//  2. else by their verified email to an existing account, linked now;
+//  3. else a new account, in no org, when they have open invites (all
+//     accepted now) or the platform isn't invite only.
 //
-// The user must then be a member of the provider's org: one already, one
-// with an open invite (accepted now), or one the provider's
-// just-in-time role lets in. Anyone else is refused and told to ask for an
-// invite. A disabled user is refused.
-func (c *Core) ssoUser(ctx context.Context, p ssoProvider, subject, email, name string) (store.User, error) {
+// Otherwise errInviteOnly. Accounts are refused while disabled.
+func (c *Core) ssoUser(ctx context.Context, p store.SsoProvider, who ssoPerson) (store.User, error) {
 	var u store.User
-	id, err := c.store.GetSSOIdentity(ctx, store.GetSSOIdentityParams{ProviderID: p.ID, Subject: subject})
+	id, err := c.store.GetSSOIdentity(ctx, store.GetSSOIdentityParams{ProviderID: p.ID, Subject: who.subject})
 	linked := err == nil
 	switch {
 	case linked:
 		u, err = c.store.GetUser(ctx, id.UserID)
 	case store.IsNotFound(err):
-		u, err = c.store.GetUserByEmail(ctx, email)
+		u, err = c.store.GetUserByEmail(ctx, who.email)
 		if store.IsNotFound(err) {
-			return c.ssoNewUser(ctx, p, subject, email, name)
+			return c.ssoNewUser(ctx, p, who)
 		}
 	}
 	if err != nil {
@@ -368,66 +448,62 @@ func (c *Core) ssoUser(ctx context.Context, p ssoProvider, subject, email, name 
 	if u.DisabledAt != nil {
 		return store.User{}, errf(apitypes.CodeForbidden, "your Dock account is disabled; ask an operator")
 	}
-	if err := c.ssoMembership(ctx, p, u); err != nil {
-		return store.User{}, err
-	}
 	if linked {
 		return u, nil
 	}
-	err = c.store.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: subject, UserID: u.ID, Email: email, CreatedAt: now()})
+	err = c.store.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()})
 	if err != nil && !store.IsUnique(err) { // a concurrent sign-in linked it
 		return store.User{}, err
 	}
-	c.audit(ctx, userActor(u), "user.sso_link", nil, nil, u.Email, fmt.Sprintf("linked %s to their identity at %s's single sign-on (%s)", u.Email, p.org.Slug, p.Name))
+	c.audit(ctx, userActor(u), "user.sso_link", nil, nil, u.Email, fmt.Sprintf("linked %s to their %s identity (%s)", u.Email, p.Label, p.Name))
 	return u, nil
 }
 
-// ssoMembership makes sure u is a member of p's org: already, through an
-// open invite of their email (accepted now) or through the provider's
-// just-in-time role. Otherwise they are refused.
-func (c *Core) ssoMembership(ctx context.Context, p ssoProvider, u store.User) error {
-	_, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: p.OrgID, UserID: u.ID})
-	if !store.IsNotFound(err) {
-		return err
-	}
-	inv, role, err := c.ssoJoinRole(ctx, p, u.Email)
-	if err != nil {
-		return err
-	}
-	err = c.store.Tx(ctx, func(q *store.Queries) error { return joinTx(ctx, q, p.org, inv, u.ID, role) })
-	if store.IsUnique(err) { // joined meanwhile
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	c.auditSSOJoin(ctx, p, u, role, inv)
-	return nil
-}
-
-// ssoNewUser creates the user a provider vouched for, when the org
-// invited their email or the provider has a just-in-time role, with an
-// unusable random password: they sign in through single sign-on (an
-// operator can give them a password).
-func (c *Core) ssoNewUser(ctx context.Context, p ssoProvider, subject, email, name string) (store.User, error) {
-	inv, role, err := c.ssoJoinRole(ctx, p, email)
+// ssoNewUser creates the account of a person p vouched for, with an
+// unusable random password (they sign in through a provider; an operator
+// can give them a password), and accepts their open invites. On an
+// invite-only platform, someone without an invite gets errInviteOnly.
+func (c *Core) ssoNewUser(ctx context.Context, p store.SsoProvider, who ssoPerson) (store.User, error) {
+	invites, err := c.store.ListOpenInvitesByEmail(ctx, store.ListOpenInvitesByEmailParams{Email: who.email, Now: now()})
 	if err != nil {
 		return store.User{}, err
+	}
+	if len(invites) == 0 {
+		set, err := signInSettings(ctx, c.store.Queries)
+		if err != nil {
+			return store.User{}, err
+		}
+		if set.InviteOnly {
+			return store.User{}, errInviteOnly
+		}
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(generatePassword()), bcrypt.DefaultCost)
 	if err != nil {
 		return store.User{}, err
 	}
+	name := clean(who.name, maxDisplayName, strings.Split(who.email, "@")[0])
 	var u store.User
+	var joined []store.ListOpenInvitesByEmailRow
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: email, Name: name, PasswordHash: string(hash)}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: who.email, Name: name, PasswordHash: string(hash)}); err != nil {
 			return err
 		}
-		if err := joinTx(ctx, q, p.org, inv, u.ID, role); err != nil {
+		if err := q.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()}); err != nil {
 			return err
 		}
-		return q.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: subject, UserID: u.ID, Email: email, CreatedAt: now()})
+		seen := map[int64]bool{}
+		for _, r := range invites {
+			if seen[r.Org.ID] { // two invites to one org: the first counts
+				continue
+			}
+			seen[r.Org.ID] = true
+			if err := joinTx(ctx, q, r.Org, &r.OrgInvite, u.ID, r.OrgInvite.Role); err != nil {
+				return err
+			}
+			joined = append(joined, r)
+		}
+		return nil
 	})
 	if store.IsUnique(err) {
 		return store.User{}, conflict("another sign-in created your account meanwhile; start again")
@@ -435,38 +511,12 @@ func (c *Core) ssoNewUser(ctx context.Context, p ssoProvider, subject, email, na
 	if err != nil {
 		return store.User{}, err
 	}
-	c.audit(ctx, userActor(u), "user.create", nil, nil, u.Email, fmt.Sprintf("created user %s on their first sign-in through %s's single sign-on (%s)", u.Email, p.org.Slug, p.Name))
-	c.auditSSOJoin(ctx, p, u, role, inv)
+	c.audit(ctx, userActor(u), "user.create", nil, nil, u.Email, fmt.Sprintf("created user %s on their first sign-in with %s (%s)", u.Email, p.Label, p.Name))
+	for _, r := range joined {
+		in := userActor(u).member(r.Org, r.OrgInvite.Role, apitypes.ScopeAdmin)
+		c.audit(ctx, in, "org.join", nil, nil, u.Email, fmt.Sprintf("%s joined as %s, accepting their invite on their first sign-in with %s", u.Email, r.OrgInvite.Role, p.Label))
+	}
 	return u, nil
-}
-
-// ssoJoinRole is how someone who isn't a member joins p's org on signing
-// in: their open invite (inv, with its role), or the provider's
-// just-in-time role (inv nil). Without either they are refused.
-func (c *Core) ssoJoinRole(ctx context.Context, p ssoProvider, email string) (*store.OrgInvite, string, error) {
-	inv, err := c.store.GetOpenOrgInviteByEmail(ctx, store.GetOpenOrgInviteByEmailParams{OrgID: p.OrgID, Email: email})
-	open := err == nil && now().Before(inv.ExpiresAt)
-	switch {
-	case open:
-		return &inv, inv.Role, nil
-	case err != nil && !store.IsNotFound(err):
-		return nil, "", err
-	case p.JitRole != "":
-		return nil, p.JitRole, nil
-	case err == nil:
-		return nil, "", errf(apitypes.CodeForbidden, "your invite to %s expired; ask an admin of %s for a new one", p.org.Name, p.org.Name)
-	}
-	return nil, "", errf(apitypes.CodeForbidden, "you aren't a member of %s; ask an admin of %s for an invite", p.org.Name, p.org.Name)
-}
-
-// auditSSOJoin records u joining p's org on signing in.
-func (c *Core) auditSSOJoin(ctx context.Context, p ssoProvider, u store.User, role string, inv *store.OrgInvite) {
-	how := "just in time"
-	if inv != nil {
-		how = "accepting their invite"
-	}
-	in := userActor(u).member(p.org, role, apitypes.ScopeAdmin)
-	c.audit(ctx, in, "org.join", nil, nil, u.Email, fmt.Sprintf("%s joined as %s through single sign-on (%s), %s", u.Email, role, p.Name, how))
 }
 
 // landingPath checks where to send the browser after signing in: a path
@@ -480,16 +530,6 @@ func landingPath(to string) (string, error) {
 		return "", invalid("to must be a path on Dock, like /acme/shop")
 	}
 	return to, nil
-}
-
-// emailDomain is an email address's domain in lowercase; "" when it has
-// none.
-func emailDomain(email string) string {
-	i := strings.LastIndexByte(email, '@')
-	if i <= 0 || i == len(email)-1 {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(email[i+1:]))
 }
 
 // emailVerified reads the email_verified claim: a boolean, or the string

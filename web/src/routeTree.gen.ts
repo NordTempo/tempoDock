@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AccessRouteImport } from './routes/access'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
+import { Route as InviteOnlyRouteImport } from './routes/invite-only'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as NoOrgRouteImport } from './routes/no-org'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
@@ -38,6 +39,7 @@ import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.gith
 import { Route as AppConsoleOrgsRouteImport } from './routes/_app.console.orgs'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
+import { Route as AppConsoleSignInRouteImport } from './routes/_app.console.sign-in'
 import { Route as AppConsoleStorageRouteImport } from './routes/_app.console.storage'
 import { Route as AppConsoleUpdatesRouteImport } from './routes/_app.console.updates'
 import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
@@ -53,7 +55,6 @@ import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.se
 import { Route as AppOrgSettingsGithubRouteImport } from './routes/_app.$org.settings.github'
 import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.settings.members'
 import { Route as AppOrgSettingsRegistriesRouteImport } from './routes/_app.$org.settings.registries'
-import { Route as AppOrgSettingsSsoRouteImport } from './routes/_app.$org.settings.sso'
 import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
 import { Route as AppOrgSettingsVariablesRouteImport } from './routes/_app.$org.settings.variables'
 import { Route as AppConsoleServersServerRouteImport } from './routes/_app.console.servers_.$server'
@@ -103,6 +104,11 @@ const AccessRoute = AccessRouteImport.update({
 const CliLoginRoute = CliLoginRouteImport.update({
   id: '/cli-login',
   path: '/cli-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteOnlyRoute = InviteOnlyRouteImport.update({
+  id: '/invite-only',
+  path: '/invite-only',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -235,6 +241,11 @@ const AppConsoleServersRoute = AppConsoleServersRouteImport.update({
   path: '/servers',
   getParentRoute: () => AppConsoleRoute,
 } as any)
+const AppConsoleSignInRoute = AppConsoleSignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
 const AppConsoleStorageRoute = AppConsoleStorageRouteImport.update({
   id: '/storage',
   path: '/storage',
@@ -313,11 +324,6 @@ const AppOrgSettingsRegistriesRoute =
     path: '/registries',
     getParentRoute: () => AppOrgSettingsRoute,
   } as any)
-const AppOrgSettingsSsoRoute = AppOrgSettingsSsoRouteImport.update({
-  id: '/sso',
-  path: '/sso',
-  getParentRoute: () => AppOrgSettingsRoute,
-} as any)
 const AppOrgSettingsTokensRoute = AppOrgSettingsTokensRouteImport.update({
   id: '/tokens',
   path: '/tokens',
@@ -536,6 +542,7 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/access': typeof AccessRoute
   '/cli-login': typeof CliLoginRoute
+  '/invite-only': typeof InviteOnlyRoute
   '/login': typeof LoginRoute
   '/no-org': typeof NoOrgRoute
   '/$org': typeof AppOrgRouteWithChildren
@@ -559,6 +566,7 @@ export interface FileRoutesByFullPath {
   '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
+  '/console/sign-in': typeof AppConsoleSignInRoute
   '/console/storage': typeof AppConsoleStorageRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
@@ -573,7 +581,6 @@ export interface FileRoutesByFullPath {
   '/$org/settings/github': typeof AppOrgSettingsGithubRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
-  '/$org/settings/sso': typeof AppOrgSettingsSsoRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
@@ -617,6 +624,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/access': typeof AccessRoute
   '/cli-login': typeof CliLoginRoute
+  '/invite-only': typeof InviteOnlyRoute
   '/login': typeof LoginRoute
   '/no-org': typeof NoOrgRoute
   '/account': typeof AppAccountRoute
@@ -638,6 +646,7 @@ export interface FileRoutesByTo {
   '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
   '/console/servers': typeof AppConsoleServersRoute
+  '/console/sign-in': typeof AppConsoleSignInRoute
   '/console/storage': typeof AppConsoleStorageRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
@@ -651,7 +660,6 @@ export interface FileRoutesByTo {
   '/$org/settings/github': typeof AppOrgSettingsGithubRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
-  '/$org/settings/sso': typeof AppOrgSettingsSsoRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
@@ -695,6 +703,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/access': typeof AccessRoute
   '/cli-login': typeof CliLoginRoute
+  '/invite-only': typeof InviteOnlyRoute
   '/login': typeof LoginRoute
   '/no-org': typeof NoOrgRoute
   '/_app/$org': typeof AppOrgRouteWithChildren
@@ -719,6 +728,7 @@ export interface FileRoutesById {
   '/_app/console/orgs': typeof AppConsoleOrgsRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
   '/_app/console/servers': typeof AppConsoleServersRoute
+  '/_app/console/sign-in': typeof AppConsoleSignInRoute
   '/_app/console/storage': typeof AppConsoleStorageRoute
   '/_app/console/updates': typeof AppConsoleUpdatesRoute
   '/_app/console/users': typeof AppConsoleUsersRoute
@@ -733,7 +743,6 @@ export interface FileRoutesById {
   '/_app/$org/settings/github': typeof AppOrgSettingsGithubRoute
   '/_app/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/_app/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
-  '/_app/$org/settings/sso': typeof AppOrgSettingsSsoRoute
   '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/_app/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
@@ -780,6 +789,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access'
     | '/cli-login'
+    | '/invite-only'
     | '/login'
     | '/no-org'
     | '/$org'
@@ -803,6 +813,7 @@ export interface FileRouteTypes {
     | '/console/orgs'
     | '/console/registry'
     | '/console/servers'
+    | '/console/sign-in'
     | '/console/storage'
     | '/console/updates'
     | '/console/users'
@@ -817,7 +828,6 @@ export interface FileRouteTypes {
     | '/$org/settings/github'
     | '/$org/settings/members'
     | '/$org/settings/registries'
-    | '/$org/settings/sso'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/console/servers/$server'
@@ -861,6 +871,7 @@ export interface FileRouteTypes {
   to:
     | '/access'
     | '/cli-login'
+    | '/invite-only'
     | '/login'
     | '/no-org'
     | '/account'
@@ -882,6 +893,7 @@ export interface FileRouteTypes {
     | '/console/orgs'
     | '/console/registry'
     | '/console/servers'
+    | '/console/sign-in'
     | '/console/storage'
     | '/console/updates'
     | '/console/users'
@@ -895,7 +907,6 @@ export interface FileRouteTypes {
     | '/$org/settings/github'
     | '/$org/settings/members'
     | '/$org/settings/registries'
-    | '/$org/settings/sso'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/console/servers/$server'
@@ -938,6 +949,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/access'
     | '/cli-login'
+    | '/invite-only'
     | '/login'
     | '/no-org'
     | '/_app/$org'
@@ -962,6 +974,7 @@ export interface FileRouteTypes {
     | '/_app/console/orgs'
     | '/_app/console/registry'
     | '/_app/console/servers'
+    | '/_app/console/sign-in'
     | '/_app/console/storage'
     | '/_app/console/updates'
     | '/_app/console/users'
@@ -976,7 +989,6 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/github'
     | '/_app/$org/settings/members'
     | '/_app/$org/settings/registries'
-    | '/_app/$org/settings/sso'
     | '/_app/$org/settings/tokens'
     | '/_app/$org/settings/variables'
     | '/_app/console/servers_/$server'
@@ -1022,6 +1034,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AccessRoute: typeof AccessRoute
   CliLoginRoute: typeof CliLoginRoute
+  InviteOnlyRoute: typeof InviteOnlyRoute
   LoginRoute: typeof LoginRoute
   NoOrgRoute: typeof NoOrgRoute
   InviteCodeRoute: typeof InviteCodeRoute
@@ -1048,6 +1061,13 @@ declare module '@tanstack/react-router' {
       path: '/cli-login'
       fullPath: '/cli-login'
       preLoaderRoute: typeof CliLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite-only': {
+      id: '/invite-only'
+      path: '/invite-only'
+      fullPath: '/invite-only'
+      preLoaderRoute: typeof InviteOnlyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1232,6 +1252,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConsoleServersRouteImport
       parentRoute: typeof AppConsoleRoute
     }
+    '/_app/console/sign-in': {
+      id: '/_app/console/sign-in'
+      path: '/sign-in'
+      fullPath: '/console/sign-in'
+      preLoaderRoute: typeof AppConsoleSignInRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
     '/_app/console/storage': {
       id: '/_app/console/storage'
       path: '/storage'
@@ -1335,13 +1362,6 @@ declare module '@tanstack/react-router' {
       path: '/registries'
       fullPath: '/$org/settings/registries'
       preLoaderRoute: typeof AppOrgSettingsRegistriesRouteImport
-      parentRoute: typeof AppOrgSettingsRoute
-    }
-    '/_app/$org/settings/sso': {
-      id: '/_app/$org/settings/sso'
-      path: '/sso'
-      fullPath: '/$org/settings/sso'
-      preLoaderRoute: typeof AppOrgSettingsSsoRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
     '/_app/$org/settings/tokens': {
@@ -1607,7 +1627,6 @@ interface AppOrgSettingsRouteChildren {
   AppOrgSettingsGithubRoute: typeof AppOrgSettingsGithubRoute
   AppOrgSettingsMembersRoute: typeof AppOrgSettingsMembersRoute
   AppOrgSettingsRegistriesRoute: typeof AppOrgSettingsRegistriesRoute
-  AppOrgSettingsSsoRoute: typeof AppOrgSettingsSsoRoute
   AppOrgSettingsTokensRoute: typeof AppOrgSettingsTokensRoute
   AppOrgSettingsVariablesRoute: typeof AppOrgSettingsVariablesRoute
   AppOrgSettingsIndexRoute: typeof AppOrgSettingsIndexRoute
@@ -1621,7 +1640,6 @@ const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
   AppOrgSettingsGithubRoute: AppOrgSettingsGithubRoute,
   AppOrgSettingsMembersRoute: AppOrgSettingsMembersRoute,
   AppOrgSettingsRegistriesRoute: AppOrgSettingsRegistriesRoute,
-  AppOrgSettingsSsoRoute: AppOrgSettingsSsoRoute,
   AppOrgSettingsTokensRoute: AppOrgSettingsTokensRoute,
   AppOrgSettingsVariablesRoute: AppOrgSettingsVariablesRoute,
   AppOrgSettingsIndexRoute: AppOrgSettingsIndexRoute,
@@ -1802,6 +1820,7 @@ interface AppConsoleRouteChildren {
   AppConsoleOrgsRoute: typeof AppConsoleOrgsRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
   AppConsoleServersRoute: typeof AppConsoleServersRoute
+  AppConsoleSignInRoute: typeof AppConsoleSignInRoute
   AppConsoleStorageRoute: typeof AppConsoleStorageRoute
   AppConsoleUpdatesRoute: typeof AppConsoleUpdatesRoute
   AppConsoleUsersRoute: typeof AppConsoleUsersRoute
@@ -1821,6 +1840,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleOrgsRoute: AppConsoleOrgsRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,
   AppConsoleServersRoute: AppConsoleServersRoute,
+  AppConsoleSignInRoute: AppConsoleSignInRoute,
   AppConsoleStorageRoute: AppConsoleStorageRoute,
   AppConsoleUpdatesRoute: AppConsoleUpdatesRoute,
   AppConsoleUsersRoute: AppConsoleUsersRoute,
@@ -1852,6 +1872,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AccessRoute: AccessRoute,
   CliLoginRoute: CliLoginRoute,
+  InviteOnlyRoute: InviteOnlyRoute,
   LoginRoute: LoginRoute,
   NoOrgRoute: NoOrgRoute,
   InviteCodeRoute: InviteCodeRoute,
