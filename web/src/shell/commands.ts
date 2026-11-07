@@ -7,7 +7,7 @@ import {
   queries,
   serviceRef,
   useIsOperator,
-  useProjectTree,
+  useProjectTreeIf,
   useServers,
   useSession,
 } from "../data/queries";
@@ -25,6 +25,7 @@ import { serviceState, type Tone } from "../ui/status";
 import { openConfirm } from "./confirmHost";
 import { openKeyHelp } from "./KeyHelp";
 import { useCurrentContext, useOrg } from "./location";
+import { useShellMode } from "./Sidebar";
 
 export type Command = {
   id: string;
@@ -53,7 +54,8 @@ export function useCommands({
 }: {
   withHistory: boolean;
 }): Command[] {
-  const projects = useProjectTree();
+  // The console has no organization, so no projects (ADR 0062).
+  const projects = useProjectTreeIf(useShellMode() !== "console");
   const here = useCurrentContext();
   const org = useOrg();
   const navigate = useNavigate();

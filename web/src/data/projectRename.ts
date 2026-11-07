@@ -1,6 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { RegisteredRouter } from "@tanstack/react-router";
-import { ApiError, api, body, currentOrg } from "../api/client";
+import { ApiError, api, body, currentOrg, isInConsole } from "../api/client";
 import type { components } from "../api/schema";
 import { lastProject, rememberProject } from "../shell/location";
 import { renameFeedProject } from "./feed";
@@ -142,6 +142,8 @@ export async function reconcileProjectNames(
   router: RenameRouter,
   org: string,
 ) {
+  // The console has no organization, so no projects to reconcile.
+  if (isInConsole()) return;
   if (currentOrg() !== org) return;
   const previous = client.getQueryData<Project[]>(keys.projects) ?? [];
   const current = await client.fetchQuery({

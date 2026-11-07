@@ -1,11 +1,20 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { setInConsole } from "../api/client";
 import { queries } from "../data/queries";
 import { Shell } from "../shell/Shell";
 import { ShellPending } from "../ui/RouteStates";
 
 // Pathless layout for everything behind login: sidebar, palette, live updates.
 export const Route = createFileRoute("/_app")({
-  beforeLoad: async ({ context, location }) => {
+  beforeLoad: async ({ context, location, preload }) => {
+    // The console's calls go without the current organization; leaving
+    // it, they carry it again (api/client.ts). Only a real navigation
+    // decides: a hovered link's preload must not flip it.
+    if (!preload)
+      setInConsole(
+        location.pathname === "/console" ||
+          location.pathname.startsWith("/console/"),
+      );
     const session = await context.queryClient.ensureQueryData(
       queries.session(),
     );
@@ -28,9 +37,11 @@ export const Route = createFileRoute("/_app")({
   // organizations. Every project's services (the sidebar tree, the
   // palette) load in the background: a slow or failing project fills in
   // or fails on its own page, without holding up the shell.
-  loader: async ({ context: { queryClient } }) => {
+  loader: async ({ context: { queryClient }, location }) => {
     const session = await queryClient.ensureQueryData(queries.session());
     if (session?.kind === "user" && !session.org) return;
+    // The console has no organization: its pages load their own data.
+    if (location.pathname.startsWith("/console")) return;
     const [projects] = await Promise.all([
       queryClient.ensureQueryData(queries.projects()),
       queryClient.ensureQueryData(queries.servers()),
