@@ -415,13 +415,16 @@ scenario_move() {
 		old=$(env_server $p)
 		out=$(dk env move "$ENV_NAME" -p $p --to "$to" --yes 2>&1)
 		if [[ $(move_status $p) == succeeded ]]; then pass "moved $old -> $to"; else fail "move $old -> $to: $(move_status $p): $out"; continue; fi
-		check "the move printed its downtime" out_has 'down|downtime' echo "$out"
+		check "the move printed how long requests were held" out_has 'requests held|downtime' echo "$out"
 		check "the environment runs on $to" test "$(env_server $p)" = "$to"
+		# The old server forwards the generated domain (ADR 0063); the move
+		# names the one that serves it on the new server.
+		check "$h still serves through $old" wait_for 30 body_has "$h" / "web v1"
+		local next
+		next=$(sed -n "s/.*generated domain $h works while server $old forwards it; \([^ ]*\) serves it on $to too.*/\1/p" <<<"$out")
+		if [[ -n $next ]]; then pass "the move named $next on $to"; else fail "the move named no domain on $to for $h: $out"; fi
 		use_proxy_of $p
-		# A generated domain takes the new server's base domain; the move
-		# says so.
-		h=$(generate_domain $p web)
-		check "the move named the domain's new name $h" out_has "is now $h" echo "$out"
+		h=${next:-$h}
 		check "$h serves v1 from $to" wait_for 60 body_has "$h" / "web v1"
 		check "db kept its five rows on $to" wait_for 60 out_has '^5$' psql_in $p db "select count(*) from t"
 		check "web reaches db on $to" out_has '^5$' dk run web $(pe $p) -- 'psql "$DATABASE_URL" -tAc "select count(*) from t"'
