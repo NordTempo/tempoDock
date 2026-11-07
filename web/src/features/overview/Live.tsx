@@ -7,6 +7,7 @@ import { useOrg } from "../../shell/location";
 import { clockSec } from "../../ui/format";
 import { Actor, Glyph, SectionHead } from "../../ui/kit";
 import { pastLabel } from "../audit/AuditTable";
+import { AuditLogLink } from "../audit/LogLink";
 
 type Entry = { id: string; time: string; body: ReactNode };
 
@@ -25,7 +26,8 @@ function auditEntry(e: AuditEvent, project: string): Entry {
         <span className={/fail/.test(e.action) ? "text-fail" : undefined}>
           {pastLabel(e.action)}
         </span>{" "}
-        <span className="font-mono">{local(e.target, project)}</span>
+        <span className="font-mono">{local(e.target, project)}</span>{" "}
+        <AuditLogLink event={e} />
       </>
     ),
   };

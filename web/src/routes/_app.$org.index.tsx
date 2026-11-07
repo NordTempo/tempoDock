@@ -157,9 +157,14 @@ function health(o: ProjectOverview | undefined) {
   const environments = (o.environments ?? []).map((e) => e.environment);
   const services = (o.environments ?? []).flatMap((e) => e.services ?? []);
   const failing = services.filter(isFailing).length;
-  const failedDeploys = services.filter(
-    (s) => !s.deploying && s.latest_release?.status === "failed",
-  ).length;
+  // A failed deploy counts while it is the news: the latest release, or
+  // the one a rollback answered (the overview's rule).
+  const failedDeploys = services.filter((s) => {
+    if (s.deploying) return false;
+    if (s.latest_release?.status === "failed") return true;
+    const f = s.last_failed_deploy;
+    return !!f && (s.service.active_release ?? 0) <= f.number + 1;
+  }).length;
   const deploying = services.filter((s) => s.deploying).length;
   const running = services.filter(
     (s) => s.service.status.state === "running",

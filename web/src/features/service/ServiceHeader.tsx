@@ -770,6 +770,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       {asking}
       {stopped ? (
         <Act
+          // Stopped, starting it is the next step: it is the primary.
+          primary={!waiting}
           cli={`dock service start ${ref.service} -e ${ref.environment}`}
           disabled={!canStart}
           title={busy ?? "Start a copy of the active release"}
@@ -812,7 +814,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </Act>
       )}
       <Act
-        primary={!waiting}
+        primary={!waiting && !stopped}
         cli={`dock deploy [dir | --image ${service.image || "<image>"}] ${flags}`}
         disabled={!canDeploy}
         title={

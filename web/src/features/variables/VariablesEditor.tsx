@@ -29,17 +29,18 @@ import { hasReference, maskUrlPasswords, resolve } from "./references";
 const MASK = "••••••••••••";
 
 /**
- * A staged line's new value when this session typed it (data/typed.ts),
- * so it can be checked before Apply; the rest stays masked.
+ * A value this session typed (data/typed.ts): the new value of a staged
+ * line, so it can be checked before Apply, and the live value once
+ * applied, so it can be checked after. The rest stays masked.
  */
 function typedOnly(env: EnvRef, v: Variable) {
-  if (v.pending !== "add" && v.pending !== "update") return undefined;
   const value = typedValue(
     env,
     v.scope === "service" ? v.service : null,
     v.key,
   );
-  return value === undefined ? undefined : { new: value };
+  if (value === undefined || v.pending === "remove") return undefined;
+  return v.pending ? { new: value } : { live: value };
 }
 
 /** The CLI's flags for a service's variables, or the shared ones. */

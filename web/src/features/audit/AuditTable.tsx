@@ -3,6 +3,7 @@ import type { AuditEvent } from "../../data/types";
 import { clockSec, day } from "../../ui/format";
 import { Actor, Panel, Scroll } from "../../ui/kit";
 import { AuditDetail } from "./AuditDetail";
+import { AuditLogLink } from "./LogLink";
 
 /**
  * Each audit action in plain words: the label for the log's Action column
@@ -379,7 +380,7 @@ export function AuditTable({
                   </td>
                   <td className="font-mono">{e.target}</td>
                   <td className="whitespace-normal wrap-anywhere text-mut">
-                    {e.summary}
+                    {e.summary} <AuditLogLink event={e} />
                   </td>
                 </tr>
                 {opened && (

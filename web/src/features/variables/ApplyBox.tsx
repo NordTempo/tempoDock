@@ -21,7 +21,6 @@ import { modKey, useKeydown } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { plural } from "../../ui/format";
 import { Act, ErrorText, Glyph } from "../../ui/kit";
-import { notify } from "../../ui/notice";
 import { failurePhrase, stepPhrase } from "../../ui/status";
 import { imageLabel, shortImage } from "../service/releases";
 import {
@@ -97,20 +96,9 @@ export function ApplyBox({
         ]
       : [],
   );
-  const applyNow = () =>
-    apply.mutate(env, {
-      onSuccess: (r) => {
-        const started = (r.releases ?? []).map(
-          (x) => `${x.service} r${x.number}`,
-        );
-        notify(
-          started.length > 0
-            ? `Applied: started ${started.join(", ")}`
-            : "Applied",
-          started.length > 0 ? "info" : undefined,
-        );
-      },
-    });
+  // The result shows in place (Applied, and each release as it goes), so
+  // no toast repeats it over the page.
+  const applyNow = () => apply.mutate(env);
   // Releases can't start on an unreachable server.
   const blocked = useDeployBlock(env);
   const applyBlocked = releases.length > 0 ? blocked : undefined;
