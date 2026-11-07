@@ -135,3 +135,15 @@ UPDATE environments SET archived_at = ?, name = ? WHERE id = +? AND archived_at 
 -- The pull request behind each of a project's preview environments, open
 -- or closed, for annotating environments.
 SELECT environment_id, repo, number, title, author, html_url, closed_at FROM previews WHERE project_id = +?;
+
+-- name: ListArchivedPreviewVolumes :many
+-- The volumes archived previews still have: their removal was cut short
+-- by a restart, or their server couldn't be reached. Each row goes once
+-- its Docker volume is gone (DeleteRemovedVolume), so this is empty in
+-- the steady state. Read once at start: it scans volumes (one row per
+-- volume), like ListClosedPreviewsLeft scans previews.
+SELECT sqlc.embed(volumes), services.environment_id FROM previews
+JOIN environments ON environments.id = previews.environment_id
+JOIN services ON services.environment_id = environments.id
+JOIN volumes ON volumes.service_id = services.id
+WHERE environments.archived_at IS NOT NULL;

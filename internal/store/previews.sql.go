@@ -416,6 +416,56 @@ func (q *Queries) ListAppPreviewConnections(ctx context.Context, arg ListAppPrev
 	return items, nil
 }
 
+const listArchivedPreviewVolumes = `-- name: ListArchivedPreviewVolumes :many
+SELECT volumes.id, volumes.service_id, volumes.name, volumes.docker_name, volumes.mount_path, volumes.pending, volumes.created_at, services.environment_id FROM previews
+JOIN environments ON environments.id = previews.environment_id
+JOIN services ON services.environment_id = environments.id
+JOIN volumes ON volumes.service_id = services.id
+WHERE environments.archived_at IS NOT NULL
+`
+
+type ListArchivedPreviewVolumesRow struct {
+	Volume        Volume
+	EnvironmentID int64
+}
+
+// The volumes archived previews still have: their removal was cut short
+// by a restart, or their server couldn't be reached. Each row goes once
+// its Docker volume is gone (DeleteRemovedVolume), so this is empty in
+// the steady state. Read once at start: it scans volumes (one row per
+// volume), like ListClosedPreviewsLeft scans previews.
+func (q *Queries) ListArchivedPreviewVolumes(ctx context.Context) ([]ListArchivedPreviewVolumesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listArchivedPreviewVolumes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListArchivedPreviewVolumesRow
+	for rows.Next() {
+		var i ListArchivedPreviewVolumesRow
+		if err := rows.Scan(
+			&i.Volume.ID,
+			&i.Volume.ServiceID,
+			&i.Volume.Name,
+			&i.Volume.DockerName,
+			&i.Volume.MountPath,
+			&i.Volume.Pending,
+			&i.Volume.CreatedAt,
+			&i.EnvironmentID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listClosedPreviewsLeft = `-- name: ListClosedPreviewsLeft :many
 SELECT previews.id, previews.project_id, previews.environment_id, previews.base_environment_id, previews.repo, previews.number, previews.title, previews.author, previews.html_url, previews.head_branch, previews.head_sha, previews.fork, previews.pr_updated_at, previews.comment_id, previews.last_event, previews.created_at, previews.updated_at, previews.closed_at FROM previews
 JOIN environments ON environments.id = previews.environment_id
