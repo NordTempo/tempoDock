@@ -21,6 +21,19 @@ let org = localStorage.getItem(orgKey) ?? undefined;
 /** The organization the UI acts in. */
 export const currentOrg = () => org;
 
+// In the platform console nothing depends on the current organization
+// (ADR 0062): its calls go without one. The session's own call (/me)
+// keeps it, so the shell still knows where to go back to.
+let inConsole = false;
+
+/** Whether the UI is in the platform console; set on every navigation. */
+export function setInConsole(on: boolean) {
+  inConsole = on;
+}
+
+/** Whether the UI is in the platform console, which has no organization. */
+export const isInConsole = () => inConsole;
+
 /** Acts in the organization named by slug from now on (unset: none). */
 export function setOrg(slug: string | undefined) {
   org = slug;
@@ -43,7 +56,8 @@ export function withOrg(url: string) {
 // rebuilding the request, and a rebuilt request loses its body.
 api.use({
   onRequest({ request }) {
-    if (org) request.headers.set("Dock-Org", org);
+    if (org && (!inConsole || new URL(request.url).pathname === "/api/v1/me"))
+      request.headers.set("Dock-Org", org);
     return undefined;
   },
 });

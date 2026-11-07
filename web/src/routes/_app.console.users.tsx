@@ -22,7 +22,6 @@ import {
 import { Saved, useValidation } from "../features/create/form";
 import { PersonCell, TwoFactorState } from "../features/org/people";
 import { consoleOrgsQuery, useConsoleOrgs } from "../features/orgs/data";
-import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
 import { day } from "../ui/format";
 import { Icon } from "../ui/icons";
@@ -62,7 +61,6 @@ type Reset = { email: string; password: string };
 function Users() {
   const users = useAccounts();
   const me = useSession();
-  const org = useOrg();
   const [reset, setReset] = useState<Reset>();
   const [adding, setAdding] = useState(false);
 
@@ -146,15 +144,8 @@ function Users() {
               >
                 your account
               </Link>
-              . Tokens for agents, CI and scripts are in{" "}
-              <Link
-                to="/$org/settings/tokens"
-                params={{ org }}
-                className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
-              >
-                the organization's settings
-              </Link>
-              .
+              . Tokens for agents, CI and scripts belong to each organization,
+              in its settings.
             </p>
             <OperatorsTwoFactor />
           </div>

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { queries, useAuditLog, useProjects } from "../../data/queries";
+import { queries, useAuditLog } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
 import { Act, Button, Page, PageBar } from "../../ui/kit";
 import { AuditTable } from "./AuditTable";
@@ -85,7 +85,10 @@ export function AuditPage({
   search: AuditSearch;
   onSearch: (search: AuditSearch) => void;
 }) {
-  const projects = useProjects().map((p) => p.name);
+  // The platform's log (the console) has no organization, so no projects.
+  const projects = (
+    useQuery({ ...queries.projects(), enabled: !search.platform }).data ?? []
+  ).map((p) => p.name);
   // An archived project's link lands here too; keep it selectable.
   if (search.project && !projects.includes(search.project)) {
     projects.push(search.project);

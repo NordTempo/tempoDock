@@ -844,10 +844,8 @@ function ConsoleNav() {
   const servers = useServers();
   return (
     <>
-      <div className="px-2.5 pt-1 pb-2">
-        <span className="font-semibold">dock</span>{" "}
-        <span className="text-faint">· platform</span>
-      </div>
+      {/* In place of the organization: the console has none (ADR 0062). */}
+      <div className="px-2.5 pt-1 pb-2 font-semibold">Platform</div>
       <NavLink to="/console" exact icon="grid">
         Overview
       </NavLink>

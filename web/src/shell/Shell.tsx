@@ -101,8 +101,11 @@ function ConsoleBar() {
       <span className="text-warn-text">
         Changes here affect every project on this Dock.
       </span>
+      {/* No preload: it would read the org's projects from inside the
+          console, which sends no organization (api/client.ts). */}
       <Link
         to="/"
+        preload={false}
         className="ml-auto inline-flex min-h-[24px] items-center text-warn-text underline"
       >
         Back to projects

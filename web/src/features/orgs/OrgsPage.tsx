@@ -438,7 +438,8 @@ function Join({ org, onClose }: DialogProps) {
           <p className="text-[13px] text-sec">
             You are an admin of {org.slug} until{" "}
             {new Date(join.data.expires_at).toLocaleString()}.{" "}
-            <Link to="/$org" params={{ org: org.slug }}>
+            {/* No preload: from the console it would read without the org. */}
+            <Link to="/$org" params={{ org: org.slug }} preload={false}>
               Open {org.slug}
             </Link>
           </p>

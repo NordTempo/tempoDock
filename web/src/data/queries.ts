@@ -516,6 +516,19 @@ export function useProjectTree() {
   });
 }
 
+/**
+ * useProjectTree while `enabled`, else none, without suspending: the
+ * command palette in the platform console, which has no organization
+ * (ADR 0062).
+ */
+export function useProjectTreeIf(enabled: boolean) {
+  const projects = useQuery({ ...queries.projects(), enabled }).data ?? [];
+  return useQueries({
+    queries: enabled ? projects.map((p) => queries.overview(p.name)) : [],
+    combine: (results) => results.flatMap((r) => (r.data ? [r.data] : [])),
+  });
+}
+
 /** One service with its live state, from its project's overview. */
 export function useService(ref: ServiceRef) {
   const service = useSuspenseQuery({

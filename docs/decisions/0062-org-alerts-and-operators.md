@@ -194,6 +194,16 @@ Its first screen (mock O): open platform alerts, the servers and their
 use, the state of each connection from the last time Dock used it, and
 the top orgs by usage.
 
+### The console has no current org
+
+Nothing in the console depends on the org the operator was in. Its API
+calls go without `Dock-Org` (the session's `/me` keeps it, to know where
+to go back), its pages load no org's projects, and its sidebar is headed
+"Platform" with no org switcher. An org's information shows only when
+the operator picks it on the Organizations page. "Back to projects"
+returns to the org they came from. Links that leave the console don't
+preload, since a preload from inside it would read without the org.
+
 ### One place for errors
 
 Errors are for org members (the plan of 2026-11-05): issues grouped by
