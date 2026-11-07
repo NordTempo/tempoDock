@@ -157,6 +157,7 @@ func (c *Core) trafficTick(ctx context.Context, col *collector, now time.Time, a
 		c.log.Warn("traffic: store", "err", err)
 		return
 	}
+	c.trafficErrors(tr.services, at)
 	c.publishTraffic(tr, points, at, now)
 }
 

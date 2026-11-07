@@ -6,9 +6,9 @@ import { alertQueries } from "../features/alerts/data";
 export const Route = createFileRoute("/_app/console/alerts")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
-      queryClient.ensureQueryData(alertQueries.open()),
-      queryClient.ensureQueryData(alertQueries.all()),
-      queryClient.ensureQueryData(alertQueries.channels()),
+      queryClient.ensureQueryData(alertQueries.open("platform")),
+      queryClient.ensureQueryData(alertQueries.all("platform")),
+      queryClient.ensureQueryData(alertQueries.channels("platform")),
     ]),
-  component: AlertsPage,
+  component: () => <AlertsPage scope="platform" />,
 });

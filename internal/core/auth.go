@@ -113,6 +113,7 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 		return Actor{}, errf(apitypes.CodeForbidden, "token %q belongs to organization %s; it can't act in %s", t.Name, *row.OrgSlug, org)
 	}
 	a.OrgID, a.OrgSlug, a.orgs = *t.OrgID, *row.OrgSlug, 1
+	a.suspended = row.OrgSuspendedAt != nil
 	if t.ProjectID != nil {
 		p, err := c.store.GetProject(ctx, *t.ProjectID)
 		if err != nil {
@@ -225,6 +226,7 @@ func (a Actor) gatedMember(org store.Org, role string, most apitypes.Scope) Acto
 // member is the actor acting in org with role, capped at most.
 func (a Actor) member(org store.Org, role string, most apitypes.Scope) Actor {
 	a.OrgID, a.OrgSlug, a.orgs = org.ID, org.Slug, 1
+	a.suspended = org.SuspendedAt != nil
 	a.Scope = apitypes.Scope(role)
 	if rank(most) < rank(a.Scope) {
 		a.Scope = most
@@ -673,6 +675,9 @@ func (c *Core) ListUsers(ctx context.Context, a Actor) ([]apitypes.User, error) 
 	for _, r := range rows {
 		u := toUser(r.User, r.Role)
 		u.Sessions, u.Tokens, u.TwoFactor = int(r.Sessions), int(r.Tokens), r.TwoFactor
+		if r.ExpiresAt != nil {
+			u.ExpiresAt = ptr(time.Unix(*r.ExpiresAt, 0).UTC())
+		}
 		out = append(out, u)
 	}
 	return out, nil

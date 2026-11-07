@@ -14,24 +14,27 @@ INSERT INTO org_members (org_id, user_id, role) VALUES (?, ?, ?);
 -- name: GetMembership :one
 SELECT sqlc.embed(orgs), org_members.role
 FROM org_members JOIN orgs ON orgs.id = org_members.org_id
-WHERE org_members.user_id = +sqlc.arg(user_id) AND orgs.slug = +sqlc.arg(slug);
+WHERE org_members.user_id = +sqlc.arg(user_id) AND orgs.slug = +sqlc.arg(slug)
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch());
 
 -- ListUserOrgs is every org a user belongs to, with their role in it,
--- oldest first.
+-- oldest first. An operator's membership that expired is no longer one.
 -- name: ListUserOrgs :many
 SELECT sqlc.embed(orgs), org_members.role
 FROM org_members JOIN orgs ON orgs.id = org_members.org_id
-WHERE org_members.user_id = +?
+WHERE org_members.user_id = +? AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 ORDER BY org_members.org_id;
 
 -- name: GetMemberRole :one
-SELECT role FROM org_members WHERE org_id = +? AND user_id = +?;
+SELECT role FROM org_members WHERE org_id = +? AND user_id = +?
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch());
 
 -- GetMemberRoleByEmail is the role in an org of the user with an email
 -- (tokens record their creator by email).
 -- name: GetMemberRoleByEmail :one
 SELECT org_members.role FROM org_members JOIN users ON users.id = org_members.user_id
-WHERE org_members.org_id = +sqlc.arg(org_id) AND users.email = +sqlc.arg(email);
+WHERE org_members.org_id = +sqlc.arg(org_id) AND users.email = +sqlc.arg(email)
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch());
 
 -- ListOrgServerIDs is the servers an org's environments run on, once per
 -- environment (DISTINCT would sort them in a temporary b-tree).
@@ -76,8 +79,11 @@ UPDATE org_members SET role = ? WHERE org_id = +? AND user_id = +?;
 -- name: RemoveOrgMember :execrows
 DELETE FROM org_members WHERE org_id = +? AND user_id = +?;
 
--- name: CountOrgAdmins :one
-SELECT count(*) FROM org_members WHERE org_id = +? AND role = 'admin';
+-- name: CountOtherOrgAdmins :one
+-- The org's own admins other than user_id. An operator who joined for a
+-- while doesn't count: the org must keep an admin of its own.
+SELECT count(*) FROM org_members
+WHERE org_id = +sqlc.arg(org_id) AND role = 'admin' AND expires_at IS NULL AND user_id != +sqlc.arg(user_id);
 
 -- name: CreateOrgInvite :one
 INSERT INTO org_invites (org_id, email, role, hash, created_by, created_at, expires_at)

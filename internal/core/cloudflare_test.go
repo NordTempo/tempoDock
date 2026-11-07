@@ -2,6 +2,7 @@ package core
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -313,8 +314,8 @@ func TestCloudflareDomainRefused(t *testing.T) {
 }
 
 // TestCloudflareTokenRevoked pauses work while Cloudflare refuses the
-// token, without retrying, and resumes it once the connection gets a
-// working one.
+// token, without retrying, with a platform alert open, and resumes it
+// (resolving the alert) once the connection gets a working one.
 func TestCloudflareTokenRevoked(t *testing.T) {
 	p, cf := cfPool(t, "tempo.run")
 	web := p.createService("staging", "web", apitypes.CreateServiceRequest{})
@@ -330,6 +331,13 @@ func TestCloudflareTokenRevoked(t *testing.T) {
 		list, _ := p.c.ListCloudflare(p.ctx, testSystem)
 		return len(list) == 1 && list[0].Status == apitypes.CloudflareInvalid
 	})
+	connAlert := func() []apitypes.Alert {
+		open, _ := p.c.ListAlerts(p.ctx, testSystem, true, false, 0, 0)
+		return slices.DeleteFunc(open, func(a apitypes.Alert) bool { return a.Kind != apitypes.AlertConnection })
+	}
+	if open := connAlert(); len(open) != 1 || open[0].Title != "Cloudflare connection home is failing" {
+		t.Fatalf("platform alerts = %+v; want the connection's", open)
+	}
 	calls := cf.CallCount("")
 	p.c.kickCloudflare()
 	time.Sleep(50 * time.Millisecond)
@@ -343,6 +351,9 @@ func TestCloudflareTokenRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return len(cf.Named("shop.tempo.run")) == 0 })
+	if open := connAlert(); len(open) != 0 {
+		t.Fatalf("platform alerts after a new token = %+v", open)
+	}
 }
 
 // TestCloudflareRateLimit stops calling Cloudflare until its Retry-After

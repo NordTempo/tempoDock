@@ -827,13 +827,26 @@ func (c *Core) runResticJob(ctx context.Context, serverID int64, rt node.Runtime
 	if err != nil {
 		return res.Output, c.nodeErr(serverID, err)
 	}
+	storage := "storage:" + repo.URL
 	if res.ExitCode == backup.UnreachableExit {
 		if text := jobOutput(res.Output); text != "" {
-			return res.Output, errors.New(strings.TrimPrefix(text, "dock: "))
+			err := errors.New(strings.TrimPrefix(text, "dock: "))
+			if !repo.Local() {
+				where := "a server"
+				if srv, gerr := c.store.GetServer(ctx, serverID); gerr == nil {
+					where = "server " + srv.Name
+				}
+				c.connectionFailed(ctx, storage, storage, "Backup storage "+repo.URL+" can't be reached",
+					fmt.Sprintf("A backup job on %s got no answer from it: %v. Backups and restores there fail until it answers; check the bucket and its keys with `dock storage`.", where, err), "dock storage")
+			}
+			return res.Output, err
 		}
 	}
 	if res.ExitCode != 0 {
 		return res.Output, fmt.Errorf("exit code %d%s", res.ExitCode, withOutput(res.Output))
+	}
+	if !repo.Local() {
+		c.connectionWorks(ctx, storage)
 	}
 	return res.Output, nil
 }

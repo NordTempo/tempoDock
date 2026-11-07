@@ -129,7 +129,7 @@ func TestResolvedAlertRetention(t *testing.T) {
 	if got := h.c.retain(h.ctx, t0.Add(91*24*time.Hour)); got.alerts != 1 {
 		t.Fatalf("pruned %d alerts, want 1", got.alerts)
 	}
-	all, _ := h.c.ListAlerts(h.ctx, testSystem, true, 0, 0)
+	all, _ := h.c.ListAlerts(h.ctx, testSystem, true, true, 0, 0)
 	if len(all) != 1 || all[0].Title != "b" {
 		t.Fatalf("alerts = %+v", all)
 	}

@@ -41,7 +41,7 @@ RETURNING *;
 -- checks them on every request.
 -- name: GetTokenByHash :one
 SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
-    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, sso_orgs.slug AS sso_org_slug
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at, sso_orgs.slug AS sso_org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = tokens.sso_org_id
 WHERE tokens.hash = +?;
@@ -50,7 +50,7 @@ WHERE tokens.hash = +?;
 -- request acts as the token that asked, checked as it is now.
 -- name: GetTokenByIDWithOwner :one
 SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
-    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, sso_orgs.slug AS sso_org_slug
+    users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at, sso_orgs.slug AS sso_org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 LEFT JOIN orgs AS sso_orgs ON sso_orgs.id = tokens.sso_org_id
 WHERE tokens.id = +?;
@@ -108,13 +108,14 @@ DELETE FROM sessions WHERE user_id = +sqlc.arg(user_id) AND id != +sqlc.arg(keep
 
 -- ListOrgMembers is an org's users with their role, live sessions and
 -- usable tokens: the tokens they created (user_id), as their account page
--- lists them.
+-- lists them. An operator who joined for a while shows until it expires.
 -- name: ListOrgMembers :many
-SELECT sqlc.embed(users), org_members.role,
+SELECT sqlc.embed(users), org_members.role, org_members.expires_at,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +sqlc.arg(now) AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +sqlc.arg(now))) AS INTEGER) AS tokens,
     EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
 FROM org_members JOIN users ON users.id = org_members.user_id
 WHERE org_members.org_id = +sqlc.arg(org_id)
+  AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 ORDER BY org_members.user_id;

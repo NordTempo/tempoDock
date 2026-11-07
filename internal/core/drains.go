@@ -262,28 +262,24 @@ func logDrainAAD(envID int64, name string) secrets.AAD {
 	return sealedLogDrain.AAD(strconv.FormatInt(envID, 10), name)
 }
 
-// startLogDrains loads every drain and follows the containers of the
-// environments that have one. Start calls it; environments on remote
-// servers are followed as each server connects (followServerDrains).
+// startLogDrains loads every drain and follows the containers on this
+// server, for errors and drains alike (drains_deliver.go). Start calls
+// it; containers on remote servers are followed as each server connects
+// (followServer).
 func (c *Core) startLogDrains(ctx context.Context) error {
 	rows, err := c.store.ListAllLogDrains(ctx)
 	if err != nil {
 		return fmt.Errorf("load log drains: %w", err)
 	}
-	envs := map[int64]bool{}
 	for _, r := range rows {
 		cfg, err := c.openLogDrain(r)
 		if err != nil {
 			c.log.Error("log drain settings", "drain", r.ID, "err", err)
 			continue
 		}
-		if c.addLogDrain(r, cfg) {
-			envs[r.EnvironmentID] = true
-		}
+		c.addLogDrain(r, cfg)
 	}
-	for id := range envs {
-		c.followEnv(ctx, id, 0)
-	}
+	c.followServer(ctx, c.localID)
 	return nil
 }
 

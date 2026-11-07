@@ -27,8 +27,13 @@ import (
 // An alert's key names its condition (disk:<server ID>, deploy:<service>);
 // at most one alert per key is open. Raising an open key updates the
 // alert in place, resolving it closes it. Open alerts live in memory and
-// in the DB; each change is written, published as an alert event to
-// operators and handed to the notifier (alerts_notify.go).
+// in the DB; each change is written, published as an alert event and
+// handed to the notifier (alerts_notify.go).
+//
+// An alert belongs to an org or to the platform (ADR 0062), decided by
+// what it names when it opens (alertOrg): one about a project or service
+// is that org's, for its members and its channels; one about a server or
+// Dock itself is the platform's, for operators and platform channels.
 
 // alertSignal raises or resolves an alert. Code that sees something
 // alert-worthy beyond the built-in conditions (a failed backup) calls
@@ -73,6 +78,10 @@ type alertEngine struct {
 	failed map[string]int64
 	// offline is when each unreachable server was first seen so.
 	offline map[int64]time.Time
+	// hot is when each server's memory or CPU was first seen above its
+	// threshold, by "memory:<id>" or "cpu:<id>"; an entry goes when the
+	// server is back under it. Bounded by servers.
+	hot map[string]time.Time
 	// started bounds how long a server counts as offline: nothing is
 	// known of the time before the daemon started.
 	started time.Time
@@ -93,7 +102,7 @@ type restartLog struct {
 
 func newAlertEngine() *alertEngine {
 	e := &alertEngine{
-		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{},
+		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{}, hot: map[string]time.Time{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
 	e.guard.what = "alerts"
@@ -101,10 +110,13 @@ func newAlertEngine() *alertEngine {
 	return e
 }
 
-// startAlerts loads the open alerts, brings deploy and domain alerts in
+// startAlerts makes the channel copies migration 0070 asked for, loads the open alerts, brings deploy and domain alerts in
 // line with the DB (they may have changed while the daemon was down) and
 // starts following the bus. Start calls it after recovery.
 func (c *Core) startAlerts(ctx context.Context) error {
+	if err := c.copyPlatformChannels(ctx); err != nil {
+		return err
+	}
 	rows, err := c.store.ListOpenAlerts(ctx)
 	if err != nil {
 		return fmt.Errorf("load alerts: %w", err)
@@ -238,7 +250,13 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 		}
 		id := strconv.FormatInt(s.ID, 10)
 		if ev.Message == "removed" {
-			c.resolveAlert(ctx, "disk:"+id, now)
+			for _, k := range []string{"disk:", "memory:", "cpu:", "update:"} {
+				c.resolveAlert(ctx, k+id, now)
+			}
+			c.alerts.mu.Lock()
+			delete(c.alerts.hot, "memory:"+id)
+			delete(c.alerts.hot, "cpu:"+id)
+			c.alerts.mu.Unlock()
 		}
 		if ev.Message == "removed" || s.Status == apitypes.ServerOnline || s.Status == apitypes.ServerRevoked {
 			c.resolveAlert(ctx, "server:"+id, now)
@@ -342,13 +360,18 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 	}, now)
 }
 
-// alertTick runs on the statistics tick: disk alerts from the samples just
-// taken (hosts, by server ID), servers offline for too long, crash loops
-// that calmed down, analytics alerts that need a clock, and reminders.
+// alertTick runs on the statistics tick: disk, memory and CPU alerts from
+// the samples just taken (hosts, by server ID), servers offline for too
+// long, crash loops that calmed down, analytics alerts that need a clock,
+// and reminders.
 func (c *Core) alertTick(ctx context.Context, now time.Time, servers []store.Server, hosts map[int64]apitypes.ServerUsage) {
 	for _, srv := range servers {
 		if u, ok := hosts[srv.ID]; ok && len(u.Disks) > 0 {
 			c.diskAlert(ctx, srv, u, now)
+		}
+		if u, ok := hosts[srv.ID]; ok {
+			c.memoryAlert(ctx, srv, u, now)
+			c.cpuAlert(ctx, srv, u, now)
 		}
 		if !srv.Local {
 			c.offlineAlert(ctx, srv, now)
@@ -400,6 +423,78 @@ func (c *Core) diskAlert(ctx context.Context, srv store.Server, u apitypes.Serve
 	c.raiseAlert(ctx, alertSignal{
 		Key: key, Kind: apitypes.AlertDisk, Severity: sev,
 		Title: fmt.Sprintf("Disk %d%% full on %s", shown, srv.Name), Message: msg, Server: srv.Name,
+	}, now)
+}
+
+// pressureHysteresis is how far below its threshold a server's memory or
+// CPU must drop before its alert resolves.
+const pressureHysteresis = 5
+
+// sustained tracks how long a reading has been above its threshold: it
+// reports whether it has been for at least d, and forgets the reading
+// once it is under (resolving its alert) below the hysteresis band.
+func (c *Core) sustained(ctx context.Context, key string, over, under bool, d time.Duration, now time.Time) bool {
+	e := c.alerts
+	e.mu.Lock()
+	since, seen := e.hot[key]
+	switch {
+	case over && !seen:
+		e.hot[key], since = now, now
+	case under:
+		delete(e.hot, key)
+	}
+	e.mu.Unlock()
+	if under {
+		c.resolveAlert(ctx, key, now)
+		return false
+	}
+	return over && now.Sub(since) >= d
+}
+
+// memoryAlert raises a server's memory alert once its memory has been
+// fuller than [alerts] memory_warning_percent for memory_minutes, critical
+// above memory_critical_percent, and resolves it once it is back under.
+func (c *Core) memoryAlert(ctx context.Context, srv store.Server, u apitypes.ServerUsage, now time.Time) {
+	if u.MemoryTotalBytes <= 0 {
+		return
+	}
+	cfg := c.cfg.Alerts
+	pct := 100 * float64(u.MemoryUsedBytes) / float64(u.MemoryTotalBytes)
+	key := "memory:" + strconv.FormatInt(srv.ID, 10)
+	over, under := pct >= float64(cfg.MemoryWarningPercent), pct < float64(cfg.MemoryWarningPercent-pressureHysteresis)
+	if !c.sustained(ctx, key, over, under, time.Duration(cfg.MemoryMinutes)*time.Minute, now) {
+		return
+	}
+	sev := apitypes.SeverityWarning
+	if pct >= float64(cfg.MemoryCriticalPercent) {
+		sev = apitypes.SeverityCritical
+	}
+	c.raiseAlert(ctx, alertSignal{
+		Key: key, Kind: apitypes.AlertMemory, Severity: sev, Server: srv.Name,
+		Title:   fmt.Sprintf("Memory %d%% used on %s", int(math.Floor(pct)), srv.Name),
+		Message: fmt.Sprintf("%s of %s used for over %d minutes. Containers past their limits get killed and new deploys may not fit; lower services' memory or add a server.", gb(u.MemoryUsedBytes), gb(u.MemoryTotalBytes), cfg.MemoryMinutes),
+		Command: "dock server show " + srv.Name,
+	}, now)
+}
+
+// cpuAlert raises a server's CPU alert once its CPUs have been busier than
+// [alerts] cpu_percent for cpu_minutes (0 turns it off), and resolves it
+// once they are back under.
+func (c *Core) cpuAlert(ctx context.Context, srv store.Server, u apitypes.ServerUsage, now time.Time) {
+	cfg := c.cfg.Alerts
+	if cfg.CPUPercent == 0 {
+		return
+	}
+	key := "cpu:" + strconv.FormatInt(srv.ID, 10)
+	over, under := u.CPUPercent >= float64(cfg.CPUPercent), u.CPUPercent < float64(cfg.CPUPercent-pressureHysteresis)
+	if !c.sustained(ctx, key, over, under, time.Duration(cfg.CPUMinutes)*time.Minute, now) {
+		return
+	}
+	c.raiseAlert(ctx, alertSignal{
+		Key: key, Kind: apitypes.AlertCPU, Severity: apitypes.SeverityWarning, Server: srv.Name,
+		Title:   fmt.Sprintf("CPU %d%% busy on %s", int(math.Floor(u.CPUPercent)), srv.Name),
+		Message: fmt.Sprintf("Its %d CPUs have been over %d%% busy for %d minutes; apps there answer slower. See which services use it, then limit them or move some to another server.", u.CPUs, cfg.CPUPercent, cfg.CPUMinutes),
+		Command: "dock server show " + srv.Name,
 	}, now)
 }
 
@@ -570,7 +665,7 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	row, err := c.store.OpenAlert(ctx, store.OpenAlertParams{
 		Key: s.Key, Kind: string(s.Kind), Severity: string(s.Severity), Title: s.Title, Message: s.Message,
 		Project: s.Project, Environment: s.Environment, Service: s.Service, Server: s.Server, OpenedAt: t, UpdatedAt: t, ProjectID: pid, ServiceID: sid,
-		Command: s.Command, Target: target,
+		Command: s.Command, Target: target, OrgID: c.alertOrg(ctx, s),
 	})
 	if err != nil {
 		e.mu.Unlock()
@@ -582,6 +677,45 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	c.log.Info("alert opened", "alert", s.Key, "severity", s.Severity, "title", s.Title)
 	c.publishAlert(row)
 	c.notify(ctx, row, "opened", now)
+}
+
+// alertOrg is the org an alert belongs to: its project's, or its
+// service's; nil (the platform's) for an alert that names neither, about
+// a server or Dock itself. A new kind of alert falls into place by what
+// it names. One indexed read, when an alert opens.
+func (c *Core) alertOrg(ctx context.Context, s alertSignal) *int64 {
+	var org int64
+	var err error
+	switch {
+	case s.projectID != 0:
+		org, err = c.store.AlertProjectOrg(ctx, s.projectID)
+	case s.serviceID != 0:
+		org, err = c.store.AlertServiceOrg(ctx, s.serviceID)
+	default:
+		return nil
+	}
+	if err != nil {
+		// Projects are never deleted: only a failing DB gets here.
+		c.log.Error("alerts: find the alert's org", "alert", s.Key, "err", err)
+		return nil
+	}
+	return &org
+}
+
+// alertOrgID is an alert's org, 0 for the platform.
+func alertOrgID(a store.Alert) int64 {
+	if a.OrgID == nil {
+		return 0
+	}
+	return *a.OrgID
+}
+
+// alertProjectID is the project an alert is about, 0 for none.
+func alertProjectID(a store.Alert) int64 {
+	if a.ProjectID == nil {
+		return 0
+	}
+	return *a.ProjectID
 }
 
 // resolveServiceAlerts closes every alert an archived service can hold:
@@ -631,14 +765,16 @@ func severityRank(s apitypes.AlertSeverity) int {
 	return 1
 }
 
-// publishAlert sends an alert event to operators.
+// publishAlert sends an alert event to those who see the alert: its
+// org's members, or for a platform alert operators.
 func (c *Core) publishAlert(a store.Alert) {
 	out := toAlert(a)
 	var projectID int64
 	if a.ProjectID != nil && a.ResolvedAt == nil {
 		projectID = *a.ProjectID
 	}
-	c.bus.publish(busEvent{projectID: projectID, serverStats: true, ev: apitypes.Event{
+	org := alertOrgID(a)
+	c.bus.publish(busEvent{orgID: org, projectID: projectID, serverStats: org == 0, ev: apitypes.Event{
 		Type: apitypes.EventAlert, Project: a.Project, Environment: a.Environment, Service: a.Service, Alert: &out,
 	}})
 }
@@ -647,7 +783,7 @@ func toAlert(a store.Alert) apitypes.Alert {
 	out := apitypes.Alert{
 		ID: a.ID, Kind: apitypes.AlertKind(a.Kind), Severity: apitypes.AlertSeverity(a.Severity), Title: a.Title, Message: a.Message,
 		Project: a.Project, Environment: a.Environment, Service: a.Service, Server: a.Server, Command: a.Command,
-		OpenedAt: a.OpenedAt, UpdatedAt: a.UpdatedAt, ResolvedAt: a.ResolvedAt,
+		OpenedAt: a.OpenedAt, UpdatedAt: a.UpdatedAt, ResolvedAt: a.ResolvedAt, Platform: a.OrgID == nil,
 	}
 	if a.Target != "" {
 		var t apitypes.AlertTarget
@@ -676,18 +812,35 @@ func svcFlags(project, env, service string) string {
 // maxAlertList caps one page of alerts.
 const maxAlertList = 500
 
-// ListAlerts returns the open alerts, worst and newest first, or with all
-// every alert newest first (limit at most maxAlertList, paged with
-// beforeID). Operators only.
-func (c *Core) ListAlerts(ctx context.Context, a Actor, all bool, limit int, beforeID int64) ([]apitypes.Alert, error) {
-	if err := a.requireOperator("reading alerts"); err != nil {
+// alertsIn is the org whose alerts the actor reads or changes: with
+// platform the platform's (0), for operators; otherwise the actor's org,
+// with scope need.
+func alertsIn(a Actor, platform bool, need apitypes.Scope, action string) (int64, error) {
+	if platform {
+		return 0, a.requireOperator(action)
+	}
+	return a.OrgID, a.require(need, action)
+}
+
+// ListAlerts returns the open alerts of the actor's org (with platform,
+// the platform's), worst and newest first, or with all every alert there
+// newest first (limit at most maxAlertList, paged with beforeID). A token
+// limited to a project sees that project's alerts.
+func (c *Core) ListAlerts(ctx context.Context, a Actor, platform, all bool, limit int, beforeID int64) ([]apitypes.Alert, error) {
+	org, err := alertsIn(a, platform, apitypes.ScopeRead, "reading alerts")
+	if err != nil {
 		return nil, err
+	}
+	sees := func(r store.Alert) bool {
+		return alertOrgID(r) == org && (org == 0 || a.canSee(org, alertProjectID(r), 0))
 	}
 	if !all {
 		c.alerts.mu.Lock()
 		out := make([]apitypes.Alert, 0, len(c.alerts.open))
 		for _, r := range c.alerts.open {
-			out = append(out, toAlert(r))
+			if sees(r) {
+				out = append(out, toAlert(r))
+			}
 		}
 		c.alerts.mu.Unlock()
 		sortAlerts(out)
@@ -699,13 +852,15 @@ func (c *Core) ListAlerts(ctx context.Context, a Actor, all bool, limit int, bef
 	if beforeID <= 0 {
 		beforeID = math.MaxInt64
 	}
-	rows, err := c.store.ListAlerts(ctx, store.ListAlertsParams{BeforeID: beforeID, MaxRows: int64(limit)})
+	rows, err := c.store.ListAlerts(ctx, store.ListAlertsParams{Org: org, BeforeID: beforeID, MaxRows: int64(limit)})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]apitypes.Alert, len(rows))
-	for i, r := range rows {
-		out[i] = toAlert(r)
+	out := make([]apitypes.Alert, 0, len(rows))
+	for _, r := range rows {
+		if sees(r) {
+			out = append(out, toAlert(r))
+		}
 	}
 	return out, nil
 }
@@ -722,14 +877,22 @@ func sortAlerts(as []apitypes.Alert) {
 
 // ResolveAlert closes an open alert by hand, for one whose condition
 // won't clear by itself (a failed backup never retried). If the condition
-// is still there, the engine raises a new one. Operators only.
+// is still there, the engine raises a new one. An org's alert takes deploy
+// in the org; a platform alert an operator.
 func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Alert, error) {
-	if err := a.requireOperator("resolving alerts"); err != nil {
+	row, err := c.store.GetAlert(ctx, id)
+	missing := notFound("alert %d not found; `dock alerts --all` lists alerts", id)
+	if store.IsNotFound(err) {
+		return apitypes.Alert{}, missing
+	}
+	if err != nil {
 		return apitypes.Alert{}, err
 	}
-	row, err := c.store.GetAlert(ctx, id)
-	if store.IsNotFound(err) {
-		return apitypes.Alert{}, notFound("alert %d not found; `dock alerts --all` lists alerts", id)
+	org := alertOrgID(row)
+	if org == 0 {
+		err = a.requireOperator("resolving platform alerts")
+	} else if err = a.require(apitypes.ScopeDeploy, "resolving alerts"); err == nil && !a.canSee(org, alertProjectID(row), 0) {
+		err = missing
 	}
 	if err != nil {
 		return apitypes.Alert{}, err
@@ -738,7 +901,11 @@ func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Al
 		return toAlert(row), nil
 	}
 	c.resolveAlert(ctx, row.Key, time.Now())
-	c.audit(ctx, a.platform(), "alert.resolve", nil, nil, "alert "+strconv.FormatInt(id, 10), "resolved alert: "+row.Title)
+	by := a
+	if org == 0 {
+		by = a.platform()
+	}
+	c.audit(ctx, by, "alert.resolve", nil, nil, "alert "+strconv.FormatInt(id, 10), "resolved alert: "+row.Title)
 	if row, err = c.store.GetAlert(ctx, id); err != nil {
 		return apitypes.Alert{}, err
 	}

@@ -1,4 +1,4 @@
-import { useOpenAlertsIfAdmin } from "../features/alerts/data";
+import { useOrgOpenAlerts } from "../features/alerts/data";
 import { isCrashLooping, isUnhealthy } from "../ui/status";
 import { useProjectOverview, useServers } from "./queries";
 import type { Problem, ServiceView } from "./types";
@@ -60,14 +60,16 @@ const derived = new Set([
  * What needs a human on a project, derived from live state, worst first:
  * crashed or unhealthy services, failed latest releases, failed latest backups,
  * offline servers, domains failing or waiting for DNS, and staged changes
- * not applied yet. For admins, open alerts live state doesn't show join
- * them, such as a full disk on a server the project uses. Deploys in
- * flight are not problems; the overview shows them on their own.
+ * not applied yet. The org's open alerts about the project that live
+ * state doesn't show join them, such as a failed job or an uptime check
+ * that is down (platform alerts, about servers, are the operator's).
+ * Deploys in flight are not problems; the overview shows them on their
+ * own.
  */
 export function useProblems(project: string): Problem[] {
   const { environments } = useProjectOverview(project);
   const servers = useServers();
-  const alerts = useOpenAlertsIfAdmin();
+  const alerts = useOrgOpenAlerts();
   const services = environments.flatMap((e) => e.services);
 
   const problems: Problem[] = [];
@@ -91,14 +93,12 @@ export function useProblems(project: string): Problem[] {
       problems.push({ kind: "staged", environment });
     }
   }
-  const used = new Set(environments.map((e) => e.environment.server));
   for (const alert of alerts) {
-    if (derived.has(alert.kind)) continue;
-    const mine =
-      alert.project === project ||
-      (!alert.project && !!alert.server && used.has(alert.server));
-    if (mine) problems.push({ kind: "alert", alert });
+    if (!derived.has(alert.kind) && alert.project === project) {
+      problems.push({ kind: "alert", alert });
+    }
   }
+  const used = new Set(environments.map((e) => e.environment.server));
   for (const server of servers) {
     if (server.status === "offline" && used.has(server.name)) {
       problems.push({ kind: "server_offline", server });

@@ -61,7 +61,7 @@ export interface paths {
         };
         /**
          * List alerts
-         * @description The open alerts, critical first, then newest first. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events. Operators only.
+         * @description The organization's open alerts (its projects and services), critical first, then newest first; with platform, the platform's (servers, Dock itself), for operators. With all, every alert including resolved ones, newest first and paged with before. Live changes arrive as `alert` events.
          */
         get: operations["list-alerts"];
         put?: never;
@@ -81,13 +81,13 @@ export interface paths {
         };
         /**
          * List alert channels
-         * @description Where alerts are sent, with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Operators only.
+         * @description Where the organization's alerts are sent (with platform, the platform's), with each channel's last delivery and last failure. URLs, signing secrets and SMTP passwords are never returned. Organization admins; operators for the platform's.
          */
         get: operations["list-alert-channels"];
         put?: never;
         /**
          * Add an alert channel
-         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP. A webhook's generated signing secret is returned once. Operators only.
+         * @description A webhook (JSON, signed with HMAC-SHA256 in the Dock-Signature header), a Slack-compatible incoming webhook, or email over SMTP, for the organization's alerts (with platform, the platform's). A webhook's generated signing secret is returned once. Organization admins; operators for the platform's.
          */
         post: operations["create-alert-channel"];
         delete?: never;
@@ -108,7 +108,7 @@ export interface paths {
         post?: never;
         /**
          * Remove an alert channel
-         * @description Operators only.
+         * @description Organization admins; operators for the platform's.
          */
         delete: operations["remove-alert-channel"];
         options?: never;
@@ -127,7 +127,7 @@ export interface paths {
         put?: never;
         /**
          * Send a test alert
-         * @description Sends a test notification once, without retries, and says whether it went through. Operators only.
+         * @description Sends a test notification once, without retries, and says whether it went through. Organization admins; operators for the platform's.
          */
         post: operations["test-alert-channel"];
         delete?: never;
@@ -147,7 +147,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve an alert
-         * @description Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. Operators only.
+         * @description Closes an open alert by hand, for one whose condition won't clear by itself. If the condition is still there, a new alert opens. An organization's alert needs deploy there; a platform alert an operator.
          */
         post: operations["resolve-alert"];
         delete?: never;
@@ -713,6 +713,178 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/console/orgs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every organization
+         * @description Every organization with its owner and admins, members, projects and services, status and resource use (CPU, memory, volumes, backups, registry images, bandwidth), biggest first. Volumes come from the servers' last disk readings; with read_disks, servers not read in the last minute are read again in the background, and the result arrives as `disk` events. Operators only.
+         */
+        get: operations["list-console-orgs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an organization
+         * @description confirm must be the organization's slug. One with projects keeps their history: they are archived (containers stopped, volumes and releases kept), its members, invites and variables removed, its tokens revoked, and it is hidden. Operators only.
+         */
+        delete: operations["delete-console-org"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename an organization
+         * @description Changes any organization's display name; its slug stays. Audited in its log and the platform's. Operators only.
+         */
+        patch: operations["rename-console-org"];
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join an organization as operator
+         * @description Makes you an admin of the organization for a while (1 to 24 hours), to see its content when needed. Its admins see it in their activity log, and the membership ends by itself. People only, not tokens. Operators only.
+         */
+        post: operations["join-console-org"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an organization's members
+         * @description Members with their role; an operator who joined for a while shows with when it ends. Operators only.
+         */
+        get: operations["list-console-org-members"];
+        put?: never;
+        /**
+         * Add a member to an organization
+         * @description Adds an existing user with a role: how an organization without an admin gets one. Operators only.
+         */
+        post: operations["add-console-org-member"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}/members/{user}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change a member's role
+         * @description The organization keeps an admin of its own. Operators only.
+         */
+        put: operations["set-console-org-member"];
+        post?: never;
+        /**
+         * Remove a member
+         * @description Their account stays. The organization keeps an admin of its own. Operators only.
+         */
+        delete: operations["remove-console-org-member"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop an organization's services
+         * @description Stops every running service, as `dock stop` does: domains show the 503 page, volumes and history stay, starting or deploying one runs it again. Services that couldn't stop are listed. Operators only.
+         */
+        post: operations["stop-console-org"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend an organization
+         * @description Its apps keep running; every deploy and change in it is refused, and its members and tokens may only read, until it is unsuspended. Operators only.
+         */
+        post: operations["suspend-console-org"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/orgs/{org}/unsuspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsuspend an organization
+         * @description Deploys and changes work again. Operators only.
+         */
+        post: operations["unsuspend-console-org"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/data-policy": {
         parameters: {
             query?: never;
@@ -731,6 +903,66 @@ export interface paths {
          */
         put: operations["set-default-data-policy"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List error issues
+         * @description The organization's error issues: errors grouped by fingerprint per service, from its containers' logs, frontend errors Dock Analytics collected and 5xx spikes. New first, then regressed, then ongoing, each by last seen; the list holds the most recently seen ones. Facets count the open issues of every service in the environment filter (or every environment), whatever project and service are picked. Scope: read.
+         */
+        get: operations["list-errors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/errors/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show an error issue
+         * @description One error issue with its latest sample (a stack trace, a log excerpt or the 5xx counts, at most 8 KB, secret values masked) and its trend over 24 hours. Scope: read.
+         */
+        get: operations["get-error"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/errors/{id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve an error issue
+         * @description Marks an issue resolved and resolves its alerts. If the error is seen again, the issue regresses and alerts. Issues also resolve by themselves after 7 days without an error. Scope: deploy.
+         */
+        post: operations["resolve-error"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4672,11 +4904,12 @@ export interface components {
             environment?: string;
             /** Format: int64 */
             id: number;
-            /** @description disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed; more may be added */
+            /** @description disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added */
             kind: string;
             message?: string;
             /** Format: date-time */
             opened_at: string;
+            platform?: boolean;
             project?: string;
             /** Format: date-time */
             resolved_at?: string;
@@ -4717,7 +4950,10 @@ export interface components {
         AlertTarget: {
             /** Format: int64 */
             backup?: number;
+            connection?: string;
             error_group?: string;
+            /** Format: int64 */
+            error_issue?: number;
             job?: string;
             /** Format: int64 */
             release?: number;
@@ -5872,6 +6108,17 @@ export interface components {
             location?: string;
             message: string;
         };
+        ErrorFacet: {
+            environment: string;
+            /** Format: int64 */
+            events: number;
+            /** Format: int64 */
+            issues: number;
+            /** Format: int64 */
+            new: number;
+            project: string;
+            service: string;
+        };
         ErrorGroup: {
             /** Format: int64 */
             count: number;
@@ -5891,6 +6138,70 @@ export interface components {
             type: string;
             /** Format: int64 */
             visitors: number;
+        };
+        ErrorIssue: {
+            /** Format: int64 */
+            count: number;
+            culprit?: string;
+            environment: string;
+            /** @description Stable within the service: the error's type, its message without numbers and IDs, and its top stack frames, hashed */
+            fingerprint: string;
+            /** Format: int64 */
+            first_release?: number;
+            /** Format: date-time */
+            first_seen: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            last_release?: number;
+            /** Format: date-time */
+            last_seen: string;
+            project: string;
+            /** Format: date-time */
+            resolved_at?: string;
+            resolved_by?: string;
+            service: string;
+            /** @enum {string} */
+            source: "frontend" | "logs" | "traffic";
+            /** @enum {string} */
+            state: "new" | "regressed" | "ongoing" | "resolved";
+            title: string;
+            trend: number[] | null;
+        };
+        ErrorIssueDetail: {
+            /** Format: int64 */
+            count: number;
+            culprit?: string;
+            environment: string;
+            /** @description Stable within the service: the error's type, its message without numbers and IDs, and its top stack frames, hashed */
+            fingerprint: string;
+            /** Format: int64 */
+            first_release?: number;
+            /** Format: date-time */
+            first_seen: string;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            last_release?: number;
+            /** Format: date-time */
+            last_seen: string;
+            project: string;
+            /** Format: date-time */
+            resolved_at?: string;
+            resolved_by?: string;
+            sample: string;
+            service: string;
+            /** @enum {string} */
+            source: "frontend" | "logs" | "traffic";
+            /** @enum {string} */
+            state: "new" | "regressed" | "ongoing" | "resolved";
+            title: string;
+            trend: number[] | null;
+        };
+        ErrorList: {
+            facets: components["schemas"]["ErrorFacet"][] | null;
+            issues: components["schemas"]["ErrorIssue"][] | null;
+            truncated?: boolean;
         };
         ErrorOccurrence: {
             /** Format: date-time */
@@ -6183,6 +6494,13 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        JoinOrgRequest: {
+            /**
+             * Format: int64
+             * @description How long, 1 when unset
+             */
+            hours?: number;
+        };
         LiveVisit: {
             /** Format: date-time */
             at: string;
@@ -6315,6 +6633,33 @@ export interface components {
             /** @enum {string} */
             status: "waiting" | "syncing" | "synced" | "stopped" | "copied" | "started" | "healthy" | "failed";
         };
+        OperatorMemberRequest: {
+            /** @description The user to add (with add); their account must exist */
+            email?: string;
+            /** @enum {string} */
+            role: "read" | "deploy" | "admin";
+        };
+        OperatorOrg: {
+            admins: string[] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int64 */
+            members: number;
+            name: string;
+            owner?: string;
+            /** Format: int64 */
+            projects: number;
+            /** Format: int64 */
+            services: number;
+            /** @example acme */
+            slug: string;
+            /** @enum {string} */
+            status: "active" | "suspended" | "no_admin";
+            /** Format: date-time */
+            suspended_at?: string;
+            suspended_by?: string;
+            usage: components["schemas"]["OrgUsage"];
+        };
         Org: {
             /** Format: date-time */
             created_at: string;
@@ -6335,10 +6680,43 @@ export interface components {
              */
             request_ttl_hours?: number;
         };
+        OrgMembershipGrant: {
+            /** Format: date-time */
+            expires_at: string;
+            org: string;
+            role: string;
+        };
         OrgSite: {
             last_24h?: components["schemas"]["AnalyticsOverview"];
             project: string;
             site: components["schemas"]["Site"];
+        };
+        OrgUsage: {
+            /**
+             * Format: int64
+             * @description Its services' newest backups that worked
+             */
+            backup_bytes: number;
+            /** Format: int64 */
+            bandwidth_bytes: number;
+            /** Format: double */
+            cpu_percent: number;
+            /** Format: double */
+            cpu_week_ago_percent: number;
+            /**
+             * Format: int64
+             * @description Images the registry keeps for its services' rollback windows
+             */
+            images: number;
+            /**
+             * Format: int64
+             * @description Working set of its containers now
+             */
+            memory_bytes: number;
+            /** Format: int64 */
+            volume_bytes: number;
+            /** Format: date-time */
+            volume_read_at?: string;
         };
         OrgVariable: {
             key: string;
@@ -6603,6 +6981,11 @@ export interface components {
             image_ref: string;
             /** @description The output of the release's removed container was kept, so its logs can be read until [logs] limits drop it */
             logs_kept: boolean;
+            /**
+             * Format: int64
+             * @description Error issues first seen in this release; only counted when fetching one release
+             */
+            new_errors: number;
             /** Format: int64 */
             number: number;
             project: string;
@@ -7702,6 +8085,11 @@ export interface components {
             /** @example v0.4.0 */
             version?: string;
         };
+        StoppedOrgServices: {
+            failed?: string[] | null;
+            /** Format: int64 */
+            stopped: number;
+        };
         Storage: {
             /** @example dock-images */
             bucket: string;
@@ -8090,6 +8478,8 @@ export interface components {
             /** Format: date-time */
             disabled_at?: string;
             email: string;
+            /** Format: date-time */
+            expires_at?: string;
             /** Format: int64 */
             id: number;
             name: string;
@@ -8570,6 +8960,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
                 /** @description Include resolved alerts */
                 all?: boolean;
                 /** @description With all: only alerts with a smaller ID (paging) */
@@ -8662,6 +9054,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -8723,6 +9117,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Error"];
                 };
             };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -8739,6 +9142,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path?: never;
@@ -8838,6 +9243,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {
@@ -8934,6 +9341,8 @@ export interface operations {
             query?: {
                 /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
                 org?: string;
+                /** @description The platform's alerts or channels (servers, Dock itself) instead of the organization's. Operators only. */
+                platform?: boolean;
             };
             header?: never;
             path: {
@@ -11795,6 +12204,1083 @@ export interface operations {
             };
         };
     };
+    "list-console-orgs": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Read stale servers' disks again, for fresh volume sizes */
+                read_disks?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorOrg"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "delete-console-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The organization's slug, typed to confirm */
+                confirm?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "rename-console-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOrgRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Org"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "join-console-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinOrgRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgMembershipGrant"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-console-org-members": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "add-console-org-member": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-console-org-member": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+                /** @description The member's user ID */
+                user: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-console-org-member": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+                /** @description The member's user ID */
+                user: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "stop-console-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoppedOrgServices"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "suspend-console-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorOrg"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "unsuspend-console-org": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The organization's slug */
+                org: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatorOrg"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "get-default-data-policy": {
         parameters: {
             query?: {
@@ -11944,6 +13430,289 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-errors": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Only this project's issues */
+                project?: string;
+                /** @description Only this environment's issues (of every project, without project); also filters the facets */
+                environment?: string;
+                /** @description Only this service's issues; needs project and environment */
+                service?: string;
+                /** @description open: not resolved */
+                state?: "open" | "resolved" | "all";
+                /** @description How many issues at most */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-error": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Error issue ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorIssueDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "resolve-error": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Error issue ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorIssue"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };

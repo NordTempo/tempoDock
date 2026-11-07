@@ -2,7 +2,10 @@ package apitypes
 
 import "time"
 
-// Alerts and notification channels (ADR 0020).
+// Alerts and notification channels (ADR 0020). An alert about a project
+// or service is its org's; one about a server or Dock itself is the
+// platform's (ADR 0062). Channels belong to an org or to the platform and
+// receive only its alerts.
 
 // AlertSeverity is how urgent an alert is.
 type AlertSeverity string
@@ -39,8 +42,15 @@ const (
 	// 0048). Its next successful run resolves it.
 	AlertJobFailed AlertKind = "job_failed"
 	// AlertNewError: a site's script reported an error of a kind it never
-	// had (Dock Analytics, ADR 0037). Resolves itself after a day.
+	// had (Dock Analytics, ADR 0037), or a service's logs or traffic
+	// brought a new error issue (ADR 0062; Target.ErrorIssue). Resolves
+	// itself after a day.
 	AlertNewError AlertKind = "new_error"
+	// AlertErrorRegressed: an error issue that was resolved, by a person
+	// or by itself after 7 days without one, was seen again (ADR 0062;
+	// Target.ErrorIssue). Resolves itself after a day, or when the issue
+	// is resolved.
+	AlertErrorRegressed AlertKind = "error_regressed"
 	// AlertErrorSpike: a site's errors in the last five minutes are many
 	// times its usual rate.
 	AlertErrorSpike AlertKind = "error_spike"
@@ -57,6 +67,22 @@ const (
 	// AlertUptimeDown: an uptime check failed twice in a row (ADR 0055).
 	// Its next successful probe resolves it.
 	AlertUptimeDown AlertKind = "uptime_down"
+	// AlertMemory: a server's memory has stayed fuller than [alerts]
+	// memory_warning_percent (or memory_critical_percent) for
+	// memory_minutes.
+	AlertMemory AlertKind = "memory"
+	// AlertCPU: a server's CPUs have stayed busier than [alerts]
+	// cpu_percent for cpu_minutes.
+	AlertCPU AlertKind = "cpu"
+	// AlertUpdateFailed: updating Dock, on the control plane or on a
+	// server, failed. The next update that succeeds there resolves it.
+	AlertUpdateFailed AlertKind = "update_failed"
+	// AlertConnection: one of the platform's connections failed when Dock
+	// used it: a Cloudflare token refused, the GitHub App's key or
+	// installation tokens rejected, backup storage unreachable, the
+	// registry's prune or a push failing. The next call that works
+	// resolves it.
+	AlertConnection AlertKind = "connection_failed"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -64,7 +90,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, server_offline, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_spike, traffic_drop, unhealthy, uptime_down, job_failed; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`
@@ -82,11 +108,15 @@ type Alert struct {
 	OpenedAt   time.Time    `json:"opened_at"`
 	UpdatedAt  time.Time    `json:"updated_at"`
 	ResolvedAt *time.Time   `json:"resolved_at,omitempty"`
+	// Platform marks the platform's alerts (servers, connections, Dock
+	// itself); the rest are the organization's.
+	Platform bool `json:"platform,omitempty"`
 }
 
 // AlertTarget is what an alert points at, beyond its project,
 // environment, service and server: the site and error group of
-// new_error, error_spike and traffic_drop, the release number of
+// new_error, error_spike and traffic_drop, the error issue of new_error
+// and error_regressed from a service's errors, the release number of
 // deploy_failed, the access request of access_request, the job and run
 // of job_failed, the backup run of a service's backup_failed.
 type AlertTarget struct {
@@ -97,6 +127,13 @@ type AlertTarget struct {
 	Job        string `json:"job,omitempty"`
 	Run        int64  `json:"run,omitempty"`
 	Backup     int64  `json:"backup,omitempty"`
+	// ErrorIssue is the ID of the error issue a new_error or
+	// error_regressed alert is about (GET /errors/{id}).
+	ErrorIssue int64 `json:"error_issue,omitempty"`
+	// Connection names the connection of connection_failed:
+	// cloudflare:<name>, github:app, storage:<repository> or
+	// registry:prune and registry:push.
+	Connection string `json:"connection,omitempty"`
 }
 
 // AlertChannelKind is how a channel sends alerts.

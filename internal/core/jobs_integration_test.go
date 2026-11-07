@@ -56,7 +56,7 @@ func TestIntegrationJobs(t *testing.T) {
 	if r := run("echo nope; exit 2"); r.Status != apitypes.RunFailed || r.ExitCode == nil || *r.ExitCode != 2 {
 		t.Fatalf("failing run: %+v", r)
 	}
-	alerts, err := c.ListAlerts(ctx, testSystem, false, 0, 0)
+	alerts, err := c.ListAlerts(ctx, testSystem, false, false, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

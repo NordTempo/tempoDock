@@ -169,6 +169,16 @@ type Alerts struct {
 	// CrashLoopMinutes is crash looping.
 	CrashLoopRestarts int `toml:"crash_loop_restarts"`
 	CrashLoopMinutes  int `toml:"crash_loop_minutes"`
+	// A server's memory used above MemoryWarningPercent (or
+	// MemoryCriticalPercent) for MemoryMinutes is memory pressure, and its
+	// CPUs busier than CPUPercent for CPUMinutes is sustained CPU. Both
+	// read the statistics the control plane collects anyway, once a
+	// minute. CPUPercent 0 turns the CPU alert off.
+	MemoryWarningPercent  int `toml:"memory_warning_percent"`
+	MemoryCriticalPercent int `toml:"memory_critical_percent"`
+	MemoryMinutes         int `toml:"memory_minutes"`
+	CPUPercent            int `toml:"cpu_percent"`
+	CPUMinutes            int `toml:"cpu_minutes"`
 }
 
 // Backup configures backup jobs (ADR 0019). The repository, credentials,
@@ -398,11 +408,16 @@ func Default() Config {
 			TokenFile: "/etc/dock/github-token",
 		},
 		Alerts: Alerts{
-			DiskWarningPercent:   85,
-			DiskCriticalPercent:  95,
-			ServerOfflineMinutes: 5,
-			CrashLoopRestarts:    3,
-			CrashLoopMinutes:     10,
+			DiskWarningPercent:    85,
+			DiskCriticalPercent:   95,
+			ServerOfflineMinutes:  5,
+			CrashLoopRestarts:     3,
+			CrashLoopMinutes:      10,
+			MemoryWarningPercent:  90,
+			MemoryCriticalPercent: 97,
+			MemoryMinutes:         5,
+			CPUPercent:            90,
+			CPUMinutes:            15,
 		},
 	}
 }
@@ -620,6 +635,12 @@ func (a Alerts) validate() error {
 		return errors.New("[alerts] needs 1 <= disk_warning_percent <= disk_critical_percent <= 100")
 	case a.ServerOfflineMinutes < 1 || a.CrashLoopMinutes < 1 || a.CrashLoopRestarts < 1:
 		return errors.New("[alerts] server_offline_minutes, crash_loop_restarts and crash_loop_minutes must be at least 1")
+	case a.MemoryWarningPercent < 1 || a.MemoryCriticalPercent > 100 || a.MemoryWarningPercent > a.MemoryCriticalPercent:
+		return errors.New("[alerts] needs 1 <= memory_warning_percent <= memory_critical_percent <= 100")
+	case a.CPUPercent < 0 || a.CPUPercent > 100:
+		return errors.New("[alerts] cpu_percent must be 0 (off) to 100")
+	case a.MemoryMinutes < 1 || a.CPUMinutes < 1:
+		return errors.New("[alerts] memory_minutes and cpu_minutes must be at least 1")
 	}
 	return nil
 }

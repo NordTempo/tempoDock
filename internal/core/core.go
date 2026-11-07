@@ -158,8 +158,12 @@ type Core struct {
 	// retention passes and disk prunes (retention.go).
 	alerts    *alertEngine
 	retention *retention
-	// logDrains are the log drains and their followers (drains_deliver.go).
+	// logDrains are the log drains and the log followers
+	// (drains_deliver.go).
 	logDrains *drainManager
+	// issues is the error sink the statistics tick writes as error
+	// issues (errors_ingest.go).
+	issues errorSink
 	// cliLogins wakes CLIs waiting on browser logins (cli_login.go).
 	cliLogins *cliLogins
 	// ceremonies are the passkey challenges and authenticator app setups

@@ -13,7 +13,7 @@ import (
 // siteAlerts are the open alerts of kind.
 func siteAlerts(h *harness, kind apitypes.AlertKind) []apitypes.Alert {
 	h.t.Helper()
-	all, err := h.c.ListAlerts(h.ctx, testSystem, false, 100, 0)
+	all, err := h.c.ListAlerts(h.ctx, testSystem, false, false, 100, 0)
 	if err != nil {
 		h.t.Fatal(err)
 	}

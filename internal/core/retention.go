@@ -28,6 +28,9 @@ import (
 //     can use keep all of it;
 //   - audit events older than audit_days, or past audit_max_events;
 //   - resolved alerts older than alert_days;
+//   - error issues (ADR 0062): open ones without an occurrence for 7
+//     days resolve by themselves, resolved ones not seen for 30 days go,
+//     and hourly counts older than 7 days;
 //   - on every online server, log archives past [logs] limits and those
 //     of services that no longer exist (pruneLogs, ADR 0046).
 //
@@ -193,6 +196,9 @@ type retained struct {
 	releases, audit int
 	alerts          int64
 	requests        int64
+	// quietErrors are error issues that resolved by themselves, errors
+	// resolved ones deleted.
+	quietErrors, errors int64
 }
 
 // retain runs one retention pass. Failures are logged; the next pass
@@ -210,15 +216,20 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if err := c.expireRequests(ctx, now); err != nil {
 		c.log.Warn("retention: access requests", "err", err)
 	}
+	c.expireOperatorMembers(ctx)
 	if out.requests, err = c.store.PruneAccessRequests(ctx, now.Add(-days(c.cfg.Retention.AuditDays)).UTC()); err != nil {
 		c.log.Warn("retention: access requests", "err", err)
 	}
 	if out.alerts, err = c.store.PruneResolvedAlerts(ctx, ptr(now.Add(-days(c.cfg.Retention.AlertDays)).UTC())); err != nil {
 		c.log.Warn("retention: alerts", "err", err)
 	}
+	if out.quietErrors, out.errors, err = c.retainErrors(ctx, now); err != nil {
+		c.log.Warn("retention: error issues", "err", err)
+	}
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {
-		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests, "took", took)
+		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests,
+			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "took", took)
 	} else {
 		c.log.Debug("retention: nothing to trim", "took", took)
 	}

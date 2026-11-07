@@ -268,7 +268,7 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 	if evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "backup.failed"}); len(evs) != 1 {
 		t.Error("no backup.failed audit event")
 	}
-	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 1 || open[0].Kind != apitypes.AlertBackupFailed {
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); len(open) != 1 || open[0].Kind != apitypes.AlertBackupFailed {
 		t.Fatalf("open alerts after a failed backup = %+v", open)
 	}
 
@@ -282,7 +282,7 @@ func TestBackupFailureIsRecorded(t *testing.T) {
 	if run := h.runBackup(db); run.Status != apitypes.BackupSucceeded {
 		t.Fatalf("second run = %+v", run)
 	}
-	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, 0, 0); len(open) != 0 {
+	if open, _ := h.c.ListAlerts(h.ctx, testSystem, false, false, 0, 0); len(open) != 0 {
 		t.Fatalf("open alerts after a successful backup = %+v", open)
 	}
 }

@@ -564,6 +564,12 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	if ss.svc.ArchivedAt != nil {
 		return store.Release{}, invalid("service %s is archived", ss)
 	}
+	// Every deploy passes here, pushes and previews too, whoever asks.
+	if org, err := c.store.GetOrg(ctx, ss.project.OrgID); err != nil {
+		return store.Release{}, err
+	} else if org.SuspendedAt != nil {
+		return store.Release{}, errSuspended(org.Slug, "deploying "+ss.String())
+	}
 	if err := c.canDeploy(ss.env); err != nil {
 		return store.Release{}, err
 	}
@@ -1090,6 +1096,9 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 	if withEvents {
 		evs, err := c.store.ListReleaseEvents(ctx, r.ID)
 		if err != nil {
+			return out, err
+		}
+		if out.NewErrors, err = c.releaseNewErrors(ctx, r.ServiceID, r.Number); err != nil {
 			return out, err
 		}
 		out.Events = make([]apitypes.ReleaseEvent, 0, len(evs))

@@ -18,18 +18,19 @@ import (
 	"net/mail"
 	"net/smtp"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
 
-// Notification channels (ADR 0020). Admins add channels: a generic webhook
+// Notification channels (ADR 0020). An org's admins add channels for its
+// alerts, operators channels for the platform's (ADR 0062): a generic webhook
 // (JSON, HMAC-signed), a Slack-compatible incoming webhook, or email over
 // SMTP. A channel gets alerts at or above its minimum severity when they
 // open, escalate and resolve, and a reminder every renotify_minutes while
@@ -65,29 +66,29 @@ type channelConfig struct {
 }
 
 // notify sends what happened to an alert (opened, escalated, resolved) to
-// the channels that should hear it: for opened and escalated those whose
-// minimum severity it meets, for resolved those that were told it opened.
+// the channels that should hear it: for opened and escalated its org's
+// (or the platform's) whose minimum severity it meets, for resolved those
+// that were told it opened.
 func (c *Core) notify(ctx context.Context, a store.Alert, event string, now time.Time) {
-	channels, err := c.store.ListAlertChannels(ctx)
-	if err != nil || len(channels) == 0 {
-		return
-	}
 	var to []store.AlertChannel
 	if event == "resolved" {
-		told, err := c.store.ListAlertNotices(ctx, a.ID)
+		told, err := c.store.ListNoticedChannels(ctx, a.ID)
 		if err != nil {
 			c.log.Error("alerts: list notices", "err", err)
 			return
 		}
-		for _, ch := range channels {
-			if slices.Contains(told, ch.ID) {
-				to = append(to, ch)
+		if len(told) > 0 {
+			if err := c.store.DeleteAlertNotices(ctx, a.ID); err != nil {
+				c.log.Error("alerts: delete notices", "err", err)
 			}
 		}
-		if err := c.store.DeleteAlertNotices(ctx, a.ID); err != nil {
-			c.log.Error("alerts: delete notices", "err", err)
-		}
+		to = told
 	} else {
+		channels, err := c.store.ListAlertChannels(ctx, alertOrgID(a))
+		if err != nil {
+			c.log.Error("alerts: list channels", "err", err)
+			return
+		}
 		for _, ch := range channels {
 			if severityRank(apitypes.AlertSeverity(a.Severity)) < severityRank(apitypes.AlertSeverity(ch.MinSeverity)) {
 				continue
@@ -118,10 +119,6 @@ func (c *Core) remind(ctx context.Context, now time.Time) {
 		return
 	}
 	due, err := c.store.ListDueReminders(ctx, now.Unix())
-	if err != nil || len(due) == 0 {
-		return
-	}
-	channels, err := c.store.ListAlertChannels(ctx)
 	if err != nil {
 		return
 	}
@@ -130,16 +127,12 @@ func (c *Core) remind(ctx context.Context, now time.Time) {
 		if !ok {
 			continue
 		}
-		for _, ch := range channels {
-			if ch.ID != d.ChannelID {
-				continue
-			}
-			if err := c.store.AddAlertNotice(ctx, store.AddAlertNoticeParams{AlertID: a.ID, ChannelID: ch.ID, NotifiedAt: now.Unix()}); err != nil {
-				c.log.Error("alerts: record notice", "err", err)
-				continue
-			}
-			c.deliver(ch, apitypes.AlertNotification{Event: "reminder", Alert: toAlert(a), SentAt: now.UTC()})
+		ch := d.AlertChannel
+		if err := c.store.AddAlertNotice(ctx, store.AddAlertNoticeParams{AlertID: a.ID, ChannelID: ch.ID, NotifiedAt: now.Unix()}); err != nil {
+			c.log.Error("alerts: record notice", "err", err)
+			continue
 		}
+		c.deliver(ch, apitypes.AlertNotification{Event: "reminder", Alert: toAlert(a), SentAt: now.UTC()})
 	}
 }
 
@@ -484,7 +477,7 @@ func oneLine(s string) string { return strings.NewReplacer("\r", " ", "\n", " ")
 
 func (c *Core) openChannel(ch store.AlertChannel) (channelConfig, error) {
 	var cfg channelConfig
-	plain, err := c.box.Open(ch.Config, sealedAlertChannel.AAD(ch.Name))
+	plain, err := c.box.Open(ch.Config, channelAAD(ch.OrgID, ch.Name))
 	if err != nil {
 		return cfg, fmt.Errorf("open channel settings: %w", err)
 	}
@@ -503,13 +496,33 @@ func toChannel(ch store.AlertChannel) apitypes.AlertChannel {
 	return out
 }
 
-// ListAlertChannels lists the channels, without their secrets. Scope:
-// operators.
-func (c *Core) ListAlertChannels(ctx context.Context, a Actor) ([]apitypes.AlertChannel, error) {
-	if err := a.requireOperator("reading alert channels"); err != nil {
+// channelsIn is the org whose channels the actor manages: with platform
+// the platform's (0), for operators; otherwise the actor's org, for its
+// unlimited admins.
+func channelsIn(a Actor, platform bool, action string) (int64, error) {
+	if platform {
+		return 0, a.requireOperator(action)
+	}
+	return a.OrgID, a.requireUnlimited(apitypes.ScopeAdmin, action)
+}
+
+// channelAudit is who a channel change is audited as: the actor in its
+// org's log, or for a platform channel in the platform's.
+func channelAudit(a Actor, org int64) Actor {
+	if org == 0 {
+		return a.platform()
+	}
+	return a
+}
+
+// ListAlertChannels lists the org's channels (with platform, the
+// platform's), without their secrets.
+func (c *Core) ListAlertChannels(ctx context.Context, a Actor, platform bool) ([]apitypes.AlertChannel, error) {
+	org, err := channelsIn(a, platform, "reading alert channels")
+	if err != nil {
 		return nil, err
 	}
-	rows, err := c.store.ListAlertChannels(ctx)
+	rows, err := c.store.ListAlertChannels(ctx, org)
 	if err != nil {
 		return nil, err
 	}
@@ -520,10 +533,12 @@ func (c *Core) ListAlertChannels(ctx context.Context, a Actor) ([]apitypes.Alert
 	return out, nil
 }
 
-// CreateAlertChannel adds a channel. A webhook without a secret gets a
-// generated one, returned only here. Operators only.
-func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.CreateAlertChannelRequest) (apitypes.CreatedAlertChannel, error) {
-	if err := a.requireOperator("adding alert channels"); err != nil {
+// CreateAlertChannel adds a channel to the org (with platform, to the
+// platform). A webhook without a secret gets a generated one, returned
+// only here.
+func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, platform bool, req apitypes.CreateAlertChannelRequest) (apitypes.CreatedAlertChannel, error) {
+	org, err := channelsIn(a, platform, "adding alert channels")
+	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
 	if err := validName("channel", req.Name); err != nil {
@@ -551,12 +566,13 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.Cre
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
-	sealed, err := c.box.Seal(plain, sealedAlertChannel.AAD(req.Name))
+	orgID := orgRef(org)
+	sealed, err := c.box.Seal(plain, channelAAD(orgID, req.Name))
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
 	row, err := c.store.CreateAlertChannel(ctx, store.CreateAlertChannelParams{
-		Name: req.Name, Kind: string(req.Kind), Target: target, Config: sealed, MinSeverity: string(sev),
+		OrgID: orgID, Name: req.Name, Kind: string(req.Kind), Target: target, Config: sealed, MinSeverity: string(sev),
 		RenotifyMinutes: int64(renotify), CreatedAt: now(),
 	})
 	if store.IsUnique(err) {
@@ -565,7 +581,7 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, req apitypes.Cre
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
-	c.audit(ctx, a.platform(), "alert.channel_add", nil, nil, "alert channel "+req.Name,
+	c.audit(ctx, channelAudit(a, org), "alert.channel_add", nil, nil, "alert channel "+req.Name,
 		fmt.Sprintf("added %s alert channel %s to %s (%s and up)", req.Kind, req.Name, target, sev))
 	return apitypes.CreatedAlertChannel{Channel: toChannel(row), Secret: generated}, nil
 }
@@ -619,31 +635,33 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (c
 	return cfg, target, generated, nil
 }
 
-// RemoveAlertChannel deletes a channel; notifications it is retrying stop
-// with the next attempt. Operators only.
-func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, name string) error {
-	if err := a.requireOperator("removing alert channels"); err != nil {
+// RemoveAlertChannel deletes one of the org's channels (with platform, the
+// platform's); notifications it is retrying stop with the next attempt.
+func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, platform bool, name string) error {
+	org, err := channelsIn(a, platform, "removing alert channels")
+	if err != nil {
 		return err
 	}
-	ch, err := c.channel(ctx, name)
+	ch, err := c.channel(ctx, org, name)
 	if err != nil {
 		return err
 	}
 	if err := c.store.DeleteAlertChannel(ctx, ch.ID); err != nil {
 		return err
 	}
-	c.audit(ctx, a.platform(), "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
+	c.audit(ctx, channelAudit(a, org), "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
 	return nil
 }
 
-// TestAlertChannel sends a test notification once, without retries, and
-// reports how it went; the outcome is recorded on the channel like any
-// delivery. Operators only.
-func (c *Core) TestAlertChannel(ctx context.Context, a Actor, name string) (apitypes.AlertChannelTest, error) {
-	if err := a.requireOperator("testing alert channels"); err != nil {
+// TestAlertChannel sends a test notification to one of the org's channels
+// (with platform, the platform's) once, without retries, and reports how
+// it went; the outcome is recorded on the channel like any delivery.
+func (c *Core) TestAlertChannel(ctx context.Context, a Actor, platform bool, name string) (apitypes.AlertChannelTest, error) {
+	org, err := channelsIn(a, platform, "testing alert channels")
+	if err != nil {
 		return apitypes.AlertChannelTest{}, err
 	}
-	ch, err := c.channel(ctx, name)
+	ch, err := c.channel(ctx, org, name)
 	if err != nil {
 		return apitypes.AlertChannelTest{}, err
 	}
@@ -666,10 +684,76 @@ func (c *Core) TestAlertChannel(ctx context.Context, a Actor, name string) (apit
 	return out, nil
 }
 
-func (c *Core) channel(ctx context.Context, name string) (store.AlertChannel, error) {
-	ch, err := c.store.GetAlertChannel(ctx, name)
+// channel is the org's channel (org 0: the platform's) with name.
+func (c *Core) channel(ctx context.Context, org int64, name string) (store.AlertChannel, error) {
+	ch, err := c.store.GetAlertChannel(ctx, store.GetAlertChannelParams{Org: org, Name: name})
 	if store.IsNotFound(err) {
-		return ch, notFound("alert channel %q not found; `dock alerts channel list` lists them", name)
+		list := "`dock alerts channel list`"
+		if org == 0 {
+			list = "`dock alerts channel list --platform`"
+		}
+		return ch, notFound("alert channel %q not found; %s lists them", name, list)
 	}
 	return ch, err
+}
+
+// orgRef is an org ID as a nullable column: nil for 0, the platform.
+func orgRef(org int64) *int64 {
+	if org == 0 {
+		return nil
+	}
+	return &org
+}
+
+// channelAAD binds a channel's sealed settings to its row: a platform
+// channel's by its name, as before channels had orgs; an org's by
+// "<org ID>/<name>" (names have no slash), matching
+// sealedAlertChannel.Key.
+func channelAAD(org *int64, name string) secrets.AAD {
+	if org == nil {
+		return sealedAlertChannel.AAD(name)
+	}
+	return sealedAlertChannel.AAD(strconv.FormatInt(*org, 10) + "/" + name)
+}
+
+// copyPlatformChannels makes the copies of platform channels that
+// migration 0070 asked for: each into an org with an operator among its
+// admins, so those orgs keep hearing about their services now that
+// platform channels receive only platform alerts (ADR 0062). Each copy is
+// sealed for its own row, written with its request's removal, and audited
+// in the org's log. Start runs it; with nothing asked for it is one
+// query.
+func (c *Core) copyPlatformChannels(ctx context.Context) error {
+	rows, err := c.store.ListAlertChannelCopies(ctx)
+	if err != nil {
+		return fmt.Errorf("list alert channel copies: %w", err)
+	}
+	for _, r := range rows {
+		ch, org := r.AlertChannel, r.CopyOrgID
+		plain, err := c.box.Open(ch.Config, channelAAD(nil, ch.Name))
+		if err != nil {
+			c.log.Error("alerts: copy a platform channel into an org", "channel", ch.Name, "org", org, "err", err)
+			continue
+		}
+		sealed, err := c.box.Seal(plain, channelAAD(&org, ch.Name))
+		if err != nil {
+			return err
+		}
+		err = c.store.Tx(ctx, func(q *store.Queries) error {
+			_, err := q.CreateAlertChannel(ctx, store.CreateAlertChannelParams{
+				OrgID: &org, Name: ch.Name, Kind: ch.Kind, Target: ch.Target, Config: sealed, MinSeverity: ch.MinSeverity,
+				RenotifyMinutes: ch.RenotifyMinutes, CreatedAt: now(),
+			})
+			if err != nil && !store.IsUnique(err) {
+				return err
+			}
+			return q.DeleteAlertChannelCopy(ctx, store.DeleteAlertChannelCopyParams{ChannelID: ch.ID, OrgID: org})
+		})
+		if err != nil {
+			return fmt.Errorf("copy alert channel %s: %w", ch.Name, err)
+		}
+		c.audit(ctx, System.InOrg(org), "alert.channel_add", nil, nil, "alert channel "+ch.Name,
+			fmt.Sprintf("copied platform alert channel %s (%s to %s) into the organization: platform channels now get only platform alerts", ch.Name, ch.Kind, ch.Target))
+	}
+	return nil
 }

@@ -54,10 +54,12 @@ type Alert struct {
 	ServiceID   *int64
 	Command     string
 	Target      string
+	OrgID       *int64
 }
 
 type AlertChannel struct {
 	ID              int64
+	OrgID           *int64
 	Name            string
 	Kind            string
 	Target          string
@@ -69,6 +71,11 @@ type AlertChannel struct {
 	LastError       string
 	LastErrorAt     *time.Time
 	Failures        int64
+}
+
+type AlertChannelCopy struct {
+	ChannelID int64
+	OrgID     int64
 }
 
 type AlertNotice struct {
@@ -354,6 +361,33 @@ type EnvironmentMoveService struct {
 	Error       string
 }
 
+type ErrorCount struct {
+	IssueID int64
+	Hour    int64
+	Count   int64
+}
+
+type ErrorIssue struct {
+	ID            int64
+	OrgID         int64
+	ProjectID     int64
+	EnvironmentID int64
+	ServiceID     int64
+	Fingerprint   string
+	Source        string
+	Title         string
+	Culprit       string
+	Sample        string
+	Count         int64
+	FirstSeen     time.Time
+	LastSeen      time.Time
+	FirstRelease  int64
+	LastRelease   int64
+	ResolvedAt    *time.Time
+	ResolvedBy    string
+	RegressedAt   *time.Time
+}
+
 type GitConnection struct {
 	ID              int64
 	ServiceID       int64
@@ -447,6 +481,9 @@ type Org struct {
 	RequestTtlHours  int64
 	RequireTwoFactor bool
 	SsoOnly          bool
+	SuspendedAt      *time.Time
+	SuspendedBy      string
+	DeletedAt        *time.Time
 }
 
 type OrgInvite struct {
@@ -467,6 +504,7 @@ type OrgMember struct {
 	UserID    int64
 	Role      string
 	CreatedAt time.Time
+	ExpiresAt *int64
 }
 
 type OrgVariable struct {

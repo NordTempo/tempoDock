@@ -133,7 +133,7 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `logs`, `list_servers`, `list_alerts` (operators), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `logs`, `list_servers`, `list_alerts` (operators), `list_errors`, `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
 | Configure | `create_service`, `update_service`, `set_pre_deploy_command`, `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain`, `check_domain`, `remove_domain` |
 | Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |

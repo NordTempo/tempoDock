@@ -215,11 +215,15 @@ running).
 | `[alerts] disk_warning_percent`, `disk_critical_percent` | `85`, `95` | Disk use that raises a warning or critical alert |
 | `[alerts] server_offline_minutes` | `5` | How long a server may be unreachable before an alert |
 | `[alerts] crash_loop_restarts`, `crash_loop_minutes` | `3`, `10` | This many restarts within this many minutes is a crash loop |
+| `[alerts] memory_warning_percent`, `memory_critical_percent`, `memory_minutes` | `90`, `97`, `5` | A server's memory use above this for this many minutes raises a warning or critical alert |
+| `[alerts] cpu_percent`, `cpu_minutes` | `90`, `15` | A server's CPUs busier than this for this many minutes raise a warning; `0` never |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
 | `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. A private repository needs one |
 
 Where alerts are sent (webhook, Slack, email) is set with `dock alerts
-channel add`, not in this file; see [ADR 0020](../decisions/0020-retention-and-alerts.md).
+channel add`, not in this file: an organization's channels get its
+alerts, platform channels (`--platform`) the platform's ([ADR
+0062](../decisions/0062-org-alerts-and-operators.md)); see [ADR 0020](../decisions/0020-retention-and-alerts.md).
 Alerts also come from failing health checks (`unhealthy`, [ADR
 0043](../decisions/0043-ongoing-health-checks.md)) and uptime checks
 (`uptime_down`, two failed probes in a row, [ADR

@@ -575,6 +575,7 @@ func (c *Core) forwardOnce(sp spoolOf) error {
 			}
 			c.observeLive(b.Events)
 			c.analyticsWritten(ctx, res, b.Events)
+			c.frontendErrors(serverID, b.Events)
 		}
 		if err := rt.AckSpool(ctx, sp.spool, b.Position, b.Count); err != nil {
 			// The store has them; the next tail starts from its cursor.

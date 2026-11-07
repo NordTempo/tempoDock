@@ -25,7 +25,10 @@ type Actor struct {
 	OrgID   int64
 	OrgSlug string
 	orgs    int
-	Scope   apitypes.Scope
+	// suspended: the platform's operator suspended the org (ADR 0062);
+	// the actor may read in it, nothing more.
+	suspended bool
+	Scope     apitypes.Scope
 	// Operator may run the platform: servers, backups, user accounts.
 	Operator bool
 	// ProjectID and EnvironmentID limit a token to one project or one
@@ -184,10 +187,18 @@ func (a Actor) requireScope(need apitypes.Scope, action string) error {
 	if a.OrgID == 0 && a.Kind != "system" {
 		return a.noOrg(action)
 	}
+	if a.suspended && rank(need) > rank(apitypes.ScopeRead) {
+		return errSuspended(a.OrgSlug, action)
+	}
 	if rank(a.Scope) >= rank(need) {
 		return nil
 	}
 	return errf(apitypes.CodeForbidden, "%s has scope %s; %s requires %s", a, a.Scope, action, need)
+}
+
+// errSuspended is why nothing changes in a suspended org.
+func errSuspended(org, action string) error {
+	return errf(apitypes.CodeConflict, "organization %s is suspended by the platform's operator: its apps keep running, but %s and every other change wait until it is unsuspended; ask the operator", org, action)
 }
 
 // noOrg explains why an actor without an org can't do action.

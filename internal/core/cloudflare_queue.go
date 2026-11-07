@@ -200,9 +200,13 @@ func (c *Core) failed(ctx context.Context, cc *cfConn, attempts int64, err error
 			}
 			cc.row.Status = string(apitypes.CloudflareInvalid)
 			c.log.Warn("Cloudflare refused a connection's token", "connection", cc.row.Name)
+			c.connectionFailed(ctx, cloudflareAlertKey(cc.row.ID), "cloudflare:"+cc.row.Name, "Cloudflare connection "+cc.row.Name+" is failing",
+				reason+". Its tunnels and records wait until then.", "dock cloudflare set "+cc.row.Name+" --token-stdin")
 			return cfOutcome{status: "pending", reason: "waiting for a working token for Cloudflare connection " + cc.row.Name, attempts: attempts}, nil
 		}
-		return cfOutcome{status: "error", reason: fmt.Sprintf("Cloudflare refused (%s); the token of connection %s needs %s, then retry", e.Message, cc.row.Name, perm)}, nil
+		reason := fmt.Sprintf("Cloudflare refused (%s); the token of connection %s needs %s, then retry", e.Message, cc.row.Name, perm)
+		c.connectionFailed(ctx, cloudflareAlertKey(cc.row.ID), "cloudflare:"+cc.row.Name, "Cloudflare connection "+cc.row.Name+" is failing", reason+".", "dock cloudflare retry")
+		return cfOutcome{status: "error", reason: reason}, nil
 	}
 	return cfOutcome{status: "error", reason: e.Error()}, nil
 }
@@ -228,6 +232,7 @@ func (c *Core) cloudflareTunnels(ctx context.Context, conns map[int64]*cfConn) e
 			stepErr = c.makeTunnel(ctx, cc, t)
 		}
 		if stepErr == nil {
+			c.connectionWorks(ctx, cloudflareAlertKey(cc.row.ID))
 			continue
 		}
 		out, err := c.failed(ctx, cc, t.Attempts, stepErr, "Account › Cloudflare Tunnel › Edit")
