@@ -52,9 +52,9 @@ func (c *Core) usableZones(org int64) []apitypes.CloudflareZone {
 	return out
 }
 
-// underBase reports whether host is a server's base domain or under it:
-// the platform's names, which may use any platform zone.
-func underBase(host, base string) bool {
+// atOrUnderBase reports whether host is a server's base domain or under
+// it: the platform's names, which may use any platform zone.
+func atOrUnderBase(host, base string) bool {
 	return base != "" && (host == base || strings.HasSuffix(host, "."+base))
 }
 
@@ -65,7 +65,7 @@ func underBase(host, base string) bool {
 // tunnel (tunnel mode, or a direct server with a tunnel listener), and
 // no record Dock didn't make is in the way. It returns the zone.
 func (c *Core) prepareCloudflareDomain(ctx context.Context, a Actor, srv store.Server, org int64, host string) (store.CloudflareZone, error) {
-	if underBase(host, c.ingressOf(srv).baseDomain) {
+	if atOrUnderBase(host, c.ingressOf(srv).baseDomain) {
 		org = 0
 	}
 	z, ok := c.zoneFor(org, host)
