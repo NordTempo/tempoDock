@@ -58,6 +58,13 @@ export const analyticsStatusQuery = () =>
     queryFn: () => body(api.GET("/api/v1/analytics")),
   });
 
+/** The org's defaults for new sites, over the platform's. */
+export const orgAnalyticsDefaultsQuery = () =>
+  queryOptions({
+    queryKey: ["analytics", "defaults", "org"],
+    queryFn: () => body(api.GET("/api/v1/org/analytics/defaults")),
+  });
+
 export const analyticsDefaultsQuery = () =>
   queryOptions({
     queryKey: ["analytics", "defaults"],

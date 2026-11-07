@@ -7,18 +7,24 @@ import {
   useResetPassword,
   useSetUserDisabled,
 } from "../data/mutations";
-import { queries, useSession, useUsers } from "../data/queries";
-import type { Scope, User } from "../data/types";
+import { useSession } from "../data/queries";
+import type { Scope } from "../data/types";
+import {
+  type Account,
+  accountsQuery,
+  useAccounts,
+  useSetOperator,
+} from "../features/console/accounts";
 import {
   platformSecurityQuery,
   useSetPlatformSecurity,
 } from "../features/console/security";
 import { Saved, useValidation } from "../features/create/form";
-import { roleNote } from "../features/org/data";
 import { PersonCell, TwoFactorState } from "../features/org/people";
+import { consoleOrgsQuery, useConsoleOrgs } from "../features/orgs/data";
 import { useOrg } from "../shell/location";
 import { CliHint } from "../ui/CliHint";
-import { day, plural } from "../ui/format";
+import { day } from "../ui/format";
 import { Icon } from "../ui/icons";
 import {
   Act,
@@ -36,12 +42,15 @@ import {
 } from "../ui/kit";
 import { notify } from "../ui/notice";
 
-// People who sign in to the UI. Nobody can disable, delete or reset
+// User accounts, the platform's (ADR 0062): every account, the orgs it
+// belongs to and owns, and who operates the platform. Roles in an org are
+// that org's own (its Members page). Nobody can disable, delete or reset
 // themselves here.
 export const Route = createFileRoute("/_app/console/users")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
-      queryClient.ensureQueryData(queries.users()),
+      queryClient.ensureQueryData(accountsQuery()),
+      queryClient.ensureQueryData(consoleOrgsQuery()),
       queryClient.ensureQueryData(platformSecurityQuery()),
     ]),
   component: Users,
@@ -51,7 +60,7 @@ export const Route = createFileRoute("/_app/console/users")({
 type Reset = { email: string; password: string };
 
 function Users() {
-  const users = useUsers();
+  const users = useAccounts();
   const me = useSession();
   const org = useOrg();
   const [reset, setReset] = useState<Reset>();
@@ -107,13 +116,10 @@ function Users() {
                 <thead>
                   <tr>
                     <th>Person</th>
-                    <th>Role</th>
+                    <th>Organizations</th>
                     <th>Status</th>
                     <th title="Whether they sign in with a second factor">
                       Two-factor
-                    </th>
-                    <th title="Signed-in browser sessions and usable tokens they created">
-                      Access
                     </th>
                     <th>Added</th>
                     <th />
@@ -152,7 +158,6 @@ function Users() {
             </p>
             <OperatorsTwoFactor />
           </div>
-          <RoleGuide />
         </div>
       </Page>
     </>
@@ -192,51 +197,18 @@ function OperatorsTwoFactor() {
   );
 }
 
-/**
- * What each role can do, beside the users table: the same words as the
- * organization's Members page (roleNote), plus what operators add.
- */
-function RoleGuide() {
-  return (
-    <aside
-      aria-labelledby="roles"
-      className="flex max-w-[360px] min-w-0 flex-[1_1_280px] flex-col gap-3"
-    >
-      <h2 id="roles" className="font-semibold">
-        What each role can do
-      </h2>
-      <dl className="panel">
-        {(["read", "deploy", "admin"] as const).map((role) => (
-          <div
-            key={role}
-            className="border-b border-soft px-3.5 py-3 last:border-b-0"
-          >
-            <dt className="font-medium">{role}</dt>
-            <dd className="text-xs text-mut">{roleNote[role]}</dd>
-          </div>
-        ))}
-        <div className="px-3.5 py-3">
-          <dt className="font-medium text-warn">operator</dt>
-          <dd className="text-xs text-mut">
-            also runs this console: servers, users, backups and updates
-          </dd>
-        </div>
-      </dl>
-    </aside>
-  );
-}
-
-type Asking = "disable" | "delete" | "reset" | null;
+type Asking = "disable" | "delete" | "reset" | "operator" | null;
 
 const UserRow = memo(function UserRow({
   user: u,
   you,
   onReset,
 }: {
-  user: User;
+  user: Account;
   you: boolean;
   onReset: (reset: Reset) => void;
 }) {
+  const setOperator = useSetOperator();
   const setDisabled = useSetUserDisabled();
   const remove = useDeleteUser();
   const resetPassword = useResetPassword();
@@ -251,20 +223,9 @@ const UserRow = memo(function UserRow({
     setPassword("");
     setAsking(null);
   };
-  // Live sessions and usable tokens, as on Members: "2 sessions · 1 token".
-  const access = [
-    u.sessions > 0 && plural(u.sessions, "session"),
-    u.tokens > 0 && plural(u.tokens, "token"),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const sessions = u.sessions
-    ? `Their ${plural(u.sessions, "session")} end now.`
-    : "They have no open sessions.";
+  const sessions = "Their sessions end now.";
   const tokens =
-    u.tokens > 0
-      ? "Their dock login tokens are revoked; tokens they created by hand keep working until revoked on Tokens."
-      : "They have no tokens.";
+    "Their dock login tokens are revoked; tokens they created by hand keep working until revoked in their organization's Tokens.";
 
   const confirms: Record<Exclude<Asking, null>, ReactNode> = {
     disable: (
@@ -310,6 +271,30 @@ const UserRow = memo(function UserRow({
       >
         The account of <b>{u.email}</b> is gone and they can't sign in.{" "}
         {sessions} Their audit history stays. {tokens}
+      </Confirm>
+    ),
+    operator: (
+      <Confirm
+        danger={u.operator}
+        action={u.operator ? "Stop operating" : "Make operator"}
+        title={
+          u.operator
+            ? `Take the console from ${u.email}?`
+            : `Make ${u.email} a platform operator?`
+        }
+        pending={setOperator.isPending}
+        error={setOperator.error}
+        onConfirm={() =>
+          setOperator.mutate(
+            { id: u.id, operator: !u.operator },
+            { onSuccess: close },
+          )
+        }
+        onCancel={close}
+      >
+        {u.operator
+          ? "They keep their organizations, but no longer run the console: servers, users, backups and updates."
+          : "They run this console too: servers, users, every organization's administration, backups and updates. Their organizations' content stays theirs to join."}
       </Confirm>
     ),
     reset: (
@@ -361,11 +346,24 @@ const UserRow = memo(function UserRow({
         )}
         <PersonCell name={u.name} email={u.email} you={you} />
       </td>
-      <td className="py-2.5">
-        {u.role}
+      <td className="py-2.5 whitespace-normal">
         {u.operator && (
-          <span className="block text-2xs text-warn">operator</span>
+          <span className="block text-2xs text-warn">platform operator</span>
         )}
+        {(u.orgs ?? []).length === 0 && !u.operator && (
+          <span className="text-faint">none</span>
+        )}
+        {(u.orgs ?? []).map((o) => (
+          <span key={o.org} className="mr-3 inline-block text-xs">
+            <Link to="/console/orgs" search={{ org: o.org }}>
+              {o.org}
+            </Link>{" "}
+            <span className="text-mut">
+              {o.owner ? "owner" : o.role}
+              {o.expires_at && ", joined as operator"}
+            </span>
+          </span>
+        ))}
       </td>
       <td className="py-2.5">
         {disabled && u.disabled_at ? (
@@ -378,11 +376,6 @@ const UserRow = memo(function UserRow({
       </td>
       <td className="py-2.5">
         <TwoFactorState on={u.two_factor} />
-      </td>
-      <td
-        className={`min-w-[84px] py-2.5 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
-      >
-        {access || "none"}
       </td>
       <td className="py-2.5 text-faint">{day(u.created_at)}</td>
       <td className="w-full py-1.5 text-right">
@@ -426,6 +419,19 @@ const UserRow = memo(function UserRow({
             >
               {(close) => (
                 <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItem}
+                    onClick={() => {
+                      close();
+                      setAsking("operator");
+                    }}
+                  >
+                    {u.operator
+                      ? "Stop operating the platform"
+                      : "Make platform operator"}
+                  </button>
                   <button
                     type="button"
                     role="menuitem"
@@ -475,6 +481,8 @@ function AddUser({ onClose }: { onClose: () => void }) {
   // The least privilege, as on Members' invite form.
   const [role, setRole] = useState<Scope>("read");
   const [operator, setOperator] = useState(false);
+  const orgs = useConsoleOrgs();
+  const [org, setOrg] = useState(orgs[0]?.slug ?? "");
   const v = useValidation();
   const emailOk = /^[^\s@]+@[^\s@]+$/.test(email.trim());
   const errors = {
@@ -503,7 +511,14 @@ function AddUser({ onClose }: { onClose: () => void }) {
           return;
         }
         create.mutate(
-          { email: email.trim(), name: name.trim(), password, role, operator },
+          {
+            email: email.trim(),
+            name: name.trim(),
+            password,
+            org,
+            role,
+            operator,
+          },
           {
             onSuccess: () => {
               notify(`${name.trim()} added`);
@@ -554,7 +569,21 @@ function AddUser({ onClose }: { onClose: () => void }) {
           )}
         </label>
         <label className={label}>
-          Role
+          Organization
+          <select
+            value={org}
+            onChange={(e) => setOrg(e.target.value)}
+            className="py-[7px] text-sm text-fg"
+          >
+            {orgs.map((o) => (
+              <option key={o.slug} value={o.slug}>
+                {o.slug}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={label}>
+          Role there
           <select
             value={role}
             onChange={(e) =>

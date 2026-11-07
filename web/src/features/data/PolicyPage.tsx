@@ -1,5 +1,6 @@
 import { useIsAdmin, useProjectTree } from "../../data/queries";
-import { Page, PageBar } from "../../ui/kit";
+import { Page } from "../../ui/kit";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import {
   builtIn,
   fromText,
@@ -14,8 +15,8 @@ import { kindNames, kinds } from "./policy";
 
 /**
  * The rules editor is the data panel's (style G, shared with tempoBase).
- * On this console page its tokens take style A's values, so it reads as
- * part of the console: the app's fonts, a black page, a white primary,
+ * On the org's settings page its tokens take style A's values, so it reads as
+ * part of the app: the app's fonts, a black page, a white primary,
  * the table in a panel.
  */
 const styleA = [
@@ -45,7 +46,7 @@ const styleA = [
   "[&_select.g-field]:bg-no-repeat",
   "[&_select.g-field]:bg-position-[right_8px_center]",
   "[&_select.g-field:disabled]:bg-none",
-  // The rules table in a bordered panel, like the console's other tables.
+  // The rules table in a bordered panel, like the app's other tables.
   "[&_div:has(>.g-table)]:rounded-panel",
   "[&_div:has(>.g-table)]:border",
   "[&_div:has(>.g-table)]:border-line",
@@ -88,7 +89,7 @@ export function PolicyPage({
 
   return (
     <>
-      <PageBar title="Data access" />
+      <OrgSettingsBar />
       <Page>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1.5 text-xs text-mut">

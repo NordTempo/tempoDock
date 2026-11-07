@@ -73,18 +73,17 @@ function download(name: string, text: string) {
 
 /**
  * The audit log, called Activity everywhere, with its filters: the
- * organization's (/audit) and the console's (/console/audit), which can show the platform's log too
- * (withPlatform). The route owns the URL; onSearch replaces its search
- * params.
+ * organization's (/audit, search.platform unset) or the platform's (the
+ * console's /console/audit sets it; ADR 0062: the console shows platform
+ * events only, an org's own activity is its members'). The route owns
+ * the URL; onSearch replaces its search params.
  */
 export function AuditPage({
   search,
   onSearch,
-  withPlatform = false,
 }: {
   search: AuditSearch;
   onSearch: (search: AuditSearch) => void;
-  withPlatform?: boolean;
 }) {
   const projects = useProjects().map((p) => p.name);
   // An archived project's link lands here too; keep it selectable.
@@ -153,28 +152,6 @@ export function AuditPage({
           className="flex flex-wrap items-center gap-2.5"
           onSubmit={(e) => e.preventDefault()}
         >
-          {withPlatform && (
-            <fieldset
-              aria-label="Log"
-              className={`seg ${control} *:flex *:items-center`}
-            >
-              {(
-                [
-                  [undefined, "Organization"],
-                  [true, "Platform"],
-                ] as const
-              ).map(([platform, label]) => (
-                <button
-                  key={label}
-                  type="button"
-                  aria-pressed={search.platform === platform}
-                  onClick={() => onSearch({ platform })}
-                >
-                  {label}
-                </button>
-              ))}
-            </fieldset>
-          )}
           <fieldset
             aria-label="Actor type"
             className={`seg ${control} *:flex *:items-center`}
