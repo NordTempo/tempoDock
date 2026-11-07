@@ -42,7 +42,7 @@ func TestSyncKeepsEveryCommittedWrite(t *testing.T) {
 	// acks volume once its insert committed.
 	db := e.start(node.ContainerSpec{
 		Name: e.name("db"), Image: pgImage, Labels: labels,
-		Env: map[string]string{"POSTGRES_HOST_AUTH_METHOD": "trust"},
+		Env:    map[string]string{"POSTGRES_HOST_AUTH_METHOD": "trust"},
 		Mounts: []node.Mount{{Volume: src, Path: "/var/lib/postgresql/data"}, {Volume: acks, Path: "/acks"}},
 		Cmd: `docker-entrypoint.sh postgres & pg=$!
 trap 'kill -INT $pg; wait $pg; exit 0' TERM
