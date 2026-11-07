@@ -42,6 +42,9 @@ type moveState struct {
 	driving map[int64]bool
 	// hook, when set (tests), runs before each step of a move.
 	hook func(id int64, step apitypes.MoveStep)
+	// deployHook, when set (tests), runs as a deploy starts, before it
+	// looks for a move of its environment.
+	deployHook func()
 	// recovered is set once Start has dealt with the moves a restart cut
 	// short; until then a server reconnecting doesn't resume any, or it
 	// could drive one forward that must roll back.
