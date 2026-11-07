@@ -243,6 +243,71 @@ func (q *Queries) EndOrphanedAccessRequests(ctx context.Context, now *time.Time)
 	return items, nil
 }
 
+const endUnlockedAccessRequests = `-- name: EndUnlockedAccessRequests :many
+UPDATE access_requests SET status = 'expired', finished_at = ?1, comment = ?2
+WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at > +?1 AND environment_id = +?3
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at
+`
+
+type EndUnlockedAccessRequestsParams struct {
+	Now           *time.Time
+	Comment       string
+	EnvironmentID int64
+}
+
+// EndUnlockedAccessRequests expires an environment's pending requests
+// once it is unlocked or opened: the calls need no approval now, so the
+// tokens call again. The comment says why. Through access_requests_open,
+// like ExpireAccessRequests.
+func (q *Queries) EndUnlockedAccessRequests(ctx context.Context, arg EndUnlockedAccessRequestsParams) ([]AccessRequest, error) {
+	rows, err := q.db.QueryContext(ctx, endUnlockedAccessRequests, arg.Now, arg.Comment, arg.EnvironmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AccessRequest
+	for rows.Next() {
+		var i AccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.Nonce,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.EnvironmentID,
+			&i.Status,
+			&i.Via,
+			&i.Operation,
+			&i.Title,
+			&i.Action,
+			&i.Args,
+			&i.Fingerprint,
+			&i.Reason,
+			&i.TokenID,
+			&i.RequestedBy,
+			&i.AuditMark,
+			&i.Upload,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.DecidedBy,
+			&i.DecidedAt,
+			&i.Comment,
+			&i.Result,
+			&i.Error,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireAccessRequests = `-- name: ExpireAccessRequests :many
 UPDATE access_requests SET status = 'expired', finished_at = expires_at
 WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at <= +?

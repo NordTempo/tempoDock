@@ -144,8 +144,9 @@ func (c *Core) LockEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 }
 
 // UnlockEnvironment unlocks an environment, or with Minutes opens it for
-// that long. Admins only, and the lock applies: a token asking to unlock
-// gets an access request like any other change.
+// that long, and expires its pending access requests. Admins only, and
+// the lock applies: a token asking to unlock gets an access request like
+// any other change.
 func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req apitypes.UnlockEnvironmentRequest) (apitypes.Environment, error) {
 	es, err := c.envFor(ctx, a, ref, apitypes.ScopeAdmin, "unlocking an environment")
 	if err != nil {
@@ -161,13 +162,20 @@ func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	if es.env.LockedAt == nil {
 		return c.toEnv(ctx, es)
 	}
+	var out apitypes.Environment
 	if req.Minutes == 0 {
-		return c.setLock(ctx, a, es, store.SetEnvironmentLockParams{ID: es.env.ID}, "environment.unlock", "unlocked")
+		out, err = c.setLock(ctx, a, es, store.SetEnvironmentLockParams{ID: es.env.ID}, "environment.unlock", "unlocked")
+	} else {
+		until := now().Add(time.Duration(req.Minutes) * time.Minute)
+		out, err = c.setLock(ctx, a, es, store.SetEnvironmentLockParams{
+			LockedAt: es.env.LockedAt, LockedBy: es.env.LockedBy, LockReason: es.env.LockReason, OpenUntil: &until, ID: es.env.ID,
+		}, "environment.unlock", fmt.Sprintf("opened for %s: tokens may change it until %s, then it locks again", time.Duration(req.Minutes)*time.Minute, until.Format("15:04 MST")))
 	}
-	until := now().Add(time.Duration(req.Minutes) * time.Minute)
-	return c.setLock(ctx, a, es, store.SetEnvironmentLockParams{
-		LockedAt: es.env.LockedAt, LockedBy: es.env.LockedBy, LockReason: es.env.LockReason, OpenUntil: &until, ID: es.env.ID,
-	}, "environment.unlock", fmt.Sprintf("opened for %s: tokens may change it until %s, then it locks again", time.Duration(req.Minutes)*time.Minute, until.Format("15:04 MST")))
+	if err == nil {
+		// Tokens may make their calls themselves now.
+		c.endUnlockedRequests(ctx, es.env.ID)
+	}
+	return out, err
 }
 
 // setLock writes an environment's lock, audits it and tells open pages.

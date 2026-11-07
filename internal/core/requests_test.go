@@ -62,6 +62,20 @@ func (h *requestHarness) ask(value, reason string) *LockedError {
 	return le
 }
 
+// askIn files the agent's refused shared variable in env as a request.
+func (h *requestHarness) askIn(env string) int64 {
+	h.t.Helper()
+	req := apitypes.SetVariablesRequest{Set: map[string]string{"B": "1"}}
+	_, err := h.c.SetVariables(h.ctx, h.agent, EnvRef{"shop", env}, req)
+	args, _ := json.Marshal(req)
+	err = h.c.FileRequest(h.ctx, h.agent, err, Call{Via: "test", Op: "set-variables", Title: "Set variables", Args: args})
+	le, ok := errors.AsType[*LockedError](err)
+	if !ok || le.Request == 0 {
+		h.t.Fatalf("want a filed request in %s, got %v", env, err)
+	}
+	return le.Request
+}
+
 // staged reports whether A is staged on web.
 func (h *requestHarness) staged() bool {
 	h.t.Helper()
@@ -280,17 +294,39 @@ func TestRequestExpiryWakesWaiter(t *testing.T) {
 	h.openAlert(requestAlertKey(r.Request), false)
 }
 
-// TestRequestApproveAfterUnlock: a request approved after its
-// environment was unlocked still runs.
-func TestRequestApproveAfterUnlock(t *testing.T) {
-	h := newRequestHarness(t)
-	r := h.ask("1", "")
-	if _, err := h.c.UnlockEnvironment(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.UnlockEnvironmentRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	out, err := h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{})
-	if err != nil || out.Status != apitypes.RequestDone || !h.staged() {
-		t.Fatalf("approve after unlock: %+v %v", out, err)
+// TestRequestEndsWhenUnlocked: unlocking an environment, or opening it
+// for a while, expires its pending requests at once: waiters hear why,
+// the alerts resolve, nothing is left to approve, and the token's call
+// goes through when made again. Other environments' requests stay.
+func TestRequestEndsWhenUnlocked(t *testing.T) {
+	for _, minutes := range []int{0, 30} {
+		h := newRequestHarness(t)
+		if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+			t.Fatal(err)
+		}
+		h.lock("staging")
+		other := h.askIn("staging")
+		r := h.ask("1", "")
+		h.openAlert(requestAlertKey(r.Request), true)
+		waiter := h.waitFor(r.Request)
+		time.Sleep(20 * time.Millisecond) // let the waiter subscribe
+		if _, err := h.c.UnlockEnvironment(h.ctx, h.admin, EnvRef{"shop", "production"}, apitypes.UnlockEnvironmentRequest{Minutes: minutes}); err != nil {
+			t.Fatal(err)
+		}
+		got := <-waiter
+		if got.Status != apitypes.RequestExpired || got.Comment != unlockedComment || got.FinishedAt == nil {
+			t.Fatalf("minutes=%d: after unlock: %+v", minutes, got)
+		}
+		h.openAlert(requestAlertKey(r.Request), false)
+		if _, err := h.c.DecideRequest(h.ctx, h.admin, r.Request, true, apitypes.DecideAccessRequest{}); CodeOf(err) != apitypes.CodeConflict || h.staged() {
+			t.Fatalf("minutes=%d: approve after unlock: %v", minutes, err)
+		}
+		if _, err := h.c.SetVariables(h.ctx, h.agent, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"A": "1"}}); err != nil {
+			t.Fatalf("minutes=%d: the call again: %v", minutes, err)
+		}
+		if got, _ := h.c.GetRequest(h.ctx, h.admin, other); got.Status != apitypes.RequestPending {
+			t.Fatalf("minutes=%d: another environment's request is %s", minutes, got.Status)
+		}
 	}
 }
 
