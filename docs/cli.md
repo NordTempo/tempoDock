@@ -146,6 +146,9 @@ The organization comes from, in order:
 
 An API token never acts in another organization than its own.
 
+An organization's old slug keeps naming it after an admin changes it
+(`dock org rename --slug`), until another organization takes it.
+
 ## Config file and links
 
 `$XDG_CONFIG_HOME/dock/config.json` (default
@@ -184,7 +187,7 @@ name. Update older CLI clients before renaming projects they use.
 | `org two-factor [on\|off]` | Whether the organization requires its members to sign in with a second factor; `on` or `off` changes it (admin with access to every project; turning it on needs your own sign-in to have used one). Members without one stay signed in but can't act in it (`two_factor_required`, exit 3) |
 | `org sso list\|add <name>\|set <name>\|remove <name>` | The organization's single sign-on providers, OpenID Connect (ADR 0058; admin with access to every project, recently confirmed). `add` takes `--issuer URL --client-id ID --client-secret-stdin --domain D` (repeat `--domain`) and `--jit-role read\|deploy` to let people with an allowed domain join without an invite; `set` changes what it's given (`--domain` replaces the list, `--jit-role ""` back to invite only). `list` and `add` show the redirect URL to register at the provider. Client secrets are never shown |
 | `org sso-only [on\|off]` | Whether members act in the organization only after signing in through its single sign-on; turning it on needs your own sign-in to have gone through it. Other sessions and browser-login tokens stay signed in but can't act in it (`sso_required`, exit 3). API tokens are not affected |
-| `org rename <name>`, `org leave [-y]`, `org delete [-y]` | Rename (admin; the slug stays); leave (the last admin can't); delete an organization without projects (admin) |
+| `org rename [<name>] [--slug S]`, `org leave [-y]`, `org delete [-y]` | Change the name, the slug (the address) or both (admin; ADR 0064): the old slug keeps working until another organization takes it, and this machine's contexts and links that named it follow; leave (the last admin can't); delete an organization without projects (admin) |
 | `mcp [--show-token] [--name N]` | Print the MCP client config for the context's server ([agents](guide/agents.md#mcp)): the endpoint URL, a `claude mcp add` command and an `mcp.json` entry. The token is `${DOCK_TOKEN}` unless `--show-token` |
 | `me name <name>` | Change your display name (1 to 64 characters, trimmed). Needs a browser-login token, which acts for you; API tokens have no account. The account page in the browser has the same |
 | `me password [--password-stdin]` | Change your own password: prompts for the current one and the new one twice, or reads both from stdin (one per line). Needs a browser-login token, which acts for you; API tokens have no password. Your UI sessions and other browser-login tokens end; the CLI's own token stays valid |

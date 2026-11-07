@@ -776,7 +776,7 @@ export interface paths {
         head?: never;
         /**
          * Rename an organization
-         * @description Changes any organization's display name; its slug stays. Audited in its log and the platform's. Operators only.
+         * @description Changes any organization's name, slug or both, as its admins can; the old slug keeps naming it until another organization takes it. Audited in its log and the platform's. Operators only.
          */
         patch: operations["rename-console-org"];
         trace?: never;
@@ -1540,8 +1540,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename the organization
-         * @description Its slug, its address, stays. Scope: admin, unlimited.
+         * Rename the organization or change its slug
+         * @description Changes its name, its slug (its address), or both. The old slug keeps naming the organization until another one takes it. Scope: admin, unlimited.
          */
         patch: operations["update-org"];
         trace?: never;
@@ -8434,7 +8434,9 @@ export interface components {
             name: string;
         };
         UpdateOrgRequest: {
-            name: string;
+            name?: string;
+            /** @description Lowercase letters, digits and dashes */
+            slug?: string;
         };
         UpdateRelease: {
             name?: string;

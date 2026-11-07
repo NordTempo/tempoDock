@@ -379,26 +379,84 @@ func describeVarUses(uses []apitypes.VariableUse) string {
 	return strings.Join(parts, ", ")
 }
 
+// newOrgRenameCmd is `dock org rename [<name>] [--slug <slug>]`. A new
+// slug is also written into this machine's contexts and links on the same
+// server that named the old one; the old slug keeps working anyway.
 func newOrgRenameCmd(g *globals) *cobra.Command {
-	return &cobra.Command{
-		Use:   "rename <name>",
-		Short: "Change the organization's name; its slug stays (admin)",
-		Args:  cobra.ExactArgs(1),
+	var slug string
+	cmd := &cobra.Command{
+		Use:   "rename [<name>] [--slug <slug>]",
+		Short: "Change the organization's name, its slug (its address), or both (admin)",
+		Long: `Change the organization's display name, its slug, or both.
+
+The slug is its address: /<slug>/... in the browser and --org <slug> here.
+After a change the old slug keeps working for links, scripts and other
+people's CLI contexts, until another organization takes it.`,
+		Example: "  dock org rename \"NordTempo\"\n  dock org rename --slug nordtempo\n  dock org rename \"NordTempo\" --slug nordtempo",
+		Args:    cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			req := apitypes.UpdateOrgRequest{Slug: slug}
+			if len(args) == 1 {
+				req.Name = args[0]
+			}
+			if req.Name == "" && req.Slug == "" {
+				return &output.Error{Exit: output.ExitUsage, Message: "give a new name, --slug, or both", Hint: "For example `dock org rename --slug nordtempo`."}
+			}
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
-			o, err := send[apitypes.Org](cmd.Context(), s, http.MethodPatch, apiPrefix+"/org", apitypes.UpdateOrgRequest{Name: args[0]})
+			var before apitypes.Org
+			if req.Slug != "" {
+				if before, err = get[apitypes.Org](cmd.Context(), s, apiPrefix+"/org"); err != nil {
+					return err
+				}
+			}
+			o, err := send[apitypes.Org](cmd.Context(), s, http.MethodPatch, apiPrefix+"/org", req)
 			if err != nil {
 				return err
 			}
+			moved := before.Slug != "" && before.Slug != o.Slug
+			if moved && s.cfg.followSlug(s.server.Server, before.Slug, o.Slug) {
+				if err := s.cfg.save(); err != nil {
+					return err
+				}
+			}
 			return g.io.Print(o, func() error {
-				g.io.Successf("Renamed %s to %s", o.Slug, o.Name)
+				if req.Name != "" {
+					g.io.Successf("Renamed %s to %s", o.Slug, o.Name)
+				}
+				if moved {
+					g.io.Successf("Moved %s to %s; %s keeps working until another organization takes it", before.Slug, o.Slug, before.Slug)
+				}
 				return nil
 			})
 		},
 	}
+	cmd.Flags().StringVar(&slug, "slug", "", "new slug: lowercase letters, digits and dashes, at most 32")
+	return cmd
+}
+
+// followSlug points the contexts and links for server that name org
+// slug from at to instead, and reports whether any did.
+func (c userConfig) followSlug(server, from, to string) bool {
+	changed := false
+	for name, ctx := range c.Contexts {
+		if ctx.Server != server {
+			continue
+		}
+		if ctx.Org == from {
+			ctx.Org, changed = to, true
+			c.Contexts[name] = ctx
+		}
+		for dir, l := range c.Links {
+			if l.Context == name && l.Org == from {
+				l.Org, changed = to, true
+				c.Links[dir] = l
+			}
+		}
+	}
+	return changed
 }
 
 // newOrgGoneCmd is `dock org leave` and `dock org delete`: confirmed, then

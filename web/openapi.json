@@ -12309,13 +12309,14 @@
         "properties": {
           "name": {
             "maxLength": 100,
-            "minLength": 1,
+            "type": "string"
+          },
+          "slug": {
+            "description": "Lowercase letters, digits and dashes",
+            "maxLength": 32,
             "type": "string"
           }
         },
-        "required": [
-          "name"
-        ],
         "type": "object"
       },
       "UpdateRelease": {
@@ -18876,7 +18877,7 @@
         ]
       },
       "patch": {
-        "description": "Changes any organization's display name; its slug stays. Audited in its log and the platform's. Operators only.",
+        "description": "Changes any organization's name, slug or both, as its admins can; the old slug keeps naming it until another organization takes it. Audited in its log and the platform's. Operators only.",
         "operationId": "rename-console-org",
         "parameters": [
           {
@@ -24176,7 +24177,7 @@
         ]
       },
       "patch": {
-        "description": "Its slug, its address, stays. Scope: admin, unlimited.",
+        "description": "Changes its name, its slug (its address), or both. The old slug keeps naming the organization until another one takes it. Scope: admin, unlimited.",
         "operationId": "update-org",
         "parameters": [
           {
@@ -24298,7 +24299,7 @@
             "session": []
           }
         ],
-        "summary": "Rename the organization",
+        "summary": "Rename the organization or change its slug",
         "tags": [
           "organizations"
         ]

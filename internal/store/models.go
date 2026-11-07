@@ -509,6 +509,12 @@ type OrgMember struct {
 	ExpiresAt *int64
 }
 
+type OrgOldSlug struct {
+	Slug      string
+	OrgID     int64
+	ChangedAt time.Time
+}
+
 type OrgSiteDefault struct {
 	OrgID     int64
 	Settings  string

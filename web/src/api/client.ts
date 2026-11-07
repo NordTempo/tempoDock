@@ -54,8 +54,10 @@ export function withOrg(url: string) {
 
 // The org rides in a header: adding the `org` parameter would mean
 // rebuilding the request, and a rebuilt request loses its body.
+// A call that names its org itself (movedOrg) keeps it.
 api.use({
   onRequest({ request }) {
+    if (request.headers.has("Dock-Org")) return undefined;
     if (org && (!inConsole || new URL(request.url).pathname === "/api/v1/me"))
       request.headers.set("Dock-Org", org);
     return undefined;

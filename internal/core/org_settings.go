@@ -34,20 +34,59 @@ func (c *Core) GetOrg(ctx context.Context, a Actor) (apitypes.Org, error) {
 	return toOrg(o, a.Scope), nil
 }
 
-// RenameOrg changes the org's display name; its slug (its address) stays.
+// RenameOrg changes the org's display name, its slug (its address), or
+// both. A new slug follows CreateOrg's rules; the old one keeps naming
+// the org (ADR 0064) until another org takes it.
 func (c *Core) RenameOrg(ctx context.Context, a Actor, req apitypes.UpdateOrgRequest) (apitypes.Org, error) {
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "renaming the organization"); err != nil {
 		return apitypes.Org{}, err
 	}
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		return apitypes.Org{}, invalid("the organization's name can't be empty")
+	name, slug := strings.TrimSpace(req.Name), strings.TrimSpace(req.Slug)
+	if name == "" && slug == "" {
+		return apitypes.Org{}, invalid("give the organization a new name, a new slug, or both")
 	}
-	o, err := c.store.RenameOrg(ctx, store.RenameOrgParams{Name: name, ID: a.OrgID})
+	o, err := c.store.GetOrg(ctx, a.OrgID)
 	if err != nil {
 		return apitypes.Org{}, err
 	}
-	c.audit(ctx, a, "org.rename", nil, nil, o.Slug, "renamed the organization to "+name)
+	old := o
+	if slug != "" && slug != o.Slug {
+		if err := validOrgSlug(slug); err != nil {
+			return apitypes.Org{}, err
+		}
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if name != "" && name != o.Name {
+			if o, err = q.RenameOrg(ctx, store.RenameOrgParams{Name: name, ID: o.ID}); err != nil {
+				return err
+			}
+		}
+		if slug == "" || slug == o.Slug {
+			return nil
+		}
+		// Taking a slug frees it from any org that had it, this one too.
+		if err := q.ReleaseOrgOldSlug(ctx, slug); err != nil {
+			return err
+		}
+		prev := o.Slug
+		if o, err = q.SetOrgSlug(ctx, store.SetOrgSlugParams{Slug: slug, ID: o.ID}); err != nil {
+			return err
+		}
+		return q.AddOrgOldSlug(ctx, store.AddOrgOldSlugParams{Slug: prev, OrgID: o.ID, ChangedAt: now()})
+	})
+	if store.IsUnique(err) {
+		return apitypes.Org{}, conflict("organization %q already exists; pick another slug", slug)
+	}
+	if err != nil {
+		return apitypes.Org{}, err
+	}
+	a.OrgSlug = o.Slug
+	if o.Name != old.Name {
+		c.audit(ctx, a, "org.rename", nil, nil, o.Slug, "renamed the organization to "+o.Name)
+	}
+	if o.Slug != old.Slug {
+		c.audit(ctx, a, "org.slug", nil, nil, o.Slug, fmt.Sprintf("moved the organization's address from /%s to /%s; the old one keeps working", old.Slug, o.Slug))
+	}
 	return toOrg(o, a.Scope), nil
 }
 

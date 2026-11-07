@@ -71,6 +71,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
 | [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | accepted |
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
+| [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
 
 ## Template
 

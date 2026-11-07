@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { currentOrg, setOrg } from "../../api/client";
 import { useSession } from "../../data/queries";
 import { Dialog } from "../../ui/Dialog";
 import { day, plural, size } from "../../ui/format";
@@ -12,6 +13,7 @@ import {
   PageBar,
   StateText,
 } from "../../ui/kit";
+import { nameProblem, toName } from "../create/form";
 import {
   type ConsoleOrg,
   type Role,
@@ -270,15 +272,50 @@ function Detail({ org: o }: { org: ConsoleOrg }) {
 
 type DialogProps = { org: ConsoleOrg; onClose: () => void };
 
+/**
+ * An org's name and slug (ADR 0064). A new slug asks first: the org's
+ * pages move, and its old address keeps working.
+ */
 function Rename({ org, onClose }: DialogProps) {
   const rename = useRenameConsoleOrg();
+  const navigate = useNavigate();
   const [name, setName] = useState(org.name);
+  const [slug, setSlug] = useState(org.slug);
+  const [asking, setAsking] = useState(false);
+  const want = { name: name.trim(), slug: slug.trim() };
+  const moved = want.slug !== org.slug;
+  const problem = moved ? nameProblem("org", want.slug) : undefined;
+  const changed = moved || (want.name !== org.name && want.name !== "");
+  const save = () =>
+    rename.mutate(
+      {
+        org: org.slug,
+        name: want.name !== org.name ? want.name : undefined,
+        slug: moved ? want.slug : undefined,
+      },
+      {
+        onSuccess: (o) => {
+          // The operator's own org too, so "Back to projects" finds it.
+          if (currentOrg() === org.slug) setOrg(o.slug);
+          if (moved)
+            navigate({
+              to: "/console/orgs",
+              search: { org: o.slug },
+              replace: true,
+            });
+          onClose();
+        },
+      },
+    );
   return (
     <Dialog title={`Edit ${org.slug}`} onClose={onClose}>
       <form
+        className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          rename.mutate({ org: org.slug, name }, { onSuccess: onClose });
+          if (!changed || problem) return;
+          if (moved) setAsking(true);
+          else save();
         }}
       >
         <label className="flex flex-col gap-1.5 text-xs text-mut">
@@ -289,20 +326,50 @@ function Rename({ org, onClose }: DialogProps) {
             onChange={(e) => setName(e.target.value)}
           />
         </label>
-        <p className="mt-2 text-xs text-faint">
-          Its slug, {org.slug}, is its address and stays.
+        <label className="flex flex-col gap-1.5 text-xs text-mut">
+          Slug
+          <input
+            className={`field font-mono ${problem ? "border-fail" : ""}`}
+            value={slug}
+            maxLength={32}
+            spellCheck={false}
+            autoComplete="off"
+            aria-invalid={!!problem}
+            onChange={(e) => setSlug(toName(e.target.value))}
+          />
+        </label>
+        <p className={`text-xs ${problem ? "text-fail" : "text-faint"}`}>
+          {problem ??
+            (moved
+              ? `Its addresses move to /${want.slug}/... Old links to /${org.slug}/ keep working.`
+              : "Its address. Old links keep working after a change.")}
         </p>
         <DialogFoot note={<ErrorText error={rename.error} />}>
           <Button onClick={onClose}>Cancel</Button>
           <Button
             type="submit"
             primary
-            disabled={!name.trim() || name === org.name || rename.isPending}
+            disabled={!changed || !!problem || rename.isPending}
           >
             Save
           </Button>
         </DialogFoot>
       </form>
+      {asking && (
+        <Confirm
+          action={`Move ${org.slug} to /${want.slug}`}
+          pending={rename.isPending}
+          error={rename.error}
+          onConfirm={save}
+          onCancel={() => setAsking(false)}
+        >
+          Its pages move from <b>/{org.slug}/...</b> to <b>/{want.slug}/...</b>,
+          and the CLI takes <b>--org {want.slug}</b>. Links, bookmarks, scripts
+          and CLI contexts that use <b>{org.slug}</b> keep working until another
+          organization takes that slug. Its admins see the change in their
+          activity log.
+        </Confirm>
+      )}
     </Dialog>
   );
 }

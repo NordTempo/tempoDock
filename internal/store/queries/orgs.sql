@@ -46,6 +46,23 @@ WHERE projects.org_id = +?;
 -- name: RenameOrg :one
 UPDATE orgs SET name = ? WHERE id = +? RETURNING *;
 
+-- name: SetOrgSlug :one
+UPDATE orgs SET slug = ? WHERE id = +? RETURNING *;
+
+-- AddOrgOldSlug records a slug an org had (ADR 0064).
+-- name: AddOrgOldSlug :exec
+INSERT INTO org_old_slugs (slug, org_id, changed_at) VALUES (?, ?, ?)
+ON CONFLICT (slug) DO UPDATE SET org_id = excluded.org_id, changed_at = excluded.changed_at;
+
+-- ReleaseOrgOldSlug frees a slug an org had, for an org taking it.
+-- name: ReleaseOrgOldSlug :exec
+DELETE FROM org_old_slugs WHERE slug = +?;
+
+-- MovedOrgSlug is the slug the org that once had slug has now.
+-- name: MovedOrgSlug :one
+SELECT orgs.slug FROM org_old_slugs JOIN orgs ON orgs.id = org_old_slugs.org_id
+WHERE org_old_slugs.slug = +?;
+
 -- name: CountOrgProjects :one
 SELECT count(*) FROM projects WHERE org_id = +?;
 

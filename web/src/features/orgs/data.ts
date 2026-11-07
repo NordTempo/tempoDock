@@ -56,15 +56,16 @@ const touches = (org: string) => [consoleOrgsKey, membersKey(org), ["audit"]];
 
 export const useRenameConsoleOrg = () =>
   useAction(
-    ({ org, name }: { org: string; name: string }) =>
+    ({ org, ...change }: { org: string } & Schemas["UpdateOrgRequest"]) =>
       body(
         api.PATCH("/api/v1/console/orgs/{org}", {
           ...path(org),
-          body: { name },
+          body: change,
         }),
       ),
-    ({ org }) => touches(org),
-    ({ name }) => `Renamed to ${name}`,
+    // The org list too: an operator's own orgs may have moved.
+    ({ org }) => [...touches(org), ["orgs"]],
+    (_, o) => `Saved ${o.slug}`,
   );
 
 export const useSuspendConsoleOrg = () =>

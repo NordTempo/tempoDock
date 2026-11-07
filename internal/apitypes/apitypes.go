@@ -97,9 +97,12 @@ type CreateOrgRequest struct {
 	Name string `json:"name,omitempty" maxLength:"100" doc:"Defaults to the slug"`
 }
 
-// UpdateOrgRequest renames an org. Its slug (its address) stays.
+// UpdateOrgRequest renames an org, changes its slug (its address), or
+// both; an empty field stays as it is. The old slug keeps naming the org
+// until another org takes it (ADR 0064).
 type UpdateOrgRequest struct {
-	Name string `json:"name" minLength:"1" maxLength:"100"`
+	Name string `json:"name,omitempty" maxLength:"100"`
+	Slug string `json:"slug,omitempty" maxLength:"32" doc:"Lowercase letters, digits and dashes"`
 }
 
 // SetMemberRoleRequest changes a member's role in the org.

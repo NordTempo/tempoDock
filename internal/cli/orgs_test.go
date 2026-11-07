@@ -83,4 +83,33 @@ func TestOrgSettingsCommands(t *testing.T) {
 	if o := ok[apitypes.Org](t, "org", "rename", "Test Org"); o.Name != "Test Org" || o.Slug != "test" {
 		t.Fatalf("rename = %+v", o)
 	}
+
+	// A new slug: this machine's context and link follow it, and the old
+	// one keeps working (ADR 0064).
+	ok[orgView](t, "org", "use", "test")
+	ok[apitypes.Project](t, "project", "create", "shop")
+	ok[linkView](t, "link", "-p", "shop")
+	if o := ok[apitypes.Org](t, "org", "rename", "--slug", "nordtempo"); o.Slug != "nordtempo" || o.Name != "Test Org" {
+		t.Fatalf("rename --slug = %+v", o)
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range cfg.Contexts {
+		if c.Org != "nordtempo" {
+			t.Errorf("context %s acts in %q, want nordtempo", name, c.Org)
+		}
+	}
+	for dir, l := range cfg.Links {
+		if l.Org != "nordtempo" {
+			t.Errorf("link %s is in %q, want nordtempo", dir, l.Org)
+		}
+	}
+	if p := ok[[]apitypes.Project](t, "project", "list", "--org", "test"); len(p) != 1 {
+		t.Fatalf("project list --org test = %+v", p)
+	}
+	if v := ok[orgView](t, "org", "use", "test"); v.Slug != "nordtempo" {
+		t.Fatalf("org use with the old slug = %+v", v)
+	}
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"slices"
 
@@ -41,11 +42,8 @@ func (c *Core) CreateOrg(ctx context.Context, a Actor, req apitypes.CreateOrgReq
 	if a.UserID == 0 {
 		return apitypes.Org{}, errf(apitypes.CodeForbidden, "%s can't create organizations; log in as a user", a)
 	}
-	if err := validName("organization", req.Slug); err != nil {
+	if err := validOrgSlug(req.Slug); err != nil {
 		return apitypes.Org{}, err
-	}
-	if slices.Contains(reservedOrgSlugs, req.Slug) {
-		return apitypes.Org{}, invalid("%q is the address of a page in the web UI; pick another organization slug", req.Slug)
 	}
 	var org store.Org
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
@@ -66,11 +64,51 @@ func (c *Core) CreateOrg(ctx context.Context, a Actor, req apitypes.CreateOrgReq
 }
 
 // createOrgTx creates an org with no members; name defaults to the slug.
+// A slug another org had before it changed its own is taken from it.
 func createOrgTx(ctx context.Context, q *store.Queries, slug, name string) (store.Org, error) {
 	if name == "" {
 		name = slug
 	}
+	if err := q.ReleaseOrgOldSlug(ctx, slug); err != nil {
+		return store.Org{}, err
+	}
 	return q.CreateOrg(ctx, store.CreateOrgParams{Slug: slug, Name: name})
+}
+
+// validOrgSlug checks a new org slug: the name rules, and not the
+// address of a top-level page of the web UI.
+func validOrgSlug(slug string) error {
+	if err := validName("organization", slug); err != nil {
+		return err
+	}
+	if slices.Contains(reservedOrgSlugs, slug) {
+		return invalid("%q is the address of a page in the web UI; pick another organization slug", slug)
+	}
+	return nil
+}
+
+// movedSlug is the slug an org has now that once had slug (ADR 0064),
+// and whether there is one. Lookups by slug ask it only once the slug
+// names no org, so a current slug costs nothing extra.
+func (c *Core) movedSlug(ctx context.Context, slug string) (string, bool, error) {
+	to, err := c.store.MovedOrgSlug(ctx, slug)
+	if store.IsNotFound(err) {
+		return "", false, nil
+	}
+	return to, err == nil, err
+}
+
+// orgBySlug loads the org named by slug, its current one or one it had.
+func (c *Core) orgBySlug(ctx context.Context, slug string) (store.Org, error) {
+	o, err := c.store.GetOrgBySlug(ctx, slug)
+	if !store.IsNotFound(err) {
+		return o, err
+	}
+	to, ok, merr := c.movedSlug(ctx, slug)
+	if merr != nil || !ok {
+		return o, cmp.Or(merr, err)
+	}
+	return c.store.GetOrgBySlug(ctx, to)
 }
 
 func toOrg(o store.Org, role apitypes.Scope) apitypes.Org {
