@@ -121,7 +121,8 @@ How it works (`internal/core/operator.go`, `/console/orgs/...`):
 - **Owner** is an org's first admin. **No admin** is an org without an
   admin of its own; an operator who joined doesn't count, and may leave
   while the org keeps one.
-- **Operator actions** reuse the org's own operations (rename, roles,
+- **Operator actions** reuse the org's own operations (rename and slug
+  ([0064](0064-changing-an-org-slug.md)), roles,
   removing members) with the operator acting as an admin there
   (`operatorIn`), built only by these functions, so it never reaches the
   org's content. Each is audited in the org's log and the platform's.

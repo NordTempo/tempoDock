@@ -158,6 +158,14 @@ func (c *Core) ssoProviderFor(ctx context.Context, req apitypes.SSOStartRequest)
 		}
 		row, err := c.store.GetSSOProviderByOrg(ctx, store.GetSSOProviderByOrgParams{Slug: req.Org, Name: req.Provider})
 		if store.IsNotFound(err) {
+			// An org's old slug still names it (ADR 0064).
+			if to, ok, merr := c.movedSlug(ctx, req.Org); merr != nil {
+				return ssoProvider{}, nil, merr
+			} else if ok {
+				row, err = c.store.GetSSOProviderByOrg(ctx, store.GetSSOProviderByOrgParams{Slug: to, Name: req.Provider})
+			}
+		}
+		if store.IsNotFound(err) {
 			return ssoProvider{}, nil, notFound("organization %s has no single sign-on provider %s", req.Org, req.Provider)
 		}
 		return ssoProvider{row.SsoProvider, row.Org}, nil, err

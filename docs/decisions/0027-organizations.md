@@ -1,6 +1,6 @@
 # 0027: Organizations and the platform operator
 
-Status: accepted (decided by the agent; direction from the owner); alerts amended by [0062](0062-org-alerts-and-operators.md)
+Status: accepted (decided by the agent; direction from the owner); alerts amended by [0062](0062-org-alerts-and-operators.md), slugs by [0064](0064-changing-an-org-slug.md)
 
 ## Context
 
@@ -45,7 +45,9 @@ console.
   meaning, now within one org (`org_members.role`). An org always keeps at
   least one admin.
 - **Slugs** follow the project name rules (1-32 lowercase letters, digits,
-  dashes) and are unique per install. **Project names are unique per
+  dashes) and are unique per install. Admins may change an org's slug;
+  the old one keeps working until another org takes it
+  ([0064](0064-changing-an-org-slug.md)). **Project names are unique per
   org**, not per install. Docker resources were already named by ID and
   generated hostnames already de-duplicate, so neither changes.
 

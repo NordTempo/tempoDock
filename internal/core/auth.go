@@ -110,7 +110,12 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 		return Actor{}, errUnauthenticated
 	}
 	if org != "" && org != *row.OrgSlug {
-		return Actor{}, errf(apitypes.CodeForbidden, "token %q belongs to organization %s; it can't act in %s", t.Name, *row.OrgSlug, org)
+		// An org's old slug still names it (ADR 0064).
+		if to, _, err := c.movedSlug(ctx, org); err != nil {
+			return Actor{}, err
+		} else if to != *row.OrgSlug {
+			return Actor{}, errf(apitypes.CodeForbidden, "token %q belongs to organization %s; it can't act in %s", t.Name, *row.OrgSlug, org)
+		}
 	}
 	a.OrgID, a.OrgSlug, a.orgs = *t.OrgID, *row.OrgSlug, 1
 	a.suspended = row.OrgSuspendedAt != nil
@@ -185,6 +190,14 @@ func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Sc
 	}
 	if slug != "" {
 		m, err := c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: slug})
+		if store.IsNotFound(err) {
+			// An org's old slug still names it (ADR 0064).
+			if to, ok, merr := c.movedSlug(ctx, slug); merr != nil {
+				return Actor{}, merr
+			} else if ok {
+				m, err = c.store.GetMembership(ctx, store.GetMembershipParams{UserID: a.UserID, Slug: to})
+			}
+		}
 		if store.IsNotFound(err) {
 			return Actor{}, notFound("organization %q not found among yours; see `dock org list`", slug)
 		}
@@ -741,7 +754,7 @@ func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserR
 	}
 	orgID, slug := a.OrgID, a.OrgSlug
 	if req.Org != "" {
-		o, err := c.store.GetOrgBySlug(ctx, req.Org)
+		o, err := c.orgBySlug(ctx, req.Org)
 		if store.IsNotFound(err) || err == nil && o.DeletedAt != nil {
 			return apitypes.User{}, notFound("organization %q not found; the console's Organizations page lists them", req.Org)
 		}

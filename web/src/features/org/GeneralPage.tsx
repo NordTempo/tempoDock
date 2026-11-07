@@ -18,7 +18,7 @@ import {
   Page,
   Panel,
 } from "../../ui/kit";
-import { Saved, useValidation } from "../create/form";
+import { nameProblem, Saved, toName, useValidation } from "../create/form";
 import {
   orgQueries,
   useDeleteOrg,
@@ -30,7 +30,8 @@ import {
 import { OrgSettingsBar } from "./SettingsBar";
 
 /**
- * The organization itself: its name, address (slug), whether members
+ * The organization itself: its name, address (slug, which admins may
+ * change), whether members
  * must sign in with a second factor or single sign-on, locked
  * environments (admins), leaving it, and deleting it while it has no
  * projects.
@@ -59,7 +60,8 @@ export function GeneralPage() {
                       className="flex flex-wrap items-center gap-2"
                       onSubmit={(e) => {
                         e.preventDefault();
-                        if (v.check(!!name.trim())) rename.mutate(name.trim());
+                        if (v.check(!!name.trim()))
+                          rename.mutate({ name: name.trim() });
                       }}
                       onKeyDown={(e) => {
                         if (e.key !== "Escape") return;
@@ -119,9 +121,15 @@ export function GeneralPage() {
               </tr>
               <tr>
                 <td className="py-2.5 text-faint">Address</td>
-                <td className="py-2.5 font-mono">
-                  {window.location.host}/
-                  <b className="font-medium">{org.slug}</b>
+                <td className={admin ? "py-1.5" : "py-2.5 font-mono"}>
+                  {admin ? (
+                    <SlugField slug={org.slug} name={org.name} />
+                  ) : (
+                    <>
+                      {window.location.host}/
+                      <b className="font-medium">{org.slug}</b>
+                    </>
+                  )}
                 </td>
               </tr>
               <tr>
@@ -163,6 +171,113 @@ export function GeneralPage() {
         )}
       </Page>
     </>
+  );
+}
+
+/**
+ * The org's slug, its address, for admins (ADR 0064): changing it asks
+ * first, then moves the app to the same page at the new address. The old
+ * slug keeps working for links, bookmarks and CLI contexts.
+ */
+function SlugField({ slug, name }: { slug: string; name: string }) {
+  const rename = useRenameOrg();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [next, setNext] = useState(slug);
+  const [asking, setAsking] = useState(false);
+  const want = next.trim();
+  const changed = want !== slug;
+  const problem = changed ? nameProblem("org", want) : undefined;
+  const cli = `dock org rename --slug ${want}`;
+  const cancel = () => {
+    rename.reset();
+    setNext(slug);
+  };
+  return (
+    <span className="flex flex-col gap-1">
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (changed && !problem) setAsking(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") cancel();
+        }}
+      >
+        <span className="flex min-w-0 flex-[1_1_220px] items-center gap-1 font-mono">
+          <span className="text-mut">{window.location.host}/</span>
+          <input
+            aria-label="Slug"
+            value={next}
+            maxLength={32}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => setNext(toName(e.target.value))}
+            aria-invalid={!!problem}
+            className={`field min-w-0 flex-1 py-[5px] font-mono ${problem ? "border-fail" : ""}`}
+          />
+        </span>
+        <Act
+          small
+          primary
+          type="submit"
+          cli={cli}
+          disabled={!changed || !!problem}
+          reason={rename.isSuccess ? undefined : "nothing changed yet"}
+        >
+          Save
+        </Act>
+        {changed && (
+          <Button small onClick={cancel}>
+            Cancel
+          </Button>
+        )}
+        {problem && (
+          <span role="alert" className="text-xs text-fail">
+            {problem}
+          </span>
+        )}
+        <Saved ok={rename.isSuccess && !changed} />
+      </form>
+      {changed && !problem && (
+        <span className="text-xs text-mut">
+          Addresses move to /{want}/... Old links to /{slug}/ keep working.
+        </span>
+      )}
+      {asking && (
+        <Confirm
+          action={`Move ${name} to /${want}`}
+          cli={cli}
+          pending={rename.isPending}
+          error={rename.error}
+          onConfirm={() =>
+            rename.mutate(
+              { slug: want },
+              {
+                onSuccess: async (o) => {
+                  setAsking(false);
+                  setNext(o.slug);
+                  setOrg(o.slug);
+                  await queryClient.invalidateQueries({ queryKey: ["orgs"] });
+                  await navigate({
+                    to: "/$org/settings/general",
+                    params: { org: o.slug },
+                    replace: true,
+                  });
+                },
+              },
+            )
+          }
+          onCancel={() => setAsking(false)}
+        >
+          Its pages move from <b>/{slug}/...</b> to <b>/{want}/...</b>, and the
+          CLI takes <b>--org {want}</b>. Links, bookmarks, scripts and CLI
+          contexts that use <b>{slug}</b> keep working until another
+          organization takes that slug.
+        </Confirm>
+      )}
+    </span>
   );
 }
 

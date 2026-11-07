@@ -75,7 +75,7 @@ func registerOperator(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "rename-console-org", Method: http.MethodPatch, Path: consoleOrgT,
 		Summary: "Rename an organization", Tags: tags,
-		Description: "Changes any organization's display name; its slug stays. Audited in its log and the platform's. Operators only.",
+		Description: "Changes any organization's name, slug or both, as its admins can; the old slug keeps naming it until another organization takes it. Audited in its log and the platform's. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ConsoleOrgPath
 		Body apitypes.UpdateOrgRequest

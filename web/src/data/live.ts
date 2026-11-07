@@ -615,6 +615,12 @@ function invalidateForAudit(
   // An org created, changed or acted on by the operator (the console's
   // Organizations page, for operators).
   if (kind === "org") invalidate(["console", "orgs"]);
+  // A new name or slug shows in the switcher; with a new slug, the next
+  // page under the old one redirects to it (routes/_app.$org.tsx).
+  if (audit.action === "org.rename" || audit.action === "org.slug") {
+    invalidate(keys.orgs);
+    queryClient.invalidateQueries({ queryKey: ["org"], exact: true });
+  }
   // Registry credentials (features/org/data.ts), set from the CLI too.
   if (audit.action.startsWith("org.registry_credential"))
     invalidate(["org", "registry-credentials"]);

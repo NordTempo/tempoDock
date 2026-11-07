@@ -122,6 +122,14 @@ func newOrgUseCmd(g *globals) *cobra.Command {
 			}
 			i := slices.IndexFunc(orgs, func(o apitypes.Org) bool { return o.Slug == slug })
 			if i < 0 {
+				// An old slug names the org it moved to (ADR 0064).
+				s.api.Org = slug
+				if o, err := get[apitypes.Org](cmd.Context(), s, apiPrefix+"/org"); err == nil {
+					slug = o.Slug
+					i = slices.IndexFunc(orgs, func(o apitypes.Org) bool { return o.Slug == slug })
+				}
+			}
+			if i < 0 {
 				return &output.Error{
 					Exit:    output.ExitNotFound,
 					Message: fmt.Sprintf("organization %q not found among yours", slug),

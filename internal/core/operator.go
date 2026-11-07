@@ -35,7 +35,7 @@ func (c *Core) operatorOrg(ctx context.Context, a Actor, slug, action string) (s
 	if err := a.requireOperator(action); err != nil {
 		return store.Org{}, err
 	}
-	o, err := c.store.GetOrgBySlug(ctx, slug)
+	o, err := c.orgBySlug(ctx, slug)
 	if store.IsNotFound(err) || err == nil && o.DeletedAt != nil {
 		return store.Org{}, notFound("organization %q not found; the console's Organizations page lists them", slug)
 	}
@@ -207,17 +207,25 @@ func (c *Core) refreshStaleDisks(ctx context.Context) {
 	}
 }
 
-// OperatorRenameOrg changes any org's display name. Operators only.
+// OperatorRenameOrg changes any org's display name or slug, as its
+// admins do (RenameOrg), also audited in the platform's log. Operators
+// only.
 func (c *Core) OperatorRenameOrg(ctx context.Context, a Actor, slug string, req apitypes.UpdateOrgRequest) (apitypes.Org, error) {
 	o, err := c.operatorOrg(ctx, a, slug, "renaming organizations")
 	if err != nil {
 		return apitypes.Org{}, err
 	}
 	out, err := c.RenameOrg(ctx, a.operatorIn(o), req)
-	if err == nil {
-		c.audit(ctx, a.platform(), "org.rename", nil, nil, o.Slug, fmt.Sprintf("renamed organization %s to %s", o.Slug, out.Name))
+	if err != nil {
+		return out, err
 	}
-	return out, err
+	if out.Name != o.Name {
+		c.audit(ctx, a.platform(), "org.rename", nil, nil, out.Slug, fmt.Sprintf("renamed organization %s to %s", out.Slug, out.Name))
+	}
+	if out.Slug != o.Slug {
+		c.audit(ctx, a.platform(), "org.slug", nil, nil, out.Slug, fmt.Sprintf("moved organization %s to /%s; /%s keeps working", o.Slug, out.Slug, o.Slug))
+	}
+	return out, nil
 }
 
 // OperatorMembers lists any org's members, with their roles. Operators

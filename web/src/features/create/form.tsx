@@ -11,6 +11,7 @@ const nameRe = /^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/;
 /** core's reserved names: the UI's pages at /<org> and /<org>/<project>. */
 const reserved = {
   org: [
+    "access",
     "account",
     "api",
     "assets",

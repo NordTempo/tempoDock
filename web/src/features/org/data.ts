@@ -107,9 +107,12 @@ export const orgQueries = {
 
 export const useRenameOrg = () =>
   useAction(
-    (name: string) => body(api.PATCH("/api/v1/org", { body: { name } })),
+    (change: OrgChange) => body(api.PATCH("/api/v1/org", { body: change })),
     () => [orgKeys.org, keys.orgs, ["audit"]],
   );
+
+/** A new name, slug or both for an org (ADR 0064). */
+export type OrgChange = components["schemas"]["UpdateOrgRequest"];
 
 /**
  * Requires (or stops requiring) a second factor of every member's

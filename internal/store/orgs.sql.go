@@ -42,6 +42,23 @@ func (q *Queries) AddOrgMember(ctx context.Context, arg AddOrgMemberParams) erro
 	return err
 }
 
+const addOrgOldSlug = `-- name: AddOrgOldSlug :exec
+INSERT INTO org_old_slugs (slug, org_id, changed_at) VALUES (?, ?, ?)
+ON CONFLICT (slug) DO UPDATE SET org_id = excluded.org_id, changed_at = excluded.changed_at
+`
+
+type AddOrgOldSlugParams struct {
+	Slug      string
+	OrgID     int64
+	ChangedAt time.Time
+}
+
+// AddOrgOldSlug records a slug an org had (ADR 0064).
+func (q *Queries) AddOrgOldSlug(ctx context.Context, arg AddOrgOldSlugParams) error {
+	_, err := q.db.ExecContext(ctx, addOrgOldSlug, arg.Slug, arg.OrgID, arg.ChangedAt)
+	return err
+}
+
 const countOrgProjects = `-- name: CountOrgProjects :one
 SELECT count(*) FROM projects WHERE org_id = +?
 `
@@ -728,6 +745,19 @@ func (q *Queries) ListUserOrgs(ctx context.Context, userID int64) ([]ListUserOrg
 	return items, nil
 }
 
+const movedOrgSlug = `-- name: MovedOrgSlug :one
+SELECT orgs.slug FROM org_old_slugs JOIN orgs ON orgs.id = org_old_slugs.org_id
+WHERE org_old_slugs.slug = +?
+`
+
+// MovedOrgSlug is the slug the org that once had slug has now.
+func (q *Queries) MovedOrgSlug(ctx context.Context, slug string) (string, error) {
+	row := q.db.QueryRowContext(ctx, movedOrgSlug, slug)
+	var slug_2 string
+	err := row.Scan(&slug_2)
+	return slug_2, err
+}
+
 const orgSlugTaken = `-- name: OrgSlugTaken :one
 SELECT EXISTS (SELECT 1 FROM orgs WHERE slug = +?)
 `
@@ -737,6 +767,16 @@ func (q *Queries) OrgSlugTaken(ctx context.Context, slug string) (bool, error) {
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const releaseOrgOldSlug = `-- name: ReleaseOrgOldSlug :exec
+DELETE FROM org_old_slugs WHERE slug = +?
+`
+
+// ReleaseOrgOldSlug frees a slug an org had, for an org taking it.
+func (q *Queries) ReleaseOrgOldSlug(ctx context.Context, slug string) error {
+	_, err := q.db.ExecContext(ctx, releaseOrgOldSlug, slug)
+	return err
 }
 
 const removeOrgMember = `-- name: RemoveOrgMember :execrows
@@ -849,6 +889,34 @@ type SetOrgLockProductionParams struct {
 func (q *Queries) SetOrgLockProduction(ctx context.Context, arg SetOrgLockProductionParams) error {
 	_, err := q.db.ExecContext(ctx, setOrgLockProduction, arg.LockProduction, arg.ID)
 	return err
+}
+
+const setOrgSlug = `-- name: SetOrgSlug :one
+UPDATE orgs SET slug = ? WHERE id = +? RETURNING id, slug, name, created_at, lock_production, request_ttl_hours, require_two_factor, sso_only, suspended_at, suspended_by, deleted_at
+`
+
+type SetOrgSlugParams struct {
+	Slug string
+	ID   int64
+}
+
+func (q *Queries) SetOrgSlug(ctx context.Context, arg SetOrgSlugParams) (Org, error) {
+	row := q.db.QueryRowContext(ctx, setOrgSlug, arg.Slug, arg.ID)
+	var i Org
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.CreatedAt,
+		&i.LockProduction,
+		&i.RequestTtlHours,
+		&i.RequireTwoFactor,
+		&i.SsoOnly,
+		&i.SuspendedAt,
+		&i.SuspendedBy,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const upsertOrgVariable = `-- name: UpsertOrgVariable :exec

@@ -488,7 +488,11 @@ func (c *Core) installOrg(ctx context.Context, a Actor, slug string) (store.Org,
 		return store.Org{}, err
 	}
 	if slug != "" && slug != a.OrgSlug {
-		return store.Org{}, errf(apitypes.CodeForbidden, "an organization's admins install the GitHub App for their own organization only; an operator installs it for org %s", slug)
+		if to, _, err := c.movedSlug(ctx, slug); err != nil {
+			return store.Org{}, err
+		} else if to != a.OrgSlug {
+			return store.Org{}, errf(apitypes.CodeForbidden, "an organization's admins install the GitHub App for their own organization only; an operator installs it for org %s", slug)
+		}
 	}
 	org, err := c.store.GetOrg(ctx, a.OrgID)
 	if store.IsNotFound(err) {
@@ -657,7 +661,7 @@ func (c *Core) GitHubOrgStatus(ctx context.Context, a Actor) (apitypes.GitHubOrg
 
 // orgNamed looks an org up by slug.
 func (c *Core) orgNamed(ctx context.Context, slug string) (store.Org, error) {
-	org, err := c.store.GetOrgBySlug(ctx, strings.TrimSpace(slug))
+	org, err := c.orgBySlug(ctx, strings.TrimSpace(slug))
 	if store.IsNotFound(err) {
 		return org, notFound("no org %q; see `dock org list`", slug)
 	}

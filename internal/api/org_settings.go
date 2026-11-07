@@ -23,7 +23,7 @@ func registerOrgSettings(s *Server, a huma.API) {
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "update-org", Method: http.MethodPatch, Path: orgPath,
-		Summary: "Rename the organization", Description: "Its slug, its address, stays. Scope: admin, unlimited.", Tags: tags,
+		Summary: "Rename the organization or change its slug", Description: "Changes its name, its slug (its address), or both. The old slug keeps naming the organization until another one takes it. Scope: admin, unlimited.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.UpdateOrgRequest }) (*out[apitypes.Org], error) {
 		return reply(s.core.RenameOrg(ctx, actor, in.Body))
 	})
