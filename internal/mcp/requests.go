@@ -80,6 +80,9 @@ func requestLine(r apitypes.AccessRequest) string {
 	case apitypes.RequestRejected:
 		return fmt.Sprintf("Access request #%d was rejected by %s%s. Don't retry it; ask the user.", r.ID, r.DecidedBy, commentSuffix(r.Comment))
 	}
+	if r.Comment != "" { // ended early, e.g. its environment was unlocked
+		return fmt.Sprintf("Access request #%d ended without a decision: %s.", r.ID, r.Comment)
+	}
 	return fmt.Sprintf("Access request #%d expired without a decision.", r.ID)
 }
 

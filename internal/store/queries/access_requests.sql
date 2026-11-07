@@ -109,3 +109,12 @@ WHERE status = 'pending' AND (
     token_id IN (SELECT id FROM tokens WHERE revoked_at IS NOT NULL)
     OR project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL))
 RETURNING *;
+
+-- EndUnlockedAccessRequests expires an environment's pending requests
+-- once it is unlocked or opened: the calls need no approval now, so the
+-- tokens call again. The comment says why. Through access_requests_open,
+-- like ExpireAccessRequests.
+-- name: EndUnlockedAccessRequests :many
+UPDATE access_requests SET status = 'expired', finished_at = sqlc.arg(now), comment = sqlc.arg(comment)
+WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at > +sqlc.arg(now) AND environment_id = +sqlc.arg(environment_id)
+RETURNING *;

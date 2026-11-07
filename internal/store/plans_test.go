@@ -31,6 +31,7 @@ func TestAccessRequestPlansUseIndexes(t *testing.T) {
 		{"ListTokenAccessRequests", listTokenAccessRequests, []any{1, 50}},
 		{"GetPendingAccessRequest", getPendingAccessRequest, []any{"x"}},
 		{"ExpireAccessRequests", expireAccessRequests, []any{now}},
+		{"EndUnlockedAccessRequests", endUnlockedAccessRequests, []any{now, "x", now, 1}},
 		{"PruneAccessRequests", pruneAccessRequests, []any{now}},
 		{"CountEnvironmentAuditSince", countEnvironmentAuditSince, []any{1, 1}},
 	})

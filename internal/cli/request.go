@@ -140,6 +140,9 @@ func requestExit(r apitypes.AccessRequest) error {
 		return &output.Error{Exit: output.ExitAuth, Code: "request_rejected", Message: fmt.Sprintf("access request #%d was rejected by %s%s", r.ID, r.DecidedBy, commentOf(r.Comment)),
 			Hint: "Don't retry it: ask the admin what they want instead."}
 	case apitypes.RequestExpired:
+		if r.Comment != "" { // ended early, e.g. its environment was unlocked
+			return &output.Error{Exit: output.ExitNotFound, Code: "request_expired", Message: fmt.Sprintf("access request #%d ended without a decision: %s", r.ID, r.Comment)}
+		}
 		return &output.Error{Exit: output.ExitNotFound, Code: "request_expired", Message: fmt.Sprintf("access request #%d expired without a decision", r.ID)}
 	}
 	return &output.Error{Exit: output.ExitConflict, Code: "request_pending", Message: fmt.Sprintf("access request #%d is still %s", r.ID, r.Status),

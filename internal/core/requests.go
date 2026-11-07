@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -671,6 +672,23 @@ func (c *Core) expireRequests(ctx context.Context, t time.Time) error {
 	return nil
 }
 
+// unlockedComment is why an unlocked environment's pending requests
+// ended, as their comment.
+const unlockedComment = "the environment was unlocked, so the call needs no approval now: call again"
+
+// endUnlockedRequests expires the pending requests of an environment an
+// admin unlocked or opened (UnlockEnvironment): waiters hear the call may
+// run as it is, and their alerts resolve. Approving one later would run a
+// call nobody needs to review any more.
+func (c *Core) endUnlockedRequests(ctx context.Context, envID int64) {
+	rows, err := c.store.EndUnlockedAccessRequests(ctx, store.EndUnlockedAccessRequestsParams{Now: ptr(now()), Comment: unlockedComment, EnvironmentID: envID})
+	if err != nil {
+		c.log.Error("end an unlocked environment's access requests", "environment", envID, "err", err)
+		return
+	}
+	c.endedRequests(ctx, rows)
+}
+
 // endOrphanedRequests rejects, for the system, pending requests that can
 // no longer run (their token revoked, their project archived), so they
 // end at once instead of failing when approved. Revoking tokens and
@@ -685,7 +703,8 @@ func (c *Core) endOrphanedRequests(ctx context.Context) {
 }
 
 // endedRequests finishes requests that ended without running (expired,
-// cut off by a restart, orphaned, replaced by a newer call): their alerts
+// cut off by a restart, orphaned, replaced by a newer call, their
+// environment unlocked): their alerts
 // resolve, their held archives go, an expired held push's commit status
 // fails and open pages hear of it.
 func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
@@ -701,7 +720,7 @@ func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
 		c.signalAlert(ctx, alertSignal{Key: requestAlertKey(r.ID), Resolve: true})
 		c.dropUpload(r.Upload)
 		if r.Status == string(apitypes.RequestExpired) {
-			c.endHeldPush(ctx, r, "the request expired")
+			c.endHeldPush(ctx, r, cmp.Or(r.Comment, "the request expired"))
 		}
 		es := scopes[r.EnvironmentID]
 		c.publishRequest(r, es.project.Name, es.env.Name)
