@@ -516,6 +516,12 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 	if d, err := c.store.GetOpenServerDrain(ctx, srv.ID); err == nil && d.Status == string(apitypes.DrainRunning) {
 		return conflict("server %s is draining; remove it once the drain ended (`dock server drain %s --status`)", srv.Name, srv.Name)
 	}
+	// The services it forwards lose their generated domains under its base
+	// domain once it is gone (pruneGeneratedDomains).
+	forwarded, err := c.store.ListServerForwards(ctx, srv.ID)
+	if err != nil {
+		return err
+	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		// Dock deletes the tunnel it made for it (ADR 0036); the row
 		// outlives the server until then. Its domains went with their
@@ -566,6 +572,20 @@ func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
 		return err
 	}
 	c.closeForwards(srv.ID)
+	for _, f := range forwarded {
+		svc, err := c.store.GetService(ctx, f.ServiceID)
+		if err != nil {
+			c.log.Warn("prune generated domains of a removed server", "service", f.ServiceID, "err", err)
+			continue
+		}
+		es, err := c.envByID(ctx, svc.EnvironmentID)
+		if err == nil {
+			_, err = c.pruneGeneratedDomains(ctx, es, svc)
+		}
+		if err != nil {
+			c.log.Warn("prune generated domains of a removed server", "service", f.ServiceID, "err", err)
+		}
+	}
 	if _, err := c.cancelJoins(ctx, name); err != nil {
 		c.log.Warn("cancel join tokens of removed server", "server", name, "err", err)
 	}

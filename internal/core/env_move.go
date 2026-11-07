@@ -1345,11 +1345,13 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 	return nil
 }
 
-// moveDomains follows a moved environment's domains: a generated one
-// under the source's base domain stays (the source forwards it while it
-// is there) and the service gets one under the target's too, and the
-// others that Dock doesn't route through Cloudflare are listed with the
-// DNS records they need now.
+// moveDomains follows a moved environment's domains. A service keeps one
+// generated domain per server that can serve it (ADR 0063): the one under
+// the base domain of the server it is on now, made if it has none there,
+// and one under the base of each server that still forwards it; the
+// clean-up removes any other (pruneGeneratedDomains). The other domains
+// that Dock doesn't route through Cloudflare are listed with the DNS
+// records they need now.
 func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Server) ([]string, error) {
 	doms, err := c.store.ListEnvironmentDomains(ctx, es.env.ID)
 	if err != nil {
@@ -1359,27 +1361,46 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 	if err != nil {
 		return nil, err
 	}
-	names := map[int64]string{}
-	for _, s := range svcs {
-		names[s.ID] = s.Name
-	}
 	fromBase, toIng := c.ingressOf(from).baseDomain, c.ingressOf(to)
+	toBase := toIng.baseDomain
 	a := System.InOrg(es.project.OrgID)
-	var notes, dns []string
+	// Which services use generated domains, and have one on the target
+	// already (moved back), before any is pruned.
+	uses, hasTo := map[int64]bool{}, map[int64]bool{}
 	for _, d := range doms {
-		ref := ServiceRef{es.project.Name, es.env.Name, names[d.ServiceID]}
-		if d.Generated && fromBase != "" && strings.HasSuffix(d.Hostname, "."+fromBase) {
-			if toIng.baseDomain == fromBase {
-				continue
-			}
-			if toIng.baseDomain == "" {
-				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it; server %s has no base domain for a new one", d.Hostname, from.Name, to.Name))
-				continue
-			}
-			if ch, err := c.GenerateDomain(ctx, a, ref); err != nil {
-				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it, and a new one couldn't be made: %v", d.Hostname, from.Name, err))
-			} else {
-				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it; %s serves it on %s too", d.Hostname, from.Name, ch.Domain.Hostname, to.Name))
+		if d.Generated {
+			uses[d.ServiceID] = true
+			hasTo[d.ServiceID] = hasTo[d.ServiceID] || underBase(d.Hostname, toBase)
+		}
+	}
+	var notes, dns []string
+	for _, svc := range svcs {
+		if svc.ArchivedAt != nil || !uses[svc.ID] {
+			continue
+		}
+		pruned, err := c.pruneGeneratedDomains(ctx, es, svc)
+		if err != nil {
+			return nil, err
+		}
+		notes = append(notes, pruned...)
+		if hasTo[svc.ID] {
+			continue
+		}
+		if toBase == "" {
+			notes = append(notes, fmt.Sprintf("server %s has no base domain, so %s got no generated domain there", to.Name, svc.Name))
+			continue
+		}
+		ref := ServiceRef{es.project.Name, es.env.Name, svc.Name}
+		if ch, err := c.GenerateDomain(ctx, a, ref); err != nil {
+			notes = append(notes, fmt.Sprintf("%s's generated domain on %s couldn't be made: %v", svc.Name, to.Name, err))
+		} else {
+			notes = append(notes, fmt.Sprintf("%s serves %s's generated domain %s", to.Name, svc.Name, ch.Domain.Hostname))
+		}
+	}
+	for _, d := range doms {
+		if d.Generated {
+			if fromBase != toBase && underBase(d.Hostname, fromBase) {
+				notes = append(notes, fmt.Sprintf("generated domain %s works while server %s forwards it", d.Hostname, from.Name))
 			}
 			continue
 		}
@@ -1406,6 +1427,47 @@ func (c *Core) moveDomains(ctx context.Context, es envScope, from, to store.Serv
 			where = strings.Join(records, " or ")
 		}
 		notes = append(notes, fmt.Sprintf("point the DNS of %s at %s: until then server %s forwards them, so they keep working while it is there", strings.Join(dns, ", "), where, from.Name))
+	}
+	return notes, nil
+}
+
+// underBase reports whether host is a hostname under base.
+func underBase(host, base string) bool {
+	return base != "" && strings.HasSuffix(host, "."+base)
+}
+
+// pruneGeneratedDomains removes a service's generated domains that no
+// server serves any more: the ones under neither the base domain of the
+// server its environment is on, nor that of a server still forwarding it
+// (ADR 0063). It returns what it removed, as notes.
+func (c *Core) pruneGeneratedDomains(ctx context.Context, es envScope, svc store.Service) ([]string, error) {
+	doms, err := c.store.ListDomainsByService(ctx, svc.ID)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := c.store.ListServiceForwardServers(ctx, svc.ID)
+	if err != nil {
+		return nil, err
+	}
+	var bases []string
+	for _, id := range append(ids, es.env.ServerID) {
+		srv, err := c.store.GetServer(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		bases = append(bases, c.ingressOf(srv).baseDomain)
+	}
+	var notes []string
+	for _, d := range doms {
+		if !d.Generated || slices.ContainsFunc(bases, func(b string) bool { return underBase(d.Hostname, b) }) {
+			continue
+		}
+		ref := ServiceRef{es.project.Name, es.env.Name, svc.Name}
+		if err := c.RemoveDomain(ctx, System.InOrg(es.project.OrgID), ref, d.Hostname); err != nil {
+			notes = append(notes, fmt.Sprintf("generated domain %s, which no server serves any more, couldn't be removed: %v", d.Hostname, err))
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("removed generated domain %s: no server serves it any more", d.Hostname))
 	}
 	return notes, nil
 }
