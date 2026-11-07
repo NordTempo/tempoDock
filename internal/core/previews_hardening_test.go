@@ -163,6 +163,12 @@ func TestPreviewLockedHoldsCommits(t *testing.T) {
 	h, _, _, appHook := previewHarness(t)
 	h.openPreview(appHook, 7)
 	h.previewLive("pr-7")
+	// Live counts the deployed services; web's first release comes from
+	// its git fetch and may still be on its way.
+	waitFor(t, func() bool {
+		rels, err := h.c.ListReleases(h.ctx, testSystem, ServiceRef{"shop", "pr-7", "web"}, 10)
+		return err == nil && len(rels) == 1 && rels[0].Status == apitypes.ReleaseActive
+	})
 	h.lock("pr-7")
 	if msg, err := h.deliver(appHook, "s1", prEvent{action: "synchronize", number: 7, sha: shaB, updated: prT0.Add(time.Minute)}); err != nil || !strings.Contains(msg, "updated to bbbbbbb") {
 		t.Fatalf("synchronize: %q, %v", msg, err)
@@ -356,7 +362,9 @@ func TestPreviewVolumesRemovedAfterRestartMidTeardown(t *testing.T) {
 	release()
 	h.c = h.start()
 	h.waitArchived(id, vols)
-	if left, err := h.store.ListArchivedPreviewVolumes(h.ctx); err != nil || len(left) != 0 {
-		t.Fatalf("volumes left to remove: %+v, %v", left, err)
-	}
+	// Nothing is left to remove at the next start.
+	waitFor(t, func() bool {
+		left, err := h.store.ListArchivedPreviewVolumes(h.ctx)
+		return err == nil && len(left) == 0
+	})
 }
