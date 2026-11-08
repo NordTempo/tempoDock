@@ -36,13 +36,6 @@ SELECT org_members.role FROM org_members JOIN users ON users.id = org_members.us
 WHERE org_members.org_id = +sqlc.arg(org_id) AND users.email = +sqlc.arg(email)
   AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch());
 
--- ListOrgServerIDs is the servers an org's environments run on, once per
--- environment (DISTINCT would sort them in a temporary b-tree).
--- name: ListOrgServerIDs :many
-SELECT environments.server_id
-FROM projects JOIN environments ON environments.project_id = projects.id
-WHERE projects.org_id = +?;
-
 -- name: RenameOrg :one
 UPDATE orgs SET name = ? WHERE id = +? RETURNING *;
 

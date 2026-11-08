@@ -156,21 +156,24 @@ type drainRecord struct {
 }
 
 // logSource is what a container's lines are labelled with, shared by
-// all of them. ndjson is the end of each http drain line, encoded once;
-// red masks the release's secret values (nil: it has none).
+// all of them. No server: drains are the org's, and only operators see
+// servers (seesServers). ndjson is the end of each http drain line,
+// encoded once; host is syslog's HOSTNAME, project.environment; red masks
+// the release's secret values (nil: it has none).
 type logSource struct {
-	Project, Environment, Service, Server string
-	Release                               int64
-	ndjson                                []byte
-	red                                   *redactor
+	Project, Environment, Service string
+	Release                       int64
+	ndjson                        []byte
+	host                          string
+	red                           *redactor
 	// serviceID is the service whose errors the lines show
 	// (errors_logs.go).
 	serviceID int64
 }
 
 // newLogSource labels a container's lines.
-func newLogSource(project, env, service string, release int64, server string) *logSource {
-	s := &logSource{Project: project, Environment: env, Service: service, Release: release, Server: server}
+func newLogSource(project, env, service string, release int64) *logSource {
+	s := &logSource{Project: project, Environment: env, Service: service, Release: release, host: project + "." + env}
 	b := append([]byte(nil), `,"project":`...)
 	b = appendJSONString(b, project)
 	b = append(b, `,"environment":`...)
@@ -179,8 +182,6 @@ func newLogSource(project, env, service string, release int64, server string) *l
 	b = appendJSONString(b, service)
 	b = append(b, `,"release":`...)
 	b = strconv.AppendInt(b, release, 10)
-	b = append(b, `,"server":`...)
-	b = appendJSONString(b, server)
 	s.ndjson = append(b, "}\n"...)
 	return s
 }
@@ -195,12 +196,12 @@ func drainLine(l node.LogLine, src *logSource) drainRecord {
 }
 
 // releaseLogSource labels and masks the lines of rel's container.
-func (c *Core) releaseLogSource(rel store.Release, project, env, service, server string) (*logSource, error) {
+func (c *Core) releaseLogSource(rel store.Release, project, env, service string) (*logSource, error) {
 	red, err := c.releaseRedactor(rel)
 	if err != nil {
 		return nil, err
 	}
-	src := newLogSource(project, env, service, rel.Number, server)
+	src := newLogSource(project, env, service, rel.Number)
 	src.red, src.serviceID = red, rel.ServiceID
 	return src, nil
 }
@@ -370,7 +371,7 @@ func (c *Core) followServer(ctx context.Context, serverID int64) {
 	since := time.Now()
 	for _, r := range rows {
 		row := store.ListDrainContainersRow{
-			Release: r.Release, Service: r.Service, Environment: r.Environment, ServerID: r.ServerID, Project: r.Project, Server: r.Server,
+			Release: r.Release, Service: r.Service, Environment: r.Environment, ServerID: r.ServerID, Project: r.Project,
 		}
 		c.followContainer(r.ServerID, r.EnvironmentID, r.Release.ContainerID, r.Release.ID, since, &row, nil)
 	}
@@ -453,7 +454,7 @@ func (c *Core) follow(f *follower, id string, releaseID int64, since time.Time, 
 	var src *logSource
 	var err error
 	if row != nil {
-		src, err = c.releaseLogSource(row.Release, row.Project, row.Environment, row.Service, row.Server)
+		src, err = c.releaseLogSource(row.Release, row.Project, row.Environment, row.Service)
 	} else {
 		src, err = c.logSource(env, serverID, releaseID, labels)
 	}
@@ -500,7 +501,7 @@ func (c *Core) logSource(env *drainEnv, serverID, releaseID int64, labels *node.
 	if labels != nil && (labels.Service != strconv.FormatInt(r.Release.ServiceID, 10) || labels.Project != strconv.FormatInt(r.ProjectID, 10)) {
 		return nil, errors.New("the container's labels don't match its release")
 	}
-	return c.releaseLogSource(r.Release, r.Project, r.Environment, r.Service, r.Server)
+	return c.releaseLogSource(r.Release, r.Project, r.Environment, r.Service)
 }
 
 // enqueue queues a line for d without ever blocking: a full queue drops

@@ -21,7 +21,7 @@ import (
 // find errors when there are none: a lock and errparse's byte scan.
 func BenchmarkErrorFollowerLine(b *testing.B) {
 	c := &Core{}
-	f := &errorFollower{src: newLogSource("shop", "production", "web", 1, "local")}
+	f := &errorFollower{src: newLogSource("shop", "production", "web", 1)}
 	lines := []node.LogLine{
 		{Text: `10.0.0.1 - - [07/Nov/2026:12:00:00 +0000] "GET /api/cart HTTP/1.1" 200 612 "-" "Mozilla/5.0"`},
 		{Text: `{"level":"info","ts":1730980800.5,"logger":"http.log.access","msg":"handled request","status":200,"duration":0.0012}`},

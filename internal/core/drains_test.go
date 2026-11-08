@@ -30,7 +30,6 @@ type drainLineJSON struct {
 	Environment string    `json:"environment"`
 	Service     string    `json:"service"`
 	Release     int64     `json:"release"`
-	Server      string    `json:"server"`
 }
 
 // drainReceiver is an http drain's endpoint on 127.0.0.1; block holds
@@ -118,9 +117,9 @@ func TestLogDrainDeliversLabelledLines(t *testing.T) {
 	k.mu.Lock()
 	got, hdr := k.lines[1], k.headers[0]
 	k.mu.Unlock()
-	want := drainLineJSON{Stream: "stdout", Text: `GET / "200"`, Project: "shop", Environment: "production", Service: "web", Release: 1, Server: h.c.localName()}
+	want := drainLineJSON{Stream: "stdout", Text: `GET / "200"`, Project: "shop", Environment: "production", Service: "web", Release: 1}
 	if got.Time.IsZero() || got.Text != want.Text || got.Stream != want.Stream || got.Project != want.Project ||
-		got.Environment != want.Environment || got.Service != want.Service || got.Release != want.Release || got.Server != want.Server {
+		got.Environment != want.Environment || got.Service != want.Service || got.Release != want.Release {
 		t.Fatalf("line = %+v, want %+v", got, want)
 	}
 	if hdr.Get("X-Ingest-Key") != "s3cret" || hdr.Get("Content-Type") != "application/x-ndjson" {
@@ -438,7 +437,7 @@ func TestSyslogDrainFraming(t *testing.T) {
 			t.Fatal(err)
 		}
 		f := strings.SplitN(string(msg), " ", 8)
-		if len(f) != 8 || f[0] != "<14>1" || f[2] != h.c.localName() || f[3] != "web" || f[4] != "-" || f[5] != "stdout" || f[6] != "-" || f[7] != text {
+		if len(f) != 8 || f[0] != "<14>1" || f[2] != "shop.production" || f[3] != "web" || f[4] != "-" || f[5] != "stdout" || f[6] != "-" || f[7] != text {
 			t.Fatalf("message = %q", msg)
 		}
 		if _, err := time.Parse(time.RFC3339Nano, f[1]); err != nil {
@@ -472,9 +471,9 @@ func TestSyslogDrainUDP(t *testing.T) {
 		t.Fatalf("datagram = %q", msg)
 	}
 
-	src := newLogSource("shop", "production", "web", 1, "vps 1")
+	src := newLogSource("shop", "production", "web", 1)
 	msg := string(appendSyslog(nil, drainRecord{Time: time.Unix(0, 0), Stream: "stderr", Text: "boom", src: src}))
-	if want := "<11>1 1970-01-01T00:00:00.000000Z vps_1 web - stderr - boom"; msg != want {
+	if want := "<11>1 1970-01-01T00:00:00.000000Z shop.production web - stderr - boom"; msg != want {
 		t.Fatalf("stderr message = %q, want %q", msg, want)
 	}
 }
@@ -482,8 +481,8 @@ func TestSyslogDrainUDP(t *testing.T) {
 // Loki gets one stream per service and output stream, labelled, with its
 // lines in order and nanosecond timestamps.
 func TestLokiPayload(t *testing.T) {
-	web := newLogSource("shop", "production", "web", 3, "vps-1")
-	worker := newLogSource("shop", "production", "worker", 7, "vps-1")
+	web := newLogSource("shop", "production", "web", 3)
+	worker := newLogSource("shop", "production", "worker", 7)
 	at := time.Unix(1700000000, 123)
 	batch := []drainRecord{
 		{Time: at, Stream: "stdout", Text: "a", src: web},
@@ -528,7 +527,7 @@ func TestLokiPayload(t *testing.T) {
 // JSON lines are valid JSON whatever an app writes: quotes, control
 // characters, invalid UTF-8.
 func TestNDJSONEscaping(t *testing.T) {
-	src := newLogSource("shop", "production", "web", 1, "vps-1")
+	src := newLogSource("shop", "production", "web", 1)
 	texts := []string{`say "hi"\n`, "tab\there\x01\x1f", "bad \xff utf-8", "ünïcode ✓", "</script>"}
 	var batch []drainRecord
 	for _, s := range texts {

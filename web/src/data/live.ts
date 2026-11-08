@@ -490,7 +490,7 @@ function applyUsage(queryClient: QueryClient, event: LiveEvent) {
   const usage = event.usage;
   if (!usage) return;
   const { server, host, point } = usage;
-  if (host) {
+  if (host && server) {
     queryClient.setQueryData<Server[]>(keys.servers, (list) =>
       list?.map((s) => (s.name === server ? { ...s, usage: host } : s)),
     );
@@ -535,8 +535,10 @@ function applyUsage(queryClient: QueryClient, event: LiveEvent) {
         ),
       },
   );
-  queryClient.setQueryData<ServerDetail>(
-    keys.server(server),
+  // Service samples don't name their server (only operators see
+  // servers), so every cached server page (["servers", name]) is patched.
+  queryClient.setQueriesData<ServerDetail>(
+    { queryKey: keys.servers, predicate: (q) => q.queryKey.length === 2 },
     (d) =>
       d && {
         ...d,

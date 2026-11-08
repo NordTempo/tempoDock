@@ -3741,7 +3741,7 @@ export interface paths {
         };
         /**
          * Project placements
-         * @description Which server the project's production and non-production environments live on.
+         * @description Which server the project's production and non-production environments live on. Operators only.
          */
         get: operations["list-placements"];
         put?: never;
@@ -4338,7 +4338,7 @@ export interface paths {
         };
         /**
          * List servers
-         * @description Status, version, accepted environment kinds and load of every server, for operators with each server's latest resource sample; others get the servers their organization's environments run on.
+         * @description Status, version, accepted environment kinds, load and latest resource sample of every server. Operators only: others see their environment's server status on the environment.
          */
         get: operations["list-servers"];
         put?: never;
@@ -6177,13 +6177,19 @@ export interface components {
             /** @enum {string} */
             kind: "production" | "non_production";
             lock?: components["schemas"]["EnvironmentLock"];
+            moving?: boolean;
             moving_to?: string;
             name: string;
             /** @description The pull request this preview environment belongs to */
             preview?: components["schemas"]["PullRequestRef"];
             project: string;
-            /** @description Server the environment runs on */
-            server: string;
+            /** @description Server the environment runs on; platform operators only */
+            server?: string;
+            /**
+             * @description Whether the environment's server can be reached
+             * @enum {string}
+             */
+            server_status: "online" | "offline" | "incompatible" | "joining" | "revoked";
         };
         EnvironmentApplied: {
             environment: string;
@@ -7822,7 +7828,7 @@ export interface components {
             oom_killed: boolean;
             /** Format: int64 */
             restart_count: number;
-            /** @description With server_offline: the server's name */
+            /** @description With server_offline: the server's name, for platform operators only */
             server?: string;
             /** @description The service's server can't be reached: state is the last known one */
             server_offline?: boolean;
@@ -8253,7 +8259,7 @@ export interface components {
             note?: string;
             /** Format: int64 */
             paused_ms: number;
-            server: string;
+            server?: string;
             service: string;
             /** Format: int64 */
             size_bytes: number;
@@ -8680,7 +8686,7 @@ export interface components {
             host?: components["schemas"]["ServerUsage"];
             /** Format: date-time */
             point?: string;
-            server: string;
+            server?: string;
             services?: components["schemas"]["ServiceUsageSample"][] | null;
         };
         User: {

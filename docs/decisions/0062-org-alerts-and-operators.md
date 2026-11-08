@@ -148,6 +148,30 @@ How it works (`internal/core/operator.go`, `/console/orgs/...`):
   with every CLI command, not the reverse). A `dock` command can follow
   when operators script them.
 
+### Servers are the operator's (2026-11-08)
+
+Org members have no use for which servers run their apps, and server
+names and addresses are the platform's business. Only operators see
+them (`Actor.seesServers`):
+
+- **The server list, server pages and placements** are operator-only.
+  The UI and the CLI stop asking for them for everyone else.
+- **Environments** carry `server_status` for everyone (whether deploys can
+  reach the server: `online`, `offline`, ...) and `server`, the name,
+  only for operators. Deploy buttons, the "server offline" problem and
+  `dock status` read the status. A service's `server_offline` keeps its
+  status, without the name.
+- **Moves** show org members that the environment is moving and its step,
+  not from or to where; the move's notes and errors are the operator's.
+  Its live event goes out twice, with servers to operators and without
+  to the rest (`busEvent.noServers`).
+- **Text an org sees names no server**: error messages, release events,
+  build logs ("the build server"), the org's audit log, log drain lines
+  (syslog's HOSTNAME is `project.environment`) and live usage events.
+  Remedies only an operator can apply say "a platform operator".
+- **Domain DNS records keep the public IP** an A record must point at:
+  that address is public in DNS anyway, and a custom domain needs it.
+
 ### The platform sets defaults and limits; orgs decide within them
 
 The owner's rule for everything else in the console: the platform runs

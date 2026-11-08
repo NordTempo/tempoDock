@@ -65,7 +65,8 @@ export function restorePoints(
       at: snapshot.started_at,
       size: snapshot.size_bytes,
       state: snapshot.status,
-      where: snapshot.server,
+      // Only operators see the server's name.
+      where: snapshot.server || "its server",
       detail: snapshot.error ?? snapshot.note,
       by: snapshot.created_by,
       trigger: snapshot.trigger.replace("_", " "),

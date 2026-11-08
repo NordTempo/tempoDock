@@ -93,7 +93,7 @@ func (c *Core) StopService(ctx context.Context, a Actor, ref ServiceRef) (apityp
 		c.releaseEvent(ctx, ss, active, fmt.Sprintf("Stopped release %d; volumes, domains and variables are kept", active.Number))
 		c.audit(ctx, a, "service.stop", &ss.project, &ss.env, ss.String(), fmt.Sprintf("stopped release %d", active.Number))
 	}
-	return c.toService(ctx, ss, apitypes.PendingChanges{})
+	return c.toService(ctx, a, ss, apitypes.PendingChanges{})
 }
 
 // StartService starts a stopped service again: a new release copying its

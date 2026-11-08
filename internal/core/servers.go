@@ -15,23 +15,16 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// ListServers returns servers with their link status, facts, placement
-// settings and load. Operators get every server, those still joining (an
-// unused join token, listed with ID 0) and their latest resource sample
-// (from memory); others only the servers their org's environments run on.
+// ListServers returns every server with its link status, facts,
+// placement settings, load and latest resource sample (from memory),
+// those still joining too (an unused join token, listed with ID 0).
+// Operators only: servers are the platform's (seesServers), and org
+// members get their environment's server status on the environment.
 func (c *Core) ListServers(ctx context.Context, a Actor) ([]apitypes.Server, error) {
-	if a.Operator {
-		return c.listServers(ctx, true)
-	}
-	if err := a.require(apitypes.ScopeRead, "listing servers"); err != nil {
+	if err := a.requireOperator("listing servers"); err != nil {
 		return nil, err
 	}
-	ids, err := c.store.ListOrgServerIDs(ctx, a.OrgID)
-	if err != nil {
-		return nil, err
-	}
-	all, err := c.listServers(ctx, false)
-	return slices.DeleteFunc(all, func(s apitypes.Server) bool { return s.ID == 0 || !slices.Contains(ids, s.ID) }), err
+	return c.listServers(ctx, true)
 }
 
 // listServers loads every server, pending join token and managed tunnel

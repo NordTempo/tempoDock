@@ -41,9 +41,10 @@ export const Route = createFileRoute("/_app")({
     if (session?.kind === "user" && !session.org) return;
     // The console has no organization: its pages load their own data.
     if (location.pathname.startsWith("/console")) return;
+    // Only operators can list servers (the move and placement controls).
     const [projects] = await Promise.all([
       queryClient.ensureQueryData(queries.projects()),
-      queryClient.ensureQueryData(queries.servers()),
+      session?.operator && queryClient.ensureQueryData(queries.servers()),
       queryClient.ensureQueryData(queries.orgs()),
     ]);
     for (const p of projects) {

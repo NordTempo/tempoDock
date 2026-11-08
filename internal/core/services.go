@@ -97,7 +97,7 @@ func (c *Core) ListServices(ctx context.Context, a Actor, ref EnvRef) ([]apitype
 	for _, v := range vols {
 		stateful[v.ServiceID] = stateful[v.ServiceID] || !v.Pending
 	}
-	link := c.linkOf(ctx, es.env.ServerID)
+	link := c.linkOf(ctx, a, es.env.ServerID)
 	out := make([]apitypes.Service, 0, len(rows))
 	for _, s := range rows {
 		out = append(out, c.serviceOf(svcScope{es, s}, link, pending, active[s.ID], stateful[s.ID]))
@@ -115,7 +115,7 @@ func (c *Core) GetService(ctx context.Context, a Actor, ref ServiceRef) (apitype
 	if err != nil {
 		return apitypes.Service{}, err
 	}
-	return c.toService(ctx, ss, pending)
+	return c.toService(ctx, a, ss, pending)
 }
 
 // CreateService creates a service. Its settings are live immediately (there
@@ -143,7 +143,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		if ss.svc.ID == 0 {
 			return apitypes.Service{}, err
 		}
-		svc, terr := c.toService(ctx, ss, apitypes.PendingChanges{})
+		svc, terr := c.toService(ctx, a, ss, apitypes.PendingChanges{})
 		if err != nil {
 			return svc, err
 		}
@@ -182,7 +182,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		return apitypes.Service{}, err
 	}
 	c.audit(ctx, a, "service.create", &es.project, &es.env, es.String()+"/"+s.Name, "created service")
-	return c.toService(ctx, svcScope{es, s}, apitypes.PendingChanges{})
+	return c.toService(ctx, a, svcScope{es, s}, apitypes.PendingChanges{})
 }
 
 // UpdateService stages settings changes, optionally applying the
@@ -268,7 +268,7 @@ func (c *Core) ArchiveService(ctx context.Context, a Actor, ref ServiceRef) (api
 		c.maybePruneRegistry()
 		c.audit(ctx, a, "service.archive", &ss.project, &ss.env, ss.String(), archiveSummary("archived service; volumes kept", notes))
 	}
-	svc, err := c.toService(ctx, ss, apitypes.PendingChanges{})
+	svc, err := c.toService(ctx, a, ss, apitypes.PendingChanges{})
 	svc.ArchiveNotes = notes
 	return svc, err
 }
@@ -349,7 +349,7 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 	for _, as := range done {
 		id := as.env.ServerID
 		if _, ok := links[id]; !ok {
-			links[id] = c.linkOf(ctx, id)
+			links[id] = c.linkOf(ctx, System, id)
 		}
 		if as.active != nil {
 			stopping[id]++
@@ -363,9 +363,9 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 			}
 		case stopping[id] == 0:
 		case link.status == apitypes.ServerRevoked:
-			notes = append(notes, fmt.Sprintf("containers on revoked server %s were left running (%d); remove them on that machine, or join it again and they are removed", link.name, stopping[id]))
+			notes = append(notes, fmt.Sprintf("containers on a revoked server were left running (%d); a platform operator can remove them on that machine, or join it again and they are removed", stopping[id]))
 		default:
-			notes = append(notes, fmt.Sprintf("server %s is %s: its containers (%d) are stopped when it reconnects", link.name, link.status, stopping[id]))
+			notes = append(notes, fmt.Sprintf("the server is %s: its containers (%d) are stopped when it reconnects", link.status, stopping[id]))
 		}
 	}
 	for _, as := range done {
@@ -385,9 +385,9 @@ func (c *Core) finishArchive(ctx context.Context, done []archivedService) (notes
 		}
 		c.publishRelease(ctx, as.svcScope, *as.active)
 		if link := links[as.env.ServerID]; link.status != apitypes.ServerOnline {
-			msg := fmt.Sprintf("Release %d stops when server %s reconnects: %s was archived", as.active.Number, link.name, as.svc.Name)
+			msg := fmt.Sprintf("Release %d stops when its server reconnects: %s was archived", as.active.Number, as.svc.Name)
 			if link.status == apitypes.ServerRevoked {
-				msg = fmt.Sprintf("Release %d was left running on revoked server %s: %s was archived; remove its container there", as.active.Number, link.name, as.svc.Name)
+				msg = fmt.Sprintf("Release %d was left running on a revoked server: %s was archived; a platform operator can remove its container there", as.active.Number, as.svc.Name)
 			}
 			c.releaseEvent(ctx, as.svcScope, *as.active, msg)
 			continue
@@ -457,7 +457,8 @@ func (c *Core) AddVolume(ctx context.Context, a Actor, ref ServiceRef, req apity
 	return c.changeResult(ctx, a, ss.envScope, req.Apply)
 }
 
-func (c *Core) toService(ctx context.Context, ss svcScope, pending apitypes.PendingChanges) (apitypes.Service, error) {
+// toService loads one service as a sees it (serviceOf).
+func (c *Core) toService(ctx context.Context, a Actor, ss svcScope, pending apitypes.PendingChanges) (apitypes.Service, error) {
 	var active *int64
 	if r, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
 		active = &r.Number
@@ -469,7 +470,7 @@ func (c *Core) toService(ctx context.Context, ss svcScope, pending apitypes.Pend
 		return apitypes.Service{}, err
 	}
 	stateful := slices.ContainsFunc(vols, func(v store.Volume) bool { return !v.Pending })
-	return c.serviceOf(ss, c.linkOf(ctx, ss.env.ServerID), pending, active, stateful), nil
+	return c.serviceOf(ss, c.linkOf(ctx, a, ss.env.ServerID), pending, active, stateful), nil
 }
 
 // serviceOf builds a service from loaded state: its server's link, its

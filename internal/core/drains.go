@@ -139,11 +139,7 @@ func (c *Core) TestLogDrain(ctx context.Context, a Actor, ref EnvRef, id int64) 
 	if d == nil {
 		return apitypes.LogDrainTest{}, notFound("log drain %d isn't running; the daemon may be shutting down", id)
 	}
-	server, err := c.store.GetServer(ctx, es.env.ServerID)
-	if err != nil {
-		return apitypes.LogDrainTest{}, err
-	}
-	src := newLogSource(es.project.Name, es.env.Name, "dock", 0, server.Name)
+	src := newLogSource(es.project.Name, es.env.Name, "dock", 0)
 	line := drainRecord{Time: now(), Stream: "stdout", Text: "Test line from dock: log drain " + row.Name + " works", src: src}
 	out := apitypes.LogDrainTest{OK: true}
 	if err := c.logDrains.deliver(ctx, d, []drainRecord{line}, nil); err != nil {

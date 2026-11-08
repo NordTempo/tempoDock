@@ -18,8 +18,10 @@ type busEvent struct {
 	envID     int64
 	serviceID int64
 	// serverStats marks platform-wide events (server statistics, alerts),
-	// for operators only.
+	// for operators only. noServers marks the twin of an event that names
+	// servers, with the names left out, for everyone else (publishMove).
 	serverStats bool
+	noServers   bool
 	ev          apitypes.Event
 	// alert, when set, raises or resolves an alert along with the event
 	// (alerts.go). Subscribers other than the alert engine never see it.

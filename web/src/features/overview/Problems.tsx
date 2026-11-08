@@ -2,12 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useApplyChanges } from "../../data/mutations";
 import { useProblems } from "../../data/problems";
-import {
-  serviceRef,
-  useChanges,
-  useIsOperator,
-  useProjectOverview,
-} from "../../data/queries";
+import { serviceRef, useChanges, useProjectOverview } from "../../data/queries";
 import type { EnvironmentView, Problem } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
@@ -110,7 +105,7 @@ export function Problems({
 function problemKey(p: Problem) {
   switch (p.kind) {
     case "server_offline":
-      return `server:${p.server.id}`;
+      return `server:${p.environment.id}`;
     case "staged":
       return `staged:${p.environment.environment.id}`;
     case "domain":
@@ -159,7 +154,6 @@ function fold(problems: Problem[]) {
 function ProblemRow({ n, problem: p, more, project }: RowProps) {
   const org = useOrg();
   const key = n <= 9 ? String(n) : undefined;
-  const operator = useIsOperator();
   switch (p.kind) {
     case "crashed": {
       const { status, active_release } = p.service.service;
@@ -399,13 +393,12 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
           tone="fail"
           glyph="✕"
           title="Server offline"
-          where={p.server.name}
-          time={p.server.last_seen_at && since(p.server.last_seen_at)}
+          where={p.environment.name}
           action={
-            operator && (
+            p.environment.server && (
               <Link
                 to="/console/servers/$server"
-                params={{ server: p.server.name }}
+                params={{ server: p.environment.server }}
                 className={actionClass}
                 data-problem={n}
               >
@@ -414,9 +407,9 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
             )
           }
         >
-          Not reachable
-          {p.server.last_seen_at &&
-            `, last seen ${since(p.server.last_seen_at)} ago`}
+          {p.environment.server
+            ? `Server ${p.environment.server} is not reachable`
+            : "Its server is not reachable"}
           . Its services keep running but can't be deployed.
         </Row>
       );

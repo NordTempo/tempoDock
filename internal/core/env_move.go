@@ -262,7 +262,7 @@ func (c *Core) beginMove(ctx context.Context, es envScope, to store.Server, o mo
 	if a.Name == "" {
 		a = System
 	}
-	c.audit(ctx, a, "environment.move", &es.project, &es.env, es.String(), fmt.Sprintf("moving to server %s from %s", to.Name, from.Name))
+	c.audit(ctx, a, "environment.move", &es.project, &es.env, es.String(), "moving to another server")
 	out, err := c.toMove(ctx, es, row)
 	if err != nil {
 		return out, err
@@ -319,7 +319,23 @@ func (c *Core) EnvironmentMoveStatus(ctx context.Context, a Actor, ref EnvRef) (
 	if err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
-	return c.toMove(ctx, es, row)
+	out, err := c.toMove(ctx, es, row)
+	if !a.seesServers() {
+		out = withoutServers(out)
+	}
+	return out, err
+}
+
+// withoutServers is a move as org members see it: that the environment
+// moves, its step and status, but not between which servers. The notes
+// and errors are the operator's, and name servers.
+func withoutServers(m apitypes.EnvironmentMove) apitypes.EnvironmentMove {
+	m.From, m.To, m.Error, m.Notes = "", "", "", []string{}
+	m.Services = slices.Clone(m.Services)
+	for i := range m.Services {
+		m.Services[i].Error = ""
+	}
+	return m
 }
 
 // moveServices lists the environment's live services with their active
@@ -1332,16 +1348,15 @@ func (c *Core) cleanupMove(ctx context.Context, es envScope, m store.Environment
 	if err != nil {
 		return err
 	}
-	summary := fmt.Sprintf("moved to server %s from %s", to.Name, from.Name)
+	// The org's audit log never names servers (ADR 0062); the move's
+	// notes, with the servers, are the operator's.
+	summary := "moved to another server"
 	if m.DowntimeFrom != nil && m.DowntimeTo != nil {
 		held := "under 0.1s"
 		if d := m.DowntimeTo.Sub(*m.DowntimeFrom).Round(100 * time.Millisecond); d > 0 {
 			held = d.String()
 		}
 		summary += "; requests were held " + held
-	}
-	if len(notes) > 0 {
-		summary += "; " + strings.Join(notes, "; ")
 	}
 	c.audit(ctx, System, "environment.moved", &es.project, &es.env, es.String(), summary)
 	c.publishMoveRow(ctx, es, m)
@@ -1542,9 +1557,8 @@ func (c *Core) rollbackMove(ctx context.Context, es envScope, m store.Environmen
 	if m, err = c.store.GetEnvironmentMove(ctx, m.ID); err != nil {
 		return err
 	}
-	to, _ := c.store.GetServer(ctx, m.ToServerID)
 	c.audit(ctx, System, "environment.move_failed", &es.project, &es.env, es.String(),
-		fmt.Sprintf("moving to server %s failed during %s and was rolled back; the environment stays where it was: %s", to.Name, m.Step, msg))
+		fmt.Sprintf("moving to another server failed during %s and was rolled back; the environment stays where it was", m.Step))
 	c.publishMoveRow(ctx, es, m)
 	return nil
 }
@@ -1596,13 +1610,17 @@ func (c *Core) publishMoveRow(ctx context.Context, es envScope, m store.Environm
 	c.publishMove(es, out)
 }
 
-// publishMove sends an environment_move event, and the drain the move is
-// part of to operators.
+// publishMove sends an environment_move event, operators' with the
+// servers and everyone else's without, and the drain the move is part of
+// to operators.
 func (c *Core) publishMove(es envScope, m apitypes.EnvironmentMove) {
 	if m.Drain != 0 {
 		defer c.publishMoveDrain(c.ctx, m.Drain)
 	}
-	c.bus.publish(busEvent{orgID: es.project.OrgID, projectID: es.project.ID, envID: es.env.ID, ev: apitypes.Event{
-		Type: apitypes.EventEnvironmentMove, Project: es.project.Name, Environment: es.env.Name, Move: &m,
-	}})
+	shown := withoutServers(m)
+	for _, e := range []busEvent{{serverStats: true, ev: apitypes.Event{Move: &m}}, {noServers: true, ev: apitypes.Event{Move: &shown}}} {
+		e.orgID, e.projectID, e.envID = es.project.OrgID, es.project.ID, es.env.ID
+		e.ev.Type, e.ev.Project, e.ev.Environment = apitypes.EventEnvironmentMove, es.project.Name, es.env.Name
+		c.bus.publish(e)
+	}
 }

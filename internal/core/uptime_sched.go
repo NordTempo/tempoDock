@@ -225,7 +225,7 @@ func (c *Core) runProbe(chk store.ListUptimeScheduleRow, srv store.Server) {
 	at := time.Now()
 	rt := c.connected(srv.ID)
 	if rt == nil {
-		rt = offlineRuntime{errf(apitypes.CodeServerOffline, "server %s is offline", srv.Name)}
+		rt = offlineRuntime{errf(apitypes.CodeServerOffline, "the server is offline")}
 	}
 	res, err := rt.Probe(ctx, req)
 	prober := srv.Name

@@ -68,7 +68,11 @@ export function ArchivedProject({
               id={`env-${environment.id}`}
               aside={
                 <>
-                  on <EnvServer name={environment.server} /> ·{" "}
+                  {environment.server && (
+                    <>
+                      on <EnvServer environment={environment} /> ·{" "}
+                    </>
+                  )}
                   {kindLabel[environment.kind]}
                 </>
               }

@@ -197,7 +197,7 @@ func TestRemoteDeployAndOffline(t *testing.T) {
 
 	p.setOffline("homelab", true)
 	_, err := p.c.DeployImage(p.ctx, testSystem, web, apitypes.DeployImageRequest{Image: "app:2"})
-	if CodeOf(err) != apitypes.CodeServerOffline || err.Error() != "server homelab is offline" {
+	if CodeOf(err) != apitypes.CodeServerOffline || err.Error() != "the server is offline; try again once it is back" {
 		t.Fatalf("deploy to an offline server: %v", err)
 	}
 	rels, err := p.c.ListReleases(p.ctx, testSystem, web, 10)
@@ -279,7 +279,7 @@ func TestArchiveOnUnreachableServer(t *testing.T) {
 	if err != nil || svc.ArchivedAt == nil {
 		t.Fatalf("archive: %+v, %v", svc, err)
 	}
-	if want := []string{"server homelab is offline: its containers (1) are stopped when it reconnects"}; !slices.Equal(svc.ArchiveNotes, want) {
+	if want := []string{"the server is offline: its containers (1) are stopped when it reconnects"}; !slices.Equal(svc.ArchiveNotes, want) {
 		t.Fatalf("notes = %q", svc.ArchiveNotes)
 	}
 	if !slices.Contains(lab.Running(), webCtr) {
@@ -298,8 +298,8 @@ func TestArchiveOnUnreachableServer(t *testing.T) {
 		t.Fatalf("archive project: %+v, %v", proj, err)
 	}
 	stagingNet := networkName(ss.envScope)
-	if len(proj.ArchiveNotes) != 2 || !strings.HasPrefix(proj.ArchiveNotes[0], "containers on revoked server homelab were left running (1)") ||
-		proj.ArchiveNotes[1] != "server homelab is revoked: its network "+stagingNet+" stayed; remove it on that machine with `docker network rm "+stagingNet+"`" {
+	if len(proj.ArchiveNotes) != 2 || !strings.HasPrefix(proj.ArchiveNotes[0], "containers on a revoked server were left running (1)") ||
+		proj.ArchiveNotes[1] != "the server is revoked: its network "+stagingNet+" stayed; a platform operator can remove it on that machine with `docker network rm "+stagingNet+"`" {
 		t.Fatalf("notes = %q", proj.ArchiveNotes)
 	}
 	if !slices.Contains(lab.Networks(), stagingNet) {

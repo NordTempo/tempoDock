@@ -97,7 +97,6 @@ func TestOrgQueryPlans(t *testing.T) {
 		{"GetMemberRoleByEmail", getMemberRoleByEmail, []any{1, "a@example.com"}},
 		{"ListOrgTokens", listOrgTokens, []any{1}},
 		{"ListUserTokens", listUserTokens, []any{1, 1}},
-		{"ListOrgServerIDs", listOrgServerIDs, []any{1}},
 		{"GetProjectByName", getProjectByName, []any{1, "shop"}},
 		{"ListProjects", listProjects, []any{1}},
 		{"ListAuditEvents", listAuditEvents, []any{1, math.MaxInt64, nil, nil, nil, nil, 100}},

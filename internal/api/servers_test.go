@@ -85,8 +85,12 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 		t.Errorf("GET /api/v1/users as admin: %d %s", resp.StatusCode, body)
 	}
 
-	// Listing servers and reading a service's statistics only need read.
-	for _, path := range []string{"/api/v1/servers", shopProd + "/services/web/stats?range=7d", "/api/v1/projects/shop/placements"} {
+	// Servers and placements are the operator's (ADR 0062); a service's
+	// statistics only need read.
+	for _, path := range []string{"/api/v1/servers", "/api/v1/projects/shop/placements"} {
+		refused("read", "GET", path, nil, "not a platform operator")
+	}
+	for _, path := range []string{shopProd + "/services/web/stats?range=7d"} {
 		if resp, body := f.do("read", "GET", path, nil); resp.StatusCode != 200 {
 			t.Errorf("GET %s as read: %d %s", path, resp.StatusCode, body)
 		}

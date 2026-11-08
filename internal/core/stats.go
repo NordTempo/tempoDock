@@ -381,7 +381,7 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 				Memory: u.MemoryBytes, IoRead: u.IOReadBytesPerSec, IoWrite: u.IOWriteBytesPerSec,
 			})
 		}
-		col.serviceEvents(srv.Name, targets, now)
+		col.serviceEvents(targets, now)
 	}
 	col.sampler.endRound()
 	err = c.storeStats(ctx, col, now.Unix(), memory)
@@ -424,7 +424,8 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 // serviceEvents adds one usage event per environment of a server with the
 // samples of its services. Targets are ordered by server and environment,
 // so own (this server's targets) has each environment's services together.
-func (col *collector) serviceEvents(server string, targets []store.ListStatsTargetsRow, now time.Time) {
+// The events don't name the server: org members get them (seesServers).
+func (col *collector) serviceEvents(targets []store.ListStatsTargetsRow, now time.Time) {
 	var up *apitypes.UsageUpdate
 	var env int64
 	for n, i := range col.own {
@@ -443,7 +444,7 @@ func (col *collector) serviceEvents(server string, targets []store.ListStatsTarg
 				size++
 			}
 			name := col.names[t.ServiceID]
-			up = &apitypes.UsageUpdate{Server: server, Services: make([]apitypes.ServiceUsageSample, 0, size)}
+			up = &apitypes.UsageUpdate{Services: make([]apitypes.ServiceUsageSample, 0, size)}
 			col.events = append(col.events, busEvent{orgID: name.OrgID, projectID: t.ProjectID, envID: t.EnvironmentID, ev: apitypes.Event{
 				Type: apitypes.EventUsage, Time: now.UTC(), Project: name.ProjectName, Environment: name.EnvironmentName, Usage: up,
 			}})

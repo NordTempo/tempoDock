@@ -9,7 +9,6 @@ import {
   useIsAdmin,
   useProjectOverview,
   useRevealedVariables,
-  useServers,
   useVariables,
 } from "../data/queries";
 import type {
@@ -105,9 +104,7 @@ function Compare() {
     : [];
   const promotable = plan.filter((r) => !r.skip).length;
   const allowed = useCanDeploy({ project, environment: toName ?? "" });
-  const blocked = deployBlock(
-    useServers().find((s) => s.name === to?.environment.server),
-  );
+  const blocked = deployBlock(to?.environment);
   const notReady = !pair
     ? "pick two different environments"
     : !allowed
@@ -306,10 +303,10 @@ function CompareTable({
               <th className="w-[120px]">Service</th>
               <th className="w-[24%] border-l border-line pl-4">
                 {from.environment.name}{" "}
-                <EnvServer name={from.environment.server} />
+                <EnvServer environment={from.environment} />
               </th>
               <th className="w-[24%] border-l border-line pl-4">
-                {to.environment.name} <EnvServer name={to.environment.server} />
+                {to.environment.name} <EnvServer environment={to.environment} />
               </th>
               <th className="border-l border-line pl-4">Differences</th>
             </tr>

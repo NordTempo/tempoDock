@@ -258,8 +258,8 @@ func (g *globals) printMove(m apitypes.EnvironmentMove) error {
 	if err := g.io.Fields(
 		"move", itoa(m.ID),
 		"environment", m.Project+"/"+m.Environment,
-		"from", m.From,
-		"to", m.To,
+		"from", dash(m.From), // only platform operators see the servers
+		"to", dash(m.To),
 		"status", string(m.Status),
 		"step", string(m.Step),
 		"held", downtimeWords(m),

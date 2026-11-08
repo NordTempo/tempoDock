@@ -34,7 +34,7 @@ func registerServers(s *Server, a huma.API) {
 	tags := []string{"servers"}
 	authed(s, a, huma.Operation{
 		OperationID: "list-servers", Method: http.MethodGet, Path: Prefix + "/servers",
-		Summary: "List servers", Description: "Status, version, accepted environment kinds and load of every server, for operators with each server's latest resource sample; others get the servers their organization's environments run on.", Tags: tags,
+		Summary: "List servers", Description: "Status, version, accepted environment kinds, load and latest resource sample of every server. Operators only: others see their environment's server status on the environment.", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Server], error) {
 		return reply(s.core.ListServers(ctx, actor))
 	})
@@ -160,7 +160,7 @@ func registerServers(s *Server, a huma.API) {
 
 	authed(s, a, huma.Operation{
 		OperationID: "list-placements", Method: http.MethodGet, Path: projectPathT + "/placements",
-		Summary: "Project placements", Description: "Which server the project's production and non-production environments live on.",
+		Summary: "Project placements", Description: "Which server the project's production and non-production environments live on. Operators only.",
 		Tags: []string{"projects"},
 	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[[]apitypes.Placement], error) {
 		return reply(s.core.ListPlacements(ctx, actor, in.Project))

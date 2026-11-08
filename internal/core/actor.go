@@ -234,6 +234,21 @@ func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
 // statistics and platform events: operators, as requireOperator checks.
 func (a Actor) readsServerStats() bool { return a.Operator }
 
+// seesServers reports whether the actor may see which servers exist:
+// their names, addresses and facts. Servers are the platform's, so only
+// operators do (ADR 0062); org members see whether their environment's
+// server is reachable, never which one it is.
+func (a Actor) seesServers() bool { return a.Operator }
+
+// serverName is a server's name as the actor may see it: the name for
+// operators, "" for everyone else (seesServers).
+func (a Actor) serverName(name string) string {
+	if a.seesServers() {
+		return name
+	}
+	return ""
+}
+
 func (a Actor) limitName() string {
 	if a.EnvironmentID != 0 {
 		return fmt.Sprintf("environment %s/%s", a.ProjectName, a.EnvironmentName)

@@ -4,10 +4,8 @@ import {
   useIsOperator,
   useProjectOverview,
   useProjectTree,
-  useServers,
 } from "../data/queries";
-import type { ServiceView } from "../data/types";
-import { statusTitle } from "../features/servers/parts";
+import type { ServerStatus, ServiceView } from "../data/types";
 import { Icon } from "../ui/icons";
 import { Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, type Tone, toneText } from "../ui/status";
@@ -191,65 +189,50 @@ export function EnvSwitch({
 }
 
 /**
- * ● per server in view: the environment's server, or every server the
- * project runs on. Anything but online says so in words: "✕ homelab
- * offline". With `troubleOnly`, only the servers that aren't online.
+ * The servers of a project's environments that aren't online, in words:
+ * "✕ homelab offline". Only operators see server names (and get a link
+ * to its page); everyone else sees "✕ server offline".
  */
-export function ServerDots({
-  project,
-  environment,
-  troubleOnly,
-}: {
-  project: string;
-  environment?: string;
-  troubleOnly?: boolean;
-}) {
-  const servers = useServers();
+export function ServerDots({ project }: { project: string }) {
   const tree = useProjectTree();
   const operator = useIsOperator();
   const environments =
     tree.find((p) => p.project.name === project)?.environments ?? [];
-  const names = new Set(
-    environments
-      .filter((e) => !environment || e.environment.name === environment)
-      .map((e) => e.environment.server),
-  );
-  const shown = servers.filter(
-    (s) => names.has(s.name) && !(troubleOnly && s.status === "online"),
-  );
-  if (shown.length === 0) return null;
+  const shown = new Map<string, ServerStatus>();
+  for (const { environment: e } of environments) {
+    if (e.server_status !== "online")
+      shown.set(e.server ?? "", e.server_status);
+  }
+  if (shown.size === 0) return null;
   return (
     <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-faint">
-      {shown.map((s) => {
-        const state = serverState(s.status);
+      {[...shown].map(([name, status]) => {
+        const state = serverState(status);
         const label = (
           <>
             <span className={toneText[state.tone]}>
               <Glyph char={state.glyph ?? "●"} />
             </span>
-            <span className="font-mono">{s.name}</span>
-            {s.status !== "online" && (
-              <span className={toneText[state.tone]}>{state.label}</span>
-            )}
+            <span className={name ? "font-mono" : undefined}>
+              {name || "server"}
+            </span>
+            <span className={toneText[state.tone]}>{state.label}</span>
           </>
         );
+        const title = `${name ? `Server ${name}` : "The server"} is ${state.label}`;
         // Server pages are in the console, for operators.
-        return operator ? (
+        return operator && name ? (
           <Link
-            key={s.id}
+            key={name}
             to="/console/servers/$server"
-            params={{ server: s.name }}
+            params={{ server: name }}
             className="flex items-center gap-1.5 hover:text-fg"
-            title={statusTitle(s)}
+            title={title}
           >
             {label}
           </Link>
         ) : (
-          <span
-            key={s.id}
-            className="flex items-center gap-1.5"
-            title={statusTitle(s)}
-          >
+          <span key={name} className="flex items-center gap-1.5" title={title}>
             {label}
           </span>
         );

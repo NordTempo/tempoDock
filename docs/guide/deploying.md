@@ -128,8 +128,8 @@ dock logs drain remove http
 
 | Kind | What it sends |
 |---|---|
-| `http` | `POST` of `application/x-ndjson`, one JSON object per line: `time`, `stream`, `text`, `project`, `environment`, `service`, `release`, `server` |
-| `syslog` | RFC 5424 over `tcp://`, `tls://` (octet counting) or `udp://` (a datagram per line); `APP-NAME` is the service, `MSGID` the stream, `HOSTNAME` the server, severity 6 for stdout and 3 for stderr. Ports default to 514, and 6514 for `tls` |
+| `http` | `POST` of `application/x-ndjson`, one JSON object per line: `time`, `stream`, `text`, `project`, `environment`, `service`, `release` |
+| `syslog` | RFC 5424 over `tcp://`, `tls://` (octet counting) or `udp://` (a datagram per line); `APP-NAME` is the service, `MSGID` the stream, `HOSTNAME` `project.environment`, severity 6 for stdout and 3 for stderr. Ports default to 514, and 6514 for `tls` |
 | `loki` | Loki's push API (`/loki/api/v1/push` is added to the URL), a stream per service and output stream, labelled `project`, `environment`, `service` and `stream` |
 
 - **Secrets stay hidden.** URLs, headers and tokens are stored encrypted and

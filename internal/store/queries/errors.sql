@@ -168,10 +168,9 @@ SELECT count(*) FROM error_issues WHERE service_id = +? AND first_release = +?;
 -- the log followers (errors and drains) follow when the daemon starts
 -- or the server reconnects.
 SELECT sqlc.embed(releases), services.name AS service, environments.id AS environment_id,
-       environments.name AS environment, environments.server_id, projects.name AS project, servers.name AS server
+       environments.name AS environment, environments.server_id, projects.name AS project
 FROM environments
 JOIN services ON services.environment_id = environments.id
 JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
 JOIN projects ON projects.id = environments.project_id
-JOIN servers ON servers.id = environments.server_id
 WHERE environments.server_id = +? AND releases.container_id != '';

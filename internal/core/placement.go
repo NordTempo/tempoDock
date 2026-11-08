@@ -88,28 +88,34 @@ func better(a, b serverLoad) bool {
 	return a.server.ID < b.server.ID
 }
 
-// noServerError explains why no server can take an environment of kind,
-// naming the servers that accept it and what keeps each one out.
+// noServerError explains why no server can take an environment of kind:
+// how many servers that accept it are offline or disabled for placement.
+// Org members get it, so it names no servers (seesServers).
 func noServerError(kind apitypes.EnvironmentKind, loads []serverLoad) error {
-	var why []string
-	offline := false
+	disabled, offline := 0, 0
 	for _, l := range loads {
 		if !acceptsKind(l.server, kind) {
 			continue
 		}
 		switch {
 		case l.server.DisabledForPlacement:
-			why = append(why, l.server.Name+" (disabled for placement)")
+			disabled++
 		case !l.online:
-			why = append(why, l.server.Name+" (offline)")
-			offline = true
+			offline++
 		}
 	}
-	if len(why) == 0 {
-		return conflict("no server accepts %s environments; allow them on one with `dock server update <name> --%s`", kindWords(kind), kindWords(kind))
+	if disabled+offline == 0 {
+		return conflict("no server accepts %s environments; a platform operator has to allow them on one", kindWords(kind))
 	}
-	msg := fmt.Sprintf("no server can take a %s environment now; servers that accept %s: %s", kindWords(kind), kindWords(kind), strings.Join(why, ", "))
-	if offline {
+	var why []string
+	if offline > 0 {
+		why = append(why, count(offline, "server")+" offline")
+	}
+	if disabled > 0 {
+		why = append(why, count(disabled, "server")+" disabled for placement")
+	}
+	msg := fmt.Sprintf("no server can take a %s environment now (%s); try again later, or ask a platform operator", kindWords(kind), strings.Join(why, ", "))
+	if offline > 0 {
 		return errf(apitypes.CodeServerOffline, "%s", msg)
 	}
 	return conflict("%s", msg)
@@ -151,8 +157,12 @@ func (c *Core) placeEnvironment(ctx context.Context, q *store.Queries, p store.P
 	return best.server.ID, err
 }
 
-// ListPlacements returns where a project's environments of each kind live.
+// ListPlacements returns which server a project's environments of each
+// kind live on. Operators only, as servers are (seesServers).
 func (c *Core) ListPlacements(ctx context.Context, a Actor, project string) ([]apitypes.Placement, error) {
+	if err := a.requireOperator("reading placements"); err != nil {
+		return nil, err
+	}
 	p, err := c.projectFor(ctx, a, project, apitypes.ScopeRead, "reading placements")
 	if err != nil {
 		return nil, err
@@ -270,23 +280,21 @@ func fanOut(ctx context.Context, n int, timeout time.Duration, fn func(ctx conte
 }
 
 // runtimeFor returns the node runtime of a server, or a server_offline
-// error that says why it can't be reached. Remote servers come from the
-// node hub (SetNodes).
+// error that says why it can't be reached. Org members get these errors,
+// so they don't name the server (seesServers); operators find it on the
+// console. Remote servers come from the node hub (SetNodes).
 func (c *Core) runtimeFor(serverID int64) (node.Runtime, error) {
 	if rt := c.connected(serverID); rt != nil {
 		return rt, nil
 	}
 	s, err := c.store.GetServer(context.Background(), serverID)
-	if err != nil {
-		return nil, errf(apitypes.CodeServerOffline, "server %d is offline", serverID)
-	}
 	switch {
-	case s.RevokedAt != nil:
-		return nil, errf(apitypes.CodeServerOffline, "server %s is revoked; join it again with `dock server add %s`", s.Name, s.Name)
+	case err == nil && s.RevokedAt != nil:
+		return nil, errf(apitypes.CodeServerOffline, "the server is revoked; a platform operator has to join it again")
 	case c.nodes != nil && c.nodes.State(serverID).Status == remote.StatusIncompatible:
-		return nil, errf(apitypes.CodeServerOffline, "server %s runs dock %s, which this control plane can't drive; upgrade dock on it", s.Name, c.nodes.State(serverID).Hello.Version)
+		return nil, errf(apitypes.CodeServerOffline, "the server runs a dock this control plane can't drive; a platform operator has to update it")
 	}
-	return nil, errf(apitypes.CodeServerOffline, "server %s is offline", s.Name)
+	return nil, errf(apitypes.CodeServerOffline, "the server is offline; try again once it is back")
 }
 
 // runtime returns a server's runtime for call sites that handle runtime

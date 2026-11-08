@@ -8,7 +8,7 @@ import {
   serviceRef,
   useIsOperator,
   useProjectTreeIf,
-  useServers,
+  useServersIfOperator,
   useSession,
 } from "../data/queries";
 import {
@@ -62,9 +62,7 @@ export function useCommands({
   const logout = useLogout();
   const operator = useIsOperator();
   const session = useSession();
-  const servers = useServers();
-  const blockOf = (server: string) =>
-    deployBlock(servers.find((s) => s.name === server));
+  const servers = useServersIfOperator();
 
   // Rollback targets need release history, for the current project.
   const local = projects
@@ -141,7 +139,7 @@ export function useCommands({
     for (const { from, to } of promotionPairs(environments)) {
       const target = { project, environment: to.environment.name };
       if (!canDeploy(session, target)) continue;
-      const blocked = blockOf(to.environment.server);
+      const blocked = deployBlock(to.environment);
       add({
         id: `promote:${project}/${from.environment.name}/${to.environment.name}`,
         group: "Actions",
@@ -167,7 +165,7 @@ export function useCommands({
       const environment = env.name;
       const inEnv = inProject && environment === here.environment;
       // Releases can't start on an unreachable server.
-      const blocked = blockOf(env.server);
+      const blocked = deployBlock(env);
       const refuse = blocked
         ? () => {
             throw new Error(`Can't deploy: ${blocked}.`);
@@ -415,7 +413,7 @@ export function useCommands({
     });
   }
   // Server pages (statistics, placement) are in the console.
-  for (const { name } of operator ? servers : []) {
+  for (const { name } of servers) {
     add({
       id: `go:server:${name}`,
       group: "Go to",

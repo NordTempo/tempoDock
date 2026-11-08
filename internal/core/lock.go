@@ -160,7 +160,7 @@ func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 		return apitypes.Environment{}, invalid("minutes must be between 0 (unlock) and %d (a week)", 7*24*60)
 	}
 	if es.env.LockedAt == nil {
-		return c.toEnv(ctx, es)
+		return c.toEnv(ctx, a, es)
 	}
 	var out apitypes.Environment
 	if req.Minutes == 0 {
@@ -189,16 +189,16 @@ func (c *Core) setLock(ctx context.Context, a Actor, es envScope, params store.S
 	c.bus.publish(busEvent{orgID: es.project.OrgID, projectID: es.project.ID, envID: e.ID, ev: apitypes.Event{
 		Type: apitypes.EventEnvironmentLock, Project: es.project.Name, Environment: e.Name, Lock: envLock(e),
 	}})
-	return c.toEnv(ctx, es)
+	return c.toEnv(ctx, a, es)
 }
 
-// toEnv is an environment as the API shows it, with its server's name.
-func (c *Core) toEnv(ctx context.Context, es envScope) (apitypes.Environment, error) {
+// toEnv is an environment as the API shows it to a (toEnvironment).
+func (c *Core) toEnv(ctx context.Context, a Actor, es envScope) (apitypes.Environment, error) {
 	srv, err := c.store.GetServer(ctx, es.env.ServerID)
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	return toEnvironment(es.project, es.env, srv.Name), nil
+	return c.toEnvironment(a, es.project, es.env, srv), nil
 }
 
 func reasonSuffix(reason string) string {

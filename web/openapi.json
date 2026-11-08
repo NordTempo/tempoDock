@@ -4652,6 +4652,9 @@
           "lock": {
             "$ref": "#/components/schemas/EnvironmentLock"
           },
+          "moving": {
+            "type": "boolean"
+          },
           "moving_to": {
             "type": "string"
           },
@@ -4666,7 +4669,18 @@
             "type": "string"
           },
           "server": {
-            "description": "Server the environment runs on",
+            "description": "Server the environment runs on; platform operators only",
+            "type": "string"
+          },
+          "server_status": {
+            "description": "Whether the environment's server can be reached",
+            "enum": [
+              "online",
+              "offline",
+              "incompatible",
+              "joining",
+              "revoked"
+            ],
             "type": "string"
           }
         },
@@ -4675,7 +4689,7 @@
           "project",
           "name",
           "kind",
-          "server",
+          "server_status",
           "created_at"
         ],
         "type": "object"
@@ -10200,7 +10214,7 @@
             "type": "integer"
           },
           "server": {
-            "description": "With server_offline: the server's name",
+            "description": "With server_offline: the server's name, for platform operators only",
             "type": "string"
           },
           "server_offline": {
@@ -11680,7 +11694,6 @@
           "service",
           "trigger",
           "status",
-          "server",
           "volumes",
           "size_bytes",
           "paused_ms",
@@ -13049,9 +13062,6 @@
             ]
           }
         },
-        "required": [
-          "server"
-        ],
         "type": "object"
       },
       "User": {
@@ -45711,7 +45721,7 @@
     },
     "/api/v1/projects/{project}/placements": {
       "get": {
-        "description": "Which server the project's production and non-production environments live on.",
+        "description": "Which server the project's production and non-production environments live on. Operators only.",
         "operationId": "list-placements",
         "parameters": [
           {
@@ -51054,7 +51064,7 @@
     },
     "/api/v1/servers": {
       "get": {
-        "description": "Status, version, accepted environment kinds and load of every server, for operators with each server's latest resource sample; others get the servers their organization's environments run on.",
+        "description": "Status, version, accepted environment kinds, load and latest resource sample of every server. Operators only: others see their environment's server status on the environment.",
         "operationId": "list-servers",
         "parameters": [
           {

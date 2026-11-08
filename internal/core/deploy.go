@@ -165,7 +165,7 @@ func (d *deployment) run(ctx context.Context) error {
 		if strings.Contains(err.Error(), "already in use") {
 			// A container of the same name that no release owns (see
 			// orphanCheck): it is left alone.
-			return step(apitypes.CodeDeployFailed, "start container: %w; Dock doesn't manage that container (it predates a database restored from an older backup): remove it with `docker rm -f` on server %s, then deploy again", err, d.server.Name)
+			return step(apitypes.CodeDeployFailed, "start container: %w; Dock doesn't manage that container (it predates a database restored from an older backup): a platform operator has to remove it with `docker rm -f` on the server, then deploy again", err)
 		}
 		return step(apitypes.CodeDeployFailed, "start container: %w", err)
 	}
@@ -293,7 +293,7 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 	}
 	id, err := d.pull(ctx, from)
 	if err != nil {
-		return "", step(apitypes.CodeBuildFailed, "image %s is not on server %s and could not be pulled: %w", from, d.server.Name, err)
+		return "", step(apitypes.CodeBuildFailed, "image %s is not on the server and could not be pulled: %w", from, err)
 	}
 	return id, nil
 }
@@ -344,9 +344,10 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
+	// The build log is the org's: it says where without naming servers.
 	where := "this server"
 	if builder.ID != d.server.ID {
-		where = "server " + builder.Name
+		where = "the build server"
 	}
 	sem := c.buildLock(builder.ID)
 	select {
@@ -551,7 +552,7 @@ func (d *deployment) fail(ctx context.Context, err error) {
 		if code == apitypes.CodeInternal {
 			code = apitypes.CodeDeployFailed
 		}
-		msg = fmt.Sprintf("server %s went offline during %s", cmp.Or(d.server.Name, strconv.FormatInt(serverID, 10)), d.rel.Status)
+		msg = fmt.Sprintf("the server went offline during %s", d.rel.Status)
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
@@ -650,8 +651,8 @@ func (d *deployment) orphanCheck(ctx context.Context) error {
 	for i, id := range ids {
 		short[i] = id[:min(len(id), 12)]
 	}
-	return step(apitypes.CodeDeployFailed, "server %s already runs containers labelled for release %d of %s that Dock doesn't manage, left from before the database was restored from an older backup. Nothing was changed; remove them with `docker rm -f %s` on that server, then deploy again",
-		d.server.Name, d.rel.Number, d.ss, strings.Join(short, " "))
+	return step(apitypes.CodeDeployFailed, "the server already runs containers labelled for release %d of %s that Dock doesn't manage, left from before the database was restored from an older backup. Nothing was changed; a platform operator has to remove them with `docker rm -f %s` on the server, then deploy again",
+		d.rel.Number, d.ss, strings.Join(short, " "))
 }
 
 func (d *deployment) setStatus(ctx context.Context, s apitypes.ReleaseStatus) {

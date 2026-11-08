@@ -235,7 +235,7 @@ func (c *Core) removeNetworks(ctx context.Context, p store.Project, envs []store
 	var online []envScope
 	for _, e := range envs {
 		if _, ok := links[e.ServerID]; !ok {
-			links[e.ServerID] = c.linkOf(ctx, e.ServerID)
+			links[e.ServerID] = c.linkOf(ctx, System, e.ServerID)
 		}
 		es := envScope{p, e}
 		switch {
@@ -252,8 +252,8 @@ func (c *Core) removeNetworks(ctx context.Context, p store.Project, envs []store
 		if len(nets) > 1 {
 			what, it = "networks", "them"
 		}
-		notes = append(notes, fmt.Sprintf("server %s is %s: its %s %s stayed; remove %s on that machine with `docker network rm %s`",
-			link.name, link.status, what, strings.Join(nets, ", "), it, strings.Join(nets, " ")))
+		notes = append(notes, fmt.Sprintf("the server is %s: its %s %s stayed; a platform operator can remove %s on that machine with `docker network rm %s`",
+			link.status, what, strings.Join(nets, ", "), it, strings.Join(nets, " ")))
 	}
 	if len(online) == 0 {
 		return notes
@@ -349,7 +349,7 @@ func (c *Core) ListEnvironments(ctx context.Context, a Actor, project string) ([
 	if err != nil {
 		return nil, err
 	}
-	servers, err := c.serverNames(ctx)
+	servers, err := c.serverRows(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +360,7 @@ func (c *Core) ListEnvironments(ctx context.Context, a Actor, project string) ([
 	out := []apitypes.Environment{}
 	for _, e := range rows {
 		if a.canSee(p.OrgID, p.ID, e.ID) {
-			env := toEnvironment(p, e, servers[e.ServerID])
+			env := c.toEnvironment(a, p, e, servers[e.ServerID])
 			env.Preview = prs[e.ID]
 			out = append(out, env)
 		}
@@ -378,7 +378,7 @@ func (c *Core) GetEnvironment(ctx context.Context, a Actor, ref EnvRef) (apitype
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	out := toEnvironment(es.project, es.env, srv.Name)
+	out := c.toEnvironment(a, es.project, es.env, srv)
 	if pv, err := c.store.GetPreviewByEnvironment(ctx, es.env.ID); err == nil {
 		out.Preview = &apitypes.PullRequestRef{Repo: pv.Repo, Number: pv.Number, Title: pv.Title, Author: pv.Author, URL: pv.HtmlUrl}
 	} else if !store.IsNotFound(err) {
@@ -421,8 +421,8 @@ func (c *Core) CreateEnvironment(ctx context.Context, a Actor, project string, r
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	c.audit(ctx, a, "environment.create", &p, &e, p.Name+"/"+e.Name, fmt.Sprintf("created %s environment on server %s", kindWords(kind), srv.Name))
-	return toEnvironment(p, e, srv.Name), nil
+	c.audit(ctx, a, "environment.create", &p, &e, p.Name+"/"+e.Name, fmt.Sprintf("created %s environment", kindWords(kind)))
+	return c.toEnvironment(a, p, e, srv), nil
 }
 
 func (c *Core) serverNames(ctx context.Context) (map[int64]string, error) {
@@ -435,6 +435,15 @@ func (c *Core) serverNames(ctx context.Context) (map[int64]string, error) {
 		m[id] = s.Name
 	}
 	return m, nil
+}
+
+// serverNamesFor is serverNames for what a may see: every server's name
+// for operators, none (and no query) for everyone else (seesServers).
+func (c *Core) serverNamesFor(ctx context.Context, a Actor) (map[int64]string, error) {
+	if !a.seesServers() {
+		return map[int64]string{}, nil
+	}
+	return c.serverNames(ctx)
 }
 
 // serverRows loads every server by ID, in one query.
@@ -454,8 +463,13 @@ func toProject(p store.Project) apitypes.Project {
 	return apitypes.Project{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt, ArchivedAt: p.ArchivedAt}
 }
 
-func toEnvironment(p store.Project, e store.Environment, server string) apitypes.Environment {
-	return apitypes.Environment{ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: server, CreatedAt: e.CreatedAt, Lock: envLock(e)}
+// toEnvironment is an environment as a shows it: its server's link status
+// for everyone, the server's name for operators only (seesServers).
+func (c *Core) toEnvironment(a Actor, p store.Project, e store.Environment, srv store.Server) apitypes.Environment {
+	return apitypes.Environment{
+		ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: a.serverName(srv.Name),
+		ServerStatus: c.serverStatus(srv), CreatedAt: e.CreatedAt, Lock: envLock(e),
+	}
 }
 
 // validProjectName applies the same address rules to creation and renaming.

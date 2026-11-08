@@ -120,13 +120,21 @@ func TestOrgsAreIsolated(t *testing.T) {
 		}
 	}
 
-	// Servers: only those acme's environments run on, without statistics.
-	servers, err := h.c.ListServers(h.ctx, bob)
-	if err != nil || len(servers) != 1 || servers[0].Usage != nil {
-		t.Fatalf("acme's servers = %+v, %v", servers, err)
+	// Servers are the platform's (ADR 0062): an org admin can't list or
+	// read them, and its environments say whether their server is online
+	// but not which one it is. Operators see the name.
+	if _, err := h.c.ListServers(h.ctx, bob); CodeOf(err) != apitypes.CodeForbidden {
+		t.Errorf("acme's admin lists servers: %v", err)
 	}
 	if _, err := h.c.GetServer(h.ctx, bob, "local"); CodeOf(err) != apitypes.CodeForbidden {
 		t.Errorf("acme's admin reads a server: %v", err)
+	}
+	env, err := h.c.GetEnvironment(h.ctx, bob, EnvRef{"shop", "production"})
+	if err != nil || env.Server != "" || env.ServerStatus != apitypes.ServerOnline {
+		t.Errorf("acme's environment = %+v, %v", env, err)
+	}
+	if env, err := h.c.GetEnvironment(h.ctx, testSystem, web.Env()); err != nil || env.Server != h.c.localName() {
+		t.Errorf("the operator's environment = %+v, %v", env, err)
 	}
 }
 

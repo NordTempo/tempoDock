@@ -259,7 +259,7 @@ func TestClonePlacement(t *testing.T) {
 		t.Fatalf("prod-eu: %+v, %v", res.Environment, err)
 	}
 
-	// No eligible server: an error naming them, and nothing left behind.
+	// No eligible server: an error counting them, and nothing left behind.
 	p.project("blog")
 	if _, err := p.c.CreateService(p.ctx, testSystem, EnvRef{"blog", "production"}, apitypes.CreateServiceRequest{Name: "web"}); err != nil {
 		t.Fatal(err)
@@ -267,7 +267,7 @@ func TestClonePlacement(t *testing.T) {
 	p.setOffline("homelab", true)
 	p.setOffline("lab2", true)
 	_, err = p.c.CloneEnvironment(p.ctx, testSystem, EnvRef{"blog", "production"}, apitypes.CloneEnvironmentRequest{Name: "staging"})
-	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "homelab (offline)") {
+	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "2 servers offline") {
 		t.Fatalf("clone with no eligible server: %v", err)
 	}
 	if envs, _ := p.c.ListEnvironments(p.ctx, testSystem, "blog"); len(envs) != 1 {

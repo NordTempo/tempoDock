@@ -131,7 +131,7 @@ export function ProjectView({
           )
         }
         title={here ?? project}
-        after={<ServerDots project={project} troubleOnly />}
+        after={<ServerDots project={project} />}
         actions={
           <>
             {canNewEnv && !only && (

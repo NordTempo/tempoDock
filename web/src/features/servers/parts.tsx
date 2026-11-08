@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { useIsOperator, useServers } from "../../data/queries";
-import type { Server } from "../../data/types";
+import { useServers } from "../../data/queries";
+import type { Environment, Server } from "../../data/types";
 import { ago } from "../../ui/format";
 import { StateText } from "../../ui/kit";
 import { serverState, versionBehind } from "../../ui/status";
@@ -16,12 +16,14 @@ export function statusTitle(s: Server) {
 
 /**
  * The server an environment runs on, marked when deploys can't reach it:
- * "homelab ✕ offline". Admins get a link to its page.
+ * "homelab ✕ offline", with a link to its page. Only operators get server
+ * names; for everyone else it is "server ✕ offline", and nothing while
+ * the server is online.
  */
-export function EnvServer({ name }: { name: string }) {
-  const server = useServers().find((s) => s.name === name);
-  const operator = useIsOperator();
-  const label = operator ? (
+export function EnvServer({ environment }: { environment: Environment }) {
+  const { server: name, server_status: status } = environment;
+  if (!name && status === "online") return null;
+  const label = name ? (
     <Link
       to="/console/servers/$server"
       params={{ server: name }}
@@ -30,12 +32,13 @@ export function EnvServer({ name }: { name: string }) {
       {name}
     </Link>
   ) : (
-    <span className="font-mono">{name}</span>
+    <span>server</span>
   );
-  if (!server || server.status === "online") return label;
+  if (status === "online") return label;
+  const state = serverState(status);
   return (
-    <span title={statusTitle(server)}>
-      {label} <StateText state={serverState(server.status)} />
+    <span title={`${name ? `Server ${name}` : "The server"} is ${state.label}`}>
+      {label} <StateText state={state} />
     </span>
   );
 }

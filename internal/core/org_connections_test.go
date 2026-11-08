@@ -161,7 +161,13 @@ func TestZoneOnSeveralConnections(t *testing.T) {
 	if _, err := p.c.CreateProject(p.ctx, bob, apitypes.CreateProjectRequest{Name: "shop"}); err != nil {
 		t.Fatal(err)
 	}
-	if e, err := p.c.CreateEnvironment(p.ctx, bob, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil || e.Server != "homelab" {
+	if _, err := p.c.CreateEnvironment(p.ctx, bob, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	// Only an operator sees which server it went to.
+	operator := bob
+	operator.Operator = true
+	if e, err := p.c.GetEnvironment(p.ctx, operator, EnvRef{"shop", "staging"}); err != nil || e.Server != "homelab" {
 		t.Fatalf("acme's environment = %+v, %v", e, err)
 	}
 	if _, err := p.c.CreateService(p.ctx, bob, web.Env(), apitypes.CreateServiceRequest{Name: "web"}); err != nil {
