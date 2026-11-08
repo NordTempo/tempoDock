@@ -22,8 +22,27 @@ concurrency:
 # scripts/ci/fetch-release.sh, which checks each against its digest and
 # keeps it in the runners' host cache, so a host downloads each version once.
 jobs:
+  # What a change touches: site/ (the landing page), the rest, or both.
+  # The other jobs skip what a change can't affect. A skipped job counts as
+  # passed, so every commit on main still gets a green run to release from.
+  changes:
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    outputs:
+      site: ${{ steps.diff.outputs.site }}
+      rest: ${{ steps.diff.outputs.rest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - id: diff
+        run: scripts/ci/changes.sh
+        env:
+          BEFORE: ${{ github.event.before }}
+
   # The Go checks run as parallel jobs, each with only the setup it needs.
   lint:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -44,6 +63,8 @@ jobs:
       - run: make analytics-deps
 
   test:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -53,6 +74,8 @@ jobs:
   # The binaries and UIs are built by perf's artifacts job, which measures
   # them, so this job only runs the integration tests.
   integration:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -77,6 +100,8 @@ jobs:
   # they run in two shards that split the tests by name
   # (scripts/race-shard.sh); every test runs in exactly one shard.
   race:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     name: race (${{ matrix.shard }}/2)
     strategy:
       fail-fast: false
@@ -92,6 +117,8 @@ jobs:
   # which the root's lint and tests don't enter. The binary is built as
   # the release builds it, to check the Dockerfile.
   analytics:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -120,6 +147,8 @@ jobs:
   # the UIs and binaries (and so checks that they build). Each builds its
   # own inputs, so they run alongside the Go and web checks.
   perf-artifacts:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     # For tempoBase's check that it closes Postgres connections after use.
     services:
@@ -152,6 +181,8 @@ jobs:
           PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
 
   perf-bench:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -163,6 +194,8 @@ jobs:
   # regenerated from Go first, so the stale-client check and the final diff
   # compare against what the Go source produces, not what was committed.
   web:
+    needs: changes
+    if: needs.changes.outputs.rest == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     defaults:
       run:
@@ -209,6 +242,8 @@ jobs:
 
   # The landing page (site/): types, Biome and a static build.
   site:
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     defaults:
       run:
