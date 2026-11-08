@@ -22,7 +22,7 @@ the public address hands the whole host to the daemon.
 |---|---|
 | Hostnames | The landing site at `dock.nordtempo.com`; the console moves to `console.nordtempo.com` (`dock address set`) |
 | Where it lives | `site/` in this repo: Astro, static, no client JavaScript. Illustrations render at build time |
-| Serving | `site/Dockerfile` builds it and serves it with Caddy on :8080. Deployed on Dock as its own project, with the Dockerfile path set on the service (there is no root `dock.toml`, so other services of this repo are unaffected) |
+| Serving | `site/Dockerfile` builds it (context `site/`) and serves it with Caddy on :8080. Deployed on Dock as its own project with `dock git connect NordTempo/tempoDock --dir site`, so only pushes that change `site/` deploy it |
 | Old links | Caddy serves only the site's own paths; every other path gets a 308 to the console with the same path and query, so invites and deep links keep working |
 | Early access | A mailto link for now (`site/src/site.ts`). A form is its own change if the volume asks for one |
 | Numbers on the page | Only measured ones, from [performance](../performance.md); they change with the budgets |
