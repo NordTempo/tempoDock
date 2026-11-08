@@ -216,7 +216,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const view = useService(ref);
-  const { server } = useEnvironment(ref).environment;
+  const { environment } = useEnvironment(ref);
   const { service } = view;
   const domain =
     view.domains.find((d) => d.status === "active") ?? view.domains[0];
@@ -281,10 +281,12 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </Link>,
     ],
     [
-      "Port and server",
+      // Only operators see which server; others see it only when down.
+      environment.server ? "Port and server" : "Port",
       <span key="p">
         <span className="font-mono">:{listenPort(service)}</span>{" "}
-        <span className="text-mut">on server</span> <EnvServer name={server} />
+        {environment.server && <span className="text-mut">on server</span>}{" "}
+        <EnvServer environment={environment} />
       </span>,
     ],
     // How it starts, a full row: the One-off command tab runs a command

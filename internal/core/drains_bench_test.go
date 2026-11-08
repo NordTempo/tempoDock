@@ -17,7 +17,7 @@ func BenchmarkDrainEnqueue(b *testing.B) {
 	defer cancel()
 	c := &Core{ctx: ctx}
 	d := &drain{ctx: ctx, kick: make(chan struct{}, 1), running: true}
-	r := drainRecord{Time: time.Now(), Stream: "stdout", Text: drainBenchLine, src: newLogSource("shop", "production", "web", 12, "vps-1")}
+	r := drainRecord{Time: time.Now(), Stream: "stdout", Text: drainBenchLine, src: newLogSource("shop", "production", "web", 12)}
 	b.ReportAllocs()
 	for b.Loop() {
 		c.enqueue(d, r)
@@ -29,8 +29,8 @@ func BenchmarkDrainEnqueue(b *testing.B) {
 
 // drainBenchBatch is a full batch from two services.
 func drainBenchBatch() []drainRecord {
-	web := newLogSource("shop", "production", "web", 12, "vps-1")
-	worker := newLogSource("shop", "production", "worker", 4, "vps-1")
+	web := newLogSource("shop", "production", "web", 12)
+	worker := newLogSource("shop", "production", "worker", 4)
 	batch := make([]drainRecord, drainBatchLines)
 	at := time.Now()
 	for i := range batch {

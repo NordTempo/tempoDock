@@ -12,10 +12,15 @@ import { Page, SectionHead } from "../ui/kit";
 const ApplyFile = lazy(() => import("../features/apply/ApplyFile"));
 
 // A project's General settings (ADR 0059): its name, where its
-// environments are placed, its config file and archiving it.
+// environments are placed (operators only, as servers are), its config
+// file and archiving it.
 export const Route = createFileRoute("/_app/$org/$project/settings/")({
-  loader: ({ context: { queryClient }, params }) =>
-    queryClient.ensureQueryData(queries.placements(params.project)),
+  loader: async ({ context: { queryClient }, params }) => {
+    const session = await queryClient.ensureQueryData(queries.session());
+    if (session?.operator) {
+      await queryClient.ensureQueryData(queries.placements(params.project));
+    }
+  },
   component: General,
 });
 
@@ -33,7 +38,7 @@ function General() {
   return (
     <Page>
       <ProjectName project={overview.project} />
-      <Placements project={project} />
+      {session?.operator && <Placements project={project} />}
       <section aria-labelledby="config-file">
         <SectionHead id="config-file">Config file</SectionHead>
         <Export

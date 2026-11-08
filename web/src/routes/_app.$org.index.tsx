@@ -1,7 +1,12 @@
 import { useQueries } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { isFailing } from "../data/problems";
-import { queries, useProjects, useServers, useSession } from "../data/queries";
+import {
+  queries,
+  useProjects,
+  useServersIfOperator,
+  useSession,
+} from "../data/queries";
 import type { ProjectOverview } from "../data/types";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
@@ -250,7 +255,8 @@ function health(o: ProjectOverview | undefined) {
 
 function NoProjects() {
   const org = useOrg();
-  const server = useServers().find((s) => s.local)?.name;
+  // Only operators can list servers, so only they see where it runs.
+  const server = useServersIfOperator().find((s) => s.local)?.name;
   const canCreate = canCreateProject(useSession());
   const steps = [
     [`dock login ${window.location.origin}`, "Sign in from your terminal."],

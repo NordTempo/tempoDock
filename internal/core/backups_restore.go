@@ -98,7 +98,7 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	} else if err := c.deployTemplate(ctx, a, r.to, r.deployed); err != nil {
 		r.finish(c.ctx, err)
 	}
-	svc, err := c.toService(ctx, r.to, apitypes.PendingChanges{})
+	svc, err := c.toService(ctx, a, r.to, apitypes.PendingChanges{})
 	return apitypes.RestoreResult{Service: svc, Restore: toBackupRun(r.row, ss.svc.Name, map[int64]string{r.to.svc.ID: name})}, err
 }
 

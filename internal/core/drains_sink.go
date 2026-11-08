@@ -227,7 +227,7 @@ func appendSyslog(b []byte, r drainRecord) []byte {
 	b = append(b, ">1 "...)
 	b = r.Time.UTC().AppendFormat(b, "2006-01-02T15:04:05.000000Z07:00")
 	b = append(b, ' ')
-	b = appendSyslogField(b, r.src.Server, 255)
+	b = appendSyslogField(b, r.src.host, 255)
 	b = append(b, ' ')
 	b = appendSyslogField(b, r.src.Service, 48)
 	b = append(b, " - "...)

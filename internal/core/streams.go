@@ -71,7 +71,7 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 		if e.ev.Type == apitypes.EventProjectRenamed {
 			envID = a.EnvironmentID
 		}
-		if !a.canSee(e.orgID, e.projectID, envID) || (e.serverStats && !serverStats) || !e.seenBy(a) {
+		if !a.canSee(e.orgID, e.projectID, envID) || (e.serverStats && !serverStats) || (e.noServers && serverStats) || !e.seenBy(a) {
 			return false
 		}
 		return (pid == 0 || e.projectID == pid) &&

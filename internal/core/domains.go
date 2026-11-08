@@ -185,7 +185,7 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 	}
 	base := c.ingressOf(srv).baseDomain
 	if base == "" {
-		return apitypes.DomainChange{}, invalid("server %s has no base domain, so it can't generate hostnames; set one with `dock server set %s --base-domain <domain>`, or add your own domain", srv.Name, srv.Name)
+		return apitypes.DomainChange{}, invalid("the server has no base domain, so it can't generate hostnames; add your own domain, or ask a platform operator to set one")
 	}
 	label := ss.svc.Name + "-" + ss.project.Name
 	if ss.env.Name != "production" {

@@ -177,6 +177,7 @@ export type Problem =
   | { kind: "backup_failed"; service: ServiceView; backup: BackupRun }
   | { kind: "domain"; service: ServiceView; domain: Domain }
   | { kind: "staged"; environment: EnvironmentView }
-  | { kind: "server_offline"; server: Server }
+  /** An environment whose server is offline; only operators see which. */
+  | { kind: "server_offline"; environment: Environment }
   /** An open alert live state doesn't show (a full disk, a failed backup). */
   | { kind: "alert"; alert: Schemas["Alert"] };

@@ -23,6 +23,7 @@ import {
 import type { components } from "../api/schema";
 import type {
   AuditFilter,
+  Environment,
   EnvRef,
   PendingChanges,
   ProjectOverview,
@@ -568,34 +569,45 @@ export const useChanges = (env: EnvRef) =>
   useSuspenseQuery(queries.changes(env)).data;
 export const useVariables = (env: EnvRef, service: string | null) =>
   useSuspenseQuery(queries.variables(env, service)).data;
+/** Every server. Operators only: the console's pages use it. */
 export const useServers = () => useSuspenseQuery(queries.servers()).data;
+/**
+ * Every server for operators, without suspending; [] for everyone else,
+ * who can't list servers (shared UI like the command palette).
+ */
+export function useServersIfOperator() {
+  const operator = useIsOperator();
+  return useQuery({ ...queries.servers(), enabled: operator }).data ?? [];
+}
 export const useServer = (name: string) =>
   useSuspenseQuery(queries.server(name)).data;
 
 /**
- * Why nothing can be deployed to a server right now, as deploy buttons
- * say it: "server homelab is offline". Undefined when it can.
+ * Why nothing can be deployed to an environment right now, from its
+ * server's status, as deploy buttons say it: "server homelab is offline",
+ * or "its server is offline" for everyone but operators, who alone see
+ * server names. Undefined when it can.
  */
-export function deployBlock(server: Server | undefined) {
-  switch (server?.status) {
+export function deployBlock(env: Environment | undefined) {
+  if (!env) return undefined;
+  const server = env.server ? `server ${env.server}` : "its server";
+  switch (env.server_status) {
     case "offline":
-      return `server ${server.name} is offline`;
+      return `${server} is offline`;
     case "incompatible":
-      return `server ${server.name} runs an incompatible dock version`;
+      return `${server} runs an incompatible dock version`;
     case "joining":
-      return `server ${server.name} hasn't connected yet`;
+      return `${server} hasn't connected yet`;
     case "revoked":
-      return `server ${server.name} is revoked`;
+      return `${server} is revoked`;
     default:
       return undefined;
   }
 }
 
-/** deployBlock for the server an environment runs on. */
-export function useDeployBlock(env: EnvRef) {
-  const { environment } = useEnvironment(env);
-  return deployBlock(useServers().find((s) => s.name === environment.server));
-}
+/** deployBlock for an environment by reference. */
+export const useDeployBlock = (env: EnvRef) =>
+  deployBlock(useEnvironment(env).environment);
 
 /**
  * Whether the caller may deploy to an environment: scope deploy or admin,

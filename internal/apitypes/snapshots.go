@@ -36,8 +36,9 @@ type Snapshot struct {
 	Service string          `json:"service"`
 	Trigger SnapshotTrigger `json:"trigger" enum:"manual,before_restore,before_deploy,before_run,before_move"`
 	Status  SnapshotStatus  `json:"status" enum:"running,ready,failed"`
-	// Server is where the snapshot's files are.
-	Server string `json:"server"`
+	// Server is where the snapshot's files are, for platform operators
+	// only.
+	Server string `json:"server,omitempty"`
 	// Volumes are the service's volumes it holds, by name.
 	Volumes   []string `json:"volumes"`
 	SizeBytes int64    `json:"size_bytes"`

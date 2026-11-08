@@ -716,14 +716,10 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 	if err != nil {
 		return "", err
 	}
-	srv, err := c.store.GetServer(ctx, dst.env.ServerID)
-	if err != nil {
-		return "", err
-	}
 	summary := fmt.Sprintf("preview of %s#%d (%s) at %s: %s", repo, number, head.title, shortSHA(head.sha), cloneSummary(base, apitypes.CloneResult{
-		Environment: toEnvironment(p, dst.env, srv.Name), Services: clone.Services, Variables: clone.Variables, Volumes: clone.Volumes,
+		Environment: apitypes.Environment{Kind: apitypes.EnvironmentKind(dst.env.Kind)}, Services: clone.Services, Variables: clone.Variables, Volumes: clone.Volumes,
 		Generated: clone.Generated, Skipped: clone.Skipped, SourceKind: apitypes.EnvironmentKind(base.env.Kind),
-	}, srv.Name))
+	}))
 	c.audit(ctx, a, "preview.create", &p, &dst.env, dst.String(), summary)
 
 	// Domains first, so the first releases route them.

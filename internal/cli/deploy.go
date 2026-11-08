@@ -115,8 +115,8 @@ func serverOffline(svc apitypes.Service) error {
 	}
 	return &output.Error{
 		Exit: output.ExitUnreachable, Code: string(apitypes.CodeServerOffline),
-		Message: fmt.Sprintf("server %s is %s", s.Server, s.ServerStatus),
-		Hint:    "Nothing was uploaded. Deploy again once it is back; `dock server list` shows its status.",
+		Message: fmt.Sprintf("%s is %s", serverWords(s.Server), s.ServerStatus),
+		Hint:    "Nothing was uploaded. Deploy again once it is back.",
 	}
 }
 

@@ -101,8 +101,8 @@ Nothing is deployed unless --deploy, which deploys the images serving in
 // doing, and what was left out.
 func (g *globals) printClone(res apitypes.CloneResult) {
 	e := res.Environment
-	g.io.Successf("Cloned %s into %s environment %s/%s on %s: %s, %s, %s",
-		res.From, kindWords(e.Kind), e.Project, e.Name, e.Server,
+	g.io.Successf("Cloned %s into %s environment %s/%s%s: %s, %s, %s",
+		res.From, kindWords(e.Kind), e.Project, e.Name, onServer(e.Server),
 		plural(len(res.Services), "service"), plural(res.Variables, "variable"), plural(res.Volumes, "new volume"))
 	cross := res.SourceKind != e.Kind
 	if len(res.CopiedAcrossKinds) > 0 {

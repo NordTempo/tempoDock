@@ -85,10 +85,13 @@ type overviewView struct {
 }
 
 type envView struct {
-	Name           string                   `json:"name"`
-	Kind           apitypes.EnvironmentKind `json:"kind"`
-	Server         string                   `json:"server"`
-	PendingChanges int                      `json:"pending_changes"`
+	Name string                   `json:"name"`
+	Kind apitypes.EnvironmentKind `json:"kind"`
+	// Server is set for platform operators only; ServerStatus says
+	// whether deploys can reach it, for everyone.
+	Server         string                `json:"server,omitempty"`
+	ServerStatus   apitypes.ServerStatus `json:"server_status"`
+	PendingChanges int                   `json:"pending_changes"`
 	// Locked: tokens can't change anything here; what you try becomes an
 	// access request a human approves (ADR 0044).
 	Locked   bool          `json:"locked,omitempty"`
@@ -146,7 +149,7 @@ func viewService(s apitypes.Service) serviceView {
 func viewOverview(o apitypes.ProjectOverview) overviewView {
 	out := overviewView{Project: o.Project.Name, Environments: make([]envView, 0, len(o.Environments))}
 	for _, e := range o.Environments {
-		ev := envView{Name: e.Environment.Name, Kind: e.Environment.Kind, Server: e.Environment.Server, PendingChanges: e.PendingChanges, Locked: e.Environment.Lock.Holds(time.Now()), Services: []serviceView{}}
+		ev := envView{Name: e.Environment.Name, Kind: e.Environment.Kind, Server: e.Environment.Server, ServerStatus: e.Environment.ServerStatus, PendingChanges: e.PendingChanges, Locked: e.Environment.Lock.Holds(time.Now()), Services: []serviceView{}}
 		for _, s := range e.Services {
 			sv := viewService(s.Service)
 			sv.Active, sv.Deploying = summarize(s.ActiveRelease), summarize(s.Deploying)

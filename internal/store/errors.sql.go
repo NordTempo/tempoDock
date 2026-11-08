@@ -398,12 +398,11 @@ func (q *Queries) ListErrorIssueCounts(ctx context.Context, arg ListErrorIssueCo
 
 const listFollowContainers = `-- name: ListFollowContainers :many
 SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id, services.name AS service, environments.id AS environment_id,
-       environments.name AS environment, environments.server_id, projects.name AS project, servers.name AS server
+       environments.name AS environment, environments.server_id, projects.name AS project
 FROM environments
 JOIN services ON services.environment_id = environments.id
 JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
 JOIN projects ON projects.id = environments.project_id
-JOIN servers ON servers.id = environments.server_id
 WHERE environments.server_id = +? AND releases.container_id != ''
 `
 
@@ -414,7 +413,6 @@ type ListFollowContainersRow struct {
 	Environment   string
 	ServerID      int64
 	Project       string
-	Server        string
 }
 
 // The active release of each service on a server that has a container,
@@ -461,7 +459,6 @@ func (q *Queries) ListFollowContainers(ctx context.Context, serverID int64) ([]L
 			&i.Environment,
 			&i.ServerID,
 			&i.Project,
-			&i.Server,
 		); err != nil {
 			return nil, err
 		}

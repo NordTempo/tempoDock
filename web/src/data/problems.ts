@@ -1,6 +1,6 @@
 import { useOrgOpenAlerts } from "../features/alerts/data";
 import { isCrashLooping, isUnhealthy } from "../ui/status";
-import { useProjectOverview, useServers } from "./queries";
+import { useProjectOverview } from "./queries";
 import type { Problem, ServiceView } from "./types";
 
 /** A domain needs a human until it is active. */
@@ -68,7 +68,6 @@ const derived = new Set([
  */
 export function useProblems(project: string): Problem[] {
   const { environments } = useProjectOverview(project);
-  const servers = useServers();
   const alerts = useOrgOpenAlerts();
   const services = environments.flatMap((e) => e.services);
 
@@ -98,10 +97,9 @@ export function useProblems(project: string): Problem[] {
       problems.push({ kind: "alert", alert });
     }
   }
-  const used = new Set(environments.map((e) => e.environment.server));
-  for (const server of servers) {
-    if (server.status === "offline" && used.has(server.name)) {
-      problems.push({ kind: "server_offline", server });
+  for (const { environment } of environments) {
+    if (environment.server_status === "offline") {
+      problems.push({ kind: "server_offline", environment });
     }
   }
   return problems.sort((a, b) => severity(a) - severity(b));

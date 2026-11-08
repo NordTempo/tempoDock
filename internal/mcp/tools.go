@@ -108,7 +108,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "project_overview", "Project overview",
-		"A project's environments (with kind and server) and their services: state, active release, an in-flight deploy, the latest release when it isn't the active one (e.g. a failed deploy), domains and staged-change counts. "+
+		"A project's environments (with kind, and whether their server is online) and their services: state, active release, an in-flight deploy, the latest release when it isn't the active one (e.g. a failed deploy), domains and staged-change counts. "+
 			"The best first look at a project.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ProjectInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in)
@@ -383,7 +383,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addPreviewTools(s)
 
 	mcpkit.AddTool(s, "list_servers", "List servers",
-		"The servers apps run on: status (online, offline, ...), which environment kinds each accepts, its base domain for generated hostnames, and memory reserved by the services placed there.",
+		"The servers apps run on: status (online, offline, ...), which environment kinds each accepts, its base domain for generated hostnames, and memory reserved by the services placed there. Platform operators only.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, _ struct{}) (mcpkit.Reply, error) {
 			ss, err := h.core.ListServers(ctx, c.Actor)
 			if err != nil {
@@ -673,7 +673,7 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 				return mcpkit.Reply{}, err
 			}
 			e := res.Environment
-			summary := fmt.Sprintf("Cloned %s into %s (%s, server %s): %d services, %d variables copied.", res.From, e.Name, e.Kind, e.Server, len(res.Services), res.Variables)
+			summary := fmt.Sprintf("Cloned %s into %s (%s): %d services, %d variables copied.", res.From, e.Name, e.Kind, len(res.Services), res.Variables)
 			if len(res.Skipped) > 0 {
 				names := make([]string, len(res.Skipped))
 				for i, v := range res.Skipped {

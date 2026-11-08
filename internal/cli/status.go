@@ -102,14 +102,33 @@ func restartsNote(s apitypes.ServiceStatus) string {
 }
 
 // serverNote says a live service's server can't be reached, so its state
-// is the last known: "server t3node is offline: last known running".
-// Empty otherwise.
+// is the last known: "server t3node is offline: last known running"
+// ("the server" for those who don't see server names). Empty otherwise.
 func serverNote(svc apitypes.Service) string {
 	s := svc.Status
 	if !s.ServerOffline || svc.ArchivedAt != nil {
 		return ""
 	}
-	return fmt.Sprintf("server %s is %s: last known %s", s.Server, s.ServerStatus, runState(s))
+	return fmt.Sprintf("%s is %s: last known %s", serverWords(s.Server), s.ServerStatus, runState(s))
+}
+
+// serverWords names a server in a sentence: "server t3node", or "the
+// server" when the API left the name out (only platform operators see
+// server names).
+func serverWords(name string) string {
+	if name == "" {
+		return "the server"
+	}
+	return "server " + name
+}
+
+// onServer is " on t3node" after an environment's name, or nothing when
+// the API left the server out.
+func onServer(name string) string {
+	if name == "" {
+		return ""
+	}
+	return " on " + name
 }
 
 // stoppedNote says who stopped a service and when (ADR 0050): "stopped
@@ -136,7 +155,7 @@ func oomNote(s apitypes.ServiceStatus) string {
 
 func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 	e := env.Environment
-	header := fmt.Sprintf("%s/%s on %s", e.Project, e.Name, e.Server)
+	header := e.Project + "/" + e.Name + onServer(e.Server)
 	if l := lockWords(e.Lock); l != "" {
 		header += ", " + l
 	}
@@ -145,7 +164,7 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 	}
 	if i := slices.IndexFunc(env.Services, func(so apitypes.ServiceOverview) bool { return so.Service.Status.ServerOffline }); i >= 0 {
 		s := env.Services[i].Service.Status
-		header += fmt.Sprintf("; server %s is %s, states are the last known", s.Server, s.ServerStatus)
+		header += fmt.Sprintf("; %s is %s, states are the last known", serverWords(s.Server), s.ServerStatus)
 	}
 	_, _ = fmt.Fprintln(g.io.Out, header)
 	if len(env.Services) == 0 {

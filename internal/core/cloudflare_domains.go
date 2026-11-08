@@ -260,12 +260,12 @@ func (c *Core) routeDomain(ctx context.Context, cc *cfConn, r store.CloudflareRe
 	t, err := c.store.GetCloudflareTunnelByServer(ctx, &srv.ID)
 	switch {
 	case store.IsNotFound(err):
-		return fail(fmt.Sprintf("server %s has no tunnel Dock runs; add the domain from Cloudflare again", srv.Name))
+		return fail("the server has no tunnel Dock runs; add the domain from Cloudflare again")
 	case err != nil:
 		return routeResult{}, err
 	case t.Status != "ok" || t.TunnelID == "":
 		// syncServerRecords tries again once the tunnel is ready.
-		return fail(fmt.Sprintf("waiting for server %s's tunnel", srv.Name))
+		return fail("waiting for the server's tunnel")
 	}
 	target := cloudflare.Tunnel{ID: t.TunnelID}.Hostname()
 	res := routeResult{Content: target, RouteTunnel: r.RouteTunnel}

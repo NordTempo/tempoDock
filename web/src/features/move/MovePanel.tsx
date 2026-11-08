@@ -212,8 +212,15 @@ function MoveProgress({ move }: { move: EnvironmentMove }) {
           {running ? "Moving" : "Last move"}
         </span>
         <span>
-          {verb} <span className="font-mono">{move.from}</span> →{" "}
-          <span className="font-mono">{move.to}</span>
+          {/* Only operators see the servers. */}
+          {move.to ? (
+            <>
+              {verb} <span className="font-mono">{move.from}</span> →{" "}
+              <span className="font-mono">{move.to}</span>
+            </>
+          ) : (
+            `${verb} to another server`
+          )}
         </span>
         <span title={`step: ${move.step}`}>
           {steps.map((s, i) => (

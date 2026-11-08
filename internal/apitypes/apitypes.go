@@ -252,20 +252,27 @@ const (
 
 // Environment is a set of services placed together on one server.
 type Environment struct {
-	ID        int64           `json:"id"`
-	Project   string          `json:"project"`
-	Name      string          `json:"name"`
-	Kind      EnvironmentKind `json:"kind" enum:"production,non_production"`
-	Server    string          `json:"server" doc:"Server the environment runs on"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID      int64           `json:"id"`
+	Project string          `json:"project"`
+	Name    string          `json:"name"`
+	Kind    EnvironmentKind `json:"kind" enum:"production,non_production"`
+	// Server is the server the environment runs on, for platform
+	// operators only: others never see server names (ADR 0062).
+	Server string `json:"server,omitempty" doc:"Server the environment runs on; platform operators only"`
+	// ServerStatus is that server's link status, for everyone: deploys
+	// wait while it isn't online.
+	ServerStatus ServerStatus `json:"server_status" enum:"online,offline,incompatible,joining,revoked" doc:"Whether the environment's server can be reached"`
+	CreatedAt    time.Time    `json:"created_at"`
 	// Lock is set while the environment is locked (ADR 0044), also while
 	// it is opened for a while.
 	Lock *EnvironmentLock `json:"lock,omitempty"`
 	// Preview is set on a preview environment (ADR 0056): the pull
 	// request it previews.
 	Preview *PullRequestRef `json:"preview,omitempty" doc:"The pull request this preview environment belongs to"`
-	// MovingTo is the server a running move is taking it to (ADR 0053),
-	// on the project overview.
+	// Moving is set while a move takes it to another server (ADR 0053),
+	// on the project overview; MovingTo names that server, for platform
+	// operators only.
+	Moving   bool   `json:"moving,omitempty"`
 	MovingTo string `json:"moving_to,omitempty"`
 }
 
@@ -320,7 +327,7 @@ type ServiceStatus struct {
 	// Only set in reads (services, overview, server pages), not in
 	// service.status events.
 	ServerOffline bool         `json:"server_offline,omitempty" doc:"The service's server can't be reached: state is the last known one"`
-	Server        string       `json:"server,omitempty" doc:"With server_offline: the server's name"`
+	Server        string       `json:"server,omitempty" doc:"With server_offline: the server's name, for platform operators only"`
 	ServerStatus  ServerStatus `json:"server_status,omitempty" enum:"offline,incompatible,revoked" doc:"With server_offline: the server's status"`
 
 	// Health is the ongoing health check's state while the container
@@ -1667,13 +1674,14 @@ type Event struct {
 }
 
 // UsageUpdate is one minute tick's samples: a server's own (Host; only
-// unlimited admins get these, as with server statistics) or the services
-// of one environment (Services; the event names the project and
-// environment). Server names the server either way. Point, when set, is
+// operators get these, as with server statistics) or the services of one
+// environment (Services; the event names the project and environment).
+// Server names the server of Host samples; service samples leave it
+// empty, since only operators see server names. Point, when set, is
 // the start of the 1-minute history point the samples were stored as, so
 // open 1h and 24h charts append them instead of refetching.
 type UsageUpdate struct {
-	Server   string               `json:"server"`
+	Server   string               `json:"server,omitempty"`
 	Host     *ServerUsage         `json:"host,omitempty"`
 	Services []ServiceUsageSample `json:"services,omitempty"`
 	Point    *time.Time           `json:"point,omitempty"`

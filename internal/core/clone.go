@@ -89,9 +89,9 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 	if err != nil {
 		return out, err
 	}
-	out.Environment = toEnvironment(p, dst.env, srv.Name)
+	out.Environment = c.toEnvironment(a, p, dst.env, srv)
 	out.NotCopied = left.describe()
-	c.audit(ctx, a, "environment.clone", &p, &dst.env, dst.String(), cloneSummary(src, out, srv.Name))
+	c.audit(ctx, a, "environment.clone", &p, &dst.env, dst.String(), cloneSummary(src, out))
 
 	if req.Deploy {
 		res, err := c.promote(ctx, a, src, dst, nil, true)
@@ -340,11 +340,12 @@ func count(n int, word string) string {
 	return strconv.Itoa(n) + " " + word + "s"
 }
 
-// cloneSummary is a clone's audit line.
-func cloneSummary(src envScope, r apitypes.CloneResult, server string) string {
+// cloneSummary is a clone's audit line. It names no server: the org's
+// audit log never does (ADR 0062).
+func cloneSummary(src envScope, r apitypes.CloneResult) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "cloned %s into a %s environment on server %s: %s, %s, %s",
-		src.env.Name, kindWords(r.Environment.Kind), server,
+	fmt.Fprintf(&b, "cloned %s into a %s environment: %s, %s, %s",
+		src.env.Name, kindWords(r.Environment.Kind),
 		count(len(r.Services), "service"), count(r.Variables, "variable"), count(r.Volumes, "volume"))
 	if len(r.Generated) > 0 {
 		fmt.Fprintf(&b, "; set anew: %s", joinNames(r.Generated))

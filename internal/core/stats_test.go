@@ -250,9 +250,6 @@ func TestServerUsageInListAndDetail(t *testing.T) {
 	if list, err := h.c.ListServers(h.ctx, testSystem); err != nil || list[0].Usage == nil || list[0].Usage.CPUs != 4 {
 		t.Fatalf("admin list = %+v, %v", list, err)
 	}
-	if list, err := h.c.ListServers(h.ctx, Actor{Kind: "token", OrgID: 1, Name: "r", Scope: apitypes.ScopeRead}); err != nil || list[0].Usage != nil {
-		t.Fatalf("read token list = %+v, %v; want no usage", list, err)
-	}
 	d, err := h.c.GetServer(h.ctx, testSystem, h.c.localName())
 	if err != nil || d.Server.Usage == nil || len(d.Services) != 2 {
 		t.Fatalf("detail = %+v, %v", d, err)

@@ -504,37 +504,6 @@ func (q *Queries) ListOrgInvites(ctx context.Context, orgID int64) ([]OrgInvite,
 	return items, nil
 }
 
-const listOrgServerIDs = `-- name: ListOrgServerIDs :many
-SELECT environments.server_id
-FROM projects JOIN environments ON environments.project_id = projects.id
-WHERE projects.org_id = +?
-`
-
-// ListOrgServerIDs is the servers an org's environments run on, once per
-// environment (DISTINCT would sort them in a temporary b-tree).
-func (q *Queries) ListOrgServerIDs(ctx context.Context, orgID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listOrgServerIDs, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []int64
-	for rows.Next() {
-		var server_id int64
-		if err := rows.Scan(&server_id); err != nil {
-			return nil, err
-		}
-		items = append(items, server_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listOrgSlugs = `-- name: ListOrgSlugs :many
 SELECT slug FROM orgs ORDER BY slug
 `

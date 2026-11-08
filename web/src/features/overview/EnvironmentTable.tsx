@@ -9,7 +9,6 @@ import {
   useCanDeploy,
   useIsAdmin,
   useIsOperator,
-  useServers,
   useSession,
 } from "../../data/queries";
 import type {
@@ -77,7 +76,6 @@ export function EnvironmentTable({
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);
   const hidden = hiddenFailures(services);
-  const server = useServers().find((s) => s.name === environment.server);
   const head = `env-head-${environment.id}`;
   const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;
   return (
@@ -100,9 +98,9 @@ export function EnvironmentTable({
           )}
         </h2>
         {pr && <PullRequestLink pr={pr} />}
-        {server && server.status !== "online" && (
+        {environment.server_status !== "online" && (
           <span className="text-xs">
-            <EnvServer name={environment.server} />
+            <EnvServer environment={environment} />
           </span>
         )}
         {staged > 0 && (
@@ -140,13 +138,17 @@ export function EnvironmentTable({
         >
           {(close) => (
             <>
-              <span
-                role="presentation"
-                className="px-2.5 pt-1 pb-1.5 text-2xs text-mut"
-              >
-                Runs on{" "}
-                <span className="font-mono text-sec">{environment.server}</span>
-              </span>
+              {environment.server && (
+                <span
+                  role="presentation"
+                  className="px-2.5 pt-1 pb-1.5 text-2xs text-mut"
+                >
+                  Runs on{" "}
+                  <span className="font-mono text-sec">
+                    {environment.server}
+                  </span>
+                </span>
+              )}
               <Link
                 to="/$org/$project/settings/variables/$environment"
                 params={{ org, ...ref }}
@@ -242,6 +244,7 @@ export function EnvironmentTable({
       {!moveOpen && (
         <MoveStrip
           env={ref}
+          moving={environment.moving}
           movingTo={environment.moving_to}
           onDetails={() => setMoveOpen(true)}
         />
@@ -250,7 +253,7 @@ export function EnvironmentTable({
         <Suspense fallback={null}>
           <MovePanel
             env={ref}
-            server={environment.server}
+            server={environment.server ?? ""}
             kind={environment.kind}
             operator={operator}
           />

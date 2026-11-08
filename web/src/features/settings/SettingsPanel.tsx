@@ -163,10 +163,12 @@ export function SettingsPanel({
             )}
             <AddVolume serviceRef={ref} />
           </Item>
-          <Item label="Server" hint="Set by the environment.">
-            <EnvServer name={environment.server} />{" "}
-            <span className="text-mut">from {environment.name}</span>
-          </Item>
+          {environment.server && (
+            <Item label="Server" hint="Set by the environment.">
+              <EnvServer environment={environment} />{" "}
+              <span className="text-mut">from {environment.name}</span>
+            </Item>
+          )}
         </dl>
       </section>
 

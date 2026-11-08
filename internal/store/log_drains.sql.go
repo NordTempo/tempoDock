@@ -87,12 +87,11 @@ func (q *Queries) GetLogDrain(ctx context.Context, arg GetLogDrainParams) (LogDr
 const getLogSource = `-- name: GetLogSource :one
 SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id, services.name AS service, environments.id AS environment_id,
        environments.name AS environment, environments.server_id, projects.id AS project_id,
-       projects.name AS project, servers.name AS server
+       projects.name AS project
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-JOIN servers ON servers.id = environments.server_id
 WHERE releases.id = +?
 `
 
@@ -104,7 +103,6 @@ type GetLogSourceRow struct {
 	ServerID      int64
 	ProjectID     int64
 	Project       string
-	Server        string
 }
 
 // A release with what its log lines are labelled with when drained, and
@@ -144,7 +142,6 @@ func (q *Queries) GetLogSource(ctx context.Context, id int64) (GetLogSourceRow, 
 		&i.ServerID,
 		&i.ProjectID,
 		&i.Project,
-		&i.Server,
 	)
 	return i, err
 }
@@ -188,12 +185,11 @@ func (q *Queries) ListAllLogDrains(ctx context.Context) ([]LogDrain, error) {
 
 const listDrainContainers = `-- name: ListDrainContainers :many
 SELECT releases.id, releases.service_id, releases.number, releases.status, releases.source, releases.from_release, releases.image_ref, releases.image_id, releases.config, releases.container_id, releases.host_port, releases.error, releases.error_code, releases.created_by, releases.created_at, releases.finished_at, releases.carried, releases.image_digest, releases.built_on_server_id, releases.promoted_from_release_id, releases.commit_sha, releases.commit_message, releases.commit_author, releases.history_trimmed, releases.logs_server_id, services.name AS service, environments.name AS environment,
-       environments.server_id, projects.name AS project, servers.name AS server
+       environments.server_id, projects.name AS project
 FROM services
 JOIN releases ON releases.service_id = services.id AND releases.status = 'active'
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-JOIN servers ON servers.id = environments.server_id
 WHERE services.environment_id = +? AND releases.container_id != ''
 `
 
@@ -203,7 +199,6 @@ type ListDrainContainersRow struct {
 	Environment string
 	ServerID    int64
 	Project     string
-	Server      string
 }
 
 // The active release of each service in an environment that has a
@@ -249,7 +244,6 @@ func (q *Queries) ListDrainContainers(ctx context.Context, environmentID int64) 
 			&i.Environment,
 			&i.ServerID,
 			&i.Project,
-			&i.Server,
 		); err != nil {
 			return nil, err
 		}

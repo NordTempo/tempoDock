@@ -58,12 +58,12 @@ func TestPickServer(t *testing.T) {
 		}, "known", "", nil},
 		{"overcommitted still placeable", prod, []serverLoad{load(1, "a", true, false, 2, 5, 1)}, "a", "", nil},
 		{"nobody accepts the kind", nonProd, []serverLoad{load(1, "a", true, false, 8, 0, 0)}, "",
-			apitypes.CodeConflict, []string{"no server accepts non-production", "--non-production"}},
+			apitypes.CodeConflict, []string{"no server accepts non-production", "a platform operator"}},
 		{"accepting server offline", nonProd, []serverLoad{
 			load(1, "a", true, false, 8, 0, 0), offline(load(2, "lab", false, true, 8, 0, 0)), disabled(load(3, "lab2", false, true, 8, 0, 0)),
-		}, "", apitypes.CodeServerOffline, []string{"lab (offline)", "lab2 (disabled for placement)"}},
+		}, "", apitypes.CodeServerOffline, []string{"1 server offline, 1 server disabled for placement"}},
 		{"accepting server disabled", prod, []serverLoad{disabled(load(1, "a", true, false, 8, 0, 0))}, "",
-			apitypes.CodeConflict, []string{"a (disabled for placement)"}},
+			apitypes.CodeConflict, []string{"(1 server disabled for placement)"}},
 		{"no servers", prod, nil, "", apitypes.CodeConflict, []string{"no server accepts production"}},
 	}
 	for _, tc := range cases {
@@ -240,7 +240,7 @@ func TestPlacementKeepsProjectsTogether(t *testing.T) {
 	p.setOffline("lab2", true)
 	p.project("wiki")
 	_, err := p.env("wiki", "staging", "")
-	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "lab2 (offline)") || !strings.Contains(err.Error(), "homelab (disabled for placement)") {
+	if CodeOf(err) != apitypes.CodeServerOffline || !strings.Contains(err.Error(), "1 server offline, 1 server disabled for placement") {
 		t.Fatalf("placing with no eligible server: %v", err)
 	}
 	// The failed placement left nothing behind.
@@ -332,7 +332,7 @@ func TestOfflineServerRuntime(t *testing.T) {
 	}
 	p.setOffline("lab", true)
 	_, err := p.c.runtimeFor(p.ids["lab"])
-	if CodeOf(err) != apitypes.CodeServerOffline || err.Error() != "server lab is offline" {
+	if CodeOf(err) != apitypes.CodeServerOffline || err.Error() != "the server is offline; try again once it is back" {
 		t.Fatalf("runtimeFor offline server = %v", err)
 	}
 	if _, err := p.c.runtime(p.ids["lab"]).List(p.ctx); CodeOf(err) != apitypes.CodeServerOffline {

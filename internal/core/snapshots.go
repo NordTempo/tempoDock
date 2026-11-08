@@ -128,7 +128,7 @@ func (c *Core) ServiceSnapshots(ctx context.Context, a Actor, ref ServiceRef) (a
 	if err != nil {
 		return out, err
 	}
-	names, err := c.serverNames(ctx)
+	names, err := c.serverNamesFor(ctx, a)
 	if err != nil {
 		return out, err
 	}
@@ -193,7 +193,7 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 		defer c.releaseService(ss.svc.ID)
 		_ = c.runSnapshot(c.ctx, ss, row, vols)
 	})
-	names, err := c.serverNames(ctx)
+	names, err := c.serverNamesFor(ctx, a)
 	return toSnapshot(row, ss.svc.Name, names), err
 }
 
@@ -223,7 +223,7 @@ func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger
 	if err != nil {
 		return nil, err
 	}
-	names, err := c.serverNames(ctx)
+	names, err := c.serverNamesFor(ctx, a)
 	snap := toSnapshot(row, ss.svc.Name, names)
 	return &snap, err
 }
@@ -712,7 +712,7 @@ func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTem
 			c.finishSnapshotRestore(c.ctx, ss, row, name, err)
 		}
 	})
-	svc, err := c.toService(ctx, to, apitypes.PendingChanges{})
+	svc, err := c.toService(ctx, a, to, apitypes.PendingChanges{})
 	names := map[int64]string{ss.svc.ID: ss.svc.Name, to.svc.ID: name}
 	return apitypes.SnapshotRestoreResult{Restore: toSnapshotRestore(row, names), Service: &svc}, err
 }

@@ -26,17 +26,18 @@ func (c *Core) getStatus(serviceID int64) apitypes.ServiceStatus {
 	return apitypes.ServiceStatus{State: apitypes.ServiceNone}
 }
 
-// serverLink is a server's name and link status, which reads put on the
-// statuses of services there (mark).
+// serverLink is a server's link status and, for operators, its name,
+// which reads put on the statuses of services there (mark).
 type serverLink struct {
 	name   string
 	status apitypes.ServerStatus
 }
 
-// linkOf returns a server's link. A connected server costs nothing (the
-// hub's state is in memory); one that isn't costs one query, for its name
-// and whether it is revoked.
-func (c *Core) linkOf(ctx context.Context, serverID int64) serverLink {
+// linkOf returns a server's link as a sees it: with the name only for
+// operators (seesServers). A connected server costs nothing (the hub's
+// state is in memory); one that isn't costs one query, for its name and
+// whether it is revoked.
+func (c *Core) linkOf(ctx context.Context, a Actor, serverID int64) serverLink {
 	if c.online(serverID) {
 		return serverLink{status: apitypes.ServerOnline}
 	}
@@ -44,7 +45,7 @@ func (c *Core) linkOf(ctx context.Context, serverID int64) serverLink {
 	if err != nil {
 		return serverLink{status: apitypes.ServerOffline}
 	}
-	return serverLink{name: s.Name, status: c.serverStatus(s)}
+	return serverLink{name: a.serverName(s.Name), status: c.serverStatus(s)}
 }
 
 // mark flags a service status as last known when its server can't be

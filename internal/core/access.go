@@ -94,7 +94,7 @@ func (c *Core) SetServiceAccess(ctx context.Context, a Actor, ref ServiceRef, re
 		}
 		summary = "protected its domains with a password for " + row.Username
 	case apitypes.AccessLogin:
-		if err := c.loginSupported(ctx, ss.env.ServerID); err != nil {
+		if err := c.loginSupported(ss.env.ServerID); err != nil {
 			return apitypes.Access{}, err
 		}
 		row.Key = cur.Key
@@ -150,7 +150,7 @@ func accessPasswordHash(password string, cur store.ServiceAccess) (string, error
 
 // loginSupported checks that a server can check Dock logins: the control
 // plane's own always can, a node from protocol 5 on (as it last said).
-func (c *Core) loginSupported(ctx context.Context, serverID int64) error {
+func (c *Core) loginSupported(serverID int64) error {
 	if serverID == c.localID || c.nodes == nil {
 		return nil
 	}
@@ -158,14 +158,10 @@ func (c *Core) loginSupported(ctx context.Context, serverID int64) error {
 	if h.Protocol >= remote.AccessProtocol {
 		return nil
 	}
-	srv, err := c.store.GetServer(ctx, serverID)
-	if err != nil {
-		return err
-	}
 	if h.Version == "" {
-		return invalid("server %s hasn't connected yet, so Dock can't tell whether it can check logins; try again once it is online", srv.Name)
+		return invalid("the server hasn't connected yet, so Dock can't tell whether it can check logins; try again once it is online")
 	}
-	return invalid("server %s runs dock %s, which can't check Dock logins; update it (`dock update`) or protect the service with a password", srv.Name, h.Version)
+	return invalid("the server runs a dock too old to check Dock logins; a platform operator has to update it, or protect the service with a password")
 }
 
 // GrantAccess lets the caller open a login-protected domain: it returns

@@ -87,15 +87,15 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 		es := envScope{p, e}
 		srv := servers[e.ServerID]
 		ing := c.ingressOf(srv)
-		link := serverLink{name: srv.Name, status: c.serverStatus(srv)}
+		link := serverLink{name: a.serverName(srv.Name), status: c.serverStatus(srv)}
 		pending, _, _, err := c.stagedChanges(ctx, c.store.Queries, es, false)
 		if err != nil {
 			return out, err
 		}
-		env := toEnvironment(p, e, srv.Name)
+		env := c.toEnvironment(a, p, e, srv)
 		env.Preview = prs[e.ID]
 		if to, ok := movingTo[e.ID]; ok {
-			env.MovingTo = servers[to].Name
+			env.Moving, env.MovingTo = true, a.serverName(servers[to].Name)
 		}
 		eo := apitypes.EnvironmentOverview{
 			Environment: env, PendingChanges: pending.Count,

@@ -138,14 +138,25 @@ func newEnvironmentCmd(g *globals) *cobra.Command {
 			return g.io.Print(envs, func() error {
 				// Preview environments name their pull request; the column
 				// shows only when there is one.
+				// The server column is for platform operators, the only ones
+				// the API names servers to.
 				previews := slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return e.Preview != nil })
-				headers := []string{"name", "kind", "server", "lock", "created"}
+				servers := slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return e.Server != "" })
+				headers := []string{"name", "kind"}
+				if servers {
+					headers = append(headers, "server")
+				}
+				headers = append(headers, "lock", "created")
 				if previews {
 					headers = append(headers, "pull request")
 				}
 				tb := g.io.Table(headers...)
 				for _, e := range envs {
-					row := []string{e.Name, kindWords(e.Kind), e.Server, cmp.Or(lockWords(e.Lock), "-"), ago(e.CreatedAt)}
+					row := []string{e.Name, kindWords(e.Kind)}
+					if servers {
+						row = append(row, e.Server)
+					}
+					row = append(row, cmp.Or(lockWords(e.Lock), "-"), ago(e.CreatedAt))
 					if previews {
 						row = append(row, pullRequestText(e.Preview))
 					}
@@ -180,7 +191,7 @@ eligible server with the most free memory.`,
 				return err
 			}
 			return g.io.Print(e, func() error {
-				g.io.Successf("Created %s environment %s/%s on %s", kindWords(e.Kind), e.Project, e.Name, e.Server)
+				g.io.Successf("Created %s environment %s/%s%s", kindWords(e.Kind), e.Project, e.Name, onServer(e.Server))
 				return nil
 			})
 		},
