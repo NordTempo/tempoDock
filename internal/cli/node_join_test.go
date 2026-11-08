@@ -23,7 +23,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/secrets"
-	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/store/storetest"
 )
 
 // A server joins with `dock node join`, `dock node` connects it, and a
@@ -44,13 +44,7 @@ func TestNodeJoinAndRun(t *testing.T) {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.Node.Listen = ln.Addr().String()
-	st, err := store.Open(ctx, filepath.Join(cfg.DataDir, "dock.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
-		t.Fatal(err)
-	}
+	st := storetest.Open(t, filepath.Join(cfg.DataDir, "dock.db"))
 	defer func() { _ = st.Close() }()
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
 	id, err := remote.NewIdentity()

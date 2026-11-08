@@ -23,6 +23,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/store/storetest"
 )
 
 // testSystem is the system actor in the test org, which newHarness creates
@@ -45,14 +46,7 @@ type harness struct {
 // openTestStore opens a database with the test org (ID 1) in it.
 func openTestStore(t testing.TB, path string) *store.Store {
 	t.Helper()
-	st, err := store.Open(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CreateOrg(context.Background(), store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
-		t.Fatal(err)
-	}
-	return st
+	return storetest.Open(t, path)
 }
 
 func newHarness(t *testing.T) *harness {
