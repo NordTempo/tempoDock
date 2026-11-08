@@ -1,0 +1,85 @@
+---
+import Section from "./Section.astro";
+
+/** The feature grid: what Dock does after a push, four columns on wide screens. */
+const features = [
+  {
+    key: "DEPLOYS",
+    color: "text-deploys",
+    title: "Push, get a release.",
+    items: [
+      "Dockerfile or compose",
+      "Preview per pull request",
+      "Rollbacks, cron jobs",
+    ],
+  },
+  {
+    key: "DOMAINS",
+    color: "text-domains",
+    title: "TLS without thinking.",
+    items: [
+      "Automatic certificates",
+      "Cloudflare DNS records",
+      "Verified ownership",
+    ],
+  },
+  {
+    key: "ERRORS",
+    color: "text-errors",
+    title: "Linked to the release.",
+    items: ["Frontend, logs and 5xx", "Alerts per organization", "Log drains"],
+  },
+  {
+    key: "ANALYTICS",
+    color: "text-analytics",
+    title: "Traffic, on your box.",
+    items: ["Visits and trends", "Web vitals", "Uptime checks"],
+  },
+  {
+    key: "DATA",
+    color: "text-neutral-200",
+    title: "Databases you can see.",
+    items: [
+      "Browse and edit Postgres",
+      "Backups and snapshots",
+      "Restores in one step",
+    ],
+  },
+  {
+    key: "SERVERS",
+    color: "text-neutral-200",
+    title: "Grow past one box.",
+    items: [
+      "Environments per server",
+      "Moves without downtime",
+      "Drain a server",
+    ],
+  },
+  {
+    key: "AGENTS",
+    color: "text-agents",
+    title: "Built for them.",
+    items: ["MCP endpoint", "--json on every command", "Approval requests"],
+  },
+  {
+    key: "ACCESS",
+    color: "text-neutral-200",
+    title: "Teams, done right.",
+    items: ["Organizations and roles", "SSO, passkeys, 2FA", "Audit log"],
+  },
+];
+---
+
+<Section id="features" title="Everything after git push.">
+  <div class="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
+    {features.map((f) => (
+      <div class="border-b border-line py-6 pr-6 sm:[&:nth-child(2n)]:border-l sm:[&:nth-child(2n)]:pl-6 lg:[&:nth-child(2n)]:border-l-0 lg:[&:nth-child(2n)]:pl-0 lg:[&:not(:nth-child(4n+1))]:border-l lg:[&:not(:nth-child(4n+1))]:pl-6">
+        <p class:list={["eyebrow mb-3", f.color]}>{f.key}</p>
+        <h3 class="text-[22px] font-semibold tracking-[-0.02em]">{f.title}</h3>
+        <ul class="mt-3 text-sm leading-[1.75] text-body">
+          {f.items.map((item) => <li>{item}</li>)}
+        </ul>
+      </div>
+    ))}
+  </div>
+</Section>

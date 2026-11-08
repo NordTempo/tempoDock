@@ -77,6 +77,7 @@ internal/secrets/      AES-GCM for values at rest
 internal/pack/         source archive for `dock deploy`
 internal/repoconfig/   dock.toml parsing
 web/                   React + Vite + Tailwind + TanStack Router/Query; web/tempobase
+site/                  the landing page (Astro, static), deployed on Dock
 scripts/perf/          the `make perf` budget checker and baseline
 docs/                  design docs; decisions/ holds the ADRs
 e2e/                   scenarios against a live server (see e2e/run.sh)
@@ -84,7 +85,7 @@ e2e/                   scenarios against a live server (see e2e/run.sh)
 
 Some directories have their own AGENTS.md with the rules for working
 there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
-`internal/tempobase` and `web`. Read the one for the directory you change.
+`internal/tempobase`, `web` and `site`. Read the one for the directory you change.
 
 - `core` depends on `store` and the `node.Runtime` interface, never on
   Docker or HTTP. Every core operation takes the calling `Actor` and checks

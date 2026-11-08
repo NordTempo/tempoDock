@@ -1,0 +1,21 @@
+---
+import { earlyAccessHref } from "../site";
+import Button from "./Button.astro";
+import Stack from "./Stack.astro";
+---
+
+<header class="mx-auto grid max-w-[1200px] items-center gap-10 px-6 pt-16 pb-16 md:px-14 lg:grid-cols-[520px_1fr] lg:gap-0 lg:pt-14 lg:pb-12">
+  <div>
+    <h1 class="text-[56px] leading-[0.95] font-[650] tracking-[-0.045em] sm:text-[72px] lg:text-[86px]">
+      The whole<br />platform.<br />One binary.
+    </h1>
+    <p class="mt-6 mb-8 max-w-[470px] text-[19px] leading-normal text-sub">
+      Deploys, domains, errors, analytics and agents on servers you own. Idle at 29 MB.
+    </p>
+    <div class="flex flex-wrap gap-3">
+      <Button href={earlyAccessHref}>Get early access →</Button>
+      <Button href="#releases" variant="secondary">See how it works</Button>
+    </div>
+  </div>
+  <Stack ruler class="w-full max-w-[640px] justify-self-end" />
+</header>
