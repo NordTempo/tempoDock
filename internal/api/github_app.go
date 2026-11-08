@@ -52,6 +52,15 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 		return nil, s.core.RemoveGitHubApp(ctx, actor)
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "set-github-app-client-secret", Method: http.MethodPut, Path: Prefix + "/github/app/client-secret",
+		Summary: "Set the GitHub App's client secret", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "For an App made before Dock kept its OAuth client: generate a client secret in the App's settings on GitHub and add the callback URL `GET /github` shows. Dock checks the secret with GitHub, then checks who installs the App. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.GitHubClientSecretRequest
+	}) (*struct{}, error) {
+		return nil, s.core.SetGitHubAppClientSecret(ctx, actor, in.Body)
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-github-org", Method: http.MethodGet, Path: Prefix + "/github/org",
 		Summary: "Show the GitHub App for the organization", Tags: tags,
 		Description: "The platform's GitHub App, if it has one, and the organization's own installations (asked of GitHub now) with the services connected through each. Organization admins.",
@@ -61,7 +70,7 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	authed(s, a, huma.Operation{
 		OperationID: "install-github-app", Method: http.MethodPost, Path: Prefix + "/github/installations",
 		Summary: "Get the GitHub App's install link for an org", Tags: tags,
-		Description: "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which assigns the installation to the org, unless another org has it. " +
+		Description: "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and assigns it to the org, unless another org has it. " +
 			"Organization admins for their own organization (org empty or theirs); operators for any.",
 	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.GitHubOrgRequest }) (*out[apitypes.GitHubLink], error) {
 		return reply(s.core.StartGitHubInstall(ctx, actor, in.Body))
@@ -126,6 +135,7 @@ type githubPageData struct {
 //	GET /api/v1/github/app/new?state=          posts the manifest to GitHub
 //	GET /api/v1/github/app/callback?code&state  GitHub's redirect: store the App
 //	GET /api/v1/github/install/callback?…       GitHub's redirect after install
+//	GET /api/v1/github/user/callback?code&state GitHub's redirect after authorizing: check and assign
 func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 	render := func(w http.ResponseWriter, status int, d githubPageData) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -182,7 +192,20 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 			})
 			return
 		}
-		msg, err := c.CompleteGitHubInstall(r.Context(), id, q.Get("setup_action"), q.Get("state"))
+		step, err := c.CompleteGitHubInstall(r.Context(), id, q.Get("setup_action"), q.Get("state"), requestOrigin(r))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		if step.Redirect != "" {
+			http.Redirect(w, r, step.Redirect, http.StatusFound)
+			return
+		}
+		render(w, http.StatusOK, githubPageData{Title: "GitHub App installed", Message: step.Message, Link: "/", LinkText: "Back to Dock"})
+	})
+	mux.HandleFunc("GET "+core.GitHubUserCallbackPath, func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		msg, err := c.CompleteGitHubVerify(r.Context(), q.Get("code"), q.Get("state"))
 		if err != nil {
 			fail(w, err)
 			return

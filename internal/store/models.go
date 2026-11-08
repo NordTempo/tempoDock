@@ -431,6 +431,8 @@ type GithubApp struct {
 	WebhookSecret []byte
 	CreatedBy     string
 	CreatedAt     time.Time
+	ClientID      string
+	ClientSecret  []byte
 }
 
 type GithubInstallation struct {

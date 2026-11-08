@@ -35,15 +35,19 @@ const (
 // App's calls (github_app_api.go). Tokens go in the Authorization header
 // only, and never into errors or logs.
 type githubClient struct {
-	api    string
+	api string
+	// web is GitHub's web origin, for the App's OAuth pages (ADR 0066). A
+	// GitHub other than github.com (tests' fake) serves both from api.
+	web    string
 	client *http.Client
 }
 
 func newGitHubClient(api string) githubClient {
 	if api == "" {
-		api = githubAPI
+		return githubClient{api: githubAPI, web: githubWeb, client: &http.Client{}}
 	}
-	return githubClient{api: strings.TrimSuffix(api, "/"), client: &http.Client{}}
+	api = strings.TrimSuffix(api, "/")
+	return githubClient{api: api, web: api, client: &http.Client{}}
 }
 
 // githubCred is how a request authenticates, which decides what an error
@@ -59,6 +63,7 @@ const (
 	credToken   credKind = iota // a webhook connection's own token, or none
 	credInstall                 // a GitHub App installation token (ADR 0031)
 	credApp                     // the GitHub App's JWT
+	credUser                    // a person's token for the App, checking an install (ADR 0066)
 )
 
 // do sends a request and returns the response if it is a 2xx; anything
@@ -111,6 +116,8 @@ func githubError(resp *http.Response, what string, cred githubCred) error {
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized && cred.kind == credApp:
 		return invalid("GitHub rejected the GitHub App's key (401: %s); if the App was deleted on GitHub, remove it with `dock github app remove` and create a new one", msg)
+	case resp.StatusCode == http.StatusUnauthorized && cred.kind == credUser:
+		return invalid("GitHub rejected your sign-in for the GitHub App (401: %s); start again with `dock github install`", msg)
 	case resp.StatusCode == http.StatusUnauthorized && cred.kind == credInstall:
 		return invalid("GitHub rejected the GitHub App's installation token (401: %s); check the installation with `dock github status`", msg)
 	case resp.StatusCode == http.StatusUnauthorized:

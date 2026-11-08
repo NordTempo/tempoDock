@@ -33,7 +33,10 @@ import (
 // operator (or an org's admin, for that org's install), single use,
 // valid for githubFlowTTL. The state is the authority for GitHub's
 // redirect back, which therefore needs no session and works when the
-// flow was started from the CLI.
+// flow was started from the CLI. It vouches for the org, never for the
+// installation ID next to it: an App with its OAuth client sends the
+// browser on to GitHub's authorize page and claims the installation only
+// if the person's token can access it (ADR 0066, github_app_verify.go).
 
 const (
 	// githubWeb is GitHub's web origin, where Apps are registered and
@@ -56,6 +59,9 @@ const (
 const (
 	GitHubAppCallbackPath     = "/api/v1/github/app/callback"
 	GitHubInstallCallbackPath = "/api/v1/github/install/callback"
+	// GitHubUserCallbackPath is the App's OAuth callback, where the
+	// installer comes back from GitHub's authorize page (ADR 0066).
+	GitHubUserCallbackPath = "/api/v1/github/user/callback"
 )
 
 // githubAppState is the App's in-memory state: links waiting for GitHub
@@ -67,16 +73,33 @@ type githubAppState struct {
 	tokens map[int64]installToken
 }
 
+// githubFlowKind is what a link into GitHub is for.
+type githubFlowKind int
+
+const (
+	flowManifest githubFlowKind = iota // registering the App
+	flowInstall                        // installing it for an org
+	flowVerify                         // checking who installed it (ADR 0066)
+)
+
 // githubFlow is a link into GitHub waiting for its redirect back.
 type githubFlow struct {
-	install bool  // an install link; else the App's manifest
-	actor   Actor // the operator or org admin who started it
-	// owner is the GitHub org to register the App under and hookID its
-	// webhook's ID, for a manifest.
-	owner   string
-	hookID  string
-	org     store.Org // install: the org it is for
-	expires time.Time
+	kind  githubFlowKind
+	actor Actor // the operator or org admin who started it
+	// owner is the GitHub org to register the App under, hookID its
+	// webhook's ID and public whether any account may install it, for a
+	// manifest.
+	owner  string
+	hookID string
+	public bool
+	org    store.Org // install, verify: the org it is for
+	// installation, verifier and redirect are a verify link's: the
+	// installation to claim, its PKCE verifier and the redirect URL the
+	// code is bound to.
+	installation int64
+	verifier     string
+	redirect     string
+	expires      time.Time
 }
 
 type installToken struct {
@@ -116,13 +139,13 @@ func (s *githubAppState) startFlow(f githubFlow) string {
 
 // flow returns the link state started, if it is still usable and of the
 // kind wanted; take also uses it up.
-func (s *githubAppState) flow(state string, install, take bool) (githubFlow, error) {
+func (s *githubAppState) flow(state string, kind githubFlowKind, take bool) (githubFlow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f, ok := s.flows[state]
-	if !ok || f.install != install || time.Now().After(f.expires) {
+	if !ok || f.kind != kind || time.Now().After(f.expires) {
 		again := "`dock github app create`"
-		if install {
+		if kind != flowManifest {
 			again = "`dock github install <org>`"
 		}
 		return githubFlow{}, errf(apitypes.CodeUnauthorized, "this link expired or was already used; start again with %s", again)
@@ -227,7 +250,7 @@ func (c *Core) githubAppFailed(ctx context.Context, err error) {
 func toGitHubApp(app store.GithubApp) *apitypes.GitHubApp {
 	return &apitypes.GitHubApp{
 		ID: app.AppID, Slug: app.Slug, Name: app.Name, Owner: app.Owner, URL: app.HtmlUrl,
-		CreatedBy: app.CreatedBy, CreatedAt: app.CreatedAt,
+		VerifiesInstalls: app.ClientSecret != nil, CreatedBy: app.CreatedBy, CreatedAt: app.CreatedAt,
 	}
 }
 
@@ -251,7 +274,7 @@ func (c *Core) GitHubStatus(ctx context.Context, a Actor) (apitypes.GitHubStatus
 	if err != nil {
 		return out, err
 	}
-	out.App, out.WebhookURL = toGitHubApp(app), c.hookURL(app.HookID)
+	out.App, out.WebhookURL, out.CallbackURL = toGitHubApp(app), c.hookURL(app.HookID), c.dockURL()+GitHubUserCallbackPath
 	assigned, err := c.store.ListGitHubInstallations(ctx)
 	if err != nil {
 		return out, err
@@ -317,7 +340,7 @@ func (c *Core) StartGitHubApp(ctx context.Context, a Actor, req apitypes.GitHubA
 	case !store.IsNotFound(err):
 		return "", err
 	}
-	return c.git.app.startFlow(githubFlow{actor: a, owner: owner, hookID: randomHex(16)}), nil
+	return c.git.app.startFlow(githubFlow{kind: flowManifest, actor: a, owner: owner, hookID: randomHex(16), public: req.Public}), nil
 }
 
 // githubManifest is the App GitHub is asked to register.
@@ -332,6 +355,7 @@ type githubManifest struct {
 	RedirectURL        string            `json:"redirect_url"`
 	SetupURL           string            `json:"setup_url"`
 	SetupOnUpdate      bool              `json:"setup_on_update"`
+	CallbackURLs       []string          `json:"callback_urls"`
 	Public             bool              `json:"public"`
 	DefaultPermissions map[string]string `json:"default_permissions"`
 	DefaultEvents      []string          `json:"default_events"`
@@ -342,7 +366,7 @@ type githubManifest struct {
 // URL the browser has open; GitHub sends it back there unless Dock has a
 // public address.
 func (c *Core) GitHubManifest(state, origin string) (string, []byte, error) {
-	f, err := c.git.app.flow(state, false, false)
+	f, err := c.git.app.flow(state, flowManifest, false)
 	if err != nil {
 		return "", nil, err
 	}
@@ -357,6 +381,7 @@ func (c *Core) GitHubManifest(state, origin string) (string, []byte, error) {
 		Description: "Deploys pushes and previews pull requests with Tempo Dock.",
 		RedirectURL: base + GitHubAppCallbackPath,
 		SetupURL:    base + GitHubInstallCallbackPath, SetupOnUpdate: true,
+		CallbackURLs: []string{base + GitHubUserCallbackPath}, Public: f.public,
 		// Pull requests: write lets previews comment (ADR 0056).
 		DefaultPermissions: map[string]string{"contents": "read", "metadata": "read", "statuses": "write", "pull_requests": "write"},
 		DefaultEvents:      []string{"push", "pull_request"},
@@ -384,7 +409,7 @@ func appName(host string) string {
 // GitHub redirected with for the App's credentials and stores them,
 // sealed. The state is the authority (see the top of this file).
 func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apitypes.GitHubApp, error) {
-	f, err := c.git.app.flow(state, false, true)
+	f, err := c.git.app.flow(state, flowManifest, true)
 	if err != nil {
 		return apitypes.GitHubApp{}, err
 	}
@@ -409,9 +434,16 @@ func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apity
 	if err != nil {
 		return apitypes.GitHubApp{}, err
 	}
+	var clientSecret []byte
+	if created.ClientID != "" && created.ClientSecret != "" {
+		if clientSecret, err = c.box.Seal([]byte(created.ClientSecret), appClientSecretAAD); err != nil {
+			return apitypes.GitHubApp{}, err
+		}
+	}
 	row := store.GithubApp{
 		AppID: created.ID, HookID: f.hookID, Slug: cleanLine(created.Slug, 100), Name: cleanLine(created.Name, 100), Owner: cleanLine(created.Owner.Login, 39),
 		HtmlUrl: cleanLine(created.HTMLURL, 200), PrivateKey: key, WebhookSecret: secret, CreatedBy: f.actor.Name, CreatedAt: now(),
+		ClientID: cleanLine(created.ClientID, 100), ClientSecret: clientSecret,
 	}
 	if err := c.store.Tx(ctx, func(q *store.Queries) error {
 		// A new App has new installations; old assignments mean nothing.
@@ -420,7 +452,8 @@ func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apity
 		}
 		return q.SetGitHubApp(ctx, store.SetGitHubAppParams{
 			AppID: row.AppID, HookID: row.HookID, Slug: row.Slug, Name: row.Name, Owner: row.Owner, HtmlUrl: row.HtmlUrl,
-			PrivateKey: row.PrivateKey, WebhookSecret: row.WebhookSecret, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt,
+			PrivateKey: row.PrivateKey, WebhookSecret: row.WebhookSecret, ClientID: row.ClientID, ClientSecret: row.ClientSecret,
+			CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt,
 		})
 	}); err != nil {
 		return apitypes.GitHubApp{}, err
@@ -473,7 +506,10 @@ func (c *Core) StartGitHubInstall(ctx context.Context, a Actor, req apitypes.Git
 	if err != nil {
 		return apitypes.GitHubLink{}, err
 	}
-	state := c.git.app.startFlow(githubFlow{install: true, actor: a, org: org})
+	if app.ClientSecret == nil && !a.Operator {
+		return apitypes.GitHubLink{}, errNoAppClient()
+	}
+	state := c.git.app.startFlow(githubFlow{kind: flowInstall, actor: a, org: org})
 	return apitypes.GitHubLink{URL: app.HtmlUrl + "/installations/new?state=" + url.QueryEscape(state)}, nil
 }
 
@@ -499,28 +535,6 @@ func (c *Core) installOrg(ctx context.Context, a Actor, slug string) (store.Org,
 		return org, notFound("no organization to install the GitHub App for; pass --org")
 	}
 	return org, err
-}
-
-// CompleteGitHubInstall handles GitHub's redirect after the App was
-// installed or its repositories changed: it assigns the installation to
-// the org the link was for, unless another org has it (conflict). It
-// returns the org's slug and what happened, for the page the browser
-// lands on. The state is the authority for the org, not the installation.
-func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, setupAction, state string) (string, error) {
-	f, err := c.git.app.flow(state, true, true)
-	if err != nil {
-		return "", err
-	}
-	if setupAction == "request" {
-		return fmt.Sprintf("The installation was requested. Once an owner of the GitHub account approves it, an operator assigns it with `dock github assign <id> %s`.", f.org.Slug), nil
-	}
-	// The installation ID comes from the redirect, not the state: it may
-	// only be claimed, never moved from another org.
-	inst, err := c.assignInstallation(ctx, f.actor, installationID, f.org, false)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("The GitHub App can read %s's repositories, and org %s can now deploy from them: `dock git connect %s/<repo>`.", inst.Account.Login, f.org.Slug, inst.Account.Login), nil
 }
 
 // AssignGitHubInstallation lets an org deploy from an installation's

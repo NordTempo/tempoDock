@@ -607,12 +607,22 @@ dock github repos                     # what the org can connect
 The console does the same under **System → GitHub**, and **Settings →
 Source** suggests the org's repositories when connecting.
 
-The App is private: only the GitHub account that owns it (yours, or
-`--owner acme`) can install it. Each installation is assigned to one org,
-and only that org's services can read its repositories. GitHub sends the
-browser back to Dock after an install, which assigns it to the org in the
-link. Installations made on GitHub directly are assigned with `dock github
-assign <id> <org>`.
+The App is private by default: only the GitHub account that owns it
+(yours, or `--owner acme`) can install it. With `dock github app create
+--public`, any GitHub account can, so each org deploys from its own
+([ADR 0066](../decisions/0066-github-apps-for-many-orgs.md)). Each
+installation is assigned to one org, and only that org's services can
+read its repositories. After an install, GitHub sends the browser back to
+Dock, then on to GitHub's authorize page for the App: Dock assigns the
+installation to the org in the link only if GitHub says the person can
+access it. Org admins install it for their own org with `dock github
+install`. Installations made on GitHub directly are assigned by an
+operator with `dock github assign <id> <org>`.
+
+An App made before Dock kept its client secret (ADR 0066), so only
+operators' install links work. `dock github status` shows the callback URL
+to add in the App's settings on GitHub; generate a client secret there,
+then `printf %s "$SECRET" | dock github app secret`.
 
 ### Through a webhook
 

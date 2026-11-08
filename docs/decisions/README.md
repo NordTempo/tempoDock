@@ -38,7 +38,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted |
 | [0029](0029-public-address.md) | Dock's public address | accepted |
 | [0030](0030-access-protection.md) | Access protection for a service's domains | accepted |
-| [0031](0031-github-app.md) | Dock's GitHub App | accepted |
+| [0031](0031-github-app.md) | Dock's GitHub App | amended by 0066 |
 | [0032](0032-server-memory-breakdown.md) | Where a server's memory goes | accepted |
 | [0033](0033-traffic-statistics.md) | Traffic statistics for a service's domains | accepted |
 | [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
@@ -73,6 +73,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
 | [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's: provider buttons, GitHub, invite only, passwords off | accepted |
+| [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs: public Apps, installs checked against the GitHub user | accepted |
 
 ## Template
 
