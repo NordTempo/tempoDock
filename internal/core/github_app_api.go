@@ -14,8 +14,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
+
+	"golang.org/x/oauth2"
+
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
 // The GitHub App's side of GitHub's REST API (ADR 0031): the manifest
@@ -93,6 +99,9 @@ type githubAppCreated struct {
 	} `json:"owner"`
 	WebhookSecret string `json:"webhook_secret"`
 	PEM           string `json:"pem"`
+	// The App's OAuth client, which checks who installs it (ADR 0066).
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
 }
 
 // convertManifest exchanges the code GitHub's manifest flow redirected
@@ -190,4 +199,82 @@ func (g githubClient) installationRepos(ctx context.Context, token string, limit
 			return all, false, nil
 		}
 	}
+}
+
+// appClientID reads the App's OAuth client ID (GET /app), for an App
+// whose client Dock didn't keep when it was made.
+func (g githubClient) appClientID(ctx context.Context, jwt string) (string, error) {
+	var out struct {
+		ClientID string `json:"client_id"`
+	}
+	err := g.call(ctx, http.MethodGet, "/app", githubCred{jwt, credApp}, "the GitHub App", &out)
+	if err == nil && out.ClientID == "" {
+		err = errors.New("GitHub returned no client ID for the GitHub App")
+	}
+	return out.ClientID, err
+}
+
+// checkClient checks an OAuth client ID and secret with GitHub: it asks
+// about a made-up token (POST /applications/{client_id}/token), which
+// GitHub answers 404 for a right pair and 401 for a wrong one.
+func (g githubClient) checkClient(ctx context.Context, clientID, secret string) error {
+	ctx, cancel := context.WithTimeout(ctx, githubCallTimeout)
+	defer cancel()
+	body := strings.NewReader(`{"access_token":"ghu_` + strings.Repeat("0", 36) + `"}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.api+"/applications/"+url.PathEscape(clientID)+"/token", body)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(clientID, secret)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return errf(apitypes.CodeConflict, "could not reach GitHub: %v; try again", redactURL(err))
+	}
+	_ = resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotFound, http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return invalid("GitHub rejected the client secret for the GitHub App (client %s); generate a new one in the App's settings on GitHub and give it again", clientID)
+	}
+	return errf(apitypes.CodeConflict, "GitHub returned %d checking the GitHub App's client secret; try again", resp.StatusCode)
+}
+
+// userOAuth is the App's OAuth client: GitHub's authorize page, where an
+// installer proves who they are (ADR 0066), and the code exchange.
+func (g githubClient) userOAuth(clientID, secret, redirect string) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID: clientID, ClientSecret: secret, RedirectURL: redirect,
+		Endpoint: oauth2.Endpoint{AuthURL: g.web + "/login/oauth/authorize", TokenURL: g.web + "/login/oauth/access_token", AuthStyle: oauth2.AuthStyleInParams},
+	}
+}
+
+// maxUserInstallationPages bounds the pages of a person's installations
+// read (100 each): far more installations of one App than anyone has.
+const maxUserInstallationPages = 10
+
+// userInstallations lists the IDs of the App's installations a person's
+// token can access (GET /user/installations).
+func (g githubClient) userInstallations(ctx context.Context, token string) ([]int64, error) {
+	var ids []int64
+	for page := 1; page <= maxUserInstallationPages; page++ {
+		var out struct {
+			Installations []struct {
+				ID int64 `json:"id"`
+			} `json:"installations"`
+		}
+		if err := g.call(ctx, http.MethodGet, fmt.Sprintf("/user/installations?per_page=100&page=%d", page),
+			githubCred{token, credUser}, "your installations of the GitHub App", &out); err != nil {
+			return nil, err
+		}
+		for _, i := range out.Installations {
+			ids = append(ids, i.ID)
+		}
+		if len(out.Installations) < 100 {
+			break
+		}
+	}
+	return ids, nil
 }

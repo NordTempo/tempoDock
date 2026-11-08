@@ -20,11 +20,13 @@ import {
   useGitHub,
   useInstall,
   useRemoveApp,
+  useSetClientSecret,
 } from "./data";
 
 // The console's GitHub page (mock G1): Dock's GitHub App as a list of
 // properties, its installations below with the org each deploys for
-// (ADR 0031). Creating and installing continue on github.com.
+// (ADR 0031). Creating and installing continue on github.com, and Dock
+// checks with GitHub who installed it (ADR 0066).
 
 export function GitHubPage() {
   const { data: gh, refetch, isFetching } = useGitHub();
@@ -103,6 +105,18 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
             </td>
           </tr>
           <tr>
+            <td className="py-2.5 text-faint">Installs</td>
+            <td className="py-2.5 whitespace-normal">
+              {app.verifies_installs ? (
+                <span className="text-mut">
+                  checked against the installer's GitHub account
+                </span>
+              ) : (
+                <ClientSecretForm callbackURL={gh.callback_url ?? ""} />
+              )}
+            </td>
+          </tr>
+          <tr>
             <td className="py-2.5 text-faint">Permissions</td>
             <td className="py-2.5 text-mut">
               contents read · metadata read · statuses write · push events
@@ -136,6 +150,55 @@ function AppPanel({ gh }: { gh: GitHubStatus }) {
         </tbody>
       </table>
     </Panel>
+  );
+}
+
+/**
+ * For an App made before Dock kept its OAuth client: the callback URL to
+ * add on GitHub and the client secret generated there.
+ */
+function ClientSecretForm({ callbackURL }: { callbackURL: string }) {
+  const set = useSetClientSecret();
+  const [secret, setSecret] = useState("");
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-warn">
+        unchecked: only operators' install links work
+      </span>
+      <span className="text-mut">
+        In the App's settings on GitHub, add the callback URL{" "}
+        <span className="font-mono">{callbackURL}</span>{" "}
+        <CopyButton text={callbackURL} /> and generate a client secret.
+      </span>
+      <form
+        aria-label="Set the GitHub App's client secret"
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          set.mutate(secret.trim());
+        }}
+      >
+        <input
+          type="password"
+          aria-label="Client secret"
+          placeholder="client secret"
+          autoComplete="off"
+          value={secret}
+          onChange={(e) => setSecret(e.target.value)}
+          className="field min-w-0 flex-[1_1_200px] py-[5px] font-mono"
+        />
+        <Act
+          small
+          primary
+          type="submit"
+          cli="dock github app secret"
+          disabled={!secret.trim() || set.isPending}
+        >
+          Save
+        </Act>
+        <ErrorText error={set.error} />
+      </form>
+    </div>
   );
 }
 
@@ -282,7 +345,10 @@ function InstallForm({ orgs }: { orgs: string[] }) {
 function CreateForm({ disabled }: { disabled: boolean }) {
   const create = useCreateApp();
   const [owner, setOwner] = useState("");
-  const flag = owner.trim() ? ` --owner ${owner.trim()}` : "";
+  const [isPublic, setPublic] = useState(false);
+  const flag =
+    (owner.trim() ? ` --owner ${owner.trim()}` : "") +
+    (isPublic ? " --public" : "");
   return (
     <Panel>
       <table>
@@ -299,7 +365,10 @@ function CreateForm({ disabled }: { disabled: boolean }) {
                 className="flex flex-wrap items-center gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  create.mutate(owner.trim());
+                  create.mutate({
+                    owner: owner.trim() || undefined,
+                    public: isPublic,
+                  });
                 }}
               >
                 <input
@@ -310,6 +379,14 @@ function CreateForm({ disabled }: { disabled: boolean }) {
                   spellCheck={false}
                   className="field min-w-0 flex-[1_1_200px] py-[5px] font-mono"
                 />
+                <label className="flex items-center gap-1.5 text-mut">
+                  <input
+                    type="checkbox"
+                    checked={isPublic}
+                    onChange={(e) => setPublic(e.target.checked)}
+                  />
+                  public
+                </label>
                 <Act
                   small
                   primary
@@ -326,9 +403,12 @@ function CreateForm({ disabled }: { disabled: boolean }) {
           <tr>
             <td className="py-2.5 text-faint" />
             <td className="py-2.5 whitespace-normal text-mut">
-              A private App owned by that GitHub organization, or by you. It
-              reads code, posts commit statuses and receives pushes. GitHub asks
-              you to confirm its name, then sends you back here.
+              An App owned by that GitHub organization, or by you. Private: only
+              that account can install it. Public: any GitHub account can, so
+              orgs deploy from their own; GitHub can make it public later, not
+              private again. It reads code, posts statuses and comments, and
+              receives pushes. GitHub asks you to confirm its name, then sends
+              you back here.
             </td>
           </tr>
         </tbody>

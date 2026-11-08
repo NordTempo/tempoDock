@@ -44,6 +44,7 @@ var (
 	sealedAnalyticsToken               = secrets.Column{Table: "analytics_settings", Name: "token"}
 	sealedAppKey                       = secrets.Column{Table: "github_app", Name: "private_key"}
 	sealedAppWebhookSecret             = secrets.Column{Table: "github_app", Name: "webhook_secret"}
+	sealedAppClientSecret              = secrets.Column{Table: "github_app", Name: "client_secret"} // its OAuth client's (ADR 0066)
 	sealedDataReader, sealedDataWriter = datapanel.AccessColumns("service_id")
 	// sealedUserFactor is a second factor's key (ADR 0057): one
 	// authenticator app per user, passkeys by credential ID.
@@ -55,7 +56,7 @@ var (
 		sealedVariableValue, sealedVariablePending, sealedOrgVariable, sealedReleaseConfig,
 		sealedAlertChannel, sealedGitSecret, sealedGitToken, sealedAccessKey, sealedStorageKeys,
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
-		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret,
+		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
 		sealedSSOSecret,
 	}
@@ -68,6 +69,7 @@ var (
 	analyticsTokenAAD   = sealedAnalyticsToken.AAD()
 	appKeyAAD           = sealedAppKey.AAD()
 	appWebhookSecretAAD = sealedAppWebhookSecret.AAD()
+	appClientSecretAAD  = sealedAppClientSecret.AAD()
 )
 
 // variableAAD binds a variable's live and staged value (serviceID nil:

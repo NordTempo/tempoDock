@@ -12,6 +12,10 @@ type GitHubStatus struct {
 	// how to fix it.
 	WebhookURL string `json:"webhook_url"`
 	HooksHint  string `json:"hooks_hint,omitempty"`
+	// CallbackURL is the App's OAuth callback, where installers come back
+	// from GitHub's authorize page (ADR 0066). An App made before Dock
+	// kept its client needs it added in its settings on GitHub.
+	CallbackURL string `json:"callback_url,omitempty"`
 	// Installations are the App's installations on GitHub, with the org
 	// each is assigned to. Assigned ones GitHub no longer lists are
 	// included with Missing set.
@@ -26,13 +30,17 @@ type GitHubStatus struct {
 // GitHubApp is the install's GitHub App. Its private key and webhook
 // secret never leave the server.
 type GitHubApp struct {
-	ID        int64     `json:"id" doc:"GitHub's App ID"`
-	Slug      string    `json:"slug"`
-	Name      string    `json:"name"`
-	Owner     string    `json:"owner" doc:"The GitHub account that owns the App"`
-	URL       string    `json:"url" doc:"The App's page on GitHub"`
-	CreatedBy string    `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
+	ID    int64  `json:"id" doc:"GitHub's App ID"`
+	Slug  string `json:"slug"`
+	Name  string `json:"name"`
+	Owner string `json:"owner" doc:"The GitHub account that owns the App"`
+	URL   string `json:"url" doc:"The App's page on GitHub"`
+	// VerifiesInstalls is set once Dock has the App's client secret and
+	// checks who installs it (ADR 0066). Until then only operators'
+	// install links work.
+	VerifiesInstalls bool      `json:"verifies_installs"`
+	CreatedBy        string    `json:"created_by"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // GitHubInstallation is one of the App's installations: a GitHub account
@@ -61,6 +69,16 @@ type GitHubAppRequest struct {
 	// Owner is the GitHub organization to register the App under; empty
 	// registers it on the account of whoever opens the link.
 	Owner string `json:"owner,omitempty" maxLength:"39"`
+	// Public lets any GitHub account install the App, so orgs can deploy
+	// from their own accounts (ADR 0066). GitHub can make a private App
+	// public later, but not back once others have installed it.
+	Public bool `json:"public,omitempty"`
+}
+
+// GitHubClientSecretRequest gives an App made before ADR 0066 its OAuth
+// client secret, generated in its settings on GitHub.
+type GitHubClientSecretRequest struct {
+	ClientSecret string `json:"client_secret" maxLength:"200"`
 }
 
 // GitHubLink is a page to open in a browser to continue on GitHub. URL is

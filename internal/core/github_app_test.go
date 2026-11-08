@@ -27,11 +27,18 @@ const (
 	fakeInstall  = 7
 	fakeRepoID   = 42
 	fakeAppToken = "ghs_installtoken"
+	// The App's OAuth client (ADR 0066).
+	fakeClientID     = "Iv1.fake"
+	fakeClientSecret = "client-secret"
+	// octo is a GitHub user who can access installation 7; mallory can't.
+	octo, mallory = "octo", "mallory"
 )
 
 // withApp makes the fake GitHub host a GitHub App: it converts manifest
 // code "c0de", has installation 7 on account acme, which reads acme/shop
-// (repository 42), and checks the App's JWTs against its key.
+// (repository 42), and checks the App's JWTs against its key. Its OAuth
+// client turns a code into the token of the user the code names, and
+// only octo's token lists installation 7.
 func (g *fakeGitHub) withApp(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -67,7 +74,41 @@ func (g *fakeGitHub) withApp(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": fakeAppID, "slug": "tempo-dock-test", "name": "Tempo Dock test", "html_url": "https://github.com/apps/tempo-dock-test",
 			"owner": map[string]string{"login": "acme"}, "webhook_secret": "app-secret", "pem": string(pemKey),
+			"client_id": fakeClientID, "client_secret": fakeClientSecret,
 		})
+	})
+	g.mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
+		if jwtOK(w, r) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": fakeAppID, "client_id": fakeClientID})
+		}
+	})
+	g.mux.HandleFunc("POST /applications/{client}/token", func(w http.ResponseWriter, r *http.Request) {
+		if id, secret, _ := r.BasicAuth(); id != fakeClientID || secret != fakeClientSecret || r.PathValue("client") != fakeClientID {
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+	})
+	g.mux.HandleFunc("POST /login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.FormValue("client_id") != fakeClientID || r.FormValue("client_secret") != fakeClientSecret || r.FormValue("code_verifier") == "" ||
+			r.FormValue("redirect_uri") != "https://dock.example.com"+GitHubUserCallbackPath {
+			_, _ = w.Write([]byte(`{"error":"bad_verification_code"}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "ghu_" + r.FormValue("code"), "token_type": "bearer"})
+	})
+	g.mux.HandleFunc("GET /user/installations", func(w http.ResponseWriter, r *http.Request) {
+		var list []any
+		switch r.Header.Get("Authorization") {
+		case "Bearer ghu_" + octo:
+			list = []any{installation}
+		case "Bearer ghu_" + mallory:
+		default:
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": len(list), "installations": list})
 	})
 	g.mux.HandleFunc("GET /app/installations", func(w http.ResponseWriter, r *http.Request) {
 		if jwtOK(w, r) {
@@ -124,15 +165,30 @@ func appHarness(t *testing.T) (*harness, *fakeGitHub, string) {
 	if _, err := h.c.CompleteGitHubApp(h.ctx, "c0de", state); err != nil {
 		t.Fatal(err)
 	}
-	link, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubOrgRequest{Org: "test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	u, _ := url.Parse(link.URL)
-	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state")); err != nil {
+	if err := h.installApp(testSystem, "test", fakeInstall, octo); err != nil {
 		t.Fatal(err)
 	}
 	return h, gh, path.Base(m.HookAttributes.URL)
+}
+
+// installApp goes through the App's install flow as a, for org, the way
+// a browser would after GitHub user login installed installation id:
+// GitHub's redirect back, then (for an App that checks installs) the
+// authorize page's redirect with login's code.
+func (h *harness) installApp(a Actor, org string, id int64, login string) error {
+	h.t.Helper()
+	link, err := h.c.StartGitHubInstall(h.ctx, a, apitypes.GitHubOrgRequest{Org: org})
+	if err != nil {
+		return err
+	}
+	u, _ := url.Parse(link.URL)
+	step, err := h.c.CompleteGitHubInstall(h.ctx, id, "install", u.Query().Get("state"), "https://dock.example.com")
+	if err != nil || step.Redirect == "" {
+		return err
+	}
+	r, _ := url.Parse(step.Redirect)
+	_, err = h.c.CompleteGitHubVerify(h.ctx, login, r.Query().Get("state"))
+	return err
 }
 
 // The manifest flow registers the App and the install flow assigns its
@@ -164,7 +220,8 @@ func TestGitHubAppSetup(t *testing.T) {
 	}
 	// No public address: GitHub sends the browser back where it came from.
 	if m.RedirectURL != "http://100.64.0.1:7070"+GitHubAppCallbackPath || !strings.HasPrefix(m.HookAttributes.URL, "https://hooks.example.com/hooks/github/") ||
-		m.Public || m.DefaultPermissions["contents"] != "read" || m.DefaultPermissions["statuses"] != "write" {
+		m.Public || m.DefaultPermissions["contents"] != "read" || m.DefaultPermissions["statuses"] != "write" ||
+		!slices.Equal(m.CallbackURLs, []string{"http://100.64.0.1:7070" + GitHubUserCallbackPath}) {
 		t.Errorf("manifest: %s", manifest)
 	}
 	if _, err := h.c.CompleteGitHubApp(h.ctx, "wrong", "not-a-state"); CodeOf(err) != apitypes.CodeUnauthorized {
@@ -174,7 +231,7 @@ func TestGitHubAppSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if app.ID != fakeAppID || app.Slug != "tempo-dock-test" || app.CreatedBy != "system" {
+	if app.ID != fakeAppID || app.Slug != "tempo-dock-test" || app.CreatedBy != "system" || !app.VerifiesInstalls {
 		t.Errorf("app %+v", app)
 	}
 	if _, err := h.c.CompleteGitHubApp(h.ctx, "c0de", state); CodeOf(err) != apitypes.CodeUnauthorized {
@@ -204,10 +261,22 @@ func TestGitHubAppSetup(t *testing.T) {
 		t.Fatalf("install link %s", link.URL)
 	}
 	// A manifest state can't finish an install.
-	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, ""); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("manifest state for an install: %v", err)
 	}
-	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state")); err != nil {
+	// The App checks who installed it: GitHub's redirect goes on to the
+	// App's authorize page, with a state of its own and PKCE.
+	step, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state"), "https://dock.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := url.Parse(step.Redirect)
+	verify := r.Query().Get("state")
+	if r.Path != "/login/oauth/authorize" || r.Query().Get("client_id") != fakeClientID || r.Query().Get("code_challenge_method") != "S256" ||
+		r.Query().Get("redirect_uri") != "https://dock.example.com"+GitHubUserCallbackPath || verify == "" || verify == u.Query().Get("state") {
+		t.Fatalf("authorize link %s", step.Redirect)
+	}
+	if _, err := h.c.CompleteGitHubVerify(h.ctx, octo, verify); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := h.c.GitHubStatus(h.ctx, testSystem); len(st.Installations) != 1 || st.Installations[0].Org != "test" {
@@ -370,15 +439,7 @@ func TestGitHubInstallKeepsItsOrg(t *testing.T) {
 	if _, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "other"}); err != nil {
 		t.Fatal(err)
 	}
-	install := func(org string) error {
-		link, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubOrgRequest{Org: org})
-		if err != nil {
-			t.Fatal(err)
-		}
-		u, _ := url.Parse(link.URL)
-		_, err = h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state"))
-		return err
-	}
+	install := func(org string) error { return h.installApp(testSystem, org, fakeInstall, octo) }
 	if err := install("other"); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("other org's install took installation 7: %v", err)
 	}
@@ -451,5 +512,87 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("timed out")
 		}
 		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+// Dock claims an installation only for someone GitHub says can access it
+// (ADR 0066): a redirect naming another installation, or a person who
+// can't see it, gets nothing, and a verify link works once.
+func TestGitHubInstallChecksTheInstaller(t *testing.T) {
+	h, _, _ := appHarness(t)
+	if err := h.c.UnassignGitHubInstallation(h.ctx, testSystem, fakeInstall); err != nil {
+		t.Fatal(err)
+	}
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	assigned := func() bool {
+		_, err := h.store.GetGitHubInstallation(h.ctx, fakeInstall)
+		return err == nil
+	}
+	if err := h.installApp(admin, "", fakeInstall, mallory); CodeOf(err) != apitypes.CodeForbidden || assigned() {
+		t.Fatalf("someone who can't access installation 7 claimed it: %v", err)
+	}
+
+	link, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(link.URL)
+	step, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state"), "https://dock.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := url.Parse(step.Redirect)
+	verify := r.Query().Get("state")
+	if _, err := h.c.CompleteGitHubVerify(h.ctx, "", verify); CodeOf(err) != apitypes.CodeForbidden || assigned() {
+		t.Fatalf("no code: %v", err)
+	}
+	if _, err := h.c.CompleteGitHubVerify(h.ctx, octo, verify); CodeOf(err) != apitypes.CodeUnauthorized || assigned() {
+		t.Fatalf("verify link used twice: %v", err)
+	}
+
+	// An edited redirect names installation 8, which octo can't access.
+	if err := h.installApp(admin, "", 8, octo); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("edited installation ID: %v", err)
+	}
+	if err := h.installApp(admin, "", fakeInstall, octo); err != nil || !assigned() {
+		t.Fatalf("octo's install: %v", err)
+	}
+}
+
+// An App made before Dock kept its OAuth client claims installations
+// only for operators' links until an operator gives it the client
+// secret, which Dock checks with GitHub first.
+func TestGitHubAppClientSecret(t *testing.T) {
+	h, _, _ := appHarness(t)
+	h.exec(`UPDATE github_app SET client_id = '', client_secret = NULL`)
+	if err := h.c.UnassignGitHubInstallation(h.ctx, testSystem, fakeInstall); err != nil {
+		t.Fatal(err)
+	}
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	if st, err := h.c.GitHubStatus(h.ctx, testSystem); err != nil || st.App.VerifiesInstalls || !strings.HasSuffix(st.CallbackURL, GitHubUserCallbackPath) {
+		t.Fatalf("status of an App without its client: %+v, %v", st, err)
+	}
+	if _, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("org admin's install link without the client: %v", err)
+	}
+	// An operator's link claims it straight away, as before.
+	if err := h.installApp(testSystem, "test", fakeInstall, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.c.SetGitHubAppClientSecret(h.ctx, admin, apitypes.GitHubClientSecretRequest{ClientSecret: fakeClientSecret}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("org admin set the client secret: %v", err)
+	}
+	if err := h.c.SetGitHubAppClientSecret(h.ctx, testSystem, apitypes.GitHubClientSecretRequest{ClientSecret: "wrong"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("wrong client secret: %v", err)
+	}
+	if err := h.c.SetGitHubAppClientSecret(h.ctx, testSystem, apitypes.GitHubClientSecretRequest{ClientSecret: fakeClientSecret}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := h.c.GitHubStatus(h.ctx, testSystem); err != nil || !st.App.VerifiesInstalls {
+		t.Fatalf("status with the client: %+v, %v", st, err)
+	}
+	if err := h.installApp(admin, "", fakeInstall, octo); err != nil {
+		t.Fatalf("org admin's install once installs are checked: %v", err)
 	}
 }

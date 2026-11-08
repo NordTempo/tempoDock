@@ -7,7 +7,7 @@ import {
 import { api, body, done } from "../../api/client";
 import type { components } from "../../api/schema";
 
-// Dock's GitHub App for the console's GitHub page (ADR 0031). Reading it
+// Dock's GitHub App for the console's GitHub page (ADR 0031, 0066). Reading it
 // asks GitHub for the App's installations now, so a refetch is "check
 // again"; nothing polls. Creating the App and installing it continue on
 // github.com, which sends the browser back to Dock.
@@ -31,10 +31,24 @@ const go = (link: { url: string }) => window.location.assign(link.url);
 /** Starts creating the App: the answer is Dock's page that posts the manifest. */
 export const useCreateApp = () =>
   useMutation({
-    mutationFn: (owner: string) =>
-      body(api.POST("/api/v1/github/app", { body: owner ? { owner } : {} })),
+    mutationFn: (req: components["schemas"]["GitHubAppRequest"]) =>
+      body(api.POST("/api/v1/github/app", { body: req })),
     onSuccess: go,
   });
+
+/** Gives an App made before ADR 0066 its client secret, so installs are checked. */
+export function useSetClientSecret() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (client_secret: string) =>
+      done(
+        api.PUT("/api/v1/github/app/client-secret", {
+          body: { client_secret },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: githubKey }),
+  });
+}
 
 /** Opens the App's install page on GitHub for an org. */
 export const useInstall = () =>

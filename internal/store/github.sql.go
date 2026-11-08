@@ -104,7 +104,7 @@ func (q *Queries) DeleteGitHubInstallations(ctx context.Context) error {
 }
 
 const getGitHubApp = `-- name: GetGitHubApp :one
-SELECT id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, created_by, created_at FROM github_app WHERE id = 1
+SELECT id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, created_by, created_at, client_id, client_secret FROM github_app WHERE id = 1
 `
 
 // The install's GitHub App; no row until one is registered.
@@ -123,6 +123,8 @@ func (q *Queries) GetGitHubApp(ctx context.Context) (GithubApp, error) {
 		&i.WebhookSecret,
 		&i.CreatedBy,
 		&i.CreatedAt,
+		&i.ClientID,
+		&i.ClientSecret,
 	)
 	return i, err
 }
@@ -224,11 +226,12 @@ func (q *Queries) ListOrgGitHubInstallations(ctx context.Context, orgID int64) (
 }
 
 const setGitHubApp = `-- name: SetGitHubApp :exec
-INSERT INTO github_app (id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, created_by, created_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO github_app (id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     app_id = excluded.app_id, hook_id = excluded.hook_id, slug = excluded.slug, name = excluded.name, owner = excluded.owner,
     html_url = excluded.html_url, private_key = excluded.private_key, webhook_secret = excluded.webhook_secret,
+    client_id = excluded.client_id, client_secret = excluded.client_secret,
     created_by = excluded.created_by, created_at = excluded.created_at
 `
 
@@ -241,6 +244,8 @@ type SetGitHubAppParams struct {
 	HtmlUrl       string
 	PrivateKey    []byte
 	WebhookSecret []byte
+	ClientID      string
+	ClientSecret  []byte
 	CreatedBy     string
 	CreatedAt     time.Time
 }
@@ -257,10 +262,31 @@ func (q *Queries) SetGitHubApp(ctx context.Context, arg SetGitHubAppParams) erro
 		arg.HtmlUrl,
 		arg.PrivateKey,
 		arg.WebhookSecret,
+		arg.ClientID,
+		arg.ClientSecret,
 		arg.CreatedBy,
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const setGitHubAppClient = `-- name: SetGitHubAppClient :execrows
+UPDATE github_app SET client_id = ?, client_secret = ? WHERE id = 1
+`
+
+type SetGitHubAppClientParams struct {
+	ClientID     string
+	ClientSecret []byte
+}
+
+// Gives the App its OAuth client (ADR 0066), for Apps made before Dock
+// kept it. No row affected: there is no App.
+func (q *Queries) SetGitHubAppClient(ctx context.Context, arg SetGitHubAppClientParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setGitHubAppClient, arg.ClientID, arg.ClientSecret)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setGitHubInstallation = `-- name: SetGitHubInstallation :exec

@@ -5840,6 +5840,9 @@
           "url": {
             "description": "The App's page on GitHub",
             "type": "string"
+          },
+          "verifies_installs": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -5848,6 +5851,7 @@
           "name",
           "owner",
           "url",
+          "verifies_installs",
           "created_by",
           "created_at"
         ],
@@ -5859,8 +5863,24 @@
           "owner": {
             "maxLength": 39,
             "type": "string"
+          },
+          "public": {
+            "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "GitHubClientSecretRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_secret": {
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_secret"
+        ],
         "type": "object"
       },
       "GitHubInstallation": {
@@ -6034,6 +6054,9 @@
         "properties": {
           "app": {
             "$ref": "#/components/schemas/GitHubApp"
+          },
+          "callback_url": {
+            "type": "string"
           },
           "hooks_hint": {
             "type": "string"
@@ -21565,9 +21588,132 @@
         ]
       }
     },
+    "/api/v1/github/app/client-secret": {
+      "put": {
+        "description": "For an App made before Dock kept its OAuth client: generate a client secret in the App's settings on GitHub and add the callback URL `GET /github` shows. Dock checks the secret with GitHub, then checks who installs the App. Operators only.",
+        "operationId": "set-github-app-client-secret",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubClientSecretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set the GitHub App's client secret",
+        "tags": [
+          "github"
+        ]
+      }
+    },
     "/api/v1/github/installations": {
       "post": {
-        "description": "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which assigns the installation to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any.",
+        "description": "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and assigns it to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any.",
         "operationId": "install-github-app",
         "parameters": [
           {

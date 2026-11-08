@@ -18,7 +18,7 @@ import (
 func newGitHubCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "github", Short: "The GitHub App that deploys pushes without per-service webhooks or tokens"})
 	app := group(&cobra.Command{Use: "app", Short: "Create or remove Dock's GitHub App (operator)"})
-	app.AddCommand(newGitHubAppCreateCmd(g), newGitHubAppRemoveCmd(g))
+	app.AddCommand(newGitHubAppCreateCmd(g), newGitHubAppSecretCmd(g), newGitHubAppRemoveCmd(g))
 	cmd.AddCommand(newGitHubStatusCmd(g), app, newGitHubInstallationsCmd(g), newGitHubInstallCmd(g), newGitHubAssignCmd(g), newGitHubUnassignCmd(g), newGitHubReposCmd(g))
 	return cmd
 }
@@ -94,9 +94,16 @@ func newGitHubStatusCmd(g *globals) *cobra.Command {
 					g.io.Successf("Dock has no GitHub App. Create one with `dock github app create`.")
 					return nil
 				}
+				installs := "checked against the installer's GitHub account"
+				if !st.App.VerifiesInstalls {
+					installs = "unchecked: only operators' install links work"
+				}
 				if err := g.io.Fields("app", st.App.Name+" ("+st.App.URL+")", "owner", st.App.Owner, "webhook", dash(st.WebhookURL),
-					"created", ago(st.App.CreatedAt)+" by "+st.App.CreatedBy); err != nil {
+					"installs", installs, "created", ago(st.App.CreatedAt)+" by "+st.App.CreatedBy); err != nil {
 					return err
+				}
+				if !st.App.VerifiesInstalls {
+					g.io.Warnf("The App was made before Dock kept its client secret. In its settings on GitHub, add the callback URL %s and generate a client secret, then: printf %%s \"$SECRET\" | dock github app secret", st.CallbackURL)
 				}
 				if st.InstallationsError != "" {
 					g.io.Warnf("GitHub couldn't list the installations: %s", st.InstallationsError)
@@ -137,11 +144,15 @@ page on Dock, which sends the App's manifest to GitHub. Confirm the App's
 name there; GitHub then sends you back to Dock, which stores the App's key.
 
 The App can read code and metadata, post commit statuses, and receives
-pushes at Dock's public address (` + "`dock address set`" + `). It is private:
-only the account that owns it (yours, or --owner) can install it. Then
-install it for an org with ` + "`dock github install <org>`" + `.`,
+pushes at Dock's public address (` + "`dock address set`" + `). It is private
+unless --public: only the account that owns it (yours, or --owner) can
+install it. A public App can be installed by any GitHub account, so orgs
+deploy from their own; Dock checks with GitHub that whoever installs it
+can access the installation. GitHub can make a private App public later,
+but not the reverse once others have installed it. Then install it for an
+org with ` + "`dock github install <org>`" + `.`,
 		Example: `  dock github app create
-  dock github app create --owner acme`,
+  dock github app create --owner acme --public`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
@@ -162,8 +173,45 @@ install it for an org with ` + "`dock github install <org>`" + `.`,
 		},
 	}
 	cmd.Flags().StringVar(&req.Owner, "owner", "", "GitHub organization to own the App (default: your own account)")
+	cmd.Flags().BoolVar(&req.Public, "public", false, "let any GitHub account install the App")
 	cmd.Flags().BoolVar(&open, "open", true, "open the link in a browser")
 	return cmd
+}
+
+// newGitHubAppSecretCmd is `dock github app secret`: the client secret of
+// an App made before Dock kept it (ADR 0066), so installs are checked.
+func newGitHubAppSecretCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "secret",
+		Short: "Give Dock the GitHub App's client secret, read from stdin (operator)",
+		Long: `Give Dock the client secret of a GitHub App made before Dock kept it.
+In the App's settings on GitHub, add the callback URL ` + "`dock github status`" + `
+shows and generate a client secret, then pipe it in. Dock checks it with
+GitHub. From then on, Dock checks with GitHub that whoever installs the App
+can access the installation, and an org's admins can install it for their
+org. Apps made since need nothing.`,
+		Example: `  printf %s "$CLIENT_SECRET" | dock github app secret`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			secret, err := readClientSecret(g, "dock github app secret")
+			if err != nil {
+				return err
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			if err := s.api.JSON(cmd.Context(), http.MethodPut, apiPrefix+"/github/app/client-secret", apitypes.GitHubClientSecretRequest{ClientSecret: secret}, nil); err != nil {
+				return err
+			}
+			return g.io.Print(struct {
+				VerifiesInstalls bool `json:"verifies_installs"`
+			}{true}, func() error {
+				g.io.Successf("Stored the GitHub App's client secret; installs are now checked with GitHub")
+				return nil
+			})
+		},
+	}
 }
 
 func newGitHubAppRemoveCmd(g *globals) *cobra.Command {
@@ -206,9 +254,10 @@ func newGitHubInstallCmd(g *globals) *cobra.Command {
 		Use:   "install [<org>]",
 		Short: "Install the GitHub App for the organization (admin; another org: operator)",
 		Long: `Print the GitHub App's install link for the organization (valid for an hour).
-On GitHub, choose the account and repositories; GitHub then sends you back
-to Dock, which lets the organization deploy from them, unless another
-organization has that installation. An operator may name any org.`,
+On GitHub, choose the account and repositories, then authorize the App:
+Dock checks with GitHub that you can access the installation and lets the
+organization deploy from it, unless another organization has it. An
+operator may name any org.`,
 		Example: `  dock github install
   dock github install default`,
 		Args: cobra.MaximumNArgs(1),

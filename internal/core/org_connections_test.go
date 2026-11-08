@@ -1,7 +1,6 @@
 package core
 
 import (
-	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -393,16 +392,7 @@ func TestGitHubInstallByOrgAdmin(t *testing.T) {
 	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
 	deployer := h.in(h.member("dev@x", map[string]apitypes.Scope{"test": apitypes.ScopeDeploy}), "test")
 	other := h.in(h.member("bob@x", map[string]apitypes.Scope{"acme": apitypes.ScopeAdmin}), "acme")
-	install := func(a Actor, org string) error {
-		t.Helper()
-		link, err := h.c.StartGitHubInstall(h.ctx, a, apitypes.GitHubOrgRequest{Org: org})
-		if err != nil {
-			return err
-		}
-		u, _ := url.Parse(link.URL)
-		_, err = h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state"))
-		return err
-	}
+	install := func(a Actor, org string) error { return h.installApp(a, org, fakeInstall, octo) }
 	assignedTo := func() int64 {
 		t.Helper()
 		inst, err := h.store.GetGitHubInstallation(h.ctx, fakeInstall)

@@ -5,12 +5,18 @@ SELECT * FROM github_app WHERE id = 1;
 -- name: SetGitHubApp :exec
 -- Stores the App registered through the manifest flow, replacing any
 -- earlier one.
-INSERT INTO github_app (id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, created_by, created_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO github_app (id, app_id, hook_id, slug, name, owner, html_url, private_key, webhook_secret, client_id, client_secret, created_by, created_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     app_id = excluded.app_id, hook_id = excluded.hook_id, slug = excluded.slug, name = excluded.name, owner = excluded.owner,
     html_url = excluded.html_url, private_key = excluded.private_key, webhook_secret = excluded.webhook_secret,
+    client_id = excluded.client_id, client_secret = excluded.client_secret,
     created_by = excluded.created_by, created_at = excluded.created_at;
+
+-- name: SetGitHubAppClient :execrows
+-- Gives the App its OAuth client (ADR 0066), for Apps made before Dock
+-- kept it. No row affected: there is no App.
+UPDATE github_app SET client_id = ?, client_secret = ? WHERE id = 1;
 
 -- name: DeleteGitHubApp :exec
 DELETE FROM github_app;
