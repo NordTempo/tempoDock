@@ -207,3 +207,23 @@ jobs:
             exit 1
           fi
 
+  # The landing page (site/): types, Biome and a static build.
+  site:
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: site/package.json
+          cache: true
+          cache_dependency_path: site/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+

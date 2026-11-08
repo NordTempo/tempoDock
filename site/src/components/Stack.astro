@@ -1,0 +1,81 @@
+---
+import { levelOpacity, plane } from "../iso";
+import { layers } from "../layers";
+
+/**
+ * The feature stack: one dot plane per layer, top layer highlighted. With
+ * `ruler`, a ruler on the right names each layer; hovering a name dims the
+ * other layers (CSS only, no script).
+ */
+interface Props {
+  ruler?: boolean;
+  class?: string;
+}
+
+const { ruler = false, class: className } = Astro.props;
+
+const width = ruler ? 640 : 380;
+const height = 500;
+const rulerX = 430;
+const top = layers.length - 1;
+
+const planes = layers.map((layer, k) => ({
+  layer,
+  highlight: k === top,
+  ...plane({ cx: 185, oy: 16 + (top - k) * 54, pattern: layer.pattern }),
+}));
+
+const ticks = Array.from({ length: 48 }, (_, t) => ({
+  y: 16 + t * 10,
+  long: t % 4 === 0,
+}));
+
+// Hovering a ruler label dims every other layer.
+const hoverCss = layers
+  .map(
+    (l) =>
+      `.stack:has([data-label="${l.id}"]:hover) [data-layer]:not([data-layer="${l.id}"]){opacity:.15}`,
+  )
+  .join("");
+---
+
+<div class:list={["stack relative", className]} style={`aspect-ratio:${width}/${height}`}>
+  <svg viewBox={`0 0 ${width} ${height}`} class="absolute inset-0 h-full w-full" aria-hidden="true">
+    {ruler && (
+      <g stroke="#262626">
+        <line x1={rulerX} y1="16" x2={rulerX} y2="490" />
+        {ticks.map((t) => <line x1={rulerX} y1={t.y} x2={rulerX + (t.long ? 12 : 6)} y2={t.y} />)}
+      </g>
+    )}
+    {planes.map((p) => (
+      <g data-layer={p.layer.id} class="transition-opacity duration-150">
+        <polygon points={p.outline} fill="rgba(0,0,0,.72)" stroke={p.highlight ? "#5b4a99" : "#2c2c2c"} />
+        {p.dots.map((dot) => <path d={dot.d} fill={p.layer.color} opacity={levelOpacity[dot.level]} />)}
+        {ruler && (
+          <line
+            x1={p.corner[0]}
+            y1={p.corner[1]}
+            x2={rulerX}
+            y2={p.corner[1]}
+            stroke={p.highlight ? "#5b4a99" : "#1e1e1e"}
+          />
+        )}
+      </g>
+    ))}
+  </svg>
+  {ruler && planes.map((p) => (
+    <div
+      data-label={p.layer.id}
+      class="absolute -translate-y-[60%] cursor-default font-mono leading-tight"
+      style={`left:${((rulerX + 17) / width) * 100}%;top:${(p.corner[1] / height) * 100}%`}
+    >
+      <span
+        class="eyebrow px-1 py-px"
+        style={p.highlight ? `background:${p.layer.color};color:#000` : `color:${p.layer.color}`}
+      >{p.layer.name}</span>
+      <span class="mt-0.5 hidden px-1 text-[10.5px] text-meta sm:block">{p.layer.detail}</span>
+    </div>
+  ))}
+</div>
+
+{ruler && <style is:inline set:html={hoverCss}></style>}

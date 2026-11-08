@@ -1,0 +1,28 @@
+---
+/**
+ * A page section: a top rule, a two-line heading (the second line dim) and,
+ * optionally, a short paragraph beside it.
+ */
+interface Props {
+  id?: string;
+  title: string;
+  dim?: string;
+}
+
+const { id, title, dim } = Astro.props;
+---
+
+<section id={id} class="border-t border-line">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 md:px-14 lg:py-[100px]">
+    <div class="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+      <h2 class="heading max-w-[820px]">
+        {title}
+        {dim && <><br /><span class="text-dim">{dim}</span></>}
+      </h2>
+      {Astro.slots.has("aside") && (
+        <p class="max-w-[380px] text-base leading-[1.55] text-body"><slot name="aside" /></p>
+      )}
+    </div>
+    <div class="mt-12 lg:mt-14"><slot /></div>
+  </div>
+</section>

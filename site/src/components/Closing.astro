@@ -1,0 +1,21 @@
+---
+import { earlyAccessHref, site } from "../site";
+import Button from "./Button.astro";
+import Stack from "./Stack.astro";
+---
+
+<section class="relative overflow-hidden border-t border-line">
+  <div class="pointer-events-none absolute top-8 right-5 hidden w-[380px] opacity-55 md:block">
+    <Stack />
+  </div>
+  <div class="relative mx-auto max-w-[1200px] px-6 py-24 md:px-14 lg:py-[110px]">
+    <h2 class="text-5xl leading-none font-[650] tracking-[-0.045em] sm:text-[72px]">Your servers.<br />Your platform.</h2>
+    <p class="mt-6 mb-8 max-w-[460px] text-[19px] leading-normal text-sub">
+      Tempo Dock is in early access. Tell us where you host and we'll help you move in.
+    </p>
+    <div class="flex flex-wrap items-center gap-5">
+      <Button href={earlyAccessHref}>Get early access →</Button>
+      <a href={earlyAccessHref} class="font-mono text-sm text-meta hover:text-white">{site.earlyAccessEmail}</a>
+    </div>
+  </div>
+</section>

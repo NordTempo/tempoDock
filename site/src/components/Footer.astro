@@ -1,0 +1,14 @@
+---
+import { site } from "../site";
+---
+
+<footer class="border-t border-line">
+  <div class="mx-auto flex max-w-[1200px] flex-wrap items-center gap-x-7 gap-y-3 px-6 pt-7 pb-9 font-mono text-sm text-neutral-500 md:px-14">
+    <span class="font-sans font-semibold text-white">Tempo Dock</span>
+    <span>by NordTempo</span>
+    <span class="flex-1"></span>
+    <a href={site.consoleUrl} class="hover:text-white">Console</a>
+    <a href={`mailto:${site.earlyAccessEmail}`} class="hover:text-white">Contact</a>
+    <span class="text-deploys">● this site runs on Dock</span>
+  </div>
+</footer>

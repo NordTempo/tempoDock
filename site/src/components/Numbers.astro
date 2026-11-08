@@ -1,0 +1,25 @@
+---
+import Section from "./Section.astro";
+
+/** Measured numbers, from docs/performance.md. Update them with the budgets. */
+const numbers = [
+  ["29 MB", "IDLE MEMORY"],
+  ["0%", "IDLE CPU"],
+  ["32 MB", "BINARY, UI INCLUDED"],
+  ["1", "SQLITE FILE"],
+] as const;
+---
+
+<Section id="performance" title="Lighter than" dim="the apps it runs.">
+  <Fragment slot="aside">
+    Idle means idle: no polling, no timers. Every release is measured against a performance budget before it ships.
+  </Fragment>
+  <div class="grid grid-cols-2 border-t border-line lg:grid-cols-4">
+    {numbers.map(([value, label], n) => (
+      <div class:list={["border-line py-7", n % 2 === 1 && "border-l pl-6", n === 2 && "lg:border-l lg:pl-6"]}>
+        <p class="text-5xl leading-none font-semibold tracking-[-0.04em] lg:text-[64px]">{value}</p>
+        <p class="eyebrow mt-3 text-neutral-500">{label}</p>
+      </div>
+    ))}
+  </div>
+</Section>

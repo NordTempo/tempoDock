@@ -1,0 +1,5 @@
+# @astrojs/check's TSX converter runs on @napi-rs/wasm-runtime, whose open
+# peer range resolves @emnapi/runtime to a 2.0 beta that crashes with
+# @emnapi/core 1.x ("this.bridge.setLastError is not a function").
+overrides:
+  '@emnapi/runtime': 1.11.3

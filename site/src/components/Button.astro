@@ -1,0 +1,23 @@
+---
+/** A link styled as the page's square button: solid white or outlined. */
+interface Props {
+  href: string;
+  variant?: "primary" | "secondary";
+  size?: "md" | "sm";
+}
+
+const { href, variant = "primary", size = "md" } = Astro.props;
+---
+
+<a
+  href={href}
+  class:list={[
+    "inline-flex items-center gap-2 whitespace-nowrap border font-[550] transition-colors",
+    size === "md" ? "px-5 py-3 text-[15px]" : "px-3.5 py-2 text-sm",
+    variant === "primary"
+      ? "border-white bg-white text-black hover:bg-neutral-200"
+      : "border-edge text-white hover:border-neutral-500",
+  ]}
+>
+  <slot />
+</a>

@@ -1,0 +1,101 @@
+---
+import { levelOpacity, type Plane, plane } from "../iso";
+import Section from "./Section.astro";
+
+/** One mini illustration: planes drawn bottom to top, and a caption. */
+interface Illustration {
+  planes: { plane: Plane; dashed?: boolean; hollow?: boolean }[];
+  caption: string;
+}
+
+const gray = "#6b6b6b";
+
+const rent: Illustration = {
+  planes: [
+    {
+      plane: plane({
+        cx: 150,
+        oy: 20,
+        size: 150,
+        n: 10,
+        pattern: (i, j) => ((i + j) % 2 ? 0 : 2),
+      }),
+      dashed: true,
+    },
+  ],
+  caption: "THEIR CLOUD",
+};
+const panel: Illustration = {
+  planes: [
+    { plane: plane({ cx: 150, oy: 50, size: 130, n: 9 }) },
+    {
+      plane: plane({ cx: 150, oy: 10, size: 130, n: 9, pattern: () => 0 }),
+      dashed: true,
+      hollow: true,
+    },
+  ],
+  caption: "YOUR SERVER, NO AGENT LAYER",
+};
+const cluster: Illustration = {
+  planes: Array.from({ length: 9 }, (_, n) => ({
+    plane: plane({
+      cx: 150,
+      oy: 8 + (8 - n) * 10,
+      size: 110,
+      n: 8,
+      pattern: n === 8 ? (i, j) => ((i * j) % 3 === 0 ? 2 : 0) : () => 0,
+    }),
+  })),
+  caption: "NINE LAYERS TO LEARN",
+};
+
+const cards = [
+  {
+    art: rent,
+    title: "A hosted platform.",
+    body: "Great to use. Not your servers. The bill grows with every app.",
+    who: "Railway · Render · Heroku",
+  },
+  {
+    art: panel,
+    title: "A self-hosted panel.",
+    body: "Your servers. Built for people clicking, not agents shipping.",
+    who: "Coolify · Dokploy · Dokku",
+  },
+  {
+    art: cluster,
+    title: "An orchestrator.",
+    body: "Everything is possible. For a platform team you don't have.",
+    who: "Kubernetes · Nomad",
+  },
+];
+---
+
+<Section title="Rent a platform or build one." dim="Neither is yours.">
+  <div class="grid md:grid-cols-3">
+    {cards.map((card, n) => (
+      <div class="border-line py-7 md:border-l md:px-7 md:first:border-l-0 md:first:pl-0">
+        <svg viewBox="0 0 300 216" class="w-full max-w-[300px]" aria-hidden="true">
+          {card.art.planes.map(({ plane: p, dashed, hollow }) => (
+            <g>
+              <polygon
+                points={p.outline}
+                fill={hollow ? "none" : "rgba(0,0,0,.72)"}
+                stroke={dashed ? "#3a3a3a" : "#2c2c2c"}
+                stroke-dasharray={dashed ? "4 4" : undefined}
+              />
+              {p.dots.map((dot) => <path d={dot.d} fill={gray} opacity={levelOpacity[dot.level]} />)}
+            </g>
+          ))}
+          <text x="150" y="212" fill="#5c5c5c" font-size="10" letter-spacing="1.4" text-anchor="middle" class="font-mono">
+            {card.art.caption}
+          </text>
+        </svg>
+        <p class="eyebrow mt-6 text-dim">0{n + 1}</p>
+        <h3 class="mt-2 text-[22px] font-semibold tracking-[-0.02em]">{card.title}</h3>
+        <p class="mt-2 text-base leading-[1.55] text-body">{card.body}</p>
+        <p class="mt-3.5 font-mono text-[13px] text-neutral-500">{card.who}</p>
+      </div>
+    ))}
+  </div>
+</Section>

@@ -1,0 +1,15 @@
+---
+import { type Line, tones } from "../terminal";
+
+/** A terminal transcript, one fixed-height row per line (23px). */
+interface Props {
+  lines: Line[];
+  class?: string;
+}
+
+const { lines, class: className } = Astro.props;
+---
+
+<pre class:list={["overflow-x-auto font-mono text-[13px] leading-[23px]", className]}>{
+  lines.map((line) => <div class={tones[line.tone]}>{line.text}</div>)
+}</pre>

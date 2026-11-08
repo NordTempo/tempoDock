@@ -1,0 +1,90 @@
+---
+import type { Line } from "../terminal";
+import Section from "./Section.astro";
+import Terminal from "./Terminal.astro";
+
+/** The feature each output line belongs to, wired to its slab on wide screens. */
+const slabs = [
+  { name: "DEPLOYS", color: "#4ade80" },
+  { name: "DOMAINS", color: "#fbbf24" },
+  { name: "ERRORS", color: "#f87171" },
+  { name: "ANALYTICS", color: "#67e8f9" },
+  { name: "APPROVALS", color: "#a78bfa" },
+] as const;
+
+type Wired = Line & { slab?: number };
+
+const lines: Wired[] = [
+  { text: "$ dock deploy", tone: "cmd" },
+  { text: "  ✓ built in 38s, release v42", tone: "ok", slab: 0 },
+  { text: "  ✓ health check passed, traffic switched", tone: "ok", slab: 0 },
+  { text: "  ✓ app.nordtempo.no, TLS valid", tone: "warn", slab: 1 },
+  { text: "$ dock errors -s web", tone: "cmd" },
+  { text: "  TypeError: cart is undefined  ×23", tone: "bad", slab: 2 },
+  { text: "$ dock analytics stats shop", tone: "cmd" },
+  { text: "  12.4k visits  +8%", tone: "info", slab: 3 },
+  { text: "$ dock service archive postgres", tone: "cmd" },
+  {
+    text: "  ✗ production is locked: waits for an admin",
+    tone: "warn",
+    slab: 4,
+  },
+];
+
+// Geometry shared by the terminal and the wires: a 1px border, 18px padding
+// and 23px rows.
+const pad = 1 + 18;
+const row = 23;
+const height = pad * 2 + lines.length * row;
+const slabY = (k: number) => 12 + k * ((height - 24) / slabs.length);
+const slabH = 38;
+const wires = lines.flatMap((line, n) => {
+  if (line.slab === undefined) return [];
+  const slab = slabs[line.slab];
+  if (!slab) return [];
+  const y1 = pad + n * row + row / 2;
+  const y2 = slabY(line.slab) + slabH / 2;
+  return [{ d: `M0 ${y1}C100 ${y1},100 ${y2},200 ${y2}`, color: slab.color }];
+});
+// Sparse dot texture inside each slab, a different rhythm per feature.
+const texture = (k: number) =>
+  Array.from({ length: 40 * 4 }, (_, n) => ({
+    i: n % 40,
+    j: Math.floor(n / 40),
+  })).filter(({ i, j }) => (i * 3 + j * 5 + k) % (k + 3) === 0);
+---
+
+<Section id="agents" title="Let agents ship." dim="They can't break prod.">
+  <Fragment slot="aside">
+    Agents use the same CLI, API and MCP as you, with tokens scoped to what they need. Anything risky in production
+    waits for a person to approve it.
+  </Fragment>
+  <div class="flex">
+    <Terminal
+      lines={lines}
+      class="w-full border border-[#222] bg-panel px-[22px] py-[18px] lg:w-[560px] lg:shrink"
+    />
+    <svg
+      viewBox={`0 0 200 ${height}`}
+      preserveAspectRatio="none"
+      class="hidden min-w-12 flex-1 lg:block"
+      style={`height:${height}px`}
+      aria-hidden="true"
+    >
+      {wires.map((w) => (
+        <path d={w.d} stroke={w.color} stroke-opacity=".35" fill="none" vector-effect="non-scaling-stroke" />
+      ))}
+    </svg>
+    <svg viewBox={`0 0 328 ${height}`} class="hidden w-[328px] shrink-0 lg:block" aria-hidden="true">
+      {slabs.map((slab, k) => (
+        <g transform={`translate(0 ${slabY(k)})`}>
+          <rect x=".5" width="327" height={slabH} fill="#000" stroke="#262626" />
+          <text x="12" y="24" fill={slab.color} font-size="11" letter-spacing="1.6" class="font-mono">{slab.name}</text>
+          {texture(k).map(({ i, j }) => (
+            <rect x={130 + i * 4.6} y={7 + j * 7} width="2" height="2" fill={slab.color} opacity=".6" />
+          ))}
+        </g>
+      ))}
+    </svg>
+  </div>
+</Section>
