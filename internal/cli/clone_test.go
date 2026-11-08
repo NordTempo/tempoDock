@@ -22,7 +22,7 @@ func TestCloneAndExport(t *testing.T) {
 	for _, args := range [][]string{
 		{"deploy", "-p", "shop", "-e", "production", "-s", "web", "--image", "web:1"},
 		{"env", "set", "API_KEY=k-7f3a", "-p", "shop", "-e", "production", "-s", "web", "--deploy"},
-		{"domain", "add", "shop.example.com", "-p", "shop", "-e", "production", "-s", "web"},
+		{"domain", "add", "shop.example.com", "-p", "shop", "-e", "production", "-s", "web", "--detach"},
 	} {
 		if code, _, stderr := exec(t, args...); code != 0 {
 			t.Fatalf("%v: %s", args, stderr)

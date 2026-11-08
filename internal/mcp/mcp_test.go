@@ -28,7 +28,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/secrets"
-	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/store/storetest"
 )
 
 // fixture is a daemon on the fake runtime with two projects:
@@ -50,13 +50,7 @@ func newFixture(t testing.TB) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
-	st, err := store.Open(ctx, filepath.Join(dir, "dock.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CreateOrg(ctx, store.CreateOrgParams{Slug: "test", Name: "test"}); err != nil {
-		t.Fatal(err)
-	}
+	st := storetest.Open(t, filepath.Join(dir, "dock.db"))
 	box, _ := secrets.New(bytes.Repeat([]byte{1}, secrets.KeySize))
 	cfg := config.Default()
 	cfg.DataDir = dir
