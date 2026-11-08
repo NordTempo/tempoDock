@@ -13,17 +13,37 @@ import {
   PageBar,
   StateText,
 } from "../../ui/kit";
-import { nameProblem, toName } from "../create/form";
+import {
+  autofocus,
+  Field,
+  Fields,
+  Footer,
+  input,
+  invalid,
+  nameProblem,
+  toName,
+  useValidation,
+} from "../create/form";
+import {
+  InviteLink,
+  type InviteLinkInfo,
+  LocalLinkNote,
+  useInviteBase,
+} from "../org/inviteLink";
 import {
   type ConsoleOrg,
   type Role,
   useAddConsoleMember,
+  useConsoleInvites,
   useConsoleMembers,
   useConsoleOrgs,
+  useCreateConsoleInvite,
+  useCreateConsoleOrg,
   useDeleteConsoleOrg,
   useJoinConsoleOrg,
   useRemoveConsoleMember,
   useRenameConsoleOrg,
+  useRevokeConsoleInvite,
   useSetConsoleMemberRole,
   useStopConsoleOrg,
   useSuspendConsoleOrg,
@@ -33,6 +53,7 @@ import {
 // first, with the numbers that rank them, and the selected one's people,
 // use and the operator's actions in a column beside it (under it below
 // 1400px). Orgs and use only: an org's alerts and errors are its admins'.
+// The operator may create an org with nobody in it and invite its people.
 
 /** Cores from a CPU percent of one core: "1.84". */
 const cores = (percent: number) => (percent / 100).toFixed(2);
@@ -55,6 +76,9 @@ const statusState = {
 export function OrgsPage({ selected }: { selected?: string }) {
   const orgs = useConsoleOrgs(true);
   const navigate = useNavigate();
+  const [creating, setCreating] = useState(false);
+  // The org just created opens on its people, to invite them.
+  const [created, setCreated] = useState<string>();
   const current = orgs.find((o) => o.slug === selected) ?? orgs[0];
   const maxCPU = Math.max(1, ...orgs.map((o) => o.usage.cpu_percent));
   const maxMem = Math.max(1, ...orgs.map((o) => o.usage.memory_bytes));
@@ -78,7 +102,23 @@ export function OrgsPage({ selected }: { selected?: string }) {
             {cores(totals.cpu)} CPU · {size(totals.memory)}
           </span>
         }
+        actions={
+          <Button primary onClick={() => setCreating(true)}>
+            New organization
+          </Button>
+        }
       />
+      {creating && (
+        <CreateOrg
+          taken={orgs.map((o) => o.slug)}
+          onCreated={(slug) => {
+            setCreating(false);
+            setCreated(slug);
+            pick(slug);
+          }}
+          onClose={() => setCreating(false)}
+        />
+      )}
       <Page>
         <div className="grid gap-x-8 gap-y-6 min-[1400px]:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 overflow-x-auto border-t border-line">
@@ -155,7 +195,13 @@ export function OrgsPage({ selected }: { selected?: string }) {
               </tbody>
             </table>
           </div>
-          {current && <Detail key={current.slug} org={current} />}
+          {current && (
+            <Detail
+              key={current.slug}
+              org={current}
+              initial={current.slug === created ? "members" : undefined}
+            />
+          )}
         </div>
       </Page>
     </>
@@ -177,8 +223,8 @@ function Bar({ share, hot }: { share: number; hot?: boolean }) {
 type Opened = "rename" | "members" | "join" | "stop" | "suspend" | "delete";
 
 /** The selected org: who runs it, what it uses, and the operator's actions. */
-function Detail({ org: o }: { org: ConsoleOrg }) {
-  const [open, setOpen] = useState<Opened | null>(null);
+function Detail({ org: o, initial }: { org: ConsoleOrg; initial?: Opened }) {
+  const [open, setOpen] = useState<Opened | null>(initial ?? null);
   const up = growth(o);
   const close = () => setOpen(null);
   const u = o.usage;
@@ -243,7 +289,9 @@ function Detail({ org: o }: { org: ConsoleOrg }) {
         <div className="flex flex-col gap-1.5">
           <h3 className="text-[13px] font-semibold">Operate</h3>
           <Button onClick={() => setOpen("rename")}>Edit settings</Button>
-          <Button onClick={() => setOpen("members")}>Manage members</Button>
+          <Button onClick={() => setOpen("members")}>
+            Members and invites
+          </Button>
           <Button onClick={() => setOpen("join")}>Join as operator</Button>
           <Button onClick={() => setOpen("stop")} disabled={o.services === 0}>
             Stop all services
@@ -271,6 +319,82 @@ function Detail({ org: o }: { org: ConsoleOrg }) {
 }
 
 type DialogProps = { org: ConsoleOrg; onClose: () => void };
+
+/**
+ * A new org with nobody in it: a slug and an optional name. Its people
+ * come in through invites, opened once it exists.
+ */
+function CreateOrg({
+  taken,
+  onCreated,
+  onClose,
+}: {
+  taken: readonly string[];
+  onCreated: (slug: string) => void;
+  onClose: () => void;
+}) {
+  const create = useCreateConsoleOrg();
+  const [slug, setSlug] = useState("");
+  const [name, setName] = useState("");
+  const v = useValidation();
+  const problem = nameProblem("org", slug, taken);
+  const slugError = problem ?? v.required(!slug, "Enter a slug, like acme.");
+  return (
+    <Dialog title="New organization" onClose={onClose}>
+      <form
+        ref={v.form}
+        aria-label="New organization"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!v.check(!!slug && !problem)) return;
+          create.mutate(
+            { slug, ...(name.trim() && { name: name.trim() }) },
+            { onSuccess: (o) => onCreated(o.slug) },
+          );
+        }}
+      >
+        <Fields>
+          <Field
+            label="Slug"
+            error={slugError}
+            note={`Its address: ${window.location.host}/${slug || "acme"}`}
+          >
+            <input
+              ref={autofocus}
+              value={slug}
+              onChange={(e) => setSlug(toName(e.target.value))}
+              placeholder="acme"
+              spellCheck={false}
+              autoComplete="off"
+              aria-invalid={!!slugError}
+              className={`${input} ${invalid(slugError)}`}
+            />
+          </Field>
+          <Field label="Name" note="Optional; the slug if empty.">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Acme"
+              autoComplete="off"
+              className={input}
+            />
+          </Field>
+        </Fields>
+        <p className="mt-3 text-xs text-mut">
+          Nobody is in it yet, not even you. Invite its admin next.
+        </p>
+        <Footer
+          submit="Create organization"
+          pending={create.isPending}
+          problem={v.problem([!slug && "a slug"], !!problem)}
+          error={create.error}
+          cli={[]}
+          onClose={onClose}
+        />
+      </form>
+    </Dialog>
+  );
+}
 
 /**
  * An org's name and slug (ADR 0064). A new slug asks first: the org's
@@ -376,20 +500,48 @@ function Rename({ org, onClose }: DialogProps) {
 
 const roles: Role[] = ["read", "deploy", "admin"];
 
+/**
+ * An org's people: members with their roles, open invites, and a row to
+ * invite someone by email or add an existing account. The first invite
+ * of an org without an admin is for an admin.
+ */
 function Members({ org, onClose }: DialogProps) {
   const members = useConsoleMembers(org.slug);
+  const invites = useConsoleInvites(org.slug);
   const setRole = useSetConsoleMemberRole();
   const remove = useRemoveConsoleMember();
+  const revoke = useRevokeConsoleInvite();
   const add = useAddConsoleMember();
+  const invite = useCreateConsoleInvite();
+  const base = useInviteBase(true);
   const [email, setEmail] = useState("");
-  const [role, setNewRole] = useState<Role>("admin");
+  const [role, setNewRole] = useState<Role>(
+    org.admins?.length ? "read" : "admin",
+  );
+  const [link, setLink] = useState<InviteLinkInfo>();
+  const typed = email.trim();
+  const valid = /^[^\s@]+@[^\s@]+$/.test(typed);
+  const empty = members.data?.length === 0 && invites.data?.length === 0;
   return (
-    <Dialog title={`Members of ${org.slug}`} onClose={onClose} wide>
+    <Dialog title={`People of ${org.slug}`} onClose={onClose} wide>
       <div className="flex flex-col gap-3">
-        {members.data ? (
+        {link && (
+          <InviteLink
+            link={link}
+            url={`${base.base}/invite/${link.code}`}
+            note={base.local && <LocalLinkNote operator />}
+            again="revoke it and invite them again for another."
+            onDone={() => setLink(undefined)}
+          />
+        )}
+        {empty ? (
+          <p className="text-[13px] text-mut">
+            Nobody yet. Invite its first admin below.
+          </p>
+        ) : (
           <table>
             <tbody>
-              {members.data.map((m) => (
+              {members.data?.map((m) => (
                 <tr key={m.id}>
                   <td className="py-1.5">
                     {m.name || m.email}
@@ -434,28 +586,70 @@ function Members({ org, onClose }: DialogProps) {
                   </td>
                 </tr>
               ))}
+              {invites.data?.map((i) => (
+                <tr key={`invite-${i.id}`}>
+                  <td className="py-1.5 text-mut">
+                    {i.email}
+                    <span className="block text-xs">
+                      {i.expired ? (
+                        <StateText state={{ tone: "mut", label: "expired" }} />
+                      ) : (
+                        <>
+                          <StateText
+                            state={{ tone: "warn", label: "invited" }}
+                          />{" "}
+                          until {day(i.expires_at)}
+                        </>
+                      )}
+                    </span>
+                  </td>
+                  <td className="py-1.5 text-xs text-mut">{i.role}</td>
+                  <td className="py-1.5 text-right">
+                    <Button
+                      small
+                      disabled={revoke.isPending}
+                      onClick={() => revoke.mutate({ org: org.slug, id: i.id })}
+                    >
+                      Revoke
+                    </Button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        ) : (
-          <ErrorText error={members.error} />
         )}
-        <ErrorText error={setRole.error ?? remove.error} />
+        <ErrorText
+          error={
+            members.error ??
+            invites.error ??
+            setRole.error ??
+            remove.error ??
+            revoke.error
+          }
+        />
+        {base.local && !link && <LocalLinkNote operator />}
         <form
           className="flex flex-wrap items-end gap-2 border-t border-line pt-3"
           onSubmit={(e) => {
             e.preventDefault();
-            add.mutate(
-              { org: org.slug, email: email.trim(), role },
-              { onSuccess: () => setEmail("") },
+            if (!valid) return;
+            invite.mutate(
+              { org: org.slug, email: typed, role },
+              {
+                onSuccess: (c) => {
+                  setEmail("");
+                  setLink({ email: c.invite.email, code: c.code });
+                },
+              },
             );
           }}
         >
           <label className="flex flex-1 flex-col gap-1.5 text-xs text-mut">
-            Add an existing user
+            Email
             <input
               className="field"
               type="email"
-              placeholder="email"
+              placeholder="name@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -472,14 +666,29 @@ function Members({ org, onClose }: DialogProps) {
               </option>
             ))}
           </select>
-          <Button
-            type="submit"
-            disabled={!email.includes("@") || add.isPending}
-          >
-            Add
+          <Button type="submit" primary disabled={!valid || invite.isPending}>
+            Create invite link
           </Button>
+          <Button
+            disabled={!valid || add.isPending}
+            onClick={() =>
+              add.mutate(
+                { org: org.slug, email: typed, role },
+                { onSuccess: () => setEmail("") },
+              )
+            }
+          >
+            Add existing user
+          </Button>
+          {!link && (
+            <p className="basis-full text-xs text-faint">
+              Dock doesn't send email: an invite gives you a link to send them.
+              It works once, for 7 days, for that address. An existing user is
+              added at once.
+            </p>
+          )}
         </form>
-        <DialogFoot note={<ErrorText error={add.error} />}>
+        <DialogFoot note={<ErrorText error={invite.error ?? add.error} />}>
           <Button onClick={onClose}>Done</Button>
         </DialogFoot>
       </div>

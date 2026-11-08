@@ -98,7 +98,9 @@ Operator actions on any org, each audited in the platform's log and the
 org's: edit its settings, manage its members (including giving an org
 without an admin one), suspend it (deploys and changes are refused, apps
 keep running) and unsuspend it, stop its services, and delete it (typing
-its name to confirm).
+its name to confirm). An operator may also create an org with nobody in
+it (2026-11-08) and invite its people, as its admins would: it shows as
+having no admin until someone accepts an admin invite.
 
 An org's content stays hidden from operators: variables, logs, data, code
 and the inside of its projects. **Join as operator** is the way in when

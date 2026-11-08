@@ -57,6 +57,7 @@ func TestConsoleIgnoresTheCurrentOrg(t *testing.T) {
 	paths := []string{
 		"/api/v1/console/orgs",
 		"/api/v1/console/orgs/acme/members",
+		"/api/v1/console/orgs/acme/invites",
 		"/api/v1/console/users",
 		"/api/v1/console/data-policy",
 		"/api/v1/alerts?platform=true",

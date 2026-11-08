@@ -73,6 +73,13 @@ func registerOperator(s *Server, a huma.API) {
 		return reply(s.core.OperatorOrgs(ctx, actor, in.ReadDisks))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "create-console-org", Method: http.MethodPost, Path: Prefix + "/console/orgs",
+		Summary: "Create an organization with no members", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "For the operator to invite its people into: it has no admin until someone accepts an admin invite. Audited in its log and the platform's. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.CreateOrgRequest }) (*out[apitypes.OperatorOrg], error) {
+		return reply(s.core.OperatorCreateOrg(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "rename-console-org", Method: http.MethodPatch, Path: consoleOrgT,
 		Summary: "Rename an organization", Tags: tags,
 		Description: "Changes any organization's name, slug or both, as its admins can; the old slug keeps naming it until another organization takes it. Audited in its log and the platform's. Operators only.",
@@ -156,5 +163,32 @@ func registerOperator(s *Server, a huma.API) {
 		Description: "Their account stays. The organization keeps an admin of its own. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *ConsoleMemberPath) (*struct{}, error) {
 		return nil, s.core.OperatorRemoveMember(ctx, actor, in.Org, in.User)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-console-org-invites", Method: http.MethodGet, Path: consoleOrgT + "/invites",
+		Summary: "List an organization's open invites", Tags: tags,
+		Description: "Newest first, expired ones too until revoked. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *ConsoleOrgPath) (*out[[]apitypes.Invite], error) {
+		return reply(s.core.OperatorInvites(ctx, actor, in.Org))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "create-console-org-invite", Method: http.MethodPost, Path: consoleOrgT + "/invites",
+		Summary: "Invite someone to an organization", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "As its admins do: the link's code is returned once, and it works once, for 7 days, only for the email. Audited in its log and the platform's. Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ConsoleOrgPath
+		Body apitypes.CreateInviteRequest
+	}) (*out[apitypes.CreatedInvite], error) {
+		return reply(s.core.OperatorCreateInvite(ctx, actor, in.Org, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "revoke-console-org-invite", Method: http.MethodDelete, Path: consoleOrgT + "/invites/{id}",
+		Summary: "Revoke an invite to an organization", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Operators only.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ConsoleOrgPath
+		ID int64 `path:"id"`
+	}) (*struct{}, error) {
+		return nil, s.core.OperatorRevokeInvite(ctx, actor, in.Org, in.ID)
 	})
 }

@@ -189,3 +189,46 @@ func TestOperatorDeletesOrg(t *testing.T) {
 		t.Fatalf("project = %+v, %v; want archived", p, err)
 	}
 }
+
+// An operator creates an org with nobody in it and invites its people:
+// it has no admin until an admin invite is accepted. Others may not.
+func TestOperatorCreatesOrgAndInvites(t *testing.T) {
+	h := newHarness(t)
+	op := h.operator("op@x")
+	ada := h.member("ada@x", nil)
+
+	if _, err := h.c.OperatorCreateOrg(h.ctx, ada, apitypes.CreateOrgRequest{Slug: "acme"}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a user created an org from the console: %v", err)
+	}
+	o, err := h.c.OperatorCreateOrg(h.ctx, op, apitypes.CreateOrgRequest{Slug: "acme", Name: "Acme"})
+	if err != nil || o.Name != "Acme" || o.Members != 0 || o.Status != apitypes.OrgNoAdmin {
+		t.Fatalf("create = %+v, %v; want an org with no members", o, err)
+	}
+	if _, err := h.c.OperatorCreateOrg(h.ctx, op, apitypes.CreateOrgRequest{Slug: "acme"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("created acme twice: %v", err)
+	}
+	if _, err := h.c.OperatorCreateInvite(h.ctx, ada, "acme", apitypes.CreateInviteRequest{Email: "ada@x", Role: apitypes.ScopeAdmin}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("a non-member invited into acme: %v", err)
+	}
+
+	inv, err := h.c.OperatorCreateInvite(h.ctx, op, "acme", apitypes.CreateInviteRequest{Email: "ada@x", Role: apitypes.ScopeAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := h.c.OperatorCreateInvite(h.ctx, op, "acme", apitypes.CreateInviteRequest{Email: "bob@x", Role: apitypes.ScopeRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.OperatorRevokeInvite(h.ctx, op, "acme", other.Invite.ID); err != nil {
+		t.Fatal(err)
+	}
+	if open, err := h.c.OperatorInvites(h.ctx, op, "acme"); err != nil || len(open) != 1 || open[0].Email != "ada@x" {
+		t.Fatalf("invites = %+v, %v; want ada's", open, err)
+	}
+	if _, err := h.c.AcceptInvite(h.ctx, ada, inv.Code); err != nil {
+		t.Fatal(err)
+	}
+	if o, _ := h.consoleOrg(op, "acme"); o.Status != apitypes.OrgActive || o.Owner != "ada@x" {
+		t.Fatalf("acme = %+v; want ada as its admin", o)
+	}
+}
