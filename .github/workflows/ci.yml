@@ -27,9 +27,8 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - id: go
+        uses: ./.github/actions/setup-go
       - name: Install golangci-lint
         run: tar -xzf "$(scripts/ci/fetch-release.sh golangci/golangci-lint v2.15.0 golangci-lint-2.15.0-linux-amd64.tar.gz 9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea)" -C "$RUNNER_TEMP" --strip-components=1 golangci-lint-2.15.0-linux-amd64/golangci-lint && echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
         env:
@@ -37,6 +36,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v8
         with:
           install-mode: none
+          skip-cache: ${{ steps.go.outputs.host-cache == 'true' }}
       # tempoBase must not link Dock's daemon (ADR 0024); skips until
       # cmd/tempobase exists.
       - run: make tempobase-deps
@@ -47,9 +47,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/setup-go
       - run: make test
 
   # The binaries and UIs are built by perf's artifacts job, which measures
@@ -58,9 +56,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/setup-go
       - name: Install Caddy
         run: sudo tar -xzf "$(scripts/ci/fetch-release.sh caddyserver/caddy v2.11.7 caddy_2.11.7_linux_amd64.tar.gz 727b91701a392de6ebc5027509f548bf39979e5216340d0faed8fa5e69c84f8b)" -C /usr/local/bin caddy
         env:
@@ -77,22 +73,20 @@ jobs:
 
   # The race detector on the packages with the most concurrency (deploys,
   # the event bus, SSE streams, MCP sessions). -race makes them several
-  # times slower than make test (core alone takes 15 to 20 minutes), so
-  # they run in three shards that split the tests by name
+  # times slower than make test (about 10 minutes on a busy runner), so
+  # they run in two shards that split the tests by name
   # (scripts/race-shard.sh); every test runs in exactly one shard.
   race:
-    name: race (${{ matrix.shard }}/3)
+    name: race (${{ matrix.shard }}/2)
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2]
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - run: make test-race SHARD=${{ matrix.shard }}/3
+      - uses: ./.github/actions/setup-go
+      - run: make test-race SHARD=${{ matrix.shard }}/2
 
   # Dock Analytics' store (ADR 0037): its own module with CGO and DuckDB,
   # which the root's lint and tests don't enter. The binary is built as
@@ -101,7 +95,8 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - id: go
+        uses: ./.github/actions/setup-go
         with:
           go-version-file: cmd/dock-analytics/go.mod
           cache-dependency-path: cmd/dock-analytics/go.sum
@@ -113,6 +108,7 @@ jobs:
         with:
           install-mode: none
           working-directory: cmd/dock-analytics
+          skip-cache: ${{ steps.go.outputs.host-cache == 'true' }}
       - run: make test-analytics
       - run: make analytics-binary
 
@@ -139,9 +135,7 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/setup-go
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -161,9 +155,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/setup-go
       # Timing warns, allocations fail (see perf-artifacts).
       - run: make perf-bench PERF_FLAGS="-soft-timing"
 
@@ -177,9 +169,7 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/setup-go
       # The version the committed sqlc output names in its header. The
       # checksum is the release asset's digest on GitHub.
       - name: Install sqlc

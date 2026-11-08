@@ -1,0 +1,42 @@
+# Go for a CI job, with its build, test and module caches on the runner
+# host when it has a cache volume (Zoomies mounts /opt/zoomies-cache in
+# every runner, shared by the host's slots and kept between jobs). Go's
+# caches are safe for several processes at once and trim entries unused
+# for five days. The build cache then holds -race builds too, and passing
+# tests whose inputs didn't change are not run again (go test's cache;
+# make test-integration passes -count=1). Elsewhere (Blacksmith through
+# CI_RUNNER) setup-go restores its cache from GitHub, a ~460 MB download
+# per job.
+name: Set up Go
+description: setup-go, with Go's caches on the runner host's cache volume when there is one
+inputs:
+  go-version-file:
+    description: the go.mod whose go line picks the version
+    default: go.mod
+  cache-dependency-path:
+    description: the go.sum keying setup-go's GitHub cache (no host cache only)
+    default: go.sum
+outputs:
+  host-cache:
+    description: "'true' when the caches are on the host, so the job skips GitHub caches"
+    value: ${{ steps.host.outputs.host-cache }}
+runs:
+  using: composite
+  steps:
+    - id: host
+      shell: bash
+      run: |
+        dir=/opt/zoomies-cache
+        if [ -d "$dir" ] && [ -w "$dir" ]; then
+          {
+            echo "GOCACHE=$dir/go/build"
+            echo "GOMODCACHE=$dir/go/mod"
+            echo "GOLANGCI_LINT_CACHE=$dir/golangci-lint"
+          } >> "$GITHUB_ENV"
+          echo "host-cache=true" >> "$GITHUB_OUTPUT"
+        fi
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: ${{ inputs.go-version-file }}
+        cache: ${{ steps.host.outputs.host-cache != 'true' }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}
