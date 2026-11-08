@@ -67,8 +67,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       # The analytics store's container test runs its binary (ADR 0037).
       - run: make analytics-binary VERSION=dev
+      # Temp dirs under the job's workspace: the tests bind-mount them into
+      # containers, and a runner's Docker daemon (a dind sidecar on Zoomies)
+      # shares the workspace with the job but not its /tmp.
       - name: Integration tests (Docker, Caddy, BuildKit)
         run: make test-integration
+        env:
+          TMPDIR: ${{ runner.temp }}
 
   # The race detector on the packages with the most concurrency (deploys,
   # the event bus, SSE streams, MCP sessions). -race makes them several
