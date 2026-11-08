@@ -1,16 +1,16 @@
-# Tempo Dock's landing site. Build context is the repo root (Dock builds with
-# the Dockerfile path site/Dockerfile).
+# Tempo Dock's landing site. The build context is site/ (Dock deploys it with
+# `dock git connect NordTempo/tempoDock --dir site`).
 FROM node:24-alpine AS build
 WORKDIR /site
 RUN corepack enable
-COPY site/package.json site/pnpm-lock.yaml site/pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY site/astro.config.ts site/tsconfig.json ./
-COPY site/public ./public
-COPY site/src ./src
+COPY astro.config.ts tsconfig.json ./
+COPY public ./public
+COPY src ./src
 RUN pnpm build
 
 FROM caddy:2-alpine
-COPY site/Caddyfile /etc/caddy/Caddyfile
+COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /site/dist /srv
 EXPOSE 8080

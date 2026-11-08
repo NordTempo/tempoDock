@@ -8,7 +8,7 @@ Caddy (`Dockerfile`, `Caddyfile`). Its own pnpm project, separate from `web/`.
 pnpm dev     # hot reload on :4321
 pnpm check   # astro check (types) and Biome
 pnpm build   # dist/
-docker build -f site/Dockerfile .   # from the repo root, as Dock builds it
+docker build site   # the image, built from site/ as Dock builds it
 ```
 
 - Keep it static. Interactions are CSS (the stack's hover is `:has()`),
