@@ -7,7 +7,7 @@
 # Lists the top-level tests of every package, sorts the unique names and
 # deals them round-robin into n shards; shard i runs its names in all the
 # packages with one go test -run. Each test runs in exactly one shard, a
-# new or renamed test included, and every shard gets about a third of each
+# new or renamed test included, and every shard gets an equal share of each
 # package's tests, so the shards take about the same time.
 set -euo pipefail
 

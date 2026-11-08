@@ -86,9 +86,10 @@ test:
 	go test ./...
 
 ## test-race: the race detector on the most concurrent packages (CI's race
-## jobs); core alone takes 15 to 20 minutes under -race, past go test's 10
-## minute default. SHARD=i/n runs one of n shards of the tests, split by name
-## (scripts/race-shard.sh), as CI does with n=3
+## jobs); core takes about 5 minutes under -race on a busy runner, so the
+## timeout is past go test's 10 minute default. SHARD=i/n runs one of n
+## shards of the tests, split by name (scripts/race-shard.sh), as CI does
+## with n=2
 RACE_PKGS := ./internal/core/... ./internal/api/... ./internal/mcp/...
 test-race:
 ifdef SHARD
