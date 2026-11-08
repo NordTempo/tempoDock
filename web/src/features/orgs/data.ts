@@ -9,7 +9,7 @@ import { useAction } from "../../data/mutations";
 
 // The platform console's organizations (ADR 0062): every org with its
 // people, size and use, for operators, and what they may do to one
-// without being a member. org.* audit events and disk readings refetch
+// without being a member, including creating one and inviting its people. org.* audit events and disk readings refetch
 // the list (data/live.ts); nothing polls.
 
 type Schemas = components["schemas"];
@@ -20,6 +20,7 @@ export type Role = Schemas["OperatorMemberRequest"]["role"];
 
 export const consoleOrgsKey = ["console", "orgs"] as const;
 const membersKey = (org: string) => [...consoleOrgsKey, org, "members"];
+const invitesKey = (org: string) => [...consoleOrgsKey, org, "invites"];
 
 /**
  * Every org. The Organizations page asks for fresh disk readings
@@ -51,8 +52,58 @@ export const useConsoleMembers = (org: string) =>
       ),
   });
 
+/** An org's open invites, loaded when its members are opened. */
+export const useConsoleInvites = (org: string) =>
+  useQuery({
+    queryKey: invitesKey(org),
+    queryFn: () =>
+      list(
+        api.GET("/api/v1/console/orgs/{org}/invites", {
+          params: { path: { org } },
+        }),
+      ),
+  });
+
 const path = (org: string) => ({ params: { path: { org } } });
-const touches = (org: string) => [consoleOrgsKey, membersKey(org), ["audit"]];
+const touches = (org: string) => [
+  consoleOrgsKey,
+  membersKey(org),
+  invitesKey(org),
+  ["audit"],
+];
+
+/** Creates an org with nobody in it, for the operator to invite people into. */
+export const useCreateConsoleOrg = () =>
+  useAction(
+    (req: Schemas["CreateOrgRequest"]) =>
+      body(api.POST("/api/v1/console/orgs", { body: req })),
+    ({ slug }) => touches(slug),
+    (_, o) => `Created ${o.slug}`,
+  );
+
+/** Invites an email into an org; the link's code comes back once. */
+export const useCreateConsoleInvite = () =>
+  useAction(
+    ({ org, ...req }: { org: string } & Schemas["CreateInviteRequest"]) =>
+      body(
+        api.POST("/api/v1/console/orgs/{org}/invites", {
+          ...path(org),
+          body: req,
+        }),
+      ),
+    ({ org }) => touches(org),
+  );
+
+export const useRevokeConsoleInvite = () =>
+  useAction(
+    ({ org, id }: { org: string; id: number }) =>
+      done(
+        api.DELETE("/api/v1/console/orgs/{org}/invites/{id}", {
+          params: { path: { org, id } },
+        }),
+      ),
+    ({ org }) => touches(org),
+  );
 
 export const useRenameConsoleOrg = () =>
   useAction(

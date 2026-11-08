@@ -309,6 +309,71 @@ func (c *Core) OperatorRemoveMember(ctx context.Context, a Actor, slug string, u
 	return nil
 }
 
+// OperatorCreateOrg creates an org with no members, for the operator to
+// invite its people into (OperatorCreateInvite): it shows as having no
+// admin until someone accepts an admin invite. Operators only.
+func (c *Core) OperatorCreateOrg(ctx context.Context, a Actor, req apitypes.CreateOrgRequest) (apitypes.OperatorOrg, error) {
+	if err := a.requireOperator("creating organizations for others"); err != nil {
+		return apitypes.OperatorOrg{}, err
+	}
+	if err := validOrgSlug(req.Slug); err != nil {
+		return apitypes.OperatorOrg{}, err
+	}
+	var o store.Org
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		var err error
+		o, err = createOrgTx(ctx, q, req.Slug, strings.TrimSpace(req.Name))
+		return err
+	})
+	if store.IsUnique(err) {
+		return apitypes.OperatorOrg{}, conflict("organization %q already exists; pick another slug", req.Slug)
+	}
+	if err != nil {
+		return apitypes.OperatorOrg{}, err
+	}
+	c.auditBoth(ctx, a, o, "org.create", "the platform's operator created organization "+o.Slug)
+	return c.operatorOrgView(ctx, a, o.Slug)
+}
+
+// OperatorInvites lists any org's open invites, expired ones too.
+// Operators only.
+func (c *Core) OperatorInvites(ctx context.Context, a Actor, slug string) ([]apitypes.Invite, error) {
+	o, err := c.operatorOrg(ctx, a, slug, "managing organizations' members")
+	if err != nil {
+		return nil, err
+	}
+	return c.ListInvites(ctx, a.operatorIn(o))
+}
+
+// OperatorCreateInvite invites an email address into any org with a
+// role, as its admins do (CreateInvite): how an org the operator created
+// gets its people. Operators only.
+func (c *Core) OperatorCreateInvite(ctx context.Context, a Actor, slug string, req apitypes.CreateInviteRequest) (apitypes.CreatedInvite, error) {
+	o, err := c.operatorOrg(ctx, a, slug, "managing organizations' members")
+	if err != nil {
+		return apitypes.CreatedInvite{}, err
+	}
+	out, err := c.CreateInvite(ctx, a.operatorIn(o), req)
+	if err == nil {
+		c.audit(ctx, a.platform(), "org.invite", nil, nil, out.Invite.Email, fmt.Sprintf("invited %s as %s to organization %s", out.Invite.Email, req.Role, o.Slug))
+	}
+	return out, err
+}
+
+// OperatorRevokeInvite stops an open invite to any org working.
+// Operators only.
+func (c *Core) OperatorRevokeInvite(ctx context.Context, a Actor, slug string, id int64) error {
+	o, err := c.operatorOrg(ctx, a, slug, "managing organizations' members")
+	if err != nil {
+		return err
+	}
+	if err := c.RevokeInvite(ctx, a.operatorIn(o), id); err != nil {
+		return err
+	}
+	c.audit(ctx, a.platform(), "org.invite_revoke", nil, nil, o.Slug, fmt.Sprintf("revoked invite %d to organization %s", id, o.Slug))
+	return nil
+}
+
 // SuspendOrg suspends an org (suspend) or lifts it: while suspended its
 // apps keep running, but every deploy and change in it is refused, its
 // members and tokens may only read. Operators only.
