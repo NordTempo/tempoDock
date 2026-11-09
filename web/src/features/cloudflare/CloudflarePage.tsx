@@ -1,4 +1,14 @@
-import { createContext, type FormEvent, useContext, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import {
+  createContext,
+  type FormEvent,
+  lazy,
+  Suspense,
+  useContext,
+  useState,
+} from "react";
+import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
 import {
   Act,
@@ -16,6 +26,7 @@ import { OrgSettingsBar } from "../org/SettingsBar";
 import {
   type Cloudflare,
   type CloudflareScope,
+  redirectsQuery,
   useAddCloudflare,
   useCloudflare,
   useRefreshCloudflare,
@@ -28,7 +39,13 @@ import {
 // routes domains with. The console's page holds the platform's (Dock's
 // address and server tunnels; "shared" lets orgs add domains from their
 // zones), an org's settings its own (ADR 0062). Each server page shows its
-// tunnel, each domain how it is routed. Tokens are write-only.
+// tunnel, each domain how it is routed. Tokens are write-only. The
+// Redirects tab (ADR 0068) holds the level's redirects (Redirects.tsx).
+
+const Redirects = lazy(() => import("./Redirects"));
+
+/** The page's tabs; connections is the address without ?tab. */
+export type CloudflareTab = "connections" | "redirects";
 
 /** The page's scope, for its rows and form. */
 const Scope = createContext<CloudflareScope>("platform");
@@ -37,29 +54,41 @@ const Scope = createContext<CloudflareScope>("platform");
 const flag = (scope: CloudflareScope) =>
   scope === "platform" ? " --platform" : "";
 
-export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
+export function CloudflarePage({
+  scope,
+  tab,
+}: {
+  scope: CloudflareScope;
+  tab: CloudflareTab;
+}) {
   const connections = useCloudflare(scope);
   const [adding, setAdding] = useState(false);
+  const [addingRedirect, setAddingRedirect] = useState(false);
   const [editing, setEditing] = useState<string>();
   // The answer to the last new token: what it changed in the zones.
   const [saved, setSaved] = useState<Cloudflare>();
   const edited = connections.find((c) => c.name === editing);
-  const actions = (
-    <>
-      {scope === "platform" && connections.length > 0 && <RetryFailed />}
-      {!adding && (
-        <Button
-          primary
-          onClick={() => {
-            setEditing(undefined);
-            setAdding(true);
-          }}
-        >
-          Add connection
-        </Button>
-      )}
-    </>
-  );
+  const actions =
+    tab === "redirects" ? (
+      <Button primary onClick={() => setAddingRedirect(true)}>
+        Add redirect
+      </Button>
+    ) : (
+      <>
+        {scope === "platform" && connections.length > 0 && <RetryFailed />}
+        {!adding && (
+          <Button
+            primary
+            onClick={() => {
+              setEditing(undefined);
+              setAdding(true);
+            }}
+          >
+            Add connection
+          </Button>
+        )}
+      </>
+    );
   return (
     <Scope.Provider value={scope}>
       {scope === "platform" ? (
@@ -67,60 +96,118 @@ export function CloudflarePage({ scope }: { scope: CloudflareScope }) {
       ) : (
         <OrgSettingsBar actions={actions} />
       )}
-      <Page>
-        <section aria-labelledby="connections" className="flex flex-col gap-2">
-          <SectionHead id="connections">Connections</SectionHead>
-          {connections.length > 0 ? (
-            <Panel>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Account</th>
-                    <th>Zones</th>
-                    <th>{scope === "platform" ? "Tunnels" : "Used by"}</th>
-                    {scope === "platform" && <th>Shared</th>}
-                    <th>Status</th>
-                    <th>Changed</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {connections.map((c) => (
-                    <ConnectionRow
-                      key={c.name}
-                      connection={c}
-                      saved={saved?.name === c.name ? saved : undefined}
-                      onEdit={() => {
-                        setAdding(false);
-                        setEditing(c.name);
-                      }}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </Panel>
-          ) : (
-            !adding && (
-              <p className="py-2 text-mut">
-                {scope === "platform"
-                  ? "No connection. With a Cloudflare API token, Dock runs each server's tunnel and adds domains from your zones; without one, tunnels and their DNS are set up by hand. Add one with Add connection."
-                  : "No connection of this organization's own. Domains can use the zones the platform shares; to add domains from your own Cloudflare zones, add a token here. It needs to be in the same Cloudflare account as the platform's tunnels."}
-              </p>
-            )
-          )}
-          {adding && <TokenForm onClose={() => setAdding(false)} />}
-          {edited && (
-            <TokenForm
-              key={edited.name}
-              connection={edited}
-              onSaved={setSaved}
-              onClose={() => setEditing(undefined)}
-            />
-          )}
-        </section>
-      </Page>
+      <Tabs />
+      {tab === "redirects" ? (
+        <Suspense>
+          <Redirects
+            scope={scope}
+            adding={addingRedirect}
+            onAdding={setAddingRedirect}
+          />
+        </Suspense>
+      ) : (
+        <Page>
+          <section
+            aria-labelledby="connections"
+            className="flex flex-col gap-2"
+          >
+            <SectionHead id="connections">Connections</SectionHead>
+            {connections.length > 0 ? (
+              <Panel>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Account</th>
+                      <th>Zones</th>
+                      <th>{scope === "platform" ? "Tunnels" : "Used by"}</th>
+                      {scope === "platform" && <th>Shared</th>}
+                      <th>Status</th>
+                      <th>Changed</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connections.map((c) => (
+                      <ConnectionRow
+                        key={c.name}
+                        connection={c}
+                        saved={saved?.name === c.name ? saved : undefined}
+                        onEdit={() => {
+                          setAdding(false);
+                          setEditing(c.name);
+                        }}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </Panel>
+            ) : (
+              !adding && (
+                <p className="py-2 text-mut">
+                  {scope === "platform"
+                    ? "No connection. With a Cloudflare API token, Dock runs each server's tunnel and adds domains from your zones; without one, tunnels and their DNS are set up by hand. Add one with Add connection."
+                    : "No connection of this organization's own. Domains can use the zones the platform shares; to add domains from your own Cloudflare zones, add a token here. It needs to be in the same Cloudflare account as the platform's tunnels."}
+                </p>
+              )
+            )}
+            {adding && <TokenForm onClose={() => setAdding(false)} />}
+            {edited && (
+              <TokenForm
+                key={edited.name}
+                connection={edited}
+                onSaved={setSaved}
+                onClose={() => setEditing(undefined)}
+              />
+            )}
+          </section>
+        </Page>
+      )}
     </Scope.Provider>
+  );
+}
+
+/**
+ * Connections and Redirects, as links: the current one is the one whose
+ * ?tab matches exactly (explicitUndefined), so Connections isn't current
+ * on ?tab=redirects too.
+ */
+function Tabs() {
+  const scope = useContext(Scope);
+  const org = useOrg();
+  const tabs = [
+    { label: "Connections", search: { tab: undefined } },
+    { label: "Redirects", search: { tab: "redirects" as const } },
+  ];
+  const active = { includeSearch: true, explicitUndefined: true };
+  return (
+    <nav
+      aria-label="Cloudflare"
+      className="tabs flex gap-0.5 border-b border-line px-4 py-2 sm:px-7"
+    >
+      {tabs.map((t) =>
+        scope === "platform" ? (
+          <Link
+            key={t.label}
+            to="/console/cloudflare"
+            search={t.search}
+            activeOptions={active}
+          >
+            {t.label}
+          </Link>
+        ) : (
+          <Link
+            key={t.label}
+            to="/$org/settings/cloudflare"
+            params={{ org }}
+            search={t.search}
+            activeOptions={active}
+          >
+            {t.label}
+          </Link>
+        ),
+      )}
+    </nav>
   );
 }
 
@@ -189,7 +276,12 @@ function ConnectionRow({
   const refresh = useRefreshCloudflare(scope);
   const remove = useRemoveCloudflare(scope);
   const update = useUpdateCloudflare(scope);
-  const [confirming, setConfirming] = useState(false);
+  // Removing asks once; a connection with redirects asks again, typed,
+  // before it goes with them (force).
+  const [confirming, setConfirming] = useState<"remove" | "force">();
+  const redirects = (useQuery(redirectsQuery(scope)).data ?? []).filter(
+    (r) => r.connection === c.name,
+  );
   const zones = c.zones ?? [];
   const tunnels = c.used_by ?? [];
   // The later of a refresh and a new token.
@@ -257,11 +349,11 @@ function ConnectionRow({
             small
             disabled={tunnels.length > 0}
             reason="a server's tunnel uses it; to take zones off it, give it a token that reaches fewer with Change token"
-            onClick={() => setConfirming(true)}
+            onClick={() => setConfirming("remove")}
           >
             Remove
           </Button>
-          {confirming && (
+          {confirming === "remove" && redirects.length === 0 && (
             <Confirm
               danger
               action={`Remove ${c.name}`}
@@ -269,16 +361,68 @@ function ConnectionRow({
               pending={remove.isPending}
               error={remove.error}
               onConfirm={() =>
-                remove.mutate(c.name, { onSuccess: () => setConfirming(false) })
+                remove.mutate(
+                  { name: c.name },
+                  { onSuccess: () => setConfirming(undefined) },
+                )
               }
               onCancel={() => {
                 remove.reset();
-                setConfirming(false);
+                setConfirming(undefined);
               }}
             >
               Dock forgets this Cloudflare token. Its domains move to another
               connection that has their zone; DNS records of the rest stay in
               Cloudflare.
+            </Confirm>
+          )}
+          {confirming === "remove" && redirects.length > 0 && (
+            <Confirm
+              danger
+              title={`Remove ${c.name}?`}
+              action="Force remove"
+              onConfirm={() => setConfirming("force")}
+              onCancel={() => setConfirming(undefined)}
+            >
+              It has {redirects.length}{" "}
+              {redirects.length === 1 ? "redirect" : "redirects"}. Remove them
+              first, or force remove to take them out of Cloudflare with it.
+              <ul className="mt-2 flex max-h-[240px] flex-col overflow-y-auto font-mono text-xs">
+                {redirects.map((r) => (
+                  <li
+                    key={r.hostname}
+                    className="truncate border-b border-soft py-1"
+                  >
+                    {r.hostname} <span className="text-faint">→</span>{" "}
+                    <span className="text-sec">{r.target}</span>
+                  </li>
+                ))}
+              </ul>
+            </Confirm>
+          )}
+          {confirming === "force" && (
+            <Confirm
+              danger
+              typed={c.name}
+              title={`Force remove ${c.name}?`}
+              action="Remove with redirects"
+              cli={`dock cloudflare remove ${c.name} --force${flag(scope)}`}
+              pending={remove.isPending}
+              error={remove.error}
+              onConfirm={() =>
+                remove.mutate(
+                  { name: c.name, force: true },
+                  { onSuccess: () => setConfirming(undefined) },
+                )
+              }
+              onCancel={() => {
+                remove.reset();
+                setConfirming(undefined);
+              }}
+            >
+              Dock deletes its {redirects.length}{" "}
+              {redirects.length === 1 ? "redirect" : "redirects"} in Cloudflare,
+              then forgets the token. The hostnames stop redirecting.
             </Confirm>
           )}
         </span>
@@ -409,8 +553,9 @@ function TokenForm({
       </div>
       <p className="text-mut">
         The token needs Account › Cloudflare Tunnel › Edit, and Zone › DNS ›
-        Edit and Zone › Zone › Read on the zones domains may come from. Dock
-        only edits records it made, and never points DNS at an IP.
+        Edit and Zone › Zone › Read on the zones domains may come from; for
+        redirects, Zone › Single Redirect › Edit too. Dock only edits records
+        and rules it made, and never points DNS at an IP.
       </p>
       <ErrorText error={add.error ?? update.error} />
       <div className="flex items-center gap-2.5">

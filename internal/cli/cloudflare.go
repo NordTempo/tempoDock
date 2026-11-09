@@ -23,12 +23,13 @@ the account's API Tokens for one owned by the account) with:
   Account › Cloudflare Tunnel › Edit
   Zone › DNS › Edit    on the zones domains may be added from
   Zone › Zone › Read   on the same zones
+  Zone › Single Redirect › Edit   on zones with redirects (optional)
 Dock only edits records it made (comment dock:<install ID>), never
 overwrites one it didn't, and never points DNS at an IP: domains go
 through tunnels.`
 
 // newCloudflareCmd is `dock cloudflare`: the list, and add, set, refresh,
-// remove, records and retry.
+// remove, records, retry and redirects.
 func newCloudflareCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cloudflare",
@@ -82,7 +83,7 @@ adds one for the platform.
 	}
 	cmd.PersistentFlags().Bool("platform", false, "the platform's connections instead of the organization's (operators)")
 	cmd.AddCommand(newCloudflareAddCmd(g), newCloudflareSetCmd(g), newCloudflareRefreshCmd(g), newCloudflareRemoveCmd(g),
-		newCloudflareZonesCmd(g), newCloudflareRecordsCmd(g), newCloudflareRetryCmd(g))
+		newCloudflareZonesCmd(g), newCloudflareRecordsCmd(g), newCloudflareRetryCmd(g), newCloudflareRedirectsCmd(g))
 	return cmd
 }
 
@@ -264,18 +265,24 @@ as with ` + "`dock cloudflare set`" + `.`,
 
 // newCloudflareRemoveCmd is `dock cloudflare remove`.
 func newCloudflareRemoveCmd(g *globals) *cobra.Command {
-	var yes bool
+	var yes, force bool
 	cmd := &cobra.Command{
 		Use:   "remove <name>",
 		Short: "Remove a Cloudflare connection no tunnel uses (admin; --platform: operators)",
 		Long: `Remove a Cloudflare connection. Its domains move to another connection that
 has their zone; Dock forgets the rest, whose records stay in Cloudflare.
 Refused while a server's tunnel uses it: to take zones off such a connection,
-give it a token that reaches fewer (` + "`dock cloudflare set <name> --platform --token-stdin`" + `).`,
+give it a token that reaches fewer (` + "`dock cloudflare set <name> --platform --token-stdin`" + `).
+Refused while it has redirects too, unless --force: Dock then deletes them in
+Cloudflare first.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
-				if err := g.io.Confirm(fmt.Sprintf("Remove Cloudflare connection %s? Its domains move to another connection with their zone; the records of the rest stay in Cloudflare, no longer kept by Dock.", args[0]), "yes"); err != nil {
+				q := fmt.Sprintf("Remove Cloudflare connection %s? Its domains move to another connection with their zone; the records of the rest stay in Cloudflare, no longer kept by Dock.", args[0])
+				if force {
+					q += " Its redirects are deleted and stop redirecting."
+				}
+				if err := g.io.Confirm(q, "yes"); err != nil {
 					return err
 				}
 			}
@@ -283,7 +290,11 @@ give it a token that reaches fewer (` + "`dock cloudflare set <name> --platform 
 			if err != nil {
 				return err
 			}
-			if err := del(cmd.Context(), s, withPlatform(cmd, apiPrefix+"/cloudflare/"+url.PathEscape(args[0]))); err != nil {
+			path := apiPrefix + "/cloudflare/" + url.PathEscape(args[0])
+			if force {
+				path += "?force=true"
+			}
+			if err := del(cmd.Context(), s, withPlatform(cmd, path)); err != nil {
 				return err
 			}
 			return g.io.Print(map[string]string{"removed": args[0]}, func() error {
@@ -293,6 +304,7 @@ give it a token that reaches fewer (` + "`dock cloudflare set <name> --platform 
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	cmd.Flags().BoolVar(&force, "force", false, "remove the connection's redirects with it")
 	return cmd
 }
 

@@ -140,7 +140,11 @@ func pointsAt(r cloudflare.Record, target string) bool {
 func describeRecords(rs []cloudflare.Record) string {
 	parts := make([]string, len(rs))
 	for i, r := range rs {
-		parts[i] = fmt.Sprintf("a %s record to %s", r.Type, r.Content)
+		article := "a"
+		if strings.HasPrefix(r.Type, "A") {
+			article = "an"
+		}
+		parts[i] = fmt.Sprintf("%s %s record to %s", article, r.Type, r.Content)
 	}
 	return strings.Join(parts, " and ")
 }

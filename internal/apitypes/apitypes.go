@@ -1641,36 +1641,41 @@ const (
 	// EventServerDrain: a server drain went an environment further, or
 	// ended (ADR 0063). Drain is the drain. Operators only.
 	EventServerDrain EventType = "server_drain"
+	// EventCloudflareRedirect carries a redirect whose state changed
+	// (ADR 0068); with Message "removed", it is gone. The platform's
+	// reach operators, an org's its admins.
+	EventCloudflareRedirect EventType = "cloudflare_redirect"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType        `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain"`
-	Time           time.Time        `json:"time"`
-	ProjectRenamed *ProjectRenamed  `json:"project_renamed,omitempty"`
-	Project        string           `json:"project,omitempty"`
-	Environment    string           `json:"environment,omitempty"`
-	Service        string           `json:"service,omitempty"`
-	Release        *Release         `json:"release,omitempty"`
-	ReleaseEvent   *ReleaseEvent    `json:"release_event,omitempty"`
-	BuildLog       *BuildLogLine    `json:"build_log,omitempty"`
-	ServiceStatus  *ServiceStatus   `json:"service_status,omitempty"`
-	Domain         *Domain          `json:"domain,omitempty"`
-	Audit          *AuditEvent      `json:"audit,omitempty"`
-	Usage          *UsageUpdate     `json:"usage,omitempty"`
-	Traffic        *TrafficUpdate   `json:"traffic,omitempty"`
-	Server         *Server          `json:"server,omitempty"`
-	Alert          *Alert           `json:"alert,omitempty"`
-	Update         *UpdateStatus    `json:"update,omitempty"`
-	Disk           *ServerDisk      `json:"disk,omitempty"`
-	Lock           *EnvironmentLock `json:"lock,omitempty"`
-	AccessRequest  *AccessRequest   `json:"access_request,omitempty"`
-	Run            *CommandRun      `json:"run,omitempty"`
-	Uptime         *UptimeUpdate    `json:"uptime,omitempty"`
-	Job            *Job             `json:"job,omitempty"`
-	Move           *EnvironmentMove `json:"move,omitempty"`
-	Drain          *ServerDrain     `json:"drain,omitempty"`
-	Message        string           `json:"message,omitempty"`
+	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect"`
+	Time           time.Time           `json:"time"`
+	ProjectRenamed *ProjectRenamed     `json:"project_renamed,omitempty"`
+	Project        string              `json:"project,omitempty"`
+	Environment    string              `json:"environment,omitempty"`
+	Service        string              `json:"service,omitempty"`
+	Release        *Release            `json:"release,omitempty"`
+	ReleaseEvent   *ReleaseEvent       `json:"release_event,omitempty"`
+	BuildLog       *BuildLogLine       `json:"build_log,omitempty"`
+	ServiceStatus  *ServiceStatus      `json:"service_status,omitempty"`
+	Domain         *Domain             `json:"domain,omitempty"`
+	Audit          *AuditEvent         `json:"audit,omitempty"`
+	Usage          *UsageUpdate        `json:"usage,omitempty"`
+	Traffic        *TrafficUpdate      `json:"traffic,omitempty"`
+	Server         *Server             `json:"server,omitempty"`
+	Alert          *Alert              `json:"alert,omitempty"`
+	Update         *UpdateStatus       `json:"update,omitempty"`
+	Disk           *ServerDisk         `json:"disk,omitempty"`
+	Lock           *EnvironmentLock    `json:"lock,omitempty"`
+	AccessRequest  *AccessRequest      `json:"access_request,omitempty"`
+	Run            *CommandRun         `json:"run,omitempty"`
+	Uptime         *UptimeUpdate       `json:"uptime,omitempty"`
+	Job            *Job                `json:"job,omitempty"`
+	Move           *EnvironmentMove    `json:"move,omitempty"`
+	Drain          *ServerDrain        `json:"drain,omitempty"`
+	Redirect       *CloudflareRedirect `json:"redirect,omitempty"`
+	Message        string              `json:"message,omitempty"`
 }
 
 // UsageUpdate is one minute tick's samples: a server's own (Host; only

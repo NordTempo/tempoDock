@@ -263,6 +263,11 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		if err := checkClaims(claims, ss, host); err != nil {
 			return err
 		}
+		if redirect, err := q.RedirectHostnameExists(ctx, host); err != nil {
+			return err
+		} else if redirect {
+			return errf(apitypes.CodeHostnameTaken, "%s is a Cloudflare redirect; remove the redirect first (its level's Cloudflare page, or `dock cloudflare redirects remove %s`)", host, host)
+		}
 		if d, err = q.CreateDomain(ctx, params); err != nil {
 			return err
 		}

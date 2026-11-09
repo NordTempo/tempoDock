@@ -1,11 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CloudflarePage } from "../features/cloudflare/CloudflarePage";
-import { cloudflareQuery } from "../features/cloudflare/data";
+import { cloudflareQuery, redirectsQuery } from "../features/cloudflare/data";
 
 // The platform's Cloudflare connections (ADR 0036, 0062): Dock's address,
-// server tunnels, and zones shared with organizations.
+// server tunnels, and zones shared with organizations; ?tab=redirects
+// holds the platform's redirects (ADR 0068).
 export const Route = createFileRoute("/_app/console/cloudflare")({
+  validateSearch: (s: Record<string, unknown>): { tab?: "redirects" } =>
+    s.tab === "redirects" ? { tab: "redirects" } : {},
   loader: ({ context: { queryClient } }) =>
-    queryClient.ensureQueryData(cloudflareQuery("platform")),
-  component: () => <CloudflarePage scope="platform" />,
+    Promise.all([
+      queryClient.ensureQueryData(cloudflareQuery("platform")),
+      queryClient.ensureQueryData(redirectsQuery("platform")),
+    ]),
+  component: function Cloudflare() {
+    const { tab = "connections" } = Route.useSearch();
+    return <CloudflarePage scope="platform" tab={tab} />;
+  },
 });

@@ -61,6 +61,10 @@ type cfState struct {
 	tunnels map[int64]string
 	// pauseUntil holds the worker back after Cloudflare rate limited it.
 	pauseUntil time.Time
+
+	// redirectsMu is held by a redirect's step and by a connection's
+	// forced removal, so the one never makes a rule the other deletes.
+	redirectsMu sync.Mutex
 }
 
 // cfZone is a managed zone with whose connection it is in.
@@ -542,6 +546,7 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 	}
 	t := now()
 	ch := zoneChange{zones: len(zones)}
+	var stranded []int64
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.UpdateCloudflareConnection(ctx, store.UpdateCloudflareConnectionParams{
 			AccountID: account.ID, AccountName: account.Name, Token: sealed, UpdatedAt: t, UpdatedBy: a.Name, ID: row.ID,
@@ -551,7 +556,16 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 		if err := q.RetryConnectionRecords(ctx, store.RetryConnectionRecordsParams{UpdatedAt: t, ConnectionID: row.ID}); err != nil {
 			return err
 		}
+		if err := q.RetryConnectionRedirects(ctx, store.RetryConnectionRedirectsParams{UpdatedAt: t, ConnectionID: row.ID}); err != nil {
+			return err
+		}
 		if ch.added, ch.dropped, err = saveZones(ctx, q, row, zones); err != nil {
+			return err
+		}
+		// Redirects are the connection's own: they don't move with a zone.
+		if stranded, err = q.FailStrandedCloudflareRedirects(ctx, store.FailStrandedCloudflareRedirectsParams{
+			Reason: strandedRedirectReason(row.Name), UpdatedAt: t, Connection: row.ID,
+		}); err != nil {
 			return err
 		}
 		ch.failed, err = c.rehomeRecords(ctx, q, row.ID)
@@ -559,6 +573,9 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 	})
 	if err != nil {
 		return zoneChange{}, err
+	}
+	for _, id := range stranded {
+		c.publishRedirect(ctx, id)
 	}
 	c.connectionWorks(ctx, cloudflareAlertKey(row.ID))
 	c.cloudflareChanged(ctx)
@@ -569,8 +586,10 @@ func (c *Core) recheckCloudflare(ctx context.Context, a Actor, row store.Cloudfl
 // RemoveCloudflare deletes one of the org's connections (with platform,
 // the platform's) that no tunnel uses. Its domains move to another
 // connection that holds their zone (rehomeRecords); Dock forgets the
-// rest, whose records stay in Cloudflare.
-func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, platform bool, name string) error {
+// rest, whose records stay in Cloudflare. A connection with redirects is
+// refused, naming them, unless force: then they are deleted in
+// Cloudflare first (dropRedirects).
+func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, platform bool, name string, force bool) error {
 	org, err := connectionsIn(a, platform, "removing Cloudflare connections")
 	if err != nil {
 		return err
@@ -586,6 +605,24 @@ func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, platform bool, nam
 	if used > 0 {
 		return conflict("Cloudflare connection %s runs server tunnels, so it can't be removed; to take zones off it, give it a token that reaches only the zones it should keep (`dock cloudflare set %s%s --token-stdin`)", name, name, cfFlag(row.OrgID))
 	}
+	redirects, err := c.store.ListConnectionRedirects(ctx, row.ID)
+	if err != nil {
+		return err
+	}
+	var left []string
+	if len(redirects) > 0 {
+		if !force {
+			return conflict("Cloudflare connection %s has %s; remove them first, or remove the connection with them (`dock cloudflare remove %s%s --force`)",
+				name, describeRedirects(redirects), name, cfFlag(row.OrgID))
+		}
+		if err := c.store.SetConnectionRedirectsAbsent(ctx, store.SetConnectionRedirectsAbsentParams{UpdatedAt: now(), UpdatedBy: a.Name, ConnectionID: row.ID}); err != nil {
+			return err
+		}
+		if left, err = c.dropRedirects(ctx, row, redirects); err != nil {
+			c.kickCloudflare() // the redirects are being removed
+			return err
+		}
+	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.DeleteCloudflareZones(ctx, row.ID); err != nil {
 			return err
@@ -599,7 +636,14 @@ func (c *Core) RemoveCloudflare(ctx context.Context, a Actor, platform bool, nam
 		return err
 	}
 	c.connectionWorks(ctx, cloudflareAlertKey(row.ID))
-	c.audit(ctx, cfAudit(a, org), "cloudflare.connection_remove", nil, nil, name, "removed Cloudflare connection "+name+"; its domains moved to another connection with their zone, or their records stay in Cloudflare")
+	summary := "removed Cloudflare connection " + name + "; its domains moved to another connection with their zone, or their records stay in Cloudflare"
+	if len(redirects) > 0 {
+		summary += fmt.Sprintf("; removed its %d redirects", len(redirects))
+		if len(left) > 0 {
+			summary += " (their rules stay in Cloudflare for " + strings.Join(left, ", ") + ")"
+		}
+	}
+	c.audit(ctx, cfAudit(a, org), "cloudflare.connection_remove", nil, nil, name, summary)
 	c.cloudflareChanged(ctx)
 	return nil
 }

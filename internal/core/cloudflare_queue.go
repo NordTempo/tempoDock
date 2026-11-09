@@ -17,7 +17,8 @@ import (
 )
 
 // The Cloudflare worker (ADR 0036): it works through the pending rows of
-// cloudflare_tunnels and cloudflare_records, one call at a time, until
+// cloudflare_tunnels, cloudflare_records and cloudflare_redirects (ADR
+// 0068), one call at a time, until
 // none is due, then sleeps until kicked or until the earliest held-back
 // retry. Idle (nothing pending) it has no timer.
 
@@ -91,6 +92,9 @@ func (c *Core) cloudflarePass(ctx context.Context) time.Time {
 	if err == nil {
 		err = c.cloudflareRecords(ctx, conns)
 	}
+	if err == nil {
+		err = c.cloudflareRedirects(ctx, conns)
+	}
 	if errors.Is(err, errRateLimited) {
 		c.cf.mu.Lock()
 		defer c.cf.mu.Unlock()
@@ -105,7 +109,7 @@ func (c *Core) cloudflarePass(ctx context.Context) time.Time {
 // nextCloudflareRetry is the earliest held-back retry, zero for none.
 func (c *Core) nextCloudflareRetry(ctx context.Context) time.Time {
 	var next time.Time
-	for _, q := range []func(context.Context) ([]*time.Time, error){c.store.NextCloudflareTunnelRetry, c.store.NextCloudflareRecordRetry} {
+	for _, q := range []func(context.Context) ([]*time.Time, error){c.store.NextCloudflareTunnelRetry, c.store.NextCloudflareRecordRetry, c.store.NextCloudflareRedirectRetry} {
 		at, err := q(ctx)
 		if err != nil || len(at) == 0 || at[0] == nil {
 			continue
@@ -668,8 +672,8 @@ func (c *Core) tunnelConnectors(ctx context.Context, serverID int64) []apitypes.
 	return out
 }
 
-// RetryCloudflare has Dock try every failed record and tunnel again.
-// Operators only.
+// RetryCloudflare has Dock try every failed record, tunnel and redirect
+// again. Operators only.
 func (c *Core) RetryCloudflare(ctx context.Context, a Actor) (apitypes.CloudflareRetried, error) {
 	if err := a.requireOperator("retrying Cloudflare changes"); err != nil {
 		return apitypes.CloudflareRetried{}, err
@@ -683,6 +687,10 @@ func (c *Core) RetryCloudflare(ctx context.Context, a Actor) (apitypes.Cloudflar
 	if err != nil {
 		return apitypes.CloudflareRetried{}, err
 	}
+	redirects, err := c.store.RetryFailedCloudflareRedirects(ctx, t)
+	if err != nil {
+		return apitypes.CloudflareRetried{}, err
+	}
 	c.kickCloudflare()
-	return apitypes.CloudflareRetried{Retried: int(records + tunnels)}, nil
+	return apitypes.CloudflareRetried{Retried: int(records + tunnels + redirects)}, nil
 }

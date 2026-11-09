@@ -1,6 +1,7 @@
 // Package cloudflaretest is an in-memory fake of the part of Cloudflare's
 // API that package cloudflare calls, for tests: one account with zones,
-// their DNS records and tunnels, and switches to make calls fail.
+// their DNS records, redirect rules and tunnels, and switches to make
+// calls fail.
 package cloudflaretest
 
 import (
@@ -37,6 +38,11 @@ type Server struct {
 	Records map[string][]cloudflare.Record
 	// Tunnels are by ID.
 	Tunnels map[string]*Tunnel
+	// Rulesets are the zones' redirect entry point rulesets, by zone ID.
+	Rulesets map[string]*cloudflare.Ruleset
+	// NoRedirects answers 403 to ruleset calls, as for a token without
+	// Single Redirect Edit.
+	NoRedirects bool
 	// DeniedZones answer 403 to DNS calls, as for a token without DNS Edit
 	// there.
 	DeniedZones map[string]bool
@@ -67,6 +73,7 @@ func New(t testing.TB, zones ...string) *Server {
 		Account:     cloudflare.Account{ID: AccountID, Name: "Test account"},
 		Records:     map[string][]cloudflare.Record{},
 		Tunnels:     map[string]*Tunnel{},
+		Rulesets:    map[string]*cloudflare.Ruleset{},
 		DeniedZones: map[string]bool{},
 	}
 	for _, z := range zones {
@@ -111,6 +118,33 @@ func (s *Server) AddRecord(zone string, r cloudflare.Record) cloudflare.Record {
 	defer s.Mu.Unlock()
 	r.ID = s.id("rec")
 	s.Records[id] = append(s.Records[id], r)
+	return r
+}
+
+// Rules returns the redirect rules of the zone named zone.
+func (s *Server) Rules(zone string) []cloudflare.Rule {
+	id := s.ZoneID(zone)
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	if rs := s.Rulesets[id]; rs != nil {
+		return slices.Clone(rs.Rules)
+	}
+	return nil
+}
+
+// AddRule adds a redirect rule to the zone named zone, as if made in the
+// dashboard.
+func (s *Server) AddRule(zone string, r cloudflare.Rule) cloudflare.Rule {
+	id := s.ZoneID(zone)
+	s.Mu.Lock()
+	defer s.Mu.Unlock()
+	rs := s.Rulesets[id]
+	if rs == nil {
+		rs = &cloudflare.Ruleset{ID: s.id("set"), Kind: "zone", Phase: cloudflare.RedirectPhase}
+		s.Rulesets[id] = rs
+	}
+	r.ID = s.id("rule")
+	rs.Rules = append(rs.Rules, r)
 	return r
 }
 
@@ -259,6 +293,92 @@ func (s *Server) mux() http.Handler {
 		}
 		s.Records[zone] = slices.Delete(s.Records[zone], i, i+1)
 		ok(w, map[string]string{"id": r.PathValue("id")})
+	}))
+
+	rulesets := func(h func(w http.ResponseWriter, r *http.Request, zone string)) handler {
+		return dns(func(w http.ResponseWriter, r *http.Request, zone string) {
+			if s.NoRedirects {
+				fail(w, http.StatusForbidden, 10000, "Authentication error")
+				return
+			}
+			h(w, r, zone)
+		})
+	}
+	// ruleset finds the zone's redirect ruleset named in the path.
+	ruleset := func(h func(w http.ResponseWriter, r *http.Request, rs *cloudflare.Ruleset)) handler {
+		return rulesets(func(w http.ResponseWriter, r *http.Request, zone string) {
+			rs := s.Rulesets[zone]
+			if rs == nil || rs.ID != r.PathValue("set") {
+				fail(w, http.StatusNotFound, 10003, "could not find ruleset")
+				return
+			}
+			h(w, r, rs)
+		})
+	}
+	decodeRule := func(w http.ResponseWriter, r *http.Request) (cloudflare.Rule, bool) {
+		var rule cloudflare.Rule
+		if err := json.NewDecoder(r.Body).Decode(&rule); err != nil || rule.Expression == "" || rule.Action == "" {
+			fail(w, http.StatusBadRequest, 20021, "invalid rule")
+			return rule, false
+		}
+		return rule, true
+	}
+	route("GET /zones/{zone}/rulesets/phases/{phase}/entrypoint", rulesets(func(w http.ResponseWriter, r *http.Request, zone string) {
+		rs := s.Rulesets[zone]
+		if rs == nil || r.PathValue("phase") != cloudflare.RedirectPhase {
+			fail(w, http.StatusNotFound, 10003, "could not find entrypoint ruleset in the "+r.PathValue("phase")+" phase")
+			return
+		}
+		ok(w, rs)
+	}))
+	route("POST /zones/{zone}/rulesets", rulesets(func(w http.ResponseWriter, r *http.Request, zone string) {
+		var rs cloudflare.Ruleset
+		if err := json.NewDecoder(r.Body).Decode(&rs); err != nil || rs.Phase != cloudflare.RedirectPhase || rs.Kind != "zone" {
+			fail(w, http.StatusBadRequest, 20021, "invalid ruleset")
+			return
+		}
+		if s.Rulesets[zone] != nil {
+			fail(w, http.StatusBadRequest, 20217, "A similar configuration with rules already exists and overwriting will have unintended consequences")
+			return
+		}
+		rs.ID = s.id("set")
+		for i := range rs.Rules {
+			rs.Rules[i].ID = s.id("rule")
+		}
+		s.Rulesets[zone] = &rs
+		ok(w, rs)
+	}))
+	route("POST /zones/{zone}/rulesets/{set}/rules", ruleset(func(w http.ResponseWriter, r *http.Request, rs *cloudflare.Ruleset) {
+		rule, valid := decodeRule(w, r)
+		if !valid {
+			return
+		}
+		rule.ID = s.id("rule")
+		rs.Rules = append(rs.Rules, rule)
+		ok(w, rs)
+	}))
+	route("PATCH /zones/{zone}/rulesets/{set}/rules/{rule}", ruleset(func(w http.ResponseWriter, r *http.Request, rs *cloudflare.Ruleset) {
+		i := slices.IndexFunc(rs.Rules, func(rule cloudflare.Rule) bool { return rule.ID == r.PathValue("rule") })
+		if i < 0 {
+			fail(w, http.StatusNotFound, 10003, "could not find rule")
+			return
+		}
+		rule, valid := decodeRule(w, r)
+		if !valid {
+			return
+		}
+		rule.ID = rs.Rules[i].ID
+		rs.Rules[i] = rule
+		ok(w, rs)
+	}))
+	route("DELETE /zones/{zone}/rulesets/{set}/rules/{rule}", ruleset(func(w http.ResponseWriter, r *http.Request, rs *cloudflare.Ruleset) {
+		i := slices.IndexFunc(rs.Rules, func(rule cloudflare.Rule) bool { return rule.ID == r.PathValue("rule") })
+		if i < 0 {
+			fail(w, http.StatusNotFound, 10003, "could not find rule")
+			return
+		}
+		rs.Rules = slices.Delete(rs.Rules, i, i+1)
+		ok(w, rs)
 	}))
 
 	tunnels := func(h func(w http.ResponseWriter, r *http.Request)) handler {

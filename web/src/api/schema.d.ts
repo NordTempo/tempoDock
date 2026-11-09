@@ -649,6 +649,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cloudflare/redirects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List redirects
+         * @description Hostnames in the organization's own Cloudflare zones (with platform, the platform's) that Cloudflare redirects to a URL, by hostname; at most 1000. Organization admins; operators for the platform's.
+         */
+        get: operations["list-cloudflare-redirects"];
+        put?: never;
+        /**
+         * Add a redirect
+         * @description The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Single Redirect › Edit. 409 (hostname_taken) when a domain or a record Dock didn't make holds the name. Organization admins; operators for the platform's.
+         */
+        post: operations["create-cloudflare-redirect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cloudflare/redirects/{hostname}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a redirect
+         * @description Dock deletes its rule and record in Cloudflare in the background, then forgets the redirect. Organization admins; operators for the platform's.
+         */
+        delete: operations["remove-cloudflare-redirect"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a redirect
+         * @description A new target, status code or keep_path; Cloudflare's rule is changed to match. Organization admins; operators for the platform's.
+         */
+        patch: operations["update-cloudflare-redirect"];
+        trace?: never;
+    };
+    "/api/v1/cloudflare/redirects/{hostname}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a failed redirect
+         * @description After what failed it was fixed (a record in the way deleted, a permission added). Organization admins; operators for the platform's.
+         */
+        post: operations["retry-cloudflare-redirect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/cloudflare/retry": {
         parameters: {
             query?: never;
@@ -701,7 +769,7 @@ export interface paths {
         post?: never;
         /**
          * Remove a Cloudflare connection
-         * @description Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it. Organization admins; operators for the platform's.
+         * @description Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it, and while it has redirects, unless force: they are then deleted in Cloudflare first. Organization admins; operators for the platform's.
          */
         delete: operations["remove-cloudflare"];
         options?: never;
@@ -5529,6 +5597,27 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        CloudflareRedirect: {
+            connection: string;
+            /** @example instagram.tempo.run */
+            hostname: string;
+            keep_path: boolean;
+            reason?: string;
+            /** @enum {string} */
+            status: "pending" | "live" | "error" | "deleting";
+            /**
+             * Format: int64
+             * @enum {integer}
+             */
+            status_code: 301 | 302 | 307 | 308;
+            /** @example https://instagram.com/tempo */
+            target: string;
+            /** Format: date-time */
+            updated_at: string;
+            updated_by: string;
+            /** @example tempo.run */
+            zone: string;
+        };
         CloudflareRetried: {
             /** Format: int64 */
             retried: number;
@@ -5690,6 +5779,21 @@ export interface components {
             smtp?: components["schemas"]["SMTPSettings"];
             /** @description webhook and slack: where to POST. Stored encrypted, never returned */
             url?: string;
+        };
+        CreateCloudflareRedirectRequest: {
+            connection?: string;
+            /** @example instagram.tempo.run */
+            hostname: string;
+            /** @description Append the request's path and query to the target */
+            keep_path?: boolean;
+            /**
+             * Format: int64
+             * @description 302 when left out
+             * @enum {integer}
+             */
+            status_code?: 301 | 302 | 307 | 308;
+            /** @example https://instagram.com/tempo */
+            target: string;
         };
         CreateCloudflareRequest: {
             account_id?: string;
@@ -6483,6 +6587,7 @@ export interface components {
             move?: components["schemas"]["EnvironmentMove"];
             project?: string;
             project_renamed?: components["schemas"]["ProjectRenamed"];
+            redirect?: components["schemas"]["CloudflareRedirect"];
             release?: components["schemas"]["Release"];
             release_event?: components["schemas"]["ReleaseEvent"];
             run?: components["schemas"]["CommandRun"];
@@ -6493,7 +6598,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -8530,6 +8635,15 @@ export interface components {
             enabled?: boolean;
             /** Format: int64 */
             hour?: number;
+        };
+        UpdateCloudflareRedirectRequest: {
+            keep_path?: boolean;
+            /**
+             * Format: int64
+             * @enum {integer}
+             */
+            status_code?: 301 | 302 | 307 | 308;
+            target?: string;
         };
         UpdateCloudflareRequest: {
             /** @description Needs a token */
@@ -12078,6 +12192,497 @@ export interface operations {
             };
         };
     };
+    "list-cloudflare-redirects": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareRedirect"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "create-cloudflare-redirect": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCloudflareRedirectRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareRedirect"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-cloudflare-redirect": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The redirect's hostname */
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-cloudflare-redirect": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The redirect's hostname */
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCloudflareRedirectRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareRedirect"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "retry-cloudflare-redirect": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
+                platform?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The redirect's hostname */
+                hostname: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloudflareRedirect"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "retry-cloudflare": {
         parameters: {
             query?: {
@@ -12248,6 +12853,8 @@ export interface operations {
                 org?: string;
                 /** @description The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only. */
                 platform?: boolean;
+                /** @description Remove the connection's redirects with it */
+                force?: boolean;
             };
             header?: never;
             path: {

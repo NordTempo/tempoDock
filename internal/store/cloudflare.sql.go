@@ -70,6 +70,61 @@ func (q *Queries) CreateCloudflareConnection(ctx context.Context, arg CreateClou
 	return i, err
 }
 
+const createCloudflareRedirect = `-- name: CreateCloudflareRedirect :one
+INSERT INTO cloudflare_redirects (hostname, connection_id, zone_id, target, status_code, keep_path, created_at, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, hostname, connection_id, zone_id, target, status_code, keep_path, record_id, ruleset_id, rule_id, want, status, reason, attempts, retry_at, gen, created_at, updated_at, updated_by
+`
+
+type CreateCloudflareRedirectParams struct {
+	Hostname     string
+	ConnectionID int64
+	ZoneID       string
+	Target       string
+	StatusCode   int64
+	KeepPath     bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	UpdatedBy    string
+}
+
+func (q *Queries) CreateCloudflareRedirect(ctx context.Context, arg CreateCloudflareRedirectParams) (CloudflareRedirect, error) {
+	row := q.db.QueryRowContext(ctx, createCloudflareRedirect,
+		arg.Hostname,
+		arg.ConnectionID,
+		arg.ZoneID,
+		arg.Target,
+		arg.StatusCode,
+		arg.KeepPath,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.UpdatedBy,
+	)
+	var i CloudflareRedirect
+	err := row.Scan(
+		&i.ID,
+		&i.Hostname,
+		&i.ConnectionID,
+		&i.ZoneID,
+		&i.Target,
+		&i.StatusCode,
+		&i.KeepPath,
+		&i.RecordID,
+		&i.RulesetID,
+		&i.RuleID,
+		&i.Want,
+		&i.Status,
+		&i.Reason,
+		&i.Attempts,
+		&i.RetryAt,
+		&i.Gen,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
 const createCloudflareTunnel = `-- name: CreateCloudflareTunnel :one
 INSERT INTO cloudflare_tunnels (server_id, server_name, connection_id, tunnel_id, token, adopted, status, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -142,6 +197,21 @@ func (q *Queries) DeleteCloudflareRecord(ctx context.Context, arg DeleteCloudfla
 	return err
 }
 
+const deleteCloudflareRedirect = `-- name: DeleteCloudflareRedirect :exec
+DELETE FROM cloudflare_redirects WHERE id = +?1 AND gen = +?2
+`
+
+type DeleteCloudflareRedirectParams struct {
+	ID  int64
+	Gen int64
+}
+
+// A deleted redirect's row, unless it changed meanwhile.
+func (q *Queries) DeleteCloudflareRedirect(ctx context.Context, arg DeleteCloudflareRedirectParams) error {
+	_, err := q.db.ExecContext(ctx, deleteCloudflareRedirect, arg.ID, arg.Gen)
+	return err
+}
+
 const deleteCloudflareTunnel = `-- name: DeleteCloudflareTunnel :exec
 DELETE FROM cloudflare_tunnels WHERE id = +?1 AND gen = +?2
 `
@@ -182,6 +252,47 @@ type FailCloudflareRecordParams struct {
 func (q *Queries) FailCloudflareRecord(ctx context.Context, arg FailCloudflareRecordParams) error {
 	_, err := q.db.ExecContext(ctx, failCloudflareRecord, arg.Reason, arg.UpdatedAt, arg.ID)
 	return err
+}
+
+const failStrandedCloudflareRedirects = `-- name: FailStrandedCloudflareRedirects :many
+UPDATE cloudflare_redirects
+SET status = 'error', reason = ?, attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE cloudflare_redirects.connection_id = +?3 AND cloudflare_redirects.want = 'present' AND NOT EXISTS (
+    SELECT 1 FROM cloudflare_zones
+    WHERE cloudflare_zones.connection_id = cloudflare_redirects.connection_id AND cloudflare_zones.zone_id = cloudflare_redirects.zone_id
+)
+RETURNING id
+`
+
+type FailStrandedCloudflareRedirectsParams struct {
+	Reason     string
+	UpdatedAt  time.Time
+	Connection int64
+}
+
+// A connection's redirects in zones it no longer reaches: failed, saying
+// what to do. Returns their IDs, for live events.
+func (q *Queries) FailStrandedCloudflareRedirects(ctx context.Context, arg FailStrandedCloudflareRedirectsParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, failStrandedCloudflareRedirects, arg.Reason, arg.UpdatedAt, arg.Connection)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getCloudflareConnection = `-- name: GetCloudflareConnection :one
@@ -262,6 +373,95 @@ func (q *Queries) GetCloudflareRecord(ctx context.Context, hostname string) (Clo
 		&i.RetryAt,
 		&i.Gen,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getCloudflareRedirectByID = `-- name: GetCloudflareRedirectByID :one
+SELECT cloudflare_redirects.id, cloudflare_redirects.hostname, cloudflare_redirects.connection_id, cloudflare_redirects.zone_id, cloudflare_redirects.target, cloudflare_redirects.status_code, cloudflare_redirects.keep_path, cloudflare_redirects.record_id, cloudflare_redirects.ruleset_id, cloudflare_redirects.rule_id, cloudflare_redirects.want, cloudflare_redirects.status, cloudflare_redirects.reason, cloudflare_redirects.attempts, cloudflare_redirects.retry_at, cloudflare_redirects.gen, cloudflare_redirects.created_at, cloudflare_redirects.updated_at, cloudflare_redirects.updated_by, cloudflare_connections.name AS connection_name,
+    CAST(coalesce(cloudflare_connections.org_id, 0) AS INTEGER) AS org_id
+FROM cloudflare_redirects JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.id = +?
+`
+
+type GetCloudflareRedirectByIDRow struct {
+	CloudflareRedirect CloudflareRedirect
+	ConnectionName     string
+	OrgID              int64
+}
+
+// A redirect with its connection's name and owner (0: the platform), for
+// its live event.
+func (q *Queries) GetCloudflareRedirectByID(ctx context.Context, id int64) (GetCloudflareRedirectByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getCloudflareRedirectByID, id)
+	var i GetCloudflareRedirectByIDRow
+	err := row.Scan(
+		&i.CloudflareRedirect.ID,
+		&i.CloudflareRedirect.Hostname,
+		&i.CloudflareRedirect.ConnectionID,
+		&i.CloudflareRedirect.ZoneID,
+		&i.CloudflareRedirect.Target,
+		&i.CloudflareRedirect.StatusCode,
+		&i.CloudflareRedirect.KeepPath,
+		&i.CloudflareRedirect.RecordID,
+		&i.CloudflareRedirect.RulesetID,
+		&i.CloudflareRedirect.RuleID,
+		&i.CloudflareRedirect.Want,
+		&i.CloudflareRedirect.Status,
+		&i.CloudflareRedirect.Reason,
+		&i.CloudflareRedirect.Attempts,
+		&i.CloudflareRedirect.RetryAt,
+		&i.CloudflareRedirect.Gen,
+		&i.CloudflareRedirect.CreatedAt,
+		&i.CloudflareRedirect.UpdatedAt,
+		&i.CloudflareRedirect.UpdatedBy,
+		&i.ConnectionName,
+		&i.OrgID,
+	)
+	return i, err
+}
+
+const getCloudflareRedirectOf = `-- name: GetCloudflareRedirectOf :one
+SELECT cloudflare_redirects.id, cloudflare_redirects.hostname, cloudflare_redirects.connection_id, cloudflare_redirects.zone_id, cloudflare_redirects.target, cloudflare_redirects.status_code, cloudflare_redirects.keep_path, cloudflare_redirects.record_id, cloudflare_redirects.ruleset_id, cloudflare_redirects.rule_id, cloudflare_redirects.want, cloudflare_redirects.status, cloudflare_redirects.reason, cloudflare_redirects.attempts, cloudflare_redirects.retry_at, cloudflare_redirects.gen, cloudflare_redirects.created_at, cloudflare_redirects.updated_at, cloudflare_redirects.updated_by, cloudflare_connections.name AS connection_name
+FROM cloudflare_redirects JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.hostname = +?1 AND coalesce(cloudflare_connections.org_id, 0) = +CAST(?2 AS INTEGER)
+`
+
+type GetCloudflareRedirectOfParams struct {
+	Hostname string
+	Org      int64
+}
+
+type GetCloudflareRedirectOfRow struct {
+	CloudflareRedirect CloudflareRedirect
+	ConnectionName     string
+}
+
+// One of an org's redirects (org 0: the platform's) by hostname.
+func (q *Queries) GetCloudflareRedirectOf(ctx context.Context, arg GetCloudflareRedirectOfParams) (GetCloudflareRedirectOfRow, error) {
+	row := q.db.QueryRowContext(ctx, getCloudflareRedirectOf, arg.Hostname, arg.Org)
+	var i GetCloudflareRedirectOfRow
+	err := row.Scan(
+		&i.CloudflareRedirect.ID,
+		&i.CloudflareRedirect.Hostname,
+		&i.CloudflareRedirect.ConnectionID,
+		&i.CloudflareRedirect.ZoneID,
+		&i.CloudflareRedirect.Target,
+		&i.CloudflareRedirect.StatusCode,
+		&i.CloudflareRedirect.KeepPath,
+		&i.CloudflareRedirect.RecordID,
+		&i.CloudflareRedirect.RulesetID,
+		&i.CloudflareRedirect.RuleID,
+		&i.CloudflareRedirect.Want,
+		&i.CloudflareRedirect.Status,
+		&i.CloudflareRedirect.Reason,
+		&i.CloudflareRedirect.Attempts,
+		&i.CloudflareRedirect.RetryAt,
+		&i.CloudflareRedirect.Gen,
+		&i.CloudflareRedirect.CreatedAt,
+		&i.CloudflareRedirect.UpdatedAt,
+		&i.CloudflareRedirect.UpdatedBy,
+		&i.ConnectionName,
 	)
 	return i, err
 }
@@ -434,6 +634,70 @@ func (q *Queries) ListCloudflareRecords(ctx context.Context, max int64) ([]ListC
 	return items, nil
 }
 
+const listCloudflareRedirectsOf = `-- name: ListCloudflareRedirectsOf :many
+SELECT cloudflare_redirects.id, cloudflare_redirects.hostname, cloudflare_redirects.connection_id, cloudflare_redirects.zone_id, cloudflare_redirects.target, cloudflare_redirects.status_code, cloudflare_redirects.keep_path, cloudflare_redirects.record_id, cloudflare_redirects.ruleset_id, cloudflare_redirects.rule_id, cloudflare_redirects.want, cloudflare_redirects.status, cloudflare_redirects.reason, cloudflare_redirects.attempts, cloudflare_redirects.retry_at, cloudflare_redirects.gen, cloudflare_redirects.created_at, cloudflare_redirects.updated_at, cloudflare_redirects.updated_by, cloudflare_connections.name AS connection_name
+FROM cloudflare_connections JOIN cloudflare_redirects ON cloudflare_redirects.connection_id = cloudflare_connections.id
+WHERE coalesce(cloudflare_connections.org_id, 0) = +CAST(?1 AS INTEGER)
+ORDER BY cloudflare_redirects.hostname
+LIMIT +?2
+`
+
+type ListCloudflareRedirectsOfParams struct {
+	Org int64
+	Max int64
+}
+
+type ListCloudflareRedirectsOfRow struct {
+	CloudflareRedirect CloudflareRedirect
+	ConnectionName     string
+}
+
+// An org's redirects (org 0: the platform's): those on its connections,
+// by hostname, with the connection's name; at most max.
+func (q *Queries) ListCloudflareRedirectsOf(ctx context.Context, arg ListCloudflareRedirectsOfParams) ([]ListCloudflareRedirectsOfRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCloudflareRedirectsOf, arg.Org, arg.Max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCloudflareRedirectsOfRow
+	for rows.Next() {
+		var i ListCloudflareRedirectsOfRow
+		if err := rows.Scan(
+			&i.CloudflareRedirect.ID,
+			&i.CloudflareRedirect.Hostname,
+			&i.CloudflareRedirect.ConnectionID,
+			&i.CloudflareRedirect.ZoneID,
+			&i.CloudflareRedirect.Target,
+			&i.CloudflareRedirect.StatusCode,
+			&i.CloudflareRedirect.KeepPath,
+			&i.CloudflareRedirect.RecordID,
+			&i.CloudflareRedirect.RulesetID,
+			&i.CloudflareRedirect.RuleID,
+			&i.CloudflareRedirect.Want,
+			&i.CloudflareRedirect.Status,
+			&i.CloudflareRedirect.Reason,
+			&i.CloudflareRedirect.Attempts,
+			&i.CloudflareRedirect.RetryAt,
+			&i.CloudflareRedirect.Gen,
+			&i.CloudflareRedirect.CreatedAt,
+			&i.CloudflareRedirect.UpdatedAt,
+			&i.CloudflareRedirect.UpdatedBy,
+			&i.ConnectionName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCloudflareTunnels = `-- name: ListCloudflareTunnels :many
 SELECT cloudflare_tunnels.id, cloudflare_tunnels.server_id, cloudflare_tunnels.server_name, cloudflare_tunnels.connection_id, cloudflare_tunnels.tunnel_id, cloudflare_tunnels.token, cloudflare_tunnels.adopted, cloudflare_tunnels.want, cloudflare_tunnels.status, cloudflare_tunnels.reason, cloudflare_tunnels.attempts, cloudflare_tunnels.retry_at, cloudflare_tunnels.gen, cloudflare_tunnels.updated_at, cloudflare_connections.name AS connection_name
 FROM cloudflare_tunnels JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_tunnels.connection_id
@@ -530,6 +794,54 @@ func (q *Queries) ListCloudflareZones(ctx context.Context) ([]ListCloudflareZone
 	return items, nil
 }
 
+const listConnectionRedirects = `-- name: ListConnectionRedirects :many
+SELECT id, hostname, connection_id, zone_id, target, status_code, keep_path, record_id, ruleset_id, rule_id, want, status, reason, attempts, retry_at, gen, created_at, updated_at, updated_by FROM cloudflare_redirects WHERE connection_id = +? ORDER BY hostname
+`
+
+// A connection's redirects, by hostname: removing it lists or deletes them.
+func (q *Queries) ListConnectionRedirects(ctx context.Context, connectionID int64) ([]CloudflareRedirect, error) {
+	rows, err := q.db.QueryContext(ctx, listConnectionRedirects, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CloudflareRedirect
+	for rows.Next() {
+		var i CloudflareRedirect
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hostname,
+			&i.ConnectionID,
+			&i.ZoneID,
+			&i.Target,
+			&i.StatusCode,
+			&i.KeepPath,
+			&i.RecordID,
+			&i.RulesetID,
+			&i.RuleID,
+			&i.Want,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.RetryAt,
+			&i.Gen,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDueCloudflareRecords = `-- name: ListDueCloudflareRecords :many
 SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at FROM cloudflare_records
 JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
@@ -572,6 +884,64 @@ func (q *Queries) ListDueCloudflareRecords(ctx context.Context, arg ListDueCloud
 			&i.RetryAt,
 			&i.Gen,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDueCloudflareRedirects = `-- name: ListDueCloudflareRedirects :many
+SELECT cloudflare_redirects.id, cloudflare_redirects.hostname, cloudflare_redirects.connection_id, cloudflare_redirects.zone_id, cloudflare_redirects.target, cloudflare_redirects.status_code, cloudflare_redirects.keep_path, cloudflare_redirects.record_id, cloudflare_redirects.ruleset_id, cloudflare_redirects.rule_id, cloudflare_redirects.want, cloudflare_redirects.status, cloudflare_redirects.reason, cloudflare_redirects.attempts, cloudflare_redirects.retry_at, cloudflare_redirects.gen, cloudflare_redirects.created_at, cloudflare_redirects.updated_at, cloudflare_redirects.updated_by FROM cloudflare_redirects
+JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.status = 'pending' AND cloudflare_connections.status = 'ok'
+  AND (cloudflare_redirects.retry_at IS NULL OR cloudflare_redirects.retry_at <= +?1)
+ORDER BY cloudflare_redirects.id
+LIMIT +?2
+`
+
+type ListDueCloudflareRedirectsParams struct {
+	Now *time.Time
+	Max int64
+}
+
+// Pending redirects whose connection works and whose retry is due.
+func (q *Queries) ListDueCloudflareRedirects(ctx context.Context, arg ListDueCloudflareRedirectsParams) ([]CloudflareRedirect, error) {
+	rows, err := q.db.QueryContext(ctx, listDueCloudflareRedirects, arg.Now, arg.Max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CloudflareRedirect
+	for rows.Next() {
+		var i CloudflareRedirect
+		if err := rows.Scan(
+			&i.ID,
+			&i.Hostname,
+			&i.ConnectionID,
+			&i.ZoneID,
+			&i.Target,
+			&i.StatusCode,
+			&i.KeepPath,
+			&i.RecordID,
+			&i.RulesetID,
+			&i.RuleID,
+			&i.Want,
+			&i.Status,
+			&i.Reason,
+			&i.Attempts,
+			&i.RetryAt,
+			&i.Gen,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UpdatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -840,6 +1210,37 @@ func (q *Queries) NextCloudflareRecordRetry(ctx context.Context) ([]*time.Time, 
 	return items, nil
 }
 
+const nextCloudflareRedirectRetry = `-- name: NextCloudflareRedirectRetry :many
+SELECT cloudflare_redirects.retry_at FROM cloudflare_redirects
+JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.status = 'pending' AND cloudflare_connections.status = 'ok' AND cloudflare_redirects.retry_at IS NOT NULL
+ORDER BY cloudflare_redirects.retry_at LIMIT 1
+`
+
+// The earliest held-back retry of a pending redirect whose connection works.
+func (q *Queries) NextCloudflareRedirectRetry(ctx context.Context) ([]*time.Time, error) {
+	rows, err := q.db.QueryContext(ctx, nextCloudflareRedirectRetry)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*time.Time
+	for rows.Next() {
+		var retry_at *time.Time
+		if err := rows.Scan(&retry_at); err != nil {
+			return nil, err
+		}
+		items = append(items, retry_at)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nextCloudflareTunnelRetry = `-- name: NextCloudflareTunnelRetry :many
 SELECT cloudflare_tunnels.retry_at FROM cloudflare_tunnels
 JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_tunnels.connection_id
@@ -871,6 +1272,18 @@ func (q *Queries) NextCloudflareTunnelRetry(ctx context.Context) ([]*time.Time, 
 	return items, nil
 }
 
+const redirectHostnameExists = `-- name: RedirectHostnameExists :one
+SELECT EXISTS (SELECT 1 FROM cloudflare_redirects WHERE hostname = +?)
+`
+
+// Whether a redirect holds a hostname, which then can't be a domain.
+func (q *Queries) RedirectHostnameExists(ctx context.Context, hostname string) (bool, error) {
+	row := q.db.QueryRowContext(ctx, redirectHostnameExists, hostname)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const retryCloudflareRecord = `-- name: RetryCloudflareRecord :exec
 UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE id = +?
@@ -884,6 +1297,21 @@ type RetryCloudflareRecordParams struct {
 // Works on a record again.
 func (q *Queries) RetryCloudflareRecord(ctx context.Context, arg RetryCloudflareRecordParams) error {
 	_, err := q.db.ExecContext(ctx, retryCloudflareRecord, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const retryCloudflareRedirect = `-- name: RetryCloudflareRedirect :exec
+UPDATE cloudflare_redirects SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE id = +?
+`
+
+type RetryCloudflareRedirectParams struct {
+	UpdatedAt time.Time
+	ID        int64
+}
+
+func (q *Queries) RetryCloudflareRedirect(ctx context.Context, arg RetryCloudflareRedirectParams) error {
+	_, err := q.db.ExecContext(ctx, retryCloudflareRedirect, arg.UpdatedAt, arg.ID)
 	return err
 }
 
@@ -919,6 +1347,23 @@ func (q *Queries) RetryConnectionRecords(ctx context.Context, arg RetryConnectio
 	return err
 }
 
+const retryConnectionRedirects = `-- name: RetryConnectionRedirects :exec
+UPDATE cloudflare_redirects SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE connection_id = +? AND status = 'error'
+`
+
+type RetryConnectionRedirectsParams struct {
+	UpdatedAt    time.Time
+	ConnectionID int64
+}
+
+// Works on a connection's failed redirects again, after it got a new
+// token or was refreshed.
+func (q *Queries) RetryConnectionRedirects(ctx context.Context, arg RetryConnectionRedirectsParams) error {
+	_, err := q.db.ExecContext(ctx, retryConnectionRedirects, arg.UpdatedAt, arg.ConnectionID)
+	return err
+}
+
 const retryFailedCloudflare = `-- name: RetryFailedCloudflare :execrows
 UPDATE cloudflare_records SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE status = 'error'
@@ -926,6 +1371,19 @@ WHERE status = 'error'
 
 func (q *Queries) RetryFailedCloudflare(ctx context.Context, updatedAt time.Time) (int64, error) {
 	result, err := q.db.ExecContext(ctx, retryFailedCloudflare, updatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const retryFailedCloudflareRedirects = `-- name: RetryFailedCloudflareRedirects :execrows
+UPDATE cloudflare_redirects SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE status = 'error'
+`
+
+func (q *Queries) RetryFailedCloudflareRedirects(ctx context.Context, updatedAt time.Time) (int64, error) {
+	result, err := q.db.ExecContext(ctx, retryFailedCloudflareRedirects, updatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -987,6 +1445,46 @@ func (q *Queries) SaveCloudflareRecord(ctx context.Context, arg SaveCloudflareRe
 	return result.RowsAffected()
 }
 
+const saveCloudflareRedirectResult = `-- name: SaveCloudflareRedirectResult :execrows
+UPDATE cloudflare_redirects
+SET record_id = ?, ruleset_id = ?, rule_id = ?, status = ?, reason = ?, attempts = ?, retry_at = ?, updated_at = ?
+WHERE id = +?9 AND gen = +?10
+`
+
+type SaveCloudflareRedirectResultParams struct {
+	RecordID  string
+	RulesetID string
+	RuleID    string
+	Status    string
+	Reason    string
+	Attempts  int64
+	RetryAt   *time.Time
+	UpdatedAt time.Time
+	ID        int64
+	Gen       int64
+}
+
+// What the worker found or did, saved only if nothing else changed the
+// row since it loaded generation gen.
+func (q *Queries) SaveCloudflareRedirectResult(ctx context.Context, arg SaveCloudflareRedirectResultParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, saveCloudflareRedirectResult,
+		arg.RecordID,
+		arg.RulesetID,
+		arg.RuleID,
+		arg.Status,
+		arg.Reason,
+		arg.Attempts,
+		arg.RetryAt,
+		arg.UpdatedAt,
+		arg.ID,
+		arg.Gen,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const saveCloudflareZone = `-- name: SaveCloudflareZone :exec
 INSERT INTO cloudflare_zones (connection_id, zone_id, name) VALUES (?, ?, ?)
 `
@@ -1040,6 +1538,24 @@ func (q *Queries) SetCloudflareConnectionStatus(ctx context.Context, arg SetClou
 	return err
 }
 
+const setCloudflareRedirectAbsent = `-- name: SetCloudflareRedirectAbsent :exec
+UPDATE cloudflare_redirects
+SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?, updated_by = ?
+WHERE id = +?
+`
+
+type SetCloudflareRedirectAbsentParams struct {
+	UpdatedAt time.Time
+	UpdatedBy string
+	ID        int64
+}
+
+// The redirect goes: delete what Dock made.
+func (q *Queries) SetCloudflareRedirectAbsent(ctx context.Context, arg SetCloudflareRedirectAbsentParams) error {
+	_, err := q.db.ExecContext(ctx, setCloudflareRedirectAbsent, arg.UpdatedAt, arg.UpdatedBy, arg.ID)
+	return err
+}
+
 const setCloudflareTunnelAbsent = `-- name: SetCloudflareTunnelAbsent :exec
 UPDATE cloudflare_tunnels SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
 WHERE server_id = +?
@@ -1083,6 +1599,24 @@ type SetCloudflareTunnelReasonParams struct {
 
 func (q *Queries) SetCloudflareTunnelReason(ctx context.Context, arg SetCloudflareTunnelReasonParams) error {
 	_, err := q.db.ExecContext(ctx, setCloudflareTunnelReason, arg.Reason, arg.ID)
+	return err
+}
+
+const setConnectionRedirectsAbsent = `-- name: SetConnectionRedirectsAbsent :exec
+UPDATE cloudflare_redirects
+SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?, updated_by = ?
+WHERE connection_id = +? AND want = 'present'
+`
+
+type SetConnectionRedirectsAbsentParams struct {
+	UpdatedAt    time.Time
+	UpdatedBy    string
+	ConnectionID int64
+}
+
+// A connection is removed with its redirects: delete what Dock made.
+func (q *Queries) SetConnectionRedirectsAbsent(ctx context.Context, arg SetConnectionRedirectsAbsentParams) error {
+	_, err := q.db.ExecContext(ctx, setConnectionRedirectsAbsent, arg.UpdatedAt, arg.UpdatedBy, arg.ConnectionID)
 	return err
 }
 
@@ -1200,6 +1734,58 @@ func (q *Queries) UpdateCloudflareRecord(ctx context.Context, arg UpdateCloudfla
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const updateCloudflareRedirectSettings = `-- name: UpdateCloudflareRedirectSettings :one
+UPDATE cloudflare_redirects
+SET target = ?, status_code = ?, keep_path = ?, status = 'pending', reason = '', attempts = 0, retry_at = NULL,
+    gen = gen + 1, updated_at = ?, updated_by = ?
+WHERE id = +?6 AND want = 'present'
+RETURNING id, hostname, connection_id, zone_id, target, status_code, keep_path, record_id, ruleset_id, rule_id, want, status, reason, attempts, retry_at, gen, created_at, updated_at, updated_by
+`
+
+type UpdateCloudflareRedirectSettingsParams struct {
+	Target     string
+	StatusCode int64
+	KeepPath   bool
+	UpdatedAt  time.Time
+	UpdatedBy  string
+	ID         int64
+}
+
+// A redirect's new target or kind, to be made in Cloudflare again.
+func (q *Queries) UpdateCloudflareRedirectSettings(ctx context.Context, arg UpdateCloudflareRedirectSettingsParams) (CloudflareRedirect, error) {
+	row := q.db.QueryRowContext(ctx, updateCloudflareRedirectSettings,
+		arg.Target,
+		arg.StatusCode,
+		arg.KeepPath,
+		arg.UpdatedAt,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	var i CloudflareRedirect
+	err := row.Scan(
+		&i.ID,
+		&i.Hostname,
+		&i.ConnectionID,
+		&i.ZoneID,
+		&i.Target,
+		&i.StatusCode,
+		&i.KeepPath,
+		&i.RecordID,
+		&i.RulesetID,
+		&i.RuleID,
+		&i.Want,
+		&i.Status,
+		&i.Reason,
+		&i.Attempts,
+		&i.RetryAt,
+		&i.Gen,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UpdatedBy,
+	)
+	return i, err
 }
 
 const updateCloudflareTunnel = `-- name: UpdateCloudflareTunnel :execrows
