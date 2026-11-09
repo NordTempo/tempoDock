@@ -8,9 +8,9 @@ const features = [
     color: "text-deploys",
     title: "Push, get a release.",
     items: [
-      "Dockerfile or compose",
       "Preview per pull request",
-      "Rollbacks, cron jobs",
+      "Migrations before traffic",
+      "Rollbacks in one step",
     ],
   },
   {
@@ -20,29 +20,59 @@ const features = [
     items: [
       "Automatic certificates",
       "Cloudflare DNS records",
-      "Verified ownership",
+      "Password or login in front",
     ],
   },
   {
     key: "ERRORS",
     color: "text-errors",
     title: "Linked to the release.",
-    items: ["Frontend, logs and 5xx", "Alerts per organization", "Log drains"],
+    items: [
+      "Frontend, logs and 5xx",
+      "Alerts per organization",
+      "Log history and drains",
+    ],
   },
   {
     key: "ANALYTICS",
     color: "text-analytics",
     title: "Traffic, on your box.",
-    items: ["Visits and trends", "Web vitals", "Uptime checks"],
+    items: ["Visits, vitals, trends", "Uptime checks", "Requests per domain"],
   },
   {
     key: "DATA",
-    color: "text-neutral-200",
+    color: "text-data",
     title: "Databases you can see.",
     items: [
       "Browse and edit Postgres",
-      "Backups and snapshots",
+      "Reviewed changesets",
+      "Postgres and Redis templates",
+    ],
+  },
+  {
+    key: "BACKUPS",
+    color: "text-data",
+    title: "Restores you have tried.",
+    items: [
+      "Scheduled, to any S3 bucket",
+      "Volume snapshots",
       "Restores in one step",
+    ],
+  },
+  {
+    key: "JOBS",
+    color: "text-neutral-200",
+    title: "More than web servers.",
+    items: ["Cron jobs", "One-off commands, dock run", "Tunnels, dock connect"],
+  },
+  {
+    key: "CONFIG",
+    color: "text-neutral-200",
+    title: "Config as code.",
+    items: [
+      "dock.toml in the repo",
+      "dock apply, Compose import",
+      "Clone an environment",
     ],
   },
   {
@@ -52,7 +82,7 @@ const features = [
     items: [
       "Environments per server",
       "Moves without downtime",
-      "Drain a server",
+      "Where memory and disk go",
     ],
   },
   {
@@ -67,10 +97,20 @@ const features = [
     title: "Teams, done right.",
     items: ["Organizations and roles", "SSO, passkeys, 2FA", "Audit log"],
   },
+  {
+    key: "UPKEEP",
+    color: "text-neutral-200",
+    title: "Dock looks after itself.",
+    items: [
+      "Updates from the console",
+      "Control plane backups",
+      "Move to a new server",
+    ],
+  },
 ];
 ---
 
-<Section id="features" title="Everything after git push.">
+<Section id="features" title="Everything after git push." dim="Twelve things you stop building.">
   <div class="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
     {features.map((f) => (
       <div class="border-b border-line py-6 pr-6 sm:[&:nth-child(2n)]:border-l sm:[&:nth-child(2n)]:pl-6 lg:[&:nth-child(2n)]:border-l-0 lg:[&:nth-child(2n)]:pl-0 lg:[&:not(:nth-child(4n+1))]:border-l lg:[&:not(:nth-child(4n+1))]:pl-6">

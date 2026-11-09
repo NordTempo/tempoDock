@@ -40,6 +40,7 @@
   --color-errors: #f87171;
   --color-analytics: #67e8f9;
   --color-agents: #a78bfa;
+  --color-data: #60a5fa;
 }
 
 @layer base {

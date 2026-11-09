@@ -1,0 +1,68 @@
+---
+import Section from "./Section.astro";
+
+/**
+ * Masked rows beside a data access policy. The policy is an example an admin
+ * might set; the built-in defaults are stricter (tokens get none on production).
+ */
+
+const rows = [
+  ["1042", "masked", "trial"],
+  ["1043", "masked", "free"],
+  ["1044", "masked", "pro"],
+];
+const levels = ["none", "schema", "read", "propose", "write"];
+const policy = [
+  { who: "viewers", prod: "none", other: "read" },
+  { who: "deployers", prod: "read", other: "write" },
+  { who: "agent tokens", prod: "propose", other: "write" },
+  { who: "admins", prod: "write", other: "write" },
+];
+const tone: Record<string, string> = {
+  none: "text-dim",
+  schema: "text-meta",
+  read: "text-analytics",
+  propose: "text-agents",
+  write: "text-deploys",
+};
+---
+
+<Section id="policy" title="Your database," dim="with a door policy.">
+  <Fragment slot="aside">
+    Browse and edit Postgres from the service page. You decide who reads, who proposes and who writes, per
+    environment. Sensitive columns stay masked. Every query lands in the audit log.
+  </Fragment>
+  <div class="grid gap-5 lg:grid-cols-[1fr_1fr]">
+    <div class="min-w-0 border border-[#1b2a3d] bg-panel px-4 py-5 sm:px-6">
+      <p class="eyebrow mb-4 text-meta">USERS · 3 OF 18,204</p>
+      <table class="w-full font-mono text-[13px]">
+        <thead><tr class="text-left text-meta"><th class="pb-2 font-normal">id</th><th class="pb-2 font-normal">email</th><th class="pb-2 font-normal">plan</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr class="border-t border-line">
+              <td class="py-2 text-sub">{r[0]}</td>
+              <td class="py-2 text-dim italic">{r[1]}</td>
+              <td class="py-2 text-sub">{r[2]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <div class="min-w-0 border border-[#222] bg-panel px-4 py-5 sm:px-6">
+      <p class="eyebrow mb-4 text-meta">DATA ACCESS POLICY</p>
+      <table class="w-full font-mono text-[13px]">
+        <thead><tr class="text-left text-meta"><th class="pb-2 font-normal">who</th><th class="pb-2 font-normal">production</th><th class="pb-2 font-normal">other</th></tr></thead>
+        <tbody>
+          {policy.map((p) => (
+            <tr class="border-t border-line">
+              <td class="py-2 text-sub">{p.who}</td>
+              <td class:list={["py-2", tone[p.prod]]}>{p.prod}</td>
+              <td class:list={["py-2", tone[p.other]]}>{p.other}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p class="mt-4 font-mono text-[11px] text-dim">{levels.join(" < ")}</p>
+    </div>
+  </div>
+</Section>
