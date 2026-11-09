@@ -18,11 +18,12 @@ const width = ruler ? 640 : 380;
 const height = 500;
 const rulerX = 430;
 const top = layers.length - 1;
+const gap = Math.min(54, (474 - 190) / top);
 
 const planes = layers.map((layer, k) => ({
   layer,
   highlight: k === top,
-  ...plane({ cx: 185, oy: 16 + (top - k) * 54, pattern: layer.pattern }),
+  ...plane({ cx: 185, oy: 16 + (top - k) * gap, pattern: layer.pattern }),
 }));
 
 const ticks = Array.from({ length: 48 }, (_, t) => ({

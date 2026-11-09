@@ -38,6 +38,19 @@ export const layers: Layer[] = [
     pattern: (i, j) => (j === 4 && i < 9 ? 3 : j % 3 === 1 ? 2 : 0),
   },
   {
+    id: "data",
+    name: "DATA",
+    detail: "browse, edit, backups",
+    color: "#60a5fa",
+    // A table: a lit header, columns, and one staged cell.
+    pattern: (i, j) => {
+      if (i < 1 || i > 10 || j < 1 || j > 10 || i === 4 || i === 8) return 0;
+      if (j === 1) return 3;
+      if (j === 6 && i >= 5 && i <= 7) return 3;
+      return j % 2 === 1 ? 2 : 1;
+    },
+  },
+  {
     id: "domains",
     name: "DOMAINS",
     detail: "automatic TLS, DNS",

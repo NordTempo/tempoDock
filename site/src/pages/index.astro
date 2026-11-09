@@ -1,24 +1,30 @@
 ---
 import Agents from "../components/Agents.astro";
+import Changesets from "../components/Changesets.astro";
 import Closing from "../components/Closing.astro";
+import Data from "../components/Data.astro";
 import Features from "../components/Features.astro";
 import Footer from "../components/Footer.astro";
 import Hero from "../components/Hero.astro";
 import Nav from "../components/Nav.astro";
 import Numbers from "../components/Numbers.astro";
+import Policy from "../components/Policy.astro";
 import Releases from "../components/Releases.astro";
 import Page from "../layouts/Page.astro";
 ---
 
 <Page
   title="Tempo Dock: the whole platform, one binary"
-  description="Deploys, domains, errors, analytics and agents on servers you own. A self-hosted platform that idles at 29 MB."
+  description="Deploys, databases, domains, errors, analytics and agents on servers you own. A self-hosted platform that idles at 29 MB."
 >
   <Nav />
   <main>
     <Hero />
     <Releases />
+    <Data />
     <Agents />
+    <Changesets />
+    <Policy />
     <Features />
     <Numbers />
     <Closing />
