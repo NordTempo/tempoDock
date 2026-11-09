@@ -101,7 +101,7 @@ func TestOrgCloudflareConnections(t *testing.T) {
 	if _, err := p.c.ListCloudflare(p.ctx, other, true); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("an org admin listed the platform's connections: %v", err)
 	}
-	if err := p.c.RemoveCloudflare(p.ctx, other, false, "own"); CodeOf(err) != apitypes.CodeNotFound {
+	if err := p.c.RemoveCloudflare(p.ctx, other, false, "own", false); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("another org removed org 1's connection: %v", err)
 	}
 	lab, err := p.store.GetServer(p.ctx, p.ids["homelab"])

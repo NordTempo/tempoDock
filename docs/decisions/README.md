@@ -75,6 +75,7 @@ Status is one of **proposed**, **accepted**, **superseded**.
 | [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's: provider buttons, GitHub, invite only, passwords off | accepted |
 | [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs: public Apps, installs checked against the GitHub user | accepted |
 | [0067](0067-landing-site-and-console-address.md) | The landing site at dock.nordtempo.com, the console at console.nordtempo.com | accepted |
+| [0068](0068-redirects-on-cloudflare-zones.md) | Redirects on Cloudflare zones, at Cloudflare's edge, on the level a zone is added | accepted |
 
 ## Template
 

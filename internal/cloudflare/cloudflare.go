@@ -166,6 +166,51 @@ type Connector struct {
 	} `json:"conns"`
 }
 
+// RedirectPhase is the phase of a zone's Single Redirect rules.
+const RedirectPhase = "http_request_dynamic_redirect"
+
+// Ruleset is a zone's entry point ruleset of one phase: its rules run in
+// order, the first that matches decides.
+type Ruleset struct {
+	ID    string `json:"id,omitempty"`
+	Name  string `json:"name,omitempty"`
+	Kind  string `json:"kind,omitempty"`
+	Phase string `json:"phase,omitempty"`
+	Rules []Rule `json:"rules"`
+}
+
+// Rule is one rule of a ruleset. Dock only writes redirect rules; others'
+// rules are read, never written back.
+type Rule struct {
+	ID               string          `json:"id,omitempty"`
+	Description      string          `json:"description,omitempty"`
+	Expression       string          `json:"expression"`
+	Action           string          `json:"action"`
+	ActionParameters *RuleParameters `json:"action_parameters,omitempty"`
+	Enabled          *bool           `json:"enabled,omitempty"`
+}
+
+// RuleParameters are a rule's action parameters; a redirect's are
+// FromValue.
+type RuleParameters struct {
+	FromValue *RedirectTarget `json:"from_value,omitempty"`
+}
+
+// RedirectTarget is where a redirect rule sends a request.
+type RedirectTarget struct {
+	TargetURL TargetURL `json:"target_url"`
+	// StatusCode is 301, 302, 307 or 308.
+	StatusCode          int  `json:"status_code"`
+	PreserveQueryString bool `json:"preserve_query_string"`
+}
+
+// TargetURL is a static URL (Value) or one built per request
+// (Expression).
+type TargetURL struct {
+	Value      string `json:"value,omitempty"`
+	Expression string `json:"expression,omitempty"`
+}
+
 // envelope is Cloudflare's response wrapper.
 type envelope struct {
 	Success    bool            `json:"success"`
@@ -337,6 +382,61 @@ func (c *Client) DeleteTunnel(ctx context.Context, accountID, id string) error {
 		return nil
 	}
 	return err
+}
+
+// EntrypointRuleset returns the zone's entry point ruleset of phase; nil
+// when the zone has none yet.
+func (c *Client) EntrypointRuleset(ctx context.Context, zoneID, phase string) (*Ruleset, error) {
+	var out Ruleset
+	err := c.do(ctx, "read the zone's "+phase+" rules", http.MethodGet, zonePath(zoneID)+"/rulesets/phases/"+url.PathEscape(phase)+"/entrypoint", nil, nil, &out)
+	if e, ok := AsError(err); ok && e.NotFound() {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateRuleset creates a zone's entry point ruleset of rs.Phase with
+// rs.Rules; only for a zone that has none.
+func (c *Client) CreateRuleset(ctx context.Context, zoneID string, rs Ruleset) (Ruleset, error) {
+	var out Ruleset
+	rs.ID, rs.Kind = "", "zone"
+	err := c.do(ctx, "create the zone's "+rs.Phase+" rules", http.MethodPost, zonePath(zoneID)+"/rulesets", nil, rs, &out)
+	return out, err
+}
+
+// AddRule appends r to a ruleset and returns the ruleset, r in it with
+// its new ID.
+func (c *Client) AddRule(ctx context.Context, zoneID, rulesetID string, r Rule) (Ruleset, error) {
+	var out Ruleset
+	r.ID = ""
+	err := c.do(ctx, "add a rule", http.MethodPost, rulesetPath(zoneID, rulesetID)+"/rules", nil, r, &out)
+	return out, err
+}
+
+// UpdateRule replaces rule r.ID of a ruleset with r.
+func (c *Client) UpdateRule(ctx context.Context, zoneID, rulesetID string, r Rule) (Ruleset, error) {
+	var out Ruleset
+	id := r.ID
+	r.ID = ""
+	err := c.do(ctx, "change a rule", http.MethodPatch, rulesetPath(zoneID, rulesetID)+"/rules/"+url.PathEscape(id), nil, r, &out)
+	return out, err
+}
+
+// DeleteRule deletes a rule of a ruleset; one that is already gone is no
+// error.
+func (c *Client) DeleteRule(ctx context.Context, zoneID, rulesetID, ruleID string) error {
+	err := c.do(ctx, "delete a rule", http.MethodDelete, rulesetPath(zoneID, rulesetID)+"/rules/"+url.PathEscape(ruleID), nil, nil, nil)
+	if e, ok := AsError(err); ok && e.NotFound() {
+		return nil
+	}
+	return err
+}
+
+func rulesetPath(zoneID, rulesetID string) string {
+	return zonePath(zoneID) + "/rulesets/" + url.PathEscape(rulesetID)
 }
 
 func zonePath(zoneID string) string { return "/zones/" + url.PathEscape(zoneID) }

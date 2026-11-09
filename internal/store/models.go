@@ -237,6 +237,28 @@ type CloudflareRecord struct {
 	UpdatedAt    time.Time
 }
 
+type CloudflareRedirect struct {
+	ID           int64
+	Hostname     string
+	ConnectionID int64
+	ZoneID       string
+	Target       string
+	StatusCode   int64
+	KeepPath     bool
+	RecordID     string
+	RulesetID    string
+	RuleID       string
+	Want         string
+	Status       string
+	Reason       string
+	Attempts     int64
+	RetryAt      *time.Time
+	Gen          int64
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	UpdatedBy    string
+}
+
 type CloudflareTunnel struct {
 	ID           int64
 	ServerID     *int64

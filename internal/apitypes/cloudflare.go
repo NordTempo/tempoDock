@@ -165,3 +165,59 @@ type ServerTunnelRequest struct {
 	Cloudflare     string `json:"cloudflare,omitempty" doc:"Cloudflare connection; may be left out when there is one"`
 	ReplaceIngress bool   `json:"replace_ingress,omitempty"`
 }
+
+// CloudflareRedirect is a hostname in one of a Cloudflare connection's
+// zones that Cloudflare redirects to a URL at its edge (ADR 0068): no
+// service or server serves it. It is the connection's owner's, the
+// platform's or an org's; a platform zone shared with orgs keeps its
+// redirects on the platform's level.
+type CloudflareRedirect struct {
+	Hostname   string `json:"hostname" example:"instagram.tempo.run"`
+	Zone       string `json:"zone" example:"tempo.run"`
+	Connection string `json:"connection"`
+	Target     string `json:"target" example:"https://instagram.com/tempo"`
+	// StatusCode is 302 or 307 for a temporary redirect, 301 or 308 for a
+	// permanent one, which browsers keep.
+	StatusCode int `json:"status_code" enum:"301,302,307,308"`
+	// KeepPath appends the request's path and query to Target.
+	KeepPath  bool           `json:"keep_path"`
+	Status    RedirectStatus `json:"status" enum:"pending,live,error,deleting"`
+	Reason    string         `json:"reason,omitempty"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	UpdatedBy string         `json:"updated_by"`
+}
+
+// RedirectStatus is how far Dock is with a redirect in Cloudflare:
+// pending (Dock is on it, or retrying), live, error (the reason says
+// why), deleting.
+type RedirectStatus string
+
+// Redirect statuses.
+const (
+	RedirectPending  RedirectStatus = "pending"
+	RedirectLive     RedirectStatus = "live"
+	RedirectError    RedirectStatus = "error"
+	RedirectDeleting RedirectStatus = "deleting"
+)
+
+// CreateCloudflareRedirectRequest adds a redirect for a hostname in one
+// of the level's own zones (the org's connections', or with platform the
+// platform's).
+type CreateCloudflareRedirectRequest struct {
+	Hostname string `json:"hostname" minLength:"1" example:"instagram.tempo.run"`
+	Target   string `json:"target" minLength:"1" maxLength:"2048" example:"https://instagram.com/tempo"`
+	// StatusCode is 302 when left out.
+	StatusCode int  `json:"status_code,omitempty" enum:"301,302,307,308" doc:"302 when left out"`
+	KeepPath   bool `json:"keep_path,omitempty" doc:"Append the request's path and query to the target"`
+	// Connection picks the connection when the zone is on several of the
+	// level's; the oldest otherwise.
+	Connection string `json:"connection,omitempty"`
+}
+
+// UpdateCloudflareRedirectRequest changes a redirect's target or kind;
+// what is left out stays.
+type UpdateCloudflareRedirectRequest struct {
+	Target     *string `json:"target,omitempty" maxLength:"2048"`
+	StatusCode *int    `json:"status_code,omitempty" enum:"301,302,307,308"`
+	KeepPath   *bool   `json:"keep_path,omitempty"`
+}

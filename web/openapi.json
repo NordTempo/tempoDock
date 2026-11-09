@@ -1957,6 +1957,76 @@
         ],
         "type": "object"
       },
+      "CloudflareRedirect": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "type": "string"
+          },
+          "hostname": {
+            "examples": [
+              "instagram.tempo.run"
+            ],
+            "type": "string"
+          },
+          "keep_path": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "live",
+              "error",
+              "deleting"
+            ],
+            "type": "string"
+          },
+          "status_code": {
+            "enum": [
+              301,
+              302,
+              307,
+              308
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "target": {
+            "examples": [
+              "https://instagram.com/tempo"
+            ],
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "zone": {
+            "examples": [
+              "tempo.run"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "zone",
+          "connection",
+          "target",
+          "status_code",
+          "keep_path",
+          "status",
+          "updated_at",
+          "updated_by"
+        ],
+        "type": "object"
+      },
       "CloudflareRetried": {
         "additionalProperties": false,
         "properties": {
@@ -2494,6 +2564,49 @@
         "required": [
           "name",
           "kind"
+        ],
+        "type": "object"
+      },
+      "CreateCloudflareRedirectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "type": "string"
+          },
+          "hostname": {
+            "examples": [
+              "instagram.tempo.run"
+            ],
+            "minLength": 1,
+            "type": "string"
+          },
+          "keep_path": {
+            "description": "Append the request's path and query to the target",
+            "type": "boolean"
+          },
+          "status_code": {
+            "description": "302 when left out",
+            "enum": [
+              301,
+              302,
+              307,
+              308
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "target": {
+            "examples": [
+              "https://instagram.com/tempo"
+            ],
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname",
+          "target"
         ],
         "type": "object"
       },
@@ -5470,6 +5583,9 @@
           "project_renamed": {
             "$ref": "#/components/schemas/ProjectRenamed"
           },
+          "redirect": {
+            "$ref": "#/components/schemas/CloudflareRedirect"
+          },
           "release": {
             "$ref": "#/components/schemas/Release"
           },
@@ -5519,7 +5635,8 @@
               "uptime",
               "job",
               "environment_move",
-              "server_drain"
+              "server_drain",
+              "cloudflare_redirect"
             ],
             "type": "string"
           },
@@ -12335,6 +12452,29 @@
         },
         "type": "object"
       },
+      "UpdateCloudflareRedirectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "keep_path": {
+            "type": "boolean"
+          },
+          "status_code": {
+            "enum": [
+              301,
+              302,
+              307,
+              308
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "target": {
+            "maxLength": 2048,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateCloudflareRequest": {
         "additionalProperties": false,
         "properties": {
@@ -17871,6 +18011,691 @@
         ]
       }
     },
+    "/api/v1/cloudflare/redirects": {
+      "get": {
+        "description": "Hostnames in the organization's own Cloudflare zones (with platform, the platform's) that Cloudflare redirects to a URL, by hostname; at most 1000. Organization admins; operators for the platform's.",
+        "operationId": "list-cloudflare-redirects",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CloudflareRedirect"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List redirects",
+        "tags": [
+          "cloudflare"
+        ]
+      },
+      "post": {
+        "description": "The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Single Redirect › Edit. 409 (hostname_taken) when a domain or a record Dock didn't make holds the name. Organization admins; operators for the platform's.",
+        "operationId": "create-cloudflare-redirect",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCloudflareRedirectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareRedirect"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add a redirect",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/redirects/{hostname}": {
+      "delete": {
+        "description": "Dock deletes its rule and record in Cloudflare in the background, then forgets the redirect. Organization admins; operators for the platform's.",
+        "operationId": "remove-cloudflare-redirect",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The redirect's hostname",
+            "in": "path",
+            "name": "hostname",
+            "required": true,
+            "schema": {
+              "description": "The redirect's hostname",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove a redirect",
+        "tags": [
+          "cloudflare"
+        ]
+      },
+      "patch": {
+        "description": "A new target, status code or keep_path; Cloudflare's rule is changed to match. Organization admins; operators for the platform's.",
+        "operationId": "update-cloudflare-redirect",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The redirect's hostname",
+            "in": "path",
+            "name": "hostname",
+            "required": true,
+            "schema": {
+              "description": "The redirect's hostname",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCloudflareRedirectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareRedirect"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change a redirect",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
+    "/api/v1/cloudflare/redirects/{hostname}/retry": {
+      "post": {
+        "description": "After what failed it was fixed (a record in the way deleted, a permission added). Organization admins; operators for the platform's.",
+        "operationId": "retry-cloudflare-redirect",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The redirect's hostname",
+            "in": "path",
+            "name": "hostname",
+            "required": true,
+            "schema": {
+              "description": "The redirect's hostname",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+            "explode": false,
+            "in": "query",
+            "name": "platform",
+            "schema": {
+              "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloudflareRedirect"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Retry a failed redirect",
+        "tags": [
+          "cloudflare"
+        ]
+      }
+    },
     "/api/v1/cloudflare/retry": {
       "post": {
         "description": "Every domain and tunnel that failed is tried again, in the background. Operators only.",
@@ -18089,7 +18914,7 @@
     },
     "/api/v1/cloudflare/{cloudflare}": {
       "delete": {
-        "description": "Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it. Organization admins; operators for the platform's.",
+        "description": "Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it, and while it has redirects, unless force: they are then deleted in Cloudflare first. Organization admins; operators for the platform's.",
         "operationId": "remove-cloudflare",
         "parameters": [
           {
@@ -18117,6 +18942,16 @@
             "name": "platform",
             "schema": {
               "description": "The platform's connections (server tunnels, Dock's address, zones shared with organizations) instead of the organization's own. Operators only.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Remove the connection's redirects with it",
+            "explode": false,
+            "in": "query",
+            "name": "force",
+            "schema": {
+              "description": "Remove the connection's redirects with it",
               "type": "boolean"
             }
           }

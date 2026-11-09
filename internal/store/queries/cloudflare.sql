@@ -239,3 +239,111 @@ WHERE id = +?;
 -- name: CountConnectionUse :one
 -- Tunnels Dock keeps with a connection; it can't be removed while any.
 SELECT COUNT(*) FROM cloudflare_tunnels WHERE connection_id = +?;
+
+-- name: ListCloudflareRedirectsOf :many
+-- An org's redirects (org 0: the platform's): those on its connections,
+-- by hostname, with the connection's name; at most max.
+SELECT sqlc.embed(cloudflare_redirects), cloudflare_connections.name AS connection_name
+FROM cloudflare_connections JOIN cloudflare_redirects ON cloudflare_redirects.connection_id = cloudflare_connections.id
+WHERE coalesce(cloudflare_connections.org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER)
+ORDER BY cloudflare_redirects.hostname
+LIMIT +sqlc.arg(max);
+
+-- name: GetCloudflareRedirectOf :one
+-- One of an org's redirects (org 0: the platform's) by hostname.
+SELECT sqlc.embed(cloudflare_redirects), cloudflare_connections.name AS connection_name
+FROM cloudflare_redirects JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.hostname = +sqlc.arg(hostname) AND coalesce(cloudflare_connections.org_id, 0) = +CAST(sqlc.arg(org) AS INTEGER);
+
+-- name: GetCloudflareRedirectByID :one
+-- A redirect with its connection's name and owner (0: the platform), for
+-- its live event.
+SELECT sqlc.embed(cloudflare_redirects), cloudflare_connections.name AS connection_name,
+    CAST(coalesce(cloudflare_connections.org_id, 0) AS INTEGER) AS org_id
+FROM cloudflare_redirects JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.id = +?;
+
+-- name: RedirectHostnameExists :one
+-- Whether a redirect holds a hostname, which then can't be a domain.
+SELECT EXISTS (SELECT 1 FROM cloudflare_redirects WHERE hostname = +?);
+
+-- name: CreateCloudflareRedirect :one
+INSERT INTO cloudflare_redirects (hostname, connection_id, zone_id, target, status_code, keep_path, created_at, updated_at, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: UpdateCloudflareRedirectSettings :one
+-- A redirect's new target or kind, to be made in Cloudflare again.
+UPDATE cloudflare_redirects
+SET target = ?, status_code = ?, keep_path = ?, status = 'pending', reason = '', attempts = 0, retry_at = NULL,
+    gen = gen + 1, updated_at = ?, updated_by = ?
+WHERE id = +sqlc.arg(id) AND want = 'present'
+RETURNING *;
+
+-- name: SetCloudflareRedirectAbsent :exec
+-- The redirect goes: delete what Dock made.
+UPDATE cloudflare_redirects
+SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?, updated_by = ?
+WHERE id = +?;
+
+-- name: RetryCloudflareRedirect :exec
+UPDATE cloudflare_redirects SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE id = +?;
+
+-- name: ListDueCloudflareRedirects :many
+-- Pending redirects whose connection works and whose retry is due.
+SELECT cloudflare_redirects.* FROM cloudflare_redirects
+JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.status = 'pending' AND cloudflare_connections.status = 'ok'
+  AND (cloudflare_redirects.retry_at IS NULL OR cloudflare_redirects.retry_at <= +sqlc.arg(now))
+ORDER BY cloudflare_redirects.id
+LIMIT +sqlc.arg(max);
+
+-- name: NextCloudflareRedirectRetry :many
+-- The earliest held-back retry of a pending redirect whose connection works.
+SELECT cloudflare_redirects.retry_at FROM cloudflare_redirects
+JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_redirects.connection_id
+WHERE cloudflare_redirects.status = 'pending' AND cloudflare_connections.status = 'ok' AND cloudflare_redirects.retry_at IS NOT NULL
+ORDER BY cloudflare_redirects.retry_at LIMIT 1;
+
+-- name: SaveCloudflareRedirectResult :execrows
+-- What the worker found or did, saved only if nothing else changed the
+-- row since it loaded generation gen.
+UPDATE cloudflare_redirects
+SET record_id = ?, ruleset_id = ?, rule_id = ?, status = ?, reason = ?, attempts = ?, retry_at = ?, updated_at = ?
+WHERE id = +sqlc.arg(id) AND gen = +sqlc.arg(gen);
+
+-- name: DeleteCloudflareRedirect :exec
+-- A deleted redirect's row, unless it changed meanwhile.
+DELETE FROM cloudflare_redirects WHERE id = +sqlc.arg(id) AND gen = +sqlc.arg(gen);
+
+-- name: ListConnectionRedirects :many
+-- A connection's redirects, by hostname: removing it lists or deletes them.
+SELECT * FROM cloudflare_redirects WHERE connection_id = +? ORDER BY hostname;
+
+-- name: RetryConnectionRedirects :exec
+-- Works on a connection's failed redirects again, after it got a new
+-- token or was refreshed.
+UPDATE cloudflare_redirects SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE connection_id = +? AND status = 'error';
+
+-- name: RetryFailedCloudflareRedirects :execrows
+UPDATE cloudflare_redirects SET status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE status = 'error';
+
+-- name: FailStrandedCloudflareRedirects :many
+-- A connection's redirects in zones it no longer reaches: failed, saying
+-- what to do. Returns their IDs, for live events.
+UPDATE cloudflare_redirects
+SET status = 'error', reason = ?, attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE cloudflare_redirects.connection_id = +sqlc.arg(connection) AND cloudflare_redirects.want = 'present' AND NOT EXISTS (
+    SELECT 1 FROM cloudflare_zones
+    WHERE cloudflare_zones.connection_id = cloudflare_redirects.connection_id AND cloudflare_zones.zone_id = cloudflare_redirects.zone_id
+)
+RETURNING id;
+
+-- name: SetConnectionRedirectsAbsent :exec
+-- A connection is removed with its redirects: delete what Dock made.
+UPDATE cloudflare_redirects
+SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?, updated_by = ?
+WHERE connection_id = +? AND want = 'present';

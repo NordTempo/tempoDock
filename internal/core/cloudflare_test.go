@@ -110,7 +110,7 @@ func TestCloudflareConnection(t *testing.T) {
 	if _, err := p.c.SetServerTunnel(p.ctx, testSystem, "homelab", apitypes.ServerTunnelRequest{Action: "create"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.c.RemoveCloudflare(p.ctx, testSystem, true, "home"); CodeOf(err) != apitypes.CodeConflict {
+	if err := p.c.RemoveCloudflare(p.ctx, testSystem, true, "home", false); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("remove a connection in use: %v", err)
 	}
 }

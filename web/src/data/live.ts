@@ -6,7 +6,7 @@ import { useEventStream } from "../api/events";
 import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
-import { cloudflareKey } from "../features/cloudflare/data";
+import { applyRedirectEvent, cloudflareKey } from "../features/cloudflare/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { applyMoveEvent } from "../features/move/data";
 import { registryKey } from "../features/registry/data";
@@ -68,6 +68,7 @@ const busEvents = [
   "job",
   "environment_move",
   "server_drain",
+  "cloudflare_redirect",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -333,6 +334,15 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "server_drain":
       // Only operators get these: a drain went an environment further.
       if (event.drain) applyDrainEvent(queryClient, event.drain);
+      return;
+    case "cloudflare_redirect":
+      // A redirect went live, failed or is gone (ADR 0068).
+      if (event.redirect)
+        applyRedirectEvent(
+          queryClient,
+          event.redirect,
+          event.message === "removed",
+        );
       return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.

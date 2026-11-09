@@ -28,6 +28,13 @@ type CloudflareInput struct {
 	CloudflarePlatform
 }
 
+// RedirectInput addresses a redirect of the org or, with platform, the
+// platform's.
+type RedirectInput struct {
+	Hostname string `path:"hostname" doc:"The redirect's hostname"`
+	CloudflarePlatform
+}
+
 // registerCloudflare registers the Cloudflare connections' endpoints
 // (ADR 0036). Connections are the org's, for its admins, or with
 // platform=true the platform's, for operators (ADR 0062).
@@ -75,10 +82,14 @@ func registerCloudflare(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "remove-cloudflare", Method: http.MethodDelete, Path: one,
 		Summary: "Remove a Cloudflare connection", Tags: tags, DefaultStatus: http.StatusNoContent,
-		Description: "Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it." + who,
-	}, func(ctx context.Context, actor core.Actor, in *CloudflareInput) (*struct{}, error) {
-		return nil, s.core.RemoveCloudflare(ctx, actor, in.Platform, in.Cloudflare)
+		Description: "Dock forgets the domains it routed with it; their records stay in Cloudflare. 409 while a server's tunnel uses it, and while it has redirects, unless force: they are then deleted in Cloudflare first." + who,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		CloudflareInput
+		Force bool `query:"force" doc:"Remove the connection's redirects with it"`
+	}) (*struct{}, error) {
+		return nil, s.core.RemoveCloudflare(ctx, actor, in.Platform, in.Cloudflare, in.Force)
 	})
+	registerRedirects(s, a)
 	authed(s, a, huma.Operation{
 		OperationID: "list-cloudflare-zones", Method: http.MethodGet, Path: Prefix + "/cloudflare/zones",
 		Summary: "List the zones domains can be added from", Tags: tags,
@@ -99,5 +110,58 @@ func registerCloudflare(s *Server, a huma.API) {
 		Description: "Every domain and tunnel that failed is tried again, in the background. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.CloudflareRetried], error) {
 		return reply(s.core.RetryCloudflare(ctx, actor))
+	})
+}
+
+// registerRedirects registers the endpoints of redirects on Cloudflare
+// zones (ADR 0068): the org's, for its admins, or with platform=true the
+// platform's, for operators.
+func registerRedirects(s *Server, a huma.API) {
+	tags := []string{"cloudflare"}
+	const all = Prefix + "/cloudflare/redirects"
+	const one = all + "/{hostname}"
+	const who = " Organization admins; operators for the platform's."
+	authed(s, a, huma.Operation{
+		OperationID: "list-cloudflare-redirects", Method: http.MethodGet, Path: all,
+		Summary: "List redirects", Tags: tags,
+		Description: "Hostnames in the organization's own Cloudflare zones (with platform, the platform's) that Cloudflare redirects to a URL, by hostname; at most 1000." + who,
+	}, func(ctx context.Context, actor core.Actor, in *CloudflarePlatform) (*out[[]apitypes.CloudflareRedirect], error) {
+		return reply(s.core.ListCloudflareRedirects(ctx, actor, in.Platform))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "create-cloudflare-redirect", Method: http.MethodPost, Path: all,
+		Summary: "Add a redirect", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "The hostname must be in a zone of the level's own connections (a platform zone shared with organizations keeps its redirects on the platform). " +
+			"Dock makes a proxied placeholder record and a Single Redirect rule in the background; the token needs Zone › Single Redirect › Edit. " +
+			"409 (hostname_taken) when a domain or a record Dock didn't make holds the name." + who,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		CloudflarePlatform
+		Body apitypes.CreateCloudflareRedirectRequest
+	}) (*out[apitypes.CloudflareRedirect], error) {
+		return reply(s.core.AddCloudflareRedirect(ctx, actor, in.Platform, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "update-cloudflare-redirect", Method: http.MethodPatch, Path: one,
+		Summary: "Change a redirect", Tags: tags,
+		Description: "A new target, status code or keep_path; Cloudflare's rule is changed to match." + who,
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		RedirectInput
+		Body apitypes.UpdateCloudflareRedirectRequest
+	}) (*out[apitypes.CloudflareRedirect], error) {
+		return reply(s.core.UpdateCloudflareRedirect(ctx, actor, in.Platform, in.Hostname, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-cloudflare-redirect", Method: http.MethodDelete, Path: one,
+		Summary: "Remove a redirect", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Dock deletes its rule and record in Cloudflare in the background, then forgets the redirect." + who,
+	}, func(ctx context.Context, actor core.Actor, in *RedirectInput) (*struct{}, error) {
+		return nil, s.core.RemoveCloudflareRedirect(ctx, actor, in.Platform, in.Hostname)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "retry-cloudflare-redirect", Method: http.MethodPost, Path: one + "/retry",
+		Summary: "Retry a failed redirect", Tags: tags,
+		Description: "After what failed it was fixed (a record in the way deleted, a permission added)." + who,
+	}, func(ctx context.Context, actor core.Actor, in *RedirectInput) (*out[apitypes.CloudflareRedirect], error) {
+		return reply(s.core.RetryCloudflareRedirect(ctx, actor, in.Platform, in.Hostname))
 	})
 }
