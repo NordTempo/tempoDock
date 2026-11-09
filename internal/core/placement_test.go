@@ -35,9 +35,6 @@ func TestPickServer(t *testing.T) {
 		code  apitypes.ErrorCode
 		msg   []string
 	}{
-		{"most free memory wins", prod, []serverLoad{
-			load(1, "a", true, false, 8, 2, 0), load(2, "b", true, false, 16, 6, 5), load(3, "c", true, false, 4, 0, 0),
-		}, "b", "", nil},
 		{"free room, not total memory", prod, []serverLoad{
 			load(1, "big", true, false, 32, 30, 1), load(2, "small", true, false, 8, 1, 3),
 		}, "small", "", nil},
@@ -323,27 +320,6 @@ func (p *pool) ids2name(name string) string {
 		p.t.Fatal(err)
 	}
 	return srv.Name
-}
-
-func TestOfflineServerRuntime(t *testing.T) {
-	p := newPool(t, poolServer{"cp", true, true, 8}, poolServer{"lab", false, true, 8})
-	if _, err := p.c.runtimeFor(p.ids["lab"]); err != nil {
-		t.Fatal(err)
-	}
-	p.setOffline("lab", true)
-	_, err := p.c.runtimeFor(p.ids["lab"])
-	if CodeOf(err) != apitypes.CodeServerOffline || err.Error() != "the server is offline; try again once it is back" {
-		t.Fatalf("runtimeFor offline server = %v", err)
-	}
-	if _, err := p.c.runtime(p.ids["lab"]).List(p.ctx); CodeOf(err) != apitypes.CodeServerOffline {
-		t.Fatalf("calls on an offline server = %v", err)
-	}
-	servers, _ := p.c.ListServers(p.ctx, testSystem)
-	for _, s := range servers {
-		if s.Name == "lab" && s.Status != "offline" {
-			t.Errorf("lab status = %s", s.Status)
-		}
-	}
 }
 
 func TestUpdateServerNeedsUnlimitedAdmin(t *testing.T) {

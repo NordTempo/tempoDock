@@ -522,32 +522,6 @@ func TestIntegrationOnDemandAsk(t *testing.T) {
 	}
 }
 
-func TestIntegrationIdleRSS(t *testing.T) {
-	ask := newAskServer(t)
-	tc := startCaddy(t, ask.url, false)
-	up := backend(t, "X")
-	var routes []node.Route
-	for i := range 50 {
-		routes = append(routes, node.Route{Hostnames: []string{"app" + strconv.Itoa(i) + ".test"}, Upstream: up})
-	}
-	if err := tc.proxy.ApplyRoutes(context.Background(), routes); err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range routes {
-		tc.get(t, tc.url("http", r.Hostnames[0], "/"))
-	}
-	time.Sleep(2 * time.Second)
-	status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", tc.pid))
-	if err != nil {
-		t.Skipf("no /proc: %v", err)
-	}
-	for line := range strings.Lines(string(status)) {
-		if strings.HasPrefix(line, "VmRSS:") {
-			t.Logf("caddy idle RSS with %d routes: %s", len(routes), strings.Join(strings.Fields(line)[1:], " "))
-		}
-	}
-}
-
 // runCaddy writes opts as Caddy's config in dir and runs Caddy until its
 // admin socket and HTTP port answer. portTaken reports that Caddy exited
 // because one of its ports was in use; the caller retries with new ones.

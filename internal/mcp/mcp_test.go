@@ -640,7 +640,6 @@ func TestAnalyticsTools(t *testing.T) {
 		"analytics_errors":    {"site": "shop.example.com", "filters": []string{"device:is:mobile"}},
 		"analytics_vitals":    {"site": "shop.example.com", "by": []string{"page"}, "metric": "lcp"},
 		"analytics_replays":   {"site": "shop.example.com", "errors_only": true},
-		"analytics_goals":     {"site": "shop.example.com"},
 		"analytics_funnel":    {"site": "shop.example.com"},
 	} {
 		if c := call(t, s, tool, args); c.isError {

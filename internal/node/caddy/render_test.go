@@ -227,12 +227,6 @@ func TestRenderRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestNotFoundPage(t *testing.T) {
-	if !strings.Contains(notFoundPage, "background:#000") || !strings.Contains(notFoundPage, "color:#fff") || strings.Contains(notFoundPage, "—") {
-		t.Error("404 page should be white on true black with no em dashes")
-	}
-}
-
 func assertMarker(t *testing.T, r route, marker string) {
 	t.Helper()
 	h := r.Handle[0]

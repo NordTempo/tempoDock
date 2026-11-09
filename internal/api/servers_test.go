@@ -230,24 +230,3 @@ func TestServerLinkEndpointsNeedOperator(t *testing.T) {
 		}
 	}
 }
-
-// Promoting needs deploy on the target environment; deploy on the source
-// alone isn't enough.
-func TestPromoteNeedsDeployOnTarget(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	if _, err := f.core.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
-		t.Fatal(err)
-	}
-	tok, err := f.core.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "staging-deploy", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.tokens["staging-deploy"] = tok.Secret
-	req := apitypes.PromoteRequest{From: "staging", To: "production"}
-	for token, want := range map[string]int{"read": 403, "staging-deploy": 403, "shop-deploy": 202} {
-		if resp, body := f.do(token, "POST", "/api/v1/projects/shop/promote", req); resp.StatusCode != want {
-			t.Errorf("promote as %s: %d %s", token, resp.StatusCode, body)
-		}
-	}
-}

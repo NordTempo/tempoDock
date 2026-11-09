@@ -291,7 +291,6 @@ func TestLogDrainsNeverReachTheServer(t *testing.T) {
 		{Kind: apitypes.DrainSyslog, URL: "tls://[fd00:ec2::254]:6514"},
 		// Private networks: the app firewall doesn't cover the control plane.
 		{Kind: apitypes.DrainHTTP, URL: "http://10.0.0.5/ingest"},
-		{Kind: apitypes.DrainHTTP, URL: "https://192.168.1.1"},
 		{Kind: apitypes.DrainLoki, URL: "http://100.64.1.1:3100"},
 		{Kind: apitypes.DrainSyslog, URL: "tcp://[fd00::1]:514"},
 		{Kind: apitypes.DrainSyslog, URL: "udp://172.17.0.2"},

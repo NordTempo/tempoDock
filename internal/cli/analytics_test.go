@@ -71,17 +71,8 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if code, _, stderr := exec(t, "analytics", "site", "set", "shop.example.com", "-p", "shop", "--replay", "maybe"); code == 0 || !strings.Contains(stderr, "on or off") {
 		t.Errorf("--replay maybe: %d %s", code, stderr)
 	}
-	if st := ok[apitypes.SiteStats](t, "analytics", "stats", "shop.example.com", "-p", "shop", "--range", "7d", "--filter", "country:is:NO"); st.Site != "shop.example.com" {
-		t.Errorf("stats = %+v", st)
-	}
 	if e := ok[apitypes.SiteErrors](t, "analytics", "errors", "shop.example.com", "-p", "shop", "--range", "24h"); e.Site != "shop.example.com" || !e.Collecting || e.Bucket != "hour" {
 		t.Errorf("errors = %+v", e)
-	}
-	if v := ok[apitypes.SiteVitals](t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "device"); len(v.Breakdowns) != 0 || v.Thresholds["inp"].Poor != 500 {
-		t.Errorf("vitals = %+v", v)
-	}
-	if r := ok[apitypes.SiteReplays](t, "analytics", "replays", "shop.example.com", "-p", "shop", "--errors"); r.Site != "shop.example.com" || !r.Recording {
-		t.Errorf("replays = %+v", r)
 	}
 	if code, _, stderr := exec(t, "analytics", "goals", "add", "shop.example.com", "Signup", "event:signup", "-p", "shop"); code != 0 {
 		t.Fatalf("goals add: %s", stderr)

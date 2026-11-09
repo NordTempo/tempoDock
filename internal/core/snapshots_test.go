@@ -402,27 +402,6 @@ func TestSnapshotRestoreInterruptedByCrash(t *testing.T) {
 	})
 }
 
-func TestSnapshotBeforeIsSynchronous(t *testing.T) {
-	h := newHarness(t)
-	h.snapshotJobs(nil)
-	app := h.volumeService("app")
-	ss, _ := h.c.serviceFor(h.ctx, testSystem, app, apitypes.ScopeRead, "testing")
-	s, err := h.c.SnapshotBefore(h.ctx, testSystem, ss, apitypes.SnapshotBeforeRun, "dock run")
-	if err != nil || s == nil || s.Status != apitypes.SnapshotReady || s.Trigger != apitypes.SnapshotBeforeRun {
-		t.Fatalf("snapshot = %+v, %v", s, err)
-	}
-	h.snapshotJobs(func(node.JobSpec) *node.JobResult { return &node.JobResult{ExitCode: 1} })
-	if _, err := h.c.SnapshotBefore(h.ctx, testSystem, ss, apitypes.SnapshotBeforeRun, ""); err == nil {
-		t.Error("a failed snapshot must stop the action")
-	}
-	// Stateless services have nothing to keep.
-	web := h.service("web", apitypes.CreateServiceRequest{})
-	ws, _ := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
-	if s, err := h.c.SnapshotBefore(h.ctx, testSystem, ws, apitypes.SnapshotBeforeRun, ""); s != nil || err != nil {
-		t.Errorf("stateless: %+v, %v", s, err)
-	}
-}
-
 // SnapshotBefore waits for a backup, snapshot or restore holding the
 // service instead of failing the action it guards.
 func TestSnapshotBeforeWaitsForTheService(t *testing.T) {

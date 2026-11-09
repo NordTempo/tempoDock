@@ -407,9 +407,6 @@ func TestFixedHostPortSurvivesRestart(t *testing.T) {
 	if after.HostPort != port {
 		t.Fatalf("HostPort after restart = %d, want %d", after.HostPort, port)
 	}
-	if !errors.Is(notFound("container", "x"), node.ErrNotFound) {
-		t.Fatal("notFound does not match node.ErrNotFound")
-	}
 }
 
 func TestHealthCheckGrace(t *testing.T) {

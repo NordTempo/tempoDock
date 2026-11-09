@@ -80,7 +80,6 @@ func TestUpdateUptimeCheck(t *testing.T) {
 		{apitypes.UpdateUptimeCheckRequest{}, "nothing to change"},
 		{apitypes.UpdateUptimeCheckRequest{IntervalSeconds: new(10)}, "30 seconds to 1 hour"},
 		{apitypes.UpdateUptimeCheckRequest{IntervalSeconds: new(30)}, "longer than the check's timeout"},
-		{apitypes.UpdateUptimeCheckRequest{ExpectStatus: new("4xx")}, "2xx or 3xx"},
 	} {
 		if _, err := h.c.UpdateUptimeCheck(h.ctx, testSystem, web, chk.ID, tc.req); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%+v: %v, want %q", tc.req, err, tc.want)

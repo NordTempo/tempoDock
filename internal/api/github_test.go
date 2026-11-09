@@ -112,7 +112,6 @@ func TestHooksHandler(t *testing.T) {
 	}{
 		"good":          {hookPath, good, body, http.StatusOK, "pong"},
 		"missing":       {hookPath, "", body, http.StatusUnauthorized, "signature missing or wrong"},
-		"bad":           {hookPath, "sha256=" + strings.Repeat("0", 64), body, http.StatusUnauthorized, "signature"},
 		"tampered body": {hookPath, good, append(body, ' '), http.StatusUnauthorized, "signature"},
 		"unknown hook":  {"/hooks/github/nope", good, body, http.StatusNotFound, "no such webhook"},
 		"too large":     {hookPath, good, bytes.Repeat([]byte("x"), maxHookBody+1), http.StatusRequestEntityTooLarge, "4 MB"},

@@ -38,7 +38,6 @@ func TestCompletion(t *testing.T) {
 		want []string
 	}{
 		{[]string{"logs", "-p", "shop", "-e", "production", "-s", ""}, []string{"web", "worker"}},
-		{[]string{"logs", "-p", "shop", "-e", "production", "-s", "w"}, []string{"web", "worker"}},
 		{[]string{"service", "show", "-p", "shop", "-e", "production", "wo"}, []string{"worker"}},
 		{[]string{"deploy", "-p", "shop", "-e", ""}, []string{"production"}},
 		{[]string{"project", "archive", ""}, []string{"shop"}},

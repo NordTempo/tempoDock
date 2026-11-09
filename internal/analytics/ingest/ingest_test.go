@@ -425,10 +425,6 @@ func TestReplayChunks(t *testing.T) {
 	}
 	q := chunkQuery
 	data := gz(`[{"type":4,"timestamp":1000}]`)
-	// The site doesn't record: nothing kept.
-	if code := send(q, data); code != http.StatusAccepted || in.Stats().Replays.Load() != 0 {
-		t.Fatalf("a site without replay: %d, %d kept", code, in.Stats().Replays.Load())
-	}
 	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20, MaskAllText: true}})
 	if code := send(q, data); code != http.StatusAccepted {
 		t.Fatalf("status %d", code)

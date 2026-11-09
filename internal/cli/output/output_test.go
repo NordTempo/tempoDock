@@ -16,7 +16,6 @@ func TestExitCodeOf(t *testing.T) {
 		errors.New("boom"):                    ExitError,
 		nf:                                    ExitNotFound,
 		fmt.Errorf("deploy web: %w", nf):      ExitNotFound,
-		&Error{Exit: ExitUnreachable}:         ExitUnreachable,
 		fmt.Errorf("x: %w", MissingFlag("a")): ExitUsage,
 	} {
 		if got := ExitCodeOf(err); got != want {

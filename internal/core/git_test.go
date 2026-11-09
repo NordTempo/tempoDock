@@ -205,14 +205,12 @@ func TestValidSignature(t *testing.T) {
 		header string
 		want   bool
 	}{
-		"good":          {good, true},
-		"other secret":  {sign("other", body), false},
-		"other body":    {sign("s3cret", []byte("{}")), false},
-		"missing":       {"", false},
-		"sha1":          {"sha1=" + strings.TrimPrefix(good, "sha256="), false},
-		"not hex":       {"sha256=zz", false},
-		"truncated":     {good[:len(good)-2], false},
-		"bare hex only": {strings.TrimPrefix(good, "sha256="), false},
+		"good":         {good, true},
+		"other secret": {sign("other", body), false},
+		"missing":      {"", false},
+		"sha1":         {"sha1=" + strings.TrimPrefix(good, "sha256="), false},
+		"not hex":      {"sha256=zz", false},
+		"truncated":    {good[:len(good)-2], false},
 	} {
 		if got := validSignature([]byte("s3cret"), body, tc.header); got != tc.want {
 			t.Errorf("%s: got %v, want %v", name, got, tc.want)

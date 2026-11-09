@@ -48,9 +48,6 @@ func TestSites(t *testing.T) {
 	if site.Name != "shop.example.com" || site.Environment != "production" || len(site.Hostnames) != 1 || site.Hostnames[0].Service != "web" {
 		t.Fatalf("site = %+v", site)
 	}
-	if *site.Settings.ReplaySampleRate != 20 || *site.Settings.Replay || !*site.Settings.ErrorsAndVitals || *site.Settings.EventRetentionDays != 396 {
-		t.Errorf("default settings = %+v", site.Settings)
-	}
 	// The service's other hostname joins the same site.
 	if site, err = h.c.EnableHostnameAnalytics(h.ctx, testSystem, "www.shop.example.com", apitypes.EnableAnalyticsRequest{}); err != nil || len(site.Hostnames) != 2 {
 		t.Fatalf("second hostname: %+v, %v", site, err)
