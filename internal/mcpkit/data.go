@@ -187,11 +187,13 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 
 	addLocatedTool(s, "data_query", "Run read-only SQL",
 		"Run one read-only SQL statement (SELECT, EXPLAIN, ...) in a read-only transaction as a least-privilege role; writes are impossible here, use propose_data_changes. "+
+			"On Redis, sql is one read command (HGETALL user:1, ZRANGE board 0 9 WITHSCORES), in db; whole-value reads of big keys are refused, use data_key. "+
 			"Rows come as JSON arrays in column order. Cells over 8 KB are cut. Needs data access level read; every statement is audited with its SQL.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			SQL            string `json:"sql" doc:"One SQL statement."`
+			SQL            string `json:"sql" doc:"One SQL statement (on Redis, one command)."`
 			Limit          int    `json:"limit,omitempty" doc:"Row cap. Default 100, at most 1000. Rows past it are dropped and the result is marked truncated."`
 			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"Statement timeout. Default 10, at most 60."`
+			DB             int    `json:"db,omitempty" doc:"Redis: the logical database, default 0."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -201,7 +203,7 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 			if err != nil {
 				return Reply{}, err
 			}
-			stream, err := ops.DataQuery(ctx, c.Actor, ref, apitypes.DataQueryRequest{SQL: in.SQL, Limit: n, TimeoutSeconds: in.TimeoutSeconds})
+			stream, err := ops.DataQuery(ctx, c.Actor, ref, apitypes.DataQueryRequest{SQL: in.SQL, Limit: n, TimeoutSeconds: in.TimeoutSeconds, DB: in.DB})
 			if err != nil {
 				return Reply{}, err
 			}
@@ -305,4 +307,74 @@ func queryError(e *apitypes.DataQueryError) string {
 		s += " [" + e.SQLState + "]"
 	}
 	return s
+}
+
+// DataKeyTools registers the key-value tools (data_keys, data_key) for a
+// host that has a key-value engine (Dock's Redis, ADR 0072); arguments
+// as DataTools'.
+func DataKeyTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error)) {
+	addLocatedTool(s, "data_keys", "Redis keys",
+		"One page of a Redis or Valkey database's keys, found with bounded SCAN steps (never KEYS): name, type, TTL in ms (-1 none), length and sampled size. "+
+			"match is a glob (user:*). A page may hold fewer keys than limit and still have a next: pass it as after. Needs data access level read; audited.",
+		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
+			DB    int    `json:"db,omitempty" doc:"Logical database, default 0."`
+			Match string `json:"match,omitempty" doc:"SCAN glob, e.g. user:*. Empty matches every key."`
+			Type  string `json:"type,omitempty" enum:",string,hash,list,set,zset,stream" doc:"Keep keys of one type."`
+			After string `json:"after,omitempty" doc:"The previous page's next cursor."`
+			Limit int    `json:"limit,omitempty" doc:"Keys per page. Default 50, at most 200."`
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
+			if err != nil {
+				return Reply{}, err
+			}
+			n, err := Limit("limit", in.Limit, defaultPageRows, maxPageRows)
+			if err != nil {
+				return Reply{}, err
+			}
+			page, err := ops.DataKeys(ctx, c.Actor, ref, apitypes.DataKeysRequest{DB: in.DB, Match: in.Match, Type: in.Type, After: in.After, Limit: n})
+			if err != nil {
+				return Reply{}, err
+			}
+			summary := fmt.Sprintf("%d keys (%d in db %d)", len(page.Keys), page.Total, in.DB)
+			if page.Next != "" {
+				summary += "; more with after"
+			}
+			return Reply{Summary: summary + ".", Data: page}, nil
+		})
+
+	addLocatedTool(s, "data_key", "Redis key",
+		"One Redis or Valkey key: type, TTL, length, sampled size, and one page of its value as rows (string [value], hash [field, value], list [#, value], set [member], sorted set [#, member, score], stream [id, fields]). "+
+			"Values over 8 KB are cut. Pass next as after for the following page. Needs data access level read; audited.",
+		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
+			DB    int    `json:"db,omitempty" doc:"Logical database, default 0."`
+			Key   string `json:"key" doc:"The key's name (hex when hex is set: data_keys returns names that aren't UTF-8 that way)."`
+			Hex   bool   `json:"hex,omitempty" doc:"key is hex."`
+			After string `json:"after,omitempty" doc:"The previous page's next cursor."`
+			Limit int    `json:"limit,omitempty" doc:"Items per page. Default 50, at most 200."`
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
+			if err != nil {
+				return Reply{}, err
+			}
+			n, err := Limit("limit", in.Limit, defaultPageRows, maxPageRows)
+			if err != nil {
+				return Reply{}, err
+			}
+			v, err := ops.DataKey(ctx, c.Actor, ref, apitypes.DataKeyRequest{DB: in.DB, Key: in.Key, Hex: in.Hex, After: in.After, Limit: n})
+			if err != nil {
+				return Reply{}, err
+			}
+			var cut bool
+			if v.Rows, cut = capRows(v.Rows); cut {
+				v.Next = ""
+			}
+			summary := fmt.Sprintf("%s: a %s of length %d, %d rows", in.Key, v.Type, v.Length, len(v.Rows))
+			switch {
+			case cut:
+				summary += "; cut at 512 KB, ask for fewer"
+			case v.Next != "":
+				summary += "; more with after"
+			}
+			return Reply{Summary: summary + ".", Data: v}, nil
+		})
 }

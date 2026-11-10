@@ -25,6 +25,8 @@ type dataCore interface {
 	SetupData(ctx context.Context, a core.Actor, ref core.ServiceRef) (apitypes.DataInfo, error)
 	DataSchema(ctx context.Context, a core.Actor, ref core.ServiceRef) (apitypes.DataSchema, error)
 	DataRows(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataPageRequest) (apitypes.DataPage, error)
+	DataKeys(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error)
+	DataKey(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error)
 	DataReferences(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error)
 	DataQuery(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataQueryRequest) (core.Stream[apitypes.DataQueryFrame], error)
 	DataHistory(ctx context.Context, a core.Actor, ref core.ServiceRef, before int64, limit int) ([]apitypes.DataHistoryEntry, error)
@@ -150,6 +152,22 @@ func registerData(s *Server, a huma.API) {
 			return nil, err
 		}
 		return reply(s.dataAPI().DataReferences(ctx, actor, in.ref(), req))
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "get-data-keys", Method: http.MethodGet, Path: dataPathT + "/keys",
+	}), func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		datahttp.KeysQuery
+	}) (*out[apitypes.DataKeyPage], error) {
+		return reply(s.dataAPI().DataKeys(ctx, actor, in.ref(), in.Request()))
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "get-data-key", Method: http.MethodGet, Path: dataPathT + "/keys/value",
+	}), func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		datahttp.KeyQuery
+	}) (*out[apitypes.DataKeyValue], error) {
+		return reply(s.dataAPI().DataKey(ctx, actor, in.ref(), in.Request()))
 	})
 	registerDataQuery(s, a)
 	authed(s, a, dataOp(huma.Operation{

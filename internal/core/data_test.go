@@ -321,7 +321,8 @@ func TestDatabaseDetection(t *testing.T) {
 		{"bitnami/mariadb:11", "", apitypes.EngineMySQL, apitypes.DetectedByImage},
 		{"myorg/db:1", "mysql", apitypes.EngineMySQL, apitypes.DetectedBySetting},
 		{"myorg/db:1", "oracle", "", ""},
-		{"redis:7", "", "", ""},
+		{"redis:7", "", apitypes.EngineRedis, apitypes.DetectedByImage},
+		{"valkey/valkey:8", "", apitypes.EngineRedis, apitypes.DetectedByImage},
 		{"", "", "", ""},
 	} {
 		engine, by := detectDatabase(store.Service{Image: tc.image, Database: tc.setting})

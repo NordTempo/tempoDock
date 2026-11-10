@@ -96,6 +96,22 @@ func registerData(s *server, a huma.API) {
 		}
 		return reply(s.app.DataReferences(ctx, act, in.Connection, req))
 	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "get-data-keys", Method: http.MethodGet, Path: dataPathT + "/keys",
+	}), func(ctx context.Context, act tempobase.Actor, in *struct {
+		ConnPath
+		datahttp.KeysQuery
+	}) (*out[apitypes.DataKeyPage], error) {
+		return reply(s.app.DataKeys(ctx, act, in.Connection, in.Request()))
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "get-data-key", Method: http.MethodGet, Path: dataPathT + "/keys/value",
+	}), func(ctx context.Context, act tempobase.Actor, in *struct {
+		ConnPath
+		datahttp.KeyQuery
+	}) (*out[apitypes.DataKeyValue], error) {
+		return reply(s.app.DataKey(ctx, act, in.Connection, in.Request()))
+	})
 	registerDataQuery(s, a)
 	authed(s, a, dataOp(huma.Operation{
 		OperationID: "get-data-history", Method: http.MethodGet, Path: dataPathT + "/history",

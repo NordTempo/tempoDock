@@ -28,6 +28,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/mysql"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/data/redis"
 	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/secrets"
@@ -58,7 +59,8 @@ type Options struct {
 	Registry Registry
 	Logger   *slog.Logger
 	// DataEngines are the database panel's engines (ADR 0016), one per
-	// kind; nil uses Postgres and MySQL (internal/data/pg, data/mysql).
+	// kind; nil uses Postgres, MySQL and Redis (internal/data/pg,
+	// data/mysql, data/redis).
 	DataEngines []data.Engine
 	// CutoverDrain overrides DefaultCutoverDrain when positive (tests use
 	// a tiny value).
@@ -306,7 +308,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		cf:         newCFState(o.CloudflareAPI),
 	}
 	if c.data == nil {
-		c.data = []data.Engine{pg.New(pg.Options{}), mysql.New(mysql.Options{})}
+		c.data = []data.Engine{pg.New(pg.Options{}), mysql.New(mysql.Options{}), redis.New(redis.Options{})}
 	}
 	if c.lookupTXT == nil {
 		c.lookupTXT = net.DefaultResolver.LookupTXT

@@ -119,10 +119,10 @@ func (c *Core) UpdateDatabaseSettings(ctx context.Context, a Actor, ref ServiceR
 	params := store.SetServiceDatabaseSettingsParams{ID: ss.svc.ID, Database: ss.svc.Database, DatabaseUrlVariable: ss.svc.DatabaseUrlVariable}
 	if req.Database != nil {
 		switch *req.Database {
-		case apitypes.DatabaseDetect, apitypes.DatabasePostgres, apitypes.DatabaseMySQL, apitypes.DatabaseNone:
+		case apitypes.DatabaseDetect, apitypes.DatabasePostgres, apitypes.DatabaseMySQL, apitypes.DatabaseRedis, apitypes.DatabaseNone:
 			params.Database = string(*req.Database)
 		default:
-			return apitypes.Service{}, invalid("database must be empty (detect from the image), postgres, mysql or none")
+			return apitypes.Service{}, invalid("database must be empty (detect from the image), postgres, mysql, redis or none")
 		}
 	}
 	if req.DatabaseURLVariable != nil {
@@ -180,6 +180,25 @@ func (c *Core) DataRows(ctx context.Context, a Actor, ref ServiceRef, req apityp
 		return apitypes.DataPage{}, err
 	}
 	return c.panel.Rows(ctx, panelActor(a), db, req)
+}
+
+// DataKeys returns one page of a key-value database's keys. Needs level
+// read.
+func (c *Core) DataKeys(ctx context.Context, a Actor, ref ServiceRef, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
+	db, err := c.dataDB(ctx, a, ref)
+	if err != nil {
+		return apitypes.DataKeyPage{}, err
+	}
+	return c.panel.Keys(ctx, panelActor(a), db, req)
+}
+
+// DataKey returns one key and a page of its value. Needs level read.
+func (c *Core) DataKey(ctx context.Context, a Actor, ref ServiceRef, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error) {
+	db, err := c.dataDB(ctx, a, ref)
+	if err != nil {
+		return apitypes.DataKeyValue{}, err
+	}
+	return c.panel.Key(ctx, panelActor(a), db, req)
 }
 
 // DataReferences returns the rows referencing one row. Needs level read.

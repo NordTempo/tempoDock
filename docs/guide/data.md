@@ -6,8 +6,10 @@ and the same permissions, and everything is in the audit log. The design
 is [ADR 0016](../decisions/0016-database-panel.md); MySQL and MariaDB are
 [ADR 0072](../decisions/0072-mysql-and-redis-in-the-data-panel.md).
 
-Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer. Redis
-comes later.
+Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer, Redis
+7.0 or newer and Valkey 7.2 or newer. Redis has keys, not tables: see
+[Redis and Valkey](#redis-and-valkey); changing keys and its Health view
+come later.
 
 ## Is it a database?
 
@@ -91,6 +93,40 @@ dock db saved run open-orders
   unique `NOT NULL` index pages by offset, up to 10 000 rows; past that,
   use `query`. 64-bit integers and decimals are exact strings, times are
   UTC.
+
+## Redis and Valkey
+
+Dock detects `redis`, `valkey/valkey`, `bitnami/redis`, `bitnami/valkey` and
+`redis/redis-stack-server` images, and the Redis template marks its service
+itself and sets up access when it starts. The owner is the default user
+with `REDIS_PASSWORD` (or the user and password of `REDIS_URL`, whose
+`/N` names the logical database); standalone servers only, not cluster
+mode.
+
+```sh
+dock db keys 'user:*' --type hash      # one page of keys, found with SCAN
+dock db key user:1042                  # type, TTL, size and a page of the value
+dock db query 'ZRANGE board 0 9 REV WITHSCORES' --db 0
+```
+
+- Keys come from `SCAN` steps, never `KEYS`: a page is about 100 keys,
+  at most 10 steps or 50 ms, so it may hold fewer and still go on. Sizes
+  are `MEMORY USAGE` with 5 samples, an estimate for big values.
+- A value comes a page at a time: hash fields and set members by
+  `HSCAN`/`SSCAN`, list elements and sorted set members by index, stream
+  entries newest first, strings up to 8 KB (`--full`: 1 MB).
+- `query` runs one read command (`GET`, `HGETALL`, `ZRANGE`, `XRANGE`,
+  `SCAN`, `TYPE`, `TTL`, `INFO`, ...). Commands that read a whole value
+  run only up to 10 000 elements (1 MB for strings), else they say what to
+  use instead; nothing that writes, blocks, scripts or runs `KEYS`.
+- Key names need level `read`, like rows: they often hold IDs and
+  emails.
+- Dock's users are ACL users with fixed command lists: `dock_reader`
+  reads, `dock_writer` will commit changesets, `dock_monitor` reads the
+  server's statistics, never keys or `CONFIG`. Redis keeps ACL users in
+  memory, so a restart drops them; Dock creates them again as the owner
+  on the next use. Browsing never changes eviction order
+  (`CLIENT NO-TOUCH`).
 
 ## Change data
 

@@ -121,7 +121,10 @@ export function DataPanel({
   const engine = engines[info.data?.engine ?? "postgres"];
   const tabList = engine.tabs
     .filter((tab) => tab !== "changes" || showChanges)
-    .map((tab) => ({ tab, label: tabLabels[tab] }));
+    .map((tab) => ({ tab, label: engine.labels?.[tab] ?? tabLabels[tab] }));
+  // A tab the engine doesn't have (a link from another database) opens
+  // its first one.
+  const tab = engine.tabs.includes(view.tab) ? view.tab : engine.tabs[0];
   // Digits pick the nth tab.
   const tabs = tabList.map((t, i) => ({ ...t, key: String(i + 1) }));
   // SQL the Health tab hands over ("Explain in SQL"); the editor opens
@@ -138,7 +141,7 @@ export function DataPanel({
             label: t.label.toLowerCase(),
             run: () => onView({ ...view, tab: t.tab }),
           })),
-          ...(canEdit && view.tab === "tables"
+          ...(canEdit && tab === "tables"
             ? [
                 {
                   key: "e",
@@ -172,7 +175,7 @@ export function DataPanel({
   const selectedName = selected && tableName(selected);
   const production = access.confirm_commit;
   // Edit mode only applies to the Tables tab; it survives a look elsewhere.
-  const writing = editing && view.tab === "tables";
+  const writing = editing && tab === "tables";
   const openTable = (table: string) =>
     onView({ ...view, table, filters: [], order: undefined });
 
@@ -184,7 +187,7 @@ export function DataPanel({
             <button
               key={t.tab}
               type="button"
-              aria-pressed={view.tab === t.tab}
+              aria-pressed={tab === t.tab}
               // The digit is the key; shown on hover and in the ? help, not
               // on the tab, where it read as a count.
               title={`${t.label} (${t.key})`}
@@ -220,7 +223,7 @@ export function DataPanel({
         <p className="p-5 text-(--g-fail)">{schema.error.message}</p>
       ) : !schema.data ? (
         <p className="p-5 text-(--g-mut)">Reading the catalog</p>
-      ) : view.tab === "health" && engine.tabs.includes("health") ? (
+      ) : tab === "health" ? (
         <Suspense
           fallback={<p className="p-5 text-(--g-mut)">Loading Health</p>}
         >
@@ -239,9 +242,9 @@ export function DataPanel({
             }}
           />
         </Suspense>
-      ) : view.tab === "changes" && showChanges ? (
+      ) : tab === "changes" && showChanges ? (
         <ChangesView access={access} actions={edit} />
-      ) : view.tab === "sql" ? (
+      ) : tab === "sql" ? (
         !atLeast(access.level, "read") ? (
           <Limited access={access}>
             Your access is schema: tables and columns, no rows or SQL.
@@ -273,7 +276,7 @@ export function DataPanel({
             <p className="p-5 text-(--g-mut)">
               This database has no tables yet.
             </p>
-          ) : view.tab === "schema" ? (
+          ) : tab === "schema" ? (
             <SchemaView
               table={selected}
               tables={tables}

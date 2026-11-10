@@ -64,11 +64,12 @@ const (
 // DataEngine is a database engine the panel supports.
 type DataEngine string
 
-// Supported engines. EngineMySQL covers MySQL and MariaDB (ADR 0072);
-// Redis comes later.
+// Supported engines. EngineMySQL covers MySQL and MariaDB, EngineRedis
+// Redis and Valkey (ADR 0072).
 const (
 	EnginePostgres DataEngine = "postgres"
 	EngineMySQL    DataEngine = "mysql"
+	EngineRedis    DataEngine = "redis"
 )
 
 // DatabaseSetting is a service's `database` setting: whether it is a
@@ -85,6 +86,9 @@ const (
 	DatabasePostgres DatabaseSetting = "postgres"
 	// DatabaseMySQL marks the service as MySQL or MariaDB.
 	DatabaseMySQL DatabaseSetting = "mysql"
+	// DatabaseRedis marks the service as Redis or Valkey (the Redis
+	// template sets it).
+	DatabaseRedis DatabaseSetting = "redis"
 	// DatabaseNone marks the service as not a database.
 	DatabaseNone DatabaseSetting = "none"
 )
@@ -93,7 +97,7 @@ const (
 // settings (PUT /services/{s}/database-settings). Only fields that are set
 // change. They apply immediately: never staged, never a release.
 type UpdateDatabaseSettingsRequest struct {
-	Database *DatabaseSetting `json:"database,omitempty" enum:",postgres,mysql,none" doc:"Override database detection; empty detects from the image"`
+	Database *DatabaseSetting `json:"database,omitempty" enum:",postgres,mysql,redis,none" doc:"Override database detection; empty detects from the image"`
 	// DatabaseURLVariable names the variable with the connection URL:
 	// DATABASE_URL, or another service's as api.DATABASE_URL. Empty uses
 	// the service's own DATABASE_URL, then the POSTGRES_* variables.
@@ -327,7 +331,7 @@ const (
 // DataInfo is a database service's panel state (GET /data). Services that
 // aren't databases are not_found.
 type DataInfo struct {
-	Engine     DataEngine    `json:"engine" enum:"postgres,mysql"`
+	Engine     DataEngine    `json:"engine" enum:"postgres,mysql,redis"`
 	DetectedBy DataDetection `json:"detected_by" enum:"setting,image"`
 	Status     DataStatus    `json:"status" enum:"ready,setup_needed,unsupported,unreachable,not_running"`
 	// Reason explains any status but ready and says what to do.
@@ -359,6 +363,9 @@ const (
 // schemas are left out.
 type DataSchema struct {
 	Tables []DataTable `json:"tables"`
+	// Keyspace is a key-value database's logical databases (Redis), in
+	// place of tables.
+	Keyspace []DataKeyspaceDB `json:"keyspace,omitempty"`
 	// ReadAt is when the catalog was read.
 	ReadAt time.Time `json:"read_at"`
 }
@@ -578,6 +585,9 @@ type DataQueryRequest struct {
 	// TimeoutSeconds is the statement timeout: 0 means DataQueryTimeout,
 	// at most DataQueryMaxTimeout.
 	TimeoutSeconds int `json:"timeout_seconds,omitempty" minimum:"0" maximum:"60"`
+	// DB is the logical database a Redis command runs in; SQL engines
+	// ignore it.
+	DB int `json:"db,omitempty" minimum:"0" maximum:"1024"`
 }
 
 // DataFrameType is the kind of an NDJSON query frame.

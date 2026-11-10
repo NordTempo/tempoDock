@@ -76,6 +76,25 @@ func (a *App) DataRows(ctx context.Context, act Actor, name string, req apitypes
 	return a.panel.Rows(ctx, act.panelActor(), db, req)
 }
 
+// DataKeys returns one page of a key-value database's keys. Needs level
+// read; tempoBase's connections are Postgres, so the panel refuses it.
+func (a *App) DataKeys(ctx context.Context, act Actor, name string, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
+	db, err := a.dataDB(ctx, act, name)
+	if err != nil {
+		return apitypes.DataKeyPage{}, err
+	}
+	return a.panel.Keys(ctx, act.panelActor(), db, req)
+}
+
+// DataKey returns one key and a page of its value (see DataKeys).
+func (a *App) DataKey(ctx context.Context, act Actor, name string, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error) {
+	db, err := a.dataDB(ctx, act, name)
+	if err != nil {
+		return apitypes.DataKeyValue{}, err
+	}
+	return a.panel.Key(ctx, act.panelActor(), db, req)
+}
+
 // DataReferences returns the rows referencing one row. Needs level read.
 func (a *App) DataReferences(ctx context.Context, act Actor, name string, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error) {
 	db, err := a.dataDB(ctx, act, name)

@@ -4,8 +4,8 @@
 // database to a Target; an Engine (internal/data/pg for Postgres) talks to
 // the database. Engines know nothing about actors, permissions or the
 // store, and the panel knows nothing about drivers. What every engine
-// does is Engine; tabular engines also implement Tables. Connections are
-// cached by internal/data/conncache.
+// does is Engine; tabular engines also implement Tables, key-value ones
+// Keys. Connections are cached by internal/data/conncache.
 //
 // Idle means idle: an engine holds no connections, goroutines or timers
 // while nobody uses the panel. Connections are opened on first use and
@@ -306,6 +306,21 @@ type Tables interface {
 	// key. Masked calls run as RoleReaderMasked, can't look up a row by a
 	// sensitive key and leave out foreign keys over sensitive columns.
 	References(ctx context.Context, t Target, c Call, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error)
+}
+
+// Keys is an engine whose data are keys (Redis, Valkey): the keyspace,
+// keys found with bounded SCAN steps, and one key's value a page at a
+// time. The panel's key operations refuse engines without it.
+type Keys interface {
+	// Keyspace lists the logical databases and their key counts, in a
+	// DataSchema without tables.
+	Keyspace(ctx context.Context, t Target, c Call) (apitypes.DataSchema, error)
+	// ScanKeys reads one page of keys. Next (and req.After) are the
+	// engine's cursors; the panel seals them.
+	ScanKeys(ctx context.Context, t Target, c Call, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error)
+	// Key reads one key and a page of its value; ErrNoTable when the key
+	// doesn't exist.
+	Key(ctx context.Context, t Target, c Call, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error)
 }
 
 // CancelResult is the session a Cancel hit.

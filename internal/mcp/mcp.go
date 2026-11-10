@@ -65,6 +65,7 @@ func Handler(c *core.Core, opts Options) http.Handler {
 			h.addPlatformTools(s)
 			h.addRequestTools(s)
 			mcpkit.DataTools(s, c, serviceOf, core.ServiceRef.String)
+			mcpkit.DataKeyTools(s, c, serviceOf)
 		},
 		Refused: h.refused,
 		Docs: mcpkit.Docs{

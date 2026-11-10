@@ -30,7 +30,7 @@ type ConnectInfo struct {
 	// Port is the container port tunnels reach.
 	Port int `json:"port"`
 	// Engine is set when the service is a detected database.
-	Engine DataEngine `json:"engine,omitempty" enum:"postgres,mysql"`
+	Engine DataEngine `json:"engine,omitempty" enum:"postgres,mysql,redis"`
 	// User and Database are the owner's login and database (Postgres),
 	// from the active release. Not secret; the password is only in URL.
 	User     string `json:"user,omitempty"`

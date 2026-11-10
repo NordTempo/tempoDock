@@ -641,12 +641,14 @@ const databaseChoices: { value: DatabaseSetting; label: string }[] = [
   { value: "", label: "detect" },
   { value: "postgres", label: "postgres" },
   { value: "mysql", label: "mysql" },
+  { value: "redis", label: "redis" },
   { value: "none", label: "none" },
 ];
 
 const engineNames: Record<NonNullable<Service["data_engine"]>, string> = {
   postgres: "Postgres",
   mysql: "MySQL or MariaDB",
+  redis: "Redis or Valkey",
 };
 
 /** What detection decided, in words. */
@@ -655,7 +657,7 @@ function detectedText(service: Service) {
   if (service.database) return `${engineNames[service.database]}, set here`;
   return service.data_engine
     ? `${engineNames[service.data_engine]}, detected from the image`
-    : "not detected from the image; choose postgres or mysql if it is one";
+    : "not detected from the image; choose its engine if it is one";
 }
 
 /**
