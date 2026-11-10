@@ -226,6 +226,8 @@ type Core struct {
 	previews previewState
 	// analytics is Dock Analytics' state (analytics.go).
 	analytics analyticsState
+	// statusPages is which hostname is which status page (status.go).
+	statusPages statusState
 	// updates is updating Dock (update.go).
 	updates updates
 	// address is Dock's public address, "" for none (address.go).
@@ -423,6 +425,12 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	if err := c.startSleep(ctx); err != nil {
 		return fmt.Errorf("sleeping environments: %w", err)
+	}
+	// Status pages' addresses, before the routes that serve them.
+	if hosts, err := c.loadStatusHosts(ctx); err == nil {
+		c.statusPages.hosts.Store(&hosts)
+	} else {
+		c.log.Error("status pages: read the pages; they aren't served until one changes", "err", err)
 	}
 	if err := c.applyRoutes(ctx, c.localID); err != nil {
 		// Caddy keeps its previous config; deploys will retry.

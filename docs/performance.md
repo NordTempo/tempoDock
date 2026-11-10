@@ -138,7 +138,9 @@ alone.
   Caddy config rendering, source packing, `dock.toml` parsing, prepared
   SQLite queries, the retention pass, the alert engine's event handling,
   the access check for login-protected services, traffic counting, a
-  site dashboard's deploy markers (`BenchmarkListSiteDeploys`), and
+  site dashboard's deploy markers (`BenchmarkListSiteDeploys`), a status
+  page served from its cache, rendered and read (`BenchmarkStatusServe`,
+  `BenchmarkRenderStatusPage`, `BenchmarkStatusPage100`, ADR 0073), and
 error issues (`BenchmarkAssembler` and `BenchmarkErrorFollowerLine`, a
 log line without an error: 130 and 80 ns, no allocation;
 `BenchmarkErrorsWrite50`, a tick's write of 100 issues; `BenchmarkListErrors`,
@@ -200,6 +202,11 @@ event driven: Docker's event stream, the in-process event bus and SSE.
   statistics tick, which writes them. A remote server's lines cross its
   node link, one HTTP/2 stream per container, at most 150 per server
   outside environments with drains.
+- Status pages ([ADR 0073](decisions/0073-public-status-pages.md)) have
+  no timer: an uptime, alert or sleep event adds one to a generation
+  counter, and a page is rendered only when someone views it after a
+  change (at most once every 5 s) or a minute after its last render. A
+  view is served from gzipped bytes in memory, without a query.
 - Traffic counting ([ADR 0033](decisions/0033-traffic-statistics.md))
   has no timer: the counter blocks on its UDP socket until Caddy sends a
   line, and the stats tick drains it. Caddy never waits for it.
@@ -251,7 +258,7 @@ end) are not listed.
 | Node link keepalive | `internal/node/remote` (`DefaultKeepAlive`) | after 15 s of silence on the link | a node is connected | one HTTP/2 ping each way, and TCP keepalives; an unanswered ping closes the link after 15 s more |
 | Registry tunnel wait | `internal/node/remote/registry.go` | once, up to 10 s | a registry connection on a node waits for a free tunnel | one timer per waiting connection |
 | Uptime scheduler | `internal/core/uptime_sched.go` | once, at the next due check: each check's interval, 30 s at the least (ADR 0055) | uptime checks exist; with none the goroutine waits on its kick channel and no timer is armed | one goroutine and one timer; per probe one HTTP GET (on another server over the node link, or in process) and one upsert (`BenchmarkUptimeRecord`, ~18 µs) |
-| Uptime rollups on the tick | `internal/core/uptime_sched.go` | with the statistics tick; works at most once an hour | uptime checks exist | an hour's minute rows into hour rows and two trims in one transaction (`BenchmarkUptimeRollup`, ~4 ms for 50 checks at 30 s) |
+| Uptime rollups on the tick | `internal/core/uptime_sched.go` | with the statistics tick; works at most once an hour | uptime checks exist | an hour's minute rows into hour rows and two trims in one transaction (`BenchmarkUptimeRollup`, ~4 ms for 50 checks at 30 s); once a day also the day's hour rows into day rows for status pages and a trim (ADR 0073), one statement each |
 | Snapshot claim wait | `internal/core/snapshots.go` | once, up to 5 min | an automatic snapshot (before a pre-deploy command or a `dock run` writing volumes, ADR 0047) waits for a backup, snapshot or restore of the service to end | one timer; the claim's release wakes it, nothing polls |
 | Backup scheduler | `internal/core/backups_schedule.go` | once, at the next due backup (daily per stateful service, and daily for the control plane itself, ADR 0021); 10 min after its own query failed | always: the control plane's own daily backup keeps it armed | one goroutine and one timer; a pass is four queries, then one job container per due backup. Each pass also deletes volume snapshots past their age (ADR 0047): one indexed query, and a job per server only when one is due. The control plane's backup is a `VACUUM INTO` of the database streamed with the keys and build logs into one restic job |
 | Job scheduler | `internal/core/jobs_schedule.go` | once, at the next due job of any service (ADR 0054); 1 min after its own query failed | an enabled job exists: with none there is no goroutine or timer (one pass at start, then it exits until a job is set) | one goroutine and one timer for every job; a pass is one query and a cron step per job (`BenchmarkJobPass`), then one job container per due job |

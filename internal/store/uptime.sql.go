@@ -127,6 +127,19 @@ func (q *Queries) GetUptimeCheck(ctx context.Context, id int64) (UptimeCheck, er
 	return i, err
 }
 
+const lastUptimeDay = `-- name: LastUptimeDay :one
+SELECT CAST(coalesce(max(at), 0) AS INTEGER) FROM uptime_stats WHERE res = 86400
+`
+
+// The start of the newest day row, 0 for none: where day rollups carry
+// on after a restart.
+func (q *Queries) LastUptimeDay(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, lastUptimeDay)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listServiceUptimeChecks = `-- name: ListServiceUptimeChecks :many
 SELECT id, service_id, url, expect_status, interval_s, timeout_ms, created_at, created_by, auto FROM uptime_checks WHERE service_id = +? ORDER BY id
 `
@@ -299,6 +312,26 @@ type PruneUptimeStatsParams struct {
 
 func (q *Queries) PruneUptimeStats(ctx context.Context, arg PruneUptimeStatsParams) error {
 	_, err := q.db.ExecContext(ctx, pruneUptimeStats, arg.Res, arg.At)
+	return err
+}
+
+const rollupUptimeDay = `-- name: RollupUptimeDay :exec
+INSERT OR REPLACE INTO uptime_stats (check_id, res, at, up, total, latency_ms_sum)
+SELECT h.check_id, 86400, ?1, sum(h.up), sum(h.total), sum(h.latency_ms_sum)
+FROM uptime_stats AS h WHERE h.res = 3600 AND h.at >= +?1 AND h.at < +?2
+GROUP BY h.check_id
+`
+
+type RollupUptimeDayParams struct {
+	FromAt int64
+	ToAt   int64
+}
+
+// Sums the hour rows of the UTC day [from_at, to_at) into one day row
+// per check, for status pages' 90-day history (ADR 0073). Running it
+// again for the same day gives the same rows.
+func (q *Queries) RollupUptimeDay(ctx context.Context, arg RollupUptimeDayParams) error {
+	_, err := q.db.ExecContext(ctx, rollupUptimeDay, arg.FromAt, arg.ToAt)
 	return err
 }
 

@@ -287,11 +287,54 @@ func (c *Core) uptimeTick(ctx context.Context, now time.Time) {
 		c.log.Warn("uptime: roll up", "err", err)
 		return
 	}
-	if end > 0 {
-		u.mu.Lock()
-		u.rolledTo = end
-		u.mu.Unlock()
+	if end == 0 {
+		return
 	}
+	u.mu.Lock()
+	u.rolledTo = end
+	dayFrom := u.dayRolledTo
+	u.mu.Unlock()
+	days, err := c.rollUptimeDays(ctx, now, end, dayFrom)
+	if err != nil {
+		c.log.Warn("uptime: roll up days", "err", err)
+		return
+	}
+	u.mu.Lock()
+	u.dayRolledTo = days
+	u.mu.Unlock()
+}
+
+// rollUptimeDays rolls every UTC day from rolledTo (the first day not
+// rolled yet; 0 after a start, when the newest day row says) that ended
+// by hourEnd, the end of the hours rolled so far, into day rows, then
+// trims day rows past apitypes.StatusDays, in one transaction. Days
+// whose hour rows are partly trimmed are never rolled, so a restart
+// can't replace a whole day with part of one; after an upgrade the
+// first roll fills in the 30 days hour rows hold. It returns the first
+// day not rolled.
+func (c *Core) rollUptimeDays(ctx context.Context, now time.Time, hourEnd, rolledTo int64) (int64, error) {
+	if rolledTo == 0 {
+		last, err := c.store.LastUptimeDay(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if last > 0 {
+			rolledTo = last + uptimeDay
+		}
+	}
+	from := max(rolledTo, firstWholeDay(now))
+	end := hourEnd - hourEnd%uptimeDay
+	if end <= from {
+		return from, nil
+	}
+	return end, c.store.Tx(ctx, func(q *store.Queries) error {
+		for d := from; d < end; d += uptimeDay {
+			if err := q.RollupUptimeDay(ctx, store.RollupUptimeDayParams{FromAt: d, ToAt: d + uptimeDay}); err != nil {
+				return err
+			}
+		}
+		return q.PruneUptimeStats(ctx, store.PruneUptimeStatsParams{Res: uptimeDay, At: now.Unix() - uptimeKeepDay})
+	})
 }
 
 // rollUptime rolls every hour after rolledTo that ended at least a

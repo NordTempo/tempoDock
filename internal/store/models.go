@@ -958,6 +958,34 @@ type StagedDomain struct {
 	CreatedAt  time.Time
 }
 
+type StatusComponent struct {
+	ID          int64
+	PageID      int64
+	Position    int64
+	Grp         string
+	Name        string
+	Description string
+	Auto        bool
+}
+
+type StatusPage struct {
+	ID         int64
+	OrgID      int64
+	Slug       string
+	Title      string
+	Published  bool
+	ShowUptime bool
+	CreatedAt  time.Time
+	CreatedBy  string
+}
+
+type StatusSource struct {
+	ID          int64
+	ComponentID int64
+	ServiceID   *int64
+	CheckID     *int64
+}
+
 type StorageConnection struct {
 	ID          int64
 	Name        string

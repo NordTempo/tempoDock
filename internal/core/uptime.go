@@ -50,6 +50,10 @@ const (
 	uptimeBucket     = 1800
 	uptimeKeepMinute = 24 * 3600
 	uptimeKeepHour   = 30 * 24 * 3600
+	// Day rows (UTC days) are status pages' history (ADR 0073), kept as
+	// long as a page shows.
+	uptimeDay     = 86400
+	uptimeKeepDay = apitypes.StatusDays * uptimeDay
 )
 
 // uptimeState is the scheduler's kick and the checks' state in memory.
@@ -74,6 +78,9 @@ type uptimeState struct {
 	// rolledTo is the end of the last hour rolled into hour rows (unix
 	// seconds), 0 before the first statistics tick.
 	rolledTo int64
+	// dayRolledTo is the first day not rolled into day rows yet, 0 before
+	// the first hour is rolled.
+	dayRolledTo int64
 }
 
 // checkState is what the probes of one check said.
@@ -585,6 +592,24 @@ func (c *Core) uptimeMinuteFrom(now time.Time) int64 {
 	}
 	from := now.Unix() - uptimeKeepMinute
 	return from - from%uptimeHour + uptimeHour
+}
+
+// uptimeDayFrom is where hour rows take over from day rows in status
+// pages' history: the first day not rolled into day rows, or before the
+// first rollup the first day hour rows still cover whole.
+func (c *Core) uptimeDayFrom(now time.Time) int64 {
+	c.uptime.mu.Lock()
+	defer c.uptime.mu.Unlock()
+	if c.uptime.dayRolledTo > 0 {
+		return c.uptime.dayRolledTo
+	}
+	return firstWholeDay(now)
+}
+
+// firstWholeDay is the first UTC day whose hour rows are all still kept.
+func firstWholeDay(now time.Time) int64 {
+	oldest := now.Unix() - uptimeKeepHour
+	return oldest - oldest%uptimeDay + uptimeDay
 }
 
 // serviceUptimes sums up a project's checks per service for the

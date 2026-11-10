@@ -228,11 +228,13 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// ipLimiter is a token bucket per client address: publicBurst requests,
-// refilled at one a second. It holds at most publicLimitEntries
-// addresses; when full it forgets those whose buckets are full again, and
-// refuses new ones while none are.
+// ipLimiter is a token bucket per client address: burst requests,
+// refilled at rate a second (publicBurst and one a second when zero). It
+// holds at most publicLimitEntries addresses; when full it forgets those
+// whose buckets are full again, and refuses new ones while none are.
 type ipLimiter struct {
+	burst, rate float64
+
 	mu      sync.Mutex
 	buckets map[string]*bucket
 }
@@ -245,13 +247,17 @@ type bucket struct {
 
 // allow takes a token for ip, if it has one.
 func (l *ipLimiter) allow(ip string, now time.Time) bool {
+	burst, rate := l.burst, l.rate
+	if burst == 0 {
+		burst, rate = publicBurst, 1
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	b := l.buckets[ip]
 	if b == nil {
 		if len(l.buckets) >= publicLimitEntries {
 			for k, o := range l.buckets {
-				if o.tokens+now.Sub(o.at).Seconds() >= publicBurst {
+				if o.tokens+now.Sub(o.at).Seconds()*rate >= burst {
 					delete(l.buckets, k)
 				}
 			}
@@ -259,10 +265,10 @@ func (l *ipLimiter) allow(ip string, now time.Time) bool {
 				return false
 			}
 		}
-		b = &bucket{tokens: publicBurst, at: now}
+		b = &bucket{tokens: burst, at: now}
 		l.buckets[ip] = b
 	}
-	b.tokens = min(publicBurst, b.tokens+now.Sub(b.at).Seconds())
+	b.tokens = min(burst, b.tokens+now.Sub(b.at).Seconds()*rate)
 	b.at = now
 	if b.tokens < 1 {
 		return false

@@ -86,6 +86,10 @@ type bus struct {
 	// names has at most one entry per project renamed during this process.
 	// No historical aliases: long-running work only needs its current name.
 	names map[int64]string
+	// statusGen counts events that may change what a status page says
+	// (uptime, alert and sleep events) and the pages' own changes
+	// (ADR 0073): a page rendered under an older count is stale.
+	statusGen atomic.Int64
 }
 
 type subscription struct {
@@ -119,6 +123,10 @@ func (b *bus) subscribeAs(reveal bool, match func(busEvent) bool) *subscription 
 func (b *bus) publish(e busEvent) {
 	if e.ev.Time.IsZero() {
 		e.ev.Time = time.Now().UTC()
+	}
+	switch e.ev.Type {
+	case apitypes.EventUptime, apitypes.EventAlert, apitypes.EventSleep:
+		b.statusGen.Add(1)
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()

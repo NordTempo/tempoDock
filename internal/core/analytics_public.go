@@ -231,6 +231,9 @@ func (c *Core) checkPublicDomain(ctx context.Context, q *store.Queries, siteID i
 	case err != nil && !store.IsNotFound(err):
 		return "", err
 	}
+	if _, ok := c.statusPageHost(h); ok {
+		return "", errf(apitypes.CodeHostnameTaken, "%s is a status page's address; use another hostname", h)
+	}
 	if other := c.publicSite(h); other != 0 && other != siteID {
 		return "", errf(apitypes.CodeHostnameTaken, "%s is another site's public dashboard", h)
 	}

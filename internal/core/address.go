@@ -222,9 +222,9 @@ func (c *Core) describeAddress(ctx context.Context) (apitypes.Address, error) {
 // withControlRoutes adds the control plane's own routes to its server's
 // routing table: Dock's public address, proxied to [public_listen] with
 // the client's address; the webhook route on [hooks] public_host, only
-// paths under gitHookPath, to the loopback hooks listener; and sites'
-// public dashboards to [analytics] stats_listen, with the client's
-// address. A domain
+// paths under gitHookPath, to the loopback hooks listener; sites'
+// public dashboards to [analytics] stats_listen and published status
+// pages to [status] listen, both with the client's address. A domain
 // with the same hostname (added before the setting) keeps it, and that
 // route is left out.
 func (c *Core) withControlRoutes(serverID int64, routes []node.Route) []node.Route {
@@ -257,6 +257,18 @@ func (c *Core) withControlRoutes(serverID int64, routes []node.Route) []node.Rou
 		}
 		if len(hosts) > 0 {
 			own = append(own, node.Route{Hostnames: hosts, Upstream: c.cfg.Analytics.StatsListen, ClientIPHeader: ClientIPHeader})
+		}
+	}
+	// Published status pages (ADR 0073), on a listener of their own.
+	if listen := c.cfg.Status.Listen; listen != "" {
+		var hosts []string
+		for _, h := range slices.Sorted(slices.Values(c.publishedStatusHosts())) {
+			if !taken(h) {
+				hosts = append(hosts, h)
+			}
+		}
+		if len(hosts) > 0 {
+			own = append(own, node.Route{Hostnames: hosts, Upstream: listen, ClientIPHeader: ClientIPHeader})
 		}
 	}
 	return append(routes, own...)

@@ -230,6 +230,9 @@ func (c *Core) checkNewDomain(ss svcScope, host string) error {
 	case c.publicSite(host) != 0:
 		return errf(apitypes.CodeHostnameTaken, "%s is a site's public dashboard (`dock analytics site`); use another hostname", host)
 	}
+	if _, ok := c.statusPageHost(host); ok {
+		return errf(apitypes.CodeHostnameTaken, "%s is a status page's address (`dock status-page list`); use another hostname", host)
+	}
 	return nil
 }
 
@@ -400,6 +403,9 @@ func (c *Core) AllowCertificate(ctx context.Context, hostname string) (bool, err
 	}
 	if host == c.cfg.Hooks.PublicHost || host == c.publicHost() || c.publicSite(host) != 0 {
 		return true, nil // the webhook route (ADR 0018), Dock's address (ADR 0029), a public dashboard (ADR 0037)
+	}
+	if p, ok := c.statusPageHost(host); ok {
+		return p.published && c.cfg.Status.Listen != "", nil // a status page (ADR 0073)
 	}
 	d, err := c.store.GetDomainByHostname(ctx, host)
 	if store.IsNotFound(err) {

@@ -72,6 +72,17 @@ type Config struct {
 	Analytics Analytics `toml:"analytics"`
 	// Logs bounds the history of removed containers' output (ADR 0046).
 	Logs Logs `toml:"logs"`
+	// Status is where public status pages are served (ADR 0073).
+	Status Status `toml:"status"`
+}
+
+// Status configures public status pages (ADR 0073). Control plane only.
+type Status struct {
+	// Listen is the loopback address the control plane's Caddy sends
+	// status pages' hostnames to. Its own listener, serving nothing but
+	// those pages, so no other part of Dock is reachable through them.
+	// Empty turns status pages' serving off.
+	Listen string `toml:"listen"`
 }
 
 // Logs bounds log history (ADR 0046): when dock removes a container, its
@@ -366,6 +377,7 @@ func Default() Config {
 			StoreMemoryMB: 512,
 			StatsListen:   "127.0.0.1:7078",
 		},
+		Status: Status{Listen: "127.0.0.1:7079"},
 		BuildKit: BuildKit{
 			Enabled:        true,
 			Image:          "moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c",
@@ -485,6 +497,12 @@ func (c *Config) validate() error {
 			return fmt.Errorf("[analytics] stats_listen %q must be a loopback IP and port, like 127.0.0.1:7078 (or empty to turn public dashboards off)", a)
 		}
 	}
+	if a := c.Status.Listen; a != "" {
+		host, _, err := net.SplitHostPort(a)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("[status] listen %q must be a loopback IP and port, like 127.0.0.1:7079 (or empty to turn status pages off)", a)
+		}
+	}
 	switch {
 	case c.Analytics.SpoolMaxMB < 16:
 		return fmt.Errorf("[analytics] spool_max_mb is %d; it must be at least 16", c.Analytics.SpoolMaxMB)
@@ -566,7 +584,7 @@ func (c Config) checkTunnelPort() error {
 		return fmt.Errorf("[caddy] tunnel_port %d is not a port (0 turns the tunnel listener off)", p)
 	}
 	taken := []int{c.Caddy.HTTPPort, c.Caddy.HTTPSPort}
-	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Analytics.IngestListen, c.Analytics.StatsListen} {
+	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Analytics.IngestListen, c.Analytics.StatsListen, c.Status.Listen} {
 		if _, port, err := net.SplitHostPort(addr); err == nil {
 			if n, err := strconv.Atoi(port); err == nil {
 				taken = append(taken, n)

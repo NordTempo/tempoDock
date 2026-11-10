@@ -65,6 +65,11 @@
       "bytes_op": 28657,
       "allocs_op": 564
     },
+    "api.BenchmarkRenderStatusPage": {
+      "ns_op": 3422327,
+      "bytes_op": 2914294,
+      "allocs_op": 21620
+    },
     "api.BenchmarkSSEWrite/batch=1": {
       "ns_op": 208,
       "bytes_op": 56,
@@ -74,6 +79,11 @@
       "ns_op": 432.9,
       "bytes_op": 56,
       "allocs_op": 2
+    },
+    "api.BenchmarkStatusServe": {
+      "ns_op": 2049,
+      "bytes_op": 2778,
+      "allocs_op": 18
     },
     "core.BenchmarkAlertEvent": {
       "ns_op": 70.42,
@@ -254,6 +264,11 @@
       "ns_op": 458590,
       "bytes_op": 87653,
       "allocs_op": 943
+    },
+    "core.BenchmarkStatusPage100": {
+      "ns_op": 13086138,
+      "bytes_op": 3002776,
+      "allocs_op": 48150
     },
     "core.BenchmarkTrafficTick50": {
       "ns_op": 11827258,

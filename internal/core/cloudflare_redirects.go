@@ -238,6 +238,9 @@ func (c *Core) checkRedirectHost(host string) error {
 	case c.publicSite(host) != 0:
 		return errf(apitypes.CodeHostnameTaken, "%s is a site's public dashboard (`dock analytics site`); use another hostname", host)
 	}
+	if _, ok := c.statusPageHost(host); ok {
+		return errf(apitypes.CodeHostnameTaken, "%s is a status page's address (`dock status-page list`); use another hostname", host)
+	}
 	return nil
 }
 
