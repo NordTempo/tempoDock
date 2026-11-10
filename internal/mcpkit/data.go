@@ -84,7 +84,7 @@ func capRows(rows []apitypes.DataRow) ([]apitypes.DataRow, bool) {
 }
 
 // DataTools registers the data tools (data_status, data_schema,
-// data_rows, data_query, propose_data_changes) over a host's panel
+// data_rows, data_query, data_insights, propose_data_changes) over a host's panel
 // operations. L is the host's locator input (Dock's service, tempoBase's
 // connection), whose properties every data tool takes; locate resolves it
 // to the host's database reference for the caller, and name says how
@@ -241,6 +241,8 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 			}
 			return Reply{Summary: summary + ".", Data: res}, nil
 		})
+
+	addInsightsTool(s, ops, locate, name)
 
 	addLocatedTool(s, "propose_data_changes", "Propose data changes",
 		"Change rows: inserts, updates and deletes by primary key, as one changeset applied in one transaction. dry_run returns the exact SQL without storing anything. "+

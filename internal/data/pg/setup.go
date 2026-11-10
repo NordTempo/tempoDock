@@ -51,7 +51,11 @@ type roleSpec struct {
 //   - dock_reader_masked (with t.ReaderMasked set): LOGIN, read-only like
 //     dock_reader; SyncGrants grants its columns.
 //
-// None is a member of any role: predefined roles such as
+//   - dock_monitor (with t.Monitor set), after the transaction and best
+//     effort: LOGIN, read-only, a member of pg_monitor only, no table
+//     privileges (ensureMonitor). It reads statistics for insights.
+//
+// The first three are members of no role: predefined roles such as
 // pg_read_all_data would also open the system catalogs (password hashes in
 // pg_authid, user mapping options, large objects), which Dock's roles must
 // never read. All are stripped of superuser, createdb, createrole,
@@ -90,6 +94,11 @@ func (e *Engine) Setup(ctx context.Context, t data.Target, owner, reader, writer
 	})
 	if err != nil {
 		return info, fmt.Errorf("set up roles as %s (needs a superuser or CREATEROLE owner): %w", owner.User, err)
+	}
+	if t.Monitor.User != "" {
+		// Best effort: insights create the monitor on first use when this
+		// fails, and say why if that fails too.
+		_ = ensureMonitor(ctx, pg, e.roles.Monitor, t.Monitor.Password, t.Database)
 	}
 	e.Forget(t.ServiceID)
 	return info, nil

@@ -67,7 +67,7 @@ and `tempobase-ui`. Measured as above (CI, 2026-11-10).
 
 | What | Budget | Measured |
 |---|---|---|
-| Binary (linux/amd64, UI embedded) | ≤ 20 MB, and baseline + 10% (`tempobase_binary_bytes`) | 20.0 MB, at its budget |
+| Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 10% (`tempobase_binary_bytes`) | 20.2 MB; embedding the UI pre-gzipped would win back about 0.7 MB |
 | Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 12.0 MB |
 | Idle CPU | ≤ 1 clock tick in 30 s | 0 |
 | Idle wake-ups | ≤ 0.1/s | 0.03/s (Go's forced GC is ~0.01/s) |

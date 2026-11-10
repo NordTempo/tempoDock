@@ -68,7 +68,7 @@ func TestMCP(t *testing.T) {
 	for _, tl := range list.Result.Tools {
 		names = append(names, tl.Name)
 	}
-	if got := strings.Join(names, ","); got != "whoami,list_connections,data_status,data_schema,data_rows,data_query,propose_data_changes" {
+	if got := strings.Join(names, ","); got != "whoami,list_connections,data_status,data_schema,data_rows,data_query,data_insights,propose_data_changes" {
 		t.Fatalf("tools = %s", got)
 	}
 

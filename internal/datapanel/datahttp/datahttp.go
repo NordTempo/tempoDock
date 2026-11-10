@@ -133,6 +133,12 @@ func Describe(id string, roles data.Roles, w datapanel.Words) (summary, descript
 		return "Reject a changeset", "Admins, or the author withdrawing it."
 	case "set-sensitive-columns":
 		return "Set sensitive columns", "Replaces the database's sensitive columns. Admin."
+	case "get-data-insights":
+		return "How the database is doing", "Reads the database's own statistics on demand, as " + string(roles.Monitor) + " (a member of pg_monitor that runs only " + w.Product + "'s fixed queries): " +
+			"connections against the limit, cache hit ratio and size (overview); the top statements from pg_stat_statements (queries); sessions with what blocks them (sessions); " +
+			"table and index sizes and use (tables, indexes); and hints about what needs a look. Nothing is stored. " +
+			"Overview, tables and indexes need level schema; queries and sessions read, with statement values redacted for callers who see sensitive columns masked. " +
+			"Views the caller may not see, or the server can't give, are listed in `unavailable`."
 	}
 	return "", ""
 }
@@ -245,4 +251,17 @@ func (w *ndjsonWriter) problem(err error) {
 	w.hctx.SetHeader("Content-Type", "application/problem+json")
 	w.hctx.SetStatus(ae.Status)
 	_ = json.NewEncoder(w.hctx.BodyWriter()).Encode(ae)
+}
+
+// InsightsQuery is the insights endpoint's query parameters; both hosts
+// embed it.
+type InsightsQuery struct {
+	View  []apitypes.DataInsightView  `query:"view" enum:"overview,queries,sessions,tables,indexes" doc:"Views to read, comma separated; default every view you may see"`
+	Order apitypes.DataStatementOrder `query:"order" enum:"total,mean,calls,rows" doc:"Order of the queries view: total time (default), mean time, calls or rows"`
+	Limit int                         `query:"limit" minimum:"0" maximum:"100" doc:"Statements in the queries view; 0 means 50"`
+}
+
+// Request is the parameters as an insights request.
+func (q InsightsQuery) Request() apitypes.DataInsightsRequest {
+	return apitypes.DataInsightsRequest{Views: q.View, Order: q.Order, Limit: q.Limit}
 }

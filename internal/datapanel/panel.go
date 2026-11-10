@@ -34,6 +34,8 @@ type Panel[D any] struct {
 	// two decisions on one changeset from running at once.
 	browse   browseLog
 	deciding decisions
+	// flights shares concurrent identical insights reads.
+	flights flights
 }
 
 // New returns a Panel. Zero Roles are Dock's (data.DockRoles); a nil
@@ -151,7 +153,8 @@ func (p *Panel[D]) useConn(tg *target[D], conn Conn) error {
 func (p *Panel[D]) setRoles(tg *target[D], reader, writer string) {
 	tg.t.Reader = data.Credentials{User: string(p.roles.Reader), Password: reader}
 	tg.t.Writer = data.Credentials{User: string(p.roles.Writer), Password: writer}
-	tg.t.ReaderMasked = data.Credentials{User: string(p.roles.ReaderMasked), Password: p.maskedPassword(reader)}
+	tg.t.ReaderMasked = data.Credentials{User: string(p.roles.ReaderMasked), Password: p.derivedPassword(reader, p.roles.ReaderMasked)}
+	tg.t.Monitor = data.Credentials{User: string(p.roles.Monitor), Password: p.derivedPassword(reader, p.roles.Monitor)}
 }
 
 // loadSensitive loads the database's sensitive columns.
@@ -175,12 +178,13 @@ func newRolePassword() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// maskedPassword derives the masked reader's password from the reader's,
-// so it needs no column of its own and rotates with it. HMAC keeps the
-// reader's password from being recovered from it.
-func (p *Panel[D]) maskedPassword(readerPassword string) string {
+// derivedPassword derives the masked reader's and the monitor's
+// passwords from the reader's, so they need no column of their own and
+// rotate with it. HMAC keeps the reader's password from being recovered
+// from them.
+func (p *Panel[D]) derivedPassword(readerPassword string, role data.Role) string {
 	m := hmac.New(sha256.New, []byte(readerPassword))
-	m.Write([]byte(p.roles.ReaderMasked))
+	m.Write([]byte(role))
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
@@ -205,6 +209,8 @@ func (p *Panel[D]) dataError(db *Database[D], err error) error {
 		return invalid("%v; the database panel needs Postgres 14 or later", err)
 	case errors.Is(err, data.ErrLoginFailed):
 		return invalid("%v. %s", err, p.words.LoginFailedHint)
+	case errors.Is(err, data.ErrFull):
+		return conflict("%s refused a connection: every connection is taken (%v); restarting it frees them", db.Name, err)
 	case errors.Is(err, data.ErrUnreachable):
 		return conflict("can't reach %s: %v; check that it is running and healthy", db.Name, err)
 	case errors.Is(err, data.ErrNoPrivilege):
@@ -373,8 +379,8 @@ func (p *Panel[D]) Setup(ctx context.Context, a Actor, db *Database[D]) (apitype
 		return apitypes.DataInfo{}, err
 	}
 	tg.access = &acc
-	p.audit(ctx, a, db, apitypes.AuditDataSetup, fmt.Sprintf("set up data access on Postgres %s: created or rotated %s, %s and %s",
-		srv.Version, p.roles.Reader, p.roles.Writer, p.roles.ReaderMasked), nil)
+	p.audit(ctx, a, db, apitypes.AuditDataSetup, fmt.Sprintf("set up data access on Postgres %s: created or rotated %s, %s, %s and %s",
+		srv.Version, p.roles.Reader, p.roles.Writer, p.roles.ReaderMasked, p.roles.Monitor), nil)
 	if err := p.loadSensitive(ctx, tg); err != nil {
 		return apitypes.DataInfo{}, err
 	}

@@ -264,6 +264,8 @@ func credentials(t data.Target, role data.Role) (data.Credentials, error) {
 		cred = t.Writer
 	case data.RoleReaderMasked:
 		cred = t.ReaderMasked
+	case data.RoleMonitor:
+		cred = t.Monitor
 	}
 	if cred.User == "" || t.Dial == nil {
 		return cred, fmt.Errorf("%w: no credentials for %s", data.ErrNotSetUp, role)
@@ -322,6 +324,9 @@ func loginError(ctx context.Context, err error, loginErr error) error {
 		return err
 	}
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
+		if pgErr.Code == "53300" {
+			return fmt.Errorf("%w: %s", data.ErrFull, pgErr.Message)
+		}
 		if strings.HasPrefix(pgErr.Code, "28") {
 			return fmt.Errorf("%w: %s", loginErr, pgErr.Message)
 		}
@@ -364,12 +369,17 @@ func beginSQL(readOnly bool, statement, lock time.Duration, idle time.Duration, 
 // change nothing, and rolling back also undoes any session setting a
 // query changed (set_config), so the next caller gets a clean connection.
 func (e *Engine) read(ctx context.Context, t data.Target, role data.Role, c data.Call, timeout time.Duration, fn func(cn *conn) error) error {
+	return e.readLocked(ctx, t, role, c, timeout, data.ReadLockTimeout, fn)
+}
+
+// readLocked is read with its own lock_timeout.
+func (e *Engine) readLocked(ctx context.Context, t data.Target, role data.Role, c data.Call, timeout, lock time.Duration, fn func(cn *conn) error) error {
 	cn, err := e.acquire(ctx, t, role)
 	if err != nil {
 		return err
 	}
 	defer e.release(cn)
-	if err := simpleExec(ctx, cn.pg, beginSQL(true, timeout, data.ReadLockTimeout, 0, appName(e.app, c.Actor))); err != nil {
+	if err := simpleExec(ctx, cn.pg, beginSQL(true, timeout, lock, 0, appName(e.app, c.Actor))); err != nil {
 		cn.broken = true
 		return dbError(err)
 	}

@@ -41,6 +41,7 @@ type dataCore interface {
 	SetDataPolicy(ctx context.Context, a core.Actor, ref core.EnvRef, req apitypes.UpdateDataPolicyRequest) (apitypes.DataPolicy, error)
 	UpdateToken(ctx context.Context, a core.Actor, id int64, req apitypes.UpdateTokenRequest) (apitypes.Token, error)
 	GetAuditDetail(ctx context.Context, a core.Actor, id int64) (apitypes.AuditDetail, error)
+	DataInsights(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
 }
 
 var _ dataCore = (*core.Core)(nil)
@@ -156,6 +157,15 @@ func registerData(s *Server, a huma.API) {
 		Limit  int   `query:"limit" default:"50" minimum:"1" maximum:"200"`
 	}) (*out[[]apitypes.DataHistoryEntry], error) {
 		return reply(s.dataAPI().DataHistory(ctx, actor, in.ref(), in.Before, in.Limit))
+	})
+
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "get-data-insights", Method: http.MethodGet, Path: dataPathT + "/insights",
+	}), func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		datahttp.InsightsQuery
+	}) (*out[apitypes.DataInsights], error) {
+		return reply(s.dataAPI().DataInsights(ctx, actor, in.ref(), in.Request()))
 	})
 
 	authed(s, a, dataOp(huma.Operation{
