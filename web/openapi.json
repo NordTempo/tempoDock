@@ -2407,7 +2407,8 @@
           },
           "engine": {
             "enum": [
-              "postgres"
+              "postgres",
+              "mysql"
             ],
             "type": "string"
           },
@@ -3773,7 +3774,8 @@
           },
           "engine": {
             "enum": [
-              "postgres"
+              "postgres",
+              "mysql"
             ],
             "type": "string"
           },
@@ -3824,7 +3826,8 @@
         "properties": {
           "engine": {
             "enum": [
-              "postgres"
+              "postgres",
+              "mysql"
             ],
             "type": "string"
           },
@@ -11096,7 +11099,8 @@
           },
           "data_engine": {
             "enum": [
-              "postgres"
+              "postgres",
+              "mysql"
             ],
             "type": "string"
           },
@@ -11104,6 +11108,7 @@
             "enum": [
               "",
               "postgres",
+              "mysql",
               "none"
             ],
             "type": "string"
@@ -14186,6 +14191,7 @@
             "enum": [
               "",
               "postgres",
+              "mysql",
               "none"
             ],
             "type": "string"

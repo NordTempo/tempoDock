@@ -389,7 +389,7 @@ says which level was missing and the rule that decided it.
 |---|---|---|
 | `db status` | Engine, version, setup state, who uses it, your access and why | level schema |
 | `db setup [--yes]` | Create or rotate Dock's roles (`dock_reader`, `dock_writer`) | admin |
-| `db settings [--database postgres\|none\|detect] [--url-variable NAME]` | Mark a service as a database, or name its connection URL variable. Immediate, never a release | deploy |
+| `db settings [--database postgres\|mysql\|none\|detect] [--url-variable NAME]` | Mark a service as a database, or name its connection URL variable. Immediate, never a release | deploy |
 | `db tables`, `db schema [TABLE]` (`describe`) | Tables; one table's (or every table's) columns, keys, indexes, constraints | level schema |
 | `db rows TABLE [-w col=op:value ...] [--order col\|-col] [-n N] [--after CURSOR] [--count] [--reveal]` | One keyset page; prints the next cursor on stderr. Sensitive columns are masked; `--reveal` shows them if your access allows (audited). `--json` prints the page with `next` | level read |
 | `db query SQL\|-f FILE\|- [-n N] [--timeout D] [--csv]` | One read-only statement, streamed: a table, CSV, or NDJSON frames with `--json`. Default 1 000 rows, at most 100 000; timeout at most 60s | level read |
@@ -414,7 +414,7 @@ values are redacted when your access masks sensitive columns.
 
 Filters (`-w`, `--filter`): `col=value` (equals), `col=op:value` with `eq`,
 `ne`, `lt`, `lte`, `gt`, `gte`, `like`, `ilike`, `in` (comma-separated), or
-`col=is_null` / `col=not_null`. Values are Postgres text input.
+`col=is_null` / `col=not_null`. Values are the database's text input (binary as `\x` hex).
 
 ## Shell completion
 

@@ -250,7 +250,7 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 			"Otherwise the changeset is stored as pending for an admin to review and approve (needs level propose); with commit it is also committed right away, only if your level is write and the environment is not production. "+
 			"Tokens never write production: there it always waits for approval. Updates must carry the old values you saw; a row changed since fails the whole changeset. At most 500 rows.",
 		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Changes []apitypes.DataChange `json:"changes" doc:"Row changes: {op: insert|update|delete, table: schema.name, key: primary key values (update, delete), old: the values you read (update), new: values to set or insert}. Values are strings in Postgres text format, or null."`
+			Changes []apitypes.DataChange `json:"changes" doc:"Row changes: {op: insert|update|delete, table: schema.name, key: primary key values (update, delete), old: the values you read (update), new: values to set or insert}. Values are strings in the database's text format (binary values as \\x hex), or null."`
 			Message string                `json:"message" doc:"Why, for the reviewer."`
 			DryRun  bool                  `json:"dry_run,omitempty" doc:"Only render the SQL; store nothing."`
 			Commit  bool                  `json:"commit,omitempty" doc:"Commit at once if your access is write on a non-production environment; otherwise it stays pending."`

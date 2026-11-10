@@ -92,7 +92,7 @@ func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tun
 	// Connecting is a visit: an asleep environment wakes for it.
 	c.wakeFor(ctx, ss.envScope, "data panel")
 	c.touchSleep(ss.env.ID)
-	if engine, _ := detectDatabase(ss.svc); engine == apitypes.EnginePostgres {
+	if engine, _ := detectDatabase(ss.svc); engine != "" {
 		conn, err := c.dbConnection(ctx, ss)
 		if errors.Is(err, errNotRunning) {
 			return tunnelTarget{}, notRunning
@@ -102,7 +102,7 @@ func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tun
 		}
 		t := tunnelTarget{serverID: conn.serverID, containerID: conn.containerID, port: conn.port, engine: engine, user: conn.owner.User, database: conn.database}
 		if withURL {
-			u := url.URL{Scheme: "postgres", User: url.UserPassword(conn.owner.User, conn.owner.Password),
+			u := url.URL{Scheme: engineConns[engine].schemes[0], User: url.UserPassword(conn.owner.User, conn.owner.Password),
 				Host: net.JoinHostPort(ss.svc.Name, strconv.Itoa(conn.port)), Path: "/" + conn.database}
 			t.url = u.String()
 		}

@@ -64,8 +64,12 @@ const (
 // DataEngine is a database engine the panel supports.
 type DataEngine string
 
-// Supported engines. MySQL/MariaDB and Redis come later.
-const EnginePostgres DataEngine = "postgres"
+// Supported engines. EngineMySQL covers MySQL and MariaDB (ADR 0072);
+// Redis comes later.
+const (
+	EnginePostgres DataEngine = "postgres"
+	EngineMySQL    DataEngine = "mysql"
+)
 
 // DatabaseSetting is a service's `database` setting: whether it is a
 // database, overriding detection. It applies immediately and never creates
@@ -78,6 +82,8 @@ const (
 	DatabaseDetect DatabaseSetting = ""
 	// DatabasePostgres marks the service as Postgres (templates set it).
 	DatabasePostgres DatabaseSetting = "postgres"
+	// DatabaseMySQL marks the service as MySQL or MariaDB.
+	DatabaseMySQL DatabaseSetting = "mysql"
 	// DatabaseNone marks the service as not a database.
 	DatabaseNone DatabaseSetting = "none"
 )
@@ -86,7 +92,7 @@ const (
 // settings (PUT /services/{s}/database-settings). Only fields that are set
 // change. They apply immediately: never staged, never a release.
 type UpdateDatabaseSettingsRequest struct {
-	Database *DatabaseSetting `json:"database,omitempty" enum:",postgres,none" doc:"Override database detection; empty detects from the image"`
+	Database *DatabaseSetting `json:"database,omitempty" enum:",postgres,mysql,none" doc:"Override database detection; empty detects from the image"`
 	// DatabaseURLVariable names the variable with the connection URL:
 	// DATABASE_URL, or another service's as api.DATABASE_URL. Empty uses
 	// the service's own DATABASE_URL, then the POSTGRES_* variables.
@@ -320,7 +326,7 @@ const (
 // DataInfo is a database service's panel state (GET /data). Services that
 // aren't databases are not_found.
 type DataInfo struct {
-	Engine     DataEngine    `json:"engine" enum:"postgres"`
+	Engine     DataEngine    `json:"engine" enum:"postgres,mysql"`
 	DetectedBy DataDetection `json:"detected_by" enum:"setting,image"`
 	Status     DataStatus    `json:"status" enum:"ready,setup_needed,unsupported,unreachable,not_running"`
 	// Reason explains any status but ready and says what to do.
@@ -458,8 +464,8 @@ const (
 type DataFilter struct {
 	Column string       `json:"column"`
 	Op     DataFilterOp `json:"op" enum:"eq,ne,lt,lte,gt,gte,like,ilike,in,is_null,not_null"`
-	// Value is in Postgres text input format (all ops but in, is_null,
-	// not_null).
+	// Value is in the database's text input format (all ops but in,
+	// is_null, not_null).
 	Value string `json:"value,omitempty"`
 	// Values are for in, at most DataPageMaxLimit of them.
 	Values []string `json:"values,omitempty"`
@@ -498,27 +504,30 @@ type DataPageRequest struct {
 // DataResultColumn is one column of a page or query result.
 type DataResultColumn struct {
 	Name string `json:"name"`
-	// TypeName is the type's name, e.g. "int4", "timestamptz", "_text".
+	// TypeName is the type's name, e.g. "int4", "timestamptz", "_text"
+	// (Postgres) or "bigint", "varchar", "datetime" (MySQL).
 	TypeName string `json:"type_name"`
 }
 
 // DataRow is one result row: a JSON array with one cell per column, in
 // column order. A cell is:
 //   - null for SQL NULL;
-//   - a JSON bool for bool;
+//   - a JSON bool for bool (Postgres);
 //   - a JSON number for int2, int4, oid, float4 and float8 (NaN and
-//     ±Infinity are strings);
-//   - a string in Postgres text output format for everything else,
-//     including int8 and numeric (exact), timestamps, uuid, json/jsonb (the
-//     JSON text), arrays ({1,2}) and bytea (\x hex);
+//     ±Infinity are strings), and MySQL's integers up to INT, YEAR, FLOAT
+//     and DOUBLE;
+//   - a string in the database's text output for everything else,
+//     including 64-bit integers and decimals (exact), timestamps (UTC),
+//     uuid, JSON (its text), Postgres arrays ({1,2}) and binary values
+//     (bytea, BLOB, VARBINARY, BIT: \x hex);
 //   - {"truncated": "<first DataCellMaxBytes bytes>", "bytes": <full size>}
 //     for a longer value (DataPageRequest.Full fetches all of it);
 //   - {"masked": true} for a sensitive column the caller can't see or
 //     hasn't revealed (DataPageRequest.Reveal).
 //
 // Values sent to the server (filters, keys, changesets) are strings in
-// Postgres text input format, or null; Postgres casts them to the column
-// type. The engine encodes rows as it reads them, so a DataRow is raw JSON.
+// the database's text input format (binary values as \x hex), or null; the
+// database casts them to the column type. The engine encodes rows as it reads them, so a DataRow is raw JSON.
 type DataRow = json.RawMessage
 
 // DataPage is one keyset page of a table.
@@ -625,8 +634,8 @@ const (
 	DataChangeDelete DataChangeOp = "delete"
 )
 
-// DataChange is one row change in a changeset. Values are strings in
-// Postgres text input format, or null.
+// DataChange is one row change in a changeset. Values are strings in the
+// database's text input format (binary values as \x hex), or null.
 type DataChange struct {
 	Op DataChangeOp `json:"op" enum:"insert,update,delete"`
 	// Table is "schema.name"; it must be editable.

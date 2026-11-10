@@ -42,9 +42,10 @@ export type DataFilterOp = DataFilter["op"];
 export type DataResultColumn = Schemas["DataResultColumn"];
 
 /**
- * One cell of a DataRow: null, bool, number (int2/int4/oid/float4/float8),
- * text in Postgres output format (everything else, including int8, numeric,
- * json and bytea as \x hex), a truncated long value, or a masked one.
+ * One cell of a DataRow: null, bool, number (small integers and floats),
+ * text in the database's output format (everything else, including 64-bit
+ * integers, decimals, JSON and binary values as \x hex), a truncated long
+ * value, or a masked one.
  */
 export type DataCell =
   | null

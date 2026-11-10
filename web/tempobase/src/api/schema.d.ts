@@ -1075,7 +1075,7 @@ export interface components {
             /** @enum {string} */
             detected_by: "setting" | "image";
             /** @enum {string} */
-            engine: "postgres";
+            engine: "postgres" | "mysql";
             reason?: string;
             server_version?: string;
             /** Format: date-time */
@@ -1087,7 +1087,7 @@ export interface components {
         };
         DataInsights: {
             /** @enum {string} */
-            engine: "postgres";
+            engine: "postgres" | "mysql";
             hints: components["schemas"]["DataHint"][] | null;
             indexes?: components["schemas"]["DataIndexStats"][] | null;
             overview?: components["schemas"]["DataOverview"];

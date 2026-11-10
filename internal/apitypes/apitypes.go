@@ -395,11 +395,11 @@ type Service struct {
 	// the image. DatabaseURLVariable names the variable the panel reads
 	// connection details from, e.g. DATABASE_URL or api.DATABASE_URL.
 	// Both apply immediately and are never staged.
-	Database            DatabaseSetting `json:"database" enum:",postgres,none"`
+	Database            DatabaseSetting `json:"database" enum:",postgres,mysql,none"`
 	DatabaseURLVariable string          `json:"database_url_variable"`
 	// DataEngine is the detected database engine; the Data tab shows when
 	// it is set.
-	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres"`
+	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres,mysql"`
 	// Template is the database template the service was created from.
 	Template Template `json:"template,omitempty" enum:"postgres,redis"`
 	// ActiveRelease is the number of the release serving traffic, if any.

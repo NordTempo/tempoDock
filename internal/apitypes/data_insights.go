@@ -70,7 +70,7 @@ type DataInsightsRequest struct {
 // DataInsights is how a database is doing right now (GET /data/insights).
 // Only the requested views are set.
 type DataInsights struct {
-	Engine DataEngine `json:"engine" enum:"postgres"`
+	Engine DataEngine `json:"engine" enum:"postgres,mysql"`
 	ReadAt time.Time  `json:"read_at"`
 	// Since is when the counters (calls, scans, cache hits) started
 	// counting, at the latest: their last reset, else the server's start.

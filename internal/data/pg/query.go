@@ -226,9 +226,9 @@ func (s *stream) flush() bool {
 // resultColumns names the result's columns and types and picks their cell
 // kinds. Types pgx doesn't know (enums, extensions) are looked up in one
 // query.
-func resultColumns(ctx context.Context, pg *pgx.Conn, fields []pgconn.FieldDescription) ([]apitypes.DataResultColumn, []cellKind, error) {
+func resultColumns(ctx context.Context, pg *pgx.Conn, fields []pgconn.FieldDescription) ([]apitypes.DataResultColumn, []data.CellKind, error) {
 	cols := make([]apitypes.DataResultColumn, len(fields))
-	kinds := make([]cellKind, len(fields))
+	kinds := make([]data.CellKind, len(fields))
 	var unknown []uint32
 	for i, f := range fields {
 		cols[i].Name = f.Name

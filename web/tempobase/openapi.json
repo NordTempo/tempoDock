@@ -922,7 +922,8 @@
           },
           "engine": {
             "enum": [
-              "postgres"
+              "postgres",
+              "mysql"
             ],
             "type": "string"
           },
@@ -973,7 +974,8 @@
         "properties": {
           "engine": {
             "enum": [
-              "postgres"
+              "postgres",
+              "mysql"
             ],
             "type": "string"
           },

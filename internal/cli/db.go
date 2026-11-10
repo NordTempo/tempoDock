@@ -34,7 +34,7 @@ func newDBCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "db",
 		Short: "Browse, query and change a database service's data",
-		Long: `Work with the data in a database service (Postgres): tables, schema, rows,
+		Long: `Work with the data in a database service (Postgres, MySQL or MariaDB): tables, schema, rows,
 read-only SQL, query history, saved queries and changesets, and how the
 database is doing (health, queries, sessions, storage).
 
@@ -168,7 +168,7 @@ func newDBSettingsCmd(g *globals) *cobra.Command {
 	var database, urlVariable string
 	var cmd *cobra.Command
 	cmd = dbCmd(g, &cobra.Command{
-		Use:   "settings [--database postgres|none|detect] [--url-variable NAME]",
+		Use:   "settings [--database postgres|mysql|none|detect] [--url-variable NAME]",
 		Short: "Mark a service as a database, or name its connection URL variable",
 		Long: `Change Dock-side database settings. They apply immediately and never create
 a release. --database overrides detection from the image (detect goes back to
@@ -183,9 +183,9 @@ POSTGRES_*).`,
 			switch database {
 			case "detect":
 				d = apitypes.DatabaseDetect
-			case "postgres", "none":
+			case "postgres", "mysql", "none":
 			default:
-				return usageError(fmt.Sprintf("invalid --database %q", database), "Use postgres, none or detect.")
+				return usageError(fmt.Sprintf("invalid --database %q", database), "Use postgres, mysql, none or detect.")
 			}
 			req.Database = &d
 		}
@@ -205,7 +205,7 @@ POSTGRES_*).`,
 			return nil
 		})
 	})
-	cmd.Flags().StringVar(&database, "database", "", "postgres, none, or detect (from the image)")
+	cmd.Flags().StringVar(&database, "database", "", "postgres, mysql (MariaDB too), none, or detect (from the image)")
 	cmd.Flags().StringVar(&urlVariable, "url-variable", "", "variable with the connection URL, e.g. DATABASE_URL or api.DATABASE_URL")
 	return cmd
 }
@@ -1170,8 +1170,8 @@ func newDBApplyCmd(g *globals) *cobra.Command {
 		Long: `Read changes from a JSON file (- for stdin): either {"changes": [...],
 "message": "..."} or a bare array of changes. Each change is
 {"op": "insert"|"update"|"delete", "table": "schema.name", "key": {...},
-"old": {...}, "new": {...}} with values as strings in Postgres text format,
-or null. An update's "old" holds the values you saw; if the row changed
+"old": {...}, "new": {...}} with values as strings in the database's text
+format (MySQL binary values as \x hex), or null. An update's "old" holds the values you saw; if the row changed
 since, nothing is written (exit 5).
 
 --dry-run shows the SQL without storing anything. Otherwise the changeset is

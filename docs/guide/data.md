@@ -3,26 +3,35 @@
 Browse, query and change the data in a database service: the **Data** tab
 on the service page, or `dock db` in the terminal. Both use the same API
 and the same permissions, and everything is in the audit log. The design
-is [ADR 0016](../decisions/0016-database-panel.md).
+is [ADR 0016](../decisions/0016-database-panel.md); MySQL and MariaDB are
+[ADR 0072](../decisions/0072-mysql-and-redis-in-the-data-panel.md).
 
-Postgres 14 or newer for now. MySQL/MariaDB and Redis come later.
+Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer. MySQL
+and MariaDB have everything below but the Health view, which comes later;
+Redis too.
 
 ## Is it a database?
 
 Dock detects Postgres from the image (`postgres`, `postgis/postgis`,
 `pgvector/pgvector`, `timescale/timescaledb*`, `bitnami/postgresql`,
-`supabase/postgres`) or from the template that created the service. For
-anything else, say so:
+`supabase/postgres`), MySQL and MariaDB from theirs (`mysql`,
+`mysql/mysql-server`, `mariadb`, `bitnami/mysql`, `bitnami/mariadb`,
+`percona`), or from the template that created the service. For anything
+else, say so:
 
 ```sh
-dock db settings --database postgres          # or none, or detect
+dock db settings --database postgres          # or mysql, none, or detect
 dock db settings --url-variable DATABASE_URL  # where the connection URL is
 ```
 
 Settings apply at once and never create a release. Connection details come
 from the active release: the variable `--url-variable` names (e.g.
 `api.DATABASE_URL` for another service's), else the service's own
-`DATABASE_URL`, else `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`.
+`DATABASE_URL` (MySQL: also `MYSQL_URL`, a `mysql://` URL), else the
+image's own variables: `POSTGRES_USER`, `POSTGRES_PASSWORD` and
+`POSTGRES_DB`; for MySQL and MariaDB `root` with `MYSQL_ROOT_PASSWORD` (or
+`MARIADB_ROOT_PASSWORD`) and `MYSQL_DATABASE` (or `MARIADB_DATABASE`). A
+MySQL URL or service without a database covers every user database.
 The panel always dials the service's own container on its private network;
 the database never gets a public port.
 
@@ -41,6 +50,15 @@ runs all browsing and SQL. `dock_writer` can change rows but not the schema
 and only commits changesets. Their passwords are generated, stored encrypted
 in Dock and never shown; running setup again rotates them. They show up in
 `\du`. Row-level security still applies to them.
+
+On MySQL and MariaDB they are users at `'%'` (Dock connects from the
+private network's gateway): `dock_reader` with `SELECT` and `SHOW VIEW` on
+the app's databases, `dock_writer` with `SELECT, INSERT, UPDATE, DELETE`,
+neither with anything on `mysql.*`, and each limited to 3 connections
+(`MAX_USER_CONNECTIONS`). Setup needs an owner that may create users with
+grants, such as `root`: a service with only `MYSQL_USER` or a random root
+password needs `--url-variable` pointing at a root URL. A database created
+after setup is covered by running setup again.
 
 ## Browse and query
 
@@ -67,6 +85,13 @@ dock db saved run open-orders
   60 s), at most 64 MB, cells over 8 KB cut. Results stream as they arrive;
   `--json` prints the API's NDJSON frames (header, rows, then end or error).
 - Writes in `query` fail (exit 3). Change data with changesets.
+- MySQL and MariaDB: `query` runs reads only (`SELECT`, `WITH`, `SHOW`,
+  `DESCRIBE`, `EXPLAIN`, `TABLE`, `VALUES`), never locking reads (`FOR
+  UPDATE`, `FOR SHARE`) or executable comments (`/*! */`); named locks a
+  query takes are released after it. A table without a primary key or a
+  unique `NOT NULL` index pages by offset, up to 10 000 rows; past that,
+  use `query`. 64-bit integers and decimals are exact strings, times are
+  UTC.
 
 ## Change data
 
@@ -87,7 +112,8 @@ primary key.
 }
 ```
 
-Values are strings in Postgres text format, or `null`.
+Values are strings in the database's text format, or `null`. Binary values
+(Postgres `bytea`, MySQL `BLOB`, `VARBINARY`, `BIT`) are `\x` hex.
 
 ```sh
 dock db apply -f changes.json --dry-run                 # the exact SQL, nothing stored

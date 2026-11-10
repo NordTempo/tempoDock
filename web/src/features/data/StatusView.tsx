@@ -72,8 +72,8 @@ export function StatusView({ info }: { info: DataInfo }) {
       return (
         <State glyph="▲" tone="text-(--g-warn)" title="Unsupported version">
           <p className="text-(--g-mut)">
-            {info.reason ?? `Postgres ${info.server_version} is too old.`} The
-            data panel needs Postgres 14 or later.
+            {info.reason ??
+              `${info.server_version} is too old for the data panel.`}
           </p>
         </State>
       );

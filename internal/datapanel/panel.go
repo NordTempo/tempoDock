@@ -247,7 +247,7 @@ func (p *Panel[D]) dataError(db *Database[D], err error) error {
 	case errors.Is(err, data.ErrNotSetUp):
 		return conflict("%s's roles in %s are missing or their passwords changed (%v); %s again", p.words.Product, db.Name, err, p.words.SetupHint)
 	case errors.Is(err, data.ErrUnsupported):
-		return invalid("%v; the database panel needs Postgres 14 or later", err)
+		return invalid("%v", err)
 	case errors.Is(err, data.ErrLoginFailed):
 		return invalid("%v. %s", err, p.words.LoginFailedHint)
 	case errors.Is(err, data.ErrFull):

@@ -5985,7 +5985,7 @@ export interface components {
             confirm: boolean;
             database?: string;
             /** @enum {string} */
-            engine?: "postgres";
+            engine?: "postgres" | "mysql";
             /** Format: int64 */
             port: number;
             service: string;
@@ -6374,7 +6374,7 @@ export interface components {
             /** @enum {string} */
             detected_by: "setting" | "image";
             /** @enum {string} */
-            engine: "postgres";
+            engine: "postgres" | "mysql";
             reason?: string;
             server_version?: string;
             /** Format: date-time */
@@ -6386,7 +6386,7 @@ export interface components {
         };
         DataInsights: {
             /** @enum {string} */
-            engine: "postgres";
+            engine: "postgres" | "mysql";
             hints: components["schemas"]["DataHint"][] | null;
             indexes?: components["schemas"]["DataIndexStats"][] | null;
             overview?: components["schemas"]["DataOverview"];
@@ -8490,9 +8490,9 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             /** @enum {string} */
-            data_engine?: "postgres";
+            data_engine?: "postgres" | "mysql";
             /** @enum {string} */
-            database: "" | "postgres" | "none";
+            database: "" | "postgres" | "mysql" | "none";
             database_url_variable: string;
             dockerfile_path: string;
             /** Format: double */
@@ -9442,7 +9442,7 @@ export interface components {
              * @description Override database detection; empty detects from the image
              * @enum {string}
              */
-            database?: "" | "postgres" | "none";
+            database?: "" | "postgres" | "mysql" | "none";
             database_url_variable?: string;
         };
         UpdateMeRequest: {

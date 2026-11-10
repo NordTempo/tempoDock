@@ -1,11 +1,13 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -20,26 +22,76 @@ import (
 // service's port setting say otherwise.
 const defaultPostgresPort = 5432
 
-// postgresImages are the image repositories detected as Postgres (ADR 0016
-// section 1); timescale/timescaledb matches as a prefix.
-var postgresImages = map[string]bool{
-	"postgres": true, "postgis/postgis": true, "pgvector/pgvector": true,
-	"bitnami/postgresql": true, "supabase/postgres": true,
+// engineConn is how core finds an engine's databases and their owner:
+// image repositories (ADR 0016 section 1), URL schemes, the default port,
+// the variables that may hold a URL, and the owner from the image's own
+// variables when there is no URL.
+type engineConn struct {
+	images  map[string]bool
+	schemes []string
+	port    int
+	urlVars []string
+	// owner reads the owner and database from the container's variables.
+	owner func(env map[string]string) (data.Credentials, string)
+}
+
+// engineConns are the engines Dock detects, in detection order.
+var engineConns = map[apitypes.DataEngine]engineConn{
+	apitypes.EnginePostgres: {
+		images: map[string]bool{
+			"postgres": true, "postgis/postgis": true, "pgvector/pgvector": true,
+			"bitnami/postgresql": true, "supabase/postgres": true,
+		},
+		schemes: []string{"postgres", "postgresql"},
+		port:    defaultPostgresPort,
+		urlVars: []string{"DATABASE_URL"},
+		// POSTGRES_USER (default postgres), POSTGRES_PASSWORD, POSTGRES_DB
+		// (default: the user).
+		owner: func(env map[string]string) (data.Credentials, string) {
+			user := cmp.Or(env["POSTGRES_USER"], "postgres")
+			return data.Credentials{User: user, Password: env["POSTGRES_PASSWORD"]}, cmp.Or(env["POSTGRES_DB"], user)
+		},
+	},
+	apitypes.EngineMySQL: {
+		images: map[string]bool{
+			"mysql": true, "mysql/mysql-server": true, "mariadb": true, "bitnami/mysql": true,
+			"bitnami/mariadb": true, "percona": true, "percona/percona-server": true,
+		},
+		schemes: []string{"mysql", "mariadb"},
+		port:    3306,
+		urlVars: []string{"DATABASE_URL", "MYSQL_URL"},
+		// root with MYSQL_ROOT_PASSWORD (MariaDB's images also read
+		// MARIADB_*), MYSQL_DATABASE; no database means every user
+		// database.
+		owner: func(env map[string]string) (data.Credentials, string) {
+			return data.Credentials{User: "root", Password: cmp.Or(env["MYSQL_ROOT_PASSWORD"], env["MARIADB_ROOT_PASSWORD"])},
+				cmp.Or(env["MYSQL_DATABASE"], env["MARIADB_DATABASE"])
+		},
+	},
 }
 
 // detectDatabase says whether a service is a database and how that was
 // decided: the database setting, else the image name. Engine "" means not
 // a database.
 func detectDatabase(s store.Service) (apitypes.DataEngine, apitypes.DataDetection) {
-	switch apitypes.DatabaseSetting(s.Database) {
+	switch setting := apitypes.DatabaseSetting(s.Database); setting {
+	case apitypes.DatabaseDetect:
 	case apitypes.DatabaseNone:
 		return "", ""
-	case apitypes.DatabasePostgres:
-		return apitypes.EnginePostgres, apitypes.DetectedBySetting
+	default:
+		if _, ok := engineConns[apitypes.DataEngine(setting)]; ok {
+			return apitypes.DataEngine(setting), apitypes.DetectedBySetting
+		}
+		return "", ""
 	}
 	repo := imageRepository(s.Image)
-	if postgresImages[repo] || strings.HasPrefix(repo, "timescale/timescaledb") {
+	if strings.HasPrefix(repo, "timescale/timescaledb") {
 		return apitypes.EnginePostgres, apitypes.DetectedByImage
+	}
+	for engine, ec := range engineConns {
+		if ec.images[repo] {
+			return engine, apitypes.DetectedByImage
+		}
 	}
 	return "", ""
 }
@@ -78,12 +130,17 @@ var errNotRunning = datapanel.ErrNotRunning
 // dbConnection derives a database service's connection details from its
 // active release's resolved variables (what the container runs with), per
 // ADR 0016 section 1: the database_url_variable setting's variable, else
-// the service's own DATABASE_URL, else POSTGRES_USER (default postgres),
-// POSTGRES_PASSWORD and POSTGRES_DB (default: the user). The port is the
-// URL's, else the service's port setting, else 5432. A service without a
-// running container is errNotRunning; details that can't be derived are a
-// validation error saying what to fix.
+// the service's own URL variable (DATABASE_URL; MySQL also MYSQL_URL),
+// else the image's own variables (engineConn.owner). The port is the
+// URL's, else the service's port setting, else the engine's. A service
+// without a running container is errNotRunning; details that can't be
+// derived are a validation error saying what to fix.
 func (c *Core) dbConnection(ctx context.Context, ss svcScope) (dbConn, error) {
+	engine, _ := detectDatabase(ss.svc)
+	ec, ok := engineConns[engine]
+	if !ok {
+		return dbConn{}, invalid("%s is not a database", ss)
+	}
 	rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 	if store.IsNotFound(err) || err == nil && rel.ContainerID == "" {
 		return dbConn{}, errNotRunning
@@ -100,31 +157,28 @@ func (c *Core) dbConnection(ctx context.Context, ss svcScope) (dbConn, error) {
 	}
 	conn := dbConn{serverID: ss.env.ServerID, containerID: rel.ContainerID, port: int(ss.svc.Port)}
 	if conn.port == 0 {
-		conn.port = defaultPostgresPort
+		conn.port = ec.port
 	}
 
-	name, raw := "", ""
-	switch v := ss.svc.DatabaseUrlVariable; {
-	case v != "":
-		name = v
-		if raw, err = c.variableValue(ctx, ss, cfg.Env, v); err != nil {
+	name, raw := ss.svc.DatabaseUrlVariable, ""
+	if name != "" {
+		if raw, err = c.variableValue(ctx, ss, cfg.Env, name); err != nil {
 			return dbConn{}, err
 		}
-	case cfg.Env["DATABASE_URL"] != "":
-		name, raw = "DATABASE_URL", cfg.Env["DATABASE_URL"]
-	default:
-		conn.owner = data.Credentials{User: cfg.Env["POSTGRES_USER"], Password: cfg.Env["POSTGRES_PASSWORD"]}
-		if conn.owner.User == "" {
-			conn.owner.User = "postgres"
+	} else {
+		for _, v := range ec.urlVars {
+			if cfg.Env[v] != "" {
+				name, raw = v, cfg.Env[v]
+				break
+			}
 		}
-		conn.database = cfg.Env["POSTGRES_DB"]
-		if conn.database == "" {
-			conn.database = conn.owner.User
-		}
+	}
+	if name == "" {
+		conn.owner, conn.database = ec.owner(cfg.Env)
 		return conn, nil
 	}
-	if err := parseDatabaseURL(raw, ss.svc.Name, &conn); err != nil {
-		return dbConn{}, invalid("%s: %v; set database_url_variable to a variable with this database's postgres:// URL", name, err)
+	if err := parseDatabaseURL(raw, ss.svc.Name, ec.schemes, &conn); err != nil {
+		return dbConn{}, invalid("%s: %v; set database_url_variable to a variable with this database's %s:// URL", name, err, ec.schemes[0])
 	}
 	return conn, nil
 }
@@ -161,13 +215,14 @@ func (c *Core) variableValue(ctx context.Context, ss svcScope, own map[string]st
 	return r.value(scope, key)
 }
 
-// parseDatabaseURL reads user, password, database and port from a
-// postgres:// URL into conn. The host must be this service: the panel
-// always dials the service's own container.
-func parseDatabaseURL(raw, service string, conn *dbConn) error {
+// parseDatabaseURL reads user, password, database and port from a URL
+// with one of schemes into conn. The host must be this service: the panel
+// always dials the service's own container. Postgres URLs without a
+// database name the user's; MySQL ones mean every user database.
+func parseDatabaseURL(raw, service string, schemes []string, conn *dbConn) error {
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
-		return errors.New("not a postgres:// URL")
+	if err != nil || !slices.Contains(schemes, u.Scheme) {
+		return fmt.Errorf("not a %s:// URL", schemes[0])
 	}
 	switch h := u.Hostname(); h {
 	case service, "localhost", "127.0.0.1", "::1", "":
@@ -180,7 +235,7 @@ func parseDatabaseURL(raw, service string, conn *dbConn) error {
 	conn.owner.User = u.User.Username()
 	conn.owner.Password, _ = u.User.Password()
 	conn.database = strings.TrimPrefix(u.Path, "/")
-	if conn.database == "" {
+	if conn.database == "" && slices.Contains(schemes, "postgres") {
 		conn.database = conn.owner.User
 	}
 	if p := u.Port(); p != "" {

@@ -5,7 +5,12 @@ import {
   historyKeymap,
   indentWithTab,
 } from "@codemirror/commands";
-import { PostgreSQL, type SQLNamespace, sql } from "@codemirror/lang-sql";
+import {
+  MySQL,
+  PostgreSQL,
+  type SQLNamespace,
+  sql,
+} from "@codemirror/lang-sql";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import {
@@ -17,10 +22,11 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import type { DataEngine } from "./engines";
 import type { DataTable } from "./types";
 
-// The SQL editor: CodeMirror 6 with the Postgres dialect, completion from
-// the schema, and Mod-Enter to run. Lives in the lazy SQL chunk only.
+// The SQL editor: CodeMirror 6 with the database's dialect, completion
+// from the schema, and Mod-Enter to run. Lives in the lazy SQL chunk only.
 
 // Style G (G3): the panel's mono stack and colours.
 const mono = "ui-monospace, 'SF Mono', Menlo, monospace";
@@ -87,11 +93,13 @@ function namespace(tables: readonly DataTable[]): SQLNamespace {
   return out;
 }
 
-const language = (tables: readonly DataTable[]) =>
+// MySQL's "schemas" are its databases: unqualified names complete from
+// the first one's tables (usually the only one).
+const language = (tables: readonly DataTable[], dialect: DataEngine) =>
   sql({
-    dialect: PostgreSQL,
+    dialect: dialect === "mysql" ? MySQL : PostgreSQL,
     schema: namespace(tables),
-    defaultSchema: "public",
+    defaultSchema: dialect === "mysql" ? tables[0]?.schema : "public",
   });
 
 export function SqlEditor({
@@ -99,6 +107,7 @@ export function SqlEditor({
   onChange,
   onRun,
   tables,
+  dialect,
   errorAt,
 }: {
   value: string;
@@ -106,6 +115,7 @@ export function SqlEditor({
   /** Mod-Enter. */
   onRun: () => void;
   tables: readonly DataTable[];
+  dialect: DataEngine;
   /** 1-based character the last error points at; selects that word. */
   errorAt?: number;
 }) {
@@ -140,7 +150,7 @@ export function SqlEditor({
             ...historyKeymap,
             indentWithTab,
           ]),
-          lang.current.of(language(tables)),
+          lang.current.of(language(tables, dialect)),
           autocompletion(),
           syntaxHighlighting(highlight),
           theme,
@@ -169,9 +179,9 @@ export function SqlEditor({
 
   useEffect(() => {
     view.current?.dispatch({
-      effects: lang.current.reconfigure(language(tables)),
+      effects: lang.current.reconfigure(language(tables, dialect)),
     });
-  }, [tables]);
+  }, [tables, dialect]);
 
   useEffect(() => {
     const editor = view.current;
