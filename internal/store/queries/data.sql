@@ -112,8 +112,8 @@ WHERE id = sqlc.arg(id) AND service_id = +sqlc.arg(service_id) AND user_id = +sq
 -- name: CreateChangeset :one
 -- Stores a changeset as pending. Committing one's own goes through
 -- DecideChangeset like an approval.
-INSERT INTO changesets (service_id, author, author_kind, user_id, token_id, message, changes, sql, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO changesets (service_id, author, author_kind, user_id, token_id, message, changes, key_changes, sql, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetChangeset :one

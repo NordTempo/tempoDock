@@ -9,21 +9,21 @@ import (
 	"github.com/NordTempo/tempoDock/internal/data"
 )
 
-// Changes to keys and the Health tab arrive in ADR 0072's last phase;
-// until then they are refused with these words.
+// The Health tab arrives with ADR 0072's last PR; until then it is
+// refused with these words. Row changes never apply: Redis has keys.
 var (
-	errNoChanges = fmt.Errorf("%w: changing Redis keys from the data panel isn't available yet", data.ErrInvalid)
-	errNoHealth  = fmt.Errorf("%w: database health isn't available for Redis and Valkey yet", data.ErrInvalid)
+	errNoRows   = fmt.Errorf("%w: Redis has keys, not rows: send key_changes", data.ErrInvalid)
+	errNoHealth = fmt.Errorf("%w: database health isn't available for Redis and Valkey yet", data.ErrInvalid)
 )
 
-// Render isn't available yet.
+// Render refuses row changes (see RenderKeys).
 func (e *Engine) Render(context.Context, data.Target, []apitypes.DataChange) (string, error) {
-	return "", errNoChanges
+	return "", errNoRows
 }
 
-// Commit isn't available yet.
+// Commit refuses row changes (see CommitKeys).
 func (e *Engine) Commit(context.Context, data.Target, data.Call, []apitypes.DataChange) (data.CommitResult, error) {
-	return data.CommitResult{}, errNoChanges
+	return data.CommitResult{}, errNoRows
 }
 
 // Insights isn't available yet.

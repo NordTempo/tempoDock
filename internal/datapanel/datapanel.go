@@ -172,11 +172,13 @@ type Changeset struct {
 	Author     string
 	AuthorKind string
 	// UserID and TokenID are the author's (Actor's); zero when not set.
-	UserID       int64
-	TokenID      int64
-	Status       apitypes.DataChangesetStatus
-	Message      string
-	Changes      []apitypes.DataChange
+	UserID  int64
+	TokenID int64
+	Status  apitypes.DataChangesetStatus
+	Message string
+	Changes []apitypes.DataChange
+	// KeyChanges are a key-value changeset's changes (Changes is empty).
+	KeyChanges   []apitypes.DataKeyChange
 	SQL          string
 	RowsAffected []int64
 	Conflicts    []apitypes.DataConflict

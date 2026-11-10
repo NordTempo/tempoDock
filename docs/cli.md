@@ -402,7 +402,7 @@ says which level was missing and the rule that decided it.
 | `db history [--before ID] [-n N]` | Your past queries here, newest first | level read |
 | `db saved list\|save NAME SQL\|run NAME\|delete NAME` | Your saved queries; `save` replaces one with the same name, `run` takes `query`'s flags | level read |
 | `db changes list [--status S]\|show ID\|commit ID [--confirm ENV]\|reject ID [--reason]` | Changesets. Committing someone else's approves it | admin to approve |
-| `db apply -f FILE [--dry-run\|--propose] [-m MSG] [--confirm ENV]` (`propose`) | Changes from JSON: preview the SQL, or store and commit them in one transaction (level write), or leave them pending for an admin (level propose, or `--propose`) | level propose |
+| `db apply -f FILE [--dry-run\|--propose] [-m MSG] [--confirm ENV]` (`propose`) | Changes from JSON (rows, or Redis `key_changes`, [guide](guide/data.md#redis-keys)): preview the SQL or commands, or store and commit them in one transaction (level write), or leave them pending for an admin (level propose, or `--propose`) | level propose |
 | `db policy show\|set [-p P [-e E]]` | The policy at the default, a project or an environment (explicit flags, not the link). `set deploy.production=read tokens.non-production=propose,visible ...` changes the named rules (`inherit` removes one); `--replace` drops the rest | admin to set |
 | `db sensitive list\|set [schema.]table.column...\|--clear` | Columns masked for callers whose access says masked; `set` replaces the list | admin to set |
 | `db health` | Connections against the limit, cache hit ratio, size, and what needs a look (idle transactions, blocked sessions, duplicate, invalid and unused indexes, dead rows, full scans), with statements to copy | level schema |

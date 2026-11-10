@@ -109,3 +109,56 @@ type DataKeyValue struct {
 	// Next is the cursor of the following page; empty on the last one.
 	Next string `json:"next,omitempty"`
 }
+
+// DataKeyOp is what one change does to a key.
+type DataKeyOp string
+
+// Key change operations: set a string (keeping its TTL), delete a key,
+// set or remove its TTL, set or remove a hash field, add or remove a set
+// or sorted set member, set a list element by index, push to a list's
+// end (rpush) or front (lpush), remove an element's first occurrence
+// (lrem).
+const (
+	KeySet          DataKeyOp = "set"
+	KeyDelete       DataKeyOp = "delete"
+	KeyExpire       DataKeyOp = "expire"
+	KeyHashSet      DataKeyOp = "hset"
+	KeyHashDelete   DataKeyOp = "hdel"
+	KeySetAdd       DataKeyOp = "sadd"
+	KeySetRemove    DataKeyOp = "srem"
+	KeyZAdd         DataKeyOp = "zadd"
+	KeyZRemove      DataKeyOp = "zrem"
+	KeyListSet      DataKeyOp = "lset"
+	KeyListPush     DataKeyOp = "rpush"
+	KeyListPushLeft DataKeyOp = "lpush"
+	KeyListRemove   DataKeyOp = "lrem"
+)
+
+// DataKeyChange is one change to one key of a Redis database, in a
+// changeset (DataChangesetRequest.KeyChanges). Every change but a push
+// carries Old, what the editor saw; a key or field that changed since
+// fails the whole changeset with a conflict.
+type DataKeyChange struct {
+	Op  DataKeyOp `json:"op" enum:"set,delete,expire,hset,hdel,sadd,srem,zadd,zrem,lset,rpush,lpush,lrem"`
+	DB  int       `json:"db,omitempty"`
+	Key string    `json:"key"`
+	// Field is the hash field (hset, hdel), the member (sadd, srem, zadd,
+	// zrem), the list index (lset) or the element to remove (lrem).
+	Field *string `json:"field,omitempty"`
+	// Value is the string (set), the field's value (hset), the element
+	// (lset, rpush, lpush) or the score (zadd).
+	Value *string `json:"value,omitempty"`
+	// TTLMs is expire's time to live in milliseconds; -1 removes it.
+	TTLMs *int64      `json:"ttl_ms,omitempty"`
+	Old   *DataKeyOld `json:"old,omitempty"`
+}
+
+// DataKeyOld is what the editor saw of a key: its type ("none" when it
+// didn't exist) and the value the change replaces or removes: the string
+// (set), the field's value (hset, hdel), the score (zadd, zrem), the
+// element (lset), "1" for a set member that was there (sadd, srem);
+// null when it was absent.
+type DataKeyOld struct {
+	Type  string  `json:"type"`
+	Value *string `json:"value,omitempty"`
+}

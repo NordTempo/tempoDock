@@ -381,7 +381,7 @@ export function TablesView({
       {review ? (
         <ReviewPanel
           table={table.name}
-          changes={changes}
+          body={{ changes }}
           // A proposal writes nothing: its approver confirms instead.
           confirmCommit={
             info.access.confirm_commit && info.access.level !== "propose"

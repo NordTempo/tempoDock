@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/data"
 )
 
 // Changesets (ADR 0016 section 5): row changes previewed, stored as
@@ -55,7 +56,7 @@ func (p *Panel[D]) changesetFor(tg *target[D], cs Changeset) apitypes.DataChange
 	expires := cs.ExpiresAt
 	out := apitypes.DataChangeset{
 		ID: cs.ID, Status: cs.Status, Author: cs.Author, AuthorKind: cs.AuthorKind,
-		Message: cs.Message, Changes: cs.Changes, SQL: cs.SQL, RowsAffected: cs.RowsAffected, Conflicts: cs.Conflicts,
+		Message: cs.Message, Changes: cs.Changes, KeyChanges: cs.KeyChanges, SQL: cs.SQL, RowsAffected: cs.RowsAffected, Conflicts: cs.Conflicts,
 		ConfirmCommit: tg.db.Perm.ConfirmCommit, CreatedAt: cs.CreatedAt, ExpiresAt: &expires,
 		DecidedAt: cs.DecidedAt, DecidedBy: cs.DecidedBy, Reason: cs.Reason,
 	}
@@ -65,7 +66,62 @@ func (p *Panel[D]) changesetFor(tg *target[D], cs Changeset) apitypes.DataChange
 	if changes, conflicts, touched := maskChanges(out.Changes, out.Conflicts, tg.sensitive); touched {
 		out.Changes, out.Conflicts, out.SQL = changes, conflicts, p.redact(tg.db.Engine, out.SQL)
 	}
+	if keys, conflicts, touched := maskKeyChanges(out.KeyChanges, out.Conflicts, tg.sensitiveKeys); touched {
+		out.KeyChanges, out.Conflicts, out.SQL = keys, conflicts, redactedText
+	}
 	return out
+}
+
+// maskKeyChanges returns key changes with keys matching a sensitive
+// pattern shown as the pattern and without values, conflicts on them
+// without current values, and whether there were any.
+func maskKeyChanges(changes []apitypes.DataKeyChange, conflicts []apitypes.DataConflict, patterns []string) ([]apitypes.DataKeyChange, []apitypes.DataConflict, bool) {
+	touched := false
+	for i, ch := range changes {
+		pattern, ok := data.KeySensitive(patterns, ch.Key)
+		if !ok {
+			continue
+		}
+		if !touched {
+			touched = true
+			changes, conflicts = slices.Clone(changes), slices.Clone(conflicts)
+		}
+		changes[i] = apitypes.DataKeyChange{Op: ch.Op, DB: ch.DB, Key: pattern}
+		for j, cf := range conflicts {
+			if cf.Change == i {
+				conflicts[j].Current = nil
+			}
+		}
+	}
+	return changes, conflicts, touched
+}
+
+// checkSensitiveKeyChanges refuses key changes to keys the caller sees
+// masked.
+func checkSensitiveKeyChanges[D any](tg *target[D], changes []apitypes.DataKeyChange) error {
+	if tg.db.Perm.Sensitive == apitypes.SensitiveVisible {
+		return nil
+	}
+	for _, ch := range changes {
+		if pattern, ok := data.KeySensitive(tg.sensitiveKeys, ch.Key); ok {
+			return forbidden("keys matching %s are sensitive and masked for you; leave them out of the changes", pattern)
+		}
+	}
+	return nil
+}
+
+// summarizeKeyChanges says what a key changeset touches, e.g. "3 changes
+// to keys in db 0". Key names are data: they stay out of summaries.
+func summarizeKeyChanges(changes []apitypes.DataKeyChange) string {
+	noun := "changes"
+	if len(changes) == 1 {
+		noun = "change"
+	}
+	db := 0
+	if len(changes) > 0 {
+		db = changes[0].DB
+	}
+	return fmt.Sprintf("%d %s to keys in db %d", len(changes), noun, db)
 }
 
 // touches reports whether a change reads or writes col.
@@ -164,10 +220,13 @@ func summarizeChanges(changes []apitypes.DataChange) string {
 // database. Stored changesets are audited as data.propose and expire
 // after apitypes.DataChangesetExpiry.
 func (p *Panel[D]) CreateChangeset(ctx context.Context, a Actor, db *Database[D], req apitypes.DataChangesetRequest) (apitypes.DataChangeset, error) {
+	keyed := len(req.KeyChanges) > 0
 	switch {
-	case len(req.Changes) == 0:
+	case keyed && len(req.Changes) > 0:
+		return apitypes.DataChangeset{}, invalid("a changeset has row changes or key changes, not both")
+	case len(req.Changes) == 0 && !keyed:
 		return apitypes.DataChangeset{}, invalid("a changeset needs at least one change")
-	case len(req.Changes) > apitypes.DataChangesetMaxRows:
+	case len(req.Changes) > apitypes.DataChangesetMaxRows || len(req.KeyChanges) > apitypes.DataChangesetMaxRows:
 		return apitypes.DataChangeset{}, invalid("a changeset has at most %d changes; split it", apitypes.DataChangesetMaxRows)
 	case len(req.Message) > 1000:
 		return apitypes.DataChangeset{}, invalid("the message is longer than 1000 characters")
@@ -178,29 +237,44 @@ func (p *Panel[D]) CreateChangeset(ctx context.Context, a Actor, db *Database[D]
 	if err != nil {
 		return apitypes.DataChangeset{}, err
 	}
-	if err := checkSensitiveChanges(tg, req.Changes); err != nil {
-		return apitypes.DataChangeset{}, err
-	}
-	sql, err := tg.eng.Render(ctx, tg.t, req.Changes)
-	if err != nil {
-		return apitypes.DataChangeset{}, p.dataError(db, err)
+	var sql, what string
+	if keyed {
+		k, err := keys(tg, "changing keys")
+		if err != nil {
+			return apitypes.DataChangeset{}, err
+		}
+		if err := checkSensitiveKeyChanges(tg, req.KeyChanges); err != nil {
+			return apitypes.DataChangeset{}, err
+		}
+		if sql, err = k.RenderKeys(ctx, tg.t, req.KeyChanges); err != nil {
+			return apitypes.DataChangeset{}, p.dataError(db, err)
+		}
+		what = summarizeKeyChanges(req.KeyChanges)
+	} else {
+		if err := checkSensitiveChanges(tg, req.Changes); err != nil {
+			return apitypes.DataChangeset{}, err
+		}
+		if sql, err = tg.eng.Render(ctx, tg.t, req.Changes); err != nil {
+			return apitypes.DataChangeset{}, p.dataError(db, err)
+		}
+		what = summarizeChanges(req.Changes)
 	}
 	if req.DryRun {
 		return apitypes.DataChangeset{
 			Status: apitypes.ChangesetPreview, Author: a.Name, AuthorKind: a.Kind, Message: req.Message,
-			Changes: req.Changes, SQL: sql, ConfirmCommit: db.Perm.ConfirmCommit, CreatedAt: now(),
+			Changes: nonNilChanges(req.Changes), KeyChanges: req.KeyChanges, SQL: sql, ConfirmCommit: db.Perm.ConfirmCommit, CreatedAt: now(),
 		}, nil
 	}
 	at := now()
 	cs, err := p.host.CreateChangeset(ctx, Changeset{
 		Database: db.ID, Author: a.Name, AuthorKind: a.Kind, UserID: a.UserID, TokenID: a.TokenID,
-		Status: apitypes.ChangesetPending, Message: req.Message, Changes: req.Changes, SQL: sql,
+		Status: apitypes.ChangesetPending, Message: req.Message, Changes: nonNilChanges(req.Changes), KeyChanges: req.KeyChanges, SQL: sql,
 		CreatedAt: at, ExpiresAt: at.Add(apitypes.DataChangesetExpiry),
 	})
 	if err != nil {
 		return apitypes.DataChangeset{}, err
 	}
-	summary := fmt.Sprintf("proposed changeset %d: %s", cs.ID, summarizeChanges(req.Changes))
+	summary := fmt.Sprintf("proposed changeset %d: %s", cs.ID, what)
 	if req.Message != "" {
 		summary += " (" + req.Message + ")"
 	}
@@ -221,10 +295,10 @@ func (p *Panel[D]) loadChangeset(ctx context.Context, db *Database[D], id int64)
 	return cs, err
 }
 
-// sensitiveTarget is db with its sensitive columns, for showing
-// changesets to its caller.
+// sensitiveTarget is db with its sensitive columns (or key patterns: the
+// engine says which), for showing changesets to its caller.
 func (p *Panel[D]) sensitiveTarget(ctx context.Context, db *Database[D]) (*target[D], error) {
-	tg := &target[D]{db: db}
+	tg := &target[D]{db: db, eng: p.engines[db.Engine]}
 	return tg, p.loadSensitive(ctx, tg)
 }
 
@@ -326,8 +400,16 @@ func (p *Panel[D]) Commit(ctx context.Context, a Actor, db *Database[D], id int6
 	if err := p.connect(ctx, tg); err != nil {
 		return apitypes.DataChangeset{}, err
 	}
-	changes := cs.Changes
-	if err := checkSensitiveChanges(tg, changes); err != nil {
+	changes, keyed := cs.Changes, len(cs.KeyChanges) > 0
+	var k data.Keys
+	if keyed {
+		if k, err = keys(tg, "changing keys"); err != nil {
+			return apitypes.DataChangeset{}, err
+		}
+		if err := checkSensitiveKeyChanges(tg, cs.KeyChanges); err != nil {
+			return apitypes.DataChangeset{}, err
+		}
+	} else if err := checkSensitiveChanges(tg, changes); err != nil {
 		return apitypes.DataChangeset{}, err
 	}
 	if cs, err = p.decidable(ctx, db, id, "committed"); err != nil {
@@ -339,7 +421,12 @@ func (p *Panel[D]) Commit(ctx context.Context, a Actor, db *Database[D], id int6
 		return apitypes.DataChangeset{}, err
 	}
 	d := Decision{Database: db.ID, ID: id, Status: apitypes.ChangesetCommitted, DecidedAt: now(), DecidedBy: a.Name}
-	res, err := tg.eng.Commit(ctx, tg.t, tg.call(a, true), changes)
+	var res data.CommitResult
+	if keyed {
+		res, err = k.CommitKeys(ctx, tg.t, tg.call(a, true), cs.KeyChanges)
+	} else {
+		res, err = tg.eng.Commit(ctx, tg.t, tg.call(a, true), changes)
+	}
 	if err != nil {
 		return apitypes.DataChangeset{}, p.dataError(db, err)
 	}
@@ -358,7 +445,11 @@ func (p *Panel[D]) Commit(ctx context.Context, a Actor, db *Database[D], id int6
 	if err != nil {
 		return apitypes.DataChangeset{}, fmt.Errorf("record the decision on changeset %d: %w", id, err)
 	}
-	summary := fmt.Sprintf("committed changeset %d: %s, %d rows", id, summarizeChanges(changes), rows)
+	what := summarizeChanges(changes)
+	if keyed {
+		what = summarizeKeyChanges(cs.KeyChanges)
+	}
+	summary := fmt.Sprintf("committed changeset %d: %s, %d rows", id, what, rows)
 	if outcome == apitypes.OutcomeConflict {
 		summary = fmt.Sprintf("changeset %d conflicted with current data; nothing was written", id)
 	}
@@ -410,4 +501,12 @@ func (p *Panel[D]) Reject(ctx context.Context, a Actor, db *Database[D], id int6
 	}
 	p.audit(ctx, a, db, apitypes.AuditDataReject, summary, nil)
 	return p.changesetFor(tg, decided), nil
+}
+
+// nonNilChanges is changes, or none (a key changeset's rows).
+func nonNilChanges(changes []apitypes.DataChange) []apitypes.DataChange {
+	if changes == nil {
+		return []apitypes.DataChange{}
+	}
+	return changes
 }

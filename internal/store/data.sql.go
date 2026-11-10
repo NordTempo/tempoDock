@@ -160,9 +160,9 @@ func (q *Queries) AddSensitiveKey(ctx context.Context, arg AddSensitiveKeyParams
 }
 
 const createChangeset = `-- name: CreateChangeset :one
-INSERT INTO changesets (service_id, author, author_kind, user_id, token_id, message, changes, sql, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by
+INSERT INTO changesets (service_id, author, author_kind, user_id, token_id, message, changes, key_changes, sql, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by, key_changes
 `
 
 type CreateChangesetParams struct {
@@ -173,6 +173,7 @@ type CreateChangesetParams struct {
 	TokenID    *int64
 	Message    string
 	Changes    string
+	KeyChanges string
 	Sql        string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
@@ -189,6 +190,7 @@ func (q *Queries) CreateChangeset(ctx context.Context, arg CreateChangesetParams
 		arg.TokenID,
 		arg.Message,
 		arg.Changes,
+		arg.KeyChanges,
 		arg.Sql,
 		arg.CreatedAt,
 		arg.ExpiresAt,
@@ -212,6 +214,7 @@ func (q *Queries) CreateChangeset(ctx context.Context, arg CreateChangesetParams
 		&i.ExpiresAt,
 		&i.DecidedAt,
 		&i.DecidedBy,
+		&i.KeyChanges,
 	)
 	return i, err
 }
@@ -221,7 +224,7 @@ UPDATE changesets SET
     status = ?1, decided_at = ?2, decided_by = ?3,
     reason = ?4, rows_affected = ?5, conflicts = ?6
 WHERE id = ?7 AND status = 'pending' AND expires_at > +?2
-RETURNING id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by
+RETURNING id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by, key_changes
 `
 
 type DecideChangesetParams struct {
@@ -267,6 +270,7 @@ func (q *Queries) DecideChangeset(ctx context.Context, arg DecideChangesetParams
 		&i.ExpiresAt,
 		&i.DecidedAt,
 		&i.DecidedBy,
+		&i.KeyChanges,
 	)
 	return i, err
 }
@@ -392,7 +396,7 @@ func (q *Queries) GetAuditEventByDetail(ctx context.Context, detailID int64) (Au
 }
 
 const getChangeset = `-- name: GetChangeset :one
-SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by FROM changesets WHERE id = ?1 AND service_id = +?2
+SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by, key_changes FROM changesets WHERE id = ?1 AND service_id = +?2
 `
 
 type GetChangesetParams struct {
@@ -421,6 +425,7 @@ func (q *Queries) GetChangeset(ctx context.Context, arg GetChangesetParams) (Cha
 		&i.ExpiresAt,
 		&i.DecidedAt,
 		&i.DecidedBy,
+		&i.KeyChanges,
 	)
 	return i, err
 }
@@ -446,7 +451,7 @@ func (q *Queries) GetDataAccess(ctx context.Context, serviceID int64) (DataAcces
 }
 
 const listChangesets = `-- name: ListChangesets :many
-SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by FROM changesets
+SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by, key_changes FROM changesets
 WHERE service_id = +?1 AND id < ?2
 ORDER BY id DESC
 LIMIT +?3
@@ -487,6 +492,7 @@ func (q *Queries) ListChangesets(ctx context.Context, arg ListChangesetsParams) 
 			&i.ExpiresAt,
 			&i.DecidedAt,
 			&i.DecidedBy,
+			&i.KeyChanges,
 		); err != nil {
 			return nil, err
 		}
@@ -672,7 +678,7 @@ func (q *Queries) ListEffectiveDataPolicyRules(ctx context.Context, arg ListEffe
 }
 
 const listPendingChangesets = `-- name: ListPendingChangesets :many
-SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by FROM changesets
+SELECT id, service_id, status, author, author_kind, user_id, token_id, message, changes, sql, rows_affected, conflicts, reason, created_at, expires_at, decided_at, decided_by, key_changes FROM changesets
 WHERE service_id = +?1 AND status = 'pending'
 ORDER BY id
 `
@@ -706,6 +712,7 @@ func (q *Queries) ListPendingChangesets(ctx context.Context, serviceID int64) ([
 			&i.ExpiresAt,
 			&i.DecidedAt,
 			&i.DecidedBy,
+			&i.KeyChanges,
 		); err != nil {
 			return nil, err
 		}

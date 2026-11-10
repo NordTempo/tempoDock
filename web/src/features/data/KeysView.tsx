@@ -1,12 +1,22 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useShortcuts } from "../../shell/keys";
-import { useCli, useKeyPages, useKeyValue, useSetSensitiveKeys } from "./api";
+import {
+  useCli,
+  useDataSource,
+  useKeyPages,
+  useKeyValue,
+  useSetSensitiveKeys,
+} from "./api";
 import { byteSize, cellText } from "./cells";
 import type { DataPanelView } from "./DataPanel";
-import { Act, Btn, ErrorText, Scroll } from "./kit";
+import { AddRow, EditCell, KeyActions, rowChanges, stagedFor } from "./KeyEdit";
+import { Act, Btn, ErrorText, Kbd, Scroll } from "./kit";
+import { type EditActions, ReviewPanel } from "./ReviewPanel";
 import type { KeyType } from "./search";
 import type {
   DataCell,
+  DataKeyChange,
   DataKeyInfo,
   DataPermission,
   DataSchema,
@@ -16,7 +26,9 @@ import type {
 // dense grid of keys found with SCAN, filtered by match, type and
 // database, and the open key's value in a drawer on the right. Enter
 // opens the key full width; clicking a segment of a key's name filters by
-// that prefix. Nothing refreshes by itself.
+// that prefix. Nothing refreshes by itself. In edit mode the drawer
+// stages key changes (KeyEdit.tsx), reviewed beside it as one changeset;
+// they stay staged across keys of one database.
 
 const keyTypes: KeyType[] = ["string", "hash", "list", "set", "zset", "stream"];
 
@@ -74,11 +86,17 @@ export default function KeysView({
   access,
   view,
   onView,
+  editing,
+  onEditing,
+  actions,
 }: {
   schema: DataSchema;
   access: DataPermission;
   view: DataPanelView;
   onView: (next: Partial<DataPanelView>) => void;
+  editing: boolean;
+  onEditing?: (editing: boolean) => void;
+  actions?: EditActions;
 }) {
   const db = view.db ?? 0;
   const pages = useKeyPages({
@@ -92,10 +110,22 @@ export default function KeysView({
   const selected = view.key;
   const [full, setFull] = useState(false);
   const [match, setMatch] = useState(view.match ?? "");
-  const [editing, setEditing] = useState(false);
+  const [patterns, setPatterns] = useState(false);
+  const [staged, setStaged] = useState<DataKeyChange[]>([]);
+  const client = useQueryClient();
+  const source = useDataSource();
+  const canEdit = editing && !!actions;
   const matchRef = useRef<HTMLInputElement>(null);
   useEffect(() => setMatch(view.match ?? ""), [view.match]);
 
+  /** Stage a change; a key's new TTL replaces one staged before. */
+  const stage = (c: DataKeyChange) =>
+    setStaged((all) => [
+      ...all.filter(
+        (s) => !(c.op === "expire" && s.op === "expire" && s.key === c.key),
+      ),
+      c,
+    ]);
   const open = (k: DataKeyInfo | undefined) => {
     if (!k || k.masked) return;
     onView({ key: k.key, keyHex: k.hex || undefined });
@@ -162,6 +192,13 @@ export default function KeysView({
         <select
           className="g-field w-[150px]"
           aria-label="Database"
+          // A changeset is in one database.
+          disabled={staged.length > 0}
+          title={
+            staged.length > 0
+              ? "Commit or discard the staged changes to switch databases"
+              : undefined
+          }
           value={db}
           onChange={(e) =>
             onView({ db: Number(e.target.value) || undefined, key: undefined })
@@ -176,21 +213,27 @@ export default function KeysView({
         <span className="text-xs text-(--g-mut)">
           {total.toLocaleString()} keys in db {db}
         </span>
-        {access.manage && (
-          <Btn
-            small
-            ghost
-            className="ml-auto"
-            onClick={() => setEditing((v) => !v)}
-          >
-            Sensitive keys {schema.sensitive_keys?.length ?? 0}
-          </Btn>
-        )}
+        <span className="ml-auto flex items-center gap-2">
+          {access.manage && (
+            <Btn small ghost onClick={() => setPatterns((v) => !v)}>
+              Sensitive keys {schema.sensitive_keys?.length ?? 0}
+            </Btn>
+          )}
+          {onEditing && (
+            <Btn
+              small
+              aria-pressed={editing}
+              onClick={() => onEditing(!editing)}
+            >
+              {editing ? "Editing" : "Edit"} <Kbd>E</Kbd>
+            </Btn>
+          )}
+        </span>
       </div>
-      {editing && (
+      {patterns && (
         <SensitiveKeys
           patterns={schema.sensitive_keys ?? []}
-          onDone={() => setEditing(false)}
+          onDone={() => setPatterns(false)}
         />
       )}
       <div className="flex min-h-0 flex-1">
@@ -286,11 +329,31 @@ export default function KeysView({
               keyMatch(p, selected),
             )}
             access={access}
+            staged={canEdit ? staged : undefined}
+            onStage={stage}
+            onUnstage={(i) => setStaged((all) => all.filter((_, j) => j !== i))}
             full={full}
             onFull={() => setFull((f) => !f)}
             onClose={() => {
               setFull(false);
               onView({ key: undefined, keyHex: undefined });
+            }}
+          />
+        )}
+        {canEdit && actions && staged.length > 0 && (
+          <ReviewPanel
+            table={selected ?? `db ${db}`}
+            body={{ key_changes: staged }}
+            confirmCommit={access.confirm_commit && access.level !== "propose"}
+            propose={access.level === "propose"}
+            actions={actions}
+            onRestoreKey={(i) =>
+              setStaged((all) => all.filter((_, j) => j !== i))
+            }
+            onDiscard={() => setStaged([])}
+            onCommitted={() => {
+              setStaged([]);
+              client.invalidateQueries({ queryKey: [...source.key, "keys"] });
             }}
           />
         )}
@@ -338,6 +401,9 @@ function KeyPane({
   hex,
   sensitive,
   access,
+  staged,
+  onStage,
+  onUnstage,
   full,
   onFull,
   onClose,
@@ -347,6 +413,10 @@ function KeyPane({
   hex: boolean;
   sensitive: boolean;
   access: DataPermission;
+  /** Edit mode's staged changes (undefined: not editing). */
+  staged?: readonly DataKeyChange[];
+  onStage: (change: DataKeyChange) => void;
+  onUnstage: (index: number) => void;
   full: boolean;
   onFull: () => void;
   onClose: () => void;
@@ -362,6 +432,9 @@ function KeyPane({
   const first = value.data?.pages[0];
   const rows = value.data?.pages.flatMap((p) => p.rows ?? []) ?? [];
   const cols = first?.columns ?? [];
+  // A key named in hex can't be written: changes name keys as text.
+  const editable = !!staged && !hex && !!first;
+  const [editingRow, setEditingRow] = useState<number>();
   const flags = [db && `--db ${db}`, hex && "--hex", reveal && "--reveal"]
     .filter(Boolean)
     .join(" ");
@@ -397,6 +470,20 @@ function KeyPane({
           <dt className="text-(--g-mut)">TTL</dt>
           <dd className="tabular-nums">{ttlText(first.ttl_ms)}</dd>
         </dl>
+      )}
+      {staged && hex && (
+        <p className="text-xs text-(--g-dim)">
+          This key's name isn't text, so it can't be changed here. Use Commands.
+        </p>
+      )}
+      {editable && first && (
+        <KeyActions
+          type={first.type}
+          db={db}
+          name={name}
+          ttlMs={first.ttl_ms}
+          onStage={onStage}
+        />
       )}
       {!canRead ? (
         <div className="my-2 flex flex-col gap-2 text-xs text-(--g-dim)">
@@ -435,26 +522,99 @@ function KeyPane({
                         {c.name}
                       </th>
                     ))}
+                    {editable && <th className="w-16" />}
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    // Value rows have no identity but their place.
-                    <tr key={`${i}`}>
-                      {(r as DataCell[]).map((cell, j) => (
-                        <td
-                          key={cols[j]?.name ?? j}
-                          className={`max-w-[520px] truncate font-mono text-xs ${cols[j]?.name === "#" ? "text-right text-(--g-dim)" : ""}`}
-                          title={typeof cell === "string" ? cell : undefined}
-                        >
-                          {cellText(cell, cols[j]?.type_name ?? "")}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {rows.map((r, i) => {
+                    const cells = r as DataCell[];
+                    const row = editable
+                      ? rowChanges(first.type, name, db, cells)
+                      : {};
+                    const at = staged ? stagedFor(staged, row) : -1;
+                    const change = staged?.[at];
+                    const removed = change && change.value === undefined;
+                    return (
+                      // Value rows have no identity but their place.
+                      <tr
+                        key={`${i}`}
+                        className={removed ? "text-(--g-dim) line-through" : ""}
+                      >
+                        {cells.map((cell, j) => (
+                          <td
+                            key={cols[j]?.name ?? j}
+                            className={`max-w-[520px] truncate font-mono text-xs ${cols[j]?.name === "#" ? "text-right text-(--g-dim)" : ""}`}
+                            title={typeof cell === "string" ? cell : undefined}
+                          >
+                            {editingRow === i &&
+                            j === row.column &&
+                            row.edit &&
+                            row.current !== undefined ? (
+                              <EditCell
+                                value={row.current}
+                                onStage={(v) => {
+                                  if (v !== row.current && row.edit)
+                                    onStage(row.edit(v));
+                                  setEditingRow(undefined);
+                                }}
+                                onCancel={() => setEditingRow(undefined)}
+                              />
+                            ) : change && !removed && j === row.column ? (
+                              <span className="text-(--g-warn)">
+                                {change.value}
+                              </span>
+                            ) : (
+                              cellText(cell, cols[j]?.type_name ?? "")
+                            )}
+                          </td>
+                        ))}
+                        {editable && (
+                          <td className="text-right text-xs whitespace-nowrap">
+                            {change ? (
+                              <button
+                                type="button"
+                                className="text-(--g-mut) hover:text-(--g-text)"
+                                onClick={() => onUnstage(at)}
+                              >
+                                Undo
+                              </button>
+                            ) : (
+                              <>
+                                {row.edit && row.current !== undefined && (
+                                  <button
+                                    type="button"
+                                    className="text-(--g-mut) hover:text-(--g-text)"
+                                    onClick={() => setEditingRow(i)}
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+                                {row.remove && (
+                                  <button
+                                    type="button"
+                                    aria-label="Remove"
+                                    title="Remove"
+                                    className="ml-2 text-(--g-mut) hover:text-(--g-fail)"
+                                    onClick={() =>
+                                      row.remove && onStage(row.remove())
+                                    }
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </Scroll>
+          )}
+          {editable && first && (
+            <AddRow type={first.type} db={db} name={name} onStage={onStage} />
           )}
           <div className="flex items-center gap-3 py-2 text-xs text-(--g-mut)">
             {first && (

@@ -2,20 +2,23 @@ import { type ReactNode, useEffect, useState } from "react";
 import { plural } from "../../ui/format";
 import { useCli, useDataSource } from "./api";
 import { Act, Btn, ErrorText } from "./kit";
-import type { DataChange } from "./types";
+import type { DataChange, DataChangesetRequest, DataKeyChange } from "./types";
 import { dataLimits } from "./types";
+
+/** A changeset's content: row changes, or a Redis database's key changes. */
+export type ChangeBody = Pick<DataChangesetRequest, "changes" | "key_changes">;
 
 /** How staged edits are turned into SQL and committed (see useEditActions). */
 export type EditActions = {
   /** The transaction a commit would run (POST /data/changesets, dry_run). */
-  renderSql: (changes: DataChange[]) => Promise<string>;
+  renderSql: (body: ChangeBody) => Promise<string>;
   /**
    * Commit, or propose: always for callers with level propose, and on
    * request (`propose`) for writers. `confirm` is the source's confirmName
    * (an environment's or connection's name) on production; `message` says
    * why, for reviewers.
    */
-  commit: (changes: DataChange[], options: CommitOptions) => Promise<void>;
+  commit: (body: ChangeBody, options: CommitOptions) => Promise<void>;
 };
 
 export type CommitOptions = {
@@ -92,6 +95,77 @@ export function ChangeList({
   );
 }
 
+/**
+ * A Redis changeset's changes: the key and the operation, then the field
+ * and what it was (red) and becomes (green).
+ */
+export function KeyChangeList({
+  changes,
+  onRestore,
+}: {
+  changes: readonly DataKeyChange[];
+  /** Unstage one change (while reviewing staged edits). */
+  onRestore?: (index: number) => void;
+}) {
+  if (!changes.length) return null;
+  return (
+    <ul className="flex flex-col gap-2">
+      {changes.map((c, i) => (
+        // A key can change twice; the place tells the changes apart.
+        <li
+          key={`${i}:${c.key}:${c.op}`}
+          className="overflow-hidden rounded-lg border border-(--g-line)"
+        >
+          <div className="flex h-[30px] items-center gap-2 bg-(--g-raise) px-2.5 text-xs text-(--g-dim)">
+            <span className="truncate font-mono" title={c.key}>
+              {c.key}
+            </span>
+            <span
+              className={
+                c.op === "delete" || c.op.endsWith("rem") || c.op === "hdel"
+                  ? "text-(--g-fail)"
+                  : "text-(--g-mut)"
+              }
+            >
+              {c.op}
+            </span>
+            {onRestore && (
+              <button
+                type="button"
+                className="ml-auto text-(--g-mut) hover:text-(--g-text)"
+                onClick={() => onRestore(i)}
+              >
+                Undo
+              </button>
+            )}
+          </div>
+          {(c.field !== undefined ||
+            c.value !== undefined ||
+            c.ttl_ms !== undefined) && (
+            <div className="g-diff break-all">
+              {c.field !== undefined && (
+                <span className="text-(--g-mut)">{c.field}</span>
+              )}
+              {c.old?.value !== undefined && c.op !== "lrem" && (
+                <div className="g-del">− {cellText(c.old.value)}</div>
+              )}
+              {c.value !== undefined && (
+                <div className="g-add">+ {cellText(c.value)}</div>
+              )}
+              {c.ttl_ms !== undefined && (
+                <div className="g-add">
+                  + TTL{" "}
+                  {c.ttl_ms < 0 ? "none" : `${Math.round(c.ttl_ms / 1000)}s`}
+                </div>
+              )}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Generated SQL, as the server rendered it. */
 export function SqlText({ children }: { children: ReactNode }) {
   return (
@@ -148,18 +222,19 @@ export function ConfirmName({
  */
 export function ReviewPanel({
   table,
-  changes,
+  body,
   confirmCommit,
   propose,
   actions,
   message: initialMessage = "",
   onRestore,
+  onRestoreKey,
   onDiscard,
   onCommitted,
 }: {
-  /** The table's (or changes file's) name, for the title. */
+  /** The table's (key's, or changes file's) name, for the title. */
   table: string;
-  changes: DataChange[];
+  body: ChangeBody;
   /** Production: type the confirmName to commit. */
   confirmCommit: boolean;
   /** The caller's level is propose: an admin approves the changeset. */
@@ -167,7 +242,9 @@ export function ReviewPanel({
   actions: EditActions;
   /** Why, for reviewers, to start from (a changes file's). */
   message?: string;
-  onRestore: (key: Record<string, string>) => void;
+  /** Unstage a row change by its key, or a key change by its index. */
+  onRestore?: (key: Record<string, string>) => void;
+  onRestoreKey?: (index: number) => void;
   onDiscard: () => void;
   onCommitted: () => void;
 }) {
@@ -183,12 +260,13 @@ export function ReviewPanel({
   const proposing = propose || proposeOnly;
   // A proposal writes nothing: its approver confirms instead.
   const confirming = confirmCommit && !proposeOnly;
-  const signature = JSON.stringify(changes);
+  const signature = JSON.stringify(body);
+  const count = (body.changes?.length ?? 0) + (body.key_changes?.length ?? 0);
 
   useEffect(() => {
     let current = true;
     setSql({});
-    actions.renderSql(changes).then(
+    actions.renderSql(body).then(
       (text) => current && setSql({ text }),
       (e: unknown) =>
         current &&
@@ -199,7 +277,7 @@ export function ReviewPanel({
     };
   }, [signature, actions]);
 
-  const tooMany = changes.length > dataLimits.changesetRows;
+  const tooMany = count > dataLimits.changesetRows;
   const confirmed = !confirming || confirm === confirmName;
   const verb = proposing ? "Propose" : "Commit";
 
@@ -207,7 +285,7 @@ export function ReviewPanel({
     setCommitting(true);
     setError(null);
     try {
-      await actions.commit(changes, {
+      await actions.commit(body, {
         confirm: confirming ? confirm : undefined,
         message: message.trim() || undefined,
         propose: proposeOnly,
@@ -229,14 +307,18 @@ export function ReviewPanel({
         Pending changes
       </div>
       <h2 className="mt-1 text-[16px] font-semibold">
-        {plural(changes.length, "change")} in {table}
+        {plural(count, "change")} in {table}
       </h2>
       <p className="mb-3.5 text-xs text-(--g-mut)">
         {proposing
           ? "Proposed together; an admin approves them"
           : "Committed together in one transaction"}
       </p>
-      <ChangeList changes={changes} onRestore={onRestore} />
+      <ChangeList changes={body.changes ?? []} onRestore={onRestore} />
+      <KeyChangeList
+        changes={body.key_changes ?? []}
+        onRestore={onRestoreKey}
+      />
       <ShowSql>{sql.text ?? (sql.error ? "" : "Rendering SQL")}</ShowSql>
       <ErrorText error={sql.error ?? null} />
       {tooMany && (
@@ -289,7 +371,7 @@ export function ReviewPanel({
               disabled={!confirmed || tooMany || committing || !sql.text}
               onClick={commit}
             >
-              {verb} {plural(changes.length, "change")}
+              {verb} {plural(count, "change")}
             </Act>
           </div>
         </div>
