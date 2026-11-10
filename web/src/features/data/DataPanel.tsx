@@ -24,19 +24,28 @@ import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
 import { TableList } from "./TableList";
 import { TablesView } from "./TablesView";
-import type { DataFilter, DataInfo, DataLevel, DataPermission } from "./types";
+import type {
+  DataFilter,
+  DataInfo,
+  DataInsightView,
+  DataLevel,
+  DataPermission,
+} from "./types";
 
-// CodeMirror loads only when the SQL tab opens.
+// CodeMirror loads only when the SQL tab opens; Health when it does.
 const SqlView = lazy(() => import("./SqlView"));
+const HealthView = lazy(() => import("./HealthView"));
 
 /** What the panel shows; the host route keeps it in the URL's search. */
 export type DataPanelView = {
-  tab: "tables" | "sql" | "schema" | "changes";
+  tab: "tables" | "sql" | "schema" | "changes" | "health";
   /** "schema.name"; the first table when unset. */
   table?: string;
   /** A column, "-column" for descending. */
   order?: string;
   filters?: DataFilter[];
+  /** The Health tab's view; the overview when unset. */
+  insight?: DataInsightView;
 };
 
 const ranks: Record<DataLevel, number> = {
@@ -100,14 +109,18 @@ export function DataPanel({
     (c) => c.status === "pending",
   ).length;
 
-  const tabs = [
-    { tab: "tables", label: "Tables", key: "1" },
-    { tab: "sql", label: "SQL", key: "2" },
-    { tab: "schema", label: "Schema", key: "3" },
-    ...(showChanges
-      ? [{ tab: "changes", label: "Changes", key: "4" } as const]
-      : []),
-  ] as const;
+  const tabList: { tab: DataPanelView["tab"]; label: string }[] = [
+    { tab: "tables", label: "Tables" },
+    { tab: "sql", label: "SQL" },
+    { tab: "schema", label: "Schema" },
+    ...(showChanges ? [{ tab: "changes", label: "Changes" } as const] : []),
+    { tab: "health", label: "Health" },
+  ];
+  // Digits pick the nth tab.
+  const tabs = tabList.map((t, i) => ({ ...t, key: String(i + 1) }));
+  // SQL the Health tab hands over ("Explain in SQL"); the editor opens
+  // with it once.
+  const [sqlDraft, setSqlDraft] = useState<{ sql: string; n: number }>();
 
   // Until the database is set up and readable the panel shows only its
   // status, so no tab or edit keys are bound (or listed in the legend).
@@ -201,6 +214,25 @@ export function DataPanel({
         <p className="p-5 text-(--g-fail)">{schema.error.message}</p>
       ) : !schema.data ? (
         <p className="p-5 text-(--g-mut)">Reading the catalog</p>
+      ) : view.tab === "health" ? (
+        <Suspense
+          fallback={<p className="p-5 text-(--g-mut)">Loading Health</p>}
+        >
+          <HealthView
+            access={access}
+            view={view.insight ?? "overview"}
+            onView={(insight) =>
+              onView({
+                ...view,
+                insight: insight === "overview" ? undefined : insight,
+              })
+            }
+            onExplain={(sql) => {
+              setSqlDraft((d) => ({ sql, n: (d?.n ?? 0) + 1 }));
+              onView({ ...view, tab: "sql" });
+            }}
+          />
+        </Suspense>
       ) : view.tab === "changes" && showChanges ? (
         <ChangesView access={access} actions={edit} />
       ) : view.tab === "sql" ? (
@@ -212,7 +244,11 @@ export function DataPanel({
           <Suspense
             fallback={<p className="p-5 text-(--g-mut)">Loading the editor</p>}
           >
-            <SqlView tables={tables} />
+            <SqlView
+              key={sqlDraft?.n}
+              tables={tables}
+              initialSql={sqlDraft?.sql}
+            />
           </Suspense>
         )
       ) : (

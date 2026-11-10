@@ -24,6 +24,7 @@ import type {
   DataFilter,
   DataHistoryEntry,
   DataInfo,
+  DataInsights,
   DataPage,
   DataPageRequest,
   DataPermission,
@@ -37,6 +38,7 @@ import type {
   DataRow,
   DataSavedQuery,
   DataSchema,
+  DataStatementOrder,
   DataSubject,
   SaveDataQueryRequest,
 } from "./types";
@@ -97,6 +99,11 @@ export type DataEndpoints = {
   rejectChangeset(id: number, req: DataRejectRequest): Promise<DataChangeset>;
   /** PUT /data/sensitive-columns (admin): replaces the list. */
   setSensitive(columns: DataColumnRef[]): Promise<DataColumnRef[] | null>;
+  /**
+   * GET /data/insights?order=: every view the caller may see, read live
+   * from the database's statistics.
+   */
+  insights(order: DataStatementOrder): Promise<DataInsights>;
 };
 
 /** The panel's database roles, as messages name them. */
@@ -189,6 +196,24 @@ export function useDataSchema(enabled = true) {
     queryFn: () => source.schema(),
     staleTime: 60_000,
     enabled,
+  });
+}
+
+/**
+ * GET /data/insights. Read when the Health tab opens and on refresh,
+ * never in the background: the result is the database's state at
+ * read_at. keepPreviousData lets the queries view show what changed
+ * between two reads.
+ */
+export function useInsights(order: DataStatementOrder) {
+  const source = useDataSource();
+  return useQuery({
+    queryKey: [...source.key, "insights", order],
+    queryFn: () => source.insights(order),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    placeholderData: (prev) => prev,
   });
 }
 

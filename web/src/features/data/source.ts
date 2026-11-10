@@ -54,6 +54,12 @@ export function serviceSource(ref: ServiceRef): DataSource {
     info: () => body(api.GET(P, params)),
     setup: () => body(api.POST(`${P}/setup` as const, params)),
     schema: () => body(api.GET(`${P}/schema` as const, params)),
+    insights: (order) =>
+      body(
+        api.GET(`${P}/insights` as const, {
+          params: { path, query: { order } },
+        }),
+      ),
     rows: async (req, signal) =>
       page(
         await body(

@@ -140,6 +140,13 @@ dock db policy set deploy.production=inherit -p shop  # remove a rule
 
 ## How the database is doing
 
+The Data tab's **Health** view shows it: an overview with what needs a
+look, then the queries, sessions, tables and indexes, each with details on
+the side. It reads when you open it and when you press R; Follow on
+Sessions refreshes every 5 seconds while the page is visible, for up to
+10 minutes. "Explain in SQL" opens a statement's generic plan in the SQL
+tab. The same from the terminal:
+
 ```sh
 dock db health                    # connections, cache, size, and what needs a look
 dock db queries --order mean      # slowest statements (pg_stat_statements)

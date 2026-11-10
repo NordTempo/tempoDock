@@ -59,11 +59,14 @@ function download(name: string, text: string, type: string) {
  */
 export default function SqlView({
   tables,
+  initialSql = "",
 }: {
   /** For completion. */
   tables: readonly DataTable[];
+  /** Text to open the editor with (Health's "Explain in SQL"). */
+  initialSql?: string;
 }) {
-  const [sql, setSql] = useState("");
+  const [sql, setSql] = useState(initialSql);
   const [savedId, setSavedId] = useState<number | null>(null);
   const [naming, setNaming] = useState<string | null>(null);
   const [pane, setPane] = useState<"results" | "history">("results");
