@@ -220,6 +220,7 @@ running).
 | `[alerts] cpu_percent`, `cpu_minutes` | `90`, `15` | A server's CPUs busier than this for this many minutes raise a warning; `0` never |
 | `[analytics] ingest_listen` | `127.0.0.1:7077` | Loopback address Caddy sends [Dock Analytics](../decisions/0037-analytics.md) events to. Must be loopback; empty turns the ingest off |
 | `[analytics] stats_listen` | `127.0.0.1:7078` | Loopback address of sites' public dashboards. Empty turns them off |
+| `[status] listen` | `127.0.0.1:7079` | Loopback address of [status pages](status-pages.md). Empty turns them off. Control plane only |
 | `[analytics] spool_max_mb` | `256` | Events waiting for the store, at most; past it the oldest go. At least `16` |
 | `[analytics] store_port`, `store_memory_mb` | `7076`, `512` | On the analytics server: the store's loopback port and memory limit (at least `256`) |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |

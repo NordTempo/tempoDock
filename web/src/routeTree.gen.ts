@@ -57,6 +57,8 @@ import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.se
 import { Route as AppOrgSettingsRegistriesRouteImport } from './routes/_app.$org.settings.registries'
 import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
 import { Route as AppOrgSettingsVariablesRouteImport } from './routes/_app.$org.settings.variables'
+import { Route as AppOrgStatusPagesIndexRouteImport } from './routes/_app.$org.status-pages.index'
+import { Route as AppOrgStatusPagesPageRouteImport } from './routes/_app.$org.status-pages.$page'
 import { Route as AppConsoleServersServerRouteImport } from './routes/_app.console.servers_.$server'
 import { Route as AppOrgProjectEnvironmentIndexRouteImport } from './routes/_app.$org.$project.$environment.index'
 import { Route as AppOrgProjectEnvironmentServiceRouteImport } from './routes/_app.$org.$project.$environment.$service'
@@ -334,6 +336,16 @@ const AppOrgSettingsVariablesRoute = AppOrgSettingsVariablesRouteImport.update({
   path: '/variables',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
+const AppOrgStatusPagesIndexRoute = AppOrgStatusPagesIndexRouteImport.update({
+  id: '/status-pages/',
+  path: '/status-pages/',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgStatusPagesPageRoute = AppOrgStatusPagesPageRouteImport.update({
+  id: '/status-pages/$page',
+  path: '/status-pages/$page',
+  getParentRoute: () => AppOrgRoute,
+} as any)
 const AppConsoleServersServerRoute = AppConsoleServersServerRouteImport.update({
   id: '/servers_/$server',
   path: '/servers/$server',
@@ -583,10 +595,12 @@ export interface FileRoutesByFullPath {
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
+  '/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project/': typeof AppOrgProjectIndexRoute
   '/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
   '/$org/settings/': typeof AppOrgSettingsIndexRoute
+  '/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
@@ -662,10 +676,12 @@ export interface FileRoutesByTo {
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
+  '/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project': typeof AppOrgProjectIndexRoute
   '/$org/analytics': typeof AppOrgAnalyticsIndexRoute
   '/$org/settings': typeof AppOrgSettingsIndexRoute
+  '/$org/status-pages': typeof AppOrgStatusPagesIndexRoute
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/$org/$project/$environment': typeof AppOrgProjectEnvironmentIndexRoute
@@ -745,10 +761,12 @@ export interface FileRoutesById {
   '/_app/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/_app/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
+  '/_app/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
   '/_app/$org/$project/': typeof AppOrgProjectIndexRoute
   '/_app/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
   '/_app/$org/settings/': typeof AppOrgSettingsIndexRoute
+  '/_app/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
   '/_app/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   '/_app/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/_app/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
@@ -830,10 +848,12 @@ export interface FileRouteTypes {
     | '/$org/settings/registries'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
+    | '/$org/status-pages/$page'
     | '/console/servers/$server'
     | '/$org/$project/'
     | '/$org/analytics/'
     | '/$org/settings/'
+    | '/$org/status-pages/'
     | '/$org/$project/$environment/$service'
     | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
@@ -909,10 +929,12 @@ export interface FileRouteTypes {
     | '/$org/settings/registries'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
+    | '/$org/status-pages/$page'
     | '/console/servers/$server'
     | '/$org/$project'
     | '/$org/analytics'
     | '/$org/settings'
+    | '/$org/status-pages'
     | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
     | '/$org/$project/$environment'
@@ -991,10 +1013,12 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/registries'
     | '/_app/$org/settings/tokens'
     | '/_app/$org/settings/variables'
+    | '/_app/$org/status-pages/$page'
     | '/_app/console/servers_/$server'
     | '/_app/$org/$project/'
     | '/_app/$org/analytics/'
     | '/_app/$org/settings/'
+    | '/_app/$org/status-pages/'
     | '/_app/$org/$project/$environment/$service'
     | '/_app/$org/$project/settings/log-drains'
     | '/_app/$org/$project/settings/previews'
@@ -1377,6 +1401,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/$org/settings/variables'
       preLoaderRoute: typeof AppOrgSettingsVariablesRouteImport
       parentRoute: typeof AppOrgSettingsRoute
+    }
+    '/_app/$org/status-pages/': {
+      id: '/_app/$org/status-pages/'
+      path: '/status-pages'
+      fullPath: '/$org/status-pages/'
+      preLoaderRoute: typeof AppOrgStatusPagesIndexRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/status-pages/$page': {
+      id: '/_app/$org/status-pages/$page'
+      path: '/status-pages/$page'
+      fullPath: '/$org/status-pages/$page'
+      preLoaderRoute: typeof AppOrgStatusPagesPageRouteImport
+      parentRoute: typeof AppOrgRoute
     }
     '/_app/console/servers_/$server': {
       id: '/_app/console/servers_/$server'
@@ -1777,8 +1815,10 @@ interface AppOrgRouteChildren {
   AppOrgIndexRoute: typeof AppOrgIndexRoute
   AppOrgProjectCompareRoute: typeof AppOrgProjectCompareRoute
   AppOrgProjectSettingsRoute: typeof AppOrgProjectSettingsRouteWithChildren
+  AppOrgStatusPagesPageRoute: typeof AppOrgStatusPagesPageRoute
   AppOrgProjectIndexRoute: typeof AppOrgProjectIndexRoute
   AppOrgAnalyticsIndexRoute: typeof AppOrgAnalyticsIndexRoute
+  AppOrgStatusPagesIndexRoute: typeof AppOrgStatusPagesIndexRoute
   AppOrgProjectEnvironmentServiceRoute: typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   AppOrgAnalyticsProjectSiteRoute: typeof AppOrgAnalyticsProjectSiteRouteWithChildren
   AppOrgProjectEnvironmentIndexRoute: typeof AppOrgProjectEnvironmentIndexRoute
@@ -1795,8 +1835,10 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgIndexRoute: AppOrgIndexRoute,
   AppOrgProjectCompareRoute: AppOrgProjectCompareRoute,
   AppOrgProjectSettingsRoute: AppOrgProjectSettingsRouteWithChildren,
+  AppOrgStatusPagesPageRoute: AppOrgStatusPagesPageRoute,
   AppOrgProjectIndexRoute: AppOrgProjectIndexRoute,
   AppOrgAnalyticsIndexRoute: AppOrgAnalyticsIndexRoute,
+  AppOrgStatusPagesIndexRoute: AppOrgStatusPagesIndexRoute,
   AppOrgProjectEnvironmentServiceRoute:
     AppOrgProjectEnvironmentServiceRouteWithChildren,
   AppOrgAnalyticsProjectSiteRoute: AppOrgAnalyticsProjectSiteRouteWithChildren,

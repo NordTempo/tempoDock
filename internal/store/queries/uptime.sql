@@ -49,6 +49,20 @@ SELECT m.check_id, 3600, sqlc.arg(from_at), sum(m.up), sum(m.total), sum(m.laten
 FROM uptime_stats AS m WHERE m.res = 60 AND m.at >= +sqlc.arg(from_at) AND m.at < +sqlc.arg(to_at)
 GROUP BY m.check_id;
 
+-- name: RollupUptimeDay :exec
+-- Sums the hour rows of the UTC day [from_at, to_at) into one day row
+-- per check, for status pages' 90-day history (ADR 0073). Running it
+-- again for the same day gives the same rows.
+INSERT OR REPLACE INTO uptime_stats (check_id, res, at, up, total, latency_ms_sum)
+SELECT h.check_id, 86400, sqlc.arg(from_at), sum(h.up), sum(h.total), sum(h.latency_ms_sum)
+FROM uptime_stats AS h WHERE h.res = 3600 AND h.at >= +sqlc.arg(from_at) AND h.at < +sqlc.arg(to_at)
+GROUP BY h.check_id;
+
+-- name: LastUptimeDay :one
+-- The start of the newest day row, 0 for none: where day rollups carry
+-- on after a restart.
+SELECT CAST(coalesce(max(at), 0) AS INTEGER) FROM uptime_stats WHERE res = 86400;
+
 -- name: PruneUptimeStats :exec
 DELETE FROM uptime_stats WHERE res = +? AND at < +?;
 

@@ -158,6 +158,9 @@ function AppNav() {
         <span className="flex-1">Alerts</span>
         <OpenAlertCount open={useOrgOpenAlerts()} />
       </NavLink>
+      <NavLink to="/$org/status-pages" icon="globe">
+        Status pages
+      </NavLink>
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>

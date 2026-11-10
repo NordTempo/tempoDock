@@ -274,6 +274,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "alert":
       // Org members get their org's, operators the platform's; each
       // patches its scope's lists.
+      invalidateStatusPages(queryClient);
       if (event.alert) {
         applyAlertEvent(queryClient, event.alert);
         // A new or regressed error issue raises one; the lists follow.
@@ -327,6 +328,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
     case "sleep":
       // Went to sleep, started waking or woke; services' states come
       // as their own service_status events.
+      invalidateStatusPages(queryClient);
       patchEnvironment(queryClient, event, (e) => ({
         ...e,
         sleep: event.sleep ?? undefined,
@@ -351,6 +353,7 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       return;
     case "uptime": {
       // An uptime check went up or down (ADR 0055).
+      invalidateStatusPages(queryClient);
       const update = event.uptime;
       if (!ref || !update) return;
       const state = applyUptimeEvent(queryClient, ref, update);
@@ -634,6 +637,18 @@ function invalidatePreviews(queryClient: QueryClient, ref: ServiceRef) {
     queryClient.invalidateQueries({ queryKey: keys.previews(ref.project) });
 }
 
+/** Status pages' queries (features/status/data.ts). */
+const statusPagesKey = ["status-pages"];
+
+/**
+ * What a status page says (ADR 0073) is worked out from uptime checks,
+ * alerts and sleep on the server, so those events refetch an open
+ * editor's page; a page nobody has open is only marked stale.
+ */
+function invalidateStatusPages(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: statusPagesKey });
+}
+
 /**
  * Every mutation is audited, so audit events also say what someone else (or
  * the CLI) just changed.
@@ -679,6 +694,8 @@ function invalidateForAudit(
     invalidate(["org", "registry-credentials"]);
   // Channels added, removed or alerts resolved (from the CLI too).
   if (kind === "alert") invalidate(["alerts"]);
+  // A status page made, changed or removed (ADR 0073).
+  if (kind === "status_page") invalidate(statusPagesKey);
   if (kind === "data") return invalidateForData(queryClient, audit);
   // The install's settings and the control plane's own backups.
   if (kind === "backup" && !audit.project) invalidate(backupSettingsKey);

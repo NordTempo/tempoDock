@@ -155,6 +155,14 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second,
 		})
 	}
+	if cfg.Status.Listen != "" {
+		// Published status pages, through Caddy (ADR 0073): nothing but
+		// them on this listener.
+		servers = append(servers, &http.Server{
+			Addr: cfg.Status.Listen, Handler: api.StatusPages(c, log.With("component", "status-pages")),
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 40 * time.Second,
+		})
+	}
 	if cfg.Hooks.PublicHost != "" {
 		// GitHub webhooks, the only thing Caddy exposes publicly (ADR 0018).
 		servers = append(servers, &http.Server{

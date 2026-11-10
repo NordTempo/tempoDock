@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{{.Title}} status</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main>
+<header><h1>{{.Title}}</h1><a href="/status.json">JSON</a></header>
+<p class="state"><span class="dot {{.Tone}}"></span><span>{{.Headline}}</span><span class="upd">updated {{.Updated}}</span></p>
+{{range .Groups}}{{if .Name}}<h2>{{.Name}}</h2>{{end}}{{range .Components}}<section>
+<div class="row"><span class="name">{{.Name}}{{if .Description}} <span class="desc">{{.Description}}</span>{{end}}</span><span class="{{.Tone}}">{{.Label}}</span></div>
+<div class="bar">{{.Bar}}</div>
+<div class="axis"><span>90 days ago</span>{{if .Uptime}}<span class="up">{{.Uptime}}</span>{{end}}<span>today</span></div>
+</section>{{end}}{{end}}{{if not .Groups}}<p class="none">No components yet.</p>{{end}}
+<footer>Days in UTC · status by Tempo Dock</footer>
+</main>
+</body>
+</html>
