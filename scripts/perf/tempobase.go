@@ -123,7 +123,9 @@ func checkTempobaseDaemon(o options, t *table) error {
 		return err
 	}
 	time.Sleep(3 * time.Second) // start-up work and the first GC
-	if err := tb.idle(t, name, o.idle, idleBudgets{tempobaseAnonBudget, tempobaseTicksBudget, tempobaseWakeupsBudget}); err != nil {
+	if err := o.gate.apart(func() error {
+		return tb.idle(t, name, o.idle, idleBudgets{tempobaseAnonBudget, tempobaseTicksBudget, tempobaseWakeupsBudget})
+	}); err != nil {
 		return err
 	}
 
@@ -147,7 +149,7 @@ func checkTempobaseDaemon(o options, t *table) error {
 		t.add("tempobase Postgres connections after use", "no -tempobase-pg URL", "", skipped)
 		return nil
 	}
-	return tb.idleConnections(t, o.tempobasePG)
+	return tb.idleConnections(t, o.gate, o.tempobasePG)
 }
 
 // tempobase is a running `tempobase serve`, signed in as the admin with a
@@ -269,7 +271,7 @@ func (tb *tempobase) seed() error {
 // schema and runs a query, then checks that no socket to Postgres is left
 // tempobaseIdleCloseAfter later: the engine's idle close works and nothing
 // pools connections behind it.
-func (tb *tempobase) idleConnections(t *table, pgURL string) error {
+func (tb *tempobase) idleConnections(t *table, g *gate, pgURL string) error {
 	u, err := url.Parse(pgURL)
 	if err != nil {
 		return fmt.Errorf("-tempobase-pg: %w", err)
@@ -299,7 +301,7 @@ func (tb *tempobase) idleConnections(t *table, pgURL string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "perf: waiting %s for tempobase to close its Postgres connections\n", tempobaseIdleCloseAfter)
-	time.Sleep(tempobaseIdleCloseAfter)
+	g.pause(tempobaseIdleCloseAfter)
 	left, err := socketsTo(tb.cmd.Process.Pid, port)
 	if err != nil {
 		return err

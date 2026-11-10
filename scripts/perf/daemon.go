@@ -67,8 +67,10 @@ func checkDaemon(o options, t *table) error {
 	// Let start-up work (migrations, reconcile, starting the analytics
 	// store and its forwarder, the GC cycles they bring) finish.
 	time.Sleep(10 * time.Second)
-	betweenTicks(o.idle)
-	if err := d.idle(t, "daemon idle, analytics on", o.idle, dockIdle(0)); err != nil {
+	if err := o.gate.apart(func() error {
+		betweenTicks(o.idle)
+		return d.idle(t, "daemon idle, analytics on", o.idle, dockIdle(0))
+	}); err != nil {
 		return err
 	}
 
@@ -78,8 +80,10 @@ func checkDaemon(o options, t *table) error {
 		return err
 	}
 	time.Sleep(time.Second)
-	betweenTicks(o.idle)
-	err = d.idle(t, fmt.Sprintf("daemon idle, %d SSE clients", o.sseClients), o.idle, dockIdle(o.sseClients))
+	err = o.gate.apart(func() error {
+		betweenTicks(o.idle)
+		return d.idle(t, fmt.Sprintf("daemon idle, %d SSE clients", o.sseClients), o.idle, dockIdle(o.sseClients))
+	})
 	cancel()
 	if err != nil {
 		return err
@@ -93,7 +97,7 @@ func checkDaemon(o options, t *table) error {
 	fmt.Fprintf(os.Stderr, "perf: seeded in %s; waiting for cutover drains to finish\n", time.Since(start).Round(time.Millisecond))
 	// Replaced containers are stopped core.DefaultCutoverDrain (12 s) after
 	// each cutover; let that settle so it doesn't land in the measurements.
-	time.Sleep(15 * time.Second)
+	o.gate.pause(15 * time.Second)
 	if err := d.latency(t, o.speed); err != nil {
 		return err
 	}
@@ -377,18 +381,25 @@ func (d *daemon) idle(t *table, name string, window time.Duration, b idleBudgets
 // (BenchmarkStatsTick50); its 10-20 wake-ups alone would fail a 30 s
 // window that happened to contain it, whatever else the daemon does.
 func betweenTicks(window time.Duration) {
+	time.Sleep(untilBetweenTicks(window))
+}
+
+// untilBetweenTicks is how long until a window of the given length fits
+// between two minute ticks; 0 if it fits now.
+func untilBetweenTicks(window time.Duration) time.Duration {
 	const margin = 3 * time.Second // the tick's own work
 	if window > time.Minute-2*margin {
-		return
+		return 0
 	}
 	now := time.Now()
 	last := now.Truncate(time.Minute)
 	switch {
 	case now.Before(last.Add(margin)):
-		time.Sleep(last.Add(margin).Sub(now))
+		return last.Add(margin).Sub(now)
 	case now.Add(window + margin).After(last.Add(time.Minute)):
-		time.Sleep(last.Add(time.Minute + margin).Sub(now))
+		return last.Add(time.Minute + margin).Sub(now)
 	}
+	return 0
 }
 
 // connectSSE opens n /events streams, waits until each is live and keeps
