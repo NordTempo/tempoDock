@@ -225,7 +225,7 @@ func TestIntegrationDataReads(t *testing.T) {
 	// the masked reader is synced again.
 	psql("CREATE TABLE notes (id int PRIMARY KEY, body text)")
 	ss, _ = h.c.loadService(h.ctx, 1, db)
-	h.c.data.Forget(ss.svc.ID)
+	h.c.panel.Forget(ss.svc.ID)
 	if frames, err := h.query(dev, db, "SELECT count(*) FROM notes"); err != nil || frames[len(frames)-1].Type != apitypes.FrameEnd {
 		t.Fatalf("new table: %+v %v", frames, err)
 	}

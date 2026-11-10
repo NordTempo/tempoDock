@@ -113,8 +113,10 @@ type Words struct {
 
 // Options configure a Panel.
 type Options[D any] struct {
-	Host   Host[D]
-	Engine data.Engine
+	Host Host[D]
+	// Engines are the engines the host supports, one per Kind. A database
+	// of another engine is refused with a validation error.
+	Engines []data.Engine
 	// Box seals role passwords and page cursors.
 	Box *secrets.Box
 	// Roles are the role names the panel creates and logs in as; they

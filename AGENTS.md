@@ -84,7 +84,8 @@ internal/store/        SQLite: migrations/*.sql, queries/*.sql, sqlc output
 internal/node/         runtime interface; docker/, build/, caddy/, remote/, fake/
 internal/cli/          Cobra commands, human and --json output
 internal/datapanel/    the Data panel's rules, shared by core and tempoBase
-internal/data/         database engines for the panel (data/pg)
+internal/data/         database engines for the panel (data/pg), one connection
+                       cache for all of them (data/conncache)
 internal/tempobase/    tempoBase's server: App, tbhttp, tbstore, tbmcp
 internal/httpkit/      HTTP plumbing shared by both servers; mcpkit the same for MCP
 internal/analytics/    Dock Analytics' events, store interface and client;

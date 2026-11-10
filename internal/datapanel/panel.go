@@ -24,12 +24,13 @@ import (
 // Every method that reaches the database audits what it did. It is safe
 // for concurrent use; create it with New.
 type Panel[D any] struct {
-	host  Host[D]
-	eng   data.Engine
-	box   *secrets.Box
-	roles data.Roles
-	words Words
-	log   *slog.Logger
+	host Host[D]
+	// engines are Options.Engines by Kind.
+	engines map[apitypes.DataEngine]data.Engine
+	box     *secrets.Box
+	roles   data.Roles
+	words   Words
+	log     *slog.Logger
 	// browse throttles data.browse and data.reveal events; deciding keeps
 	// two decisions on one changeset from running at once.
 	browse   browseLog
@@ -47,15 +48,39 @@ func New[D any](o Options[D]) *Panel[D] {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
-	return &Panel[D]{host: o.Host, eng: o.Engine, box: o.Box, roles: o.Roles, words: o.Words, log: o.Logger}
+	engines := make(map[apitypes.DataEngine]data.Engine, len(o.Engines))
+	for _, e := range o.Engines {
+		engines[e.Kind()] = e
+	}
+	return &Panel[D]{host: o.Host, engines: engines, box: o.Box, roles: o.Roles, words: o.Words, log: o.Logger}
 }
 
-// Forget drops the engine's connections and schema cache for a database
+// Forget drops the engines' connections and schema caches for a database
 // whose connection details or container changed.
-func (p *Panel[D]) Forget(id int64) { p.eng.Forget(id) }
+func (p *Panel[D]) Forget(id int64) {
+	for _, e := range p.engines {
+		e.Forget(id)
+	}
+}
 
 // Close closes every database connection; hosts call it on shutdown.
-func (p *Panel[D]) Close() { p.eng.Close() }
+func (p *Panel[D]) Close() {
+	for _, e := range p.engines {
+		e.Close()
+	}
+}
+
+// redactedText stands in for a statement whose engine the panel can't
+// redact with (its database is gone, or its engine isn't supported here).
+const redactedText = "(values hidden)"
+
+// redact is engine's Redact of text.
+func (p *Panel[D]) redact(engine apitypes.DataEngine, text string) string {
+	if e, ok := p.engines[engine]; ok {
+		return e.Redact(text)
+	}
+	return redactedText
+}
 
 func now() time.Time { return time.Now().UTC() }
 
@@ -63,6 +88,8 @@ func now() time.Time { return time.Now().UTC() }
 // once connected, the engine target and the sensitive columns.
 type target[D any] struct {
 	db *Database[D]
+	// eng is the database's engine.
+	eng data.Engine
 	// access is the setup record; nil before setup.
 	access *Access
 	// conn and t are set by connect (useConn).
@@ -72,13 +99,27 @@ type target[D any] struct {
 	sensitive []apitypes.DataColumnRef
 }
 
-// load returns db with its setup record.
+// load returns db with its engine and setup record.
 func (p *Panel[D]) load(ctx context.Context, db *Database[D]) (*target[D], error) {
+	eng, ok := p.engines[db.Engine]
+	if !ok {
+		return nil, invalid("%s is a %s database, which the data panel doesn't support here", db.Name, db.Engine)
+	}
 	acc, err := p.host.Access(ctx, db.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &target[D]{db: db, access: acc}, nil
+	return &target[D]{db: db, eng: eng, access: acc}, nil
+}
+
+// tables is tg's engine as a tabular one, or a validation error saying
+// the database has no tables (doing is what the caller tried).
+func tables[D any](tg *target[D], doing string) (data.Tables, error) {
+	t, ok := tg.eng.(data.Tables)
+	if !ok {
+		return nil, invalid("%s is %s: it has no tables, so %s doesn't apply", tg.db.Name, tg.db.Engine, doing)
+	}
+	return t, nil
 }
 
 // ready is everything an engine call needs: a level check, a set-up
@@ -231,7 +272,7 @@ func (p *Panel[D]) syncGrants(ctx context.Context, tg *target[D], current string
 	if current != "" && current == tg.access.GrantsSyncedHash {
 		return nil
 	}
-	hash, err := p.eng.SyncGrants(ctx, tg.t, tg.conn.Owner, tg.sensitive)
+	hash, err := tg.eng.SyncGrants(ctx, tg.t, tg.conn.Owner, tg.sensitive)
 	if err != nil {
 		return conflict("couldn't update the grants of %s's roles in %s (%v); %s again", p.words.Product, tg.db.Name, p.dataError(tg.db, err), p.words.SetupHint)
 	}
@@ -244,9 +285,13 @@ func (p *Panel[D]) syncGrants(ctx context.Context, tg *target[D], current string
 
 // ensureGrants syncs the grants unless they were synced for the schema the
 // engine reports now (cached for data.SchemaTTL, so usually without a
-// round trip).
+// round trip). Engines without tables have no column grants to sync.
 func (p *Panel[D]) ensureGrants(ctx context.Context, tg *target[D], call data.Call) error {
-	s, err := p.eng.Schema(ctx, tg.t, call, tg.sensitive)
+	t, ok := tg.eng.(data.Tables)
+	if !ok {
+		return nil
+	}
+	s, err := t.Schema(ctx, tg.t, call, tg.sensitive)
 	if err != nil {
 		return p.dataError(tg.db, err)
 	}
@@ -324,7 +369,7 @@ func (p *Panel[D]) info(ctx context.Context, tg *target[D]) (apitypes.DataInfo, 
 			p.log.Warn("sync data grants", "database", db.Name, "err", err)
 		}
 	}
-	srv, err := p.eng.Status(ctx, tg.t)
+	srv, err := tg.eng.Status(ctx, tg.t)
 	switch {
 	case err == nil:
 		info.Status, info.ServerVersion = apitypes.DataReady, srv.Version
@@ -363,7 +408,7 @@ func (p *Panel[D]) Setup(ctx context.Context, a Actor, db *Database[D]) (apitype
 		return apitypes.DataInfo{}, err
 	}
 	p.setRoles(tg, newRolePassword(), newRolePassword())
-	srv, err := p.eng.Setup(ctx, tg.t, tg.conn.Owner, tg.t.Reader, tg.t.Writer)
+	srv, err := tg.eng.Setup(ctx, tg.t, tg.conn.Owner, tg.t.Reader, tg.t.Writer)
 	if err != nil {
 		return apitypes.DataInfo{}, p.dataError(db, err)
 	}
@@ -397,7 +442,11 @@ func (p *Panel[D]) Schema(ctx context.Context, a Actor, db *Database[D]) (apityp
 	if err != nil {
 		return apitypes.DataSchema{}, err
 	}
-	s, err := p.eng.Schema(ctx, tg.t, tg.call(a, false), tg.sensitive)
+	t, err := tables(tg, "reading the schema")
+	if err != nil {
+		return apitypes.DataSchema{}, err
+	}
+	s, err := t.Schema(ctx, tg.t, tg.call(a, false), tg.sensitive)
 	return s, p.dataError(db, err)
 }
 
@@ -421,6 +470,10 @@ func (p *Panel[D]) Rows(ctx context.Context, a Actor, db *Database[D], req apity
 	if err != nil {
 		return apitypes.DataPage{}, err
 	}
+	t, err := tables(tg, "reading rows")
+	if err != nil {
+		return apitypes.DataPage{}, err
+	}
 	if req.Reveal && db.Perm.Sensitive != apitypes.SensitiveVisible {
 		return apitypes.DataPage{}, forbidden("revealing sensitive columns needs sensitive visible; yours are masked (%s)", Why(db.Perm))
 	}
@@ -429,7 +482,7 @@ func (p *Panel[D]) Rows(ctx context.Context, a Actor, db *Database[D], req apity
 	}
 	var page apitypes.DataPage
 	err = p.withGrants(ctx, tg, func() (err error) {
-		page, err = p.eng.Page(ctx, tg.t, tg.call(a, req.Reveal), req)
+		page, err = t.Page(ctx, tg.t, tg.call(a, req.Reveal), req)
 		return err
 	})
 	if err != nil {
@@ -459,9 +512,13 @@ func (p *Panel[D]) References(ctx context.Context, a Actor, db *Database[D], req
 	if err != nil {
 		return nil, err
 	}
+	t, err := tables(tg, "following references")
+	if err != nil {
+		return nil, err
+	}
 	var refs []apitypes.DataReferences
 	err = p.withGrants(ctx, tg, func() (err error) {
-		refs, err = p.eng.References(ctx, tg.t, tg.call(a, false), req)
+		refs, err = t.References(ctx, tg.t, tg.call(a, false), req)
 		return err
 	})
 	if err != nil {
@@ -503,7 +560,7 @@ func (p *Panel[D]) Query(ctx context.Context, a Actor, db *Database[D], req apit
 	}
 	return func(ctx context.Context, ready func(), send func(...apitypes.DataQueryFrame) error) error {
 		started := false
-		stats, err := p.eng.Query(ctx, tg.t, call, req, func(f apitypes.DataQueryFrame) error {
+		stats, err := tg.eng.Query(ctx, tg.t, call, req, func(f apitypes.DataQueryFrame) error {
 			if !started {
 				ready()
 				started = true

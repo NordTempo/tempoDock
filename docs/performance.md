@@ -27,7 +27,7 @@ than on a quiet machine.
 
 | What | Budget | Measured |
 |---|---|---|
-| Daemon idle memory | ≤ 32 MB anonymous RSS | 27.0 MB |
+| Daemon idle memory | ≤ 32 MB anonymous RSS | 29.1 MB (2026-11-10) |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00/s; 0.60/s with 20 streams |
 | Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (34.9 MB with 20) | 27.1 MB with 20 streams |
@@ -38,7 +38,7 @@ than on a quiet machine.
 | UI initial CSS (gzip) | ≤ 30 KB | 13.9 KB |
 | UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 63.6 KB (Inter and JetBrains Mono, Latin subsets) |
 | UI fonts (all font files) | ≤ 150 KB | 63.6 KB |
-| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 10% | 66.1 MB |
+| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 10% (67.8 MB) | 67.0 MB (2026-11-10): measure before adding a dependency |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
 
 `make perf` also prints, without a budget, the daemon's memory after
@@ -264,7 +264,7 @@ end) are not listed.
 | CLI update wait | `internal/cli/update.go` | 2 s | `dock update apply` waits for an update | one GET |
 | CLI backup and snapshot wait | `internal/cli/backup.go`, `snapshots.go` | 2 s | `dock backup run`/`restore` (or `run --control-plane`) or `dock volume snapshot` / `snapshot restore` waits for a run | one GET |
 | CLI long polls | `internal/cli/login_browser.go`, `request.go` | one request held up to 30 s by the server, then the next; 2 s after a lost connection (login) | `dock login` waits for the browser, or `dock request wait` for a decision | one request per 30 s; the server answers at once on the event, nothing polls inside it |
-| Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open (Dock and tempoBase) | one timer per connection |
+| Data connection idle close | `internal/data/conncache` (every engine) | once, 60 s after last use | a database connection is open (Dock and tempoBase) | one timer per connection |
 | tempoBase audit prune | `internal/tempobase` | at most hourly, inline when an event is written; no timer | something is being audited | one indexed delete of events past `audit_retention_days`, at most 1000 |
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | Health follow (browser) | `web/src/features/data/HealthView.tsx` | 5 s | a person turned on Follow in the Data panel's Health tab, Sessions view, and the page is visible; it stops after 10 minutes or on leaving the view (ADR 0069) | one insights request: a few catalog queries on the database as `dock_monitor`, 2 to 16 ms each; nothing in the daemon between requests |

@@ -43,7 +43,7 @@ func (e *insightsEngine) EnsureMonitor(context.Context, data.Target, data.Creden
 func TestInsightsViewsAndTexts(t *testing.T) {
 	p, h, base := newTestPanel(t)
 	eng := &insightsEngine{fakeEngine: base}
-	p.eng = eng
+	p.engines[apitypes.EnginePostgres] = eng
 	ctx := context.Background()
 	if _, err := p.Setup(ctx, admin, testDB(adminPerm)); err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func (cancelEngine) Cancel(_ context.Context, _ data.Target, _ data.Credentials,
 // in the summary.
 func TestCancelSession(t *testing.T) {
 	p, h, base := newTestPanel(t)
-	p.eng = cancelEngine{base}
+	p.engines[apitypes.EnginePostgres] = cancelEngine{base}
 	ctx := context.Background()
 
 	reader := apitypes.DataPermission{Level: apitypes.LevelRead, Sensitive: masked}

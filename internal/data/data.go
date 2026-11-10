@@ -3,7 +3,9 @@
 // The panel (internal/datapanel) decides who may do what and resolves a
 // database to a Target; an Engine (internal/data/pg for Postgres) talks to
 // the database. Engines know nothing about actors, permissions or the
-// store, and the panel knows nothing about SQL drivers.
+// store, and the panel knows nothing about drivers. What every engine
+// does is Engine; tabular engines also implement Tables. Connections are
+// cached by internal/data/conncache.
 //
 // Idle means idle: an engine holds no connections, goroutines or timers
 // while nobody uses the panel. Connections are opened on first use and
@@ -189,9 +191,11 @@ type CommitResult struct {
 	Duration     time.Duration
 }
 
-// Engine talks to databases of one kind. Implementations are safe for
-// concurrent use. Reads run as Reader in a READ ONLY transaction with a
-// statement timeout; Commit runs as Writer in one transaction.
+// Engine talks to databases of one kind: what every engine does, whatever
+// its data model. Implementations are safe for concurrent use. Reads run
+// as Reader, read-only and time-limited; Commit runs as Writer, all or
+// nothing. A host registers its engines with the panel by Kind
+// (datapanel.Options.Engines).
 type Engine interface {
 	// Kind is the engine this implements.
 	Kind() apitypes.DataEngine
@@ -229,18 +233,6 @@ type Engine interface {
 	// see the values (audit summaries, masked callers).
 	Redact(sql string) string
 
-	// Schema introspects the database with one catalog query, cached for
-	// SchemaTTL. sensitive marks columns in the result.
-	Schema(ctx context.Context, t Target, c Call, sensitive []apitypes.DataColumnRef) (apitypes.DataSchema, error)
-	// Page reads one keyset page. Core has applied defaults and limits to
-	// req.Limit. Next (and req.After) are the engine's own cursors, which
-	// hold the last row's key values in the clear: core seals them before
-	// they leave the daemon.
-	Page(ctx context.Context, t Target, c Call, req apitypes.DataPageRequest) (apitypes.DataPage, error)
-	// References reads the rows referencing one row, per incoming foreign
-	// key. Masked calls run as RoleReaderMasked, can't look up a row by a
-	// sensitive key and leave out foreign keys over sensitive columns.
-	References(ctx context.Context, t Target, c Call, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error)
 	// Query runs one read-only statement and streams frames to send:
 	// header, rows (at most apitypes.DataFrameRows each, encoded as they
 	// are read), then end or error. Core has applied defaults and limits
@@ -296,6 +288,24 @@ type Engine interface {
 	Forget(serviceID int64)
 	// Close closes every connection; the daemon calls it on shutdown.
 	Close()
+}
+
+// Tables is an engine whose data are tables (Postgres): introspection,
+// keyset pages and foreign key navigation. The panel's table operations
+// refuse databases whose engine doesn't implement it.
+type Tables interface {
+	// Schema introspects the database with one catalog query, cached for
+	// SchemaTTL. sensitive marks columns in the result.
+	Schema(ctx context.Context, t Target, c Call, sensitive []apitypes.DataColumnRef) (apitypes.DataSchema, error)
+	// Page reads one keyset page. Core has applied defaults and limits to
+	// req.Limit. Next (and req.After) are the engine's own cursors, which
+	// hold the last row's key values in the clear: core seals them before
+	// they leave the daemon.
+	Page(ctx context.Context, t Target, c Call, req apitypes.DataPageRequest) (apitypes.DataPage, error)
+	// References reads the rows referencing one row, per incoming foreign
+	// key. Masked calls run as RoleReaderMasked, can't look up a row by a
+	// sensitive key and leave out foreign keys over sensitive columns.
+	References(ctx context.Context, t Target, c Call, req apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error)
 }
 
 // CancelResult is the session a Cancel hit.

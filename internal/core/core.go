@@ -56,9 +56,9 @@ type Options struct {
 	// Remote servers are plugged in with SetNodes.
 	Registry Registry
 	Logger   *slog.Logger
-	// Data is the database panel engine (ADR 0016); nil uses Postgres
-	// (internal/data/pg).
-	Data data.Engine
+	// DataEngines are the database panel's engines (ADR 0016), one per
+	// kind; nil uses Postgres (internal/data/pg).
+	DataEngines []data.Engine
 	// CutoverDrain overrides DefaultCutoverDrain when positive (tests use
 	// a tiny value).
 	CutoverDrain time.Duration
@@ -187,9 +187,9 @@ type Core struct {
 	// talks to identity providers (sso_signin.go).
 	sso ssoState
 
-	// data is the database panel's engine and panel the shared panel
-	// over it, with Dock as its host (data_host.go).
-	data  data.Engine
+	// data are the database panel's engines and panel the shared panel
+	// over them, with Dock as its host (data_host.go).
+	data  []data.Engine
 	panel *dataPanel
 	// tunnels are the open `dock connect` tunnels (data_connect.go).
 	tunnels tunnelSet
@@ -289,14 +289,14 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		fwd:        newForwardState(),
 		drains:     newServerDrainState(),
 		drain:      DefaultCutoverDrain,
-		data:       o.Data,
+		data:       o.DataEngines,
 		git:        newGitState(o.GitHubAPI),
 		previews:   newPreviewState(),
 		updates:    newUpdates(o),
 		cf:         newCFState(o.CloudflareAPI),
 	}
 	if c.data == nil {
-		c.data = pg.New(pg.Options{})
+		c.data = []data.Engine{pg.New(pg.Options{})}
 	}
 	if c.lookupTXT == nil {
 		c.lookupTXT = net.DefaultResolver.LookupTXT

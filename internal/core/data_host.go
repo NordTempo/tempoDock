@@ -30,7 +30,7 @@ type dataPanel = datapanel.Panel[*svcData]
 // newDataPanel builds the panel over Dock's store and node runtime.
 func newDataPanel(c *Core) *dataPanel {
 	return datapanel.New(datapanel.Options[*svcData]{
-		Host: dataHost{c}, Engine: c.data, Box: c.box, Words: DataWords, Logger: c.log,
+		Host: dataHost{c}, Engines: c.data, Box: c.box, Words: DataWords, Logger: c.log,
 	})
 }
 

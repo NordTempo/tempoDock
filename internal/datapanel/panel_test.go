@@ -181,6 +181,16 @@ func (e *fakeEngine) Commit(_ context.Context, _ data.Target, _ data.Call, chang
 
 func (e *fakeEngine) Redact(sql string) string { return e.pg.Redact(sql) }
 
+func (e *fakeEngine) Kind() apitypes.DataEngine { return apitypes.EnginePostgres }
+
+func (e *fakeEngine) Page(context.Context, data.Target, data.Call, apitypes.DataPageRequest) (apitypes.DataPage, error) {
+	return apitypes.DataPage{}, nil
+}
+
+func (e *fakeEngine) References(context.Context, data.Target, data.Call, apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error) {
+	return nil, nil
+}
+
 func newTestPanel(t *testing.T) (*Panel[string], *fakeHost, *fakeEngine) {
 	t.Helper()
 	box, err := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
@@ -188,7 +198,7 @@ func newTestPanel(t *testing.T) (*Panel[string], *fakeHost, *fakeEngine) {
 		t.Fatal(err)
 	}
 	h, eng := &fakeHost{}, &fakeEngine{pg: pg.New(pg.Options{})}
-	return New(Options[string]{Host: h, Engine: eng, Box: box, Words: Words{Product: "Test", SetupHint: "set it up"}}), h, eng
+	return New(Options[string]{Host: h, Engines: []data.Engine{eng}, Box: box, Words: Words{Product: "Test", SetupHint: "set it up"}}), h, eng
 }
 
 func testDB(perm apitypes.DataPermission) *Database[string] {

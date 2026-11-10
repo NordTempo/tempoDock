@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn/ctxwatch"
 
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/conncache"
 )
 
 const (
@@ -29,229 +30,61 @@ const (
 	stmtCacheSize = 64
 )
 
-var errClosed = errors.New("data engine closed")
+// errClosed is what acquire returns after Close.
+var errClosed = conncache.ErrClosed
 
-// connKey identifies a set of cached connections: one service, one role.
-type connKey struct {
-	service int64
-	role    data.Role
+// conn is one cached connection (internal/data/conncache): Conn is the
+// pgx connection, used only by the caller holding it; Broken tells
+// release to close it.
+type conn = conncache.Conn[*pgx.Conn]
+
+// newCache returns the engine's connection cache; zero limits are
+// package data's. Closing a database's last connection drops its cached
+// schema (under the cache's lock: e.mu is never held while calling the
+// cache).
+func (e *Engine) newCache(idle time.Duration, maxConns int) *conncache.Cache[*pgx.Conn] {
+	return conncache.New(conncache.Options[*pgx.Conn]{
+		IdleTimeout: idle,
+		Max:         maxConns,
+		Reusable:    func(pg *pgx.Conn) bool { return !pg.IsClosed() && pg.PgConn().TxStatus() == 'I' },
+		Close:       closeConn,
+		Emptied: func(id int64) {
+			e.mu.Lock()
+			delete(e.schemas, id)
+			e.mu.Unlock()
+		},
+	})
 }
 
-// conn is one cached connection. busy, stale, removed, idleAt and timer are
-// guarded by Engine.mu; pg is used only by the caller holding the conn
-// (busy) or, once removed, by whoever closes it.
-type conn struct {
-	key connKey
-	pg  *pgx.Conn
-	// busy: handed out (or still connecting, with pg nil).
-	busy bool
-	// stale: Forget or Close ran while busy; close it on release.
-	stale bool
-	// broken: the holder saw the connection in an unknown state (a
-	// result abandoned mid-stream, a canceled context); close it on
-	// release.
-	broken  bool
-	removed bool
-	idleAt  time.Time
-	// timer closes the connection IdleTimeout after its last release. It
-	// is created on the first release and re-armed (Reset) on each one, so
-	// an idle engine has no goroutines and only these timers pending.
-	timer *time.Timer
-}
-
-// acquire hands out a connection to t as role: an idle cached one, a new
-// one within the limits, or (at the limits) the next one released, waiting
-// until ctx ends. Release it with release.
+// acquire hands out a connection to t as role from the cache (an idle
+// one, a new one within the limits, or the next one released, waiting
+// until ctx ends). Release it with release.
 func (e *Engine) acquire(ctx context.Context, t data.Target, role data.Role) (*conn, error) {
 	cred, err := credentials(t, role)
 	if err != nil {
 		return nil, err
 	}
-	k := connKey{t.ServiceID, role}
-	for {
-		e.mu.Lock()
-		if e.closed {
-			e.mu.Unlock()
-			return nil, errClosed
-		}
-		list := e.conns[k]
-		for _, c := range list {
-			if !c.busy {
-				c.busy = true
-				if c.timer != nil {
-					c.timer.Stop()
-				}
-				e.mu.Unlock()
-				return c, nil
-			}
-		}
-		if len(list) < e.maxPerKey && e.total >= e.maxConns {
-			if victim := e.evictIdleLocked(); victim != nil {
-				e.mu.Unlock()
-				victim.close()
-				continue
-			}
-		}
-		if len(list) < e.maxPerKey && e.total < e.maxConns {
-			c := &conn{key: k, busy: true}
-			e.conns[k] = append(list, c)
-			e.total++
-			e.mu.Unlock()
-			pc, err := e.connect(ctx, t, cred)
-			if err != nil {
-				e.release(c)
-				return nil, loginError(ctx, err, data.ErrNotSetUp)
-			}
-			c.pg = pc
-			return c, nil
-		}
-		e.waiters++
-		wake := e.wake
-		e.mu.Unlock()
-		select {
-		case <-wake:
-		case <-ctx.Done():
-		}
-		e.mu.Lock()
-		e.waiters--
-		e.mu.Unlock()
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
+	cn, err := e.conns.Acquire(ctx, conncache.Key{ID: t.ServiceID, Role: role}, func(ctx context.Context) (*pgx.Conn, error) {
+		return e.connect(ctx, t, cred)
+	})
+	if err != nil {
+		return nil, loginError(ctx, err, data.ErrNotSetUp)
 	}
+	return cn, nil
 }
 
-// release returns c to the cache, or closes it when it is broken, stale or
-// not idle (open transaction, closed by the server).
-func (e *Engine) release(c *conn) {
-	discard := c.broken || c.pg == nil || c.pg.IsClosed() || c.pg.PgConn().TxStatus() != 'I'
-	e.mu.Lock()
-	if discard || c.stale || e.closed {
-		e.removeLocked(c)
-		e.mu.Unlock()
-		c.close()
-		return
-	}
-	c.busy = false
-	c.idleAt = time.Now()
-	if c.timer == nil {
-		c.timer = time.AfterFunc(e.idleTimeout, func() { e.closeIdle(c) })
-	} else {
-		c.timer.Reset(e.idleTimeout)
-	}
-	e.broadcastLocked()
-	e.mu.Unlock()
-}
+// release returns cn to the cache, or closes it when it is broken or not
+// idle (open transaction, closed by the server).
+func (e *Engine) release(cn *conn) { e.conns.Release(cn) }
 
-// closeIdle is c's idle timer: it closes c if it is still idle, and drops
-// the service's cached schema with its last connection.
-func (e *Engine) closeIdle(c *conn) {
-	e.mu.Lock()
-	if c.busy || c.removed || time.Since(c.idleAt) < e.idleTimeout {
-		e.mu.Unlock()
-		return
-	}
-	e.removeLocked(c)
-	if !e.hasConnsLocked(c.key.service) {
-		delete(e.schemas, c.key.service)
-	}
-	e.mu.Unlock()
-	c.close()
-}
-
-// evictIdleLocked removes the longest-idle connection to make room under
-// MaxConns, or returns nil when every connection is busy.
-func (e *Engine) evictIdleLocked() *conn {
-	var victim *conn
-	for _, list := range e.conns {
-		for _, c := range list {
-			if !c.busy && (victim == nil || c.idleAt.Before(victim.idleAt)) {
-				victim = c
-			}
-		}
-	}
-	if victim != nil {
-		e.removeLocked(victim)
-	}
-	return victim
-}
-
-// removeLocked takes c out of the cache and wakes waiters.
-func (e *Engine) removeLocked(c *conn) {
-	if c.removed {
-		return
-	}
-	c.removed = true
-	list := e.conns[c.key]
-	for i, x := range list {
-		if x == c {
-			list = append(list[:i], list[i+1:]...)
-			break
-		}
-	}
-	if len(list) == 0 {
-		delete(e.conns, c.key)
-	} else {
-		e.conns[c.key] = list
-	}
-	e.total--
-	e.broadcastLocked()
-}
-
-// hasConnsLocked reports whether any connection of service is cached.
-func (e *Engine) hasConnsLocked(service int64) bool {
-	for k := range e.conns {
-		if k.service == service {
-			return true
-		}
-	}
-	return false
-}
-
-// broadcastLocked wakes everyone waiting in acquire.
-func (e *Engine) broadcastLocked() {
-	if e.waiters > 0 {
-		close(e.wake)
-		e.wake = make(chan struct{})
-	}
-}
-
-// dropLocked removes the connections whose key matches: idle ones are
-// returned for closing, busy ones are marked stale and closed on release.
-func (e *Engine) dropLocked(match func(connKey) bool) []*conn {
-	var idle []*conn
-	for k, list := range e.conns {
-		if !match(k) {
-			continue
-		}
-		for _, c := range list {
-			if c.busy {
-				c.stale = true
-			} else {
-				idle = append(idle, c)
-			}
-		}
-	}
-	for _, c := range idle {
-		e.removeLocked(c)
-	}
-	return idle
-}
-
-// close stops c's timer and closes its connection. A broken connection
-// gets a short deadline first so a stuck socket can't hold the caller.
-func (c *conn) close() {
-	if c.timer != nil {
-		c.timer.Stop()
-	}
-	if c.pg == nil {
-		return
-	}
-	if c.broken {
-		_ = c.pg.PgConn().Conn().SetDeadline(time.Now().Add(closeTimeout))
+// closeConn closes a connection. A broken one gets a short deadline first
+// so a stuck socket can't hold the caller.
+func closeConn(pg *pgx.Conn, broken bool) {
+	if broken {
+		_ = pg.PgConn().Conn().SetDeadline(time.Now().Add(closeTimeout))
 	}
 	// Background: a canceled context would make pgx send a cancel request.
-	_ = c.pg.Close(context.Background())
+	_ = pg.Close(context.Background())
 }
 
 // credentials picks the login for one of the engine's roles.
@@ -379,20 +212,20 @@ func (e *Engine) readLocked(ctx context.Context, t data.Target, role data.Role, 
 		return err
 	}
 	defer e.release(cn)
-	if err := simpleExec(ctx, cn.pg, beginSQL(true, timeout, lock, 0, appName(e.app, c.Actor))); err != nil {
-		cn.broken = true
+	if err := simpleExec(ctx, cn.Conn, beginSQL(true, timeout, lock, 0, appName(e.app, c.Actor))); err != nil {
+		cn.Broken = true
 		return dbError(err)
 	}
 	ferr := fn(cn)
 	if ctx.Err() != nil {
-		cn.broken = true
+		cn.Broken = true
 		if ferr != nil {
 			return ferr
 		}
 		return ctx.Err()
 	}
-	if err := simpleExec(ctx, cn.pg, "ROLLBACK"); err != nil {
-		cn.broken = true
+	if err := simpleExec(ctx, cn.Conn, "ROLLBACK"); err != nil {
+		cn.Broken = true
 	}
 	return ferr
 }

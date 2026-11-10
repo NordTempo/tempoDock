@@ -446,7 +446,7 @@ internal/backup/     restic jobs; internal/cpbackup the control plane's own back
 internal/update/     finding and verifying releases; internal/updater applies them
 internal/cloudflare/ the slice of Cloudflare's API Dock uses
 internal/datapanel/  the Data panel's rules behind a Host interface; Dock and tempoBase
-internal/data/       database engines for the Data panel (data/pg: Postgres)
+internal/data/       database engines for the Data panel (data/pg: Postgres); data/conncache their connection cache
 internal/tempobase/  tempoBase's server: config, auth, connections, its SQLite store
 internal/repoconfig/ dock.toml; internal/projectfile project files; internal/compose import
 internal/secrets/    AES-GCM encryption of values at rest, key file

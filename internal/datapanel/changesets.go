@@ -63,7 +63,7 @@ func (p *Panel[D]) changesetFor(tg *target[D], cs Changeset) apitypes.DataChange
 		return out
 	}
 	if changes, conflicts, touched := maskChanges(out.Changes, out.Conflicts, tg.sensitive); touched {
-		out.Changes, out.Conflicts, out.SQL = changes, conflicts, p.eng.Redact(out.SQL)
+		out.Changes, out.Conflicts, out.SQL = changes, conflicts, p.redact(tg.db.Engine, out.SQL)
 	}
 	return out
 }
@@ -181,7 +181,7 @@ func (p *Panel[D]) CreateChangeset(ctx context.Context, a Actor, db *Database[D]
 	if err := checkSensitiveChanges(tg, req.Changes); err != nil {
 		return apitypes.DataChangeset{}, err
 	}
-	sql, err := p.eng.Render(ctx, tg.t, req.Changes)
+	sql, err := tg.eng.Render(ctx, tg.t, req.Changes)
 	if err != nil {
 		return apitypes.DataChangeset{}, p.dataError(db, err)
 	}
@@ -339,7 +339,7 @@ func (p *Panel[D]) Commit(ctx context.Context, a Actor, db *Database[D], id int6
 		return apitypes.DataChangeset{}, err
 	}
 	d := Decision{Database: db.ID, ID: id, Status: apitypes.ChangesetCommitted, DecidedAt: now(), DecidedBy: a.Name}
-	res, err := p.eng.Commit(ctx, tg.t, tg.call(a, true), changes)
+	res, err := tg.eng.Commit(ctx, tg.t, tg.call(a, true), changes)
 	if err != nil {
 		return apitypes.DataChangeset{}, p.dataError(db, err)
 	}
