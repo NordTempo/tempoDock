@@ -203,3 +203,88 @@ func waitFor(t *testing.T, ctx context.Context, what string, cond func() bool) {
 		}
 	}
 }
+
+// TestInsightActions: a cancel only hits the query the caller saw (by
+// session and query start), ending a session rolls back its transaction,
+// query stats reset, and creating the extension again is a no-op.
+func TestInsightActions(t *testing.T) {
+	ctx := ctxT(t)
+	e := newEngine(t)
+	tg := target(72)
+
+	sleeper := ownerConnT(t, ctx)
+	slept := make(chan error, 1)
+	go func() {
+		_, err := sleeper.Exec(context.Background(), "SELECT pg_sleep(30)")
+		slept <- err
+	}()
+	idle := ownerConnT(t, ctx)
+	if _, err := idle.Exec(ctx, "BEGIN; CREATE TABLE ins_tx (id int)"); err != nil {
+		t.Fatal(err)
+	}
+	var ins apitypes.DataInsights
+	waitFor(t, ctx, "the sleeper to run", func() bool {
+		var err error
+		ins, err = e.Insights(ctx, tg, data.Call{}, apitypes.DataInsightsRequest{Views: []apitypes.DataInsightView{apitypes.InsightSessions}})
+		return err == nil && session(ins, int64(sleeper.PgConn().PID())) != nil
+	})
+	sleep := session(ins, int64(sleeper.PgConn().PID()))
+	tx := session(ins, int64(idle.PgConn().PID()))
+	if tx == nil || tx.State != "idle_in_transaction" {
+		t.Fatalf("idle transaction: %+v", tx)
+	}
+
+	earlier := sleep.QueryAt.Add(-time.Second)
+	if res, err := e.Cancel(ctx, tg, owner, sleep.ID, &earlier, false); err != nil || res.Found {
+		t.Fatalf("cancel with another query's start: %+v %v", res, err)
+	}
+	res, err := e.Cancel(ctx, tg, owner, sleep.ID, sleep.QueryAt, false)
+	if err != nil || !res.Found || res.User != "postgres" || !strings.Contains(res.Text, "pg_sleep") {
+		t.Fatalf("cancel: %+v %v", res, err)
+	}
+	if err := <-slept; err == nil || !strings.Contains(err.Error(), "canceling statement") {
+		t.Fatalf("the sleeping query: %v", err)
+	}
+
+	if res, err := e.Cancel(ctx, tg, owner, tx.ID, nil, true); err != nil || !res.Found {
+		t.Fatalf("terminate: %+v %v", res, err)
+	}
+	if !idle.IsClosed() {
+		if _, err := idle.Exec(ctx, "SELECT 1"); err == nil {
+			t.Fatal("the ended session still answers")
+		}
+	}
+	var n int
+	if err := sleeper.QueryRow(ctx, "SELECT count(*) FROM pg_class WHERE relname = 'ins_tx'").Scan(&n); err != nil || n != 0 {
+		t.Fatalf("the ended session's transaction wasn't rolled back: %d %v", n, err)
+	}
+	if _, err := e.Cancel(ctx, tg, owner, "not-a-session", nil, false); !errors.Is(err, data.ErrInvalid) {
+		t.Fatalf("bad session ID: %v", err)
+	}
+
+	if state, created, err := e.EnableQueryStats(ctx, tg, owner); err != nil || state != apitypes.QueryStatsOn || created {
+		t.Fatalf("enable with the extension there: %s %v %v", state, created, err)
+	}
+	if err := e.ResetQueryStats(ctx, tg, owner); err != nil {
+		t.Fatal(err)
+	}
+	ins, err = e.Insights(ctx, tg, data.Call{}, apitypes.DataInsightsRequest{Views: []apitypes.DataInsightView{apitypes.InsightQueries}, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range ins.Queries {
+		if strings.Contains(q.Text, "pg_sleep") {
+			t.Errorf("a statement from before the reset: %+v", q)
+		}
+	}
+}
+
+// session finds a session by process ID.
+func session(ins apitypes.DataInsights, pid int64) *apitypes.DataSession {
+	for i, s := range ins.Sessions {
+		if s.PID == pid {
+			return &ins.Sessions[i]
+		}
+	}
+	return nil
+}

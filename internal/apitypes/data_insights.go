@@ -269,3 +269,46 @@ type DataUnavailable struct {
 	Partial bool            `json:"partial,omitempty"`
 	Reason  string          `json:"reason"`
 }
+
+// Audit actions of insight actions. Summaries name the session's
+// application and user and how long it ran, never its statement; the
+// detail holds the statement as the caller could see it.
+const (
+	AuditDataCancel     = "data.cancel"      // a query cancelled; detail: its statement
+	AuditDataTerminate  = "data.terminate"   // a session ended; detail: its statement
+	AuditDataStatsReset = "data.stats_reset" // query stats reset
+)
+
+// DataCancelRequest cancels a session's query, or with Terminate ends
+// the session (POST /data/insights/sessions/{session}/cancel).
+type DataCancelRequest struct {
+	// Terminate ends the session (its connection and open transaction)
+	// instead of cancelling its query.
+	Terminate bool `json:"terminate,omitempty"`
+	// QueryStartedAt is the query_at the caller saw: the cancel only hits
+	// that query, never one the session started since.
+	QueryStartedAt *time.Time `json:"query_started_at,omitempty"`
+	// Confirm is the environment's (or connection's) name, needed to end
+	// a session on production.
+	Confirm string `json:"confirm,omitempty"`
+}
+
+// DataCancelResult says what was cancelled or ended.
+type DataCancelResult struct {
+	Session     string `json:"session"`
+	Terminated  bool   `json:"terminated"`
+	User        string `json:"user"`
+	Application string `json:"application"`
+	// RunningMs is how long the query (or, ended, the transaction) had
+	// been running.
+	RunningMs int64 `json:"running_ms"`
+}
+
+// DataQueryStatsResult says what turning on query stats did.
+type DataQueryStatsResult struct {
+	// State: on (the extension exists now), or staged (the start command
+	// change waits to apply; it applies with the next deploy, which
+	// restarts the database).
+	State  string `json:"state" enum:"on,staged"`
+	Detail string `json:"detail"`
+}

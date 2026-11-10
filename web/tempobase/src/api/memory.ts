@@ -486,6 +486,41 @@ export function memoryBackend(): Backend {
         need(perm, "schema", "database insights");
         return fakeInsights(tables, rank[perm.level] >= rank.read);
       },
+      cancelSession: async (session, req) => {
+        const { perm } = ready();
+        need(
+          perm,
+          "write",
+          req.terminate ? "ending a session" : "cancelling a query",
+        );
+        const s = fakeInsights([], true).sessions?.find(
+          (x) => x.id === session,
+        );
+        if (!s)
+          fail(
+            409,
+            "conflict",
+            "that query already finished; refresh the sessions",
+          );
+        return {
+          session,
+          terminated: !!req.terminate,
+          user: s?.user ?? "",
+          application: s?.application ?? "",
+          running_ms: 372_000,
+        };
+      },
+      resetQueryStats: async () => {
+        const { perm } = ready();
+        if (!perm.manage)
+          fail(403, "forbidden", "Resetting query stats is for admins.");
+      },
+      enableQueryStats: async () => {
+        const { perm } = ready();
+        if (!perm.manage)
+          fail(403, "forbidden", "Turning on query stats is for admins.");
+        return { state: "on", detail: "Query stats were already on." };
+      },
       schema: async () => {
         const { c, perm, tables } = ready();
         need(perm, "schema", "the schema");

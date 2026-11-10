@@ -16,6 +16,8 @@ import {
 import type { PolicyRule } from "./policy";
 import type { CommitOptions, EditActions } from "./ReviewPanel";
 import type {
+  DataCancelRequest,
+  DataCancelResult,
   DataChange,
   DataChangeset,
   DataChangesetRequest,
@@ -31,6 +33,7 @@ import type {
   DataQueryError,
   DataQueryFrame,
   DataQueryRequest,
+  DataQueryStatsResult,
   DataReferences,
   DataReferencesRequest,
   DataRejectRequest,
@@ -104,6 +107,15 @@ export type DataEndpoints = {
    * from the database's statistics.
    */
   insights(order: DataStatementOrder): Promise<DataInsights>;
+  /** POST /data/insights/sessions/{session}/cancel (level write). */
+  cancelSession(
+    session: string,
+    req: DataCancelRequest,
+  ): Promise<DataCancelResult>;
+  /** POST /data/insights/queries/reset (admin). */
+  resetQueryStats(): Promise<void>;
+  /** POST /data/insights/queries/enable: stages or creates it. */
+  enableQueryStats(): Promise<DataQueryStatsResult>;
 };
 
 /** The panel's database roles, as messages name them. */
@@ -121,6 +133,13 @@ export type DataWords = {
   unreachable: string;
   /** Status not_running. */
   notRunning: string;
+  /**
+   * The server doesn't load pg_stat_statements: what turning it on
+   * involves. With `stagesQueryStats`, the host does it (Dock stages the
+   * start command change); otherwise it says what to change.
+   */
+  queryStatsOff: string;
+  stagesQueryStats: boolean;
 };
 
 /**

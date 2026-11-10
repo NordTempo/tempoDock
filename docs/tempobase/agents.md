@@ -63,6 +63,7 @@ Agents & MCP shows this snippet with your address filled in.
 | `data_rows` | A page of a table's rows, with filters and order |
 | `data_query` | One read-only SQL statement |
 | `data_insights` | How the database is doing: connections, slow queries, sessions and locks, table and index sizes, with hints |
+| `data_cancel` | Cancel a session's query, or end the session; needs `write`, so never on production |
 | `propose_data_changes` | A changeset: committed with `write` on non-production, otherwise stored for a person to approve |
 
 Each data tool takes `connection`, which may be left out when the token is

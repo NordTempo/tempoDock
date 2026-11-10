@@ -40,6 +40,17 @@ function dataEndpoints(connection: string): DataEndpoints {
     schema: () => body(api.GET(`${D}/schema`, params)),
     insights: (order) =>
       body(api.GET(`${D}/insights`, { params: { path, query: { order } } })),
+    cancelSession: (session, req) =>
+      body(
+        api.POST(`${D}/insights/sessions/{session}/cancel`, {
+          params: { path: { ...path, session } },
+          body: req,
+        }),
+      ),
+    resetQueryStats: () =>
+      done(api.POST(`${D}/insights/queries/reset`, params)),
+    enableQueryStats: () =>
+      body(api.POST(`${D}/insights/queries/enable`, params)),
     rows: async (req, signal) =>
       page(
         await body(

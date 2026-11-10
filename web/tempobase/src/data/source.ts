@@ -27,6 +27,9 @@ export function connectionSource(connection: string): DataSource {
       unreachable:
         "The database didn't answer. Check the URL and that tempoBase can reach the host.",
       notRunning: "The database isn't running.",
+      queryStatsOff:
+        "The server doesn't load pg_stat_statements. Turn it on in your provider's settings, or add it to shared_preload_libraries and restart the server; then an admin creates the extension here.",
+      stagesQueryStats: false,
     },
     subjectNames,
     policy: {

@@ -295,6 +295,51 @@
         ],
         "type": "object"
       },
+      "DataCancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "type": "string"
+          },
+          "query_started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "terminate": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "DataCancelResult": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "type": "string"
+          },
+          "running_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "terminated": {
+            "type": "boolean"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "terminated",
+          "user",
+          "application",
+          "running_ms"
+        ],
+        "type": "object"
+      },
       "DataChange": {
         "additionalProperties": false,
         "properties": {
@@ -1470,6 +1515,26 @@
         },
         "required": [
           "sql"
+        ],
+        "type": "object"
+      },
+      "DataQueryStatsResult": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "on",
+              "staged"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "detail"
         ],
         "type": "object"
       },
@@ -5016,6 +5081,387 @@
           }
         ],
         "summary": "How the database is doing",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection}/data/insights/queries/enable": {
+      "post": {
+        "description": "Creates the pg_stat_statements extension as the owner when the server loads it (state on). A server that doesn't load it needs a configuration change and a restart, which tempoBase can't make. Admin.",
+        "operationId": "enable-data-query-stats",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataQueryStatsResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Turn on query stats",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection}/data/insights/queries/reset": {
+      "post": {
+        "description": "Sets pg_stat_statements back to zero, as the owner. Admin; audited as data.stats_reset.",
+        "operationId": "reset-data-query-stats",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Reset query stats",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection}/data/insights/sessions/{session}/cancel": {
+      "post": {
+        "description": "Cancels the session's running query, or with `terminate` ends the session (its connection and open transaction), as the owner. `query_started_at` (the session's `query_at`) makes sure only that query is cancelled, never a later one; a session that ended or moved on is 409. Level write, which tokens never have on production; ending a session on production needs `confirm` set to the connection's name. Audited as data.cancel or data.terminate.",
+        "operationId": "cancel-data-session",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Session ID from the sessions view",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "Session ID from the sessions view",
+              "examples": [
+                "4121.1794328800123456"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataCancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataCancelResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Cancel a query or end a session",
         "tags": [
           "data"
         ]

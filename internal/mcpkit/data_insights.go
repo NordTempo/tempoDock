@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -47,6 +48,34 @@ func addInsightsTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate 
 				return Reply{}, err
 			}
 			return Reply{Summary: insightsSummary(name(ref), ins), Data: trimInsights(ins)}, nil
+		})
+}
+
+// addCancelTool registers data_cancel over a host's panel operations.
+func addCancelTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error), name func(R) string) {
+	addLocatedTool(s, "data_cancel", "Cancel a query or end a session",
+		"Cancel a session's running query (the client gets an error, its connection stays), or with terminate end the session (its connection drops and its open transaction rolls back). "+
+			"Take session and query_started_at (its query_at) from data_insights' sessions, so only the query you saw is cancelled. "+
+			"Needs data access level write; tokens never have it on production or in a locked environment, so there ask a person to do it in the Data panel's Health tab. Audited.",
+		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
+			Session        string     `json:"session" doc:"Session ID from data_insights' sessions."`
+			QueryStartedAt *time.Time `json:"query_started_at,omitempty" doc:"The session's query_at, so a later query is never cancelled."`
+			Terminate      bool       `json:"terminate,omitempty" doc:"End the session instead of cancelling its query."`
+		}) (Reply, error) {
+			ref, err := locate(c, loc)
+			if err != nil {
+				return Reply{}, err
+			}
+			res, err := ops.CancelDataSession(ctx, c.Actor, ref, in.Session, apitypes.DataCancelRequest{QueryStartedAt: in.QueryStartedAt, Terminate: in.Terminate})
+			if err != nil {
+				return Reply{}, err
+			}
+			verb := "Cancelled the query of"
+			if res.Terminated {
+				verb = "Ended the session of"
+			}
+			return Reply{Summary: fmt.Sprintf("%s %s (%s) in %s, running %s.", verb, res.Application, res.User, name(ref),
+				(time.Duration(res.RunningMs) * time.Millisecond).Round(time.Second)), Data: res}, nil
 		})
 }
 

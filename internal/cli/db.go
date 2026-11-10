@@ -47,7 +47,7 @@ commits need --confirm <environment>.`,
 		newDBStatusCmd(g), newDBSetupCmd(g), newDBSettingsCmd(g),
 		newDBTablesCmd(g), newDBSchemaCmd(g), newDBRowsCmd(g), newDBQueryCmd(g), newDBHistoryCmd(g),
 		newDBSavedCmd(g), newDBChangesCmd(g), newDBApplyCmd(g),
-		newDBHealthCmd(g), newDBQueriesCmd(g), newDBSessionsCmd(g), newDBStorageCmd(g),
+		newDBHealthCmd(g), newDBQueriesCmd(g), newDBSessionsCmd(g), newDBStorageCmd(g), newDBCancelCmd(g),
 		newDBPolicyCmd(g), newDBSensitiveCmd(g),
 	)
 	return cmd
