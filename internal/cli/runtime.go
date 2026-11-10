@@ -188,9 +188,9 @@ const askPath = "/internal/caddy/ask"
 // the control plane and on nodes alike.
 const accessPath = "/internal/caddy/access"
 
-// wakePath is where the wake check of asleep environments' routes is
-// served on the internal listener (api.WakePath); on the control plane
-// only, as only its environments sleep.
+// wakePath is where the wake check of asleep environments' routes
+// (caddy.WakeHandler, ADR 0070) is served on the internal listener, on
+// the control plane and on nodes alike.
 const wakePath = "/internal/caddy/wake"
 
 // unjoinedMarker stands in for a server's marker where Caddy needs one

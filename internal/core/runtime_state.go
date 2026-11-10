@@ -164,6 +164,11 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	if c.foreign(ev.Labels) {
 		return
 	}
+	if ev.Action == node.ActionWake {
+		// No container's: a node's wake check (ADR 0070).
+		c.wakeFromNode(ctx, serverID, ev)
+		return
+	}
 	c.drainContainerEvent(serverID, ev)
 	own := c.ownRemoval(ev)
 	id, err := strconv.ParseInt(ev.Labels.Release, 10, 64)

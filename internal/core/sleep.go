@@ -12,7 +12,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
-	"github.com/NordTempo/tempoDock/internal/node/traffic"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -31,22 +31,13 @@ import (
 // converges to it after a crash (settleSleep).
 //
 // While an environment is asleep its routes carry a wake check
-// (node.Route.Wake): Caddy asks the internal listener's wake handler
-// (WakeForRequest) after the route's access check, which wakes the
-// environment and holds the request until it is awake.
-//
-// The control plane's own server only, for now: the node link doesn't
-// carry the wake check or the calls sleeping needs.
-
-// Waiting a request to an asleep environment may do: a page load gets the
-// waking page after wakeHoldPage, anything else a 503 after wakeHoldAPI,
-// and at most wakeMaxWaiting wait at once per environment (the rest get
-// their answer at once).
-const (
-	wakeHoldPage   = 3 * time.Second
-	wakeHoldAPI    = 30 * time.Second
-	wakeMaxWaiting = 256
-)
+// (node.Route.Wake): Caddy asks its server's internal listener
+// (caddy.WakeHandler) after the route's access check, which wakes the
+// environment and holds the request until it is awake. On the control
+// plane's own server RequestWaker wakes it; on another server the node
+// asks over its link (an ActionWake event, wakeFromNode) and waits for
+// routes that no longer hold it. Servers whose node predates
+// remote.SleepProtocol don't sleep environments.
 
 // sleepState is the sleep manager's memory: the environments that may
 // sleep on their own or are asleep, loaded at start and when a setting
@@ -67,8 +58,6 @@ type sleepEnv struct {
 	lastActive, lastRequest time.Time
 	// busy counts what keeps it awake while it lasts: command runs.
 	busy int
-	// waiting counts requests held for its wake (wakeMaxWaiting).
-	waiting int
 	// op is the sleep or wake in flight, nil when none.
 	op *sleepOp
 }
@@ -179,7 +168,7 @@ func (c *Core) sleepTick(now time.Time, active map[int64]*serviceTraffic) {
 	}
 	var due []int64
 	for id, e := range s.envs {
-		if e.after > 0 && !e.asleep && e.op == nil && e.busy == 0 && e.serverID == c.localID && now.Sub(e.lastActive) >= e.after {
+		if e.after > 0 && !e.asleep && e.op == nil && e.busy == 0 && now.Sub(e.lastActive) >= e.after && c.canSleepOn(e.serverID) == nil {
 			due = append(due, id)
 		}
 	}
@@ -305,15 +294,29 @@ func (c *Core) endOp(envID int64, op *sleepOp, asleep bool, err error) {
 	close(op.done)
 }
 
-// sleepable says why an environment can't sleep, nil if it can.
+// sleepable says why an environment may never sleep, nil if it may.
 func (c *Core) sleepable(es envScope) error {
 	switch {
 	case es.env.Kind == string(apitypes.KindProduction):
 		return invalid("%s is a production environment, which never sleeps", es)
 	case es.env.ArchivedAt != nil:
 		return invalid("%s is archived", es)
-	case es.env.ServerID != c.localID:
-		return invalid("%s runs on another server, where environments can't sleep yet; only environments on the control plane's own server sleep", es)
+	}
+	return nil
+}
+
+// canSleepOn says why environments on a server can't sleep now, nil if
+// they can: the control plane's own server, or a connected node that
+// speaks remote.SleepProtocol (an older one would proxy to stopped
+// containers: no wake check).
+func (c *Core) canSleepOn(serverID int64) error {
+	switch {
+	case serverID == c.localID:
+		return nil
+	case c.nodes == nil || c.connected(serverID) == nil:
+		return errf(apitypes.CodeServerOffline, "its server is offline; it can sleep once the server is back")
+	case c.nodes.State(serverID).Hello.Protocol < remote.SleepProtocol:
+		return invalid("its server runs a dock too old to sleep environments; update dock on it (`dock update`)")
 	}
 	return nil
 }
@@ -324,6 +327,9 @@ func (c *Core) sleepable(es envScope) error {
 // Services stopped on purpose (ADR 0050) are left as they are.
 func (c *Core) putToSleep(ctx context.Context, es envScope, by string) error {
 	if err := c.sleepable(es); err != nil {
+		return err
+	}
+	if err := c.canSleepOn(es.env.ServerID); err != nil {
 		return err
 	}
 	op := c.beginOp(es.env.ID, es.env.ServerID, false)
@@ -639,91 +645,103 @@ func (c *Core) envSleep(e store.Environment) *apitypes.EnvironmentSleep {
 	switch {
 	case e.Kind == string(apitypes.KindProduction):
 		sl.Blocked = "production environments never sleep"
-	case e.ServerID != c.localID:
-		sl.Blocked = "it runs on another server, where environments can't sleep yet"
-	case c.cfg.Caddy.TrafficListen == "":
+	case e.ServerID != c.localID && c.nodes != nil && c.connected(e.ServerID) != nil && c.nodes.State(e.ServerID).Hello.Protocol < remote.SleepProtocol:
+		sl.Blocked = "its server runs a dock too old to sleep environments; update dock on it"
+	case e.ServerID == c.localID && c.cfg.Caddy.TrafficListen == "":
 		sl.Blocked = "traffic counting is off on its server ([caddy] traffic_listen), so it can't tell when it is idle"
 	}
 	return sl
 }
 
-// WakeAnswer is what the wake check tells Caddy about a request to an
-// asleep environment.
-type WakeAnswer int
+// RequestWaker wakes this control plane's own server's asleep
+// environments for the requests Caddy holds at their wake check: the
+// Waker of caddy.WakeHandler. Its key is the environment's ID
+// (Route.Wake). Other servers' wake checks ask over the node link
+// instead (wakeFromNode).
+type RequestWaker struct{ c *Core }
 
-// Wake answers.
-const (
-	// WakeGo: the environment is awake; the request goes on to the app.
-	WakeGo WakeAnswer = iota
-	// WakeWaking: it is still waking (or can't wake); a page load gets
-	// the waking page, anything else a 503 to retry.
-	WakeWaking
-	// WakeAsleep: it stays asleep (an uptime probe); a 503.
-	WakeAsleep
-)
+// RequestWaker returns the control plane's Waker.
+func (c *Core) RequestWaker() RequestWaker { return RequestWaker{c} }
 
-// WakeForRequest is the wake check (Route.Wake) for a request Caddy
-// holds: key is the route's environment key, method and uri the
-// request's. It wakes the environment (in the background, so a client
-// that gives up doesn't stop it) and waits for it: up to wakeHoldPage for
-// a page load, wakeHoldAPI for the rest. Dock's uptime probes never wake
-// anything. A key that names no asleep environment lets the request go
-// on: its route was re-rendered meanwhile.
-func (c *Core) WakeForRequest(ctx context.Context, key, method, uri, userAgent string, pageLoad bool) WakeAnswer {
-	envID, err := strconv.ParseInt(key, 10, 64)
-	if err != nil || !c.isAsleep(envID) && !c.isWaking(envID) {
-		return WakeGo
+// Asleep reports whether key's environment is asleep or waking here.
+func (w RequestWaker) Asleep(key string) bool {
+	id, err := strconv.ParseInt(key, 10, 64)
+	return err == nil && w.c.onLocal(id) && (w.c.isAsleep(id) || w.c.isWaking(id))
+}
+
+// Wake wakes key's environment in the background, so a client that gives
+// up doesn't stop it, and waits for it until ctx ends.
+func (w RequestWaker) Wake(ctx context.Context, key, request string) error {
+	id, err := strconv.ParseInt(key, 10, 64)
+	if err != nil {
+		return err
 	}
-	if strings.HasPrefix(userAgent, "dock-uptime/") {
-		return WakeAsleep
+	done := make(chan error, 1)
+	w.c.wg.Go(func() { done <- w.c.wakeByID(id, request) })
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// wakeFromNode handles a node's wake request (node.ActionWake): its
+// wake check holds a request to an asleep environment. Only an
+// environment on that server is woken, as traffic counts only a server's
+// own hostnames; one that is awake already gets the server's routes
+// applied again, which releases the node's held requests.
+func (c *Core) wakeFromNode(ctx context.Context, serverID int64, ev node.ContainerEvent) {
+	id, err := strconv.ParseInt(ev.Labels.Environment, 10, 64)
+	if err != nil {
+		return
 	}
 	s := &c.sleep
 	s.mu.Lock()
-	e := s.envs[envID]
-	if e == nil || e.serverID != c.localID {
-		s.mu.Unlock()
-		return WakeGo
-	}
-	if e.waiting >= wakeMaxWaiting {
-		s.mu.Unlock()
-		return WakeWaking
-	}
-	e.waiting++
+	e := s.envs[id]
+	known := e != nil && e.serverID == serverID
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		e.waiting--
-		s.mu.Unlock()
-	}()
-	done := make(chan error, 1)
-	c.wg.Go(func() {
-		env, err := c.store.GetEnvironment(c.ctx, envID)
-		if err == nil {
-			var p store.Project
-			if p, err = c.store.GetProject(c.ctx, env.ProjectID); err == nil {
-				err = c.wake(c.ctx, envScope{p, env}, traffic.Endpoint(method, uri))
-			}
-		}
-		done <- err
-	})
-	hold := wakeHoldAPI
-	if pageLoad {
-		hold = wakeHoldPage
+	if !known {
+		return
 	}
-	t := time.NewTimer(hold)
-	defer t.Stop()
-	select {
-	case err := <-done:
-		if err != nil {
-			c.log.Warn("wake for a request", "environment", envID, "err", err)
-			return WakeWaking
+	if !c.isAsleep(id) && !c.isWaking(id) {
+		if err := c.applyRoutes(ctx, serverID); err != nil {
+			c.log.Warn("wake: apply routes again", "server", serverID, "err", err)
 		}
-		return WakeGo
-	case <-t.C:
-		return WakeWaking
-	case <-ctx.Done():
-		return WakeWaking
+		return
 	}
+	request := ev.Request
+	if len(request) > 200 {
+		request = strings.ToValidUTF8(request[:200], "") // a node's word: capped like its errors
+	}
+	c.wg.Go(func() { _ = c.wakeByID(id, request) })
+}
+
+// onLocal reports whether a sleepable environment is on the control
+// plane's own server.
+func (c *Core) onLocal(envID int64) bool {
+	s := &c.sleep
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.envs[envID]
+	return e != nil && e.serverID == c.localID
+}
+
+// wakeByID wakes an environment by its ID, for a request that asked.
+func (c *Core) wakeByID(envID int64, request string) error {
+	env, err := c.store.GetEnvironment(c.ctx, envID)
+	if err != nil {
+		return err
+	}
+	p, err := c.store.GetProject(c.ctx, env.ProjectID)
+	if err != nil {
+		return err
+	}
+	err = c.wake(c.ctx, envScope{p, env}, request)
+	if err != nil {
+		c.log.Warn("wake for a request", "environment", envID, "err", err)
+	}
+	return err
 }
 
 // isWaking reports whether an environment's wake is in flight.

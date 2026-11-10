@@ -115,8 +115,8 @@ keeps it awake. Uptime checks pause while it sleeps and never wake it.
   staging 2h`. Production never sleeps.
 
 Sleeping keeps every container, so a preview comes back as it was, except
-for what its apps kept in memory. Previews on servers other than the
-control plane's don't sleep yet.
+for what its apps kept in memory. On a server whose dock is older than
+the control plane's, previews stay awake until it is updated.
 
 ## Locks
 

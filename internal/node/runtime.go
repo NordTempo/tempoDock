@@ -869,7 +869,15 @@ type ContainerEvent struct {
 	// or HealthUnhealthy.
 	Health string
 	Time   time.Time
+	// Request is set on an ActionWake event: what woke the environment.
+	Request string
 }
+
+// ActionWake is the Action of a ContainerEvent that is no container's: a
+// node's wake check asking the control plane to wake the asleep
+// environment Labels.Environment for Request (ADR 0070). Only nodes send
+// it; the control plane checks the environment is on that server.
+const ActionWake = "dock.wake"
 
 // BuildRequest describes one image build.
 type BuildRequest struct {

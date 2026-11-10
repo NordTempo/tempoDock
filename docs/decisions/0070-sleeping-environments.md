@@ -2,7 +2,8 @@
 
 Status: accepted (asked by Saile, 2026-11-10; plan and UI mock A picked
 by Saile). Amends [0056](0056-preview-environments.md) (previews sleep
-by default) and [0055](0055-uptime-checks.md) (checks pause while asleep).
+by default), [0055](0055-uptime-checks.md) (checks pause while asleep)
+and [0014](0014-node-protocol.md) (protocol 22).
 
 ## Context
 
@@ -37,7 +38,8 @@ service answers 503 until someone starts it.
 | Jobs ([0054](0054-scheduled-jobs.md)) | A scheduled run of an asleep environment is skipped, saying so. Run now, `dock run` and the Data panel wake it first; a run keeps it awake while it lasts |
 | Deploys | Any deploy into an asleep environment wakes it first (deploying is a request to run it, as in 0050) |
 | Settings | `environments.sleep_after_minutes`: 0 (never) or 5 to 1440. **Previews sleep after 30 minutes by default**, open ones included, from `preview_settings.sleep_after_minutes` (copied into each preview, and into open ones when changed; `--sleep-after off`). Other non-production environments opt in (`dock env sleep-after staging 2h`). Production is refused in core |
-| Where | The control plane's own server only, for now. The node link carries neither the wake check nor `Resume`/`OpenRequests` (remote `Client` answers that it can't); `Environment.sleep.blocked` says why such an environment doesn't sleep. A server with traffic counting off can't tell idle either and says so; manual sleep still works |
+| Where | Every server. The wake check (`caddy.WakeHandler`) runs on each server's internal listener: on the control plane core wakes the environment (`RequestWaker`); on a node `caddy.NodeWaker` asks the control plane over the link and holds the request until the control plane applies that server's routes without the wake check. A node's wake request is an `ActionWake` event on the event stream the control plane already holds open (with the request, at most one per environment every 2 s, never queued while the link is down); the control plane wakes only an environment on that server. Before routes were applied after a node restart, every key reads asleep, so requests wait for the control plane rather than reach a stopped container |
+| Node protocol 22 | Adds `resume` and `open-requests`, the routes' `wake` and `quiet_probes`, and wake events (`request`). A node below it gets no sleeping environment (`remote.SleepProtocol`): it would proxy to stopped containers. `Environment.sleep.blocked` says to update it. A server with traffic counting off can't tell idle either and says so; manual sleep still works |
 | Permissions | Sleep now: deploy scope (it takes the environment from its users; a locked environment refuses tokens). Wake: **read** scope, since anyone who sees it can wake it by opening its address. The setting: admin of the project. Manual sleeps, wakes and setting changes are audited (`environment.sleep`, `environment.wake`, `environment.sleep_settings`); idle sleeps and request wakes aren't (their record is `slept_by`, `woke_by` and the `sleep` event) |
 | API | `Environment.sleep` (state awake, sleeping, asleep or waking; since, last request, sleeps at, memory freed, who woke it as `GET /path/:id`, why it can't sleep), service state `asleep`, a `sleep` live event. `POST .../environments/{e}/sleep`, `POST .../wake`, `PUT .../sleep`; `PUT /projects/{p}/previews` takes `sleep_after_minutes` |
 | CLI, MCP | `dock env sleep`, `dock env wake`, `dock env sleep-after ENV DURATION\|off`, `dock env previews enable --sleep-after`; `env list` and `status` show it. MCP `sleep_environment`, `wake_environment` |
@@ -55,6 +57,6 @@ service answers 503 until someone starts it.
   protection stops it.
 - Apps that take longer than 30 s to start make programs retry; page
   loads keep reloading the waking page.
-- Remote servers need a node protocol bump (the wake check on the node's
-  internal listener, `Resume`, `OpenRequests`, and a wake request over the
-  link) before their environments sleep.
+- A node's asleep environments wake only while its control plane is
+  reachable: without the link, a request to one waits its 3 or 30 s and
+  gets the waking page or a 503. Awake apps keep running either way.

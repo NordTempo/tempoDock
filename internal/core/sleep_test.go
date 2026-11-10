@@ -7,6 +7,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -160,8 +161,8 @@ func TestSleepWhenIdle(t *testing.T) {
 	}
 }
 
-// A request to an asleep environment wakes it and goes on once it is
-// awake; an uptime probe never wakes it.
+// A request to an asleep environment wakes it, through the control
+// plane's Waker, and goes on once it is awake.
 func TestWakeForRequest(t *testing.T) {
 	h := newHarness(t)
 	_, web := h.sleepEnv()
@@ -174,14 +175,12 @@ func TestWakeForRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := h.wakeKey(host)
-	if got := h.c.WakeForRequest(h.ctx, key, "GET", "/", "dock-uptime/1.0", false); got != WakeAsleep {
-		t.Fatalf("uptime probe: %v", got)
+	w := h.c.RequestWaker()
+	if !w.Asleep(key) || w.Asleep("999") {
+		t.Fatalf("asleep: %v for %s, %v for 999", w.Asleep(key), key, w.Asleep("999"))
 	}
-	if h.state(web) != apitypes.ServiceAsleep {
-		t.Fatal("a probe woke it")
-	}
-	if got := h.c.WakeForRequest(h.ctx, key, "GET", "/orders/12345", "Mozilla/5.0", true); got != WakeGo {
-		t.Fatalf("page load: %v", got)
+	if err := w.Wake(h.ctx, key, "GET /orders/:id"); err != nil {
+		t.Fatal(err)
 	}
 	if h.state(web) != apitypes.ServiceRunning || h.wakeKey(host) != "" {
 		t.Fatalf("after the request: web %s, wake key %q", h.state(web), h.wakeKey(host))
@@ -248,5 +247,58 @@ func TestSleepSettlesAfterCrash(t *testing.T) {
 	}
 	if s := h.state(web); s != apitypes.ServiceAsleep {
 		t.Fatalf("web is %s after restart", s)
+	}
+}
+
+// An environment on another server sleeps too, through the node link:
+// its routes there carry the wake check, and the node's wake request (an
+// ActionWake event) wakes it. A node too old for it refuses.
+func TestSleepOnAnotherServer(t *testing.T) {
+	p := newPool(t, poolServer{"cp", true, false, 8}, poolServer{"homelab", false, true, 16})
+	p.project("shop")
+	p.mustEnv("shop", "staging", apitypes.KindNonProduction, "homelab")
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.CreateService(p.ctx, testSystem, staging, apitypes.CreateServiceRequest{Name: "web", Port: 8080}); err != nil {
+		t.Fatal(err)
+	}
+	web := ServiceRef{"shop", "staging", "web"}
+	if _, err := p.c.UpdateServer(p.ctx, testSystem, "homelab", apitypes.UpdateServerRequest{BaseDomain: ptr("lab.example.dev")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.GenerateDomain(p.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	p.deploy(web, "app:1")
+	lab := p.ids["homelab"]
+	rt := p.rts[lab]
+	wakeKey := func() string {
+		for _, r := range rt.Routes() {
+			if r.Wake != "" {
+				return r.Wake
+			}
+		}
+		return ""
+	}
+
+	e, err := p.c.SleepEnvironment(p.ctx, testSystem, staging)
+	if err != nil || e.Sleep == nil || e.Sleep.State != apitypes.SleepAsleep {
+		t.Fatalf("sleep on homelab: %+v, %v", e.Sleep, err)
+	}
+	if len(rt.Running()) != 0 || wakeKey() == "" {
+		t.Fatalf("asleep on homelab: running %v, wake key %q", rt.Running(), wakeKey())
+	}
+
+	// The node's wake check asks over the link.
+	rt.Emit(node.ContainerEvent{Action: node.ActionWake, Labels: node.Labels{Environment: wakeKey()}, Request: "GET /orders/:id"})
+	eventually(t, "staging to wake from the node's request", func() bool { return p.state(web) == apitypes.ServiceRunning })
+	eventually(t, "homelab's routes to drop the wake check", func() bool { return wakeKey() == "" })
+
+	// An older node gets no sleeping environments.
+	p.nodes.add(lab, rt, remote.Hello{Protocol: remote.SleepProtocol - 1, Facts: remote.Facts{Ingress: remote.IngressDirect}})
+	if _, err := p.c.SleepEnvironment(p.ctx, testSystem, staging); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("sleep on an older node: %v", err)
+	}
+	if v, err := p.c.GetEnvironment(p.ctx, testSystem, staging); err != nil || v.Sleep != nil && v.Sleep.Blocked == "" {
+		t.Fatalf("an older node's environment: %+v, %v", v.Sleep, err)
 	}
 }

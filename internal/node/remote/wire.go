@@ -137,6 +137,14 @@ type (
 	containerRequest struct {
 		ID string `json:"id"`
 	}
+	// openRequestsRequest is open-requests': the upstreams (host:port) to
+	// count Caddy's open requests to (protocol 22).
+	openRequestsRequest struct {
+		Upstreams []string `json:"upstreams"`
+	}
+	openRequestsResult struct {
+		Open int `json:"open"`
+	}
 	// removeRequest is remove's: a containerRequest plus whether the
 	// container's anonymous volumes go too (ADR 0052). Keeping is the
 	// default, so a request without the field (an older control plane)
@@ -563,14 +571,17 @@ type wireEvent struct {
 	// Health is new in protocol 13: a health_status event's new state.
 	Health string    `json:"health,omitempty"`
 	Time   time.Time `json:"time"`
+	// Request is new in protocol 22: what woke an environment, on an
+	// ActionWake event (ADR 0070).
+	Request string `json:"request,omitempty"`
 }
 
 func toWireEvent(e node.ContainerEvent) wireEvent {
-	return wireEvent{ContainerID: e.ContainerID, Labels: toWireLabels(e.Labels), Action: e.Action, ExitCode: e.ExitCode, Health: e.Health, Time: e.Time}
+	return wireEvent{ContainerID: e.ContainerID, Labels: toWireLabels(e.Labels), Action: e.Action, ExitCode: e.ExitCode, Health: e.Health, Time: e.Time, Request: e.Request}
 }
 
 func (w wireEvent) node() node.ContainerEvent {
-	return node.ContainerEvent{ContainerID: w.ContainerID, Labels: w.Labels.node(), Action: w.Action, ExitCode: w.ExitCode, Health: w.Health, Time: w.Time}
+	return node.ContainerEvent{ContainerID: w.ContainerID, Labels: w.Labels.node(), Action: w.Action, ExitCode: w.ExitCode, Health: w.Health, Time: w.Time, Request: w.Request}
 }
 
 type wireRoute struct {
@@ -595,6 +606,10 @@ type wireRoute struct {
 	// Hold is new in protocol 21 (ADR 0063); older nodes answer 502 while
 	// the upstream is down instead of waiting.
 	Hold bool `json:"hold,omitempty"`
+	// Wake and QuietProbes are new in protocol 22 (ADR 0070); the control
+	// plane sleeps no environment on an older node.
+	Wake        string `json:"wake,omitempty"`
+	QuietProbes bool   `json:"quiet_probes,omitempty"`
 }
 
 // wireAnalyticsHosts is node.AnalyticsHosts.
@@ -614,7 +629,8 @@ type wireAccess struct {
 func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
-		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly, Stopped: r.Stopped, Hold: r.Hold}
+		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly, Stopped: r.Stopped, Hold: r.Hold,
+			Wake: r.Wake, QuietProbes: r.QuietProbes}
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -628,7 +644,8 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
-		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly, Stopped: w.Stopped, Hold: w.Hold}
+		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly, Stopped: w.Stopped, Hold: w.Hold,
+			Wake: w.Wake, QuietProbes: w.QuietProbes}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}

@@ -64,6 +64,11 @@ type Node struct {
 	regConns chan net.Conn
 
 	connectedOnce sync.Once
+
+	// wakes carries RequestWake's events to the control plane's open
+	// event stream; streams counts those open (normally one).
+	wakes   chan node.ContainerEvent
+	streams atomic.Int32
 }
 
 // Errors that keep a node out until someone acts. Run logs them and keeps
@@ -255,7 +260,7 @@ func (n *Node) handler(st *connState) http.Handler {
 	}))
 	mux.HandleFunc("POST /v1/"+opRegistry, n.serveRegistryCall)
 	n.analyticsStoreRoutes(mux)
-	runtimeRoutes(mux, n.Runtime)
+	n.runtimeRoutes(mux, n.Runtime)
 	return mux
 }
 
@@ -329,8 +334,9 @@ func (n *Node) promoteNext() {
 	n.logger().Info("node key rotated", "key", n.id.Fingerprint())
 }
 
-// runtimeRoutes serves rt's methods.
-func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
+// runtimeRoutes serves rt's methods; events also carry the node's wake
+// requests (RequestWake).
+func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h := func(op string, fn http.HandlerFunc) { mux.Handle("POST /v1/"+op, fn) }
 
 	h(opPull, withLogs(func(ctx context.Context, a pullRequest, _ io.Reader, logs io.Writer) (imageIDResult, error) {
@@ -416,8 +422,15 @@ func runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		return pruneResult(r), err
 	}))
 	h(opEvents, stream(func(ctx context.Context, _ empty) (<-chan node.ContainerEvent, error) {
-		return rt.Events(ctx)
+		return n.events(ctx, rt)
 	}, toWireEvent))
+	h(opResume, unary(func(ctx context.Context, a containerRequest) (empty, error) {
+		return empty{}, rt.Resume(ctx, a.ID)
+	}))
+	h(opOpenRequests, unary(func(ctx context.Context, a openRequestsRequest) (openRequestsResult, error) {
+		open, err := rt.OpenRequests(ctx, a.Upstreams)
+		return openRequestsResult{Open: open}, err
+	}))
 	h(opBuild, withLogs(func(ctx context.Context, a buildRequest, source io.Reader, logs io.Writer) (imageIDResult, error) {
 		id, err := rt.Build(ctx, node.BuildRequest{
 			Source: source, Dockerfile: a.Dockerfile, BuildCommand: a.BuildCommand, StartCommand: a.StartCommand,
@@ -739,3 +752,67 @@ type dummyAddr struct{}
 
 func (dummyAddr) Network() string { return "dock-node" }
 func (dummyAddr) String() string  { return "control-plane" }
+
+// RequestWake asks the control plane to wake the asleep environment key
+// (an ActionWake event on its event stream) for this server's wake check
+// (caddy.NodeWaker). It never blocks, and reports false when no event
+// stream is open (the control plane is away) or one is still queued:
+// nothing is kept for later, which would wake an environment nobody
+// waits for anymore.
+func (n *Node) RequestWake(key, request string) bool {
+	if n.streams.Load() == 0 {
+		return false
+	}
+	ev := node.ContainerEvent{Action: node.ActionWake, Labels: node.Labels{Environment: key}, Request: request, Time: time.Now()}
+	select {
+	case n.wakeChan() <- ev:
+		return true
+	default:
+		return false
+	}
+}
+
+// wakeChan is wakes, made on first use.
+func (n *Node) wakeChan() chan node.ContainerEvent {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.wakes == nil {
+		n.wakes = make(chan node.ContainerEvent, 16)
+	}
+	return n.wakes
+}
+
+// events is rt's container events with the node's wake requests merged
+// in, until ctx ends.
+func (n *Node) events(ctx context.Context, rt node.Runtime) (<-chan node.ContainerEvent, error) {
+	in, err := rt.Events(ctx)
+	if err != nil {
+		return nil, err
+	}
+	wakes := n.wakeChan()
+	out := make(chan node.ContainerEvent, 16)
+	n.streams.Add(1)
+	go func() {
+		defer close(out)
+		defer n.streams.Add(-1)
+		for {
+			var ev node.ContainerEvent
+			select {
+			case e, ok := <-in:
+				if !ok {
+					return
+				}
+				ev = e
+			case ev = <-wakes:
+			case <-ctx.Done():
+				return
+			}
+			select {
+			case out <- ev:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}

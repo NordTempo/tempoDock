@@ -202,16 +202,19 @@ func (c *Client) Restart(ctx context.Context, id string, timeout time.Duration) 
 	return err
 }
 
-// Resume implements node.Containers. The node link doesn't carry it
-// yet: core sleeps environments on the control plane's own server only,
-// and never asks another server.
-func (c *Client) Resume(context.Context, string) error {
-	return errNoSleep
-}
+// SleepProtocol is the first node protocol whose environments can sleep:
+// resume, open-requests, the routes' wake check and wake events (ADR
+// 0070).
+const SleepProtocol = 22
 
-// errNoSleep is the answer of the node link's sleep calls until it
-// carries them.
-var errNoSleep = errors.New("environments on other servers can't sleep yet")
+// Resume implements node.Containers.
+func (c *Client) Resume(ctx context.Context, id string) error {
+	if err := c.needProtocol(ctx, SleepProtocol, "wake a sleeping environment"); err != nil {
+		return err
+	}
+	_, err := unaryCall[empty](ctx, c, opResume, containerRequest{ID: id})
+	return err
+}
 
 // Remove implements node.Containers.
 func (c *Client) Remove(ctx context.Context, id string, opts node.RemoveOptions) error {
@@ -421,9 +424,13 @@ func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, erro
 // everyone, so it isn't sent them.
 const AccessProtocol = 5
 
-// OpenRequests implements node.Proxy; see Resume.
-func (c *Client) OpenRequests(context.Context, []string) (int, error) {
-	return 0, errNoSleep
+// OpenRequests implements node.Proxy.
+func (c *Client) OpenRequests(ctx context.Context, upstreams []string) (int, error) {
+	if err := c.needProtocol(ctx, SleepProtocol, "put an environment to sleep"); err != nil {
+		return 0, err
+	}
+	r, err := unaryCall[openRequestsResult](ctx, c, opOpenRequests, openRequestsRequest{Upstreams: upstreams})
+	return r.Open, err
 }
 
 // ApplyRoutes implements node.Proxy.

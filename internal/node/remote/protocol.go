@@ -75,8 +75,10 @@ const (
 	// adds remove-volume, for a closed preview's volumes (ADR 0056); 21
 	// adds run-job's sync (dock-sync mounted in the job), the routes'
 	// hold, and forward-listen and forward-accept, connections a server
-	// forwards to the server its environment moved to (ADR 0063).
-	Protocol = 21
+	// forwards to the server its environment moved to (ADR 0063). 22 adds
+	// resume, open-requests, the routes' wake and quiet probes, and wake
+	// events: environments that sleep (ADR 0070, SleepProtocol).
+	Protocol = 22
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -182,6 +184,8 @@ const (
 	opRunJob       = "run-job"        // protocol 2
 	opRunJobStream = "run-job-stream" // protocol 16, full duplex: see job_stream.go
 	opProbe        = "probe"          // protocol 19
+	opResume       = "resume"         // protocol 22
+	opOpenRequests = "open-requests"  // protocol 22
 	opRotate       = "rotate"
 	opUpdate       = "update" // protocol 4
 	// Joining mode (join.go) only.

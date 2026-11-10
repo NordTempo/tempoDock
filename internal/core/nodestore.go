@@ -359,6 +359,8 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	if err := c.reconcileServer(ctx, serverID, rt, true); err != nil {
 		c.log.Warn("server reconnected: reconcile", "server", serverID, "err", err)
 	}
+	// Its asleep environments' containers stay stopped (ADR 0070).
+	c.settleSleep(ctx, serverID)
 	if err := c.applyRoutes(ctx, serverID); err != nil {
 		c.log.Error("server reconnected: apply routes", "server", serverID, "err", err)
 	}
