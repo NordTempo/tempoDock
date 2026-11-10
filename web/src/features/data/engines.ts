@@ -27,7 +27,7 @@ export const engines: Record<
     dialect: "mysql",
   },
   redis: {
-    tabs: ["keys", "sql"],
+    tabs: ["keys", "sql", "changes"],
     dialect: "redis",
     labels: { sql: "Commands" },
   },

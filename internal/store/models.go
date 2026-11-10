@@ -186,6 +186,7 @@ type Changeset struct {
 	ExpiresAt    time.Time
 	DecidedAt    *time.Time
 	DecidedBy    string
+	KeyChanges   string
 }
 
 type CliLogin struct {

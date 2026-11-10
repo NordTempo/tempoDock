@@ -438,6 +438,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "key_changes": {
+            "items": {
+              "$ref": "#/components/schemas/DataKeyChange"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "message": {
             "type": "string"
           },
@@ -489,7 +498,6 @@
               "$ref": "#/components/schemas/DataChange"
             },
             "maxItems": 500,
-            "minItems": 1,
             "type": [
               "array",
               "null"
@@ -498,14 +506,21 @@
           "dry_run": {
             "type": "boolean"
           },
+          "key_changes": {
+            "items": {
+              "$ref": "#/components/schemas/DataKeyChange"
+            },
+            "maxItems": 500,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "message": {
             "maxLength": 1000,
             "type": "string"
           }
         },
-        "required": [
-          "changes"
-        ],
         "type": "object"
       },
       "DataColumn": {
@@ -1067,6 +1082,54 @@
         ],
         "type": "object"
       },
+      "DataKeyChange": {
+        "additionalProperties": false,
+        "properties": {
+          "db": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "field": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "old": {
+            "$ref": "#/components/schemas/DataKeyOld"
+          },
+          "op": {
+            "enum": [
+              "set",
+              "delete",
+              "expire",
+              "hset",
+              "hdel",
+              "sadd",
+              "srem",
+              "zadd",
+              "zrem",
+              "lset",
+              "rpush",
+              "lpush",
+              "lrem"
+            ],
+            "type": "string"
+          },
+          "ttl_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "key"
+        ],
+        "type": "object"
+      },
       "DataKeyInfo": {
         "additionalProperties": false,
         "properties": {
@@ -1101,6 +1164,21 @@
           "ttl_ms",
           "length",
           "bytes"
+        ],
+        "type": "object"
+      },
+      "DataKeyOld": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },

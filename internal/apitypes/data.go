@@ -668,7 +668,10 @@ type DataChange struct {
 // (POST /data/changesets). Creating stores it as pending; it is written
 // only by a commit.
 type DataChangesetRequest struct {
-	Changes []DataChange `json:"changes" minItems:"1" maxItems:"500"`
+	// Changes are row changes (SQL databases); KeyChanges key changes
+	// (Redis). A changeset has one or the other.
+	Changes    []DataChange    `json:"changes,omitempty" maxItems:"500"`
+	KeyChanges []DataKeyChange `json:"key_changes,omitempty" maxItems:"500"`
 	// Message says why, for reviewers (agents should always set it).
 	Message string `json:"message,omitempty" maxLength:"1000"`
 	// DryRun validates and renders the SQL without storing anything.
@@ -699,8 +702,11 @@ type DataChangeset struct {
 	AuthorKind string              `json:"author_kind" enum:"user,token"`
 	Message    string              `json:"message,omitempty"`
 	Changes    []DataChange        `json:"changes"`
+	// KeyChanges are a Redis changeset's changes (Changes is then empty).
+	KeyChanges []DataKeyChange `json:"key_changes,omitempty"`
 	// SQL is the transaction exactly as it runs, values inlined as quoted
-	// literals, one statement per change in order.
+	// literals, one statement per change in order; for Redis the commands
+	// (WATCH, MULTI, ..., EXEC).
 	SQL string `json:"sql"`
 	// RowsAffected is per change, in order, once committed.
 	RowsAffected []int64 `json:"rows_affected,omitempty"`

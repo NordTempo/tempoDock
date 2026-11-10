@@ -151,7 +151,7 @@ export function DataPanel({
             label: t.label.toLowerCase(),
             run: () => onView({ ...view, tab: t.tab }),
           })),
-          ...(canEdit && tab === "tables"
+          ...(canEdit && (tab === "tables" || tab === "keys")
             ? [
                 {
                   key: "e",
@@ -184,8 +184,9 @@ export function DataPanel({
   const selected = tables.find((t) => tableName(t) === view.table) ?? tables[0];
   const selectedName = selected && tableName(selected);
   const production = access.confirm_commit;
-  // Edit mode only applies to the Tables tab; it survives a look elsewhere.
-  const writing = editing && tab === "tables";
+  // Edit mode applies to the Tables and Keys tabs; it survives a look
+  // elsewhere.
+  const writing = editing && (tab === "tables" || tab === "keys");
   const openTable = (table: string) =>
     onView({ ...view, table, filters: [], order: undefined });
 
@@ -248,6 +249,9 @@ export function DataPanel({
               access={access}
               view={view}
               onView={(next) => onView({ ...view, ...next })}
+              editing={editing}
+              onEditing={canEdit ? setEditing : undefined}
+              actions={edit}
             />
           </Suspense>
         )

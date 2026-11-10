@@ -1114,7 +1114,7 @@ func printChangeset(o *output.IO, cs apitypes.DataChangeset) error {
 		"status", string(cs.Status),
 		"author", cs.Author,
 		"message", cs.Message,
-		"changes", strconv.Itoa(len(cs.Changes)),
+		"changes", strconv.Itoa(len(cs.Changes)+len(cs.KeyChanges)),
 		"decided", decided,
 		"reason", cs.Reason,
 	); err != nil {
@@ -1178,6 +1178,12 @@ func newDBApplyCmd(g *globals) *cobra.Command {
 format (MySQL binary values as \x hex), or null. An update's "old" holds the values you saw; if the row changed
 since, nothing is written (exit 5).
 
+On Redis the file holds {"key_changes": [...]}: each {"op": "set"|"delete"|
+"expire"|"hset"|"hdel"|"sadd"|"srem"|"zadd"|"zrem"|"lset"|"rpush"|"lpush"|
+"lrem", "db": N, "key": "...", "field": "...", "value": "...", "ttl_ms": N,
+"old": {"type": "...", "value": "..."}}; "old" is the key's type and the
+value you saw (every op but the pushes).
+
 --dry-run shows the SQL without storing anything. Otherwise the changeset is
 stored and committed in one transaction when your access allows writing, or
 left pending for an admin when it allows proposing (or with --propose).
@@ -1223,7 +1229,7 @@ Production commits need --confirm <environment>.`,
 		}
 		if !commit {
 			return g.io.Print(cs, func() error {
-				g.io.Successf("Proposed changeset %d (%s)", cs.ID, plural(len(cs.Changes), "change"))
+				g.io.Successf("Proposed changeset %d (%s)", cs.ID, plural(len(cs.Changes)+len(cs.KeyChanges), "change"))
 				g.io.Progressf("An admin commits it with `dock db changes commit %d`.", cs.ID)
 				return nil
 			})
@@ -1270,7 +1276,7 @@ func (g *globals) readChanges(file string) (apitypes.DataChangesetRequest, error
 	if err != nil {
 		return req, usageError("invalid changes JSON: "+err.Error(), "See `dock db apply --help` for the format.")
 	}
-	if len(req.Changes) == 0 {
+	if len(req.Changes) == 0 && len(req.KeyChanges) == 0 {
 		return req, usageError("no changes in "+file, "See `dock db apply --help` for the format.")
 	}
 	return req, nil

@@ -358,3 +358,83 @@ func TestConsole(t *testing.T) {
 
 // t0 is a context for setup outside a test.
 func t0() context.Context { return context.Background() }
+
+func TestCommitKeys(t *testing.T) {
+	each(t, func(t *testing.T, e *Engine, s *redistest.Server, tg data.Target) {
+		ctx := t.Context()
+		str := func(v string) *string { return &v }
+		ms := func(v int64) *int64 { return &v }
+		seed := [][]string{
+			{"DEL", "ch:s", "ch:h", "ch:set", "ch:z", "ch:l", "ch:new"},
+			{"SET", "ch:s", "old", "PX", "600000"},
+			{"HSET", "ch:h", "a", "1"},
+			{"SADD", "ch:set", "x"},
+			{"ZADD", "ch:z", "1", "m"},
+			{"RPUSH", "ch:l", "a", "b"},
+		}
+		if _, err := ownerDo(s, seed...); err != nil {
+			t.Fatal(err)
+		}
+		changes := []apitypes.DataKeyChange{
+			{Op: apitypes.KeySet, Key: "ch:s", Value: str("new \"v\""), Old: &apitypes.DataKeyOld{Type: "string", Value: str("old")}},
+			{Op: apitypes.KeyHashSet, Key: "ch:h", Field: str("b"), Value: str("2"), Old: &apitypes.DataKeyOld{Type: "hash"}},
+			{Op: apitypes.KeyHashDelete, Key: "ch:h", Field: str("a"), Old: &apitypes.DataKeyOld{Type: "hash", Value: str("1")}},
+			{Op: apitypes.KeySetAdd, Key: "ch:set", Field: str("y"), Old: &apitypes.DataKeyOld{Type: "set"}},
+			{Op: apitypes.KeyZAdd, Key: "ch:z", Field: str("m"), Value: str("5"), Old: &apitypes.DataKeyOld{Type: "zset", Value: str("1.0")}},
+			{Op: apitypes.KeyListSet, Key: "ch:l", Field: str("0"), Value: str("A"), Old: &apitypes.DataKeyOld{Type: "list", Value: str("a")}},
+			{Op: apitypes.KeyListPush, Key: "ch:l", Value: str("c")},
+			{Op: apitypes.KeySet, Key: "ch:new", Value: str("1"), Old: &apitypes.DataKeyOld{Type: "none"}},
+			{Op: apitypes.KeyExpire, Key: "ch:new", TTLMs: ms(60_000), Old: &apitypes.DataKeyOld{Type: "none"}},
+		}
+		script, err := e.RenderKeys(ctx, tg, changes)
+		if err != nil || !strings.Contains(script, `SET ch:s "new \"v\"" KEEPTTL`) || !strings.HasPrefix(script, "SELECT 0\nWATCH ch:s ch:h ch:set ch:z ch:l ch:new\nMULTI\n") {
+			t.Fatalf("render: %s %v", script, err)
+		}
+		res, err := e.CommitKeys(ctx, tg, data.Call{}, changes)
+		if err != nil || len(res.Conflicts) != 0 || len(res.RowsAffected) != len(changes) {
+			t.Fatalf("commit: %+v %v", res, err)
+		}
+		got, err := ownerDo(s, []string{"GET", "ch:s"}, []string{"PTTL", "ch:s"}, []string{"HGETALL", "ch:h"}, []string{"SCARD", "ch:set"},
+			[]string{"ZSCORE", "ch:z", "m"}, []string{"LRANGE", "ch:l", "0", "-1"}, []string{"PTTL", "ch:new"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got[1].Str != `new "v"` || got[2].Int <= 0 || len(got[3].Arr) != 2 || got[4].Int != 2 || got[5].Str != "5" ||
+			fmt.Sprint(plain(got[6])) != "[A b c]" || got[7].Int <= 0 {
+			t.Fatalf("after commit: %+v", got)
+		}
+
+		// A stale old value, a key that went and one whose type changed:
+		// conflicts, and nothing of the changeset is written.
+		if _, err := ownerDo(s, []string{"DEL", "ch:set"}); err != nil {
+			t.Fatal(err)
+		}
+		stale := []apitypes.DataKeyChange{
+			{Op: apitypes.KeyHashDelete, Key: "ch:h", Field: str("b"), Old: &apitypes.DataKeyOld{Type: "hash"}},
+			{Op: apitypes.KeySet, Key: "ch:s", Value: str("x"), Old: &apitypes.DataKeyOld{Type: "string", Value: str("old")}},
+			{Op: apitypes.KeySetRemove, Key: "ch:set", Field: str("x"), Old: &apitypes.DataKeyOld{Type: "set", Value: str("1")}},
+			{Op: apitypes.KeyHashSet, Key: "ch:s", Field: str("f"), Value: str("v"), Old: &apitypes.DataKeyOld{Type: "hash"}},
+		}
+		res, err = e.CommitKeys(ctx, tg, data.Call{}, stale)
+		reasons := map[int]apitypes.DataConflictReason{}
+		for _, c := range res.Conflicts {
+			reasons[c.Change] = c.Reason
+		}
+		if err != nil || reasons[0] != apitypes.ConflictChanged || reasons[1] != apitypes.ConflictChanged || reasons[2] != apitypes.ConflictMissing || reasons[3] != apitypes.ConflictChanged {
+			t.Fatalf("conflicts: %+v %v", res, err)
+		}
+		if v, _ := ownerDo(s, []string{"HEXISTS", "ch:h", "b"}); v[1].Int != 1 {
+			t.Error("a conflicting changeset wrote")
+		}
+		for _, bad := range [][]apitypes.DataKeyChange{
+			{{Op: apitypes.KeySet, Key: "ch:s", Value: str("x")}},
+			{{Op: apitypes.KeyZAdd, Key: "ch:z", Field: str("m"), Value: str("high"), Old: &apitypes.DataKeyOld{Type: "zset"}}},
+			{{Op: apitypes.KeySet, Key: "a", Value: str("1"), Old: &apitypes.DataKeyOld{Type: "none"}}, {Op: apitypes.KeySet, DB: 1, Key: "b", Value: str("1"), Old: &apitypes.DataKeyOld{Type: "none"}}},
+			{{Op: "rename", Key: "a"}},
+		} {
+			if _, err := e.RenderKeys(ctx, tg, bad); !errors.Is(err, data.ErrInvalid) {
+				t.Errorf("%+v: %v", bad, err)
+			}
+		}
+	})
+}

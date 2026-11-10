@@ -252,10 +252,11 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 			"Otherwise the changeset is stored as pending for an admin to review and approve (needs level propose); with commit it is also committed right away, only if your level is write and the environment is not production. "+
 			"Tokens never write production: there it always waits for approval. Updates must carry the old values you saw; a row changed since fails the whole changeset. At most 500 rows.",
 		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Changes []apitypes.DataChange `json:"changes" doc:"Row changes: {op: insert|update|delete, table: schema.name, key: primary key values (update, delete), old: the values you read (update), new: values to set or insert}. Values are strings in the database's text format (binary values as \\x hex), or null."`
-			Message string                `json:"message" doc:"Why, for the reviewer."`
-			DryRun  bool                  `json:"dry_run,omitempty" doc:"Only render the SQL; store nothing."`
-			Commit  bool                  `json:"commit,omitempty" doc:"Commit at once if your access is write on a non-production environment; otherwise it stays pending."`
+			Changes    []apitypes.DataChange    `json:"changes,omitempty" doc:"Row changes: {op: insert|update|delete, table: schema.name, key: primary key values (update, delete), old: the values you read (update), new: values to set or insert}. Values are strings in the database's text format (binary values as \\x hex), or null."`
+			KeyChanges []apitypes.DataKeyChange `json:"key_changes,omitempty" doc:"Redis instead of changes: {op: set|delete|expire|hset|hdel|sadd|srem|zadd|zrem|lset|rpush|lpush|lrem, db, key, field (hash field, member, list index), value, ttl_ms, old: {type, value} as you read them (every op but pushes)}."`
+			Message    string                   `json:"message" doc:"Why, for the reviewer."`
+			DryRun     bool                     `json:"dry_run,omitempty" doc:"Only render the SQL; store nothing."`
+			Commit     bool                     `json:"commit,omitempty" doc:"Commit at once if your access is write on a non-production environment; otherwise it stays pending."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -264,13 +265,13 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 			if strings.TrimSpace(in.Message) == "" {
 				return Reply{}, Invalid("pass message: why these changes are needed, for the reviewer")
 			}
-			cs, err := ops.CreateDataChangeset(ctx, c.Actor, ref, apitypes.DataChangesetRequest{Changes: in.Changes, Message: in.Message, DryRun: in.DryRun})
+			cs, err := ops.CreateDataChangeset(ctx, c.Actor, ref, apitypes.DataChangesetRequest{Changes: in.Changes, KeyChanges: in.KeyChanges, Message: in.Message, DryRun: in.DryRun})
 			if err != nil {
 				return Reply{}, err
 			}
 			switch {
 			case in.DryRun:
-				return Reply{Summary: fmt.Sprintf("Preview of %d changes; nothing stored.", len(cs.Changes)), Data: cs}, nil
+				return Reply{Summary: fmt.Sprintf("Preview of %d changes; nothing stored.", len(cs.Changes)+len(cs.KeyChanges)), Data: cs}, nil
 			case !in.Commit:
 				return Reply{Summary: fmt.Sprintf("Changeset %d proposed: pending until an admin approves it.", cs.ID), Data: cs}, nil
 			case cs.ConfirmCommit:

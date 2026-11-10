@@ -221,6 +221,11 @@ func toChangeset(cs store.Changeset) (datapanel.Changeset, error) {
 	if err := json.Unmarshal([]byte(cs.Changes), &out.Changes); err != nil {
 		return out, fmt.Errorf("changeset %d changes: %w", cs.ID, err)
 	}
+	if cs.KeyChanges != "" {
+		if err := json.Unmarshal([]byte(cs.KeyChanges), &out.KeyChanges); err != nil {
+			return out, fmt.Errorf("changeset %d key changes: %w", cs.ID, err)
+		}
+	}
 	if cs.RowsAffected != "" {
 		if err := json.Unmarshal([]byte(cs.RowsAffected), &out.RowsAffected); err != nil {
 			return out, fmt.Errorf("changeset %d rows: %w", cs.ID, err)
@@ -242,6 +247,13 @@ func (h dataHost) CreateChangeset(ctx context.Context, cs datapanel.Changeset) (
 	params := store.CreateChangesetParams{
 		ServiceID: cs.Database, Author: cs.Author, AuthorKind: cs.AuthorKind, Message: cs.Message,
 		Changes: string(changes), Sql: cs.SQL, CreatedAt: cs.CreatedAt, ExpiresAt: cs.ExpiresAt,
+	}
+	if len(cs.KeyChanges) > 0 {
+		keys, err := json.Marshal(cs.KeyChanges)
+		if err != nil {
+			return datapanel.Changeset{}, err
+		}
+		params.KeyChanges = string(keys)
 	}
 	if cs.UserID != 0 {
 		params.UserID = &cs.UserID

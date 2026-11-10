@@ -12,10 +12,16 @@ import {
   ChangeList,
   ConfirmName,
   type EditActions,
+  KeyChangeList,
   ReviewPanel,
   SqlText,
 } from "./ReviewPanel";
-import type { DataChange, DataChangeset, DataPermission } from "./types";
+import type {
+  DataChange,
+  DataChangeset,
+  DataKeyChange,
+  DataPermission,
+} from "./types";
 
 type Status = DataChangeset["status"];
 
@@ -30,16 +36,31 @@ const isChange = (x: unknown): x is DataChange =>
   "table" in x &&
   typeof x.table === "string";
 
+/** A key change in a file: an op and a key; the server checks the rest. */
+const isKeyChange = (x: unknown): x is DataKeyChange =>
+  typeof x === "object" &&
+  x !== null &&
+  "op" in x &&
+  typeof x.op === "string" &&
+  "key" in x &&
+  typeof x.key === "string";
+
 /** A changes file as it is loaded for review. */
-type ChangesFile = { name: string; changes: DataChange[]; message?: string };
+type ChangesFile = {
+  name: string;
+  changes: DataChange[];
+  key_changes: DataKeyChange[];
+  message?: string;
+};
 
 /**
  * Reads a changes file like `dock db apply -f`: {"changes": [...],
- * "message": "..."} or a bare array of changes.
+ * "message": "..."}, {"key_changes": [...]} for Redis, or a bare array of
+ * changes.
  */
 function parseChangesFile(name: string, text: string): ChangesFile | Error {
   const wrong = new Error(
-    `${name}: expected {"changes": [...]} or an array of changes, each with op (insert, update or delete) and table`,
+    `${name}: expected {"changes": [...]} or an array of changes, each with op (insert, update or delete) and table, or {"key_changes": [...]}, each with op and key`,
   );
   let parsed: unknown;
   try {
@@ -51,14 +72,26 @@ function parseChangesFile(name: string, text: string): ChangesFile | Error {
     typeof parsed === "object" && parsed !== null && "changes" in parsed
       ? parsed
       : null;
-  const changes = Array.isArray(parsed) ? parsed : wrapped?.changes;
-  if (!Array.isArray(changes) || !changes.length || !changes.every(isChange))
+  const keyed =
+    typeof parsed === "object" && parsed !== null && "key_changes" in parsed
+      ? parsed
+      : null;
+  const changes = Array.isArray(parsed) ? parsed : (wrapped?.changes ?? []);
+  const keyChanges = keyed?.key_changes ?? [];
+  if (
+    !Array.isArray(changes) ||
+    !Array.isArray(keyChanges) ||
+    !(changes.length || keyChanges.length) ||
+    !changes.every(isChange) ||
+    !keyChanges.every(isKeyChange)
+  )
     return wrong;
+  const head = wrapped ?? keyed;
   const message =
-    wrapped && "message" in wrapped && typeof wrapped.message === "string"
-      ? wrapped.message
+    head && "message" in head && typeof head.message === "string"
+      ? head.message
       : undefined;
-  return { name, changes, message };
+  return { name, changes, key_changes: keyChanges, message };
 }
 
 const statusText: Record<DataChangeset["status"], [string, string]> = {
@@ -183,8 +216,11 @@ export function ChangesView({
                   <span className={`ml-auto text-xs ${tone}`}>{label}</span>
                 </span>
                 <span className="truncate text-xs text-(--g-mut)">
-                  {plural(c.changes?.length ?? 0, "change")} ·{" "}
-                  {ago(c.created_at)}
+                  {plural(
+                    (c.changes?.length ?? 0) + (c.key_changes?.length ?? 0),
+                    "change",
+                  )}{" "}
+                  · {ago(c.created_at)}
                   {c.message && ` · ${c.message}`}
                 </span>
               </button>
@@ -195,9 +231,9 @@ export function ChangesView({
       {file && actions ? (
         <div className="flex min-w-0 flex-1 justify-center overflow-y-auto">
           <ReviewPanel
-            key={`${file.name}:${file.changes.length}`}
+            key={`${file.name}:${file.changes.length}:${file.key_changes.length}`}
             table={file.name}
-            changes={file.changes}
+            body={{ changes: file.changes, key_changes: file.key_changes }}
             message={file.message}
             confirmCommit={access.confirm_commit && access.level !== "propose"}
             propose={access.level === "propose"}
@@ -207,7 +243,19 @@ export function ChangesView({
               const changes = file.changes.filter(
                 (c) => JSON.stringify(c.key) !== id,
               );
-              setFile(changes.length ? { ...file, changes } : null);
+              setFile(
+                changes.length || file.key_changes.length
+                  ? { ...file, changes }
+                  : null,
+              );
+            }}
+            onRestoreKey={(i) => {
+              const keyChanges = file.key_changes.filter((_, j) => j !== i);
+              setFile(
+                file.changes.length || keyChanges.length
+                  ? { ...file, key_changes: keyChanges }
+                  : null,
+              );
             }}
             onDiscard={() => setFile(null)}
             onCommitted={() => setFile(null)}
@@ -284,6 +332,7 @@ function Changeset({
         {c.message && <p>{c.message}</p>}
         {c.reason && <p className="text-(--g-dim)">Reason: {c.reason}</p>}
         <ChangeList changes={c.changes ?? []} />
+        <KeyChangeList changes={c.key_changes ?? []} />
         <SqlText>{c.sql}</SqlText>
         {c.rows_affected && (
           <p className="text-xs text-(--g-mut)">

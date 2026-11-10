@@ -8,8 +8,7 @@ is [ADR 0016](../decisions/0016-database-panel.md); MySQL and MariaDB are
 
 Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer, Redis
 7.0 or newer and Valkey 7.2 or newer. Redis has keys, not tables: see
-[Redis and Valkey](#redis-and-valkey); changing keys and its Health view
-come later.
+[Redis and Valkey](#redis-and-valkey); its Health view comes later.
 
 ## Is it a database?
 
@@ -133,7 +132,7 @@ dock db query 'ZRANGE board 0 9 REV WITHSCORES' --db 0
   what the list masks); the others read them with an audited reveal
   (`dock db key ... --reveal`).
 - Dock's users are ACL users with fixed command lists: `dock_reader`
-  reads, `dock_writer` will commit changesets, `dock_monitor` reads the
+  reads, `dock_writer` commits changesets, `dock_monitor` reads the
   server's statistics, never keys or `CONFIG`. Redis keeps ACL users in
   memory, so a restart drops them; Dock creates them again as the owner
   on the next use. Browsing never changes eviction order
@@ -173,6 +172,47 @@ dock db changes reject 12 --reason "use the refund flow"
 
 With level `propose`, `apply` stores the changeset as pending and an admin
 commits or rejects it. Pending changesets expire after 7 days.
+
+### Redis keys
+
+Redis changesets hold `key_changes` instead, all in one logical database.
+Each one carries `old`, the key's type and the value you saw (`null`: not
+there); the commit `WATCH`es the keys, compares, and runs the writes in
+one `MULTI`/`EXEC`, so a key changed meanwhile writes nothing and is
+listed as a conflict.
+
+```json
+{
+  "message": "give 1042 the pro plan",
+  "key_changes": [
+    {"op": "hset", "db": 0, "key": "user:1042", "field": "plan",
+     "value": "pro", "old": {"type": "hash", "value": "free"}},
+    {"op": "expire", "db": 0, "key": "session:9f2", "ttl_ms": 3600000,
+     "old": {"type": "string"}},
+    {"op": "rpush", "db": 0, "key": "jobs", "value": "reindex"}
+  ]
+}
+```
+
+| Op | Does | `field` | `value` |
+|---|---|---|---|
+| `set` | Set a string (keeps its TTL) | | the string |
+| `delete` | Delete the key | | |
+| `expire` | `ttl_ms` milliseconds to live, `-1` removes the TTL | | |
+| `hset`, `hdel` | Set or remove a hash field | the field | the value (`hset`) |
+| `sadd`, `srem` | Add or remove a set member (`old.value` is `"1"` when present) | the member | |
+| `zadd`, `zrem` | Add or remove a sorted set member | the member | the score (`zadd`) |
+| `lset` | Set a list element | its index | the value |
+| `rpush`, `lpush` | Append or prepend to a list (no `old`) | | the value |
+| `lrem` | Remove the first element equal to `field` | the element | |
+
+In the Keys view, **Edit** (E) turns the open key's value into editable
+rows: change a value, remove a row, add one, set the TTL or delete the
+key. Staged changes across keys of one database are reviewed beside it,
+with the commands that run. Values are text up to 512 KB; change binary
+values and keys named in hex with redis-cli over
+[`dock connect`](#connecting-from-your-machine). No rename, flush or
+pattern deletes.
 
 ## Who may do what
 

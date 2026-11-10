@@ -43,6 +43,7 @@ export type DataKeyRequest = Omit<
   "org"
 >;
 export type DataKeyValue = Schemas["DataKeyValue"];
+export type DataKeyChange = Schemas["DataKeyChange"];
 export type DataTable = Schemas["DataTable"];
 export type DataColumn = Schemas["DataColumn"];
 export type DataForeignKey = Schemas["DataForeignKey"];

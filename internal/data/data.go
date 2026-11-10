@@ -324,6 +324,13 @@ type Keys interface {
 	// Key reads one key and a page of its value; ErrNoTable when the key
 	// doesn't exist.
 	Key(ctx context.Context, t Target, c Call, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error)
+	// RenderKeys validates key changes and renders the commands a commit
+	// would run, without touching data.
+	RenderKeys(ctx context.Context, t Target, changes []apitypes.DataKeyChange) (string, error)
+	// CommitKeys applies key changes as Writer, all or nothing: every key
+	// is watched, its old values compared, then the writes run in one
+	// MULTI/EXEC. A mismatch writes nothing and is reported in Conflicts.
+	CommitKeys(ctx context.Context, t Target, c Call, changes []apitypes.DataKeyChange) (CommitResult, error)
 }
 
 // CancelResult is the session a Cancel hit.

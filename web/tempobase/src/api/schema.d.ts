@@ -1020,6 +1020,7 @@ export interface components {
             expires_at?: string;
             /** Format: int64 */
             id: number;
+            key_changes?: components["schemas"]["DataKeyChange"][] | null;
             message?: string;
             reason?: string;
             rows_affected?: number[] | null;
@@ -1028,8 +1029,9 @@ export interface components {
             status: "preview" | "pending" | "committed" | "rejected" | "expired" | "conflict";
         };
         DataChangesetRequest: {
-            changes: components["schemas"]["DataChange"][] | null;
+            changes?: components["schemas"]["DataChange"][] | null;
             dry_run?: boolean;
+            key_changes?: components["schemas"]["DataKeyChange"][] | null;
             message?: string;
         };
         DataColumn: {
@@ -1164,6 +1166,18 @@ export interface components {
             tables?: components["schemas"]["DataTableStats"][] | null;
             unavailable: components["schemas"]["DataUnavailable"][] | null;
         };
+        DataKeyChange: {
+            /** Format: int64 */
+            db?: number;
+            field?: string;
+            key: string;
+            old?: components["schemas"]["DataKeyOld"];
+            /** @enum {string} */
+            op: "set" | "delete" | "expire" | "hset" | "hdel" | "sadd" | "srem" | "zadd" | "zrem" | "lset" | "rpush" | "lpush" | "lrem";
+            /** Format: int64 */
+            ttl_ms?: number;
+            value?: string;
+        };
         DataKeyInfo: {
             /** Format: int64 */
             bytes: number;
@@ -1175,6 +1189,10 @@ export interface components {
             /** Format: int64 */
             ttl_ms: number;
             type: string;
+        };
+        DataKeyOld: {
+            type: string;
+            value?: string;
         };
         DataKeyPage: {
             keys: components["schemas"]["DataKeyInfo"][] | null;

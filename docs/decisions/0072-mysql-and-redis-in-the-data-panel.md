@@ -127,3 +127,16 @@ key browser (mock B) and sensitive key patterns. Console commands run in
 `DataQueryRequest.db`. The `services.database` CHECK of migration 0010
 only allowed `postgres`, so `mysql` failed to save; migration 0087 widens
 it to every engine.
+
+## Amendment (2026-11-11): Redis changesets
+
+Key changes are `DataChangesetRequest.key_changes` (stored in
+`changesets.key_changes`), never mixed with row changes in one changeset,
+all in one logical database. Each change's type is checked under `WATCH`
+before `MULTI`, because Redis runs the rest of an `EXEC` when one command
+fails: `EXEC` can then only fail whole (`EXECABORT`) or not run (a
+watched key changed, one conflict with change -1). `SET` keeps the TTL;
+`lrem` removes one element by value, so it compares the type only.
+Values are text up to 512 KB; the UI doesn't edit binary values or keys
+named in hex. Masked callers see a sensitive key's changes by pattern,
+without values.

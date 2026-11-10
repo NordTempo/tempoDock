@@ -14,11 +14,10 @@ import {
   useState,
 } from "react";
 import type { PolicyRule } from "./policy";
-import type { CommitOptions, EditActions } from "./ReviewPanel";
+import type { ChangeBody, CommitOptions, EditActions } from "./ReviewPanel";
 import type {
   DataCancelRequest,
   DataCancelResult,
-  DataChange,
   DataChangeset,
   DataChangesetRequest,
   DataColumnRef,
@@ -521,13 +520,13 @@ export function useEditActions(
     const settle = () =>
       client.invalidateQueries({ queryKey: [...source.key, "changesets"] });
     return {
-      renderSql: async (changes: DataChange[]) =>
-        (await source.changeset({ changes, dry_run: true })).sql,
+      renderSql: async (body: ChangeBody) =>
+        (await source.changeset({ ...body, dry_run: true })).sql,
       commit: async (
-        changes: DataChange[],
+        body: ChangeBody,
         { confirm, message, propose }: CommitOptions,
       ) => {
-        const staged = await source.changeset({ changes, message });
+        const staged = await source.changeset({ ...body, message });
         if (level === "propose" || propose) {
           await settle();
           proposed.current(staged);
