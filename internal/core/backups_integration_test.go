@@ -22,9 +22,9 @@ import (
 )
 
 // Templates, backups and restores on the real Docker runtime: create a
-// Postgres and a Redis from their templates, write data, back them up to
-// the local restic repository, restore each into a new service and read
-// the data back there.
+// Redis from its template, write data, back it up to the local restic
+// repository, restore it into a new service and read the data back there.
+// Postgres's backup and restore run in TestIntegrationMoveBackups.
 func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	// Registered first, so it runs after the harness removed the containers.
 	var install string
@@ -36,56 +36,33 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
 		t.Fatal(err)
 	}
-	env := EnvRef{project, "production"}
-	db, cache := ServiceRef{project, "production", "db"}, ServiceRef{project, "production", "cache"}
-	for ref, tpl := range map[ServiceRef]apitypes.Template{db: apitypes.TemplatePostgres, cache: apitypes.TemplateRedis} {
-		if _, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: ref.Service, Template: tpl}); err != nil {
-			t.Fatal(err)
-		}
+	cache := ServiceRef{project, "production", "cache"}
+	if _, err := c.CreateService(ctx, testSystem, cache.Env(), apitypes.CreateServiceRequest{Name: cache.Service, Template: apitypes.TemplateRedis}); err != nil {
+		t.Fatal(err)
 	}
-	for _, ref := range []ServiceRef{db, cache} {
-		if r := waitRelease(t, c, ref, 1); r.Status != apitypes.ReleaseActive {
-			t.Fatalf("%s: %s %s", ref.Service, r.Status, r.Error)
-		}
-	}
-	// Data setup runs on its own once Postgres went active.
-	for start := time.Now(); ; time.Sleep(200 * time.Millisecond) {
-		info, err := c.DataInfo(ctx, testSystem, db)
-		if err == nil && info.Status == apitypes.DataReady {
-			break
-		}
-		if time.Since(start) > 30*time.Second {
-			t.Fatalf("data setup of the template database: %+v %v", info, err)
-		}
+	if r := waitRelease(t, c, cache, 1); r.Status != apitypes.ReleaseActive {
+		t.Fatalf("cache: %s %s", r.Status, r.Error)
 	}
 
-	execIn(t, c, db, "psql", "-U", "postgres", "-d", "app", "-v", "ON_ERROR_STOP=1", "-c",
-		"CREATE TABLE notes (id int PRIMARY KEY, body text); INSERT INTO notes SELECT g, md5(g::text) FROM generate_series(1, 500) g;")
 	pw := liveVar(t, c, cache, "REDIS_PASSWORD")
 	execIn(t, c, cache, "redis-cli", "-a", pw, "--no-auth-warning", "SET", "greeting", "hello")
 
-	for _, ref := range []ServiceRef{db, cache} {
-		run, err := c.RunBackup(ctx, testSystem, ref)
-		if err != nil {
-			t.Fatal(err)
-		}
-		done := waitBackupRun(t, c, ref, run.ID)
-		if done.Status != apitypes.BackupSucceeded || done.Snapshot == "" || done.SizeBytes == 0 {
-			t.Fatalf("backup of %s: %+v", ref.Service, done)
-		}
-		res, err := c.RestoreBackup(ctx, testSystem, ref, apitypes.RestoreBackupRequest{Snapshot: done.Snapshot[:8]})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if r := waitBackupRun(t, c, ref, res.Restore.ID); r.Status != apitypes.BackupSucceeded {
-			t.Fatalf("restore of %s: %+v", ref.Service, r)
-		}
+	run, err := c.RunBackup(ctx, testSystem, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := waitBackupRun(t, c, cache, run.ID)
+	if done.Status != apitypes.BackupSucceeded || done.Snapshot == "" || done.SizeBytes == 0 {
+		t.Fatalf("backup: %+v", done)
+	}
+	res, err := c.RestoreBackup(ctx, testSystem, cache, apitypes.RestoreBackupRequest{Snapshot: done.Snapshot[:8]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := waitBackupRun(t, c, cache, res.Restore.ID); r.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore: %+v", r)
 	}
 
-	restoredDB := ServiceRef{project, "production", "db-restored"}
-	if out := execIn(t, c, restoredDB, "psql", "-U", "postgres", "-d", "app", "-tAc", "SELECT count(*), max(body) FROM notes"); !strings.HasPrefix(out, "500|") {
-		t.Errorf("restored Postgres: %q", out)
-	}
 	restoredCache := ServiceRef{project, "production", "cache-restored"}
 	newPw := liveVar(t, c, restoredCache, "REDIS_PASSWORD")
 	if newPw == pw {

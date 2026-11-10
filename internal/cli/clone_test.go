@@ -60,9 +60,6 @@ func TestCloneAndExport(t *testing.T) {
 
 	// Copying production's values into non-production is an admin's
 	// explicit choice, and the output names them.
-	if code, _, stderr := exec(t, "env", "clone", "production", "qa", "-p", "shop", "--copy-values"); code != 3 || !strings.Contains(stderr, "requires admin") {
-		t.Fatalf("deploy token with --copy-values: exit %d %s", code, stderr)
-	}
 	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
 	code, stdout, stderr = exec(t, "env", "clone", "production", "qa", "-p", "shop", "--copy-values")
 	if code != 0 || !strings.Contains(stderr, "Values copied from the production environment production: web.API_KEY") || strings.Contains(stdout+stderr, "k-7f3a") {

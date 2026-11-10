@@ -3,9 +3,6 @@
 package docker
 
 import (
-	"context"
-	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -13,8 +10,8 @@ import (
 )
 
 // A stopped container's whole output is archived by its labels' service
-// and release, read back with tail and both streams, and pruned once its
-// service is gone (ADR 0046).
+// and release and read back with both streams (ADR 0046). Tail, missing
+// releases and pruning are internal/node/logarchive's tests.
 func TestArchiveLogs(t *testing.T) {
 	e := newEnv(t)
 	e.DataDir = t.TempDir()
@@ -54,33 +51,15 @@ func TestArchiveLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	read := func(q node.LogArchiveQuery) []node.LogLine {
-		t.Helper()
-		ch, err := e.ArchivedLogs(ctx, q)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out []node.LogLine
-		for l := range ch {
-			out = append(out, l)
-		}
-		return out
+	ch, err := e.ArchivedLogs(ctx, node.LogArchiveQuery{Service: "41", Release: "7"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	all := read(node.LogArchiveQuery{Service: "41", Release: "7"})
+	var all []node.LogLine
+	for l := range ch {
+		all = append(all, l)
+	}
 	if len(all) != 6 || !containsLine(all, node.LogLine{Stream: "stderr", Text: "oops"}) || all[0].Time.IsZero() {
 		t.Fatalf("archived = %+v", all)
-	}
-	var texts []string
-	for _, l := range read(node.LogArchiveQuery{Service: "41", Release: "7", Tail: 2}) {
-		texts = append(texts, l.Text)
-	}
-	if want := []string{all[4].Text, all[5].Text}; !slices.Equal(texts, want) {
-		t.Fatalf("tail 2 = %v, want %v", texts, want)
-	}
-	if _, err := e.ArchivedLogs(ctx, node.LogArchiveQuery{Service: "41", Release: "8"}); !errors.Is(err, node.ErrNotFound) {
-		t.Fatalf("another release: %v", err)
-	}
-	if r, err := e.PruneLogs(context.Background(), node.LogPrune{KeepServices: []string{"41"}, Limits: node.LogLimits{MaxAge: time.Hour}}); err != nil || r.Removed != 0 {
-		t.Fatalf("prune of a kept service = %+v, %v", r, err)
 	}
 }

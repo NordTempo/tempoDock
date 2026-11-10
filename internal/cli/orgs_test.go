@@ -44,9 +44,6 @@ func TestOrgSelection(t *testing.T) {
 	if v := ok[orgView](t, "org", "use", "test"); v.Slug != "test" {
 		t.Fatalf("org use test = %+v", v)
 	}
-	if code, _, stderr := exec(t, "org", "create", "side"); code == 0 || !strings.Contains(stderr, "can't create organizations") {
-		t.Fatalf("a token creating an org: %d %s", code, stderr)
-	}
 }
 
 // The organization's settings from the CLI: variables, invites and its

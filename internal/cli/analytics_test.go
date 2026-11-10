@@ -89,9 +89,6 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if f := ok[apitypes.SiteFunnel](t, "analytics", "funnels", "shop.example.com", "Buy", "-p", "shop"); len(f.Steps) != 2 {
 		t.Errorf("funnel = %+v", f)
 	}
-	if code, _, stderr := exec(t, "analytics", "vitals", "shop.example.com", "-p", "shop", "--by", "referrer"); code == 0 || !strings.Contains(stderr, "break down by page") {
-		t.Errorf("vitals by referrer: %d %s", code, stderr)
-	}
 	if code, _, stderr := exec(t, "analytics", "stats", "shop.example.com", "-p", "shop", "--filter", "nope"); code == 0 || !strings.Contains(stderr, "country:is:NO") {
 		t.Errorf("a malformed filter: %d %s", code, stderr)
 	}

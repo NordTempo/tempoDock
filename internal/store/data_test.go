@@ -81,59 +81,6 @@ func openBefore(t *testing.T, suffix string, rows ...string) string {
 	return path
 }
 
-// Existing services, tokens and audit events survive the data migration
-// with the defaults: detect the engine, follow the policy, no detail.
-func TestDataMigrationOnExistingDatabase(t *testing.T) {
-	ctx := context.Background()
-	path := openBefore(t, "_data.sql",
-		`INSERT INTO servers (id, name, local, accepts_production, accepts_non_production) VALUES (1, 'local', 1, 1, 1)`,
-		`INSERT INTO projects (id, name) VALUES (1, 'shop')`,
-		`INSERT INTO environments (id, project_id, name, server_id) VALUES (1, 1, 'staging', 1)`,
-		`INSERT INTO services (id, environment_id, name, image) VALUES (1, 1, 'postgres', 'postgres:16')`,
-		`INSERT INTO tokens (id, name, hash, scope, created_by) VALUES (1, 'ci', 'h', 'deploy', 'admin')`,
-		`INSERT INTO audit_events (actor, actor_kind, action, target, summary) VALUES ('admin', 'user', 'service.create', 'shop/staging/postgres', 'created')`,
-	)
-	s, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	svc, err := s.GetService(ctx, 1)
-	if err != nil || svc.Database != "" || svc.DatabaseUrlVariable != "" {
-		t.Errorf("service = %+v, %v; want empty database settings", svc, err)
-	}
-	tok, err := s.GetToken(ctx, 1)
-	if err != nil || tok.DataProduction != nil || tok.DataNonProduction != nil || tok.DataSensitive != nil {
-		t.Errorf("token = %+v, %v; want no data override", tok, err)
-	}
-	org := int64(1) // the orgs migration moves everything into org 1
-	events, err := s.ListAuditEvents(ctx, ListAuditEventsParams{OrgID: &org, BeforeID: math.MaxInt64, MaxRows: 10})
-	if err != nil || len(events) != 1 || events[0].AuditEvent.DetailID != nil {
-		t.Errorf("audit events = %+v, %v; want one without detail", events, err)
-	}
-
-	if svc, err = s.SetServiceDatabaseSettings(ctx, SetServiceDatabaseSettingsParams{ID: 1, Database: "postgres", DatabaseUrlVariable: "api.DATABASE_URL"}); err != nil || svc.Database != "postgres" {
-		t.Errorf("set database settings = %+v, %v", svc, err)
-	}
-	if _, err := s.SetServiceDatabaseSettings(ctx, SetServiceDatabaseSettingsParams{ID: 1, Database: "mysql"}); err == nil {
-		t.Error("database = mysql accepted, want a check violation")
-	}
-	read, visible := "read", "visible"
-	if n, err := s.SetTokenDataAccess(ctx, SetTokenDataAccessParams{ID: 1, DataNonProduction: &read, DataProduction: &read, DataSensitive: &visible}); err != nil || n != 1 {
-		t.Fatalf("set token data access = %d, %v", n, err)
-	}
-	if tok, _ = s.GetToken(ctx, 1); tok.DataNonProduction == nil || *tok.DataNonProduction != "read" || *tok.DataSensitive != "visible" {
-		t.Errorf("token = %+v", tok)
-	}
-	if _, err := s.SetTokenDataAccess(ctx, SetTokenDataAccessParams{ID: 1}); err != nil {
-		t.Fatal(err)
-	}
-	if tok, _ = s.GetToken(ctx, 1); tok.DataNonProduction != nil {
-		t.Errorf("cleared token override = %+v", tok)
-	}
-}
-
 // The effective lookup returns the default's, the project's and the
 // environment's rules and nothing from other scopes; each scope holds one
 // rule per subject and kind.

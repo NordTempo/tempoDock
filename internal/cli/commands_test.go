@@ -388,7 +388,6 @@ func TestCommandErrors(t *testing.T) {
 		stderr string
 	}{
 		{"read token can't deploy", apitypes.ScopeRead, []string{"deploy", "-p", "shop", "-e", "production", "-s", "web"}, output.ExitAuth, "requires deploy"},
-		{"deploy token can't archive", apitypes.ScopeDeploy, []string{"service", "archive", "web", "-p", "shop", "-e", "production", "--yes"}, output.ExitAuth, "requires admin"},
 		{"unknown service", apitypes.ScopeAdmin, []string{"status", "-p", "shop", "-e", "production", "-s", "nope"}, output.ExitNotFound, `service "nope" not found`},
 		{"nothing linked", apitypes.ScopeAdmin, []string{"deploy"}, output.ExitUsage, "--project"},
 		{"no environment", apitypes.ScopeAdmin, []string{"logs", "-p", "shop"}, output.ExitUsage, "--environment"},

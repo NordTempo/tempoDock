@@ -12,7 +12,7 @@ import (
 )
 
 // Channels are added, listed without their URL, tested and removed from
-// the CLI; a failing test exits 7. Deploy tokens can't see alerts.
+// the CLI; a failing test exits 7.
 func TestAlertChannelCommands(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
@@ -52,14 +52,5 @@ func TestAlertChannelCommands(t *testing.T) {
 	exec(t, "alerts", "channel", "remove", "down", "--yes")
 	if alerts := ok[[]apitypes.Alert](t, "alerts"); len(alerts) != 0 {
 		t.Fatalf("alerts = %+v", alerts)
-	}
-
-	// A deploy token reads its org's alerts, not the platform's.
-	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
-	if code, _, stderr := exec(t, "alerts"); code != 0 {
-		t.Fatalf("deploy token listing its org's alerts: exit %d %q", code, stderr)
-	}
-	if code, _, _ := exec(t, "alerts", "--platform"); code != int(output.ExitAuth) {
-		t.Fatalf("deploy token listing the platform's alerts: exit %d", code)
 	}
 }

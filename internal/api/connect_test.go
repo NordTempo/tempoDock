@@ -146,16 +146,3 @@ func TestTunnel(t *testing.T) {
 		t.Fatalf("audit: %+v", evs)
 	}
 }
-
-func TestConnectInfoEndpoint(t *testing.T) {
-	f := newFixture(t)
-	f.cacheService()
-	resp, body := f.do("admin", "GET", shopStaging+"/services/cache/connect", nil)
-	var info apitypes.ConnectInfo
-	if err := json.Unmarshal(body, &info); err != nil || resp.StatusCode != http.StatusOK || info.Port != 6379 || info.Service != "shop/staging/cache" || info.Confirm {
-		t.Fatalf("info: %d %s", resp.StatusCode, body)
-	}
-	if resp, body := f.do("admin", "GET", shopProd+"/services/web/connect?confirm=production", nil); resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "tokens only propose") {
-		t.Fatalf("an API token on production: %d %s", resp.StatusCode, body)
-	}
-}

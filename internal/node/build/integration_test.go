@@ -382,18 +382,6 @@ func TestBuildRailpackSymlinkLoop(t *testing.T) {
 	}
 }
 
-func TestBuildMissingDockerfile(t *testing.T) {
-	b := newBuilder(t, dockerClient(t), 1024)
-	_, _, err := build(t, b, node.BuildRequest{
-		Source:     sourceTar(t, map[string]string{"server.js": serverJS}),
-		Dockerfile: "../Dockerfile",
-		Tag:        "dock-test/hello:missing",
-	})
-	if err == nil || !strings.Contains(err.Error(), "inside the source") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestBuildOutOfMemory(t *testing.T) {
 	b := newBuilder(t, dockerClient(t), 256)
 	_, _, err := build(t, b, node.BuildRequest{

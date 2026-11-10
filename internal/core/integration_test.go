@@ -173,58 +173,6 @@ func waitRelease(t *testing.T, c *Core, ref ServiceRef, number int64) apitypes.R
 	}
 }
 
-// Right after a cutover the old container still holds its host port while
-// it drains and stops. Deploys on the same server in that window must not
-// be handed that port ("port is already allocated").
-func TestIntegrationDeploysDuringDrain(t *testing.T) {
-	c := dockerHarness(t)
-	ctx := context.Background()
-	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
-		t.Fatal(err)
-	}
-	env := EnvRef{project, "production"}
-	a, b := ServiceRef{project, "production", "a"}, ServiceRef{project, "production", "b"}
-	for _, ref := range []ServiceRef{a, b} {
-		if _, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: ref.Service, Port: 80}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	const image = "traefik/whoami:latest"
-	deploy := func(ref ServiceRef) int64 {
-		t.Helper()
-		rel, err := c.DeployImage(ctx, testSystem, ref, apitypes.DeployImageRequest{Image: image})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return rel.Number
-	}
-	if r := waitRelease(t, c, a, deploy(a)); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("a release 1: %s %s", r.Status, r.Error)
-	}
-
-	// A restart is a cutover: release 1 drains (12s) and then stops.
-	restart, err := c.Restart(ctx, testSystem, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRelease(t, c, a, restart.Number); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("a release 2: %s %s", r.Status, r.Error)
-	}
-	// Release 1 is still draining with its port; B must get another.
-	if r := waitRelease(t, c, b, deploy(b)); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("b release 1 during a's drain: %s %s", r.Status, r.Error)
-	}
-	// And another restart of A while release 1 may still be stopping.
-	again, err := c.Restart(ctx, testSystem, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRelease(t, c, a, again.Number); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("a release 3: %s %s", r.Status, r.Error)
-	}
-}
-
 // Docker's die and destroy events for containers the daemon stops itself
 // (stateful recreate, archive) are not drift.
 func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {

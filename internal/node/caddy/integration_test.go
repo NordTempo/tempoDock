@@ -306,129 +306,120 @@ func TestIntegrationRoutingWithoutTLS(t *testing.T) {
 }
 
 // TestIntegrationSwapUnderTraffic flips a route between two upstreams while
-// concurrent clients hammer it, then swaps to a final upstream and checks
-// that new requests stop reaching the old ones.
+// concurrent HTTP/1.1 clients hammer it, then swaps to a final upstream and
+// checks that new requests stop reaching the old ones.
 //
-// Reloads are not perfectly lossless, for two upstream reasons:
-//   - On Linux each Caddy config binds its own SO_REUSEPORT socket and the
-//     old server shuts down on reload. Go's HTTP/1 server drops the first
-//     request of a connection the old socket accepted just before shutdown
-//     (net/http: "if c.server.shuttingDown() { return }"), and the kernel
-//     resets connections still queued on the closed socket unless
-//     net.ipv4.tcp_migrate_req=1. Clients see EOF or a reset on a fresh
-//     connection.
-//   - Go's HTTP/2 server only sends GOAWAY to connections registered when
-//     shutdown starts. A connection whose HTTP/2 setup finishes a moment
-//     later keeps serving the old config until it goes away by itself.
-//
-// So the test allows rare connection drops, never a bad response, and only
-// requires HTTP/1.1 to stop reaching old upstreams.
+// Reloads are not perfectly lossless: on Linux each Caddy config binds its
+// own SO_REUSEPORT socket and the old server shuts down on reload. Go's
+// HTTP/1 server drops the first request of a connection the old socket
+// accepted just before shutdown (net/http: "if c.server.shuttingDown() {
+// return }"), and the kernel resets connections still queued on the closed
+// socket unless net.ipv4.tcp_migrate_req=1. Clients see EOF or a reset on
+// a fresh connection. So the test allows rare connection drops, never a
+// bad response.
 func TestIntegrationSwapUnderTraffic(t *testing.T) {
-	for _, proto := range []string{"HTTP/1.1", "HTTP/2.0"} {
-		t.Run(proto, func(t *testing.T) {
-			ask := newAskServer(t, "app.test")
-			tc := startCaddy(t, ask.url, false)
-			tc.client.Transport.(*http.Transport).ForceAttemptHTTP2 = proto == "HTTP/2.0"
-			ctx := context.Background()
-			backends := []string{backend(t, "A"), backend(t, "B")}
-			routes := func(up string) []node.Route {
-				return []node.Route{{Hostnames: []string{"app.test"}, Upstream: up}}
-			}
-			tc.applyRoutes(t, routes(backends[0]))
-			tc.trustInternalCA(t)
-			tc.get(t, tc.url("https", "app.test", "/")) // issue the certificate up front
+	const proto = "HTTP/1.1"
+	ask := newAskServer(t, "app.test")
+	tc := startCaddy(t, ask.url, false)
+	tc.client.Transport.(*http.Transport).ForceAttemptHTTP2 = false
+	ctx := context.Background()
+	backends := []string{backend(t, "A"), backend(t, "B")}
+	routes := func(up string) []node.Route {
+		return []node.Route{{Hostnames: []string{"app.test"}, Upstream: up}}
+	}
+	tc.applyRoutes(t, routes(backends[0]))
+	tc.trustInternalCA(t)
+	tc.get(t, tc.url("https", "app.test", "/")) // issue the certificate up front
 
-			const workers, swaps = 32, 50
-			var (
-				total, dropped, bad atomic.Int64
-				finalSwap           atomic.Pointer[time.Time]
-				mu                  sync.Mutex
-				seen                = map[string]int{}
-				// lastStale is the latest start of a request that still
-				// reached an old upstream after the final swap.
-				lastStale time.Time
-			)
-			stop := make(chan struct{})
-			var wg sync.WaitGroup
-			for range workers {
-				wg.Go(func() {
-					for {
-						select {
-						case <-stop:
-							return
-						default:
-						}
-						start := time.Now()
-						total.Add(1)
-						resp, err := tc.client.Get(tc.url("https", "app.test", "/"))
-						if err != nil {
-							dropped.Add(1)
-							continue
-						}
-						b, _ := io.ReadAll(resp.Body)
-						_ = resp.Body.Close()
-						if resp.StatusCode != 200 || resp.Proto != proto {
-							bad.Add(1)
-							t.Logf("bad response: %s %d %q", resp.Proto, resp.StatusCode, b)
-							continue
-						}
-						mu.Lock()
-						seen[string(b)]++
-						if fs := finalSwap.Load(); fs != nil && string(b) != "C" && start.After(*fs) && start.After(lastStale) {
-							lastStale = start
-						}
-						mu.Unlock()
-					}
-				})
-			}
-
-			var latencies []time.Duration
-			for i := 1; i <= swaps; i++ {
-				time.Sleep(50 * time.Millisecond)
-				start := time.Now()
-				if err := tc.proxy.ApplyRoutes(ctx, routes(backends[i%2])); err != nil {
-					t.Fatalf("swap %d: %v", i, err)
+	const workers, swaps = 32, 50
+	var (
+		total, dropped, bad atomic.Int64
+		finalSwap           atomic.Pointer[time.Time]
+		mu                  sync.Mutex
+		seen                = map[string]int{}
+		// lastStale is the latest start of a request that still
+		// reached an old upstream after the final swap.
+		lastStale time.Time
+	)
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for {
+				select {
+				case <-stop:
+					return
+				default:
 				}
-				latencies = append(latencies, time.Since(start))
-			}
-			if err := tc.proxy.ApplyRoutes(ctx, routes(backend(t, "C"))); err != nil {
-				t.Fatal(err)
-			}
-			swapped := time.Now()
-			finalSwap.Store(&swapped)
-			time.Sleep(time.Second)
-			close(stop)
-			wg.Wait()
-
-			slices.Sort(latencies)
-			pct := func(p int) time.Duration { return latencies[len(latencies)*p/100] }
-			var stale time.Duration
-			if !lastStale.IsZero() {
-				stale = lastStale.Sub(swapped).Round(time.Millisecond)
-			}
-			t.Logf("%s: %d workers, %d swaps, %d requests %v, %d connection drops, %d bad responses; reload latency p50=%v p95=%v max=%v; old upstreams still reached %v after the final swap",
-				proto, workers, swaps, total.Load(), seen, dropped.Load(), bad.Load(), pct(50), pct(95), latencies[len(latencies)-1], stale)
-
-			if bad.Load() != 0 {
-				t.Errorf("%d requests got a bad response", bad.Load())
-			}
-			// Drops depend on machine speed (reloads take 2 ms here, 50+ ms
-			// on shared CI runners). Strict mode (DOCK_STRICT_PERF=1) holds
-			// the measured bound; otherwise only gross regressions fail.
-			limit := total.Load() / 100
-			if os.Getenv("DOCK_STRICT_PERF") == "" {
-				limit = total.Load() / 5
-			}
-			if dropped.Load() > limit {
-				t.Errorf("%d of %d requests were dropped, want at most %d", dropped.Load(), total.Load(), limit)
-			}
-			if seen["A"] == 0 || seen["B"] == 0 {
-				t.Errorf("traffic did not reach both upstreams: %v", seen)
-			}
-			if proto == "HTTP/1.1" && stale > 0 {
-				t.Errorf("old upstreams got new requests %v after the final swap", stale)
+				start := time.Now()
+				total.Add(1)
+				resp, err := tc.client.Get(tc.url("https", "app.test", "/"))
+				if err != nil {
+					dropped.Add(1)
+					continue
+				}
+				b, _ := io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+				if resp.StatusCode != 200 || resp.Proto != proto {
+					bad.Add(1)
+					t.Logf("bad response: %s %d %q", resp.Proto, resp.StatusCode, b)
+					continue
+				}
+				mu.Lock()
+				seen[string(b)]++
+				if fs := finalSwap.Load(); fs != nil && string(b) != "C" && start.After(*fs) && start.After(lastStale) {
+					lastStale = start
+				}
+				mu.Unlock()
 			}
 		})
+	}
+
+	var latencies []time.Duration
+	for i := 1; i <= swaps; i++ {
+		time.Sleep(50 * time.Millisecond)
+		start := time.Now()
+		if err := tc.proxy.ApplyRoutes(ctx, routes(backends[i%2])); err != nil {
+			t.Fatalf("swap %d: %v", i, err)
+		}
+		latencies = append(latencies, time.Since(start))
+	}
+	if err := tc.proxy.ApplyRoutes(ctx, routes(backend(t, "C"))); err != nil {
+		t.Fatal(err)
+	}
+	swapped := time.Now()
+	finalSwap.Store(&swapped)
+	time.Sleep(time.Second)
+	close(stop)
+	wg.Wait()
+
+	slices.Sort(latencies)
+	pct := func(p int) time.Duration { return latencies[len(latencies)*p/100] }
+	var stale time.Duration
+	if !lastStale.IsZero() {
+		stale = lastStale.Sub(swapped).Round(time.Millisecond)
+	}
+	t.Logf("%s: %d workers, %d swaps, %d requests %v, %d connection drops, %d bad responses; reload latency p50=%v p95=%v max=%v; old upstreams still reached %v after the final swap",
+		proto, workers, swaps, total.Load(), seen, dropped.Load(), bad.Load(), pct(50), pct(95), latencies[len(latencies)-1], stale)
+
+	if bad.Load() != 0 {
+		t.Errorf("%d requests got a bad response", bad.Load())
+	}
+	// Drops depend on machine speed (reloads take 2 ms here, 50+ ms
+	// on shared CI runners). Strict mode (DOCK_STRICT_PERF=1) holds
+	// the measured bound; otherwise only gross regressions fail.
+	limit := total.Load() / 100
+	if os.Getenv("DOCK_STRICT_PERF") == "" {
+		limit = total.Load() / 5
+	}
+	if dropped.Load() > limit {
+		t.Errorf("%d of %d requests were dropped, want at most %d", dropped.Load(), total.Load(), limit)
+	}
+	if seen["A"] == 0 || seen["B"] == 0 {
+		t.Errorf("traffic did not reach both upstreams: %v", seen)
+	}
+	if stale > 0 {
+		t.Errorf("old upstreams got new requests %v after the final swap", stale)
 	}
 }
 

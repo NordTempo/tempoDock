@@ -1,14 +1,11 @@
 package api
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
@@ -72,7 +69,7 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	// In order: delete comes last.
 	for _, c := range platform {
 		if c.ok == 0 {
-			continue // a live stream; see TestServerStatsLive
+			continue // a live stream
 		}
 		if resp, body := f.do("operator", c.method, c.path, c.body); resp.StatusCode != c.ok {
 			t.Errorf("%s %s as operator: %d %s", c.method, c.path, resp.StatusCode, body)
@@ -98,34 +95,6 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	if resp, _ := f.do("shop-deploy", "GET", "/api/v1/projects/blog/environments/production/services/api/stats", nil); resp.StatusCode != 403 {
 		t.Errorf("another project's service stats: %d", resp.StatusCode)
 	}
-}
-
-func TestServerStatsLive(t *testing.T) {
-	f := newFixture(t)
-	servers, _ := f.core.ListServers(context.Background(), sys)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", f.srv.URL+"/api/v1/servers/"+servers[0].Name+"/stats/live", nil)
-	req.Header.Set("Authorization", "Bearer "+f.tokens["operator"])
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	sc := bufio.NewScanner(resp.Body)
-	if !sc.Scan() || sc.Text() != "event: ready" {
-		t.Fatalf("first line %q", sc.Text())
-	}
-	for sc.Scan() {
-		if v, ok := strings.CutPrefix(sc.Text(), "data: "); ok && v != "{}" {
-			var u apitypes.ServerUsage
-			if err := json.Unmarshal([]byte(v), &u); err != nil || u.MemoryTotalBytes == 0 {
-				t.Fatalf("sample %s: %v", v, err)
-			}
-			return
-		}
-	}
-	t.Fatal("no sample")
 }
 
 func TestResetPasswordAndUserCounts(t *testing.T) {

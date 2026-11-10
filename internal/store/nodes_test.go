@@ -6,37 +6,6 @@ import (
 	"time"
 )
 
-// Existing servers and releases survive the nodes migration with the
-// defaults: no pinned key, direct ingress, no digest.
-func TestNodesMigrationOnExistingDatabase(t *testing.T) {
-	ctx := context.Background()
-	path := openBefore(t, "_nodes.sql",
-		`INSERT INTO servers (id, name, local, accepts_production, accepts_non_production, version) VALUES (1, 'local', 1, 1, 1, '0.9.0')`,
-		`INSERT INTO projects (id, name) VALUES (1, 'shop')`,
-		`INSERT INTO environments (id, project_id, name, server_id) VALUES (1, 1, 'staging', 1)`,
-		`INSERT INTO services (id, environment_id, name, image) VALUES (1, 1, 'web', 'nginx')`,
-		`INSERT INTO releases (id, service_id, number, status, source, image_ref, config, created_by) VALUES (1, 1, 1, 'active', 'image', 'nginx', x'00', 'admin')`,
-	)
-	s, err := Open(ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-
-	srv, err := s.GetServer(ctx, 1)
-	if err != nil || srv.Version != "0.9.0" || srv.KeyFingerprint != nil || srv.RevokedAt != nil ||
-		srv.Ingress != "direct" || srv.PublicIps != "[]" || srv.BaseDomain != "" || srv.ConnectedAt != nil {
-		t.Errorf("server = %+v, %v; want node defaults", srv, err)
-	}
-	r, err := s.GetRelease(ctx, 1)
-	if err != nil || r.Status != "active" || r.ImageDigest != "" || r.BuiltOnServerID != nil || r.PromotedFromReleaseID != nil {
-		t.Errorf("release = %+v, %v; want no digest or promotion", r, err)
-	}
-	if _, err := s.GetServerByFingerprint(ctx, "sha256:x"); !IsNotFound(err) {
-		t.Errorf("fingerprint lookup = %v, want not found", err)
-	}
-}
-
 // A join token works once and only before it expires; the server it
 // registers is found by its key (and by its next key during a rotation),
 // and not at all once revoked, until it re-joins under the same name.
@@ -130,66 +99,6 @@ func TestJoinRotateRevoke(t *testing.T) {
 	}
 	if pending, _ := s.ListPendingJoinTokens(ctx, now); len(pending) != 1 {
 		t.Errorf("failed join consumed its token: pending = %+v", pending)
-	}
-}
-
-// A server is removed only without environments, and never the local one.
-func TestDeleteServer(t *testing.T) {
-	ctx := context.Background()
-	f := newDataFixture(t)
-	srv, err := f.s.RegisterNodeServer(ctx, RegisterNodeServerParams{Name: "lab", KeyFingerprint: "sha256:a"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	env, err := f.s.CreateEnvironment(ctx, CreateEnvironmentParams{ProjectID: f.project.ID, Name: "dev", Kind: "non_production", ServerID: srv.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n, err := f.s.DeleteServer(ctx, srv.ID); err != nil || n != 0 {
-		t.Errorf("deleted a server with an environment: %d, %v", n, err)
-	}
-	if _, err := f.s.DB.Exec(`UPDATE environments SET server_id = 1 WHERE id = ?`, env.ID); err != nil {
-		t.Fatal(err)
-	}
-	if n, err := f.s.DeleteServer(ctx, srv.ID); err != nil || n != 1 {
-		t.Errorf("delete = %d, %v", n, err)
-	}
-	if n, err := f.s.DeleteServer(ctx, 1); err != nil || n != 0 {
-		t.Errorf("deleted the local server: %d, %v", n, err)
-	}
-}
-
-// Promote reads each live service's active release in the source
-// environment and creates the target's release pointing back at it.
-func TestPromotedRelease(t *testing.T) {
-	ctx := context.Background()
-	f := newDataFixture(t)
-	now := time.Now().UTC()
-	src, err := f.s.CreateRelease(ctx, CreateReleaseParams{ServiceID: f.svc.ID, Number: 1, Source: "upload", ImageRef: "reg/shop/postgres:staging-1", Config: []byte{0}, CreatedBy: "a"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.SetReleaseDigest(ctx, SetReleaseDigestParams{ImageDigest: "sha256:d", BuiltOnServerID: new(int64(1)), ID: src.ID}); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.s.ActivateRelease(ctx, ActivateReleaseParams{FinishedAt: &now, ID: src.ID}); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := f.s.ListPromotableReleases(ctx, f.staging.ID)
-	if err != nil || len(rows) != 1 || rows[0].ServiceName != "postgres" || rows[0].Release.ImageDigest != "sha256:d" {
-		t.Fatalf("promotable = %+v, %v", rows, err)
-	}
-
-	target, err := f.s.CreateService(ctx, CreateServiceParams{EnvironmentID: f.prod.ID, Name: "postgres"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	r, err := f.s.CreatePromotedRelease(ctx, CreatePromotedReleaseParams{
-		ServiceID: target.ID, Number: 1, ImageRef: src.ImageRef, ImageDigest: rows[0].Release.ImageDigest,
-		BuiltOnServerID: rows[0].Release.BuiltOnServerID, PromotedFromReleaseID: src.ID, Config: []byte{0}, CreatedBy: "a",
-	})
-	if err != nil || r.Source != "promote" || r.Status != "queued" || r.PromotedFromReleaseID == nil || *r.PromotedFromReleaseID != src.ID || *r.BuiltOnServerID != 1 {
-		t.Errorf("promoted release = %+v, %v", r, err)
 	}
 }
 

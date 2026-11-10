@@ -37,9 +37,8 @@ wait`
 
 // A live app that hangs while its process stays alive, on real Docker
 // with dock-probe: it is marked unhealthy and alerted on, restarted at
-// once, and recovers (resolving the alert). Hanging again within the
-// backoff escalates the alert without a restart; the tick restarts it
-// once the backoff is over, and it recovers again.
+// once, and recovers (resolving the alert). The backoff after that is
+// TestUnhealthyServiceIsRestartedWithBackoff's.
 func TestIntegrationUnhealthyAppIsRestarted(t *testing.T) {
 	c := dockerHarnessWithProbe(t, buildProbe(t))
 	ctx := context.Background()
@@ -111,22 +110,6 @@ func TestIntegrationUnhealthyAppIsRestarted(t *testing.T) {
 	if s := status(); s.State != apitypes.ServiceRunning || s.RestartCount != 0 {
 		t.Fatalf("status after recovering = %+v", s)
 	}
-
-	// Hangs again within the backoff: critical, but not restarted yet.
-	hang()
-	until("critical alert", 30*time.Second, func() bool {
-		msg, ok := alert()
-		return ok && strings.HasPrefix(msg, "critical ")
-	})
-	time.Sleep(3 * time.Second)
-	if s := status(); s.HealthRestarts != 1 || s.Health != apitypes.HealthUnhealthy {
-		t.Fatalf("status within the backoff = %+v", s)
-	}
-	// The tick restarts it once the backoff is over, and it recovers.
-	c.healthTick(ctx, time.Now().Add(2*time.Minute))
-	until("second restart", 60*time.Second, func() bool { return status().HealthRestarts == 2 })
-	until("recovered again", 60*time.Second, func() bool { return status().Health == apitypes.HealthHealthy })
-	until("alert resolved again", 10*time.Second, func() bool { _, ok := alert(); return !ok })
 }
 
 // buildProbe builds cmd/dock-probe for this machine, static like `make

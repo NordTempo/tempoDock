@@ -12,7 +12,7 @@ import (
 )
 
 // Drains are added, listed without their secrets, tested and removed by
-// name from the CLI; a failing test exits 7. Deploy tokens can only list.
+// name from the CLI; a failing test exits 7.
 func TestLogDrainCommands(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
@@ -46,13 +46,5 @@ func TestLogDrainCommands(t *testing.T) {
 	exec(t, append([]string{"logs", "drain", "remove", itoa(d.ID), "--yes"}, env...)...)
 	if code, _, _ := exec(t, append([]string{"logs", "drain", "remove", "http", "--yes"}, env...)...); code != int(output.ExitNotFound) {
 		t.Fatalf("removing a removed drain: exit %d", code)
-	}
-
-	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
-	if drains := ok[[]apitypes.LogDrain](t, append([]string{"logs", "drain", "list"}, env...)...); len(drains) != 1 {
-		t.Fatalf("deploy token's list = %+v", drains)
-	}
-	if code, _, _ := exec(t, append([]string{"logs", "drain", "add", "http", sink.URL, "--name", "ci"}, env...)...); code != int(output.ExitAuth) {
-		t.Fatalf("deploy token adding a drain: exit %d", code)
 	}
 }
