@@ -37,5 +37,9 @@ After changing either directory: `go generate ./internal/store` and commit
 the generated files. Never edit `*.sql.go`, `models.go` or `db.go` by
 hand.
 
+Tests open a migrated database with `storetest.Open(t, path)`: it
+migrates once per test binary and copies the result, which is far faster
+than `store.Open` on an empty file (seconds under `-race`).
+
 `internal/tempobase/tbstore` is tempoBase's store and follows the same
 rules (`go generate ./internal/tempobase/tbstore`).

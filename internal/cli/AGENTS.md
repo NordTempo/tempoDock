@@ -16,8 +16,9 @@ daemon's dependencies (Docker, BuildKit, Caddy, SQLite, Huma).
   `serverCommands()` (`server_cmds.go`; `cli_only.go` is the client's
   empty version).
 - Client commands import `apitypes`, `clientconfig`, `cli/apiclient`,
-  `cli/output` and small leaf packages (`pack`, `repoconfig`, `version`),
-  nothing heavier. Check with `go build -tags dockcli ./cmd/dock`.
+  `cli/output` and small leaf packages (`pack`, `repoconfig`,
+  `projectfile`, `cron`, `runframe`, `version`), nothing heavier. Check
+  with `go list -tags dockcli -deps ./cmd/dock`.
 - Nothing runs at start-up that `--help` doesn't need: no network, no
   config reads in `init`.
 

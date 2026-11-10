@@ -1,6 +1,6 @@
 # 0046: Log history past the container, and log drains
 
-Status: accepted (decided by the agent)
+Status: accepted (decided by the agent); superseded in part by [0062](0062-org-alerts-and-operators.md) (every running container's log is followed, for errors)
 
 ## Context
 

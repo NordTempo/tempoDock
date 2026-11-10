@@ -14,7 +14,7 @@ control plane.
 | Docker | Docker Engine 28 or newer, installed and running (`systemctl enable --now docker`), with its default iptables firewall backend. Older versions expose ports published on 127.0.0.1 to the LAN; the script warns |
 | Tools | `curl` (downloads Caddy, detects the public IP), `iptables` (the app firewall) |
 | Access | root (`sudo`) |
-| Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-m0)). Builds are capped at 2 GB by default |
+| Size | 2 vCPU / 4 GB is comfortable. Idle platform is about 490 MB including Docker, Caddy and BuildKit ([measured](../experience.md#measured-in-the-m0-spike-2026-10)). Builds are capped at 2 GB by default |
 | Ports | 80/tcp, 443/tcp and 443/udp public. The API port (7070) and node port (7443) private: Dock goes public only through Caddy, at its [public address](#public-address). None on a [Cloudflare Tunnel](#cloudflare-tunnel) server |
 | cgroups | cgroup v2 (the default on current distributions) for per-service statistics. Docker's systemd and cgroupfs drivers both work |
 | Optional | Tailscale, so the API listens on the tailnet by default. Recommended for every server once there's more than one |
@@ -183,7 +183,8 @@ running).
 | `[buildkit] memory_mb` | `2048` | Hard memory cap for builds (no swap). Builds over it fail; apps are unaffected |
 | `[buildkit] cpus` | `1` | CPU cap for builds. Builds also get a quarter of the normal CPU weight |
 | `[buildkit] timeout_minutes` | `30` | A build running longer fails, on any builder (read by the control plane). A release's build log stops at 16 MB |
-| `[backup] restic_image` | `restic/restic:0.18.1@sha256:39d9…` | Where backup jobs get the restic binary, pinned by digest. The repository and retention are set with `dock backup configure` |
+| `[backup] restic_image` | `restic/restic:0.18.1@sha256:39d9…` | Where backup jobs get the restic binary, pinned by digest. Retention is set with `dock backup configure`, the repository with `dock backup move` |
+| `[backup] snapshot_keep`, `snapshot_days` | `5`, `7` | [Volume snapshots](../decisions/0047-volume-snapshots.md) kept per service, and for how many days at most |
 | `[network] pool` | `10.213.0.0/16` | IPv4 range app networks get their addresses from, a /24 per environment. Keep it clear of your LAN and VPNs |
 | `[network] allow_private` | `[]` | Private CIDRs apps and builds may reach, e.g. `["192.168.10.20/32"]` for a NAS. See [App firewall](#app-firewall) |
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
@@ -217,6 +218,10 @@ running).
 | `[alerts] crash_loop_restarts`, `crash_loop_minutes` | `3`, `10` | This many restarts within this many minutes is a crash loop |
 | `[alerts] memory_warning_percent`, `memory_critical_percent`, `memory_minutes` | `90`, `97`, `5` | A server's memory use above this for this many minutes raises a warning or critical alert |
 | `[alerts] cpu_percent`, `cpu_minutes` | `90`, `15` | A server's CPUs busier than this for this many minutes raise a warning; `0` never |
+| `[analytics] ingest_listen` | `127.0.0.1:7077` | Loopback address Caddy sends [Dock Analytics](../decisions/0037-analytics.md) events to. Must be loopback; empty turns the ingest off |
+| `[analytics] stats_listen` | `127.0.0.1:7078` | Loopback address of sites' public dashboards. Empty turns them off |
+| `[analytics] spool_max_mb` | `256` | Events waiting for the store, at most; past it the oldest go. At least `16` |
+| `[analytics] store_port`, `store_memory_mb` | `7076`, `512` | On the analytics server: the store's loopback port and memory limit (at least `256`) |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
 | `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. A private repository needs one |
 
@@ -482,7 +487,26 @@ dock project pin shop --kind production --server vps-2
 
 When no server can take an environment, creating it fails and names the
 servers that accept the kind and why each is out (offline or disabled).
-Moving a placed project to another server is a later feature.
+
+### Moving environments and draining a server
+
+An environment moves to another server with its volumes, snapshots and
+domains, without downtime: see [moving an
+environment](deploying.md#move-an-environment-to-another-server). To
+empty a server for maintenance or before removing it, drain it
+([ADR 0063](../decisions/0063-moves-without-downtime-and-server-drains.md)):
+
+```sh
+dock server drain hetzner-1 --dry-run                 # the plan: each environment and its target
+dock server drain hetzner-1 --to shop=hetzner-2 --yes
+dock server drain hetzner-1 --status                  # progress and the server's forwards
+```
+
+A drain moves the server's environments (or one kind's, `--kind`) one at a
+time, to the server placement would pick or the one `--to` names, and
+stops the server taking new ones. A failed move pauses it: `--resume`
+tries again, `--resume --skip` leaves that environment where it is,
+`--cancel` stops after the move that runs. Drains are for operators.
 
 Upgrading from a version with server roles keeps every environment where it
 is. A production-role server accepts production, a non-production one

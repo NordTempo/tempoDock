@@ -3,6 +3,7 @@
 Status: accepted (the plan agreed with Saile; the budgets revised by the
 agent with the spike's numbers below, and the UI mocks picked by the
 agent on Saile's direction).
+Superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md) (the service's Analytics tab became the org's Analytics area).
 
 ## Context
 

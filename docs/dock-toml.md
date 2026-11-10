@@ -3,12 +3,14 @@
 An optional file at the root of a repo that holds the settings belonging to
 the code: how to build it and how to run it
 ([ADR 0007](decisions/0007-config-db-plus-repo-file.md)). It is read on every
-deploy. A field set here wins over the platform's stored value and shows as
+source deploy (`dock deploy` or a git push); an image deploy has none. A field set here wins over the platform's stored value and shows as
 locked in the UI; a field left out falls back to the platform.
 
-Variables, secrets, domains, resource limits, volumes and replicas are not
+Variables, secrets, domains, resource limits and volumes are not
 configured here, and there are no per-environment sections. Anything that
-differs between environments lives in the platform.
+differs between environments lives in the platform. A whole project's
+config, all environments included, is a [project file](project-file.md)
+instead.
 
 ```toml
 [build]

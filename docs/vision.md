@@ -35,17 +35,21 @@ and what we deliberately don't build yet.
 - One-command deploys of any Dockerized app to your own server.
 - Railway's model: projects, environments, services and variables, with private
   networking between services in the same environment.
-- UI and CLI parity. Everything you can do in one, you can do in the other.
+- UI and CLI parity. Everything you can do in one, you can do in the other
+  ([ADR 0026](decisions/0026-ui-cli-parity.md)).
 - Agent-safe by design, enforced server-side.
 - Own your data. No external control plane required.
 
 ## Non-goals (for now)
 
 - Clustering: spreading one environment across servers, or automatic failover
-  (we do place whole environments on different servers, see
-  [ADR 0010](decisions/0010-environments-on-servers.md))
+  (we do place whole environments on different servers and move them
+  without downtime when asked, see
+  [ADR 0010](decisions/0010-environments-on-servers.md) and
+  [0063](decisions/0063-moves-without-downtime-and-server-drains.md))
 - Kubernetes, Nomad, Swarm or any orchestrator layer
-- Billing, or hosting untrusted customer workloads (organizations exist,
+- Billing, open signup, or hosting untrusted customer workloads
+  (organizations exist, invite-only,
   [ADR 0027](decisions/0027-organizations.md); hosting is its own design)
 - Managed databases beyond "a container with a volume and backups"
 - Building our own reverse proxy or container runtime

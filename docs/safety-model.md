@@ -11,14 +11,18 @@ access goes through the daemon's API, which enforces permissions.
 | Scope | Allows |
 |---|---|
 | `read` | Status, logs, releases, variable *names* |
-| `deploy` | Deploy, rollback, restart, set variables, add domains |
-| `admin` | Destroy services, delete volumes, manage users and tokens, read secret values |
+| `deploy` | Deploy, rollback, restart, set variables, add domains, run commands |
+| `admin` | Archive services and projects, manage members, tokens and locks, read secret values |
 
-- Tokens can be limited to specific projects and environments, so an agent can
-  deploy `myapp/staging` but not `myapp/production`.
+- Scopes act within one organization ([0027](decisions/0027-organizations.md)).
+  Tokens can also be limited to specific projects and environments, so an
+  agent can deploy `myapp/staging` but not `myapp/production`.
 - Tokens are stored hashed, have a name, and can expire.
-- Users have a role that maps to the same scopes. In v1 that's mostly "admin",
-  but the check is the same code path tokens use.
+- Users have a role per organization that maps to the same scopes; the
+  check is the same code path tokens use. Running the platform (servers,
+  storage, backups, accounts, sign-in, updates) needs an **operator**,
+  a user or token with the operator flag, not an org role
+  ([0062](decisions/0062-org-alerts-and-operators.md)).
 - **Two kinds of token, two lifetimes.** A token from `dock login` acts for
   the user who approved it: every request checks that user, so it stops
   working the moment they are disabled or deleted, and its scope is capped
@@ -71,11 +75,14 @@ The UI controls production, so a password shouldn't be enough
 
 ## Non-destructive by default
 
-- **Destroying a service** stops and archives it. Real deletion happens after a
-  grace period (default 7 days) or through an explicit `admin` command.
+- **Archiving a service** (`admin`) stops it and removes its routes; its
+  volumes and records stay. There is no hard delete of a service.
 - **Volumes are never deleted as a side effect** of any other operation.
-- **Diffs before risky changes:** changes that touch domains, volumes or limits
-  show what will happen first, in both CLI and UI.
+  The one exception is a closed preview environment's volumes
+  ([0056](decisions/0056-preview-environments.md)); after a move, the old
+  server's volumes stay until someone removes them.
+- **Staged changes:** variables, settings, volumes and domains are staged
+  and shown (`dock changes`, the UI's bar) before they go live together.
 - Client flags like `--yes` skip confirmation prompts, never permission checks.
 
 ## Locked environments
@@ -119,6 +126,9 @@ stay open.
   another's domain.
 - Certificates are only issued for hostnames that exist in the DB, so pointing
   a random domain at the server can't trigger certificate issuance.
+- A custom hostname routes only after a TXT record proves the organization
+  controls it ([0042](decisions/0042-domain-verification.md)), so one org
+  can't claim another's domain.
 - Only the daemon can change proxy config (Unix socket, not a network port).
 
 ## Servers
@@ -130,8 +140,9 @@ stay open.
 - Each server accepts production, non-production or both. With production
   servers that accept only production, a runaway staging app or build can't
   starve production. (A lone server accepts both until a second one joins.)
-- Server and user administration (accepted kinds, pins, statistics,
-  password resets) needs an `admin` token that isn't limited to a project.
+- Server and account administration (accepted kinds, pins, statistics,
+  password resets) is for operators only; members see their environment's
+  server status, not the servers.
 
 ## Network isolation
 
@@ -171,8 +182,11 @@ for the exact rules.
   images outside the rollback window and of old build cache, retention of
   build logs and the audit log, disk usage alerts
   ([0020](decisions/0020-retention-and-alerts.md)).
-- **Alerts:** full disks, offline servers, crash loops, failed deploys and
-  certificate failures reach admins by webhook, Slack or email.
+- **Alerts** ([0062](decisions/0062-org-alerts-and-operators.md)): an
+  organization's (failed deploys, crash loops, unhealthy services, failed
+  backups and jobs, uptime, domains) go to its channels; the platform's
+  (full disks, memory, CPU, offline servers, failed updates) to the
+  operators' channels. Channels are webhooks, Slack or email.
 - **Platform isolation:** the daemon, Caddy and BuildKit are installed by the
   install script, never deployed through the platform. An agent cannot deploy
   over the control plane.
@@ -180,16 +194,23 @@ for the exact rules.
 ## Audit
 
 Every mutating API call writes an AuditEvent: actor (user or token name),
-action, target, summary of the change, and timestamp. Visible in the UI and CLI.
+action, target, summary of the change, and timestamp. Each organization
+has its log; the platform's (servers, accounts, logins, backup settings)
+is for operators, and an operator's action on an org goes into both.
+Visible in the UI and CLI (`dock audit`, `--platform`).
 
-## Backups (M5)
+## Backups
 
 - Every stateful service is backed up daily with restic
   ([0019](decisions/0019-templates-and-backups.md)): template databases with
   their own tool (`pg_dump`, Redis snapshots), other volumes file by file.
-- Off-box once an S3-compatible repository is configured; until then backups
-  stay on the server and say "not off-box" wherever they show.
-- Restores never overwrite a live database: they create a new service.
+- Off-box once an operator moves them to a storage connection's bucket
+  ([0039](decisions/0039-backups-on-storage-connections.md)); until then
+  backups stay on the server and say "not off-box" wherever they show.
+- A template database restores into a new service, never over the live
+  one; switching to it is an explicit `dock service switch-references`
+  ([0061](decisions/0061-one-restore-model.md)). Restoring a snapshot in
+  place takes a safety snapshot first.
 - Restore is tested, not assumed: the integration suite backs up and restores
   Postgres and Redis on real Docker.
 - The control plane backs itself up daily into the same repository

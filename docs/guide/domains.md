@@ -9,14 +9,36 @@ database and loads it atomically.
 ```
 $ dock domain add shop.example.com
 Added shop.example.com → web (production)
+Prove control:  TXT  _dock-challenge.shop.example.com  →  dock-verify=…
 Point DNS:  A  shop.example.com  →  203.0.113.10
+Waiting for the TXT record... ok. Waiting for DNS... ok. Issuing certificate... ok.
+https://shop.example.com is live.
 ```
 
-DNS can be set before or after adding. Status updates live.
+DNS can be set before or after adding. The command waits up to
+`--timeout` (default 5 minutes; `--detach` returns at once); still waiting
+after that is not an error, the server keeps checking. Status updates live.
+
+### Proving control
+
+A custom hostname is routed and gets a certificate only once a TXT record
+proves your organization controls it
+([ADR 0042](../decisions/0042-domain-verification.md)): create
+`_dock-challenge.<hostname>` with the value `dock domain add` printed (also in
+`verification` in the API, and in the UI). Until it is there the domain is
+`waiting_for_dns` and the reason says which record is missing. Hostnames
+under the server's base domain, generated ones, domains from Cloudflare and
+domains an operator adds need no proof (`verified` is `true` at once).
+
+Several organizations may claim a hostname nobody proved yet; the first to
+verify holds it, and the others' domains turn `error`. A hostname another
+organization proved is refused. `dock domain check shop.example.com` checks
+the TXT record, DNS and certificate now instead of at the next retry.
 
 ### DNS records
 
-`dns_records` lists the records to create; any one of them is enough.
+`dns_records` lists the records that route the hostname; any one of them
+is enough. The TXT record above comes on top.
 
 | Hostname | Record |
 |---|---|
@@ -53,7 +75,7 @@ added → waiting_for_dns → issuing_certificate → active
 | `error` | DNS is right but the certificate is invalid, or still missing after 10 minutes, or DNS also points somewhere else. `status_reason` says why | Fix and wait for the next check |
 
 Checks back off from 5 s to 5 min per domain, so a fix can take up to five
-minutes to show. With `disable_tls`, a domain is `active` as soon as DNS is
+minutes to show (`dock domain check` checks at once). With `disable_tls`, a domain is `active` as soon as DNS is
 right. Until then each domain also carries `checked_at` (the last check)
 and `resolved_ips` (what the hostname resolved to then), shown in the UI as
 "checked 20s ago, now resolves to ...". They are kept in memory, so they
@@ -94,6 +116,40 @@ dock domain add www.example.com --redirect-to example.com
 
 Permanent `308` redirect to the other hostname, keeping path and query.
 Typical: `www` → apex. A redirect domain gets its own certificate.
+
+A hostname in a connected Cloudflare zone can also redirect to any URL at
+Cloudflare's edge, with no service and no server involved
+([ADR 0068](../decisions/0068-redirects-on-cloudflare-zones.md)). Dock
+makes a Single Redirect rule and a proxied placeholder record, both marked
+as its own; the token needs Zone › Single Redirect › Edit.
+
+```sh
+dock cloudflare redirects add instagram.example.com https://instagram.com/acme   # 302 by default
+dock cloudflare redirects add docs.example.com https://example.dev/docs --code 301 --keep-path
+dock cloudflare redirects set instagram.example.com --code 301
+dock cloudflare redirects                       # each one's state
+dock cloudflare redirects remove instagram.example.com
+```
+
+A redirect belongs to the level its connection is on: an organization's
+(its admins) or the platform's (`--platform`, operators).
+
+## Domains from Cloudflare
+
+With a Cloudflare connection (`dock cloudflare add`, Organization settings
+or the console, [ADR 0036](../decisions/0036-cloudflare-api.md)), a
+hostname in one of its zones needs no DNS work:
+
+```sh
+dock cloudflare zones                              # the zones domains can come from
+dock domain add shop.example-apps.dev -s web --cloudflare
+```
+
+Dock routes the hostname through the server's Cloudflare tunnel (creating
+or adopting one, also on a server with a public IP) and creates its
+proxied CNAME; both go when the domain is removed. A record Dock didn't
+make at that name is refused. Setup and tokens: [Tunnels managed by
+Dock](install.md#tunnels-managed-by-dock).
 
 ## Access
 

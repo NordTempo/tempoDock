@@ -49,7 +49,7 @@ make test               # Go unit tests (fake runtime, temp SQLite)
 make test-integration   # against real Docker, Caddy and BuildKit (-tags integration)
 make lint               # golangci-lint (gofmt, goimports, errorlint, ...)
 go vet ./...
-make generate           # sqlc, OpenAPI spec (web/openapi.json) and the UI client
+make generate           # sqlc, OpenAPI specs, the UI's API clients, the analytics recorder
 make web && make build  # UI into web/dist, then bin/dock with it embedded
 make perf               # performance budgets (docs/performance.md)
 make test-analytics lint-analytics   # the analytics store's module (CGO)
@@ -70,30 +70,50 @@ cmd/dock/              entry point
 cmd/tempobase/         tempoBase's entry point (ADR 0024)
 cmd/dock-analytics/    the analytics store (ADR 0037): its own Go module with
                        CGO and DuckDB, run as a container; dock never links it
+cmd/dock-probe/        health probe run inside app containers (ADR 0043)
+cmd/dock-sync/         volume copier run in job containers (ADR 0063); both
+                       are embedded into dock by internal/node/probe
 internal/apitypes/     the API's JSON contract; the CLI imports it, no server deps
-internal/analytics/    Dock Analytics' events, store interface and client;
-                       standard library only (make analytics-deps)
 internal/api/          Huma handlers, auth, SSE streams, loopback endpoints
 internal/mcp/          the MCP endpoint for agents (ADR 0017): tools over core
-internal/core/         domain logic: projects, services, variables, releases,
-                       deploy state machine, domains, permissions, audit, event bus
-internal/store/        SQLite: migrations/*.sql, queries/*.sql, sqlc output (*.sql.go)
+internal/core/         domain logic: orgs, projects, services, variables,
+                       releases, deploy state machine, domains, permissions,
+                       audit, event bus, and every feature built on them
+internal/store/        SQLite: migrations/*.sql, queries/*.sql, sqlc output
+                       (*.sql.go); storetest opens migrated test databases
 internal/node/         runtime interface; docker/, build/, caddy/, remote/, fake/
 internal/cli/          Cobra commands, human and --json output
 internal/datapanel/    the Data panel's rules, shared by core and tempoBase
 internal/data/         database engines for the panel (data/pg)
 internal/tempobase/    tempoBase's server: App, tbhttp, tbstore, tbmcp
 internal/httpkit/      HTTP plumbing shared by both servers; mcpkit the same for MCP
+internal/analytics/    Dock Analytics' events, store interface and client;
+                       standard library only (make analytics-deps)
 internal/registry/     the platform image registry next to the control plane
-internal/update*/      finding and applying Dock releases (ADR 0028)
+internal/s3/           the small S3 client behind the registry and backups
+internal/update/       finding, downloading and verifying Dock releases;
+internal/updater/      applying one as root (`dock admin update`, ADR 0028)
 internal/backup/       restic jobs for stateful services; cpbackup the control plane's
+internal/volsync/      copying volumes between servers (ADR 0063)
+internal/cloudflare/   the Cloudflare API calls Dock makes (ADR 0036)
+internal/access/       signed grants for Dock-login access protection (ADR 0030)
+internal/errparse/     finds and groups errors in log output (Errors tab)
 internal/secrets/      AES-GCM for values at rest
+internal/config/       the daemon's config file (`dock serve`, `dock node`)
+internal/clientconfig/ the CLI's contexts and directory links
 internal/pack/         source archive for `dock deploy`
-internal/repoconfig/   dock.toml parsing
+internal/repoconfig/   dock.toml parsing (ADR 0007)
+internal/projectfile/  project files for `dock apply` and `dock project export`
+internal/compose/      Docker Compose to project file (`dock import compose`)
+internal/cron/         cron expressions for scheduled jobs (ADR 0054)
+internal/runframe/     stream framing for `dock run` (ADR 0048)
+internal/version/      the build version (-ldflags)
 web/                   React + Vite + Tailwind + TanStack Router/Query; web/tempobase
 site/                  the landing page (Astro, static), deployed on Dock
-scripts/perf/          the `make perf` budget checker and baseline
-docs/                  design docs; decisions/ holds the ADRs
+deploy/                install.sh, systemd units, analytics and tempoBase packaging
+dev/                   config for `make dev` (state in .data/)
+scripts/               perf/ (the `make perf` checker and baseline), ci/, release/
+docs/                  design docs and the user guide; decisions/ holds the ADRs
 e2e/                   scenarios against a live server (see e2e/run.sh)
 ```
 
@@ -135,8 +155,7 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
 - UI: follow `docs/design/README.md`, the T3 style: style A for the app,
   style G for the data panel and tempoBase, with the mockups in
   `docs/design/t3-style/`. Dark near-black backgrounds, information
-  dense, no decorative chrome, no em dashes in copy. Screens not yet
-  migrated still use the old look; migrate a screen as a whole.
+  dense, no decorative chrome, no em dashes in copy.
 
 ## Commits and PRs
 

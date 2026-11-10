@@ -1,6 +1,6 @@
 # 0022: Clone an environment, export a project's config
 
-Status: accepted (decided by the agent, M4)
+Status: accepted (decided by the agent, M4); superseded in part by [0049](0049-apply-and-compose-import.md) (import, as `dock apply FILE`)
 
 ## Context
 

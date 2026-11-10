@@ -13,7 +13,7 @@ Users: developers in a terminal, agents in a sandbox, and CI.
   short top-level aliases: `dock deploy`, `dock logs`, `dock status`.
 - **Linked directories.** `dock link` remembers project, environment and
   service for the current directory, so most commands need no flags.
-- **Contexts** for multiple servers (`dock context use prod-vps`), like
+- **Contexts** for multiple control planes (`dock context use prod`), like
   kubectl. Also the hook for a future hosted control plane.
 - **Machine-readable everywhere.** Every command supports `--json`. Output is
   stable and documented, so agents and scripts never parse human text.
@@ -34,7 +34,7 @@ Users: developers who want an overview, and anyone who prefers clicking.
 - **Overview first.** Landing on a project shows every service in every
   environment with status, current release, domain and resource use at a
   glance. Problems surface at the top.
-- **Information dense.** Dark near-black backgrounds (the tokens in
+- **Information dense.** True black (`#000`) backgrounds (the tokens in
   [design/README.md](design/README.md)), white text, no decorative cards
   or chrome. Built for scanning, not for screenshots.
 - **Live, without polling.** Status, deploy progress and logs update over
@@ -44,8 +44,8 @@ Users: developers who want an overview, and anyone who prefers clicking.
 - **Keyboard first.** Command palette (`Cmd+K`) for navigation and actions.
 - **Variables editor** with environment vs service scope, references, bulk
   paste of `.env` files, and secret values hidden by default.
-- **Diffs before risky changes.** Changing domains, volumes or limits shows
-  what will happen before it happens.
+- **Changes wait to apply.** Variables, settings, domains and volumes are
+  staged and shown before they go live together, in both clients.
 - **No continuously repainting animations** (spinners, shimmer, pulse). Static
   state indicators instead.
 
@@ -56,33 +56,35 @@ The flow is the same in both clients:
 ```
 $ dock domain add shop.example.com
 Added shop.example.com → web (production)
+Prove control:  TXT  _dock-challenge.shop.example.com  →  dock-verify=…
 Point DNS:  A  shop.example.com  →  203.0.113.10
-Waiting for DNS... ok. Issuing certificate... ok.
+Waiting for the TXT record... ok. Waiting for DNS... ok. Issuing certificate... ok.
 https://shop.example.com is live.
 ```
 
 - Any hostname, any number per service, added or removed at any time.
+  A custom one needs the TXT record once
+  ([ADR 0042](decisions/0042-domain-verification.md)).
 - `dock domain generate` gives a service a hostname under the base domain
   instantly, no DNS work needed.
-- The UI shows each domain's state (waiting for DNS, issuing certificate,
-  active, error) with the exact DNS record to create.
+- The UI shows each domain's state (waiting for verification or DNS,
+  issuing certificate, active, error) with the exact DNS records to create.
 
 ## Servers and promotion
 
 ```
-$ dock server list
-NAME      ROLE            BUILDER  STATUS   ENVIRONMENTS
-hetzner   production      no       online   12
-homelab   non-production  yes      online   31
-
 $ dock promote staging production
-Promoting web@staging (release 57, sha256:4be1…) to production on hetzner
-Health check... ok. Traffic switched. https://shop.example.com
 ```
 
-- Where things run is visible everywhere: every environment shows its server.
-- Placement is automatic; pinning an environment to a server is one command or
-  one dropdown.
+`promote` deploys the images serving in staging to production by digest,
+with production's own variables; nothing is rebuilt.
+
+- Where things run is visible: every environment shows its server's
+  status, and operators see the servers in the console (`dock server
+  list`).
+- Placement is automatic; an operator can pin a project's environments of
+  one kind to a server before any exist, and move an environment later
+  without downtime.
 
 ## Shared
 
@@ -94,7 +96,8 @@ Health check... ok. Traffic switched. https://shop.example.com
 
 ## Performance targets
 
-Verified in M0 and tracked as we go.
+Set in M0. The budgets `make perf` enforces, and what it measures now, are
+in [performance](performance.md).
 
 | What | Target |
 |---|---|
@@ -105,10 +108,12 @@ Verified in M0 and tracked as we go.
 | UI initial JS (gzipped) | ≤ 200 KB |
 | Rollback to a cached image | ≤ 10 s to traffic switch, after health check |
 
-## Measured (M0)
+## Measured in the M0 spike (2026-10)
 
-On `dock-lab`, a homelab VM (Debian 13, 4 vCPU, 4 GB RAM, Docker 29), unless
-noted. "Private" is anonymous memory (what the process really costs); RSS also
+Measured once, on `dock-lab`, a homelab VM (Debian 13, 4 vCPU, 4 GB RAM,
+Docker 29), unless noted, and kept as the record behind the design. Current
+numbers for the daemon, CLI and UI are in [performance](performance.md).
+"Private" is anonymous memory (what the process really costs); RSS also
 counts mapped binaries.
 
 | What | Measured | Notes |
@@ -121,9 +126,7 @@ counts mapped binaries.
 | App latency during a build | p99 1.2 ms idle, 1.3 ms during | 0 failed requests (dev VM) |
 | Caddy config reload | p50 2-3 ms, p95 3-18 ms | Full config, ~50 routes |
 | Requests during 50 route swaps | 0.01% of new connections dropped, 0 wrong responses | Upstream Go limitation, see `internal/node/caddy` |
-| CLI start-up | 2 ms | `dock context list` |
-| UI initial JS | 109 KB gzipped | Tooling scaffold only |
-| Daemon idle | 14.5 MB private, 0 CPU ticks in 60 s | 15.5 MB per systemd; 40 MB RSS incl. binary |
+| Daemon idle (M0's daemon) | 14.5 MB private, 0 CPU ticks in 60 s | 15.5 MB per systemd; 40 MB RSS incl. binary |
 | Whole server idle | ~490 MB used | Docker, Caddy, daemon, one app, BuildKit idle |
 
 Known limits found in the spike:
@@ -139,9 +142,8 @@ Known limits found in the spike:
 `scripts/registry-spike.sh` on the development VM (Debian 13, 8 vCPU,
 32 GB RAM, Docker 29), 2026-10-30. No real bucket was available, so the
 bucket is MinIO in a container on the same machine: these numbers show
-the registry's S3 driver overhead, not a network to a provider. Saile
-measures Hetzner Object Storage next with the same script (`S3_*`
-variables), from the Hetzner server and from the homelab.
+the registry's S3 driver overhead, not a network to a provider. The same
+script measures a real provider with its `S3_*` variables.
 
 The image is `node:24-slim` plus 200 MB of random data (281 MB pushed);
 the one-layer change adds a few bytes. Pushes are `docker push`; pulls

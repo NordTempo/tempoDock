@@ -1,6 +1,6 @@
 # 0047: Volume snapshots
 
-Status: accepted (decided by the agent, on Saile's direction, 2026-11-03)
+Status: accepted (decided by the agent, on Saile's direction, 2026-11-03); superseded in part by [0061](0061-one-restore-model.md) (one restore flow, `<db>-restored`), [0063](0063-moves-without-downtime-and-server-drains.md) (snapshots move with the environment)
 
 ## Context
 
@@ -72,7 +72,7 @@ a confirmation, and itself undoable through the safety snapshot.
 - The pause is visible as latency: a 1 GB volume on an SSD is a few
   seconds.
 - Snapshots stay on the server they were taken on. An environment that
-  moves to another server ([0048](0048-moving-environments.md)) leaves its old snapshots
+  moves to another server ([0053](0053-moving-environments.md)) leaves its old snapshots
   behind, still listed; they are pruned by age.
 - Generic services restore in place only; to look at an old copy
   without replacing anything, restore it into a template database or

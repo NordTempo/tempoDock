@@ -1,6 +1,6 @@
 # 0011: Stateful services and databases
 
-Status: accepted
+Status: accepted; superseded in part by [0047](0047-volume-snapshots.md) (snapshots can restore in place, behind a safety snapshot)
 
 ## Context
 

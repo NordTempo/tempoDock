@@ -350,8 +350,8 @@ exits with the command's exit code.
 | | |
 |---|---|
 | Who | Scope `deploy` on the environment. A locked environment refuses tokens like any change (ADR 0044) |
-| Volumes | A database's volume is never mounted (connect over the network). Another stateful service's volumes are read-only unless `--volumes write`, which mounts them next to the running service: only for storage that takes a second writer. One writer per service at a time. A writer first takes a [snapshot](databases.md#snapshots) of the volumes (the run shows its ID); a failed snapshot refuses the run, and `--no-snapshot` skips it |
-| Limits | `--timeout`, default 1 hour, at most 24 hours; 4 runs per service at once |
+| Volumes | A database's volume is never mounted (connect over the network). Another stateful service's volumes are mounted read-only (`--volumes read`, the default), not at all with `--volumes none`, or writable with `--volumes write`, next to the running service: only for storage that takes a second writer. One writer per service at a time. A writer first takes a [snapshot](databases.md#snapshots) of the volumes (the run shows its ID); a failed snapshot refuses the run, and `--no-snapshot` skips it |
+| Limits | `--timeout`, default 1 hour, at most 24 hours; 4 runs per service at once. `--detach` runs it in the background (`dock runs show <id>` for its output) |
 | Record | Audited as `service.run` with the command and exit code. The service's last 50 runs keep their status and the last 16 KB of output, except terminal sessions, which keep no output |
 
 The service's Run tab in the UI runs commands too (without a terminal),
@@ -408,7 +408,7 @@ read in the job's timezone (default UTC).
 
 Jobs can live in `dock.toml` as `[[jobs]]` ([reference](../dock-toml.md));
 they follow the active release. The service's Jobs tab edits them in the
-UI, and agents have `list_jobs`, `set_job`, `run_job` and `job_history`.
+UI, and agents have `list_jobs`, `set_job`, `run_job`, `remove_job` and `job_history`.
 Design: [ADR 0054](../decisions/0054-scheduled-jobs.md).
 
 ## Promote
@@ -468,27 +468,36 @@ dock env move staging --status         # the running or latest move
 ```
 
 Operators move an environment when a server joins or is retired
-([ADR 0053](../decisions/0053-moving-environments.md)); the UI has the same
-in the environment's settings. Everything is checked first: the server
-accepts the environment's kind, both servers are online, and the target
-has the memory, disk, images and Cloudflare tunnels. Then:
+([ADR 0053](../decisions/0053-moving-environments.md), without downtime
+since [ADR 0063](../decisions/0063-moves-without-downtime-and-server-drains.md));
+the UI has the same in the environment's settings. Everything is checked
+first: the server accepts the environment's kind, both servers are online
+and on protocol 21, and the target has the memory, disk, images and
+Cloudflare tunnels. Then:
 
 | Step | What happens |
 |---|---|
 | prepare | Images, network and volumes are made on the target |
-| stop | Stateful services stop on the source: the downtime starts |
-| copy | Their volumes stream to the target |
-| start | Every service starts on the target and passes its health check: the downtime ends |
-| switch | The environment, routes, domains and placement point at the target, in one go |
+| sync | Volumes and snapshots copy while the services keep running, in passes that each send only what changed |
+| stop | Caddy holds the environment's requests and its containers stop cleanly on the source |
+| copy | A last exact pass, then a check pass that must find no difference |
+| start | Every service starts on the target and passes its health check |
+| switch | The environment, routes, domains and placement point at the target, in one go; the hold ends |
 | cleanup | The source's containers go |
 
-Stateless services keep serving until the switch. A failure before the
-switch rolls back: the environment stays where it was, its data untouched.
-Domains routed through Cloudflare follow by themselves; for other domains
-the move lists the DNS records to change. The source's volumes stay as a
-last copy until you remove them (the move names them). While a move runs,
-deploys, backups, snapshots and restores of the environment are refused
-until it ends. The environment's lock applies to the move itself.
+Requests wait during the hold instead of failing. `--max-hold` (default
+30 s, 5 to 600) bounds it: a move whose final copy would not fit fails
+during sync, before anything stopped. A failure before the switch rolls
+back: the environment stays where it was, its data untouched. After the
+switch the source keeps forwarding the services' domains to the target
+until the source server is removed, so DNS can catch up; Cloudflare
+domains follow by themselves, and the move lists the DNS records to
+change for the rest. The source's volumes stay as a last copy until you
+remove them (the move names them). A deploy during a move waits for it;
+`dock run` and jobs run except in the hold; backups, snapshots and
+restores are refused until it ends. The environment's lock applies to the
+move itself. To empty a whole server, see
+[draining a server](install.md#moving-environments-and-draining-a-server).
 
 ## Export a project's config
 

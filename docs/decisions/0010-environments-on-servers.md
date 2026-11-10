@@ -1,6 +1,6 @@
 # 0010: Environments are placed on servers
 
-Status: accepted
+Status: accepted; superseded in part by [0015](0015-server-pools-and-placement.md) (placement: servers accept kinds instead of one role)
 
 ## Context
 

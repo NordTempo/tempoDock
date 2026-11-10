@@ -1,6 +1,6 @@
 # 0055: Uptime checks from another server
 
-Status: accepted (decided by the agent)
+Status: accepted (decided by the agent); amended by [0059](0059-analytics-area-and-slimmer-service-page.md) (checks that set themselves up)
 
 ## Context
 

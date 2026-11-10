@@ -35,15 +35,19 @@ reasons behind it, see the [docs index](../../README.md#docs).
 ## Commands at a glance
 
 Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit-codes).
+`dock env clone`, `lock`, `unlock`, `move` and `previews` are the `dock environment` commands under a shorter name.
 
 | Area | Commands |
 |---|---|
-| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock me password\|two-factor`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
-| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|export\|archive\|pin`, `dock apply FILE`, `dock import compose`, `dock environment list\|create\|clone\|previews\|move`, `dock service list\|create\|show\|update\|archive` |
-| Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|rollback`, `dock rollback`, `dock restart`, `dock git connect\|status\|deploy\|disconnect`, `dock github status\|app\|install\|assign\|repos` |
-| Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add` |
-| Domains | `dock domain add\|list\|remove\|generate` |
-| Databases and backups | `dock service create NAME --template postgres\|redis`, `dock backup list\|run\|restore\|schedule\|status\|configure` |
-| Data | `dock db status\|setup\|tables\|schema\|rows\|query\|history\|saved\|changes\|apply\|policy\|sensitive` |
-| Admin | `dock token list\|create\|update\|revoke`, `dock user list` (accounts are managed in the web UI), `dock audit`, `dock server list\|show\|update`, `dock address`, `dock org two-factor`, `dock security`, `dock sso` |
-| On the server | `dock serve`, `dock admin bootstrap`, `dock admin caddy-config`, `dock admin backup\|restore`, `dock admin reset-2fa`, `dock admin password-sign-in`, `dock node set-control-plane` |
+| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock version`, `dock me name\|password\|two-factor`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
+| Organizations | `dock org list\|use\|create\|rename\|delete\|join\|leave`, `dock org members\|member role\|member remove`, `dock org invite\|invites\|invites revoke`, `dock org env list\|set\|unset\|redeploy`, `dock org locks`, `dock org two-factor` |
+| Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|rename\|export\|archive\|pin`, `dock export`, `dock apply FILE`, `dock import compose`, `dock environment list\|create\|clone\|lock\|unlock\|move\|previews`, `dock service list\|create\|show\|update\|start\|stop\|archive\|switch-references` |
+| Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|wait\|rollback`, `dock rollback`, `dock restart`, `dock promote`, `dock git connect\|status\|deploy\|disconnect`, `dock github status\|installations\|app\|install\|assign\|unassign\|repos` |
+| Run commands | `dock run`, `dock runs`, `dock runs show`, `dock job list\|set\|run\|history\|enable\|disable\|remove`, `dock connect` |
+| Config | `dock env set\|unset\|list\|import`, `dock changes`, `dock apply`, `dock discard`, `dock volume list\|add`, `dock registry login\|logout\|credentials` |
+| Domains and access | `dock domain add\|list\|check\|remove\|generate`, `dock access public\|password\|login`, `dock uptime list\|add\|update\|remove\|domains`, `dock cloudflare zones\|records\|redirects` |
+| Databases and backups | `dock service create NAME --template postgres\|redis`, `dock backup list\|run\|log\|restore\|schedule\|status\|configure\|move`, `dock volume snapshot [list\|restore\|delete]` |
+| Data | `dock db status\|setup\|settings\|tables\|schema\|rows\|query\|history\|saved\|changes\|apply\|policy\|sensitive` |
+| Watch | `dock alerts`, `dock alerts resolve`, `dock alerts channel add\|list\|test\|remove`, `dock errors`, `dock errors show\|resolve`, `dock traffic`, `dock analytics sites\|stats\|errors\|vitals\|replays\|goals\|funnels\|site\|enable\|disable\|defaults\|server`, `dock logs drain add\|list\|test\|remove`, `dock audit`, `dock request list\|show\|wait` |
+| Admin | `dock token list\|create\|update\|revoke`, `dock user list\|create\|disable\|enable\|delete\|reset-password`, `dock server list\|show\|add\|update\|rename\|disk\|prune\|drain\|tunnel\|revoke\|rotate-key\|remove`, `dock address set\|remove`, `dock cloudflare add\|set\|refresh\|retry\|remove`, `dock storage add\|set\|rename\|remove`, `dock registry`, `dock registry prune\|migrate`, `dock update`, `dock update apply`, `dock security operators-two-factor`, `dock sso list\|add\|set\|remove\|invite-only\|password-sign-in` |
+| On the server | `dock serve`, `dock admin bootstrap\|caddy-config\|registry-config\|registry-storage\|firewall`, `dock admin backup\|restore\|update`, `dock admin reset-2fa`, `dock admin password-sign-in`, `dock node join\|set-control-plane` |
