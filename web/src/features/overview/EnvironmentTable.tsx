@@ -36,7 +36,13 @@ import { imageLabel, shortImage } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
-import { SleepState, sleepCli, useSleepEnvironment } from "./EnvironmentSleep";
+import {
+  duration,
+  SleepForm,
+  SleepState,
+  sleepCli,
+  useSleepEnvironment,
+} from "./EnvironmentSleep";
 import { hiddenFailures } from "./failed";
 import { lockRequestDone, useLockRequested } from "./lockRequest";
 
@@ -84,6 +90,10 @@ export function EnvironmentTable({
     environment.kind === "non_production" &&
     environment.sleep?.state !== "asleep" &&
     services.some((s) => s.service.status.state === "running");
+  // When it sleeps on its own: admins of non-production environments;
+  // previews take their project's Previews setting (ADR 0070).
+  const canSetSleep = admin && environment.kind === "non_production" && !pr;
+  const [sleepForm, setSleepForm] = useState(false);
   const head = `env-head-${environment.id}`;
   const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;
   return (
@@ -209,6 +219,26 @@ export function EnvironmentTable({
                   Clone into a new environment
                 </button>
               )}
+              {canSetSleep && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  role="menuitem"
+                  title={`dock env sleep-after ${ref.environment} <duration>|off -p ${ref.project}`}
+                  aria-expanded={sleepForm}
+                  onClick={() => {
+                    close();
+                    setSleepForm(true);
+                  }}
+                >
+                  Sleep after…
+                  {!!environment.sleep?.after_minutes && (
+                    <span className="ml-1.5 font-mono text-2xs text-faint">
+                      {duration(environment.sleep.after_minutes)}
+                    </span>
+                  )}
+                </button>
+              )}
               {canSleep && (
                 <button
                   type="button"
@@ -261,6 +291,12 @@ export function EnvironmentTable({
         <LockStrip envRef={ref} lock={environment.lock} />
       ) : (
         locking && <LockForm envRef={ref} onDone={() => setLocking(false)} />
+      )}
+      {sleepForm && (
+        <SleepForm
+          environment={environment}
+          onDone={() => setSleepForm(false)}
+        />
       )}
       {pr && <PreviewLine env={ref} />}
       {closing && <ClosePreview env={ref} onDone={() => setClosing(false)} />}
