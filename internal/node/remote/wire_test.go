@@ -38,15 +38,14 @@ func TestWireRoundTrip(t *testing.T) {
 	check(t, node.HealthCheck{Path: "/up", Port: 5432, Timeout: time.Minute, Interval: 2 * time.Second, Grace: 3 * time.Second},
 		toWireHealthCheck, wireHealthCheck.node)
 	check(t, node.LogLine{Time: at, Stream: "stderr", Text: "boom"}, toWireLogLine, wireLogLine.node)
-	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "health_status", ExitCode: 1, Health: node.HealthUnhealthy, Time: at},
+	check(t, node.ContainerEvent{ContainerID: "abc", Labels: labels, Action: "health_status", ExitCode: 1, Health: node.HealthUnhealthy, Time: at, Request: "GET /"},
 		toWireEvent, wireEvent.node)
-	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/", Traffic: true, TunnelOnly: true, Stopped: "web", Hold: true,
+	check(t, node.Route{Hostnames: []string{"a.example.com"}, Upstream: "127.0.0.1:1", RedirectTo: "b.example.com", PathPrefix: "/p/", Traffic: true, TunnelOnly: true, Stopped: "web", Hold: true, Wake: "7", QuietProbes: true,
 		Analytics: []node.AnalyticsHosts{{Hostnames: []string{"a.example.com"}, Tag: "3.40.981"}},
 		Access:    &node.Access{Username: "u", PasswordHash: "$2a$06$x", Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
 		func(r node.Route) []wireRoute { return toWireRoutes([]node.Route{r}) },
 		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] },
-		"ClientIPHeader",      // only on the control plane's own server (ADR 0029)
-		"Wake", "QuietProbes") // sleeping environments: control plane's own server only, until the node link carries them
+		"ClientIPHeader") // only on the control plane's own server (ADR 0029)
 	check(t, node.DomainCheck{ExpectedIPs: []string{"1.2.3.4"}, ResolvedIPs: []string{"5.6.7.8"}, DNSOK: true, CertificateOK: true, Error: "x"},
 		toWireDomainCheck, wireDomainCheck.node)
 	check(t, node.HostTraffic{

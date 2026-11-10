@@ -160,7 +160,8 @@ func joinToken(stdin io.Reader, args []string, file string) (string, error) {
 
 // runNode runs the node daemon until ctx ends: the link to the control
 // plane, the registry proxy and, on the internal listener, Caddy's `ask`
-// answered from the last applied routes.
+// answered from the last applied routes, the access check and the wake
+// check of asleep environments.
 func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if err := checkLoopback("internal_listen", cfg.InternalListen); err != nil {
 		return err
@@ -209,6 +210,8 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if proxy != nil {
 		mux.Handle("GET "+askPath, proxy.AskHandler())
 		mux.Handle("GET "+accessPath, caddy.AccessHandler())
+		// Asleep environments here wake through the link (ADR 0070).
+		mux.Handle("GET "+wakePath, caddy.WakeHandler(&caddy.NodeWaker{Proxy: proxy, Request: n.RequestWake}))
 	}
 	internal := &http.Server{Addr: cfg.InternalListen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { errc <- internal.ListenAndServe() }()

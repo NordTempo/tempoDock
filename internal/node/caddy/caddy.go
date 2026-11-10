@@ -222,6 +222,9 @@ type Proxy struct {
 	// tunnel is the tunnel hostname the control plane runs cloudflared
 	// with (SetTunnelHostname); it wins over Options.TunnelHostname.
 	tunnel atomic.Pointer[string]
+	// wake holds the asleep environments of the last applied routes, for
+	// a node's wake check (NodeWaker).
+	wake wakeState
 
 	// Overridable in tests.
 	lookupIP   func(ctx context.Context, host string) ([]net.IPAddr, error)
@@ -270,6 +273,7 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 		return err
 	}
 	p.hosts.Store(routeHosts(routes))
+	p.setWakeKeys(routes)
 	return nil
 }
 
