@@ -185,6 +185,11 @@
       "bytes_op": 276706,
       "allocs_op": 4122
     },
+    "core.BenchmarkDiagnoseRules": {
+      "ns_op": 14543,
+      "bytes_op": 2145,
+      "allocs_op": 38
+    },
     "core.BenchmarkDrainEncodeHTTP": {
       "ns_op": 130109,
       "bytes_op": 0,

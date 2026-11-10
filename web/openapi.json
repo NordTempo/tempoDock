@@ -4872,6 +4872,622 @@
         },
         "type": "object"
       },
+      "Diagnosis": {
+        "additionalProperties": false,
+        "properties": {
+          "also_matched": {
+            "description": "Rules that matched after the cause's",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "build_tail": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisLine"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "captured_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cause": {
+            "$ref": "#/components/schemas/DiagnosisCause"
+          },
+          "changes": {
+            "$ref": "#/components/schemas/DiagnosisChanges",
+            "description": "What changed since the last good release; absent when none served before"
+          },
+          "checked": {
+            "description": "Every rule that applies to the failed step, with its verdict",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisCheck"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "container_tail": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisLine"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "environment": {
+            "type": "string"
+          },
+          "errors": {
+            "description": "Error issues of the service seen around the failure, newest first",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisError"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "failure": {
+            "$ref": "#/components/schemas/DiagnosisFailure"
+          },
+          "health": {
+            "$ref": "#/components/schemas/DiagnosisHealth",
+            "description": "The deploy's health check, when the release got that far"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "release"
+            ],
+            "type": "string"
+          },
+          "last_good_release": {
+            "description": "The newest earlier release that served, which changes compare with; 0 when none did",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pre_deploy": {
+            "$ref": "#/components/schemas/DiagnosisPreDeploy",
+            "description": "The pre-deploy command, when one ran"
+          },
+          "project": {
+            "type": "string"
+          },
+          "release": {
+            "description": "The failed release's number",
+            "format": "int64",
+            "type": "integer"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/DiagnosisResources",
+            "description": "The service's memory and CPU before the failure, from its 1-minute samples"
+          },
+          "service": {
+            "type": "string"
+          },
+          "truncated": {
+            "description": "Older log lines were left out to keep the bundle under its size limit",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "project",
+          "environment",
+          "service",
+          "release",
+          "captured_at",
+          "cause",
+          "also_matched",
+          "checked",
+          "failure",
+          "container_tail",
+          "build_tail",
+          "errors",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "DiagnosisCause": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "description": "What matched; may quote a log line (masked)",
+            "type": "string"
+          },
+          "fix": {
+            "$ref": "#/components/schemas/DiagnosisFix"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "summary": {
+            "description": "One line, made from the rule's facts (a port, a limit, a variable name), never from log text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "type": "object"
+      },
+      "DiagnosisChanges": {
+        "additionalProperties": false,
+        "properties": {
+          "image": {
+            "$ref": "#/components/schemas/DiagnosisImage",
+            "description": "Set when the image changed"
+          },
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisSetting"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "variables": {
+            "$ref": "#/components/schemas/DiagnosisVariables"
+          }
+        },
+        "required": [
+          "variables",
+          "settings"
+        ],
+        "type": "object"
+      },
+      "DiagnosisCheck": {
+        "additionalProperties": false,
+        "properties": {
+          "matched": {
+            "type": "boolean"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "why": {
+            "description": "The fact the verdict rests on",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "matched",
+          "why"
+        ],
+        "type": "object"
+      },
+      "DiagnosisError": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "first_release": {
+            "description": "The release it was first seen in",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "count",
+          "first_release"
+        ],
+        "type": "object"
+      },
+      "DiagnosisExit": {
+        "additionalProperties": false,
+        "properties": {
+          "exit_code": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "memory_limit_mb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "oom_killed": {
+            "type": "boolean"
+          },
+          "restarts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "running": {
+            "description": "Still running when the deploy stopped it",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "running",
+          "exit_code",
+          "oom_killed",
+          "memory_limit_mb",
+          "restarts"
+        ],
+        "type": "object"
+      },
+      "DiagnosisFailure": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "description": "From the release's start to its failure",
+            "format": "int64",
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "exit": {
+            "$ref": "#/components/schemas/DiagnosisExit",
+            "description": "The container's state, when one was started"
+          },
+          "step": {
+            "description": "The step it failed in",
+            "enum": [
+              "queued",
+              "building",
+              "starting",
+              "health_checking",
+              "active"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "error_code",
+          "error",
+          "duration_ms"
+        ],
+        "type": "object"
+      },
+      "DiagnosisFix": {
+        "additionalProperties": false,
+        "properties": {
+          "cli": {
+            "description": "The command that makes the change",
+            "type": "string"
+          },
+          "setting": {
+            "enum": [
+              "port",
+              "health_check_path",
+              "memory",
+              "start_command",
+              "image",
+              "variables",
+              "pre_deploy_command",
+              "health_check_timeout"
+            ],
+            "type": "string"
+          },
+          "suggested": {
+            "description": "A value the evidence suggests (the port the app listens on)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "setting"
+        ],
+        "type": "object"
+      },
+      "DiagnosisHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "http: GET of the path; tcp: a connection; running: a service without a port has to keep running",
+            "enum": [
+              "http",
+              "tcp",
+              "running"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "port": {
+            "description": "The container port it checked",
+            "format": "int64",
+            "type": "integer"
+          },
+          "result": {
+            "type": "string"
+          },
+          "status": {
+            "description": "The HTTP status the check got",
+            "format": "int64",
+            "type": "integer"
+          },
+          "timeout_seconds": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "timeout_seconds"
+        ],
+        "type": "object"
+      },
+      "DiagnosisImage": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "$ref": "#/components/schemas/Commit",
+            "description": "The failed release's commit"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "DiagnosisLine": {
+        "additionalProperties": false,
+        "properties": {
+          "matched": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "DiagnosisPreDeploy": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "exit_code": {
+            "description": "Null when it couldn't run or timed out",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tail": {
+            "items": {
+              "$ref": "#/components/schemas/DiagnosisLine"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "timed_out": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command",
+          "exit_code",
+          "duration_ms",
+          "tail"
+        ],
+        "type": "object"
+      },
+      "DiagnosisRef": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "release"
+            ],
+            "type": "string"
+          },
+          "rule": {
+            "description": "The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched",
+            "type": "string"
+          },
+          "summary": {
+            "description": "The likely cause in one line, or that no rule matched",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "DiagnosisResources": {
+        "additionalProperties": false,
+        "properties": {
+          "cpu_percent": {
+            "items": {
+              "format": "double",
+              "type": "number"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "memory_limit_mb": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "memory_mb": {
+            "items": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "of_release": {
+            "description": "The release the samples are of",
+            "format": "int64",
+            "type": "integer"
+          },
+          "peak_memory_mb": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "memory_mb",
+          "cpu_percent",
+          "peak_memory_mb",
+          "memory_limit_mb"
+        ],
+        "type": "object"
+      },
+      "DiagnosisSetting": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "DiagnosisSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "captured_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "release"
+            ],
+            "type": "string"
+          },
+          "release": {
+            "description": "The failed release's number",
+            "format": "int64",
+            "type": "integer"
+          },
+          "rule": {
+            "description": "The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched",
+            "type": "string"
+          },
+          "summary": {
+            "description": "The likely cause in one line, or that no rule matched",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release",
+          "captured_at",
+          "id",
+          "kind",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "DiagnosisVariables": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "added",
+          "removed",
+          "changed"
+        ],
+        "type": "object"
+      },
       "DiscardChangesRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8887,6 +9503,10 @@
           },
           "created_by": {
             "type": "string"
+          },
+          "diagnosis": {
+            "$ref": "#/components/schemas/DiagnosisRef",
+            "description": "A failed release's diagnosis and its likely cause; read it whole with GET .../diagnoses/{id}"
           },
           "environment": {
             "type": "string"
@@ -40006,6 +40626,348 @@
         "summary": "Change database settings",
         "tags": [
           "data"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/diagnoses": {
+      "get": {
+        "description": "A service's deploy diagnoses, newest first, without their bundles: one per failed release, captured when it failed. Scope: read.",
+        "operationId": "list-diagnoses",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this release's",
+            "explode": false,
+            "in": "query",
+            "name": "release",
+            "schema": {
+              "description": "Only this release's",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "format": "int64",
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiagnosisSummary"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List diagnoses",
+        "tags": [
+          "releases"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/diagnoses/{id}": {
+      "get": {
+        "description": "One failure's bundle: the likely cause and what was ruled out, the failure, the health check, what changed since the last good release, the pre-deploy command, the last lines of the container and the build, error issues and resources around it. Secret values in log lines are masked unless the caller can reveal them. Scope: read.",
+        "operationId": "get-diagnosis",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnosis"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a diagnosis",
+        "tags": [
+          "releases"
         ]
       }
     },

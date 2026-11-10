@@ -98,7 +98,7 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				// shows the new run), and an oom one says why it died.
 				if errors.Is(err, errRestarted) && evs != nil {
 					if code, died, oom := awaitDie(ctx, evs, oom); died || oom {
-						return errExited(code, oom, memoryLimit(st))
+						return node.ExitedError(code, oom, memoryLimit(st))
 					}
 				}
 				return err
@@ -139,7 +139,7 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.Hea
 				// Killed: the oom event may still be on its way.
 				oom = awaitOOM(ctx, evs)
 			}
-			return errExited(code, oom, memoryLimit(st))
+			return node.ExitedError(code, oom, memoryLimit(st))
 		case err := <-evErrs:
 			// Polling still catches crashes via state and restart count,
 			// just less promptly.
@@ -218,13 +218,13 @@ func crashed(st container.InspectResponse, baseRestarts int, oom bool) error {
 	}
 	switch s.Status {
 	case container.StateExited, container.StateDead, container.StateRestarting:
-		return errExited(s.ExitCode, oom || s.OOMKilled, memoryLimit(st))
+		return node.ExitedError(s.ExitCode, oom || s.OOMKilled, memoryLimit(st))
 	case container.StateRemoving:
 		return errors.New("container was removed during health check")
 	}
 	if st.RestartCount > baseRestarts {
 		if oom {
-			return errExited(oomExitCode, true, memoryLimit(st))
+			return node.ExitedError(oomExitCode, true, memoryLimit(st))
 		}
 		return errRestarted
 	}
