@@ -27,6 +27,20 @@ query or the UI. The rules that matter most:
   `b.ReportAllocs`) for new hot paths. Update `scripts/perf/baseline.json`
   with `make perf-baseline` only for intended changes, and say why.
 
+## Fix what taught the mistake
+
+When a review, a bot or a check catches a bad pattern, fix the code and
+also whatever led to it, in the same PR: the doc or AGENTS.md rule that
+pointed the wrong way, the code it was copied from, or the missing check
+that would have caught it. If the cause isn't clear, ask the agent that
+wrote it why it chose that, and fix what it names. A pattern left in the
+codebase is an example the next change copies.
+
+Two checks keep that visible: CI's perf comment on every pull request
+(timing rows only warn there, so read them) and the lint suppression
+budget in `scripts/ci/suppressions.sh` (`make lint`). Fix the code before
+raising the budget.
+
 ## Commands
 
 ```sh

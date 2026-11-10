@@ -46,6 +46,8 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
+      # Go's and the UI's lint suppressions against their budget.
+      - run: scripts/ci/suppressions.sh
       - id: go
         uses: ./.github/actions/setup-go
       - name: Install golangci-lint
@@ -175,10 +177,20 @@ jobs:
           cache_dependency_path: web/pnpm-lock.yaml
       # Shared runners are too noisy for timing budgets: they warn here and
       # are enforced locally (make perf). Sizes, memory and allocs still fail.
-      - run: make perf-artifacts PERF_FLAGS="-soft-timing -tempobase-pg $PERF_PG_URL"
+      - run: make perf-artifacts PERF_FLAGS="-soft-timing -markdown $RUNNER_TEMP/perf.md -tempobase-pg $PERF_PG_URL"
         env:
           # The throwaway service above, not a secret.
           PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
+      # The results as Markdown, for the job summary and perf-comment.
+      - if: ${{ !cancelled() }}
+        run: if [ -f "$RUNNER_TEMP/perf.md" ]; then cat "$RUNNER_TEMP/perf.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-artifacts
+          path: ${{ runner.temp }}/perf.md
+          if-no-files-found: ignore
+          retention-days: 3
 
   perf-bench:
     needs: changes
@@ -188,7 +200,58 @@ jobs:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-go
       # Timing warns, allocations fail (see perf-artifacts).
-      - run: make perf-bench PERF_FLAGS="-soft-timing"
+      - run: make perf-bench PERF_FLAGS="-soft-timing -markdown $RUNNER_TEMP/perf.md"
+      - if: ${{ !cancelled() }}
+        run: if [ -f "$RUNNER_TEMP/perf.md" ]; then cat "$RUNNER_TEMP/perf.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-bench
+          path: ${{ runner.temp }}/perf.md
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # The two perf jobs' results as one comment on the pull request, updated
+  # on every push. A failure or a timing warning (timing only warns here)
+  # is then in front of the reviewer and the agent babysitting the PR, not
+  # only in a job log. Pull requests from forks get no write token: skipped.
+  perf-comment:
+    needs: [changes, perf-artifacts, perf-bench]
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.rest == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: perf-*
+          path: perf
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- dock-perf -->';
+            const part = (job, title) => {
+              const f = `perf/${job}/perf.md`;
+              const md = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : `No results: ${job} stopped before its checks ran. See its log.`;
+              return `### ${title}\n\n${md}`;
+            };
+            const sha = context.payload.pull_request.head.sha.slice(0, 7);
+            const body = [
+              marker,
+              `## Performance budgets\n\nFor ${sha}. Timing budgets only warn on shared runners; \`make perf\` enforces them locally. Budgets and how to read them: docs/performance.md.`,
+              part('perf-artifacts', 'Binaries, daemons and UI'),
+              part('perf-bench', 'Benchmarks'),
+            ].join('\n\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number, per_page: 100 });
+            const previous = comments.find((c) => c.user?.type === 'Bot' && c.body?.startsWith(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   # The UI, and every generated file: the API specs and sqlc's code are
   # regenerated from Go first, so the stale-client check and the final diff
