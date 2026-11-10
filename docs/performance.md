@@ -3,7 +3,11 @@
 "Lightweight" and "Fast" are product pillars: the daemon shares a small
 server with the apps it hosts, so every megabyte and every wake-up it costs
 is taken from them. These rules apply to every change, by people and agents
-alike. `make perf` checks the budgets; CI runs it on every pull request.
+alike. `make perf` checks the budgets; CI runs it on every pull request
+and posts the results as a comment on it (the `perf-comment` job), updated
+on each push. Timing budgets only warn on CI's shared runners, so a
+**warn** row in that comment is a regression to fix, or to explain in the
+PR, before merging.
 
 ## Budgets
 
@@ -377,8 +381,8 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 
 ## Reviewer checklist
 
-- [ ] `make perf` passes (CI `perf` job), or the PR explains a baseline
-      update.
+- [ ] `make perf` passes (CI's perf jobs), or the PR explains a baseline
+      update. The PR's perf comment has no unexplained **warn** rows.
 - [ ] New periodic work has a doc comment, stops when idle, and is in the
       table above.
 - [ ] New queries: no N+1, an index for the filter, `EXPLAIN QUERY PLAN`

@@ -68,6 +68,10 @@ type options struct {
 	nsTol, allocsTol     float64
 	update               bool
 
+	// markdown is a file the results are also written to as Markdown, for
+	// CI's job summary and the perf comment on a pull request.
+	markdown string
+
 	// analytics is the analytics store's binary (ADR 0037).
 	analytics string
 
@@ -112,6 +116,7 @@ func main() {
 	flag.Float64Var(&o.nsTol, "ns-tolerance", 0.30, "allowed ns/op regression (fraction), after normalizing for machine speed")
 	flag.Float64Var(&o.allocsTol, "allocs-tolerance", 0.15, "allowed allocs/op regression (fraction, plus 2 allocs)")
 	flag.BoolVar(&o.softTiming, "soft-timing", false, "report timing budgets as warnings (shared CI runners)")
+	flag.StringVar(&o.markdown, "markdown", "", "also write the results as Markdown to this file (CI's job summary and PR comment)")
 	flag.BoolVar(&o.update, "update-baseline", false, "record binary size and benchmarks into -baseline instead of checking")
 	flag.Parse()
 	o.checks = slices.DeleteFunc(strings.Split(checks, ","), func(c string) bool {
@@ -139,6 +144,12 @@ func main() {
 	t := &table{waivers: base.Waivers, softTiming: o.softTiming}
 	runChecks(o, t)
 	t.print(os.Stdout)
+	if o.markdown != "" {
+		if err := writeMarkdown(o.markdown, t); err != nil {
+			fmt.Fprintln(os.Stderr, "perf:", err)
+			os.Exit(1)
+		}
+	}
 	if t.failed() {
 		fmt.Println("\nOver budget. See docs/performance.md; if a change is intended, run `make perf-baseline` and commit scripts/perf/baseline.json.")
 		os.Exit(1)
