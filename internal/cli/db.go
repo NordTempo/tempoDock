@@ -1500,14 +1500,31 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 		return g.io.Print(cols, func() error { return printColumns(g.io, cols) })
 	})
 
-	var clear bool
+	var clear, keys bool
 	set := dbCmd(g, &cobra.Command{
-		Use:   "set [schema.]table.column... | --clear",
-		Short: "Replace the list of sensitive columns",
-		Long:  "Replace the whole list with the columns named (schema public when left out), or empty it with --clear.",
+		Use:   "set [schema.]table.column... | --keys PATTERN... | --clear",
+		Short: "Replace the list of sensitive columns (or, on Redis, key patterns)",
+		Long: `Replace the whole list with the columns named (schema public when left out),
+or empty it with --clear. On Redis, --keys takes key patterns (globs such as
+session:*): matching keys are masked for callers who see sensitive values
+masked, and read only with an audited --reveal by the others.`,
 		Example: `  dock db sensitive set users.password_hash users.email
+  dock db sensitive set --keys 'session:*' 'auth:*'
   dock db sensitive set --clear`,
 	}, func(ctx context.Context, s *session, _ target, data string, args []string) error {
+		if keys {
+			patterns, err := send[[]string](ctx, s, http.MethodPut, data+"/sensitive-keys", apitypes.SetSensitiveKeysRequest{Patterns: append([]string{}, args...)})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(patterns, func() error {
+				g.io.Successf("%s marked sensitive", plural(len(patterns), "key pattern"))
+				for _, p := range patterns {
+					g.io.Detail(p)
+				}
+				return nil
+			})
+		}
 		if len(args) == 0 && !clear {
 			return usageError("no columns given", "Name columns as table.column or schema.table.column, or pass --clear.")
 		}
@@ -1533,6 +1550,7 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 		})
 	})
 	set.Flags().BoolVar(&clear, "clear", false, "mark no columns sensitive")
+	set.Flags().BoolVar(&keys, "keys", false, "the arguments are Redis key patterns (none clears them)")
 	cmd.AddCommand(list, set)
 	return cmd
 }

@@ -145,6 +145,20 @@ func (q *Queries) AddSensitiveColumn(ctx context.Context, arg AddSensitiveColumn
 	return err
 }
 
+const addSensitiveKey = `-- name: AddSensitiveKey :exec
+INSERT INTO sensitive_keys (service_id, pattern) VALUES (?, ?)
+`
+
+type AddSensitiveKeyParams struct {
+	ServiceID int64
+	Pattern   string
+}
+
+func (q *Queries) AddSensitiveKey(ctx context.Context, arg AddSensitiveKeyParams) error {
+	_, err := q.db.ExecContext(ctx, addSensitiveKey, arg.ServiceID, arg.Pattern)
+	return err
+}
+
 const createChangeset = `-- name: CreateChangeset :one
 INSERT INTO changesets (service_id, author, author_kind, user_id, token_id, message, changes, sql, created_at, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -304,6 +318,17 @@ DELETE FROM sensitive_columns WHERE service_id = +?1
 // per column in one transaction.
 func (q *Queries) DeleteSensitiveColumns(ctx context.Context, serviceID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteSensitiveColumns, serviceID)
+	return err
+}
+
+const deleteSensitiveKeys = `-- name: DeleteSensitiveKeys :exec
+DELETE FROM sensitive_keys WHERE service_id = +?1
+`
+
+// Clears a database's key patterns; replacing them is this plus
+// AddSensitiveKey in one transaction.
+func (q *Queries) DeleteSensitiveKeys(ctx context.Context, serviceID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteSensitiveKeys, serviceID)
 	return err
 }
 
@@ -763,6 +788,35 @@ func (q *Queries) ListSensitiveColumns(ctx context.Context, serviceID int64) ([]
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSensitiveKeys = `-- name: ListSensitiveKeys :many
+SELECT pattern FROM sensitive_keys
+WHERE service_id = +?1
+ORDER BY pattern
+`
+
+func (q *Queries) ListSensitiveKeys(ctx context.Context, serviceID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listSensitiveKeys, serviceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var pattern string
+		if err := rows.Scan(&pattern); err != nil {
+			return nil, err
+		}
+		items = append(items, pattern)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

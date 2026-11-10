@@ -3,18 +3,28 @@ import type { DataFilter, DataInsightView } from "./types";
 
 // The panel's view in a route's search params, shared by Dock's Data tab
 // and tempoBase's connection page:
-// ?tab=sql&table=public.orders&order=-total&filter=[...], ?tab=health&insight=queries
+// ?tab=sql&table=public.orders&order=-total&filter=[...], ?tab=health&insight=queries,
+// and for Redis ?db=0&match=user:*&type=hash&key=user:1
 
-/** The panel's view in the URL; the Tables tab is the default. */
+/** The panel's view in the URL; the Tables (or Keys) tab is the default. */
 export type DataSearch = {
-  tab?: "sql" | "schema" | "changes" | "health";
+  tab?: "keys" | "sql" | "schema" | "changes" | "health";
   table?: string;
   order?: string;
   filter?: DataFilter[];
   insight?: DataInsightView;
+  db?: number;
+  match?: string;
+  type?: KeyType;
+  key?: string;
+  hex?: boolean;
 };
 
-const tabs = ["sql", "schema", "changes", "health"] as const;
+/** A Redis key type the browser filters by. */
+export type KeyType = "string" | "hash" | "list" | "set" | "zset" | "stream";
+
+const tabs = ["keys", "sql", "schema", "changes", "health"] as const;
+const keyTypes = ["string", "hash", "list", "set", "zset", "stream"] as const;
 const insights = ["queries", "sessions", "tables", "indexes"] as const;
 const ops = new Set<string>([
   "eq",
@@ -54,6 +64,16 @@ export function validateDataSearch(
     order: text(search.order),
     filter: filter.length ? filter : undefined,
     insight: insights.find((v) => v === search.insight),
+    db:
+      typeof search.db === "number" &&
+      Number.isInteger(search.db) &&
+      search.db > 0
+        ? search.db
+        : undefined,
+    match: text(search.match),
+    type: keyTypes.find((t) => t === search.type),
+    key: text(search.key),
+    hex: search.hex === true || undefined,
   };
 }
 
@@ -64,13 +84,24 @@ export const searchView = (search: DataSearch): DataPanelView => ({
   order: search.order,
   filters: search.filter,
   insight: search.insight,
+  db: search.db,
+  match: search.match,
+  keyType: search.type,
+  key: search.key,
+  keyHex: search.hex,
 });
 
 /** The search for a view, leaving defaults out of the URL. */
 export const viewSearch = (view: DataPanelView): DataSearch => ({
-  tab: view.tab === "tables" ? undefined : view.tab,
+  // Tables and Keys are each engine's first tab: the default.
+  tab: view.tab === "tables" || view.tab === "keys" ? undefined : view.tab,
   table: view.table,
   order: view.order,
   filter: view.filters?.length ? view.filters : undefined,
   insight: view.tab === "health" ? view.insight : undefined,
+  db: view.db || undefined,
+  match: view.match,
+  type: view.keyType,
+  key: view.key,
+  hex: view.keyHex || undefined,
 });

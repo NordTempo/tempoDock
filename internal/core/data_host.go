@@ -129,6 +129,24 @@ func (h dataHost) ReplaceSensitiveColumns(ctx context.Context, id int64, cols []
 	})
 }
 
+func (h dataHost) SensitiveKeys(ctx context.Context, id int64) ([]string, error) {
+	return h.c.store.ListSensitiveKeys(ctx, id)
+}
+
+func (h dataHost) ReplaceSensitiveKeys(ctx context.Context, id int64, patterns []string) error {
+	return h.c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.DeleteSensitiveKeys(ctx, id); err != nil {
+			return err
+		}
+		for _, p := range patterns {
+			if err := q.AddSensitiveKey(ctx, store.AddSensitiveKeyParams{ServiceID: id, Pattern: p}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // SavedQueryOwner is the user, or the user a `dock login` token acts for.
 // Other tokens have none and are told to log in.
 func (h dataHost) SavedQueryOwner(ctx context.Context, a datapanel.Actor) (int64, error) {

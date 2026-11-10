@@ -22,6 +22,7 @@ type fakeHost struct {
 	notRunning bool
 	access     *Access
 	sensitive  []apitypes.DataColumnRef
+	keys       []string
 	changesets []Changeset
 	audits     []AuditEntry
 }
@@ -70,6 +71,19 @@ func (h *fakeHost) ReplaceSensitiveColumns(_ context.Context, _ int64, cols []ap
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sensitive = cols
+	return nil
+}
+
+func (h *fakeHost) SensitiveKeys(context.Context, int64) ([]string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.keys, nil
+}
+
+func (h *fakeHost) ReplaceSensitiveKeys(_ context.Context, _ int64, patterns []string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.keys = patterns
 	return nil
 }
 

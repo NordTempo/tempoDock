@@ -61,11 +61,14 @@ function download(name: string, text: string, type: string) {
 export default function SqlView({
   tables,
   dialect,
+  db,
   initialSql = "",
 }: {
   /** For completion. */
   tables: readonly DataTable[];
   dialect: DataEngine;
+  /** Redis: the logical database commands run in. */
+  db?: number;
   /** Text to open the editor with (Health's "Explain in SQL"). */
   initialSql?: string;
 }) {
@@ -81,10 +84,12 @@ export default function SqlView({
   const queryOptions: QueryOptions = {
     limit: options.limit,
     timeout_seconds: options.timeout,
+    db,
   };
   const flags = [
     options.limit !== 1_000 && `-n ${options.limit}`,
     options.timeout !== 10 && `--timeout ${options.timeout}s`,
+    db && `--db ${db}`,
   ]
     .filter(Boolean)
     .join(" ");

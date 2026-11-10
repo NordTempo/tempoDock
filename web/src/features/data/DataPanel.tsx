@@ -23,6 +23,7 @@ import { engines } from "./engines";
 import { Act, ErrorText } from "./kit";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
+import type { KeyType } from "./search";
 import { TableList } from "./TableList";
 import { TablesView } from "./TablesView";
 import type {
@@ -36,10 +37,12 @@ import type {
 // CodeMirror loads only when the SQL tab opens; Health when it does.
 const SqlView = lazy(() => import("./SqlView"));
 const HealthView = lazy(() => import("./HealthView"));
+// The key browser (Redis) loads only for key-value databases.
+const KeysView = lazy(() => import("./KeysView"));
 
 /** What the panel shows; the host route keeps it in the URL's search. */
 export type DataPanelView = {
-  tab: "tables" | "sql" | "schema" | "changes" | "health";
+  tab: "tables" | "keys" | "sql" | "schema" | "changes" | "health";
   /** "schema.name"; the first table when unset. */
   table?: string;
   /** A column, "-column" for descending. */
@@ -47,10 +50,17 @@ export type DataPanelView = {
   filters?: DataFilter[];
   /** The Health tab's view; the overview when unset. */
   insight?: DataInsightView;
+  /** Redis: the logical database (0 when unset), the key filter, the open key. */
+  db?: number;
+  match?: string;
+  keyType?: KeyType;
+  key?: string;
+  keyHex?: boolean;
 };
 
 const tabLabels: Record<DataPanelView["tab"], string> = {
   tables: "Tables",
+  keys: "Keys",
   sql: "SQL",
   schema: "Schema",
   changes: "Changes",
@@ -223,6 +233,24 @@ export function DataPanel({
         <p className="p-5 text-(--g-fail)">{schema.error.message}</p>
       ) : !schema.data ? (
         <p className="p-5 text-(--g-mut)">Reading the catalog</p>
+      ) : tab === "keys" ? (
+        !atLeast(access.level, "read") ? (
+          <Limited access={access}>
+            Your access is schema: the databases and their key counts, no keys.
+            Key names are data.
+          </Limited>
+        ) : (
+          <Suspense
+            fallback={<p className="p-5 text-(--g-mut)">Loading the keys</p>}
+          >
+            <KeysView
+              schema={schema.data}
+              access={access}
+              view={view}
+              onView={(next) => onView({ ...view, ...next })}
+            />
+          </Suspense>
+        )
       ) : tab === "health" ? (
         <Suspense
           fallback={<p className="p-5 text-(--g-mut)">Loading Health</p>}
@@ -257,6 +285,7 @@ export function DataPanel({
               key={sqlDraft?.n}
               tables={tables}
               dialect={engine.dialect}
+              db={view.db}
               initialSql={sqlDraft?.sql}
             />
           </Suspense>

@@ -272,3 +272,16 @@ func (c *Core) SetSensitiveColumns(ctx context.Context, a Actor, ref ServiceRef,
 	}
 	return c.panel.SetSensitiveColumns(ctx, panelActor(a), db, req)
 }
+
+// SetSensitiveKeys replaces a key-value database's sensitive key
+// patterns. Admin.
+func (c *Core) SetSensitiveKeys(ctx context.Context, a Actor, ref ServiceRef, req apitypes.SetSensitiveKeysRequest) ([]string, error) {
+	db, err := c.dataDB(ctx, a, ref)
+	if err != nil {
+		return nil, err
+	}
+	if !db.Perm.Manage {
+		return nil, errf(apitypes.CodeForbidden, "marking sensitive keys is for admins; %s has scope %s", a, a.Scope)
+	}
+	return c.panel.SetSensitiveKeys(ctx, panelActor(a), db, req)
+}

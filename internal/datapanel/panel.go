@@ -95,8 +95,10 @@ type target[D any] struct {
 	// conn and t are set by connect (useConn).
 	conn Conn
 	t    data.Target
-	// sensitive are the marked columns (loadSensitive).
-	sensitive []apitypes.DataColumnRef
+	// sensitive are the marked columns, sensitiveKeys a key-value
+	// database's marked patterns (loadSensitive).
+	sensitive     []apitypes.DataColumnRef
+	sensitiveKeys []string
 }
 
 // load returns db with its engine and setup record.
@@ -198,8 +200,17 @@ func (p *Panel[D]) setRoles(tg *target[D], reader, writer string) {
 	tg.t.Monitor = data.Credentials{User: string(p.roles.Monitor), Password: p.derivedPassword(reader, p.roles.Monitor)}
 }
 
-// loadSensitive loads the database's sensitive columns.
+// loadSensitive loads the database's sensitive columns, or for a
+// key-value database its sensitive key patterns.
 func (p *Panel[D]) loadSensitive(ctx context.Context, tg *target[D]) error {
+	if _, ok := tg.eng.(data.Keys); ok {
+		keys, err := p.host.SensitiveKeys(ctx, tg.db.ID)
+		if err != nil {
+			return err
+		}
+		tg.sensitive, tg.sensitiveKeys = []apitypes.DataColumnRef{}, keys
+		return nil
+	}
 	cols, err := p.host.SensitiveColumns(ctx, tg.db.ID)
 	if err != nil {
 		return err
@@ -235,7 +246,7 @@ func (p *Panel[D]) derivedPassword(readerPassword string, role data.Role) string
 // data.reveal), implicitly for SQL and changesets, whose every statement
 // is audited with its text.
 func (tg *target[D]) call(a Actor, reveal bool) data.Call {
-	return data.Call{Actor: a.Name, Masked: !reveal || tg.db.Perm.Sensitive != apitypes.SensitiveVisible, Sensitive: tg.sensitive}
+	return data.Call{Actor: a.Name, Masked: !reveal || tg.db.Perm.Sensitive != apitypes.SensitiveVisible, Sensitive: tg.sensitive, SensitiveKeys: tg.sensitiveKeys}
 }
 
 // dataError maps an engine error to what the caller should do. Errors
@@ -458,6 +469,7 @@ func (p *Panel[D]) Schema(ctx context.Context, a Actor, db *Database[D]) (apityp
 			s, err = k.Keyspace(ctx, tg.t, tg.call(a, false))
 			return err
 		})
+		s.SensitiveKeys = tg.sensitiveKeys
 		return s, p.dataError(db, err)
 	}
 	t, err := tables(tg, "reading the schema")
@@ -571,6 +583,11 @@ func (p *Panel[D]) Query(ctx context.Context, a Actor, db *Database[D], req apit
 	tg, err := p.ready(ctx, db, apitypes.LevelRead, "running SQL")
 	if err != nil {
 		return nil, err
+	}
+	if len(tg.sensitiveKeys) > 0 && db.Perm.Sensitive != apitypes.SensitiveVisible {
+		// Redis ACLs can't deny a key pattern: the console could read
+		// what the browser masks.
+		return nil, forbidden("the console isn't available while sensitive keys are masked for you (%s)", Why(db.Perm))
 	}
 	call := tg.call(a, true)
 	if err := p.ensureGrants(ctx, tg, call); err != nil {

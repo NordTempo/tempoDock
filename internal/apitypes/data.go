@@ -366,6 +366,8 @@ type DataSchema struct {
 	// Keyspace is a key-value database's logical databases (Redis), in
 	// place of tables.
 	Keyspace []DataKeyspaceDB `json:"keyspace,omitempty"`
+	// SensitiveKeys are a key-value database's sensitive key patterns.
+	SensitiveKeys []string `json:"sensitive_keys,omitempty"`
 	// ReadAt is when the catalog was read.
 	ReadAt time.Time `json:"read_at"`
 }

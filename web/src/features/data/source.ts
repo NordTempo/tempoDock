@@ -169,5 +169,26 @@ export function serviceSource(ref: ServiceRef): DataSource {
           body: { columns },
         }),
       ),
+    keys: (req, signal) =>
+      body(
+        api.GET(`${P}/keys` as const, {
+          params: { path, query: { ...req, type: req.type || undefined } },
+          signal,
+        }),
+      ),
+    keyValue: (req, signal) =>
+      body(
+        api.GET(`${P}/keys/value` as const, {
+          params: { path, query: req },
+          signal,
+        }),
+      ),
+    setSensitiveKeys: (patterns) =>
+      body(
+        api.PUT(`${P}/sensitive-keys` as const, {
+          ...params,
+          body: { patterns },
+        }),
+      ),
   };
 }

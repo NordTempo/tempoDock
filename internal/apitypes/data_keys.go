@@ -53,6 +53,9 @@ type DataKeyInfo struct {
 	Length int64 `json:"length"`
 	// Bytes is MEMORY USAGE with 5 samples: an estimate for big values.
 	Bytes int64 `json:"bytes"`
+	// Masked: the key matches a sensitive pattern the caller sees masked;
+	// Key is then the pattern, not the name.
+	Masked bool `json:"masked,omitempty"`
 }
 
 // DataKeyPage is one page of keys.
@@ -79,6 +82,17 @@ type DataKeyRequest struct {
 	// Full returns a string value (or each item) untruncated, up to
 	// 1 MB.
 	Full bool `json:"full,omitempty"`
+	// Reveal reads a key matching a sensitive pattern. Only for callers
+	// with sensitive visible (others get forbidden); audited as
+	// data.reveal, at most every 10 min per caller and pattern.
+	Reveal bool `json:"reveal,omitempty"`
+}
+
+// SetSensitiveKeysRequest replaces a key-value database's sensitive key
+// patterns (PUT /data/sensitive-keys): Redis globs such as session:*.
+// Admin.
+type SetSensitiveKeysRequest struct {
+	Patterns []string `json:"patterns" maxItems:"200"`
 }
 
 // DataKeyValue is one key with a page of its value, as rows of a grid:

@@ -138,6 +138,8 @@ func Describe(id string, roles data.Roles, w datapanel.Words) (summary, descript
 		return "Reject a changeset", "Admins, or the author withdrawing it."
 	case "set-sensitive-columns":
 		return "Set sensitive columns", "Replaces the database's sensitive columns. Admin."
+	case "set-sensitive-keys":
+		return "Set sensitive keys", "Replaces a key-value database's sensitive key patterns (Redis globs, e.g. session:*): matching keys are listed by pattern and read only with an audited reveal. Admin."
 	case "get-data-insights":
 		return "How the database is doing", "Reads the database's own statistics on demand, as " + string(roles.Monitor) + " (a member of pg_monitor that runs only " + w.Product + "'s fixed queries): " +
 			"connections against the limit, cache hit ratio and size (overview); the top statements from pg_stat_statements (queries); sessions with what blocks them (sessions); " +
@@ -295,15 +297,16 @@ func (q KeysQuery) Request() apitypes.DataKeysRequest {
 
 // KeyQuery is get-data-key's query parameters, shared by both hosts.
 type KeyQuery struct {
-	DB    int    `query:"db" minimum:"0" maximum:"1024" doc:"Logical database; default 0"`
-	Key   string `query:"key" required:"true" doc:"The key's name (hex when hex is set)"`
-	Hex   bool   `query:"hex" doc:"key is hex: for names that aren't UTF-8"`
-	After string `query:"after" doc:"The previous page's next cursor"`
-	Limit int    `query:"limit" minimum:"0" maximum:"1000" doc:"Items of the value per page; 0 means 100"`
-	Full  bool   `query:"full" doc:"Values untruncated, up to 1 MB each"`
+	DB     int    `query:"db" minimum:"0" maximum:"1024" doc:"Logical database; default 0"`
+	Key    string `query:"key" required:"true" doc:"The key's name (hex when hex is set)"`
+	Hex    bool   `query:"hex" doc:"key is hex: for names that aren't UTF-8"`
+	After  string `query:"after" doc:"The previous page's next cursor"`
+	Limit  int    `query:"limit" minimum:"0" maximum:"1000" doc:"Items of the value per page; 0 means 100"`
+	Full   bool   `query:"full" doc:"Values untruncated, up to 1 MB each"`
+	Reveal bool   `query:"reveal" doc:"Read a key matching a sensitive pattern. Needs sensitive visible (403 otherwise); audited as data.reveal"`
 }
 
 // Request is the query as a DataKeyRequest.
 func (q KeyQuery) Request() apitypes.DataKeyRequest {
-	return apitypes.DataKeyRequest{DB: q.DB, Key: q.Key, Hex: q.Hex, After: q.After, Limit: q.Limit, Full: q.Full}
+	return apitypes.DataKeyRequest{DB: q.DB, Key: q.Key, Hex: q.Hex, After: q.After, Limit: q.Limit, Full: q.Full, Reveal: q.Reveal}
 }
