@@ -94,7 +94,7 @@ func New(cfg Config, st *tbstore.Store, box *secrets.Box, log *slog.Logger) *App
 		loginLimit: httpkit.NewLoginLimiter(),
 	}
 	a.panel = datapanel.New(datapanel.Options[*tbstore.Connection]{
-		Host: host{a}, Engine: a.engine, Box: box, Roles: data.TempoBaseRoles, Words: Words, Logger: log,
+		Host: host{a}, Engines: []data.Engine{a.engine}, Box: box, Roles: data.TempoBaseRoles, Words: Words, Logger: log,
 	})
 	return a
 }

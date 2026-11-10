@@ -1,11 +1,12 @@
 // Package pg is the Postgres engine of the database panel (ADR 0016): a
 // data.Engine on pgx v5.
 //
-// Connections are dialed through data.Target.Dial (never a TCP address),
-// cached per (service, role), at most data.MaxConnsPerKey per key and
-// data.MaxConns in total, and closed by a per-connection timer
-// data.IdleTimeout after their last use. There is no pool goroutine: an idle
-// engine holds nothing but the timers of connections still open.
+// Connections are dialed through data.Target.Dial (never a TCP address)
+// and cached by internal/data/conncache per (service, role), at most
+// data.MaxConnsPerKey per key and data.MaxConns in total, each closed by its
+// own timer data.IdleTimeout after its last use. There is no pool
+// goroutine: an idle engine holds nothing but the timers of connections
+// still open.
 //
 // Every read runs as the reader role (Options.Roles; Dock's dock_reader,
 // masked references and SQL as dock_reader_masked) in a READ ONLY
@@ -31,27 +32,21 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/conncache"
 )
 
 // Engine is the Postgres data.Engine. Create it with New; it is safe for
 // concurrent use.
 type Engine struct {
-	mu      sync.Mutex
-	conns   map[connKey][]*conn
-	total   int
-	waiters int
-	// wake is closed (and replaced) when a connection is released or
-	// removed while someone waits in acquire.
-	wake   chan struct{}
+	// conns are the cached connections (internal/data/conncache).
+	conns *conncache.Cache[*pgx.Conn]
+	// mu guards schemas and closed.
+	mu     sync.Mutex
 	closed bool
 	// schemas caches introspection per service for schemaTTL; a service's
 	// entry is dropped with its last connection or by Forget.
-	schemas map[int64]*catalog
-
-	idleTimeout time.Duration
-	schemaTTL   time.Duration
-	maxPerKey   int
-	maxConns    int
+	schemas   map[int64]*catalog
+	schemaTTL time.Duration
 	// countTimeout bounds each exact count of a never-analysed table
 	// (countUnanalysed).
 	countTimeout time.Duration
@@ -73,7 +68,10 @@ type Options struct {
 	AppName string
 }
 
-var _ data.Engine = (*Engine)(nil)
+var (
+	_ data.Engine = (*Engine)(nil)
+	_ data.Tables = (*Engine)(nil)
+)
 
 // New returns an engine with the limits of package data. It opens nothing
 // until the first call.
@@ -84,20 +82,15 @@ func New(o Options) *Engine {
 	if o.AppName == "" {
 		o.AppName = "dock"
 	}
-	return &Engine{
-		conns:       map[connKey][]*conn{},
-		wake:        make(chan struct{}),
-		schemas:     map[int64]*catalog{},
-		idleTimeout: data.IdleTimeout,
-		schemaTTL:   data.SchemaTTL,
-		maxPerKey:   data.MaxConnsPerKey,
-		maxConns:    data.MaxConns,
-
+	e := &Engine{
+		schemas:      map[int64]*catalog{},
+		schemaTTL:    data.SchemaTTL,
 		countTimeout: exactCountTimeout,
-
-		roles: o.Roles,
-		app:   o.AppName,
+		roles:        o.Roles,
+		app:          o.AppName,
 	}
+	e.conns = e.newCache(0, 0)
+	return e
 }
 
 // Kind is Postgres.
@@ -119,13 +112,13 @@ func (e *Engine) Status(ctx context.Context, t data.Target) (data.ServerInfo, er
 	defer e.release(cn)
 	var num int
 	var readsAll, masked bool
-	err = cn.pg.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'MEMBER'), to_regrole($1) IS NOT NULL",
+	err = cn.Conn.QueryRow(ctx, "SELECT current_setting('server_version_num')::int, pg_has_role(current_user, 'pg_read_all_data', 'MEMBER'), to_regrole($1) IS NOT NULL",
 		string(e.roles.ReaderMasked)).Scan(&num, &readsAll, &masked)
 	if err != nil {
-		cn.broken = true
+		cn.Broken = true
 		return data.ServerInfo{}, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
 	}
-	info := serverInfo(cn.pg, num)
+	info := serverInfo(cn.Conn, num)
 	if num < data.MinPostgresVersion {
 		return info, unsupported(info)
 	}
@@ -173,25 +166,18 @@ func unsupported(info data.ServerInfo) error {
 // Forget closes the service's idle connections (busy ones close when
 // released) and drops its cached schema.
 func (e *Engine) Forget(serviceID int64) {
+	e.conns.Drop(func(k conncache.Key) bool { return k.ID == serviceID })
 	e.mu.Lock()
-	idle := e.dropLocked(func(k connKey) bool { return k.service == serviceID })
 	delete(e.schemas, serviceID)
 	e.mu.Unlock()
-	for _, c := range idle {
-		c.close()
-	}
 }
 
 // Close closes every connection; busy ones close when released, and later
 // calls fail.
 func (e *Engine) Close() {
+	e.conns.Close()
 	e.mu.Lock()
 	e.closed = true
-	idle := e.dropLocked(func(connKey) bool { return true })
 	clear(e.schemas)
-	e.broadcastLocked()
 	e.mu.Unlock()
-	for _, c := range idle {
-		c.close()
-	}
 }

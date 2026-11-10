@@ -76,8 +76,8 @@ func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apit
 		return stats, err
 	}
 	defer e.release(cn)
-	if err := simpleExec(qctx, cn.pg, beginSQL(true, timeout, data.ReadLockTimeout, 0, appName(e.app, c.Actor))); err != nil {
-		cn.broken = true
+	if err := simpleExec(qctx, cn.Conn, beginSQL(true, timeout, data.ReadLockTimeout, 0, appName(e.app, c.Actor))); err != nil {
+		cn.Broken = true
 		return stats, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
 	}
 
@@ -103,12 +103,12 @@ func (e *Engine) Query(ctx context.Context, t data.Target, c data.Call, req apit
 	}
 	// A canceled context leaves the connection in an unknown state; one
 	// that broke on the wire is closed already (release drops both).
-	if qctx.Err() != nil || cn.pg.IsClosed() {
-		cn.broken = true
+	if qctx.Err() != nil || cn.Conn.IsClosed() {
+		cn.Broken = true
 	}
-	if !cn.broken {
-		if err := simpleExec(qctx, cn.pg, endQuerySQL); err != nil {
-			cn.broken = true
+	if !cn.Broken {
+		if err := simpleExec(qctx, cn.Conn, endQuerySQL); err != nil {
+			cn.Broken = true
 		}
 	}
 	return stats, nil
@@ -141,7 +141,7 @@ type stream struct {
 // run prepares and executes sql on cn, sending the header and row frames.
 // Database errors are returned for the caller's error frame.
 func (s *stream) run(ctx context.Context, cn *conn, sql string) error {
-	pc := cn.pg.PgConn()
+	pc := cn.Conn.PgConn()
 	sd, err := pc.Prepare(ctx, "", sql, nil)
 	if err != nil {
 		return err
@@ -149,12 +149,12 @@ func (s *stream) run(ctx context.Context, cn *conn, sql string) error {
 	if len(sd.ParamOIDs) > 0 {
 		return errors.New("query parameters ($1, ...) aren't supported: write the values into the SQL")
 	}
-	cols, kinds, err := resultColumns(ctx, cn.pg, sd.Fields)
+	cols, kinds, err := resultColumns(ctx, cn.Conn, sd.Fields)
 	if err != nil {
 		return err
 	}
 	if s.sendErr = s.send(apitypes.DataQueryFrame{Type: apitypes.FrameHeader, Columns: cols}); s.sendErr != nil {
-		cn.broken = true
+		cn.Broken = true
 		return nil
 	}
 	src := make([]int, len(kinds))
@@ -189,7 +189,7 @@ func (s *stream) run(ctx context.Context, cn *conn, sql string) error {
 	if s.truncated || s.sendErr != nil {
 		// Cut the connection instead of draining the rest of the result;
 		// the server stops when its next write fails.
-		cn.broken = true
+		cn.Broken = true
 		_ = pc.Conn().Close()
 		_, _ = rr.Close()
 		if s.sendErr == nil {

@@ -100,7 +100,7 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 	res.SQL = renderTx(plans)
 
 	fail := func(err error) (data.CommitResult, error) {
-		cn.broken = true
+		cn.Broken = true
 		res.Duration = time.Since(start)
 		if ctx.Err() != nil {
 			return res, ctx.Err()
@@ -108,12 +108,12 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 		return res, err
 	}
 	begin := beginSQL(false, data.WriteStatementTimeout, data.WriteLockTimeout, data.WriteIdleTimeout, appName(e.app, c.Actor))
-	if err := simpleExec(ctx, cn.pg, begin); err != nil {
+	if err := simpleExec(ctx, cn.Conn, begin); err != nil {
 		return fail(fmt.Errorf("%w: %w", data.ErrUnreachable, err))
 	}
 	affected := make([]int64, 0, len(plans))
 	for i, p := range plans {
-		tag, err := cn.pg.Exec(ctx, p.sql, p.args...)
+		tag, err := cn.Conn.Exec(ctx, p.sql, p.args...)
 		if err != nil {
 			pgErr, ok := errors.AsType[*pgconn.PgError](err)
 			if !ok || ctx.Err() != nil {
@@ -124,7 +124,7 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 		}
 		affected = append(affected, tag.RowsAffected())
 		if tag.RowsAffected() == 0 && p.op != apitypes.DataChangeInsert {
-			conflict, err := diagnose(ctx, cn.pg, i, p)
+			conflict, err := diagnose(ctx, cn.Conn, i, p)
 			if err != nil {
 				return fail(err)
 			}
@@ -132,13 +132,13 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 		}
 	}
 	if len(res.Conflicts) > 0 {
-		if err := simpleExec(ctx, cn.pg, "ROLLBACK"); err != nil {
-			cn.broken = true
+		if err := simpleExec(ctx, cn.Conn, "ROLLBACK"); err != nil {
+			cn.Broken = true
 		}
 		res.Duration = time.Since(start)
 		return res, nil
 	}
-	if err := simpleExec(ctx, cn.pg, "COMMIT"); err != nil {
+	if err := simpleExec(ctx, cn.Conn, "COMMIT"); err != nil {
 		pgErr, ok := errors.AsType[*pgconn.PgError](err)
 		if !ok {
 			return fail(err)

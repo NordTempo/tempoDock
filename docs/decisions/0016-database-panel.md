@@ -1,6 +1,6 @@
 # 0016: Database panel
 
-Status: accepted; superseded in part by [0023](0023-connect-tunnels.md) (raw access by policy, not admin-only), [0024](0024-tempobase-standalone.md) (a standalone tempoBase after all)
+Status: accepted; superseded in part by [0023](0023-connect-tunnels.md) (raw access by policy, not admin-only), [0024](0024-tempobase-standalone.md) (a standalone tempoBase after all); amended by [0072](0072-mysql-and-redis-in-the-data-panel.md) (MySQL/MariaDB and Redis/Valkey)
 
 ## Context
 

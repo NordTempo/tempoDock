@@ -37,7 +37,7 @@ func (p *Panel[D]) Insights(ctx context.Context, a Actor, db *Database[D], req a
 	}
 	ins, err := p.flights.do(ctx, flightKey{db.ID, fmt.Sprint(req.Views), req.Order, req.Limit}, func() (apitypes.DataInsights, error) {
 		return withMonitor(ctx, p, tg, func() (apitypes.DataInsights, error) {
-			return p.eng.Insights(ctx, tg.t, tg.call(a, false), req)
+			return tg.eng.Insights(ctx, tg.t, tg.call(a, false), req)
 		})
 	})
 	if err != nil {
@@ -52,11 +52,11 @@ func (p *Panel[D]) Insights(ctx context.Context, a Actor, db *Database[D], req a
 	masked := db.Perm.Sensitive != apitypes.SensitiveVisible
 	ins.Sessions = slices.Clone(ins.Sessions)
 	for i := range ins.Sessions {
-		ins.Sessions[i].Text = p.insightText(ins.Sessions[i].Text, masked)
+		ins.Sessions[i].Text = p.insightText(db.Engine, ins.Sessions[i].Text, masked)
 	}
 	ins.Queries = slices.Clone(ins.Queries)
 	for i := range ins.Queries {
-		ins.Queries[i].Text = p.insightText(ins.Queries[i].Text, masked)
+		ins.Queries[i].Text = p.insightText(db.Engine, ins.Queries[i].Text, masked)
 	}
 	if slices.Contains(req.Views, apitypes.InsightQueries) || slices.Contains(req.Views, apitypes.InsightSessions) {
 		if p.browse.due(browseKey{apitypes.AuditDataInsights, ActorKey(a), db.ID, ""}, time.Now()) {
@@ -112,9 +112,9 @@ func insightsRequest(perm apitypes.DataPermission, req apitypes.DataInsightsRequ
 // insightText is a statement text as the caller may see it: values
 // redacted for masked callers, and for everyone when it mentions a
 // password (ALTER ROLE ... PASSWORD carries one in clear).
-func (p *Panel[D]) insightText(text string, masked bool) string {
+func (p *Panel[D]) insightText(engine apitypes.DataEngine, text string, masked bool) string {
 	if text != "" && (masked || strings.Contains(strings.ToUpper(text), "PASSWORD")) {
-		return p.eng.Redact(text)
+		return p.redact(engine, text)
 	}
 	return text
 }
@@ -134,7 +134,7 @@ func (p *Panel[D]) Pressure(ctx context.Context, db *Database[D]) (apitypes.Data
 	if err := p.connect(ctx, tg); err != nil {
 		return apitypes.DataPressure{}, err
 	}
-	pr, err := withMonitor(ctx, p, tg, func() (apitypes.DataPressure, error) { return p.eng.Pressure(ctx, tg.t) })
+	pr, err := withMonitor(ctx, p, tg, func() (apitypes.DataPressure, error) { return tg.eng.Pressure(ctx, tg.t) })
 	return pr, p.dataError(db, err)
 }
 
@@ -147,7 +147,7 @@ func withMonitor[D, T any](ctx context.Context, p *Panel[D], tg *target[D], fn f
 	if !errors.Is(err, data.ErrNotSetUp) {
 		return out, err
 	}
-	if err := p.eng.EnsureMonitor(ctx, tg.t, tg.conn.Owner); err != nil {
+	if err := tg.eng.EnsureMonitor(ctx, tg.t, tg.conn.Owner); err != nil {
 		var zero T
 		return zero, fmt.Errorf("create %s's monitor role in %s: %w", p.words.Product, tg.db.Name, err)
 	}
@@ -221,7 +221,7 @@ func (p *Panel[D]) EnableQueryStats(ctx context.Context, a Actor, db *Database[D
 	if err := p.connect(ctx, tg); err != nil {
 		return apitypes.DataQueryStatsResult{}, err
 	}
-	state, created, err := p.eng.EnableQueryStats(ctx, tg.t, tg.conn.Owner)
+	state, created, err := tg.eng.EnableQueryStats(ctx, tg.t, tg.conn.Owner)
 	switch {
 	case err != nil:
 		return apitypes.DataQueryStatsResult{}, p.dataError(db, err)
@@ -247,7 +247,7 @@ func (p *Panel[D]) ResetQueryStats(ctx context.Context, a Actor, db *Database[D]
 	if err := p.connect(ctx, tg); err != nil {
 		return err
 	}
-	if err := p.eng.ResetQueryStats(ctx, tg.t, tg.conn.Owner); err != nil {
+	if err := tg.eng.ResetQueryStats(ctx, tg.t, tg.conn.Owner); err != nil {
 		return p.dataError(db, err)
 	}
 	p.audit(ctx, a, db, apitypes.AuditDataStatsReset, "reset the query stats", nil)
@@ -278,7 +278,7 @@ func (p *Panel[D]) CancelSession(ctx context.Context, a Actor, db *Database[D], 
 	if err := p.connect(ctx, tg); err != nil {
 		return apitypes.DataCancelResult{}, err
 	}
-	res, err := p.eng.Cancel(ctx, tg.t, tg.conn.Owner, session, req.QueryStartedAt, req.Terminate)
+	res, err := tg.eng.Cancel(ctx, tg.t, tg.conn.Owner, session, req.QueryStartedAt, req.Terminate)
 	if err != nil {
 		return apitypes.DataCancelResult{}, p.dataError(db, err)
 	}
@@ -296,7 +296,7 @@ func (p *Panel[D]) CancelSession(ctx context.Context, a Actor, db *Database[D], 
 	if req.Terminate {
 		action, summary = apitypes.AuditDataTerminate, fmt.Sprintf("ended a session of %s (%s), in its transaction for %s", who, res.User, res.Running.Round(time.Second))
 	}
-	text := p.insightText(res.Text, db.Perm.Sensitive != apitypes.SensitiveVisible)
+	text := p.insightText(db.Engine, res.Text, db.Perm.Sensitive != apitypes.SensitiveVisible)
 	p.audit(context.WithoutCancel(ctx), a, db, action, summary, &AuditDetail{SQL: text, Duration: res.Running, Outcome: apitypes.OutcomeOK})
 	return apitypes.DataCancelResult{
 		Session: session, Terminated: req.Terminate, User: res.User, Application: res.Application, RunningMs: res.Running.Milliseconds(),

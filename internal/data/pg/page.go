@@ -89,14 +89,14 @@ func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apity
 		if err != nil {
 			return err
 		}
-		page, err = runPage(ctx, cn.pg, plan)
+		page, err = runPage(ctx, cn.Conn, plan)
 		if err != nil {
 			return err
 		}
 		page.EstimatedRows = tm.EstimatedRows
 		if req.Count {
 			var n int64
-			err := cn.pg.QueryRow(ctx, plan.countSQL, plan.countArgs...).Scan(&n)
+			err := cn.Conn.QueryRow(ctx, plan.countSQL, plan.countArgs...).Scan(&n)
 			if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "57014" && ctx.Err() == nil {
 				return nil // counting took too long: no exact count
 			}
@@ -515,7 +515,7 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 				fks = append(fks, in)
 			}
 		}
-		values, err := referencedValues(ctx, cn.pg, tm, req.Key, fks)
+		values, err := referencedValues(ctx, cn.Conn, tm, req.Key, fks)
 		if err != nil {
 			return err
 		}
@@ -535,7 +535,7 @@ func (e *Engine) References(ctx context.Context, t data.Target, c data.Call, req
 			if err != nil {
 				return err
 			}
-			page, err := runPage(ctx, cn.pg, plan)
+			page, err := runPage(ctx, cn.Conn, plan)
 			if err != nil {
 				return err
 			}

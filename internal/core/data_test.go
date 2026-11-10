@@ -464,6 +464,12 @@ func (e *pageEngine) SyncGrants(context.Context, data.Target, data.Credentials, 
 	return "synced", nil
 }
 
+func (e *pageEngine) Kind() apitypes.DataEngine { return apitypes.EnginePostgres }
+
+func (e *pageEngine) References(context.Context, data.Target, data.Call, apitypes.DataReferencesRequest) ([]apitypes.DataReferences, error) {
+	return nil, nil
+}
+
 func (e *pageEngine) Redact(sql string) string { return pg.New(pg.Options{}).Redact(sql) }
 
 func (e *pageEngine) Forget(id int64) {
@@ -490,7 +496,7 @@ func (e *pageEngine) last() (data.Call, int) {
 func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 	h := newHarness(t)
 	eng := &pageEngine{}
-	h.opts.Data = eng
+	h.opts.DataEngines = []data.Engine{eng}
 	h.restart()
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")
@@ -652,7 +658,7 @@ func TestContainerEventForget(t *testing.T) {
 func TestDataReveal(t *testing.T) {
 	h := newHarness(t)
 	eng := &pageEngine{}
-	h.opts.Data = eng
+	h.opts.DataEngines = []data.Engine{eng}
 	h.restart()
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
 	h.deploy(db, "postgres:17")

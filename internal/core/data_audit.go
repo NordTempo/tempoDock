@@ -41,9 +41,10 @@ func (c *Core) GetAuditDetail(ctx context.Context, a Actor, id int64) (apitypes.
 		return apitypes.AuditDetail{}, notFound("audit detail %d not found", id)
 	}
 	var perm apitypes.DataPermission
+	var engine apitypes.DataEngine
 	own, sensitive := false, false
 	if strings.HasPrefix(ev.Action, "data.") {
-		if perm, own, sensitive, err = c.dataDetailAccess(ctx, a, ev); err != nil {
+		if engine, perm, own, sensitive, err = c.dataDetailAccess(ctx, a, ev); err != nil {
 			return apitypes.AuditDetail{}, err
 		}
 	}
@@ -51,49 +52,51 @@ func (c *Core) GetAuditDetail(ctx context.Context, a Actor, id int64) (apitypes.
 	if err != nil {
 		return apitypes.AuditDetail{}, err
 	}
-	return c.panel.RedactDetail(perm, own, sensitive, toAuditDetail(d)), nil
+	return c.panel.RedactDetail(engine, perm, own, sensitive, toAuditDetail(d)), nil
 }
 
 // dataDetailAccess checks that a may read the detail of data event ev
 // (level read in its environment) and returns what decides whether its
 // values are redacted (datapanel.Panel.RedactDetail): a's permission,
-// whether it is their own event and whether the database has sensitive
-// columns. The last is only looked up when it matters.
-func (c *Core) dataDetailAccess(ctx context.Context, a Actor, ev store.AuditEvent) (perm apitypes.DataPermission, own, sensitive bool, err error) {
+// whether it is their own event, and whether the database has sensitive
+// columns with its engine ("" when it is gone). The last two are only
+// looked up when they matter.
+func (c *Core) dataDetailAccess(ctx context.Context, a Actor, ev store.AuditEvent) (engine apitypes.DataEngine, perm apitypes.DataPermission, own, sensitive bool, err error) {
 	if ev.ProjectID == nil || ev.EnvironmentID == nil {
-		return perm, false, false, errf(apitypes.CodeForbidden, "the detail of this %s event isn't tied to an environment", ev.Action)
+		return "", perm, false, false, errf(apitypes.CodeForbidden, "the detail of this %s event isn't tied to an environment", ev.Action)
 	}
 	env, err := c.store.GetEnvironment(ctx, *ev.EnvironmentID)
 	if err != nil {
-		return perm, false, false, err
+		return "", perm, false, false, err
 	}
 	p, err := c.store.GetProject(ctx, *ev.ProjectID)
 	if err != nil {
-		return perm, false, false, err
+		return "", perm, false, false, err
 	}
 	es := envScope{p, env}
 	if perm, err = c.dataPermission(ctx, a, es); err != nil {
-		return perm, false, false, err
+		return "", perm, false, false, err
 	}
 	if err := datapanel.RequireLevel(perm, apitypes.LevelRead, "reading the SQL of "+ev.Action+" events"); err != nil {
-		return perm, false, false, err
+		return "", perm, false, false, err
 	}
 	if own = ownEvent(a, ev); perm.Sensitive == apitypes.SensitiveVisible || own {
-		return perm, own, false, nil
+		return "", perm, own, false, nil
 	}
 	name, ok := strings.CutPrefix(ev.Target, es.String()+"/")
 	if !ok {
-		return perm, false, true, nil
+		return "", perm, false, true, nil
 	}
 	svc, err := c.store.GetServiceByName(ctx, store.GetServiceByNameParams{EnvironmentID: env.ID, Name: name})
 	if store.IsNotFound(err) {
-		return perm, false, true, nil // gone: it can't say what's sensitive
+		return "", perm, false, true, nil // gone: it can't say what's sensitive
 	}
 	if err != nil {
-		return perm, false, false, err
+		return "", perm, false, false, err
 	}
+	engine, _ = detectDatabase(svc)
 	cols, err := c.store.ListSensitiveColumns(ctx, svc.ID)
-	return perm, false, err != nil || len(cols) > 0, err
+	return engine, perm, false, err != nil || len(cols) > 0, err
 }
 
 // ownEvent reports whether a recorded ev.

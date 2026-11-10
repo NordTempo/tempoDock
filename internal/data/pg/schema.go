@@ -205,7 +205,7 @@ func (e *Engine) catalog(ctx context.Context, t data.Target, cn *conn, inTx bool
 		return cat, nil
 	}
 	var doc string
-	if err := cn.pg.QueryRow(ctx, catalogSQL).Scan(&doc); err != nil {
+	if err := cn.Conn.QueryRow(ctx, catalogSQL).Scan(&doc); err != nil {
 		return nil, fmt.Errorf("read schema: %w", err)
 	}
 	cat, err := parseCatalog([]byte(doc), time.Now())
@@ -252,15 +252,15 @@ func (e *Engine) countUnanalysed(ctx context.Context, cn *conn, cat *catalog) er
 	}
 	timeout := "SAVEPOINT dock_count; SET LOCAL statement_timeout = " + strconv.FormatInt(max(e.countTimeout.Milliseconds(), 1), 10)
 	for _, tb := range todo {
-		if err := simpleExec(ctx, cn.pg, timeout); err != nil {
+		if err := simpleExec(ctx, cn.Conn, timeout); err != nil {
 			return dbError(err)
 		}
 		var n int64
-		err := cn.pg.QueryRow(ctx, "SELECT count(*) FROM "+pgx.Identifier{tb.Schema, tb.Name}.Sanitize(), pgx.QueryExecModeSimpleProtocol).Scan(&n)
+		err := cn.Conn.QueryRow(ctx, "SELECT count(*) FROM "+pgx.Identifier{tb.Schema, tb.Name}.Sanitize(), pgx.QueryExecModeSimpleProtocol).Scan(&n)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := simpleExec(ctx, cn.pg, "ROLLBACK TO SAVEPOINT dock_count"); err != nil {
+		if err := simpleExec(ctx, cn.Conn, "ROLLBACK TO SAVEPOINT dock_count"); err != nil {
 			return dbError(err)
 		}
 		if err == nil {

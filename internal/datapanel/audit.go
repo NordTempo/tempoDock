@@ -124,7 +124,7 @@ func (p *Panel[D]) auditQuery(ctx context.Context, a Actor, db *Database[D], sql
 			outcome = apitypes.OutcomeCanceled
 		}
 	}
-	summary := fmt.Sprintf("ran SQL (%s, %d rows): %s", outcome, stats.Rows, sqlSummary(p.eng.Redact(sql)))
+	summary := fmt.Sprintf("ran SQL (%s, %d rows): %s", outcome, stats.Rows, sqlSummary(p.redact(db.Engine, sql)))
 	p.audit(context.WithoutCancel(ctx), a, db, apitypes.AuditDataQuery, summary, &AuditDetail{
 		SQL: sql, Rows: stats.Rows, Duration: stats.Duration, Outcome: outcome,
 	})
@@ -170,10 +170,12 @@ func (p *Panel[D]) auditReveal(ctx context.Context, a Actor, tg *target[D], tabl
 // RedactDetail is an audit detail of a data event as a caller may see it:
 // with its values redacted when the caller sees sensitive columns masked
 // (perm), it isn't their own event and the database has sensitive
-// columns. The host checks the caller may read the detail at all.
-func (p *Panel[D]) RedactDetail(perm apitypes.DataPermission, own, sensitive bool, d apitypes.AuditDetail) apitypes.AuditDetail {
+// columns. engine is the database's, "" when it is gone (the whole
+// statement is hidden then). The host checks the caller may read the
+// detail at all.
+func (p *Panel[D]) RedactDetail(engine apitypes.DataEngine, perm apitypes.DataPermission, own, sensitive bool, d apitypes.AuditDetail) apitypes.AuditDetail {
 	if perm.Sensitive != apitypes.SensitiveVisible && !own && sensitive {
-		d.SQL = p.eng.Redact(d.SQL)
+		d.SQL = p.redact(engine, d.SQL)
 	}
 	return d
 }

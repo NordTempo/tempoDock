@@ -84,6 +84,7 @@ line means a later record added to it without changing what it decided.
 | [0069](0069-database-insights.md) | Database insights | accepted |
 | [0070](0070-sleeping-environments.md) | Sleeping environments (scale to zero) | accepted |
 | [0071](0071-deploy-diagnosis.md) | Deploy diagnosis | accepted |
+| [0072](0072-mysql-and-redis-in-the-data-panel.md) | MySQL/MariaDB and Redis/Valkey in the Data panel | accepted |
 
 ## Template
 

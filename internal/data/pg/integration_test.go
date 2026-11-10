@@ -836,74 +836,46 @@ func TestCommit(t *testing.T) {
 	}
 }
 
+// TestConnCache checks the engine's use of the connection cache against a
+// real server: a connection closes after its idle timeout and takes the
+// service's cached schema with it, and Forget closes the rest. The cache's
+// limits are conncache's own tests.
 func TestConnCache(t *testing.T) {
 	ctx := ctxT(t)
 	e := newEngine(t)
-	e.idleTimeout = 200 * time.Millisecond
-	count := func() int {
-		e.mu.Lock()
-		defer e.mu.Unlock()
-		return e.total
-	}
+	e.conns = e.newCache(200*time.Millisecond, 0)
 
 	if _, err := e.Schema(ctx, target(1), data.Call{}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if count() != 1 {
-		t.Fatalf("%d conns", count())
+	if n := e.conns.Len(); n != 1 {
+		t.Fatalf("%d conns", n)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for count() > 0 && time.Now().Before(deadline) {
+	for e.conns.Len() > 0 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	e.mu.Lock()
-	idle, schemas := e.total, len(e.schemas)
+	schemas := len(e.schemas)
 	e.mu.Unlock()
-	if idle != 0 || schemas != 0 {
-		t.Fatalf("after idle: %d conns, %d schemas", idle, schemas)
+	if n := e.conns.Len(); n != 0 || schemas != 0 {
+		t.Fatalf("after idle: %d conns, %d schemas", n, schemas)
 	}
 
-	// Per key: the third caller waits for a release.
-	e.idleTimeout = time.Minute
+	e.conns = e.newCache(time.Minute, 0)
 	a, err := e.acquire(ctx, target(1), data.RoleReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := e.acquire(ctx, target(1), data.RoleReader)
+	e.release(a)
+	b, err := e.acquire(ctx, target(2), data.RoleReader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-	if _, err := e.acquire(short, target(1), data.RoleReader); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("third conn: %v", err)
-	}
-	time.AfterFunc(100*time.Millisecond, func() { e.release(a) })
-	c, err := e.acquire(ctx, target(1), data.RoleReader)
-	if err != nil || c != a {
-		t.Fatalf("waiter got %p (%v), want the released %p", c, err, a)
-	}
-	e.release(b)
-	e.release(c)
-
-	// Over MaxConns, an idle connection of another key makes room.
-	e.maxConns = 2
-	d, err := e.acquire(ctx, target(2), data.RoleReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.mu.Lock()
-	left := len(e.conns[connKey{1, data.RoleReader}])
-	e.mu.Unlock()
-	if count() != 2 || left != 1 {
-		t.Fatalf("eviction: %d conns, %d of service 1", count(), left)
-	}
-	e.release(d)
-
+	defer e.release(b)
 	e.Forget(1)
-	e.Forget(2)
-	if count() != 0 {
-		t.Fatalf("after forget: %d conns", count())
+	if n := e.conns.Len(); n != 1 {
+		t.Fatalf("after forget: %d conns, want the busy one of service 2", n)
 	}
 }
 

@@ -21,7 +21,7 @@ func (pressureEngine) Pressure(context.Context, data.Target) (apitypes.DataPress
 // database is not found.
 func TestDatabasePressure(t *testing.T) {
 	h, eng, db, _ := fakeDatabase(t)
-	h.opts.Data = pressureEngine{eng}
+	h.opts.DataEngines = []data.Engine{pressureEngine{eng}}
 	h.restart()
 	ss, err := h.c.loadService(h.ctx, 1, db)
 	if err != nil {

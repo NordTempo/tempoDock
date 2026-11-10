@@ -13,6 +13,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
+	"github.com/NordTempo/tempoDock/internal/data/conncache"
 )
 
 // Insights (ADR 0069): fixed, read-only statistics queries as
@@ -178,7 +179,7 @@ func (e *Engine) Insights(ctx context.Context, t data.Target, c data.Call, req a
 	err := e.readLocked(ctx, t, data.RoleMonitor, c, insightTimeout, insightLockTimeout, func(cn *conn) error {
 		out.ReadAt = time.Now().UTC()
 		var st dbStats
-		if err := cn.pg.QueryRow(ctx, statsSQL).Scan(&st.blksHit, &st.blksRead, &st.deadlocks, &st.tempBytes, &st.statsReset,
+		if err := cn.Conn.QueryRow(ctx, statsSQL).Scan(&st.blksHit, &st.blksRead, &st.deadlocks, &st.tempBytes, &st.statsReset,
 			&st.started, &st.xidAge, &st.preload, &st.pgssSchema); err != nil {
 			return fmt.Errorf("%w: %w", data.ErrUnreachable, err)
 		}
@@ -194,7 +195,7 @@ func (e *Engine) Insights(ctx context.Context, t data.Target, c data.Call, req a
 			if !want(v) {
 				return nil
 			}
-			if _, err := cn.pg.Exec(ctx, "SAVEPOINT v"); err != nil {
+			if _, err := cn.Conn.Exec(ctx, "SAVEPOINT v"); err != nil {
 				return err
 			}
 			err := fn()
@@ -202,21 +203,21 @@ func (e *Engine) Insights(ctx context.Context, t data.Target, c data.Call, req a
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				if _, rerr := cn.pg.Exec(ctx, "ROLLBACK TO SAVEPOINT v"); rerr != nil {
+				if _, rerr := cn.Conn.Exec(ctx, "ROLLBACK TO SAVEPOINT v"); rerr != nil {
 					return rerr
 				}
 				out.Unavailable = append(out.Unavailable, apitypes.DataUnavailable{View: v, Reason: "couldn't read it: " + dbError(err).Error()})
 				return nil
 			}
-			_, err = cn.pg.Exec(ctx, "RELEASE SAVEPOINT v")
+			_, err = cn.Conn.Exec(ctx, "RELEASE SAVEPOINT v")
 			return err
 		}
 		readers := map[apitypes.DataInsightView]func() error{
-			apitypes.InsightOverview: func() error { return readOverview(ctx, cn.pg, st, &out) },
-			apitypes.InsightQueries:  func() error { return readStatements(ctx, cn.pg, st, req, &out, &ev) },
-			apitypes.InsightSessions: func() error { return e.readSessions(ctx, cn.pg, &out) },
-			apitypes.InsightTables:   func() error { return readTables(ctx, cn.pg, &out) },
-			apitypes.InsightIndexes:  func() error { return readIndexes(ctx, cn.pg, &out, &ev) },
+			apitypes.InsightOverview: func() error { return readOverview(ctx, cn.Conn, st, &out) },
+			apitypes.InsightQueries:  func() error { return readStatements(ctx, cn.Conn, st, req, &out, &ev) },
+			apitypes.InsightSessions: func() error { return e.readSessions(ctx, cn.Conn, &out) },
+			apitypes.InsightTables:   func() error { return readTables(ctx, cn.Conn, &out) },
+			apitypes.InsightIndexes:  func() error { return readIndexes(ctx, cn.Conn, &out, &ev) },
 		}
 		for _, v := range apitypes.DataInsightViews {
 			if err := view(v, readers[v]); err != nil {
@@ -304,7 +305,7 @@ func scanPressure(ctx context.Context, pg *pgx.Conn) (apitypes.DataPressure, err
 func (e *Engine) Pressure(ctx context.Context, t data.Target) (apitypes.DataPressure, error) {
 	var p apitypes.DataPressure
 	err := e.readLocked(ctx, t, data.RoleMonitor, data.Call{Actor: "pressure"}, insightTimeout, insightLockTimeout, func(cn *conn) (err error) {
-		p, err = scanPressure(ctx, cn.pg)
+		p, err = scanPressure(ctx, cn.Conn)
 		return err
 	})
 	if errors.Is(err, data.ErrFull) {
@@ -525,12 +526,7 @@ func (e *Engine) EnsureMonitor(ctx context.Context, t data.Target, owner data.Cr
 	if err := ensureMonitor(ctx, pg, e.roles.Monitor, t.Monitor.Password, t.Database); err != nil {
 		return err
 	}
-	e.mu.Lock()
-	idle := e.dropLocked(func(k connKey) bool { return k.service == t.ServiceID && k.role == data.RoleMonitor })
-	e.mu.Unlock()
-	for _, c := range idle {
-		c.close()
-	}
+	e.conns.Drop(func(k conncache.Key) bool { return k.ID == t.ServiceID && k.Role == data.RoleMonitor })
 	return nil
 }
 
