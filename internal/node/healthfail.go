@@ -73,7 +73,9 @@ var (
 	httpStatus = regexp.MustCompile(`returned (\d{3})\b`)
 )
 
-// ParseHealthFailure reads what a failed health check's message says.
+// ParseHealthFailure reads what a failed health check's message says: a
+// deploy's (above), or the last output of a running container's ongoing
+// check (cmd/dock-probe, ADR 0043), whose words it knows too.
 // The most specific statement wins: a check that timed out after the
 // container died says it died.
 func ParseHealthFailure(msg string) HealthFailure {
@@ -98,12 +100,12 @@ func ParseHealthFailure(msg string) HealthFailure {
 		status, _ := strconv.Atoi(m[1])
 		return HealthFailure{Kind: HealthFailStatus, Status: status}
 	}
-	for _, s := range []string{"is the app listening", "connection refused", "connection reset by peer", ": EOF", "no route to host"} {
+	for _, s := range []string{"is the app listening", "connection refused", "connection reset", ": EOF", "no route to host"} {
 		if strings.Contains(msg, s) {
 			return HealthFailure{Kind: HealthFailNotListening}
 		}
 	}
-	for _, s := range []string{"Client.Timeout", "deadline exceeded", "i/o timeout", "health check timed out"} {
+	for _, s := range []string{"Client.Timeout", "deadline exceeded", "i/o timeout", "health check timed out", ": timed out", "closed without an answer"} {
 		if strings.Contains(msg, s) {
 			return HealthFailure{Kind: HealthFailNoAnswer}
 		}

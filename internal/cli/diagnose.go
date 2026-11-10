@@ -19,8 +19,9 @@ func newDiagnoseCmd(g *globals) *cobra.Command {
 	var release int64
 	cmd := &cobra.Command{
 		Use:   "diagnose",
-		Short: "Why a release failed: the likely cause and the evidence",
-		Long: `Why a release failed, from what Dock kept when it failed: the likely cause
+		Short: "Why a release failed or crash looped: the likely cause and the evidence",
+		Long: `Why a release failed, or why the live one crash looped or turned unhealthy,
+from what Dock kept when it happened: the likely cause
 and what was ruled out, the health check's answer, what changed since the
 last good release, the pre-deploy command, and the last lines of the
 container and the build. The service's newest diagnosis, or release N's
@@ -67,8 +68,11 @@ func releaseQuery(n int64) string {
 // printDiagnosis prints a diagnosis the way the release page shows it.
 func printDiagnosis(g *globals, d apitypes.Diagnosis, flags string) error {
 	out := g.io.Out
-	_, _ = fmt.Fprintf(out, "r%d of %s/%s/%s failed in %s after %s.\n\n", d.Release, d.Project, d.Environment, d.Service,
-		strings.ReplaceAll(string(d.Failure.Step), "_", " "), humanDuration(d.Failure.DurationMS))
+	after := "after " + humanDuration(d.Failure.DurationMS)
+	if d.Kind != apitypes.DiagnosisRelease {
+		after = humanDuration(d.Failure.DurationMS) + " after it went live"
+	}
+	_, _ = fmt.Fprintf(out, "%s, %s.\n\n", d.Headline(), after)
 	cause, matched := d.Cause.Summary, d.Cause.Detail
 	if d.Cause.Rule == "" {
 		cause, matched = cause+": "+d.Failure.Error, ""
@@ -119,10 +123,15 @@ func printDiagnosis(g *globals, d apitypes.Diagnosis, flags string) error {
 
 // humanDuration says milliseconds as people read them.
 func humanDuration(ms int64) string {
-	if ms < 60_000 {
+	switch {
+	case ms < 60_000:
 		return fmt.Sprintf("%.1fs", float64(ms)/1000)
+	case ms < 3_600_000:
+		return fmt.Sprintf("%dm%02ds", ms/60_000, ms/1000%60)
+	case ms < 86_400_000:
+		return fmt.Sprintf("%dh%02dm", ms/3_600_000, ms/60_000%60)
 	}
-	return fmt.Sprintf("%dm%02ds", ms/60_000, ms/1000%60)
+	return fmt.Sprintf("%dd%dh", ms/86_400_000, ms/3_600_000%24)
 }
 
 func healthText(h *apitypes.DiagnosisHealth) string {
@@ -147,6 +156,8 @@ func exitText(e *apitypes.DiagnosisExit) string {
 	switch {
 	case e == nil:
 		return ""
+	case e.Running && e.ExitCode != nil:
+		return fmt.Sprintf("running again after exit %d, %s", *e.ExitCode, plural(e.Restarts, "restart"))
 	case e.Running:
 		return fmt.Sprintf("running when stopped, %s", plural(e.Restarts, "restart"))
 	case e.OOMKilled:

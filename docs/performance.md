@@ -362,10 +362,12 @@ end) are not listed.
   counting past them; a tick opens at most 10 issues per service, and a
   service has at most 1,000.
 - Deploy diagnoses ([ADR 0071](decisions/0071-deploy-diagnosis.md))
-  are captured only when a release fails: two node calls within 5 s, a
-  60-line container tail and a 40-line build tail (lines cut at 400
-  bytes), stored as at most 48 KB, 20 per service. Nothing is kept in
-  memory.
+  are captured only when a release fails, or once per crash loop or
+  unhealthy alert (in a goroutine of its own, never the alert engine's):
+  two node calls within 5 s, a 60-line container tail and a 40-line
+  build tail (lines cut at 400 bytes), stored as at most 48 KB, 20 per
+  service. In memory only an open alert's cause, a few strings per open
+  crash loop or unhealthy alert.
 - Project rename canonicalization keeps one current name per renamed project ID
   for the daemon's lifetime. It is bounded by projects, not rename count, and
   avoids DB reads for in-flight events. There are no historical aliases or timers

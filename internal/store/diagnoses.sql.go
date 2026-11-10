@@ -153,6 +153,55 @@ func (q *Queries) ListDiagnoses(ctx context.Context, arg ListDiagnosesParams) ([
 	return items, nil
 }
 
+const listProjectDiagnosisHeads = `-- name: ListProjectDiagnosisHeads :many
+SELECT d.id, d.service_id, d.release_id, d.kind, d.rule, d.summary
+FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN diagnoses d ON d.id = (SELECT max(n.id) FROM diagnoses n WHERE n.service_id = services.id)
+WHERE environments.project_id = +?
+`
+
+type ListProjectDiagnosisHeadsRow struct {
+	ID        int64
+	ServiceID int64
+	ReleaseID int64
+	Kind      string
+	Rule      string
+	Summary   string
+}
+
+// The newest diagnosis of each service in a project, without its bundle,
+// for the project overview: one row per service at most.
+func (q *Queries) ListProjectDiagnosisHeads(ctx context.Context, projectID int64) ([]ListProjectDiagnosisHeadsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectDiagnosisHeads, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectDiagnosisHeadsRow
+	for rows.Next() {
+		var i ListProjectDiagnosisHeadsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ServiceID,
+			&i.ReleaseID,
+			&i.Kind,
+			&i.Rule,
+			&i.Summary,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServiceDiagnosisRefs = `-- name: ListServiceDiagnosisRefs :many
 SELECT id, release_id, kind, rule, summary FROM diagnoses
 WHERE service_id = +? ORDER BY id

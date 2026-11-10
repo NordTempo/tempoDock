@@ -4950,7 +4950,9 @@
           },
           "kind": {
             "enum": [
-              "release"
+              "release",
+              "crash_loop",
+              "unhealthy"
             ],
             "type": "string"
           },
@@ -4967,7 +4969,7 @@
             "type": "string"
           },
           "release": {
-            "description": "The failed release's number",
+            "description": "The release's number: the one that failed, or the active one that crash looped or turned unhealthy",
             "format": "int64",
             "type": "integer"
           },
@@ -5139,7 +5141,7 @@
         "additionalProperties": false,
         "properties": {
           "duration_ms": {
-            "description": "From the release's start to its failure",
+            "description": "From the release's start to its failure; for a running service, how long it had been live",
             "format": "int64",
             "type": "integer"
           },
@@ -5154,7 +5156,7 @@
             "description": "The container's state, when one was started"
           },
           "step": {
-            "description": "The step it failed in",
+            "description": "The step it failed in; active for a running service",
             "enum": [
               "queued",
               "building",
@@ -5325,7 +5327,9 @@
           },
           "kind": {
             "enum": [
-              "release"
+              "release",
+              "crash_loop",
+              "unhealthy"
             ],
             "type": "string"
           },
@@ -5423,12 +5427,14 @@
           },
           "kind": {
             "enum": [
-              "release"
+              "release",
+              "crash_loop",
+              "unhealthy"
             ],
             "type": "string"
           },
           "release": {
-            "description": "The failed release's number",
+            "description": "The release's number",
             "format": "int64",
             "type": "integer"
           },
@@ -9720,6 +9726,10 @@
           },
           "created_by": {
             "type": "string"
+          },
+          "diagnosis": {
+            "$ref": "#/components/schemas/DiagnosisRef",
+            "description": "The release's newest diagnosis (why it failed, crash loops or is unhealthy), in the project overview"
           },
           "error": {
             "type": "string"

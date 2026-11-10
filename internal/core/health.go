@@ -262,7 +262,22 @@ func (c *Core) handleUnhealthy(ss svcScope, containerID string, now time.Time) {
 	if restart {
 		next = now.Add(backoffAfter(streak + 1))
 	}
-	c.raiseAlert(ctx, unhealthyAlert(ss, ct.HealthOutput, since, streak, restart, inflight, next), now)
+	sig := unhealthyAlert(ss, ct.HealthOutput, since, streak, restart, inflight, next)
+	if streak > 0 {
+		// A restart didn't help: diagnosed once per alert (ADR 0071),
+		// before the next restart, while its output is there.
+		c.alerts.mu.Lock()
+		_, known := c.alerts.causes[sig.Key]
+		c.alerts.mu.Unlock()
+		if !known {
+			if ref := c.diagnoseRunning(ctx, ss, apitypes.DiagnosisUnhealthy); ref != nil {
+				c.alerts.mu.Lock()
+				c.alerts.causes[sig.Key] = c.causeOf(ss, ref)
+				c.alerts.mu.Unlock()
+			}
+		}
+	}
+	c.raiseAlert(ctx, sig, now)
 	if !restart {
 		return
 	}

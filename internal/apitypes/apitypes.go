@@ -1588,6 +1588,9 @@ type ReleaseSummary struct {
 	// Error and ErrorCode explain a failed release.
 	Error     string    `json:"error,omitempty"`
 	ErrorCode ErrorCode `json:"error_code,omitempty"`
+	// Diagnosis is the release's newest diagnosis (ADR 0071), in the
+	// project overview: why it failed, or why it crash loops.
+	Diagnosis *DiagnosisRef `json:"diagnosis,omitempty" doc:"The release's newest diagnosis (why it failed, crash loops or is unhealthy), in the project overview"`
 }
 
 // EventType names a live event. It is also the SSE `event:` field.

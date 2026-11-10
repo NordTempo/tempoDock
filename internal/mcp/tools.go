@@ -336,15 +336,15 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: summary + ".", Data: v}, nil
 		})
 
-	mcpkit.AddTool(s, "diagnose", "Diagnose a failed release",
-		"Why a release failed, in one bundle Dock kept when it failed: the likely cause from deterministic rules (cause.rule, cause.summary, a fix with its setting and CLI command), "+
+	mcpkit.AddTool(s, "diagnose", "Diagnose a failure",
+		"Why a release failed, or why the live one crash looped or turned unhealthy (kind), in one bundle Dock kept when it happened: the likely cause from deterministic rules (cause.rule, cause.summary, a fix with its setting and CLI command), "+
 			"every rule checked with its verdict (checked: what was ruled out and why), the failure with its exit code and OOM kill, the health check's answer, "+
 			"what changed since the last good release (image, variable names, settings), the pre-deploy command, the last lines of the container (matched lines marked) and the build, "+
 			"error issues and memory around it. Default: the service's newest diagnosis; release picks one. Call this first after a failed deploy instead of reading logs. "+
 			"A failed release never got traffic: fix the cause and deploy again, don't roll back. No rule matching (empty cause.rule) means read the evidence.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Release int64 `json:"release,omitempty" doc:"Release number. Default: the service's newest diagnosis."`
+			Release int64 `json:"release,omitempty" doc:"Release number: a failed one, or a live one that crash looped. Default: the service's newest diagnosis."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -365,7 +365,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			summary := fmt.Sprintf("Release %d of %s failed in %s. ", d.Release, ref, d.Failure.Step)
+			summary := d.Headline() + ". "
 			if d.Cause.Rule != "" {
 				summary += "Likely cause: " + d.Cause.Summary + "."
 				if f := d.Cause.Fix; f != nil && f.CLI != "" {

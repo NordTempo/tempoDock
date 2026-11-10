@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -156,7 +157,119 @@ func TestReleaseDiagnosis(t *testing.T) {
 	if strings.Contains(masked.ContainerTail[0].Text, "sentry-secret-key") || !strings.Contains(masked.ContainerTail[0].Text, secretMask) {
 		t.Errorf("a reader reads %q, want the value masked", masked.ContainerTail[0].Text)
 	}
+	// The failed deploy's alert says the cause and points at it.
+	ss, err := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := h.openAlert("deploy:"+alertServiceKey(ss.svc.ID, "", "", ""), true); !strings.Contains(a.Message, "Likely cause: The app listens on :3000, Dock checks :8080.") ||
+		!strings.HasPrefix(a.Command, "dock diagnose -r 2") {
+		t.Errorf("deploy alert = %q, %q", a.Message, a.Command)
+	}
 	if _, err := h.c.GetDiagnosis(h.ctx, reader, web, got.Diagnosis.ID+1); CodeOf(err) != apitypes.CodeNotFound {
 		t.Errorf("another ID: %v, want not found", err)
+	}
+}
+
+// A crash loop is diagnosed before its alert opens, so the alert says the
+// likely cause and points at the live release's diagnosis.
+func TestCrashLoopDiagnosis(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "shop:1", Port: 8080})
+	// The release's live event, which resets the engine's restart count,
+	// is published just after it reads active: wait for it, so the
+	// restarts below come after it on the bus, as they would.
+	sub := h.c.bus.subscribe(func(e busEvent) bool {
+		return e.ev.Type == apitypes.EventRelease && e.ev.Release != nil && e.ev.Release.Status == apitypes.ReleaseActive
+	})
+	h.deploy(web, "shop:1")
+	select {
+	case <-sub.ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no live event")
+	}
+	sub.close()
+	ss, err := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.rt.AddStderr(h.ctr(web, 1), "Error: DATABASE_URL is not set")
+	// Docker restarts it again and again, as its events say: the first
+	// one the alert engine sees is history, the next three a loop.
+	restart := func() {
+		h.c.changeStatus(ss, func(s *apitypes.ServiceStatus) { s.State, s.ExitCode = apitypes.ServiceRunning, 1; s.RestartCount++ })
+	}
+	for range 4 {
+		restart()
+	}
+	key := "crash:" + alertServiceKey(ss.svc.ID, "", "", "")
+	a := h.openAlert(key, true)
+	if !strings.Contains(a.Message, "Likely cause: DATABASE_URL isn't set.") || !strings.HasPrefix(a.Command, "dock diagnose") ||
+		!strings.Contains(a.Target, `"release":1`) {
+		t.Fatalf("alert = %+v", a)
+	}
+	rel, err := h.c.GetRelease(h.ctx, testSystem, web, 1)
+	if err != nil || rel.Diagnosis == nil || rel.Diagnosis.Kind != apitypes.DiagnosisCrashLoop {
+		t.Fatalf("active release's diagnosis: %v %+v", err, rel.Diagnosis)
+	}
+	d, err := h.c.GetDiagnosis(h.ctx, testSystem, web, rel.Diagnosis.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Cause.Rule != "missing_variable" || d.Failure.Exit == nil || d.Failure.Exit.ExitCode == nil || *d.Failure.Exit.ExitCode != 1 ||
+		d.Headline() != "Release 1 of shop/production/web crash looped while live" {
+		t.Errorf("diagnosis = %+v", d)
+	}
+
+	// The project overview carries it with the active release.
+	ov, err := h.c.Overview(h.ctx, testSystem, "shop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar := ov.Environments[0].Services[0].ActiveRelease; ar == nil || ar.Diagnosis == nil || ar.Diagnosis.ID != rel.Diagnosis.ID {
+		t.Errorf("overview's active release = %+v", ar)
+	}
+
+	// Later restarts keep the cause; the next crash loop is diagnosed anew.
+	restart()
+	if a := h.openAlert(key, true); !strings.Contains(a.Message, "Likely cause") {
+		t.Errorf("after another restart: %q", a.Message)
+	}
+	h.c.resolveAlert(h.ctx, key, time.Now())
+	h.c.alerts.mu.Lock()
+	_, kept := h.c.alerts.causes[key]
+	h.c.alerts.mu.Unlock()
+	if kept {
+		t.Error("a resolved alert kept its cause")
+	}
+}
+
+// An unhealthy service is diagnosed once a restart didn't help, and its
+// alert says why.
+func TestUnhealthyDiagnosis(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Port: 3000, HealthCheckPath: "/healthz"})
+	h.deploy(web, "nginx:1")
+	ss, err := h.c.serviceFor(h.ctx, testSystem, web, apitypes.ScopeRead, "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, name, key := h.ctrID(web, 1), h.ctr(web, 1), healthAlertKey(ss.svc.ID)
+	h.rt.SetHealth(id, node.HealthHealthy, "")
+	h.until("healthy", func() bool { return h.healthOf(ss.svc.ID).Health == apitypes.HealthHealthy })
+
+	h.rt.SetHealth(id, node.HealthUnhealthy, "GET /healthz returned 404")
+	h.until("first restart", func() bool { return h.restarts(name) == 1 })
+	if a := h.openAlert(key, true); strings.Contains(a.Message, "Likely cause") {
+		t.Fatalf("diagnosed before a restart failed to help: %q", a.Message)
+	}
+	h.rt.SetHealth(id, node.HealthUnhealthy, "GET /healthz returned 404")
+	h.until("critical", func() bool { return h.openAlert(key, true).Severity == string(apitypes.SeverityCritical) })
+	if a := h.openAlert(key, true); !strings.Contains(a.Message, "Likely cause: GET /healthz answered 404: the app has no such path.") {
+		t.Fatalf("alert = %q", a.Message)
+	}
+	list, err := h.c.ListDiagnoses(h.ctx, testSystem, web, 0, 5)
+	if err != nil || len(list) != 1 || list[0].Kind != apitypes.DiagnosisUnhealthy || list[0].Release != 1 {
+		t.Fatalf("diagnoses = %v %+v", err, list)
 	}
 }

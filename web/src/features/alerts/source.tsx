@@ -175,6 +175,18 @@ export function AlertLink({
     case "crash_loop":
     case "unhealthy":
       if (!svc) break;
+      // Diagnosed (ADR 0071): its release's page says why.
+      if (a.target?.release)
+        return (
+          <Link
+            to="/$org/$project/$environment/$service/releases/$number"
+            params={{ ...svc, number: String(a.target.release) }}
+            hash="diagnosis"
+            {...props}
+          >
+            See why
+          </Link>
+        );
       return (
         <Link
           to="/$org/$project/$environment/$service/logs"

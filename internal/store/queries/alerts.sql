@@ -83,12 +83,14 @@ WHERE alert_channels.renotify_minutes > 0
 
 -- name: ListFailedLatestReleases :many
 -- Services whose newest release failed: what failed-deploy alerts should
--- be open after the alert engine missed events. One pass over services
+-- be open after the alert engine missed events, with their cause. One pass over services
 -- (CROSS JOIN keeps SQLite from scanning releases instead), each newest
 -- release found through (service_id, number).
 SELECT projects.id AS project_id, services.id AS service_id,
   projects.name AS project, environments.name AS environment, services.name AS service,
-  releases.number, releases.error
+  releases.number, releases.error,
+  -- Its diagnosis's cause, when a rule matched (ADR 0071).
+  CAST(coalesce((SELECT d.summary FROM diagnoses d WHERE d.release_id = releases.id AND d.rule <> '' ORDER BY d.id DESC LIMIT 1), '') AS TEXT) AS cause
 FROM services
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id

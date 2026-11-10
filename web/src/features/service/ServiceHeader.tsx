@@ -368,6 +368,18 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   const { status } = service;
   const serving = service.active_release;
   const mut = (text: string) => <span className="text-mut">{text}</span>;
+  // The live release's diagnosis while it crash loops or is unhealthy
+  // (ADR 0071): the likely cause, and the way to the evidence.
+  const liveCause = (kind: "crash_loop" | "unhealthy") => {
+    const d = view.active_release?.diagnosis;
+    if (!d || d.kind !== kind || !d.rule || !serving) return null;
+    return (
+      <>
+        {" "}
+        Likely cause: {d.summary}. {releaseLink(serving, "See why")}
+      </>
+    );
+  };
   // The failed deploy, while it matters: the overview's last_failed_deploy
   // survives a rollback and clears once a new image or config deploys;
   // else the latest attempt when it failed. Its own strip under the
@@ -387,9 +399,15 @@ export function StatusSentence({ view }: { view: ServiceView }) {
       // A problem row like the project page's: a tinted strip, with the
       // way to the cause as a button, so it isn't lost under the headline.
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-fail bg-fail-bg py-1.5 pr-1.5 pl-3 text-sm">
-        <span className="flex-1 text-fail">
-          ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
-          {ago(lastFailed.created_at)}
+        <span className="flex-1">
+          <span className="text-fail">
+            ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
+            {ago(lastFailed.created_at)}
+          </span>
+          {lastFailed.diagnosis?.rule && (
+            // Its diagnosis's likely cause (ADR 0071).
+            <>. {lastFailed.diagnosis.summary}</>
+          )}
         </span>
         <Link
           to="/$org/$project/$environment/$service/releases/$number"
@@ -447,6 +465,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         {status.exit_code}
         {healthRestarts(status)}.{" "}
         {status.oom_killed && mut(`It ${oomPhrase(status)}.`)}
+        {liveCause("crash_loop")}
       </>
     );
   } else if (status.state === "crashed") {
@@ -500,7 +519,8 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           <> {mono(`GET ${service.health_check_path}`)}</>
         )}
         {healthRestarts(status)}.{" "}
-        {mut("Dock restarts it, with backoff. Check its logs.")}
+        {liveCause("unhealthy") ??
+          mut("Dock restarts it, with backoff. Check its logs.")}
       </>
     );
   } else {
