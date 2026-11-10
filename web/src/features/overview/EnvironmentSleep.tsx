@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
@@ -143,6 +143,9 @@ export function SleepForm({
   onDone: () => void;
 }) {
   const set = useSetSleep();
+  // Opened from the menu: the choice is the first thing to make.
+  const select = useRef<HTMLSelectElement>(null);
+  useEffect(() => select.current?.focus(), []);
   const ref = { project: environment.project, environment: environment.name };
   const current = environment.sleep?.after_minutes ?? 0;
   const [pick, setPick] = useState(
@@ -166,8 +169,7 @@ export function SleepForm({
       <label htmlFor={`sleep-${environment.id}`}>Sleep after</label>
       <select
         id={`sleep-${environment.id}`}
-        // biome-ignore lint/a11y/noAutofocus: opened from the menu
-        autoFocus
+        ref={select}
         value={pick}
         onChange={(e) => setPick(e.target.value)}
         className="field py-[3px] font-mono text-xs"

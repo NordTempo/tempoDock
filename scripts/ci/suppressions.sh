@@ -7,7 +7,7 @@
 # leaves room for another to slip in. Run by make lint and CI's lint job.
 set -euo pipefail
 
-budget=50
+budget=49
 
 cd "$(git rev-parse --show-toplevel)"
 pattern='//[[:space:]]*nolint|#nosec|//lint:ignore|biome-ignore|@ts-(ignore|expect-error|nocheck)|eslint-disable'

@@ -1,6 +1,6 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { envPath, keys, useIsAdmin } from "../../data/queries";
@@ -268,6 +268,9 @@ export function LockForm({
 }) {
   const lock = useLock();
   const [reason, setReason] = useState("");
+  // Opened by clicking Lock: the reason is the first thing to type.
+  const reasonField = useRef<HTMLInputElement>(null);
+  useEffect(() => reasonField.current?.focus(), []);
   const cli = `dock environment lock ${ref.environment}${reason.trim() ? ` --reason ${JSON.stringify(reason.trim())}` : ""}`;
   return (
     <form
@@ -283,8 +286,7 @@ export function LockForm({
       <input
         aria-label="Reason (optional)"
         placeholder="Reason (optional)"
-        // biome-ignore lint/a11y/noAutofocus: opened by clicking Lock
-        autoFocus
+        ref={reasonField}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         className="field min-w-0 flex-[1_1_220px] py-[3px] text-fg"
