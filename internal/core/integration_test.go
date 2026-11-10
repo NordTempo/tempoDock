@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/netip"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,8 +68,9 @@ func (noBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, erro
 // dockerHarness starts Core on the local Docker Engine with a temp data
 // dir. DB IDs start at a random high number, so container labels and names
 // (dock_p<id>_...) can't match those of another daemon on the same Docker
-// host, and host ports come from a range of their own. Containers get no
-// ongoing health check (dockerHarnessWithProbe gives them one).
+// host, and host ports and network subnets come from ranges of their own,
+// so the tests using it run in parallel. Containers get no ongoing health
+// check (dockerHarnessWithProbe gives them one).
 func dockerHarness(t *testing.T) *Core {
 	t.Helper()
 	return dockerHarnessWithProbe(t, "")
@@ -81,18 +84,29 @@ func dockerHarnessWithProbe(t *testing.T, probe string) *Core {
 	ctx := context.Background()
 	dir := t.TempDir()
 	st := openTestStore(t, filepath.Join(dir, "dock.db"))
+	// Test databases are copies of one migrated image, so they share its
+	// install ID; parallel harnesses need their own (it names the restic
+	// and local backup volumes and labels everything they create).
+	if _, err := st.DB.ExecContext(ctx, `UPDATE install SET install_id = lower(hex(randomblob(8)))`); err != nil {
+		t.Fatal(err)
+	}
 	box, err := secrets.New(bytes.Repeat([]byte{7}, secrets.KeySize))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rt, err := docker.New(netip.MustParsePrefix("10.213.0.0/16"))
+	slot := harnesses.Add(1)
+	rt, err := docker.New(networkPool(slot))
 	if err != nil {
 		t.Fatal(err)
 	}
 	rt.Probe = probe
+	// A container without a port is healthy once it stayed up this long;
+	// a second proves the same as production's five. Set once: parallel
+	// tests' deploys read it.
+	shortGrace.Do(func() { healthGrace = time.Second })
 	cfg := config.Default()
 	cfg.DataDir = dir
-	base := freePortRange(t)
+	base := freePortRange(t, slot)
 	cfg.HostPorts = config.PortRange{Min: base, Max: base + 99}
 	c, err := New(ctx, Options{Config: cfg, Store: st, Secrets: box, Runtime: node.Local{Containers: rt, Builder: noBuilder{}, Proxy: noProxy{}, Stats: noStats{}, Traffic: noStats{}, Tunnel: noProxy{}, Analytics: fake.New(), Prober: fake.New()}, Logger: slog.New(slog.DiscardHandler)})
 	if err != nil {
@@ -173,61 +187,10 @@ func waitRelease(t *testing.T, c *Core, ref ServiceRef, number int64) apitypes.R
 	}
 }
 
-// Right after a cutover the old container still holds its host port while
-// it drains and stops. Deploys on the same server in that window must not
-// be handed that port ("port is already allocated").
-func TestIntegrationDeploysDuringDrain(t *testing.T) {
-	c := dockerHarness(t)
-	ctx := context.Background()
-	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
-		t.Fatal(err)
-	}
-	env := EnvRef{project, "production"}
-	a, b := ServiceRef{project, "production", "a"}, ServiceRef{project, "production", "b"}
-	for _, ref := range []ServiceRef{a, b} {
-		if _, err := c.CreateService(ctx, testSystem, env, apitypes.CreateServiceRequest{Name: ref.Service, Port: 80}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	const image = "traefik/whoami:latest"
-	deploy := func(ref ServiceRef) int64 {
-		t.Helper()
-		rel, err := c.DeployImage(ctx, testSystem, ref, apitypes.DeployImageRequest{Image: image})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return rel.Number
-	}
-	if r := waitRelease(t, c, a, deploy(a)); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("a release 1: %s %s", r.Status, r.Error)
-	}
-
-	// A restart is a cutover: release 1 drains (12s) and then stops.
-	restart, err := c.Restart(ctx, testSystem, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRelease(t, c, a, restart.Number); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("a release 2: %s %s", r.Status, r.Error)
-	}
-	// Release 1 is still draining with its port; B must get another.
-	if r := waitRelease(t, c, b, deploy(b)); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("b release 1 during a's drain: %s %s", r.Status, r.Error)
-	}
-	// And another restart of A while release 1 may still be stopping.
-	again, err := c.Restart(ctx, testSystem, a)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRelease(t, c, a, again.Number); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("a release 3: %s %s", r.Status, r.Error)
-	}
-}
-
 // Docker's die and destroy events for containers the daemon stops itself
 // (stateful recreate, archive) are not drift.
 func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
+	t.Parallel()
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
@@ -297,13 +260,30 @@ func TestIntegrationOwnRemovalsAreNotDrift(t *testing.T) {
 	}
 }
 
+// Per-run state of dockerHarness: harnesses counts them (each gets its own
+// /20 of 10.213.0.0/16 and port range), portStart is this run's first port
+// range, and shortGrace shortens healthGrace once.
+var (
+	harnesses  atomic.Int64
+	portStart  = rand.Int64N(110)
+	shortGrace sync.Once
+)
+
+// networkPool is the /20 of 10.213.0.0/16 the runtime of harness slot
+// makes networks in, apart from the other parallel tests'.
+func networkPool(slot int64) netip.Prefix {
+	return netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 213, byte(slot%16) * 16, 0}), 20)
+}
+
 // freePortRange picks 100 host ports below Linux's ephemeral range (32768+),
 // where outgoing connections can't take them, and checks the first ones are
 // free right now.
-func freePortRange(t *testing.T) int {
+func freePortRange(t *testing.T, slot int64) int {
 	t.Helper()
-	for range 50 {
-		base := 21000 + rand.IntN(110)*100
+	for i := range 50 {
+		// Harnesses in one run take different ranges (their tests run in
+		// parallel), retrying 16 ranges on, past the other harnesses'.
+		base := 21000 + int((portStart+slot+int64(i)*16)%110)*100
 		free := true
 		for p := base; p < base+20 && free; p++ {
 			l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))

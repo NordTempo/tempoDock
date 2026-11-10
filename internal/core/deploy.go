@@ -23,8 +23,9 @@ import (
 // runs even when the deploy's own context is cancelled.
 const cleanupTimeout = time.Minute
 
-// healthGrace is how long a container without a port must stay up.
-const healthGrace = 5 * time.Second
+// healthGrace is how long a container without a port must stay up. A var
+// only so the real-Docker tests can shorten it (dockerHarness).
+var healthGrace = 5 * time.Second
 
 // deployment runs one release through the state machine:
 // queued → building → starting → health_checking → active | failed.

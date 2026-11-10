@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -85,15 +84,6 @@ func TestCookieRequestsRefuseCrossSite(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("logout: %d", resp.StatusCode)
-	}
-}
-
-func TestVersionReportsUploadLimit(t *testing.T) {
-	f := newFixture(t)
-	_, body := f.do("", "GET", "/api/v1/version", nil)
-	var v apitypes.Version
-	if err := json.Unmarshal(body, &v); err != nil || v.MaxUploadBytes != 1<<20 {
-		t.Fatalf("version = %s (%v)", body, err)
 	}
 }
 

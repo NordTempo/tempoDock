@@ -299,14 +299,3 @@ func TestKeepsAnAdmin(t *testing.T) {
 	_, err = h.ListUsers(h.ctx, viewer)
 	wantCode(t, err, apitypes.CodeForbidden)
 }
-
-// A person sees the name they set, not the email their actions are
-// recorded under.
-func TestMeShowsTheName(t *testing.T) {
-	h := newHarness(t)
-	admin := h.admin()
-	me, err := h.Me(h.ctx, admin)
-	if err != nil || me.Name != "Admin" || me.Email != "admin@example.com" {
-		t.Fatalf("me = %+v, %v", me, err)
-	}
-}

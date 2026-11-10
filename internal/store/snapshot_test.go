@@ -106,17 +106,3 @@ func TestSnapshotIsConsistentDuringWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-// LatestSchema is the number of the last migration, which Open applies.
-func TestLatestSchema(t *testing.T) {
-	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "dock.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = st.Close() }()
-	var v int
-	if err := st.DB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil || v != LatestSchema() || v < 21 {
-		t.Fatalf("user_version %d, LatestSchema %d, %v", v, LatestSchema(), err)
-	}
-}

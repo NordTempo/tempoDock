@@ -98,8 +98,8 @@ func (h *harness) addDrain(req apitypes.AddLogDrainRequest) apitypes.LogDrain {
 
 // An http drain gets every line of the environment's running services as
 // JSON lines labelled with where they come from, from the running
-// container when the drain is added, from a new release's container when
-// it starts, and after a restart without repeating lines.
+// container when the drain is added and from a new release's container
+// when it starts. A restarted container: TestLogDrainFollowsQuickRestart.
 func TestLogDrainDeliversLabelledLines(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
@@ -126,33 +126,25 @@ func TestLogDrainDeliversLabelledLines(t *testing.T) {
 		t.Fatalf("headers = %v", hdr)
 	}
 
-	// The container restarts: lines resume after the last one sent.
-	ctr := h.containerID(web, 1)
-	h.rt.Emit(node.ContainerEvent{ContainerID: ctr, Action: "die", ExitCode: 1})
-	eventually(t, "the follower to end", func() bool { return h.followed(ctr) == false })
-	h.rt.Emit(node.ContainerEvent{ContainerID: ctr, Action: "start"})
-	h.rt.AddLogs(h.ctr(web, 1), "restarted")
-	eventually(t, "the line after the restart", func() bool { return len(k.texts()) == 3 })
-
 	// A new release's container is followed from its start.
 	h.deploy(web, "nginx:2")
 	h.rt.AddLogs(h.ctr(web, 2), "release 2 up")
-	eventually(t, "release 2's line", func() bool { return len(k.texts()) == 4 })
+	eventually(t, "release 2's line", func() bool { return len(k.texts()) == 3 })
 	k.mu.Lock()
-	r2 := k.lines[3]
+	r2 := k.lines[2]
 	k.mu.Unlock()
 	if r2.Release != 2 {
 		t.Fatalf("release 2's line = %+v", r2)
 	}
-	if texts := k.texts(); !slices.Equal(texts, []string{"listening on :80", `GET / "200"`, "restarted", "release 2 up"}) {
+	if texts := k.texts(); !slices.Equal(texts, []string{"listening on :80", `GET / "200"`, "release 2 up"}) {
 		t.Fatalf("received %q", texts)
 	}
 	// The receiver has the lines before its answer reaches the sender,
 	// which counts them after it.
 	var list []apitypes.LogDrain
-	eventually(t, "4 lines counted as sent", func() bool {
+	eventually(t, "3 lines counted as sent", func() bool {
 		list, _ = h.c.ListLogDrains(h.ctx, testSystem, EnvRef{"shop", "production"})
-		return len(list) == 1 && list[0].Status.Sent == 4
+		return len(list) == 1 && list[0].Status.Sent == 3
 	})
 	if list[0].Status.Dropped != 0 || list[0].Status.LastSentAt == nil {
 		t.Fatalf("drains = %+v", list)
@@ -291,7 +283,6 @@ func TestLogDrainsNeverReachTheServer(t *testing.T) {
 		{Kind: apitypes.DrainSyslog, URL: "tls://[fd00:ec2::254]:6514"},
 		// Private networks: the app firewall doesn't cover the control plane.
 		{Kind: apitypes.DrainHTTP, URL: "http://10.0.0.5/ingest"},
-		{Kind: apitypes.DrainHTTP, URL: "https://192.168.1.1"},
 		{Kind: apitypes.DrainLoki, URL: "http://100.64.1.1:3100"},
 		{Kind: apitypes.DrainSyslog, URL: "tcp://[fd00::1]:514"},
 		{Kind: apitypes.DrainSyslog, URL: "udp://172.17.0.2"},

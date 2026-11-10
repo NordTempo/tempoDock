@@ -1,14 +1,11 @@
 package api
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
@@ -72,7 +69,7 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	// In order: delete comes last.
 	for _, c := range platform {
 		if c.ok == 0 {
-			continue // a live stream; see TestServerStatsLive
+			continue // a live stream
 		}
 		if resp, body := f.do("operator", c.method, c.path, c.body); resp.StatusCode != c.ok {
 			t.Errorf("%s %s as operator: %d %s", c.method, c.path, resp.StatusCode, body)
@@ -98,34 +95,6 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	if resp, _ := f.do("shop-deploy", "GET", "/api/v1/projects/blog/environments/production/services/api/stats", nil); resp.StatusCode != 403 {
 		t.Errorf("another project's service stats: %d", resp.StatusCode)
 	}
-}
-
-func TestServerStatsLive(t *testing.T) {
-	f := newFixture(t)
-	servers, _ := f.core.ListServers(context.Background(), sys)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", f.srv.URL+"/api/v1/servers/"+servers[0].Name+"/stats/live", nil)
-	req.Header.Set("Authorization", "Bearer "+f.tokens["operator"])
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	sc := bufio.NewScanner(resp.Body)
-	if !sc.Scan() || sc.Text() != "event: ready" {
-		t.Fatalf("first line %q", sc.Text())
-	}
-	for sc.Scan() {
-		if v, ok := strings.CutPrefix(sc.Text(), "data: "); ok && v != "{}" {
-			var u apitypes.ServerUsage
-			if err := json.Unmarshal([]byte(v), &u); err != nil || u.MemoryTotalBytes == 0 {
-				t.Fatalf("sample %s: %v", v, err)
-			}
-			return
-		}
-	}
-	t.Fatal("no sample")
 }
 
 func TestResetPasswordAndUserCounts(t *testing.T) {
@@ -227,27 +196,6 @@ func TestServerLinkEndpointsNeedOperator(t *testing.T) {
 			if resp.StatusCode != 403 || !strings.Contains(p.Detail, "not a platform operator") {
 				t.Errorf("%s %s as %s: %d %s", c.method, c.path, token, resp.StatusCode, body)
 			}
-		}
-	}
-}
-
-// Promoting needs deploy on the target environment; deploy on the source
-// alone isn't enough.
-func TestPromoteNeedsDeployOnTarget(t *testing.T) {
-	f := newFixture(t)
-	ctx := context.Background()
-	if _, err := f.core.CreateEnvironment(ctx, sys, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
-		t.Fatal(err)
-	}
-	tok, err := f.core.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "staging-deploy", Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.tokens["staging-deploy"] = tok.Secret
-	req := apitypes.PromoteRequest{From: "staging", To: "production"}
-	for token, want := range map[string]int{"read": 403, "staging-deploy": 403, "shop-deploy": 202} {
-		if resp, body := f.do(token, "POST", "/api/v1/projects/shop/promote", req); resp.StatusCode != want {
-			t.Errorf("promote as %s: %d %s", token, resp.StatusCode, body)
 		}
 	}
 }

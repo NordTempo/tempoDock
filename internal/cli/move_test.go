@@ -73,7 +73,7 @@ func TestFollowMove(t *testing.T) {
 }
 
 // TestEnvironmentMoveCommand: --status before any move is not found, and
-// a move is confirmed first and refused by the server with its reason.
+// a move is confirmed first.
 func TestEnvironmentMoveCommand(t *testing.T) {
 	setup(t)
 	srv := newTestServer(t)
@@ -90,8 +90,5 @@ func TestEnvironmentMoveCommand(t *testing.T) {
 	}
 	if code, _, stderr := exec(t, "env", "move", "production", "-p", "shop", "--to", servers[0].Name); code != int(output.ExitUsage) || !strings.Contains(stderr, "--yes") {
 		t.Fatalf("unconfirmed: exit %d %s", code, stderr)
-	}
-	if code, _, stderr := exec(t, "env", "move", "production", "-p", "shop", "--to", servers[0].Name, "--yes"); code == 0 || !strings.Contains(stderr, "already") {
-		t.Fatalf("same server: exit %d %s", code, stderr)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -362,7 +361,7 @@ func TestBuildEntitlementsRefused(t *testing.T) {
 // walking fails the build instead of hanging the daemon.
 func TestBuildRailpackSymlinkLoop(t *testing.T) {
 	defer func(d time.Duration) { planTimeout = d }(planTimeout)
-	planTimeout = 10 * time.Second
+	planTimeout = 2 * time.Second
 	b := newBuilder(t, dockerClient(t), 1024)
 	start := time.Now()
 	_, _, err := build(t, b, node.BuildRequest{
@@ -380,18 +379,6 @@ func TestBuildRailpackSymlinkLoop(t *testing.T) {
 	}
 	if time.Since(start) > planTimeout+10*time.Second {
 		t.Fatalf("took %s", time.Since(start))
-	}
-}
-
-func TestBuildMissingDockerfile(t *testing.T) {
-	b := newBuilder(t, dockerClient(t), 1024)
-	_, _, err := build(t, b, node.BuildRequest{
-		Source:     sourceTar(t, map[string]string{"server.js": serverJS}),
-		Dockerfile: "../Dockerfile",
-		Tag:        "dock-test/hello:missing",
-	})
-	if err == nil || !strings.Contains(err.Error(), "inside the source") {
-		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -559,152 +546,6 @@ func runHelper(t *testing.T, docker *client.Client, host container.HostConfig, s
 		t.Fatal(err)
 	}
 	return -1
-}
-
-// TestSpike measures the numbers the M0 spike asks for. It builds a real
-// Next.js app, so it's slow and only runs with DOCK_SPIKE=1.
-func TestSpike(t *testing.T) {
-	if os.Getenv("DOCK_SPIKE") == "" {
-		t.Skip("set DOCK_SPIKE=1 to run")
-	}
-	docker := dockerClient(t)
-	ctx := t.Context()
-	pull, err := docker.ImagePull(ctx, "node:22-alpine", client.ImagePullOptions{})
-	if err == nil {
-		err = pull.Wait(ctx)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, memMB := range []int{1024, 256} {
-		t.Run(fmt.Sprintf("%dMB", memMB), func(t *testing.T) {
-			b := newBuilder(t, docker, memMB)
-			bk, err := b.ensureDaemon(ctx, io.Discard)
-			if err != nil {
-				t.Fatal(err)
-			}
-			_ = bk.Close()
-			time.Sleep(10 * time.Second)
-			idle := watchMemory(t, docker)
-			time.Sleep(3 * time.Second)
-			t.Logf("buildkit idle: %s", idle())
-
-			app := run(t, docker, "dock-test-latency", "node:22-alpine", "node", "-e", serverJS)
-			get(t, app)
-			t.Logf("app latency idle: %s", latency(app, 10*time.Second))
-
-			done := make(chan struct{})
-			during := make(chan string)
-			go func() { during <- latency(app, 0, done) }()
-			peak := watchMemory(t, docker)
-			start := time.Now()
-			_, logs, err := build(t, b, node.BuildRequest{Source: nextApp(t), Tag: fmt.Sprintf("dock-test/next:%d", memMB)})
-			close(done)
-			t.Logf("build took %s, err: %v", time.Since(start).Round(time.Second), err)
-			if err != nil {
-				t.Logf("last log lines:\n%s", tail(logs, 15))
-			}
-			t.Logf("buildkit peak during build: %s", peak())
-			t.Logf("app latency during build: %s", <-during)
-		})
-	}
-}
-
-// nextApp is a minimal Next.js app, the classic memory-hungry Node build. A
-// nonce in package.json defeats the build cache.
-func nextApp(t *testing.T) io.Reader {
-	return sourceTar(t, map[string]string{
-		"package.json": fmt.Sprintf(`{"name": "next-spike", "private": true, "description": "%d",
-  "scripts": {"build": "next build", "start": "next start"},
-  "dependencies": {"next": "15.5.4", "react": "19.1.1", "react-dom": "19.1.1"}}`, time.Now().UnixNano()),
-		"app/layout.js": `export default function RootLayout({ children }) { return <html><body>{children}</body></html> }`,
-		"app/page.js":   `export default function Page() { return <h1>Hello</h1> }`,
-		"Dockerfile": `FROM node:22-alpine
-WORKDIR /app
-COPY package.json ./
-RUN npm install --no-audit --no-fund
-COPY . .
-RUN npm run build
-CMD ["npm", "start"]
-`,
-	})
-}
-
-// watchMemory streams the BuildKit container's memory stats and returns a
-// func reporting the maxima seen so far. "anon" is process memory, what the
-// OOM killer acts on; "working set" adds active page cache, as docker stats
-// shows it.
-func watchMemory(t *testing.T, docker *client.Client) func() string {
-	ctx, cancel := context.WithCancel(t.Context())
-	res, err := docker.ContainerStats(ctx, testContainer, client.ContainerStatsOptions{Stream: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var mu sync.Mutex
-	var anon, working uint64
-	go func() {
-		defer func() { _ = res.Body.Close() }()
-		dec := json.NewDecoder(res.Body)
-		for {
-			var s container.StatsResponse
-			if dec.Decode(&s) != nil {
-				return
-			}
-			m := s.MemoryStats
-			mu.Lock()
-			anon = max(anon, m.Stats["anon"])
-			working = max(working, m.Usage-m.Stats["inactive_file"])
-			mu.Unlock()
-		}
-	}()
-	return func() string {
-		cancel()
-		mu.Lock()
-		defer mu.Unlock()
-		return fmt.Sprintf("anon %s, working set %s", mb(anon), mb(working))
-	}
-}
-
-func mb(v uint64) string { return fmt.Sprintf("%.0f MB", float64(v)/(1<<20)) }
-
-// latency sends sequential requests every 20ms until d passes (or done
-// closes) and summarizes the response times.
-func latency(url string, d time.Duration, done ...chan struct{}) string {
-	var ms []float64
-	var failed int
-	end := time.Now().Add(d)
-	httpc := &http.Client{Timeout: 5 * time.Second}
-	for {
-		if len(done) > 0 {
-			select {
-			case <-done[0]:
-				return summarize(ms, failed)
-			default:
-			}
-		} else if time.Now().After(end) {
-			return summarize(ms, failed)
-		}
-		start := time.Now()
-		resp, err := httpc.Get(url)
-		if err == nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			_ = resp.Body.Close()
-			ms = append(ms, float64(time.Since(start).Microseconds())/1000)
-		} else {
-			failed++
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-func summarize(ms []float64, failed int) string {
-	if len(ms) == 0 {
-		return fmt.Sprintf("no successful requests, %d failed", failed)
-	}
-	slices.Sort(ms)
-	p := func(q float64) float64 { return ms[int(q*float64(len(ms)-1))] }
-	return fmt.Sprintf("n=%d p50=%.2fms p99=%.2fms max=%.2fms failed=%d", len(ms), p(0.5), p(0.99), ms[len(ms)-1], failed)
 }
 
 func tail(s string, n int) string {

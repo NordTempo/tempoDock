@@ -56,7 +56,7 @@ func TestProbeStatus(t *testing.T) {
 		case "/empty":
 			w.WriteHeader(http.StatusNoContent)
 		case "/slow":
-			time.Sleep(300 * time.Millisecond)
+			<-r.Context().Done() // until the probe gives up
 		}
 	}))
 	defer srv.Close()

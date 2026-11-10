@@ -34,6 +34,10 @@ const (
 	runSnapshotNote = 100
 )
 
+// runSecond is a second of a run's timeout. A variable so a test can time
+// a run out without waiting a second.
+var runSecond = time.Second
+
 // runState counts the runs in flight per service (by ID); the ones with
 // their volumes mounted for writing are in volumeWriters. Entries go when
 // their runs end.
@@ -317,7 +321,7 @@ func (r *Run) Wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 
 func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.CommandRun {
 	c := r.c
-	timeout := time.Duration(r.row.TimeoutSeconds) * time.Second
+	timeout := time.Duration(r.row.TimeoutSeconds) * runSecond
 	jctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	stop := context.AfterFunc(c.ctx, cancel)

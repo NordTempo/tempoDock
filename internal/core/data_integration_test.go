@@ -3,7 +3,6 @@
 package core
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -15,10 +14,11 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// The database panel against a real Postgres. Most tests run on the fake
+// The database panel against a real Postgres. These tests run on the fake
 // runtime, whose Dial goes to a postgres:17-alpine container started per
-// test on a loopback port; TestIntegrationDataRealDial deploys Postgres on
-// the real Docker runtime and dials it on its environment network.
+// test on a loopback port. The real runtime's Dial on an environment
+// network is covered by the template database's data setup in
+// TestIntegrationMoveBackups.
 
 const ownerPassword = "owner-pw"
 
@@ -116,6 +116,7 @@ func (h *harness) auditCount(action string) int {
 }
 
 func TestIntegrationDataReads(t *testing.T) {
+	t.Parallel()
 	h, db, psql := dataHarness(t, "staging")
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
 	dev := h.user("dev@x", apitypes.ScopeDeploy)
@@ -304,6 +305,7 @@ func TestIntegrationDataReads(t *testing.T) {
 }
 
 func TestIntegrationDataChangesets(t *testing.T) {
+	t.Parallel()
 	h, db, psql := dataHarness(t, "production")
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
 	dev := h.user("dev@x", apitypes.ScopeDeploy)
@@ -449,57 +451,5 @@ func TestIntegrationDataChangesets(t *testing.T) {
 		Op: apitypes.DataChangeUpdate, Table: "public.customers", Key: map[string]string{"id": "1"}, Old: map[string]*string{"password_hash": s("hash1")}, New: map[string]*string{"password_hash": s("x")},
 	}}}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("masked change to a sensitive column: %v", err)
-	}
-}
-
-// TestIntegrationDataRealDial deploys Postgres on the real Docker runtime
-// and uses the panel through node.Runtime.Dial on the environment network.
-func TestIntegrationDataRealDial(t *testing.T) {
-	c := dockerHarness(t)
-	ctx := context.Background()
-	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
-	if _, err := c.CreateProject(ctx, testSystem, apitypes.CreateProjectRequest{Name: project}); err != nil {
-		t.Fatal(err)
-	}
-	db := ServiceRef{project, "production", "db"}
-	if _, err := c.CreateService(ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "db", Port: 5432, HealthCheckTimeoutSeconds: 60}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.SetVariables(ctx, testSystem, db.Env(), apitypes.SetVariablesRequest{Service: "db", Set: map[string]string{"POSTGRES_PASSWORD": ownerPassword, "POSTGRES_DB": "shop"}, Apply: true}); err != nil {
-		t.Fatal(err)
-	}
-	rel, err := c.DeployImage(ctx, testSystem, db, apitypes.DeployImageRequest{Image: "postgres:17-alpine"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r := waitRelease(t, c, db, rel.Number); r.Status != apitypes.ReleaseActive {
-		t.Fatalf("deploy: %s %s", r.Status, r.Error)
-	}
-	// The health check only waits for the port; setup retries while the
-	// image's init restarts the server.
-	var info apitypes.DataInfo
-	for start := time.Now(); ; time.Sleep(500 * time.Millisecond) {
-		if info, err = c.SetupData(ctx, testSystem, db); err == nil || time.Since(start) > time.Minute {
-			break
-		}
-	}
-	if err != nil || info.Status != apitypes.DataReady {
-		t.Fatalf("setup: %+v %v", info, err)
-	}
-	stream, err := c.DataQuery(ctx, testSystem, db, apitypes.DataQueryRequest{SQL: "SELECT current_database(), current_user"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rows []string
-	err = stream(ctx, func() {}, func(fs ...apitypes.DataQueryFrame) error {
-		for _, f := range fs {
-			for _, r := range f.Rows {
-				rows = append(rows, string(r))
-			}
-		}
-		return nil
-	})
-	if err != nil || len(rows) != 1 || rows[0] != `["shop","dock_reader"]` {
-		t.Fatalf("query over the real dial: %v %v", rows, err)
 	}
 }

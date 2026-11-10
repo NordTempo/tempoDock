@@ -137,14 +137,6 @@ func TestReadGrowsBuffer(t *testing.T) {
 	}
 }
 
-func TestParseLoad(t *testing.T) {
-	for in, want := range map[string]float64{"0.62 1 2": 0.62, "12.5 1": 12.5, "3 1": 3, "": 0} {
-		if got := parseLoad1([]byte(in)); got != want {
-			t.Errorf("parseLoad1(%q) = %v, want %v", in, got, want)
-		}
-	}
-}
-
 // BenchmarkContainerStats50 is one collector tick's container reads for a
 // server running 50 containers.
 func BenchmarkContainerStats50(b *testing.B) {

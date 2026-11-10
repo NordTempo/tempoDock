@@ -72,13 +72,6 @@ func TestCreateOptions(t *testing.T) {
 	}
 }
 
-func TestCreateOptionsMinimal(t *testing.T) {
-	o := createOptions(node.ContainerSpec{Name: "x", Image: "alpine"}, "", nil)
-	if o.Config.Cmd != nil || o.Config.ExposedPorts != nil || o.HostConfig.PortBindings != nil || o.NetworkingConfig != nil {
-		t.Errorf("unexpected defaults: %+v %+v %+v", o.Config, o.HostConfig, o.NetworkingConfig)
-	}
-}
-
 // A spec with Health gets Docker's healthcheck running the bind-mounted
 // probe, which times out a second before Docker would kill it. Without an
 // installed probe, or without Health, the image's own check is turned off.

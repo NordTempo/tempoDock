@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -901,27 +900,6 @@ func TestConnCache(t *testing.T) {
 	if count() != 0 {
 		t.Fatalf("after forget: %d conns", count())
 	}
-}
-
-// TestConnMemory reports the Go heap one open, used connection costs.
-func TestConnMemory(t *testing.T) {
-	ctx := ctxT(t)
-	e := newEngine(t)
-	const n = 8
-	var before, after runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&before)
-	for i := range n {
-		if _, err := e.Page(ctx, target(int64(100+i)), data.Call{}, apitypes.DataPageRequest{Table: "public.items"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	e.mu.Lock()
-	clear(e.schemas) // count connections only
-	e.mu.Unlock()
-	runtime.GC()
-	runtime.ReadMemStats(&after)
-	t.Logf("heap per open connection: %d KB (%d connections)", int64(after.HeapAlloc-before.HeapAlloc)/n/1024, n)
 }
 
 // ownerExec runs sql as the owner on the shared database.

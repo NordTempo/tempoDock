@@ -43,9 +43,6 @@ const (
 	// drainBatchLines and drainBatchBytes bound one delivery.
 	drainBatchLines = 1000
 	drainBatchBytes = 1 << 20
-	// drainBatchWait is how long a sender waits after the first line of a
-	// batch for more to arrive, unless the batch fills first.
-	drainBatchWait = time.Second
 	// drainSendTimeout bounds one delivery attempt.
 	drainSendTimeout = 15 * time.Second
 	// maxDrainResume bounds the containers whose last read line is
@@ -56,6 +53,11 @@ const (
 	// HTTP/2 connection allows 250 at once.
 	maxServerFollows = 150
 )
+
+// drainBatchWait is how long a sender waits after the first line of a
+// batch for more to arrive, unless the batch fills first. A variable so
+// tests can wait less.
+var drainBatchWait = time.Second
 
 // drainManager holds the drains and the log followers.
 type drainManager struct {

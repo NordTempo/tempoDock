@@ -106,7 +106,7 @@ func (c *Core) hashPassword(ctx context.Context, password string) (string, error
 		return "", ctx.Err()
 	}
 	defer func() { <-c.bcryptSem }()
-	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword([]byte(password), c.passwordCost)
 	if errors.Is(err, bcrypt.ErrPasswordTooLong) {
 		return "", invalid("password must be at most 72 bytes; use a shorter one")
 	}

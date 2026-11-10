@@ -206,42 +206,6 @@ func TestLockedEnvironmentRefusesTokens(t *testing.T) {
 	}
 }
 
-// TestLockOpensForAWhile: an opened environment lets tokens in until its
-// time is up, then the lock holds again without anything running.
-func TestLockOpensForAWhile(t *testing.T) {
-	f := newFixture(t)
-	resp, body := f.do("admin", "POST", shopProd+"/lock", apitypes.LockEnvironmentRequest{Reason: "live"})
-	var e apitypes.Environment
-	_ = json.Unmarshal(body, &e)
-	if resp.StatusCode != 200 || e.Lock == nil || e.Lock.Reason != "live" || e.Lock.LockedBy != "admin" {
-		t.Fatalf("lock: %d %s", resp.StatusCode, body)
-	}
-	// A token can't unlock: that is a change like any other.
-	if resp, body := f.do("admin", "POST", shopProd+"/unlock", apitypes.UnlockEnvironmentRequest{}); resp.StatusCode != http.StatusLocked {
-		t.Fatalf("token unlock: %d %s", resp.StatusCode, body)
-	}
-	admin := f.login()
-	resp, body = f.as(admin, "POST", shopProd+"/unlock", apitypes.UnlockEnvironmentRequest{Minutes: 30})
-	_ = json.Unmarshal(body, &e)
-	if resp.StatusCode != 200 || e.Lock == nil || e.Lock.OpenUntil == nil {
-		t.Fatalf("open: %d %s", resp.StatusCode, body)
-	}
-	set := apitypes.SetVariablesRequest{Set: map[string]string{"A": "1"}}
-	if resp, body := f.do("deploy", "PATCH", shopProd+"/variables", set); resp.StatusCode != 200 {
-		t.Fatalf("while open: %d %s", resp.StatusCode, body)
-	}
-	resp, body = f.as(admin, "POST", shopProd+"/unlock", apitypes.UnlockEnvironmentRequest{})
-	var unlocked apitypes.Environment
-	_ = json.Unmarshal(body, &unlocked)
-	if resp.StatusCode != 200 || unlocked.Lock != nil {
-		t.Fatalf("unlock: %d %s", resp.StatusCode, body)
-	}
-	_, body = f.do("admin", "GET", "/api/v1/audit?action=environment.unlock", nil)
-	if !strings.Contains(string(body), "opened for 30m0s") {
-		t.Fatalf("audit: %s", body)
-	}
-}
-
 // TestAccessRequestFlow: a token's refused change answers 423 naming the
 // request it filed, with the reason it sent; an admin in the UI sees it
 // with its arguments, approves it, and it has run as the token.

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
-	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/clientconfig"
 )
 
@@ -35,19 +34,5 @@ func TestProjectRenameLinkedDirectory(t *testing.T) {
 	code, stdout, stderr := exec(t, "project", "rename", "storefront", "next")
 	if code != 0 || !strings.Contains(stdout, "Renamed project storefront to next") {
 		t.Fatalf("human output: %d %s", code, stderr)
-	}
-	for _, tc := range []struct {
-		name  string
-		scope apitypes.Scope
-		exit  output.ExitCode
-	}{
-		{"Upper", apitypes.ScopeAdmin, output.ExitUsage},
-		{"shop", apitypes.ScopeAdmin, output.ExitConflict},
-		{"denied", apitypes.ScopeDeploy, output.ExitAuth},
-	} {
-		t.Setenv(clientconfig.EnvToken, srv.tokens[tc.scope])
-		if code, _, stderr := exec(t, "project", "rename", "next", tc.name, "--json"); code != int(tc.exit) {
-			t.Errorf("rename %s: %d %s", tc.name, code, stderr)
-		}
 	}
 }

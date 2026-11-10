@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -24,9 +23,10 @@ import (
 // and one that runs out of disk anyway (a sparse file is larger copied
 // than measured) leaves nothing behind.
 func TestIntegrationSnapshotScripts(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	rt, err := docker.New(netip.MustParsePrefix("10.213.0.0/16"))
+	rt, err := docker.New(networkPool(harnesses.Add(1)))
 	if err != nil {
 		t.Fatal(err)
 	}

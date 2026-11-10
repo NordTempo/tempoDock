@@ -15,9 +15,10 @@ import (
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
-// backupPoll is how often `dock backup run` and `restore` check on a run
-// they wait for.
-const backupPoll = 2 * time.Second
+// backupPoll is how often `dock backup run`, `restore` and the volume
+// snapshot commands check on a run they wait for. A variable so tests can
+// wait less.
+var backupPoll = 2 * time.Second
 
 func newBackupCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{

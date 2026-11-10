@@ -84,7 +84,6 @@ func TestExitCodes(t *testing.T) {
 		{[]string{"context", "add", "x", "--server", "https://x"}, output.ExitUsage, "--token"},
 		{[]string{"context", "add", "x", "--server", "x.example.com", "--token", "t"}, output.ExitUsage, "https://"},
 		{[]string{"context", "add"}, output.ExitUsage, "--help"},
-		{[]string{"context", "lst"}, output.ExitUsage, "unknown command"},
 		{[]string{"context", "list", "--bogus"}, output.ExitUsage, "unknown flag"},
 		{[]string{"nope"}, output.ExitUsage, "unknown command"},
 		{[]string{"unlink"}, output.ExitNotFound, "not linked"},

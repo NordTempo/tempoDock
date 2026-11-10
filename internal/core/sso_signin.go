@@ -477,7 +477,7 @@ func (c *Core) ssoNewUser(ctx context.Context, p store.SsoProvider, who ssoPerso
 			return store.User{}, errInviteOnly
 		}
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(generatePassword()), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(generatePassword()), c.passwordCost)
 	if err != nil {
 		return store.User{}, err
 	}

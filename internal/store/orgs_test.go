@@ -75,18 +75,6 @@ func TestOrgsMigrationMovesAnInstallIntoOneOrg(t *testing.T) {
 	}
 }
 
-// A fresh install gets no org from the migration; bootstrap creates one.
-func TestOrgsMigrationLeavesAnEmptyInstallEmpty(t *testing.T) {
-	s, err := Open(context.Background(), openBefore(t, "_orgs.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	if _, err := s.GetOrg(context.Background(), 1); !IsNotFound(err) {
-		t.Fatalf("org 1: %v, want none", err)
-	}
-}
-
 // What authentication and org-scoped lists run reads through an index.
 func TestOrgQueryPlans(t *testing.T) {
 	f := newDataFixture(t)

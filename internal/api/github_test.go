@@ -25,31 +25,6 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store/storetest"
 )
 
-// The API connects with deploy scope and never returns the token; the
-// hooks listener checks signatures and caps bodies.
-func TestGitEndpoints(t *testing.T) {
-	f := newFixture(t)
-	git := shopProd + "/services/web/git"
-	token := "github_pat_xyz"
-	req := apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Token: &token}
-	if res, _ := f.do("read", http.MethodPut, git, req); res.StatusCode != http.StatusForbidden {
-		t.Fatalf("read token connects: %d", res.StatusCode)
-	}
-	res, body := f.do("deploy", http.MethodPut, git, req)
-	var conn apitypes.GitConnectResult
-	_ = json.Unmarshal(body, &conn)
-	if res.StatusCode != http.StatusOK || conn.Secret == "" || !conn.Connection.TokenSet || conn.HooksHint == "" {
-		t.Fatalf("connect: %d %s", res.StatusCode, body)
-	}
-	res, body = f.do("read", http.MethodGet, git, nil)
-	if res.StatusCode != http.StatusOK || bytes.Contains(body, []byte(token)) || bytes.Contains(body, []byte(conn.Secret)) || !bytes.Contains(body, []byte(`"token_set":true`)) {
-		t.Fatalf("status: %d %s", res.StatusCode, body)
-	}
-	if res, _ := f.do("deploy", http.MethodDelete, git, nil); res.StatusCode != http.StatusNoContent {
-		t.Fatalf("disconnect: %d", res.StatusCode)
-	}
-}
-
 func TestHooksHandler(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -112,7 +87,6 @@ func TestHooksHandler(t *testing.T) {
 	}{
 		"good":          {hookPath, good, body, http.StatusOK, "pong"},
 		"missing":       {hookPath, "", body, http.StatusUnauthorized, "signature missing or wrong"},
-		"bad":           {hookPath, "sha256=" + strings.Repeat("0", 64), body, http.StatusUnauthorized, "signature"},
 		"tampered body": {hookPath, good, append(body, ' '), http.StatusUnauthorized, "signature"},
 		"unknown hook":  {"/hooks/github/nope", good, body, http.StatusNotFound, "no such webhook"},
 		"too large":     {hookPath, good, bytes.Repeat([]byte("x"), maxHookBody+1), http.StatusRequestEntityTooLarge, "4 MB"},

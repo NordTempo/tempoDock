@@ -8,10 +8,12 @@ import (
 )
 
 // TestLockCoverage: the operations of stop/start, log drains, project
-// files, Compose import and registry credentials, called by an admin token
-// with shop/production locked. Changes to production are refused with
-// environment_locked naming it, before anything changes; reads and
-// org-level settings that change no environment by themselves stay open.
+// files (applying one without naming an environment, and planning, are
+// TestApplyLockedEnvironment's), Compose import and registry credentials,
+// called by an admin token with shop/production locked. Changes to
+// production are refused with environment_locked naming it, before
+// anything changes; reads and org-level settings that change no
+// environment by themselves stay open.
 func TestLockCoverage(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
@@ -37,16 +39,8 @@ func TestLockCoverage(t *testing.T) {
 		{"test log drain", true, func() error { _, err := h.c.TestLogDrain(h.ctx, agent, prod, drain.ID); return err }},
 		{"remove log drain", true, func() error { return h.c.RemoveLogDrain(h.ctx, agent, prod, drain.ID) }},
 		{"list log drains", false, func() error { _, err := h.c.ListLogDrains(h.ctx, agent, prod); return err }},
-		{"apply project file", true, func() error {
-			_, err := h.c.ApplyProject(h.ctx, agent, "shop", apitypes.ApplyRequest{File: file})
-			return err
-		}},
 		{"apply project file to production", true, func() error {
 			_, err := h.c.ApplyProject(h.ctx, agent, "shop", apitypes.ApplyRequest{File: file, Environment: "production", Deploy: true})
-			return err
-		}},
-		{"plan project file", false, func() error {
-			_, err := h.c.PlanProject(h.ctx, agent, "shop", apitypes.ApplyRequest{File: file})
 			return err
 		}},
 		{"import compose", true, func() error {

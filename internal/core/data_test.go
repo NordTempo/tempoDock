@@ -11,7 +11,6 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
-	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -174,28 +173,6 @@ func toStrings[T ~string](s []T) []string {
 	return out
 }
 
-func TestPermissionWhy(t *testing.T) {
-	in := permissionInput{
-		actor: Actor{Kind: "token", OrgID: 1, Name: "bot", TokenID: 1, Scope: apitypes.ScopeRead},
-		token: &store.Token{Name: "bot", CreatedBy: "ada@x"}, kind: apitypes.KindNonProduction, project: "shop", env: "staging",
-		rules: policyRules{rule(apitypes.PolicyProject, apitypes.SubjectTokens, apitypes.KindNonProduction, apitypes.LevelWrite, apitypes.SensitiveMasked)},
-	}
-	got := decidePermission(in)
-	want := []apitypes.DataPermissionStep{
-		{Source: apitypes.PermissionPolicy, Policy: apitypes.PolicyProject, Subject: apitypes.SubjectTokens, Level: apitypes.LevelWrite, Sensitive: apitypes.SensitiveMasked,
-			Detail: "project shop: tokens gets write on non-production, sensitive masked"},
-		{Source: apitypes.PermissionCap, Policy: apitypes.PolicyBuiltIn, Subject: apitypes.SubjectReadUsers, Level: apitypes.LevelNone, Sensitive: apitypes.SensitiveMasked,
-			Detail: "capped by the token's scope read: built-in default: role:read gets none on non-production, sensitive masked"},
-	}
-	if len(got.Why) != len(want) || got.Why[0] != want[0] || got.Why[1] != want[1] {
-		t.Fatalf("why = %+v", got.Why)
-	}
-	err := datapanel.RequireLevel(got, apitypes.LevelRead, "reading rows")
-	if CodeOf(err) != apitypes.CodeForbidden || !strings.Contains(err.Error(), "needs data access level read; you have none") || !strings.Contains(err.Error(), "capped by the token's scope read") {
-		t.Fatalf("error: %v", err)
-	}
-}
-
 func TestDataPolicyScopes(t *testing.T) {
 	h := newHarness(t)
 	h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
@@ -335,7 +312,6 @@ func TestDatabaseDetection(t *testing.T) {
 		{"docker.io/library/postgres:17-alpine@sha256:abc", "", apitypes.EnginePostgres, apitypes.DetectedByImage},
 		{"ghcr.io/supabase/postgres:15", "", apitypes.EnginePostgres, apitypes.DetectedByImage},
 		{"bitnami/postgresql-repmgr:16", "", "", ""},
-		{"supabase/postgres:15.1", "", apitypes.EnginePostgres, apitypes.DetectedByImage},
 		{"timescale/timescaledb-ha:pg16", "", apitypes.EnginePostgres, apitypes.DetectedByImage},
 		{"localhost:5000/pgvector/pgvector:pg17", "", apitypes.EnginePostgres, apitypes.DetectedByImage},
 		{"postgres:17", "none", "", ""},

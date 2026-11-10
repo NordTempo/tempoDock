@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -56,7 +57,11 @@ func TestFirstUseInATransactionNeedsNoSecondConnection(t *testing.T) {
 		if err := f.s.Tx(ctx, func(q *Queries) error {
 			close(locked)
 			// Let the others take every other connection, waiting in BEGIN.
-			time.Sleep(300 * time.Millisecond)
+			for deadline := time.Now().Add(5 * time.Second); f.s.DB.Stats().InUse < 8; time.Sleep(time.Millisecond) {
+				if time.Now().After(deadline) {
+					return fmt.Errorf("connections in use: %d, want 8", f.s.DB.Stats().InUse)
+				}
+			}
 			_, err := q.CountOtherOrgAdmins(ctx, CountOtherOrgAdminsParams{OrgID: f.project.OrgID, UserID: 1})
 			return err
 		}); err != nil {

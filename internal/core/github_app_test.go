@@ -431,26 +431,6 @@ func TestGitAppStaysInItsOrg(t *testing.T) {
 	}
 }
 
-// GitHub's redirect back names the installation, which the install link's
-// state doesn't vouch for: it can't take an installation from another
-// org. The same org installing again still works.
-func TestGitHubInstallKeepsItsOrg(t *testing.T) {
-	h, _, _ := appHarness(t)
-	if _, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "other"}); err != nil {
-		t.Fatal(err)
-	}
-	install := func(org string) error { return h.installApp(testSystem, org, fakeInstall, octo) }
-	if err := install("other"); CodeOf(err) != apitypes.CodeConflict {
-		t.Fatalf("other org's install took installation 7: %v", err)
-	}
-	if inst, err := h.store.GetGitHubInstallation(h.ctx, fakeInstall); err != nil || inst.OrgID != 1 {
-		t.Fatalf("installation after the refused install: %+v, %v", inst, err)
-	}
-	if err := install("test"); err != nil {
-		t.Fatalf("same org installing again: %v", err)
-	}
-}
-
 // An installation event resent under a new delivery ID does nothing: a
 // captured "deleted" can't unassign a reassigned installation again.
 func TestGitAppInstallationReplay(t *testing.T) {

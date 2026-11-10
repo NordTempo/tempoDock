@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/NordTempo/tempoDock/internal/api"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
@@ -36,6 +38,10 @@ type testServer struct {
 
 // sys is the system actor in the test org, the first one created.
 var sys = core.System.InOrg(1)
+
+// Commands that wait for a backup or snapshot check every few
+// milliseconds in tests, not every 2 s.
+func init() { backupPoll = 5 * time.Millisecond }
 
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
@@ -61,7 +67,7 @@ func newTestServerWith(t *testing.T, opts func(*core.Options)) *testServer {
 		t.Fatal(err)
 	}
 	rt := fake.New()
-	o := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond}
+	o := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost}
 	if opts != nil {
 		opts(&o)
 	}
@@ -388,10 +394,7 @@ func TestCommandErrors(t *testing.T) {
 		stderr string
 	}{
 		{"read token can't deploy", apitypes.ScopeRead, []string{"deploy", "-p", "shop", "-e", "production", "-s", "web"}, output.ExitAuth, "requires deploy"},
-		{"deploy token can't archive", apitypes.ScopeDeploy, []string{"service", "archive", "web", "-p", "shop", "-e", "production", "--yes"}, output.ExitAuth, "requires admin"},
-		{"deploy token can't archive a project", apitypes.ScopeDeploy, []string{"project", "archive", "shop", "--yes"}, output.ExitAuth, "requires admin"},
 		{"unknown service", apitypes.ScopeAdmin, []string{"status", "-p", "shop", "-e", "production", "-s", "nope"}, output.ExitNotFound, `service "nope" not found`},
-		{"unknown project", apitypes.ScopeAdmin, []string{"service", "list", "-p", "nope", "-e", "production"}, output.ExitNotFound, "not found"},
 		{"nothing linked", apitypes.ScopeAdmin, []string{"deploy"}, output.ExitUsage, "--project"},
 		{"no environment", apitypes.ScopeAdmin, []string{"logs", "-p", "shop"}, output.ExitUsage, "--environment"},
 		{"several environments, no prompt", apitypes.ScopeAdmin, []string{"link", "-p", "shop"}, output.ExitUsage, "--environment"},

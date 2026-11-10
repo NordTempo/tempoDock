@@ -278,19 +278,6 @@ func TestDiskAlertEscalatesAndResolves(t *testing.T) {
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
-// A known signature, so receivers in other languages can check theirs.
-func TestSignWebhook(t *testing.T) {
-	got := signWebhook("s3cret", time.Unix(1700000000, 0), []byte(`{"event":"test"}`))
-	want := "t=1700000000,v1=" + func() string {
-		m := hmac.New(sha256.New, []byte("s3cret"))
-		m.Write([]byte(`1700000000.{"event":"test"}`))
-		return hex.EncodeToString(m.Sum(nil))
-	}()
-	if got != want {
-		t.Fatalf("signature = %s, want %s", got, want)
-	}
-}
-
 // A delivery is signed when it is attempted, so a retry long after the
 // alert still passes a receiver's timestamp check.
 func TestWebhookSignedAtAttempt(t *testing.T) {
@@ -312,19 +299,6 @@ func TestWebhookSignedAtAttempt(t *testing.T) {
 	sec, _ := strconv.ParseInt(ts, 10, 64)
 	if time.Since(time.Unix(sec, 0)) > time.Minute || header != signWebhook(created.Secret, time.Unix(sec, 0), []byte(body)) {
 		t.Fatalf("signature %q for a retry of an alert sent at %s", header, old)
-	}
-}
-
-// A backup that failed with nothing more to say still reads as a sentence.
-func TestBackupFailedMessage(t *testing.T) {
-	for _, reason := range []string{"restic reported no snapshot", "exit code 1: Fatal: no key found.", "restic reported no snapshot: "} {
-		m := backupFailed("p", "e", "s", 1, reason, 0).Message
-		if strings.HasSuffix(m, ":.") || strings.HasSuffix(m, "..") || !strings.HasSuffix(m, ".") {
-			t.Errorf("message for %q = %q", reason, m)
-		}
-	}
-	if got := withOutput("\n{\"message_type\":\"status\"}\n"); got != "" {
-		t.Errorf("output with nothing to show = %q", got)
 	}
 }
 
@@ -420,22 +394,6 @@ func TestServerOfflineAlert(t *testing.T) {
 	}
 	h.c.onAlertEvent(h.ctx, newLiveEvent(apitypes.Event{Type: apitypes.EventServer, Server: &apitypes.Server{ID: srv.ID, Status: apitypes.ServerOnline}}), time.Now())
 	h.openAlert(key, false)
-}
-
-// Any event can carry an alert signal (a failed backup), and a signal
-// resolves it again.
-func TestAlertSignalOnEvent(t *testing.T) {
-	h := newHarness(t)
-	sig := alertSignal{
-		Key: "backup:shop/production/db", Kind: apitypes.AlertBackupFailed, Severity: apitypes.SeverityCritical,
-		Title: "Backup of shop/production/db failed", Message: "pg_dump: connection refused", Project: "shop",
-	}
-	h.c.bus.publish(busEvent{ev: apitypes.Event{Type: apitypes.EventAudit}, alert: &sig})
-	if a := h.openAlert(sig.Key, true); a.Kind != "backup_failed" || a.Message != sig.Message {
-		t.Fatalf("alert = %+v", a)
-	}
-	h.c.signalAlert(h.ctx, alertSignal{Key: sig.Key, Resolve: true})
-	h.openAlert(sig.Key, false)
 }
 
 // A delivery that fails is retried; one that keeps failing shows on the

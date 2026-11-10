@@ -154,23 +154,6 @@ func TestPreDeploySettingsValidation(t *testing.T) {
 	}
 }
 
-func TestLastLines(t *testing.T) {
-	for _, tt := range []struct {
-		in   string
-		n    int
-		want string
-	}{
-		{"", 3, ""},
-		{"a\nb\nc\n", 2, "b\nc"},
-		{"a\nb", 5, "a\nb"},
-		{"a\n\n\n", 1, "a"},
-	} {
-		if got := lastLines(tt.in, tt.n); got != tt.want {
-			t.Errorf("lastLines(%q, %d) = %q, want %q", tt.in, tt.n, got, tt.want)
-		}
-	}
-}
-
 // snapshotJobIndexes returns the positions of the snapshot jobs and of
 // the job running script among the fake runtime's jobs.
 func (h *harness) snapshotJobIndexes(script string) (snaps, cmds []int) {

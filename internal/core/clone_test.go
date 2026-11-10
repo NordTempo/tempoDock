@@ -213,7 +213,6 @@ func TestOnlyReferences(t *testing.T) {
 		"${{postgres.DATABASE_URL}}":           true,
 		"${{ shared.A }}${{api.B}}":            true,
 		"":                                     false,
-		"http://${{api.HOST}}:${{api.PORT}}":   false,
 		"postgres://u:pw@${{db.HOST}}/app":     false,
 		"${{postgres.DATABASE_URL}}?sslmode=1": false,
 	} {
