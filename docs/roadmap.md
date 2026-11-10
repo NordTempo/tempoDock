@@ -1,127 +1,69 @@
 # Roadmap
 
-Each milestone ends with something usable on a real server. Later milestones
-are deliberately vaguer; we refine them as we learn.
+Each milestone ended with something usable on a real server. M0 to M5 are
+done; what they held is in the ADRs and the git history. What is left is
+M6 and the backlog below.
 
-## Status (2026-10-22)
+## Status (2026-11-10, v0.41.0)
 
 | Milestone | State |
 |---|---|
-| M0 | Done. Measurements in [experience](experience.md); budgets enforced by `make perf`. |
-| M1 | Done on the homelab test VM: source and image deploys, health-gated cutover with zero failed requests, rollback, domains, staged variables, `dock.toml`, browser `dock login`. Waiting on a real NordTempo app. |
-| M2 | Done: projects, environments, services, references, private networking, users and scoped tokens, audit, the v2 web UI with full CLI parity. |
-| M3 | Nearly done: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), statistics, the admin dashboard, `dock node` join over the outbound link, the remote runtime, the registry, builder servers and `dock promote` ([0014](decisions/0014-node-protocol.md)), verified across two machines; control plane backup, restore and move ([0021](decisions/0021-control-plane-backup-and-move.md)). Left: doing the move to Hetzner. |
-| M4 | Done: GitHub push-to-deploy ([0018](decisions/0018-git-push-deploy.md)); retention, disk pruning and alerts with webhook, Slack and email channels ([0020](decisions/0020-retention-and-alerts.md)); cloning an environment and exporting a project's config ([0022](decisions/0022-clone-and-export.md)); preview environments per pull request, pulled forward from Later ([0056](decisions/0056-preview-environments.md)). |
-| M5 | Done: the native database panel ([0016](decisions/0016-database-panel.md)); Postgres and Redis templates, scheduled restic backups and restore into a new service ([0019](decisions/0019-templates-and-backups.md)); `dock connect` tunnels ([0023](decisions/0023-connect-tunnels.md)). |
+| M0 Spike and skeleton | Done. Measurements in [experience](experience.md); budgets enforced by `make perf` ([performance](performance.md)). |
+| M1 Deploy loop | Done: source and image deploys, health-gated cutover, rollback, domains, staged variables, `dock.toml`, browser `dock login`. |
+| M2 Railway model and web UI | Done: projects, environments, services, references, private networking, users and scoped tokens, audit, the web UI with CLI parity ([0026](decisions/0026-ui-cli-parity.md)). |
+| M3 Production and homelab | Done: placement and server pools ([0015](decisions/0015-server-pools-and-placement.md)), the node link, registry, builder servers and `dock promote` ([0014](decisions/0014-node-protocol.md)), control plane backup, restore and move ([0021](decisions/0021-control-plane-backup-and-move.md)). The control plane runs on the Hetzner server; the homelab has not joined it yet. |
+| M4 Day-to-day comfort | Done: push-to-deploy ([0018](decisions/0018-git-push-deploy.md)) and GitHub Apps ([0031](decisions/0031-github-app.md), [0066](decisions/0066-github-apps-for-many-orgs.md)), retention and alerts ([0020](decisions/0020-retention-and-alerts.md), [0062](decisions/0062-org-alerts-and-operators.md)), clone and export ([0022](decisions/0022-clone-and-export.md)), preview environments ([0056](decisions/0056-preview-environments.md)). |
+| M5 Data | Done: the Data panel ([0016](decisions/0016-database-panel.md)) and tempoBase ([0024](decisions/0024-tempobase-standalone.md)), templates and backups ([0019](decisions/0019-templates-and-backups.md), [0039](decisions/0039-backups-on-storage-connections.md)), `dock connect` ([0023](decisions/0023-connect-tunnels.md)), volume snapshots ([0047](decisions/0047-volume-snapshots.md)), one restore model ([0061](decisions/0061-one-restore-model.md)). |
+| M6 Ready for others | In progress, see below. |
 
-## Where we start
+Shipped beyond the milestones, by area:
 
-**M0 → M1 on the homelab.** Prove the stack's footprint, then build the
-smallest loop that is genuinely useful: deploy an app from the CLI with zero
-downtime and safe rollback. Everything before M3 runs on the homelab, so
-production is never at risk while the platform is young. The UI comes in M2,
-once the API it sits on is real. Production joins in M3.
-
-## M0: Spike and skeleton
-
-- Go module, `cmd/dock`, CI (lint, test, build), README for local dev.
-- `dock serve`: one API endpoint, SQLite file, list containers via the
-  Docker SDK, embedded "hello" web page.
-- Measure idle RAM/CPU of the daemon, Caddy, an idle BuildKit and the registry
-  on a small VM in the homelab.
-- Spike Caddy: render config from a small DB, atomic reload during traffic,
-  on-demand TLS with the `ask` endpoint.
-- Spike capped BuildKit: build a Node app with a memory limit, confirm running
-  apps stay healthy during the build.
-
-**Done when:** measured numbers are in [experience](experience.md).
-
-## M1: Deploy loop (CLI)
-
-- Install script: checks Docker, installs Caddy, BuildKit, binary, systemd unit,
-  creates the first admin token.
-- `dock login`, `dock link`, `dock deploy` (source or `--image`).
-- Deploy state machine with health-gated cutover and crash recovery.
-- `rollback`, `releases`, `logs`, `status`, all with `--json`.
-- Domains: add any hostname from the CLI, generated subdomains, automatic
-  HTTPS, live DNS and certificate status.
-- Service variables (`dock env set/list/unset`).
-- Optional `dock.toml` for build and health check settings.
-
-**Done when:** a real NordTempo app deploys to the homelab from a laptop and
-from an agent with zero downtime, and a broken deploy leaves the previous version
-serving.
-
-## M2: Railway model + web UI
-
-- Projects, environments, services; environment and service variables;
-  variable references.
-- Per-environment Docker networks (private networking by service name).
-- Users, scoped tokens, audit log.
-- Web UI with full parity: project overview, services, variables editor,
-  releases, live logs and deploy progress, deploy and rollback, command palette.
-
-**Done when:** everything is doable from either the UI or the CLI, and an agent
-with a `deploy` token cannot delete anything.
-
-## M3: Production + homelab
-
-- `dock node` mode, node join tokens, the outbound node connection,
-  version compatibility checks.
-- Servers accept production and/or non-production environments; projects
-  are placed per kind on the least-loaded eligible server and stay together
-  ([ADR 0015](decisions/0015-server-pools-and-placement.md)).
-- Admin dashboard: users, tokens, servers (add, accepted kinds, placements,
-  statistics).
-- Registry next to the control plane; builds only on builder servers.
-- `dock promote staging production`.
-- Per-server status in the UI and CLI.
-- Move the control plane to the Hetzner server; homelab joins as a node.
-
-**Done when:** a NordTempo app runs staging on the homelab and production on
-Hetzner, production is deployed by promotion, and taking the homelab offline
-doesn't affect production.
-
-## M4: Day-to-day comfort
-
-- GitHub push-to-deploy (webhook per service and branch). Done: [0018](decisions/0018-git-push-deploy.md).
-- Dock's GitHub App: no webhook or token per service. Done: [0031](decisions/0031-github-app.md).
-- Resource limits in the UI. (Stored, downsampled metrics per server and
-  service: 24 hours at 1 minute, 7 days at 10 minutes, landed early with
-  ADR 0015.)
-- Disk pruning, alerts (disk, failed deploys, crash loops).
-- Clone an environment. Export a project's config. Done: [0022](decisions/0022-clone-and-export.md).
-
-## M5: Data
-
-- Database panel: browse, query and edit data with configurable access
-  policy for people and agents ([ADR 0016](decisions/0016-database-panel.md)).
-
-- Volumes in the UI.
-- Scheduled off-box backups and tested restore.
-- Database templates (Postgres, Redis): regular services with volumes and
-  backup presets ([ADR 0011](decisions/0011-stateful-services-and-databases.md)).
-- Non-destructive restore into a new service; `dock connect` tunnels
-  ([ADR 0023](decisions/0023-connect-tunnels.md)).
-- Volume snapshots before risky actions, restored into a new service or
-  in place ([ADR 0047](decisions/0047-volume-snapshots.md)).
+- **Access:** organizations and the platform operator ([0027](decisions/0027-organizations.md)), the public address ([0029](decisions/0029-public-address.md)), access protection ([0030](decisions/0030-access-protection.md)), locked environments and access requests ([0044](decisions/0044-environment-lock.md)), two-factor and passkeys ([0057](decisions/0057-two-factor-sign-in.md)), SSO with OIDC ([0058](decisions/0058-sso-oidc.md), [0065](decisions/0065-sign-in-is-the-platforms.md)), invite links ([0060](decisions/0060-invite-links-signed-out.md)), org slug renames ([0064](decisions/0064-changing-an-org-slug.md)).
+- **Deploys and services:** ongoing health checks ([0043](decisions/0043-ongoing-health-checks.md)), pre-deploy commands ([0045](decisions/0045-pre-deploy-command.md)), `dock run` ([0048](decisions/0048-one-off-commands.md)), `dock apply` and Compose import ([0049](decisions/0049-apply-and-compose-import.md)), stop and start ([0050](decisions/0050-stop-start-service.md)), private registry credentials ([0051](decisions/0051-registry-credentials.md)), scheduled jobs ([0054](decisions/0054-scheduled-jobs.md)).
+- **Servers:** updates from the console ([0028](decisions/0028-updates-from-the-console.md)), memory and disk breakdowns ([0032](decisions/0032-server-memory-breakdown.md), [0035](decisions/0035-server-disk-breakdown.md)), the registry on object storage ([0034](decisions/0034-registry-object-storage.md)), moving environments and draining servers without downtime ([0053](decisions/0053-moving-environments.md), [0063](decisions/0063-moves-without-downtime-and-server-drains.md)).
+- **Domains:** Cloudflare tunnels, DNS and redirects ([0036](decisions/0036-cloudflare-api.md), [0068](decisions/0068-redirects-on-cloudflare-zones.md)), TXT verification ([0042](decisions/0042-domain-verification.md)).
+- **Observing:** traffic statistics ([0033](decisions/0033-traffic-statistics.md), [0040](decisions/0040-traffic-counts-requests.md)), Dock Analytics with errors, vitals, replays and funnels ([0037](decisions/0037-analytics.md), [0059](decisions/0059-analytics-area-and-slimmer-service-page.md)), log history and drains ([0046](decisions/0046-log-history-and-drains.md)), uptime checks ([0055](decisions/0055-uptime-checks.md)), one Errors tab per service ([0062](decisions/0062-org-alerts-and-operators.md)).
+- **Agents:** one MCP endpoint for the platform and its data ([0017](decisions/0017-mcp-endpoint.md)).
+- **Site:** the landing page and the console at its own address ([0067](decisions/0067-landing-site-and-console-address.md)).
 
 ## M6: Ready for others (if we go open source)
 
-- Polished install and upgrade path, public docs, license.
-- Multiple users with roles in the UI.
-- Telemetry-free by default.
-- Organizations ([ADR 0027](decisions/0027-organizations.md)). Done: orgs
-  as the boundary (projects, tokens, data policy, audit, live events) and
-  the platform operator; the org switcher and the org in UI URLs; org
-  settings with members, invites and org variables (`${{org.KEY}}`).
-  Next: org alert channels. Servers stay the platform's: orgs only say
-  production or non-production. Invite-only until paying customers;
-  open signup, email verification and payments come with them.
+- Done: install script and in-place updates ([0028](decisions/0028-updates-from-the-console.md)), the [user guide](guide/README.md), roles in the UI, organizations with members, invites, org variables and org alert channels, no telemetry.
+- Left: a license ([open questions](open-questions.md)). Open signup, email verification and payments come with paying customers; until then orgs are invite-only. Servers stay the platform's: orgs only say production or non-production.
+- Hosting customers' apps on our servers: sandboxing, quotas, metering, billing, abuse handling. Its own ADR first.
 
-## Later (only when needed)
+## Backlog
 
-- Moving an environment between servers
-- Human approval flow for selected actions
-- Hosting customers' apps on our servers: sandboxing, quotas, metering,
-  billing, abuse handling (its own ADR, after ADR 0027's phases)
+### Being planned now (wave 1)
+
+- Sleeping previews: preview environments scale to zero when idle and wake on a request.
+- Deploy diagnosis: a deterministic failure bundle for a failed deploy, in the UI and over MCP.
+- Database insights in the Data panel.
+
+### Planned next (wave 2)
+
+- OTLP tracing and app metrics.
+- Public status pages, with incidents and maintenance windows.
+- Image vulnerability scanning that never slows deploys: it runs after the release is live, and only when the builder is idle.
+- MySQL and Redis in the Data panel.
+
+### Later
+
+- More service templates and a catalog: MySQL/MariaDB, Valkey, MongoDB, an S3-compatible bucket, Meilisearch, NATS/RabbitMQ.
+- Shareable project templates.
+- Object storage buckets for apps.
+- Postgres point-in-time recovery.
+- Replicas on one server.
+- `dock run --local` with an environment's variables.
+- Agent sandboxes: an environment per branch or task, with a TTL.
+- Cost per project.
+- Links across errors, traffic, logs and releases.
+
+### Dropped
+
+- Mail catcher for previews: few apps need it, and mail providers cover it.
+- Heartbeat monitors: not needed for now.
+- Domain purchasing.
+- HA Postgres.
+- Autoscaling across servers.
+- A built-in AI chat panel: the MCP endpoint covers it.
