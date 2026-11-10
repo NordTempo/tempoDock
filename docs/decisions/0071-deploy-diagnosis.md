@@ -35,11 +35,18 @@ state, and the health check's answer only ever lived in the deploy.
 | MCP | `diagnose` (read-only): a summary line with the cause and the fix, then the bundle. Deploy-like tools' summaries name the likely cause and say to call it |
 | UI | The release page: the cause with a ruled edge, what matched and what was ruled out, the fix as the primary button (port and health check path edited in place, other settings and variables through their editors), then the evidence as rows, the matched ones marked. Replaces the page's regex guess |
 
+## Running services (phase 2)
+
+| Topic | Decision |
+|---|---|
+| When | A crash loop is diagnosed when its alert is about to open: the capture runs in its own goroutine (it reads the container over the node link, within 5 s) and the alert opens after it, so the first notification already says the cause; restarts meanwhile wait for it. An unhealthy service is diagnosed when its alert turns critical (a restart didn't help), in the health check's own goroutine, before the next restart. Once per alert: the alert engine keeps the cause while the alert is open (`alertEngine.causes`, bounded by services) and drops it when the alert resolves, so the next occurrence is diagnosed again |
+| What | The same bundle, kind `crash_loop` or `unhealthy`, kept with the active release (migration 0083 widens `kind`). The exit code and OOM kill come from the service status, since Docker resets them on each restart; an unhealthy service's probe output (dock-probe's words, which `node.ParseHealthFailure` knows) feeds the health rules. `failure.duration_ms` is how long it had been live. Rules that read a deploy's steps skip it |
+| Alerts | Crash loop, unhealthy and failed deploy alerts say "Likely cause: ..." (the rule's sentence, never log text), their command is `dock diagnose`, their target the release, so the UI's "See why" opens its page. A failed deploy's alert reads the cause from the release's diagnosis, and after a restart from the reconcile query |
+| UI | A release's page shows its diagnosis when it failed, and when it crash looped or turned unhealthy while live ("Crash looped 4m ago, while live"). The service's headline says the likely cause while it crash loops or is unhealthy, and the failed-deploy strip after the failure. The project overview carries each service's newest diagnosis with its release (one more query, one row per service); a crash loop or unhealthy alert refetches it |
+| Not republished | Capturing a running service's diagnosis publishes no release event: the alert engine reads an active release's event as a release going live and would reset the crash count |
+
 ## Not now
 
-- Crash loops and an unhealthy service after its restarts didn't help:
-  the same bundle, captured when their alert opens, on the active
-  release's page, with the cause in the alert and the overview's strip.
 - A cause column in the release list; the rules' cause line on a failed
   run or job, from its stored output.
 - Database signals (connections, locks) as evidence, from the Data

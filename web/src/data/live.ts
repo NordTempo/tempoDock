@@ -122,6 +122,7 @@ const summarize = ({
   created_at,
   error,
   error_code,
+  diagnosis,
 }: Release): ReleaseSummary => ({
   number,
   status,
@@ -133,6 +134,7 @@ const summarize = ({
   created_at,
   error,
   error_code,
+  diagnosis,
 });
 
 const inFlight = (status: Release["status"]) =>
@@ -280,6 +282,26 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
           event.alert.kind === "error_regressed"
         )
           queryClient.invalidateQueries({ queryKey: ["errors"] });
+        // A crash loop or unhealthy service is diagnosed as its alert
+        // opens or turns critical (ADR 0071): its overview and live
+        // release then name the cause. Rare, so refetched.
+        const { kind, project, environment, service, target } = event.alert;
+        if (
+          (kind === "crash_loop" || kind === "unhealthy") &&
+          project &&
+          environment &&
+          service &&
+          target?.release &&
+          !event.alert.resolved_at
+        ) {
+          queryClient.invalidateQueries({ queryKey: keys.overview(project) });
+          queryClient.invalidateQueries({
+            queryKey: keys.release(
+              { project, environment, service },
+              target.release,
+            ),
+          });
+        }
       }
       return;
     case "update":

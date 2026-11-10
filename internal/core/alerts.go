@@ -85,6 +85,14 @@ type alertEngine struct {
 	// threshold, by "memory:<id>" or "cpu:<id>"; an entry goes when the
 	// server is back under it. Bounded by servers.
 	hot map[string]time.Time
+	// causes are the diagnoses (ADR 0071) of open crash loop and
+	// unhealthy alerts, by alert key: raiseAlert says the cause and points
+	// at it. An entry is kept while its alert is open, so the condition is
+	// diagnosed once per alert; resolveAlert removes it. diagnosing marks
+	// a crash loop whose diagnosis is being captured, before its alert
+	// opens. Both are bounded by services.
+	causes     map[string]alertCause
+	diagnosing map[string]bool
 	// started bounds how long a server counts as offline: nothing is
 	// known of the time before the daemon started.
 	started time.Time
@@ -94,6 +102,61 @@ type alertEngine struct {
 	// never to addresses guard refuses.
 	client *http.Client
 	guard  egressGuard
+}
+
+// alertCause is an alert's diagnosis: its release, the likely cause
+// (empty when no rule matched) and the command that shows it.
+type alertCause struct {
+	release          int64
+	summary, command string
+}
+
+// withCause says a diagnosed alert's likely cause and points it at the
+// diagnosis; the message's cause is the rule's sentence, never log text.
+func withCause(s alertSignal, cs alertCause) alertSignal {
+	if cs.summary != "" {
+		s.Message += " Likely cause: " + cs.summary + "."
+	}
+	s.Command, s.Target = cs.command, &apitypes.AlertTarget{Release: cs.release}
+	return s
+}
+
+// diagnosedAlert captures a running service's diagnosis for an alert of
+// kind about to open (a crash loop), then raises it with its cause, so
+// the first notification says it. Runs in its own goroutine: capturing
+// reads the container over the node link, within a few seconds.
+func (c *Core) diagnosedAlert(s alertSignal, kind apitypes.DiagnosisKind) {
+	defer c.wg.Done()
+	ctx := c.ctx
+	var ref *apitypes.DiagnosisRef
+	ss, err := c.scopeOf(ctx, s.serviceID)
+	if err == nil {
+		ref = c.diagnoseRunning(ctx, ss, kind)
+	}
+	e := c.alerts
+	e.mu.Lock()
+	delete(e.diagnosing, s.Key)
+	// A service stopped meanwhile lost its restart count: no alert.
+	still := e.restarts[strings.TrimPrefix(s.Key, "crash:")] != nil
+	if ref != nil && still {
+		e.causes[s.Key] = c.causeOf(ss, ref)
+	}
+	e.mu.Unlock()
+	if still && ctx.Err() == nil {
+		c.raiseAlert(ctx, s, time.Now())
+	}
+}
+
+// causeOf is the alert cause of a running service's diagnosis.
+func (c *Core) causeOf(ss svcScope, ref *apitypes.DiagnosisRef) alertCause {
+	cs := alertCause{command: fmt.Sprintf("dock diagnose %s", svcFlags(ss.project.Name, ss.env.Name, ss.svc.Name))}
+	if ref.Rule != "" {
+		cs.summary = ref.Summary
+	}
+	if rel, err := c.store.GetActiveRelease(c.ctx, ss.svc.ID); err == nil {
+		cs.release = rel.Number
+	}
+	return cs
 }
 
 // restartLog is a service's restart count as last seen and the times of
@@ -106,6 +169,7 @@ type restartLog struct {
 func newAlertEngine() *alertEngine {
 	e := &alertEngine{
 		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{}, hot: map[string]time.Time{},
+		causes: map[string]alertCause{}, diagnosing: map[string]bool{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
 	e.guard.what = "alerts"
@@ -205,7 +269,11 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 			c.alerts.mu.Lock()
 			c.alerts.failed[svc] = max(c.alerts.failed[svc], r.Number)
 			c.alerts.mu.Unlock()
-			s := deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error, ev.serviceID)
+			cause := ""
+			if d := r.Diagnosis; d != nil && d.Rule != "" {
+				cause = d.Summary
+			}
+			s := deployFailed(ev.Project, ev.Environment, ev.Service, r.Number, r.Error, cause, ev.serviceID)
 			s.projectID = ev.projectID
 			c.raiseAlert(ctx, s, now)
 		case apitypes.ReleaseActive:
@@ -270,14 +338,21 @@ func (c *Core) onAlertEvent(ctx context.Context, ev LiveEvent, now time.Time) {
 	}
 }
 
-// deployFailed is the alert for a service whose newest release failed.
-func deployFailed(project, env, service string, number int64, reason string, serviceID int64) alertSignal {
+// deployFailed is the alert for a service whose newest release failed;
+// cause is its diagnosis's likely cause (ADR 0071), empty when none.
+func deployFailed(project, env, service string, number int64, reason, cause string, serviceID int64) alertSignal {
 	svc := serviceKey(project, env, service)
+	msg := fmt.Sprintf("Release %d failed: %s. The release before it keeps serving.", number, reason)
+	cmd := fmt.Sprintf("dock release show %d %s", number, svcFlags(project, env, service))
+	if cause != "" {
+		msg += " Likely cause: " + cause + "."
+		cmd = fmt.Sprintf("dock diagnose -r %d %s", number, svcFlags(project, env, service))
+	}
 	return alertSignal{
 		Key: "deploy:" + alertServiceKey(serviceID, project, env, service), serviceID: serviceID, Kind: apitypes.AlertDeployFailed, Severity: apitypes.SeverityWarning,
 		Title:   "Deploy of " + svc + " failed",
-		Message: fmt.Sprintf("Release %d failed: %s. The release before it keeps serving.", number, reason),
-		Command: fmt.Sprintf("dock release show %d %s", number, svcFlags(project, env, service)),
+		Message: msg,
+		Command: cmd,
 		Target:  &apitypes.AlertTarget{Release: number},
 		Project: project, Environment: env, Service: service,
 	}
@@ -361,12 +436,29 @@ func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st
 	if st.OOMKilled {
 		msg += fmt.Sprintf(" It was killed for using more than its %d MB memory limit.", st.MemoryLimitMB)
 	}
-	c.raiseAlert(ctx, alertSignal{
+	sig := alertSignal{
 		Key: "crash:" + svc, Kind: apitypes.AlertCrashLoop, Severity: apitypes.SeverityCritical,
 		Title:     serviceKey(ev.Project, ev.Environment, ev.Service) + " is crash looping",
 		projectID: ev.projectID, serviceID: ev.serviceID, Message: msg,
 		Project: ev.Project, Environment: ev.Environment, Service: ev.Service,
-	}, now)
+	}
+	// A new crash loop is diagnosed first (ADR 0071), so its alert says
+	// why; until then later restarts wait for it.
+	e.mu.Lock()
+	_, open := e.open[sig.Key]
+	waiting := e.diagnosing[sig.Key]
+	diagnose := !open && !waiting && ev.serviceID != 0
+	if diagnose {
+		e.diagnosing[sig.Key] = true
+	}
+	e.mu.Unlock()
+	switch {
+	case diagnose:
+		c.wg.Add(1)
+		go c.diagnosedAlert(sig, apitypes.DiagnosisCrashLoop)
+	case !waiting:
+		c.raiseAlert(ctx, sig, now)
+	}
 }
 
 // alertTick runs on the statistics tick: disk, memory and CPU alerts from
@@ -587,7 +679,7 @@ func (c *Core) reconcileAlerts(ctx context.Context, now time.Time) {
 		return
 	}
 	for _, r := range failed {
-		s := deployFailed(r.Project, r.Environment, r.Service, r.Number, r.Error, r.ServiceID)
+		s := deployFailed(r.Project, r.Environment, r.Service, r.Number, r.Error, r.Cause, r.ServiceID)
 		s.projectID = r.ProjectID
 		want[s.Key] = s
 	}
@@ -636,6 +728,9 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 		s.Title = strings.Replace(s.Title, s.Project+"/", name+"/", 1)
 		s.Command = strings.Replace(s.Command, "-p "+s.Project+" ", "-p "+name+" ", 1)
 		s.Project = name
+	}
+	if cs, ok := e.causes[s.Key]; ok {
+		s = withCause(s, cs)
 	}
 	target := alertTargetJSON(s.Target)
 	cur, ok := e.open[s.Key]
@@ -750,6 +845,7 @@ func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostna
 func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {
 	e := c.alerts
 	e.mu.Lock()
+	delete(e.causes, key) // the next occurrence is diagnosed again
 	a, ok := e.open[key]
 	if !ok {
 		e.mu.Unlock()

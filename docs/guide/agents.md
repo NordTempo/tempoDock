@@ -252,8 +252,9 @@ release that is already running (another deploy, or one whose wait was
 cut off), `dock release wait [N]` waits until it is done and exits the
 same way.
 
-A failed deploy needs no rollback. To learn why it failed, `dock diagnose
---json` (MCP `diagnose`) returns one bundle: the likely cause with its fix
+A failed deploy needs no rollback. To learn why it failed (or why the live
+release crash loops or turned unhealthy), `dock diagnose --json` (MCP
+`diagnose`) returns one bundle: the likely cause with its fix
 (`cause.rule`, `cause.summary`, `cause.fix.cli`; an empty rule means no
 rule matched), what was ruled out (`checked`), and the evidence. Rollback
 is for a release that went live but misbehaves:

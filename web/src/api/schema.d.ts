@@ -6584,7 +6584,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "release";
+            kind: "release" | "crash_loop" | "unhealthy";
             /**
              * Format: int64
              * @description The newest earlier release that served, which changes compare with; 0 when none did
@@ -6595,7 +6595,7 @@ export interface components {
             project: string;
             /**
              * Format: int64
-             * @description The failed release's number
+             * @description The release's number: the one that failed, or the active one that crash looped or turned unhealthy
              */
             release: number;
             /** @description The service's memory and CPU before the failure, from its 1-minute samples */
@@ -6650,7 +6650,7 @@ export interface components {
         DiagnosisFailure: {
             /**
              * Format: int64
-             * @description From the release's start to its failure
+             * @description From the release's start to its failure; for a running service, how long it had been live
              */
             duration_ms: number;
             error: string;
@@ -6658,7 +6658,7 @@ export interface components {
             /** @description The container's state, when one was started */
             exit?: components["schemas"]["DiagnosisExit"];
             /**
-             * @description The step it failed in
+             * @description The step it failed in; active for a running service
              * @enum {string}
              */
             step: "queued" | "building" | "starting" | "health_checking" | "active";
@@ -6718,7 +6718,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "release";
+            kind: "release" | "crash_loop" | "unhealthy";
             /** @description The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched */
             rule?: string;
             /** @description The likely cause in one line, or that no rule matched */
@@ -6748,10 +6748,10 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "release";
+            kind: "release" | "crash_loop" | "unhealthy";
             /**
              * Format: int64
-             * @description The failed release's number
+             * @description The release's number
              */
             release: number;
             /** @description The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched */
@@ -7972,6 +7972,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            /** @description The release's newest diagnosis (why it failed, crash loops or is unhealthy), in the project overview */
+            diagnosis?: components["schemas"]["DiagnosisRef"];
             error?: string;
             error_code?: string;
             image_id: string;

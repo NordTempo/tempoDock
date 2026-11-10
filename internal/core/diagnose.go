@@ -20,9 +20,10 @@ import (
 // verdict, so a reader sees what was ruled out. No rule matching is an
 // answer too. diagnose is pure: capture.go gathers its input.
 
-// diagInput is what the rules read: one failed release and what was
-// captured when it failed.
+// diagInput is what the rules read: one failed release, or a running one
+// that crash loops or turned unhealthy, and what was captured then.
 type diagInput struct {
+	kind                 apitypes.DiagnosisKind
 	service, environment string
 	step                 apitypes.ReleaseStatus
 	code                 apitypes.ErrorCode
@@ -130,13 +131,39 @@ func (in *diagInput) inHealthCheck() bool {
 	return in.step == apitypes.ReleaseHealthChecking && in.code == apitypes.CodeHealthCheckFailed
 }
 
+// running: a live release that crash loops or turned unhealthy.
+func (in *diagInput) running() bool {
+	return in.kind == apitypes.DiagnosisCrashLoop || in.kind == apitypes.DiagnosisUnhealthy
+}
+
+// checksHealth: a health check's answer is known, the deploy's or the
+// ongoing one's.
+func (in *diagInput) checksHealth() bool {
+	return in.inHealthCheck() || in.kind == apitypes.DiagnosisUnhealthy
+}
+
+// exitCode is the code the container last exited with, from the health
+// check's answer or a running service's status; -1 when it didn't exit.
+func (in *diagInput) exitCode() int {
+	switch {
+	case in.health.Kind == node.HealthFailExited || in.health.Kind == node.HealthFailKilled:
+		return in.health.ExitCode
+	case in.kind == apitypes.DiagnosisCrashLoop && in.exit != nil && in.exit.ExitCode != nil:
+		return *in.exit.ExitCode
+	}
+	return -1
+}
+
 // started: a container was started (or tried to), so its exit and
 // output may tell.
 func (in *diagInput) started() bool {
-	return in.step == apitypes.ReleaseStarting || in.inHealthCheck()
+	return in.step == apitypes.ReleaseStarting || in.inHealthCheck() || in.running()
 }
 
 func ruleServerOffline(in *diagInput) diagVerdict {
+	if in.running() {
+		return diagVerdict{skip: true}
+	}
 	if !in.offline {
 		return diagVerdict{why: "the server stayed online"}
 	}
@@ -234,7 +261,7 @@ func ruleOOMKilled(in *diagInput) diagVerdict {
 			summary: fmt.Sprintf("Killed for using more than its %d MB memory limit", limit)}
 	case oom:
 		return diagVerdict{matched: true, why: "the kernel's OOM kill", fix: fix, summary: "Killed for running out of memory"}
-	case in.health.Kind == node.HealthFailKilled:
+	case in.health.Kind == node.HealthFailKilled || in.kind == apitypes.DiagnosisCrashLoop && in.exitCode() == 137 && limit > 0:
 		return diagVerdict{matched: true, why: "exit 137 with a memory limit", fix: fix,
 			summary: fmt.Sprintf("Killed (exit code 137), most likely for using more than its %d MB memory limit", limit)}
 	}
@@ -249,11 +276,11 @@ func ruleMissingBinary(in *diagInput) diagVerdict {
 	if !in.started() {
 		return diagVerdict{skip: true}
 	}
-	exit127 := in.health.Kind == node.HealthFailExited && in.health.ExitCode == 127
+	exit127 := in.exitCode() == 127
 	errLine := in.step == apitypes.ReleaseStarting && strings.Contains(in.err, "executable file not found")
 	if !exit127 && !errLine {
-		if in.inHealthCheck() && in.health.Kind == node.HealthFailExited {
-			return diagVerdict{why: fmt.Sprintf("exit %d, not 127", in.health.ExitCode)}
+		if code := in.exitCode(); code >= 0 {
+			return diagVerdict{why: fmt.Sprintf("exit %d, not 127", code)}
 		}
 		return diagVerdict{why: "no exit 127"}
 	}
@@ -295,7 +322,7 @@ var (
 )
 
 func ruleMissingVariable(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() && in.pre == nil {
+	if !in.inHealthCheck() && in.pre == nil && in.kind != apitypes.DiagnosisCrashLoop {
 		return diagVerdict{skip: true}
 	}
 	lines, fromPre := in.container, false
@@ -381,6 +408,9 @@ func lastListen(lines []string) (host string, port int, at int) {
 // published port, or a template database's on its network; 0 when it
 // only had to keep running.
 func (in *diagInput) port() int {
+	if in.kind == apitypes.DiagnosisUnhealthy && in.cfg.HealthPort == 0 {
+		return in.cfg.Port // probed inside the container, published or not
+	}
 	if in.cfg.Published {
 		return in.cfg.Port
 	}
@@ -393,7 +423,7 @@ func (in *diagInput) unreachable() bool {
 }
 
 func rulePortMismatch(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() || in.port() == 0 {
+	if !in.checksHealth() || in.port() == 0 {
 		return diagVerdict{skip: true}
 	}
 	if !in.unreachable() {
@@ -413,7 +443,7 @@ func rulePortMismatch(in *diagInput) diagVerdict {
 }
 
 func ruleLoopbackOnly(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() || in.port() == 0 {
+	if !in.checksHealth() || in.port() == 0 {
 		return diagVerdict{skip: true}
 	}
 	if !in.unreachable() {
@@ -432,7 +462,7 @@ func ruleLoopbackOnly(in *diagInput) diagVerdict {
 }
 
 func ruleHealthPath(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() || in.cfg.HealthCheckPath == "" {
+	if !in.checksHealth() || in.cfg.HealthCheckPath == "" {
 		return diagVerdict{skip: true}
 	}
 	if in.health.Kind != node.HealthFailStatus {
@@ -458,32 +488,44 @@ func ruleHealthPath(in *diagInput) diagVerdict {
 }
 
 func ruleNotListening(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() || in.port() == 0 {
+	if !in.checksHealth() || in.port() == 0 {
 		return diagVerdict{skip: true}
 	}
 	timeout := in.cfg.HealthCheckTimeout
 	switch in.health.Kind {
 	case node.HealthFailNotListening:
+		summary := fmt.Sprintf("Nothing answered on :%d within %ds", in.port(), timeout)
+		if in.running() {
+			summary = fmt.Sprintf("The app stopped answering on :%d", in.port())
+		}
 		return diagVerdict{matched: true, why: fmt.Sprintf("nothing accepted connections on :%d", in.port()),
-			summary: fmt.Sprintf("Nothing answered on :%d within %ds", in.port(), timeout),
+			summary: summary,
 			fix:     &apitypes.DiagnosisFix{Setting: "port", CLI: "dock service update --port PORT " + in.flags()}}
 	case node.HealthFailNoAnswer:
+		summary := fmt.Sprintf("The app accepted connections on :%d but didn't answer within %ds", in.port(), timeout)
+		if in.running() {
+			summary = fmt.Sprintf("The app accepts connections on :%d but stopped answering: it may hang", in.port())
+		}
 		return diagVerdict{matched: true, why: "connected, no answer",
-			summary: fmt.Sprintf("The app accepted connections on :%d but didn't answer within %ds", in.port(), timeout),
+			summary: summary,
 			fix:     &apitypes.DiagnosisFix{Setting: "health_check_timeout", CLI: "dock service update --health-check-timeout 120s " + in.flags()}}
 	}
 	return diagVerdict{why: "the port answered"}
 }
 
 func ruleExited(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() {
+	if !in.inHealthCheck() && in.kind != apitypes.DiagnosisCrashLoop {
 		return diagVerdict{skip: true}
 	}
-	if in.health.Kind != node.HealthFailExited {
+	code := in.exitCode()
+	if code < 0 || in.health.Kind == node.HealthFailKilled || in.health.Kind == node.HealthFailOOM || in.exit != nil && in.exit.OOMKilled {
 		return diagVerdict{why: "it kept running"}
 	}
-	v := diagVerdict{matched: true, why: fmt.Sprintf("exit %d", in.health.ExitCode),
-		summary: fmt.Sprintf("The app exited with code %d while starting", in.health.ExitCode)}
+	v := diagVerdict{matched: true, why: fmt.Sprintf("exit %d", code),
+		summary: fmt.Sprintf("The app exited with code %d while starting", code)}
+	if in.kind == apitypes.DiagnosisCrashLoop {
+		v.summary = fmt.Sprintf("The app keeps exiting with code %d", code)
+	}
 	if i := lastErrorIndex(in.container); i >= 0 {
 		v.detail, v.lines = in.container[i], []int{i}
 	}

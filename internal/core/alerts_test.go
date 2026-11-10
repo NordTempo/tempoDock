@@ -147,8 +147,10 @@ func TestDeployFailureAlertDedupesAndResolves(t *testing.T) {
 	if a.Kind != string(apitypes.AlertDeployFailed) || a.Service != "web" || !strings.Contains(a.Message, "Release 2 failed") {
 		t.Fatalf("alert = %+v", a)
 	}
-	if out := toAlert(a); out.Target == nil || out.Target.Release != 2 || out.Command != "dock release show 2 -p shop -e production -s web" {
-		t.Fatalf("target %+v, command %q", out.Target, out.Command)
+	// Its diagnosis named the cause (ADR 0071), so it points there.
+	if out := toAlert(a); out.Target == nil || out.Target.Release != 2 || out.Command != "dock diagnose -r 2 -p shop -e production -s web" ||
+		!strings.Contains(out.Message, "Likely cause: The image or its tag doesn't exist in the registry.") {
+		t.Fatalf("target %+v, command %q, message %q", out.Target, out.Command, out.Message)
 	}
 	h.deploy(web, "app:3")
 	deadline := time.Now().Add(5 * time.Second)

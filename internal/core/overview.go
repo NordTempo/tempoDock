@@ -35,6 +35,14 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 	if err != nil {
 		return out, err
 	}
+	diags, err := c.store.ListProjectDiagnosisHeads(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	diagOf := make(map[int64]*apitypes.DiagnosisRef, len(diags)) // by release ID
+	for _, d := range diags {
+		diagOf[d.ReleaseID] = &apitypes.DiagnosisRef{ID: d.ID, Kind: apitypes.DiagnosisKind(d.Kind), Rule: d.Rule, Summary: d.Summary}
+	}
 	heads, err := c.store.ListProjectReleaseHeads(ctx, p.ID)
 	if err != nil {
 		return out, err
@@ -106,18 +114,25 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			rh := releases[s.ID]
 			var active *int64
 			so := apitypes.ServiceOverview{Domains: make([]apitypes.Domain, 0, len(domainsBySvc[s.ID]))}
+			// Each with its service's newest diagnosis, when it is that
+			// release's (ADR 0071).
+			withDiag := func(r *store.Release) *apitypes.ReleaseSummary {
+				out := summarize(*r)
+				out.Diagnosis = diagOf[r.ID]
+				return out
+			}
 			if rh.active != nil {
 				active = &rh.active.Number
-				so.ActiveRelease = summarize(*rh.active)
+				so.ActiveRelease = withDiag(rh.active)
 			}
 			if rh.deploying != nil {
 				so.Deploying = summarize(*rh.deploying)
 			}
 			if rh.latest != nil {
-				so.LatestRelease = summarize(*rh.latest)
+				so.LatestRelease = withDiag(rh.latest)
 			}
 			if rh.lastFailed != nil {
-				so.LastFailedDeploy = summarize(*rh.lastFailed)
+				so.LastFailedDeploy = withDiag(rh.lastFailed)
 			}
 			so.Service = c.serviceOf(ss, link, pending, active, stateful[s.ID])
 			if b, ok := backups[s.ID]; ok {

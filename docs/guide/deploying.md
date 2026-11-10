@@ -263,6 +263,12 @@ as its first button; `dock diagnose` prints it (`-r N` for an older one,
 matches it says so and shows the evidence. A service keeps its last 20
 for 30 days.
 
+The same happens when a live release crash loops, or stays unhealthy
+after Dock restarted it: the alert waits a few seconds for the diagnosis
+and says the likely cause, the service's page names it, and the
+release's page shows the evidence (`dock diagnose` without `-r` shows the
+newest).
+
 **If the daemon restarts mid-deploy**, the in-flight release is marked
 `failed` ("daemon restarted during deploy") and the active one keeps
 serving.

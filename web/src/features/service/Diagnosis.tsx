@@ -5,11 +5,12 @@ import type { components } from "../../api/schema";
 import { keys, servicePath } from "../../data/queries";
 import type { Release, ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { plural } from "../../ui/format";
+import { ago, plural } from "../../ui/format";
 import { Prop, SectionHead } from "../../ui/kit";
 import type { TextSettingKey } from "../settings/settings";
 
-// A failed release's diagnosis (ADR 0071) on its page: the likely cause
+// A release's diagnosis (ADR 0071) on its page, why it failed or why it
+// crash looped or turned unhealthy while live: the likely cause
 // with what was ruled out, then the evidence as rows, the rows a rule
 // matched marked. Dock captured it when the release failed; the rules run
 // in core, so the UI, `dock diagnose` and MCP say the same.
@@ -94,8 +95,19 @@ export function fixEdit(
 /** The likely cause, what matched, and what was ruled out. */
 export function Cause({ d }: { d: Diagnosis }) {
   const ruledOut = (d.checked ?? []).filter((c) => !c.matched);
+  const running =
+    d.kind === "crash_loop"
+      ? "Crash looped"
+      : d.kind === "unhealthy"
+        ? "Turned unhealthy"
+        : undefined;
   return (
     <div className="border-l-2 border-fail py-1.5 pl-3.5">
+      {running && (
+        <p className="text-xs text-mut">
+          {running} {ago(d.captured_at)}, while live
+        </p>
+      )}
       <p className="text-md font-semibold">
         {d.cause.rule ? d.cause.summary : "No rule matched"}
       </p>
@@ -228,6 +240,8 @@ function exitText(e: NonNullable<Diagnosis["failure"]["exit"]>) {
   const restarts = plural(e.restarts, "restart");
   if (e.oom_killed)
     return `Killed for memory, limit ${e.memory_limit_mb} MB, ${restarts}`;
+  if (e.running && e.exit_code != null)
+    return `Running again after exit ${e.exit_code}, ${restarts}`;
   if (e.running) return `Running when stopped, ${restarts}`;
   return `Exited with code ${e.exit_code}, ${restarts}`;
 }

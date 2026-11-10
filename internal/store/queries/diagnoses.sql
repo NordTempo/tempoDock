@@ -39,3 +39,12 @@ WHERE service_id = +? ORDER BY id;
 -- name: PruneDiagnoses :execrows
 -- Deletes diagnoses captured before the cutoff (the retention pass).
 DELETE FROM diagnoses WHERE created_at < +?;
+
+-- name: ListProjectDiagnosisHeads :many
+-- The newest diagnosis of each service in a project, without its bundle,
+-- for the project overview: one row per service at most.
+SELECT d.id, d.service_id, d.release_id, d.kind, d.rule, d.summary
+FROM services
+JOIN environments ON environments.id = services.environment_id
+JOIN diagnoses d ON d.id = (SELECT max(n.id) FROM diagnoses n WHERE n.service_id = services.id)
+WHERE environments.project_id = +?;

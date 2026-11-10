@@ -1073,8 +1073,9 @@ func (c *Core) releaseByNumber(ctx context.Context, ss svcScope, number int64) (
 	return r, err
 }
 
-// toRelease is a release as the API returns it. A failed one carries its
-// diagnosis (one indexed lookup); toReleaseWith takes them preloaded.
+// toRelease is a release as the API returns it. One that failed or
+// served carries its newest diagnosis (one indexed lookup);
+// toReleaseWith takes them preloaded.
 func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, withEvents bool) (apitypes.Release, error) {
 	return c.toReleaseWith(ctx, ss, r, withEvents, nil)
 }
@@ -1105,7 +1106,9 @@ func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, 
 	for _, m := range cfg.Mounts {
 		out.Config.Mounts = append(out.Config.Mounts, apitypes.VolumeMount{Volume: m.Volume, Path: m.Path})
 	}
-	if r.Status == string(apitypes.ReleaseFailed) {
+	switch apitypes.ReleaseStatus(r.Status) {
+	case apitypes.ReleaseFailed, apitypes.ReleaseActive, apitypes.ReleaseSuperseded:
+		// Why it failed, or why it crash looped while live (ADR 0071).
 		if diags != nil {
 			out.Diagnosis = diags[r.ID]
 		} else if out.Diagnosis, err = c.diagnosisRef(ctx, r.ID); err != nil {

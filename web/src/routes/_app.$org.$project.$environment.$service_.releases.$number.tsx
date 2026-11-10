@@ -99,13 +99,19 @@ function ReleasePage() {
   const r = `r${release.number}`;
   // Its diagnosis (ADR 0071): the likely cause and the fix it points at.
   const diagnosis = useDiagnosis(ref, release);
-  const edit = failed ? fixEdit(diagnosis?.cause.fix) : undefined;
+  // Shown for a failed release, and for a live one that crash looped or
+  // turned unhealthy.
+  const diagnosed =
+    diagnosis && (failed || diagnosis.kind !== "release")
+      ? diagnosis
+      : undefined;
+  const edit = diagnosed ? fixEdit(diagnosed.cause.fix) : undefined;
   const fix =
     edit && "inPlace" in edit
       ? {
           edit: edit.inPlace,
           label: edit.label,
-          suggested: diagnosis?.cause.fix?.suggested,
+          suggested: diagnosed?.cause.fix?.suggested,
         }
       : undefined;
   // What it replaced (or would have): the release before it that served.
@@ -255,13 +261,13 @@ function ReleasePage() {
               {releaseWhat(release)}{" "}
               <span className="font-mono">{release.image_ref}</span>
             </Prop>
-            {previous && !(failed && diagnosis?.changes) && (
+            {previous && !diagnosed?.changes && (
               <Prop label={`Changed since r${previous.number}`}>
                 <Changes from={previous} to={release} />
               </Prop>
             )}
           </dl>
-          {failed && diagnosis && <Cause d={diagnosis} />}
+          {diagnosed && <Cause d={diagnosed} />}
           {fix && fixing && (
             <FixAndDeploy
               release={release}
@@ -396,7 +402,7 @@ function ReleasePage() {
           )}
         </section>
 
-        {failed && diagnosis && <Evidence d={diagnosis} ref={ref} />}
+        {diagnosed && <Evidence d={diagnosed} ref={ref} />}
 
         <section aria-labelledby="steps" className="flex flex-col gap-2">
           <SectionHead id="steps">

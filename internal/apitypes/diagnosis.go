@@ -1,6 +1,10 @@
 package apitypes
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // Deploy diagnosis (ADR 0071): when a release fails, Dock keeps what
 // explains it in one bundle, captured at the failure (the container, its
@@ -16,13 +20,19 @@ const (
 	// DiagnosisRelease: a release failed (build, pull, pre-deploy
 	// command, start, health check, routes, or its server went offline).
 	DiagnosisRelease DiagnosisKind = "release"
+	// DiagnosisCrashLoop: the active release's container kept exiting
+	// (its crash loop alert opened).
+	DiagnosisCrashLoop DiagnosisKind = "crash_loop"
+	// DiagnosisUnhealthy: the active release's ongoing health check kept
+	// failing after a restart (its unhealthy alert turned critical).
+	DiagnosisUnhealthy DiagnosisKind = "unhealthy"
 )
 
 // DiagnosisRef names a release's diagnosis and its cause, for the release
 // itself and its live events.
 type DiagnosisRef struct {
 	ID   int64         `json:"id"`
-	Kind DiagnosisKind `json:"kind" enum:"release"`
+	Kind DiagnosisKind `json:"kind" enum:"release,crash_loop,unhealthy"`
 	// Rule is the matched rule's ID, empty when none matched.
 	Rule    string `json:"rule,omitempty" doc:"The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched"`
 	Summary string `json:"summary" doc:"The likely cause in one line, or that no rule matched"`
@@ -31,7 +41,7 @@ type DiagnosisRef struct {
 // DiagnosisSummary is a diagnosis in a list, without its bundle.
 type DiagnosisSummary struct {
 	DiagnosisRef
-	Release    int64     `json:"release" doc:"The failed release's number"`
+	Release    int64     `json:"release" doc:"The release's number"`
 	CapturedAt time.Time `json:"captured_at"`
 }
 
@@ -40,11 +50,11 @@ type DiagnosisSummary struct {
 // traces.
 type Diagnosis struct {
 	ID          int64         `json:"id"`
-	Kind        DiagnosisKind `json:"kind" enum:"release"`
+	Kind        DiagnosisKind `json:"kind" enum:"release,crash_loop,unhealthy"`
 	Project     string        `json:"project"`
 	Environment string        `json:"environment"`
 	Service     string        `json:"service"`
-	Release     int64         `json:"release" doc:"The failed release's number"`
+	Release     int64         `json:"release" doc:"The release's number: the one that failed, or the active one that crash looped or turned unhealthy"`
 	// LastGoodRelease is the newest earlier release that served (0: none),
 	// what Changes compares with.
 	LastGoodRelease int64     `json:"last_good_release,omitempty" doc:"The newest earlier release that served, which changes compare with; 0 when none did"`
@@ -69,6 +79,20 @@ type Diagnosis struct {
 	Errors        []DiagnosisError    `json:"errors" doc:"Error issues of the service seen around the failure, newest first"`
 	Resources     *DiagnosisResources `json:"resources,omitempty" doc:"The service's memory and CPU before the failure, from its 1-minute samples"`
 	Truncated     bool                `json:"truncated" doc:"Older log lines were left out to keep the bundle under its size limit"`
+}
+
+// Headline says what the diagnosis is about in one line: "Release 62 of
+// shop/production/web failed in health checking", "... crash looped
+// while live", "... turned unhealthy while live".
+func (d Diagnosis) Headline() string {
+	what := fmt.Sprintf("Release %d of %s/%s/%s", d.Release, d.Project, d.Environment, d.Service)
+	switch d.Kind {
+	case DiagnosisCrashLoop:
+		return what + " crash looped while live"
+	case DiagnosisUnhealthy:
+		return what + " turned unhealthy while live"
+	}
+	return what + " failed in " + strings.ReplaceAll(string(d.Failure.Step), "_", " ")
 }
 
 // DiagnosisCause is the likely cause: the first rule that matched.
@@ -98,10 +122,10 @@ type DiagnosisCheck struct {
 
 // DiagnosisFailure is how and where the release failed.
 type DiagnosisFailure struct {
-	Step       ReleaseStatus  `json:"step" enum:"queued,building,starting,health_checking,active" doc:"The step it failed in"`
+	Step       ReleaseStatus  `json:"step" enum:"queued,building,starting,health_checking,active" doc:"The step it failed in; active for a running service"`
 	ErrorCode  ErrorCode      `json:"error_code"`
 	Error      string         `json:"error"`
-	DurationMS int64          `json:"duration_ms" doc:"From the release's start to its failure"`
+	DurationMS int64          `json:"duration_ms" doc:"From the release's start to its failure; for a running service, how long it had been live"`
 	Exit       *DiagnosisExit `json:"exit,omitempty" doc:"The container's state, when one was started"`
 }
 

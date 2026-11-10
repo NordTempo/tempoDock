@@ -48,34 +48,43 @@ const (
 	diagStatsWindow  = 15 * time.Minute
 )
 
-// containerCapture is what was read from a failed release's container
-// before it was removed.
+// containerCapture is what was read from a release's container: a failed
+// one's before it was removed, or a running one's.
 type containerCapture struct {
 	exit  *apitypes.DiagnosisExit
 	lines []string
+	// healthOutput is what its ongoing health check's last failed probe
+	// said (ADR 0043).
+	healthOutput string
 }
 
 // captureContainer reads the failed release's container while it still
-// exists: its state and its last lines, within diagReadBudget. A
-// container that can't be read (an offline server) leaves them empty.
+// exists.
 func (d *deployment) captureContainer(ctx context.Context) containerCapture {
+	return readContainer(ctx, d.rt, d.rel.ContainerID, d.cfg.MemoryMB)
+}
+
+// readContainer reads a container's state and last lines within
+// diagReadBudget. One that can't be read (an offline server) leaves
+// them empty.
+func readContainer(ctx context.Context, rt node.Runtime, id string, memoryMB int) containerCapture {
 	var out containerCapture
-	id := d.rel.ContainerID
 	if id == "" {
 		return out
 	}
 	ctx, cancel := context.WithTimeout(ctx, diagReadBudget)
 	defer cancel()
-	if ctr, err := d.rt.Inspect(ctx, id); err == nil {
+	if ctr, err := rt.Inspect(ctx, id); err == nil {
 		out.exit = &apitypes.DiagnosisExit{
 			Running: ctr.State == node.StateRunning, OOMKilled: ctr.OOMKilled,
-			MemoryLimitMB: d.cfg.MemoryMB, Restarts: ctr.RestartCount,
+			MemoryLimitMB: memoryMB, Restarts: ctr.RestartCount,
 		}
 		if !out.exit.Running {
 			out.exit.ExitCode = ptr(ctr.ExitCode)
 		}
+		out.healthOutput = ctr.HealthOutput
 	}
-	lines, err := d.rt.Logs(ctx, id, node.LogOptions{Tail: diagContainerLines})
+	lines, err := rt.Logs(ctx, id, node.LogOptions{Tail: diagContainerLines})
 	if err != nil {
 		return out
 	}
@@ -120,7 +129,7 @@ func (d *deployment) recordDiagnosis(ctx context.Context, code apitypes.ErrorCod
 	}
 	bundle, cause, err := d.assemble(ctx, code, msg, offline, cc)
 	if err == nil {
-		err = c.storeDiagnosis(ctx, d.ss.svc.ID, d.rel.ID, bundle, cause)
+		_, err = c.storeDiagnosis(ctx, d.ss.svc.ID, d.rel.ID, bundle, cause)
 	}
 	if err != nil {
 		c.log.Warn("record deploy diagnosis", "service", d.ss.String(), "release", d.rel.Number, "err", err)
@@ -143,7 +152,7 @@ func (d *deployment) assemble(ctx context.Context, code apitypes.ErrorCode, msg 
 		PreDeploy: d.pre,
 	}
 	in := diagInput{
-		service: d.ss.svc.Name, environment: d.ss.env.Name,
+		kind: apitypes.DiagnosisRelease, service: d.ss.svc.Name, environment: d.ss.env.Name,
 		step: b.Failure.Step, code: code, err: msg, offline: offline,
 		pulled: apitypes.ReleaseSource(d.rel.Source) != apitypes.SourceUpload,
 		cfg:    d.cfg, exit: cc.exit, pre: d.pre, container: cc.lines,
@@ -170,14 +179,7 @@ func (d *deployment) assemble(ctx context.Context, code apitypes.ErrorCode, msg 
 		b.Changes = releaseChanges(*last, lastCfg, d.rel, d.cfg)
 	}
 
-	res := diagnose(&in)
-	b.Cause, b.AlsoMatched, b.Checked = res.cause, append(b.AlsoMatched, res.also...), append(b.Checked, res.checked...)
-	for i, l := range cc.lines {
-		b.ContainerTail = append(b.ContainerTail, apitypes.DiagnosisLine{Text: l, Matched: slices.Contains(res.matched, i)})
-	}
-	for _, l := range in.build {
-		b.BuildTail = append(b.BuildTail, apitypes.DiagnosisLine{Text: l})
-	}
+	fillDiagnosis(&b, diagnose(&in), cc.lines, in.build)
 	if b.Errors, err = c.errorsAround(ctx, d.ss.svc.ID, d.rel.CreatedAt); err != nil {
 		return b, b.Cause, err
 	}
@@ -185,6 +187,102 @@ func (d *deployment) assemble(ctx context.Context, code apitypes.ErrorCode, msg 
 		return b, b.Cause, err
 	}
 	return b, b.Cause, nil
+}
+
+// fillDiagnosis puts the rules' answer and the log tails in b, the
+// container lines the cause matched marked.
+func fillDiagnosis(b *apitypes.Diagnosis, res diagResult, container, build []string) {
+	b.Cause, b.AlsoMatched, b.Checked = res.cause, append(b.AlsoMatched, res.also...), append(b.Checked, res.checked...)
+	for i, l := range container {
+		b.ContainerTail = append(b.ContainerTail, apitypes.DiagnosisLine{Text: l, Matched: slices.Contains(res.matched, i)})
+	}
+	for _, l := range build {
+		b.BuildTail = append(b.BuildTail, apitypes.DiagnosisLine{Text: l})
+	}
+}
+
+// newDiagnosis is an empty bundle of kind for release, its lists empty
+// rather than null.
+func newDiagnosis(kind apitypes.DiagnosisKind, release int64, at time.Time) apitypes.Diagnosis {
+	return apitypes.Diagnosis{
+		Kind: kind, Release: release, CapturedAt: at,
+		AlsoMatched: []string{}, Checked: []apitypes.DiagnosisCheck{},
+		ContainerTail: []apitypes.DiagnosisLine{}, BuildTail: []apitypes.DiagnosisLine{}, Errors: []apitypes.DiagnosisError{},
+	}
+}
+
+// diagnoseRunning captures the diagnosis of a service whose active
+// release crash loops or stays unhealthy after a restart (kind), when
+// its alert opens or turns critical, and stores it with that release.
+// It reads the running container like a failed deploy's; the exit code
+// and OOM kill come from the service status, since Docker resets them on
+// each restart. nil when there is nothing to diagnose (no active
+// release) or storing failed.
+func (c *Core) diagnoseRunning(ctx context.Context, ss svcScope, kind apitypes.DiagnosisKind) *apitypes.DiagnosisRef {
+	rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
+	if err != nil {
+		return nil
+	}
+	cfg, err := c.openConfig(rel)
+	if err != nil {
+		c.log.Warn("diagnose running service", "service", ss.String(), "err", err)
+		return nil
+	}
+	cc := readContainer(ctx, c.runtime(ss.env.ServerID), rel.ContainerID, cfg.MemoryMB)
+	st := c.getStatus(ss.svc.ID)
+	at := now()
+	b := newDiagnosis(kind, rel.Number, at)
+	b.Failure.Step = apitypes.ReleaseActive
+	if rel.FinishedAt != nil {
+		b.Failure.DurationMS = at.Sub(*rel.FinishedAt).Milliseconds()
+	}
+	exit := cc.exit
+	if exit == nil {
+		exit = &apitypes.DiagnosisExit{MemoryLimitMB: cfg.MemoryMB}
+	}
+	exit.OOMKilled = exit.OOMKilled || st.OOMKilled
+	exit.Restarts = max(exit.Restarts, st.RestartCount)
+	in := diagInput{kind: kind, service: ss.svc.Name, environment: ss.env.Name, step: apitypes.ReleaseActive, cfg: cfg, exit: exit, container: cc.lines}
+	switch kind {
+	case apitypes.DiagnosisCrashLoop:
+		exit.ExitCode = ptr(st.ExitCode) // the last crash's: inspect shows the run Docker restarted
+		b.Failure.Error = fmt.Sprintf("restarted %d times; last exit code %d", exit.Restarts, st.ExitCode)
+	case apitypes.DiagnosisUnhealthy:
+		b.Failure.Error = "its health check keeps failing"
+		if cc.healthOutput != "" {
+			b.Failure.Error += ": " + cc.healthOutput
+		}
+		in.health = node.ParseHealthFailure(cc.healthOutput)
+		b.Health = &apitypes.DiagnosisHealth{Kind: "tcp", Port: in.port(), TimeoutSeconds: cfg.HealthCheckProbeTimeout,
+			Result: string(in.health.Kind), Status: in.health.Status}
+		if cfg.HealthCheckPath != "" {
+			b.Health.Kind, b.Health.Path = "http", cfg.HealthCheckPath
+		}
+	}
+	in.err = b.Failure.Error
+	b.Failure.Exit = exit
+	if last, err := c.lastGoodRelease(ctx, ss.svc.ID, rel.Number); err == nil && last != nil {
+		if lastCfg, err := c.openConfig(*last); err == nil {
+			in.last = &lastCfg
+			b.LastGoodRelease = last.Number
+			b.Changes = releaseChanges(*last, lastCfg, rel, cfg)
+		}
+	}
+	fillDiagnosis(&b, diagnose(&in), cc.lines, nil)
+	if b.Errors, err = c.errorsAround(ctx, ss.svc.ID, at); err == nil {
+		b.Resources, err = c.resourcesBefore(ctx, ss.svc.ID, at, &rel)
+	}
+	var id int64
+	if err == nil {
+		id, err = c.storeDiagnosis(ctx, ss.svc.ID, rel.ID, b, b.Cause)
+	}
+	if err != nil {
+		c.log.Warn("record diagnosis", "service", ss.String(), "kind", kind, "err", err)
+		return nil
+	}
+	// No release event: the alert engine would read the active release as
+	// newly live. Open pages learn from the alert that names it.
+	return &apitypes.DiagnosisRef{ID: id, Kind: kind, Rule: b.Cause.Rule, Summary: b.Cause.Summary}
 }
 
 // healthOf is what the deploy's health check probed, with its answer.
@@ -365,15 +463,16 @@ func (c *Core) resourcesBefore(ctx context.Context, serviceID int64, at time.Tim
 	return out, nil
 }
 
-// storeDiagnosis writes a bundle, cut to diagMaxBytes, and trims the
-// service to its newest diagKeep.
-func (c *Core) storeDiagnosis(ctx context.Context, serviceID, releaseID int64, b apitypes.Diagnosis, cause apitypes.DiagnosisCause) error {
+// storeDiagnosis writes a bundle, cut to diagMaxBytes, trims the service
+// to its newest diagKeep, and returns the new diagnosis's ID.
+func (c *Core) storeDiagnosis(ctx context.Context, serviceID, releaseID int64, b apitypes.Diagnosis, cause apitypes.DiagnosisCause) (int64, error) {
 	body, err := fitDiagnosis(&b)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return c.store.Tx(ctx, func(q *store.Queries) error {
-		if _, err := q.AddDiagnosis(ctx, store.AddDiagnosisParams{
+	var id int64
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if id, err = q.AddDiagnosis(ctx, store.AddDiagnosisParams{
 			ServiceID: serviceID, ReleaseID: releaseID, Kind: string(b.Kind), Rule: cause.Rule,
 			Summary: cause.Summary, Bundle: string(body), CreatedAt: b.CapturedAt.Unix(),
 		}); err != nil {
@@ -381,6 +480,7 @@ func (c *Core) storeDiagnosis(ctx context.Context, serviceID, releaseID int64, b
 		}
 		return q.TrimDiagnoses(ctx, store.TrimDiagnosesParams{ServiceID: serviceID, Keep: diagKeep})
 	})
+	return id, err
 }
 
 // fitDiagnosis encodes b, dropping its oldest log lines (container output

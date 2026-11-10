@@ -208,14 +208,14 @@ func TestRenameProjectPreservesOpenAlerts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signal := deployFailed("shop", "production", "web", 1, "other failure", service.ID)
+	signal := deployFailed("shop", "production", "web", 1, "other failure", "", service.ID)
 	signal.projectID = project.ID
 	h.c.raiseAlert(h.ctx, signal, time.Now())
 	otherBefore := h.openAlert(signal.Key, true)
 	if _, err := h.c.RenameProject(h.ctx, testSystem, "shop", apitypes.RenameProjectRequest{Name: "storefront"}); err != nil {
 		t.Fatal(err)
 	}
-	stale := deployFailed("shop", "production", "web", 1, "missing image", ss.svc.ID)
+	stale := deployFailed("shop", "production", "web", 1, "missing image", "", ss.svc.ID)
 	stale.projectID = ss.project.ID
 	h.c.raiseAlert(h.ctx, stale, time.Now())
 	after := h.openAlert("deploy:service:1", true)
@@ -243,7 +243,7 @@ func TestRenameProjectQueuedAlertEvent(t *testing.T) {
 	h := newHarness(t)
 	h.service("web", apitypes.CreateServiceRequest{})
 	ss, _ := h.c.serviceFor(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, apitypes.ScopeRead, "testing")
-	signal := deployFailed("shop", "production", "web", 1, "failure", ss.svc.ID)
+	signal := deployFailed("shop", "production", "web", 1, "failure", "", ss.svc.ID)
 	signal.projectID = ss.project.ID
 	h.c.raiseAlert(h.ctx, signal, time.Now())
 	row, err := h.store.GetAlert(h.ctx, h.openAlert(signal.Key, true).ID)

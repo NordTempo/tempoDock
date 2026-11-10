@@ -19,6 +19,12 @@ func TestParseHealthFailure(t *testing.T) {
 		{pre + "health check timed out after 1m0s: connect to 127.0.0.1:32768: connection closed, is the app listening on the container port?", HealthFailure{Kind: HealthFailNotListening}},
 		{pre + "health check timed out after 1m0s: GET http://127.0.0.1:32768/health: EOF", HealthFailure{Kind: HealthFailNotListening}},
 		{pre + "health check timed out after 1m0s: GET http://127.0.0.1:32768/health: context deadline exceeded (Client.Timeout exceeded while awaiting headers)", HealthFailure{Kind: HealthFailNoAnswer}},
+		// dock-probe's own output (cmd/dock-probe), for a running service.
+		{"GET /health returned 503", HealthFailure{Kind: HealthFailStatus, Status: 503}},
+		{"connect to port 8080: connection refused, nothing listens on it", HealthFailure{Kind: HealthFailNotListening}},
+		{"connect to port 8080: connection reset", HealthFailure{Kind: HealthFailNotListening}},
+		{"GET /health: timed out", HealthFailure{Kind: HealthFailNoAnswer}},
+		{"GET /health: connection closed without an answer", HealthFailure{Kind: HealthFailNoAnswer}},
 		{"something else entirely", HealthFailure{}},
 	} {
 		if got := ParseHealthFailure(tc.msg); got != tc.want {

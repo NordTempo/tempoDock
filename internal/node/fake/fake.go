@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -196,6 +197,31 @@ func (r *Runtime) passHealthLater(id string, started time.Time) {
 			r.SetHealth(id, node.HealthHealthy, "")
 		}
 	})
+}
+
+// demoCrashLoop is a `make dev` demo of a crash loop's diagnosis (ADR
+// 0071), for a service with the variable DEMO_CRASH_LOOP=<exit code>:
+// 8 s after it starts (past a deploy's grace), its container says a
+// variable is missing and exits with code, and Docker restarts it, five
+// times a second apart.
+func (r *Runtime) demoCrashLoop(id string, code int) {
+	for i := range 5 {
+		time.AfterFunc(time.Duration(8+i)*time.Second, func() {
+			r.mu.Lock()
+			c, ok := r.containers[id]
+			name := ""
+			if ok {
+				name = c.Name
+			}
+			r.mu.Unlock()
+			if !ok {
+				return
+			}
+			r.addLogs(name, "stderr", []string{"Error: DATABASE_URL is not set"})
+			r.Emit(node.ContainerEvent{ContainerID: id, Action: "die", ExitCode: code, Time: time.Now()})
+			r.Emit(node.ContainerEvent{ContainerID: id, Action: "restart", Time: time.Now()})
+		})
+	}
 }
 
 // FailHealthCheck makes health checks fail for containers where fn returns
@@ -636,6 +662,9 @@ func (r *Runtime) Start(_ context.Context, spec node.ContainerSpec) (node.Contai
 	r.containers[id] = c
 	r.specs[id] = spec
 	r.logs[id] = append(r.logs[id], demoLogs()...)
+	if n, err := strconv.Atoi(spec.Env["DEMO_CRASH_LOOP"]); err == nil && !exit {
+		r.demoCrashLoop(id, n)
+	}
 	out := *c
 	if !exit {
 		r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "start"})
