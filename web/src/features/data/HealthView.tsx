@@ -309,7 +309,9 @@ function Overview({
           </Fact>
           <Fact k="cache hit">{percent(ov.cache_hit)}</Fact>
           <Fact k="size">{byteSize(ov.bytes)}</Fact>
-          <Fact k="spilled to disk">{byteSize(ov.temp_bytes)}</Fact>
+          {ins.engine === "postgres" && (
+            <Fact k="spilled to disk">{byteSize(ov.temp_bytes)}</Fact>
+          )}
           <Fact k="deadlocks">{ov.deadlocks}</Fact>
           {ov.transaction_id_age !== undefined && (
             <Fact k="transaction ID age">
@@ -502,8 +504,9 @@ function Queries({
           </span>
           {ins.queries_tracked !== undefined && (
             <span className="ml-auto">
-              {all.length} of {count(ins.queries_tracked)} statements · Dock's
-              own hidden
+              {all.length} of {count(ins.queries_tracked)} statements
+              {/* MySQL's digests aren't per user: Dock's own show too. */}
+              {ins.engine === "postgres" && " · Dock's own hidden"}
             </span>
           )}
           {access.manage && ins.overview?.query_stats === "on" && (
@@ -512,6 +515,7 @@ function Queries({
         </div>
         {ins.overview && ins.overview.query_stats !== "on" && (
           <QueryStatsOff
+            engine={ins.engine}
             state={ins.overview.query_stats}
             access={access}
             onDone={onDone}
@@ -583,7 +587,10 @@ function Queries({
           st={current}
           share={totalAll ? current.total_ms / totalAll : undefined}
           tables={ins.tables ?? []}
-          onExplain={canRead ? onExplain : undefined}
+          // MySQL's digests have ? for values: nothing to explain.
+          onExplain={
+            canRead && ins.engine === "postgres" ? onExplain : undefined
+          }
           onClose={() => onSelect(null)}
         />
       )}
@@ -935,6 +942,8 @@ function Tables({
 }) {
   const notes = hintsOf(ins, "tables");
   const indexNotes = hintsOf(ins, "indexes");
+  // MySQL counts rows read, not scans, and has no vacuum or dead rows.
+  const pg = ins.engine === "postgres";
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <Scroll>
@@ -945,11 +954,20 @@ function Tables({
               <th className="text-right">size</th>
               <th className="text-right">indexes</th>
               <th className="text-right">rows</th>
-              <th className="text-right">dead</th>
-              <th className="text-right">full scans</th>
-              <th className="text-right">index scans</th>
-              <th className="text-right">vacuumed</th>
-              <th className="text-right">cache</th>
+              {pg ? (
+                <>
+                  <th className="text-right">dead</th>
+                  <th className="text-right">full scans</th>
+                  <th className="text-right">index scans</th>
+                  <th className="text-right">vacuumed</th>
+                  <th className="text-right">cache</th>
+                </>
+              ) : (
+                <>
+                  <th className="text-right">rows by full scans</th>
+                  <th className="text-right">rows by index</th>
+                </>
+              )}
               <th>notes</th>
             </tr>
           </thead>
@@ -982,15 +1000,26 @@ function Tables({
                       : "-"}
                   </Num>
                   <Num>{count(t.estimated_rows)}</Num>
-                  <Num warn={hs.some((h) => h.kind === "dead_rows")}>
-                    {`${Math.round(dead * 100)}%`}
-                  </Num>
-                  <Num warn={hs.some((h) => h.kind === "full_scans")}>
-                    {count(t.seq_scans)}
-                  </Num>
-                  <Num>{count(t.index_scans)}</Num>
-                  <Num>{forAt(ins, t.vacuumed_at)}</Num>
-                  <Num>{percent(t.cache_hit)}</Num>
+                  {pg ? (
+                    <>
+                      <Num warn={hs.some((h) => h.kind === "dead_rows")}>
+                        {`${Math.round(dead * 100)}%`}
+                      </Num>
+                      <Num warn={hs.some((h) => h.kind === "full_scans")}>
+                        {count(t.seq_scans)}
+                      </Num>
+                      <Num>{count(t.index_scans)}</Num>
+                      <Num>{forAt(ins, t.vacuumed_at)}</Num>
+                      <Num>{percent(t.cache_hit)}</Num>
+                    </>
+                  ) : (
+                    <>
+                      <Num warn={hs.some((h) => h.kind === "full_scans")}>
+                        {count(t.seq_rows_read)}
+                      </Num>
+                      <Num>{count(t.index_scans)}</Num>
+                    </>
+                  )}
                   <td className="text-xs text-(--g-dim)">
                     <span className="inline-flex items-center gap-2">
                       {hs.map((h) => (
@@ -1117,10 +1146,12 @@ const indexKind = (x: DataIndexStats) =>
  * the start command change; creating the extension is for admins).
  */
 function QueryStatsOff({
+  engine,
   state,
   access,
   onDone,
 }: {
+  engine: DataInsights["engine"];
   state: DataOverview["query_stats"];
   access: DataPermission;
   onDone: () => void;
@@ -1129,6 +1160,14 @@ function QueryStatsOff({
   const cli = useCli();
   const enable = useEnableQueryStats(onDone);
   const notLoaded = state === "not_loaded";
+  if (engine === "mysql") {
+    return (
+      <div className="border-b border-(--g-line) px-3 py-2.5 text-xs text-(--g-dim)">
+        performance_schema is off on this server, so statements aren't counted.
+        Start it with --performance-schema=ON and deploy (a restart).
+      </div>
+    );
+  }
   const canAct = notLoaded ? words.stagesQueryStats : access.manage;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-(--g-line) px-3 py-2.5 text-xs text-(--g-dim)">

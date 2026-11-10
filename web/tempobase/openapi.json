@@ -741,7 +741,8 @@
               "temp_spill",
               "transaction_id_age",
               "query_stats_dropping",
-              "query_stats_off"
+              "query_stats_off",
+              "history_long"
             ],
             "type": "string"
           },

@@ -17,10 +17,12 @@ import (
 	"slices"
 )
 
-// Auth plugins Dock can log in with.
+// Auth plugins Dock can log in with. sha256_password is also what MySQL
+// switches a login for an unknown user to, before refusing it.
 const (
 	pluginNative = "mysql_native_password"
 	pluginSHA2   = "caching_sha2_password"
+	pluginSHA256 = "sha256_password"
 )
 
 // handshake is the server's initial packet, as far as the login needs it.
@@ -119,12 +121,12 @@ func (c *Conn) login(cfg Config) error {
 	}
 
 	plugin := cmp.Or(hs.plugin, pluginNative)
-	auth, err := scramble(plugin, cfg.Password, hs.seed)
+	auth, err := c.answer(plugin, cfg.Password, hs.seed)
 	if err != nil {
 		// Unknown default plugin: answer as native; the server switches us
 		// to the user's plugin if it is one Dock knows.
 		plugin = pluginNative
-		auth, _ = scramble(plugin, cfg.Password, hs.seed)
+		auth, _ = c.answer(plugin, cfg.Password, hs.seed)
 	}
 	b := binary.LittleEndian.AppendUint32(nil, caps)
 	b = binary.LittleEndian.AppendUint32(b, maxPacket)
@@ -189,7 +191,7 @@ func (c *Conn) authResult(password, plugin string, seed []byte) error {
 				return c.fail(errors.New("bad auth switch"))
 			}
 			plugin, seed = string(p[:end]), bytes.TrimRight(p[end+1:], "\x00")
-			auth, err := scramble(plugin, password, seed)
+			auth, err := c.answer(plugin, password, seed)
 			if err != nil {
 				return c.fail(err)
 			}
@@ -197,6 +199,13 @@ func (c *Conn) authResult(password, plugin string, seed []byte) error {
 				return err
 			}
 		case 0x01:
+			if plugin == pluginSHA256 {
+				// The RSA key Dock asked for.
+				if err := c.sendRSA(password, seed, pkt[1:]); err != nil {
+					return err
+				}
+				continue
+			}
 			if plugin != pluginSHA2 || len(pkt) < 2 {
 				return c.fail(errors.New("unexpected auth data"))
 			}
@@ -233,7 +242,14 @@ func (c *Conn) fullAuth(password string, seed []byte) error {
 	if firstByte(pkt) != 0x01 {
 		return c.fail(errors.New("the server sent no public key"))
 	}
-	block, _ := pem.Decode(pkt[1:])
+	return c.sendRSA(password, seed, pkt[1:])
+}
+
+// sendRSA sends the password, XORed with the seed, encrypted with the
+// server's RSA key (PEM).
+func (c *Conn) sendRSA(password string, seed, keyPEM []byte) error {
+	plain := append([]byte(password), 0)
+	block, _ := pem.Decode(keyPEM)
 	if block == nil {
 		return c.fail(errors.New("bad public key from the server"))
 	}
@@ -256,8 +272,18 @@ func (c *Conn) fullAuth(password string, seed []byte) error {
 	return c.writePacket(enc)
 }
 
+// answer is the login answer for plugin: scramble's, except that
+// sha256_password over TLS takes the password itself.
+func (c *Conn) answer(plugin, password string, seed []byte) ([]byte, error) {
+	if plugin == pluginSHA256 && c.tls {
+		return append([]byte(password), 0), nil
+	}
+	return scramble(plugin, password, seed)
+}
+
 // scramble is the login answer for plugin: the password hashed with the
-// server's seed, never the password itself.
+// server's seed (or, for sha256_password, a request for the server's RSA
+// key), never the password itself.
 func scramble(plugin, password string, seed []byte) ([]byte, error) {
 	if len(seed) > 20 {
 		seed = seed[:20]
@@ -294,6 +320,13 @@ func scramble(plugin, password string, seed []byte) ([]byte, error) {
 			out[i] ^= m1[i]
 		}
 		return out, nil
+	case pluginSHA256:
+		// Not a hash: ask for the server's RSA key (authResult sends the
+		// password encrypted with it; over TLS answer sends the password).
+		if password == "" {
+			return []byte{0}, nil
+		}
+		return []byte{1}, nil
 	}
 	return nil, fmt.Errorf("the user logs in with %s, which Dock doesn't support; use caching_sha2_password or mysql_native_password", plugin)
 }

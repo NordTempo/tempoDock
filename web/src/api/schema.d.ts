@@ -6323,7 +6323,7 @@ export interface components {
             copy?: string;
             detail: string;
             /** @enum {string} */
-            kind: "connections_high" | "idle_in_transaction" | "blocked" | "long_query" | "duplicate_index" | "invalid_index" | "unused_index" | "full_scans" | "dead_rows" | "not_analyzed" | "cache_low" | "temp_spill" | "transaction_id_age" | "query_stats_dropping" | "query_stats_off";
+            kind: "connections_high" | "idle_in_transaction" | "blocked" | "long_query" | "duplicate_index" | "invalid_index" | "unused_index" | "full_scans" | "dead_rows" | "not_analyzed" | "cache_low" | "temp_spill" | "transaction_id_age" | "query_stats_dropping" | "query_stats_off" | "history_long";
             /** @enum {string} */
             level: "warn" | "note";
             subject?: string;

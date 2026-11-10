@@ -7,7 +7,7 @@ export type DataEngine = DataInfo["engine"];
 /**
  * What changes in the panel per engine: its tabs, in order, and the SQL
  * dialect the editor highlights and completes with. Everything else is
- * the same panel. MySQL's Health tab arrives with its insights.
+ * the same panel.
  */
 export const engines: Record<
   DataEngine,
@@ -17,5 +17,8 @@ export const engines: Record<
     tabs: ["tables", "sql", "schema", "changes", "health"],
     dialect: "postgres",
   },
-  mysql: { tabs: ["tables", "sql", "schema", "changes"], dialect: "mysql" },
+  mysql: {
+    tabs: ["tables", "sql", "schema", "changes", "health"],
+    dialect: "mysql",
+  },
 };
