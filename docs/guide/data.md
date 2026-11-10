@@ -6,9 +6,8 @@ and the same permissions, and everything is in the audit log. The design
 is [ADR 0016](../decisions/0016-database-panel.md); MySQL and MariaDB are
 [ADR 0072](../decisions/0072-mysql-and-redis-in-the-data-panel.md).
 
-Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer. MySQL
-and MariaDB have everything below but the Health view, which comes later;
-Redis too.
+Postgres 14 or newer, MySQL 8.0 or newer and MariaDB 10.6 or newer. Redis
+comes later.
 
 ## Is it a database?
 
@@ -205,6 +204,17 @@ in their start command, then an admin creates the extension the same way.
 Without `pg_monitor` (some managed services refuse the grant) the monitor
 still reads sizes and counts, but not other roles' statement texts; the
 views say so.
+
+On MySQL and MariaDB the monitor is a user with `PROCESS` and read access
+to `performance_schema` (and `mysql.innodb_index_stats`, for index sizes),
+created on first use like on Postgres. Queries are the server's statement
+digests, whose text already has `?` for every value; they aren't per user,
+so Dock's own statements show too. Tables and indexes count rows read by
+full scans and through each index since the server started. MariaDB ships
+with `performance_schema` off: add `--performance-schema=ON` to the start
+command and deploy to get the queries view and index use (sessions, sizes
+and the overview work without it). Cancel query is `KILL QUERY`, End
+session `KILL CONNECTION`.
 
 From a session's side pane, "Cancel query" stops its running statement
 (the app gets an error, its connection stays) and "End session" drops its

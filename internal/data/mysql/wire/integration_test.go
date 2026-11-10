@@ -87,6 +87,12 @@ func TestLoginsAndQueries(t *testing.T) {
 					t.Fatalf("wrong password with %s: %v", p, err)
 				}
 			}
+			// A user that doesn't exist: MySQL switches the login to
+			// sha256_password before refusing it; it must still read as
+			// access denied.
+			if _, err := connect(t, s, wire.Config{User: "nobody", Password: "x"}); wire.ErrorCode(err) != 1045 {
+				t.Fatalf("unknown user: %v", err)
+			}
 			tc, err := connect(t, s, wire.Config{User: "root", Password: mysqltest.RootPassword,
 				TLS: &tls.Config{InsecureSkipVerify: true}, TLSOptional: true})
 			if err != nil {

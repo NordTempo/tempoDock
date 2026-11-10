@@ -243,12 +243,14 @@ const (
 	HintTransactionIDAge   DataHintKind = "transaction_id_age"
 	HintQueryStatsDropping DataHintKind = "query_stats_dropping"
 	HintQueryStatsOff      DataHintKind = "query_stats_off"
+	// HintHistoryLong: MySQL's purge falls behind (a long undo history).
+	HintHistoryLong DataHintKind = "history_long"
 )
 
 // DataHint is one thing that needs a look. Its words carry no values
 // from the data: only names and numbers.
 type DataHint struct {
-	Kind  DataHintKind    `json:"kind" enum:"connections_high,idle_in_transaction,blocked,long_query,duplicate_index,invalid_index,unused_index,full_scans,dead_rows,not_analyzed,cache_low,temp_spill,transaction_id_age,query_stats_dropping,query_stats_off"`
+	Kind  DataHintKind    `json:"kind" enum:"connections_high,idle_in_transaction,blocked,long_query,duplicate_index,invalid_index,unused_index,full_scans,dead_rows,not_analyzed,cache_low,temp_spill,transaction_id_age,query_stats_dropping,query_stats_off,history_long"`
 	Level string          `json:"level" enum:"warn,note"`
 	View  DataInsightView `json:"view" enum:"overview,queries,sessions,tables,indexes"`
 	// Subject is what it is about: "public.orders_status2", a session or

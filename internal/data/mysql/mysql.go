@@ -169,8 +169,9 @@ func credentials(t data.Target, role data.Role) (data.Credentials, error) {
 	return cred, nil
 }
 
-// dialWire opens one logged-in wire connection to t as cred.
-func (e *Engine) dialWire(ctx context.Context, t data.Target, cred data.Credentials) (*wire.Conn, error) {
+// dialWire opens one logged-in wire connection to t as cred, with
+// database as the default (none when empty).
+func (e *Engine) dialWire(ctx context.Context, t data.Target, cred data.Credentials, database string) (*wire.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
 	nc, err := t.Dial(ctx)
@@ -180,7 +181,7 @@ func (e *Engine) dialWire(ctx context.Context, t data.Target, cred data.Credenti
 	deadline, _ := ctx.Deadline()
 	_ = nc.SetDeadline(deadline)
 	c, err := wire.Connect(nc, wire.Config{
-		User: cred.User, Password: cred.Password, Database: t.Database,
+		User: cred.User, Password: cred.Password, Database: database,
 		TLS: t.TLS, TLSOptional: t.TLSOptional,
 		Attributes: map[string]string{"program_name": e.app},
 	})
@@ -192,14 +193,19 @@ func (e *Engine) dialWire(ctx context.Context, t data.Target, cred data.Credenti
 }
 
 // open connects as role and sets the session up: UTC, lock waits, and
-// for readers the statement timeout. One round trip after the login.
+// for readers the statement timeout. One round trip after the login. The
+// monitor has no default database: it may not use the app's.
 func (e *Engine) open(ctx context.Context, t data.Target, cred data.Credentials, role data.Role) (*conn, error) {
-	wc, err := e.dialWire(ctx, t, cred)
+	database := t.Database
+	if role == data.RoleMonitor {
+		database = ""
+	}
+	wc, err := e.dialWire(ctx, t, cred, database)
 	if err != nil {
 		return nil, err
 	}
 	c := &conn{Conn: wc, mariadb: isMariaDB(wc.Version)}
-	c.dial = func(ctx context.Context) (*wire.Conn, error) { return e.dialWire(ctx, t, cred) }
+	c.dial = func(ctx context.Context) (*wire.Conn, error) { return e.dialWire(ctx, t, cred, database) }
 	lock := readLockWait
 	if role == data.RoleWriter {
 		lock = writeLockWait
@@ -351,12 +357,12 @@ func (e *Engine) ownerConn(ctx context.Context, t data.Target, owner data.Creden
 	if t.Dial == nil {
 		return nil, data.ServerInfo{}, fmt.Errorf("%w: no way to reach the database", data.ErrUnreachable)
 	}
-	wc, err := e.dialWire(ctx, t, owner)
+	wc, err := e.dialWire(ctx, t, owner, t.Database)
 	if err != nil {
 		return nil, data.ServerInfo{}, loginError(ctx, err, data.ErrLoginFailed)
 	}
 	c := &conn{Conn: wc, mariadb: isMariaDB(wc.Version)}
-	c.dial = func(ctx context.Context) (*wire.Conn, error) { return e.dialWire(ctx, t, owner) }
+	c.dial = func(ctx context.Context) (*wire.Conn, error) { return e.dialWire(ctx, t, owner, t.Database) }
 	info := serverInfo(wc.Version)
 	if err := unsupported(info, c.mariadb); err != nil {
 		_ = c.Close()
@@ -410,6 +416,7 @@ const (
 	errMySQLTimeout       = 3024 // max_execution_time
 	errMariaDBTimeout     = 1969 // max_statement_time
 	errBadValue           = 1366 // incorrect value for a column (state HY000)
+	errUnknownThread      = 1094 // KILL of a connection that is gone
 )
 
 // loginError maps a connect error: a refused login becomes loginErr
