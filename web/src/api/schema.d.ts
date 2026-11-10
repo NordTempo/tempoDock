@@ -5794,6 +5794,8 @@ export interface components {
             platform?: boolean;
         };
         CommandRun: {
+            /** @description A failed run's likely cause (missing variable, program not in the image, out of memory), from the deploy diagnosis's rules; empty when none matched */
+            cause?: string;
             command: string;
             created_by: string;
             environment: string;

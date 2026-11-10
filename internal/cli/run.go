@@ -384,6 +384,7 @@ func printRun(g *globals, r apitypes.CommandRun) error {
 		"status", string(r.Status),
 		"exit code", runExitCode(r),
 		"error", r.Error,
+		"likely cause", r.Cause,
 		"command", r.Command,
 		"release", itoa(r.Release),
 		"volumes", string(r.Volumes),

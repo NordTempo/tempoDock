@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -344,6 +345,9 @@ func printJobRun(g *globals, name string, r apitypes.CommandRun) error {
 		g.io.Progressf("Run %d of job %s succeeded in %s", r.ID, name, runDuration(r))
 	default:
 		g.io.Failf("Run %d of job %s exited with %d after %s", r.ID, name, *r.ExitCode, runDuration(r))
+		if r.Cause != "" {
+			g.io.Detail("Likely cause: " + r.Cause)
+		}
 	}
 	return nil
 }
@@ -385,9 +389,9 @@ and skipped ones. ` + "`dock runs show <id>`" + ` shows one with its output.`,
 					g.io.Successf("Job %s has not run yet. Run it now with `dock job run %s`.", args[0], args[0])
 					return nil
 				}
-				tb := g.io.Table("id", "status", "exit", "trigger", "started", "duration", "error")
+				tb := g.io.Table("id", "status", "exit", "trigger", "started", "duration", "error or likely cause")
 				for _, r := range runs {
-					tb.Row(itoa(r.ID), string(r.Status), runExitCode(r), string(r.Trigger), ago(r.StartedAt), runDuration(r), dash(cut(oneLine(r.Error), 60)))
+					tb.Row(itoa(r.ID), string(r.Status), runExitCode(r), string(r.Trigger), ago(r.StartedAt), runDuration(r), dash(cut(oneLine(cmp.Or(r.Error, r.Cause)), 60)))
 				}
 				if err := tb.Flush(); err != nil {
 					return err

@@ -87,7 +87,7 @@ func (q *Queries) GetServiceJobByID(ctx context.Context, id int64) (ServiceJob, 
 
 const listJobRuns = `-- name: ListJobRuns :many
 SELECT r.id, r.service_id, r.release_id, r.trigger, r.command, r.tty, r.volumes, r.timeout_seconds, r.status,
-       r.exit_code, r.error, r.actor, r.actor_kind, r.started_at, r.finished_at, r.job_id, COALESCE(rel.number, 0) AS release_number
+       r.exit_code, r.error, r.cause, r.actor, r.actor_kind, r.started_at, r.finished_at, r.job_id, COALESCE(rel.number, 0) AS release_number
 FROM service_runs r LEFT JOIN releases rel ON rel.id = r.release_id
 WHERE r.job_id = +? ORDER BY r.id DESC LIMIT +?
 `
@@ -109,6 +109,7 @@ type ListJobRunsRow struct {
 	Status         string
 	ExitCode       *int64
 	Error          string
+	Cause          string
 	Actor          string
 	ActorKind      string
 	StartedAt      time.Time
@@ -140,6 +141,7 @@ func (q *Queries) ListJobRuns(ctx context.Context, arg ListJobRunsParams) ([]Lis
 			&i.Status,
 			&i.ExitCode,
 			&i.Error,
+			&i.Cause,
 			&i.Actor,
 			&i.ActorKind,
 			&i.StartedAt,

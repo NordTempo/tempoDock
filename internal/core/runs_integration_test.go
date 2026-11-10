@@ -60,6 +60,10 @@ func TestIntegrationRunCommand(t *testing.T) {
 	if r := run(apitypes.RunCommandRequest{Command: "touch /data/x && ls /data", Volumes: apitypes.VolumesWrite}); r.Status != apitypes.RunSucceeded || !strings.Contains(r.Output, "x") {
 		t.Fatalf("write volume: %+v", r)
 	}
+	// A missing program, as Alpine's shell says it, gets its cause (ADR 0071).
+	if r := run(apitypes.RunCommandRequest{Command: "rake db:seed"}); r.Cause != "The command's program (rake) isn't in the image" {
+		t.Fatalf("missing program: cause %q, exit %v, output %q", r.Cause, r.ExitCode, r.Output)
+	}
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		t.Fatal(err)

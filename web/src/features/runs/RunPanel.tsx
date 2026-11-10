@@ -358,6 +358,12 @@ function RunDetail({
         </pre>
       )}
       {r.error && <p className="text-fail">{r.error}</p>}
+      {r.cause && (
+        // The deploy diagnosis's rules over its exit and output (ADR 0071).
+        <p>
+          <span className="text-mut">Likely cause:</span> {r.cause}
+        </p>
+      )}
       {!ended ? (
         <p className="text-mut">Output appears when it ends.</p>
       ) : !canRead ? (

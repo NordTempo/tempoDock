@@ -60,12 +60,34 @@ func TestRunCommand(t *testing.T) {
 		t.Fatalf("output tail is %d bytes", len(got.Output))
 	}
 	list, err := h.c.ListRuns(h.ctx, testSystem, web)
-	if err != nil || len(list) != 1 || list[0].Output != "" || list[0].Release != 1 {
+	if err != nil || len(list) != 1 || list[0].Output != "" || list[0].Release != 1 || list[0].Cause != "" {
 		t.Fatalf("list = %+v, %v", list, err)
 	}
 	evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "service.run"})
 	if len(evs) != 1 || !strings.Contains(evs[0].Summary, "`bin/seed --all`: exit code 3") {
 		t.Fatalf("audit = %+v", evs)
+	}
+}
+
+// A failed run gets the likely cause the deploy diagnosis's rules find in
+// its exit code and output (ADR 0071), in its list too.
+func TestRunCause(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(web, "app:1")
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{ExitCode: 127, Output: "/bin/sh: 1: rake: not found\n"}, nil
+	})
+	run, err := h.runCmd(testSystem, web, apitypes.RunCommandRequest{Command: "rake db:seed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "The command's program (rake) isn't in the image"
+	if run.Cause != want {
+		t.Fatalf("cause = %q, want %q", run.Cause, want)
+	}
+	if list, err := h.c.ListRuns(h.ctx, testSystem, web); err != nil || list[0].Cause != want {
+		t.Fatalf("listed: %v %+v", err, list)
 	}
 }
 

@@ -73,6 +73,8 @@ func runSummary(r apitypes.CommandRun) string {
 		took = " after " + r.FinishedAt.Sub(r.StartedAt).Round(time.Second).String()
 	}
 	switch {
+	case r.ExitCode != nil && r.Cause != "":
+		return fmt.Sprintf("Run %d exited with code %d%s. Likely cause: %s.", r.ID, *r.ExitCode, took, r.Cause)
 	case r.ExitCode != nil:
 		return fmt.Sprintf("Run %d exited with code %d%s.", r.ID, *r.ExitCode, took)
 	case r.Error != "":
