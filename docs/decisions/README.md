@@ -67,8 +67,8 @@ line means a later record added to it without changing what it decided.
 | [0052](0052-anonymous-volumes-of-served-containers.md) | Keeping the anonymous volumes of containers that served | accepted |
 | [0053](0053-moving-environments.md) | Moving an environment to another server | superseded in part by [0063](0063-moves-without-downtime-and-server-drains.md) |
 | [0054](0054-scheduled-jobs.md) | Scheduled jobs (cron) | accepted |
-| [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted |
-| [0056](0056-preview-environments.md) | Preview environments per pull request | accepted |
+| [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted; amended by [0070](0070-sleeping-environments.md) (paused while asleep) |
+| [0056](0056-preview-environments.md) | Preview environments per pull request | accepted; amended by [0070](0070-sleeping-environments.md) (previews sleep) |
 | [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
 | [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | superseded in part by [0065](0065-sign-in-is-the-platforms.md) |
 | [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up | accepted |
@@ -82,6 +82,7 @@ line means a later record added to it without changing what it decided.
 | [0067](0067-landing-site-and-console-address.md) | The landing site, and the console's address | accepted |
 | [0068](0068-redirects-on-cloudflare-zones.md) | Redirects on Cloudflare zones | accepted |
 | [0069](0069-database-insights.md) | Database insights | accepted |
+| [0070](0070-sleeping-environments.md) | Sleeping environments (scale to zero) | accepted |
 
 ## Template
 

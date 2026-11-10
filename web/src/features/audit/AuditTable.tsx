@@ -84,7 +84,13 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "environment.move": ["move environment", "started moving"],
   "environment.move_failed": ["environment move failed", "failed to move"],
   "environment.moved": ["environment moved", "moved"],
+  "environment.sleep": ["put to sleep", "put to sleep"],
+  "environment.sleep_settings": [
+    "change sleep setting",
+    "changed the sleep setting of",
+  ],
   "environment.unlock": ["unlock environment", "unlocked"],
+  "environment.wake": ["wake environment", "woke"],
   "git.connect": ["connect repository", "connected a repository to"],
   "git.deploy": ["queue deploy from git", "queued a deploy of"],
   "git.disconnect": ["disconnect repository", "disconnected the repository of"],

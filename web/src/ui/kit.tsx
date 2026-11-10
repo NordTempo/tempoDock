@@ -14,12 +14,13 @@ import { Icon } from "./icons";
 import { type GlyphChar, type State, toneText } from "./status";
 
 /**
- * A status glyph. ● ○ ◐ are CSS dots (filled, ring, half-filled ring;
- * never animated), everything else text.
+ * A status glyph. ● ○ ◐ ◌ are CSS dots (filled, ring, half-filled ring,
+ * dashed ring; never animated), everything else text.
  */
 export function Glyph({ char }: { char: GlyphChar }) {
   if (char === "●") return <span className="dot" aria-hidden />;
   if (char === "○") return <span className="ring" aria-hidden />;
+  if (char === "◌") return <span className="ring nap" aria-hidden />;
   if (char === "◐") return <span className="pi" aria-hidden />;
   return <span aria-hidden>{char}</span>;
 }

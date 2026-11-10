@@ -27,9 +27,10 @@ func TestLockedEnvironmentRefusesTools(t *testing.T) {
 	}
 	// Cloning reads the environment and creates another one. Data tools
 	// are capped at proposing instead (core's TestLockedDataProposes).
-	// request_access asks rather than changes.
+	// request_access asks rather than changes. Waking is read scope:
+	// anyone who sees an environment wakes it by opening its address.
 	skip := func(name string) bool {
-		return name == "clone_environment" || strings.Contains(name, "data") || name == "request_access"
+		return name == "clone_environment" || strings.Contains(name, "data") || name == "request_access" || name == "wake_environment"
 	}
 	n := 0
 	for _, tool := range list.Tools {

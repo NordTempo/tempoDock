@@ -153,9 +153,10 @@ func TestLockedEnvironmentRefusesTokens(t *testing.T) {
 	// Locking is the one change a lock allows: it only takes power away.
 	// The Data panel's writes are capped at proposing instead (core's
 	// TestLockedDataProposes); they need a database to reach that far.
-	// Cloning reads it and creates another environment.
+	// Cloning reads it and creates another environment. Waking is read
+	// scope: anyone who can see an environment wakes it by opening it.
 	skip := func(op envOp) bool {
-		return op.id == "lock-environment" || op.id == "clone-environment" || strings.Contains(op.path, "/data/")
+		return op.id == "lock-environment" || op.id == "clone-environment" || op.id == "wake-environment" || strings.Contains(op.path, "/data/")
 	}
 	for _, op := range ops {
 		if skip(op) {

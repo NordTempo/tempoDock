@@ -188,8 +188,9 @@ func (c *Core) startProbe(chk store.ListUptimeScheduleRow, servers []store.Serve
 	u := &c.uptime
 	u.mu.Lock()
 	st := u.checks[chk.ID]
-	if st == nil || st.running || u.inFlight >= uptimeMaxProbes || u.orgInFlight[chk.OrgID] >= uptimeOrgProbes {
+	if st == nil || st.running || u.inFlight >= uptimeMaxProbes || u.orgInFlight[chk.OrgID] >= uptimeOrgProbes || c.isAsleep(chk.EnvironmentID) {
 		// Still running, or no slot: skipped this round, never queued.
+		// A check of an asleep environment is paused, not down (sleep.go).
 		u.mu.Unlock()
 		return
 	}

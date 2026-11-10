@@ -675,6 +675,23 @@ func (r *Runtime) Restart(ctx context.Context, id string, timeout time.Duration)
 	return nil
 }
 
+// Resume starts a stopped managed container again, keeping its ID, port
+// and volumes (a sleeping environment waking). A running one is left
+// alone.
+func (r *Runtime) Resume(ctx context.Context, id string) error {
+	st, err := r.inspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if st.State != nil && st.State.Running {
+		return nil
+	}
+	if _, err := r.cli.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("start container %s: %w", id, err)
+	}
+	return nil
+}
+
 // Remove removes a stopped managed container. Its anonymous volumes (the
 // ones for an image's VOLUME that no Dock volume covers, a Postgres image
 // without one, say) go with it, unless opts.KeepAnonymousVolumes: then

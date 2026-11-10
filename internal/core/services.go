@@ -495,6 +495,14 @@ func (c *Core) serviceOf(ss svcScope, link serverLink, pending apitypes.PendingC
 		s.Status.State = apitypes.ServiceStopped
 		return s
 	}
+	if ss.env.AsleepAt != nil && active != nil {
+		// Asleep (sleep.go), also before the first reconcile; waking
+		// services read running as each comes back.
+		if st := s.Status.State; st != apitypes.ServiceRunning || !c.isWaking(ss.env.ID) {
+			s.Status.State = apitypes.ServiceAsleep
+		}
+		return s
+	}
 	if active != nil {
 		if u, ok := c.stats.serviceUsage(ss.svc.ID); ok {
 			s.Usage = &u

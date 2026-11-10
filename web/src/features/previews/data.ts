@@ -26,6 +26,8 @@ export type PullRequestRef = Schemas["PullRequestRef"];
 
 /** The default and the most open previews a project may have. */
 export const PREVIEW_DEFAULT_MAX = 3;
+/** Minutes without requests before a preview sleeps, by default. */
+export const SLEEP_DEFAULT = 30;
 export const PREVIEW_MAX = 20;
 
 const toPreview = (p: Schemas["Preview"]): Preview => ({

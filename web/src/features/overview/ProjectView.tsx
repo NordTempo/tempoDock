@@ -217,7 +217,10 @@ export function ProjectView({
             <Glyph char="◐" />
           </span>{" "}
           in progress · ▲ needs action · ✕ failed · ↻ restarting · ○ stopped ·{" "}
-          <span className="text-info">◇</span> token · ○ person
+          <span className="text-info">
+            <Glyph char="◌" />
+          </span>{" "}
+          asleep · <span className="text-info">◇</span> token · ○ person
         </p>
       </Page>
     </>

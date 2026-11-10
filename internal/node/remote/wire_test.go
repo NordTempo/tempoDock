@@ -45,7 +45,8 @@ func TestWireRoundTrip(t *testing.T) {
 		Access:    &node.Access{Username: "u", PasswordHash: "$2a$06$x", Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
 		func(r node.Route) []wireRoute { return toWireRoutes([]node.Route{r}) },
 		func(w []wireRoute) node.Route { return fromWireRoutes(w)[0] },
-		"ClientIPHeader") // only on the control plane's own server (ADR 0029)
+		"ClientIPHeader",      // only on the control plane's own server (ADR 0029)
+		"Wake", "QuietProbes") // sleeping environments: control plane's own server only, until the node link carries them
 	check(t, node.DomainCheck{ExpectedIPs: []string{"1.2.3.4"}, ResolvedIPs: []string{"5.6.7.8"}, DNSOK: true, CertificateOK: true, Error: "x"},
 		toWireDomainCheck, wireDomainCheck.node)
 	check(t, node.HostTraffic{

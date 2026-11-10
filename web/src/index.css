@@ -615,6 +615,10 @@
     background: rgb(255 255 255 / 0.06);
   }
 
+  .state[data-tone="info"] {
+    background: var(--color-info-bg);
+  }
+
   /* Status dots: running (filled), stopped (ring), in progress (half). */
   .dot,
   .ring,
@@ -633,6 +637,11 @@
 
   .ring {
     border: 1.5px solid currentColor;
+  }
+
+  /* Asleep (◌): a dashed ring, stopped's quieter cousin. */
+  .ring.nap {
+    border-style: dashed;
   }
 
   /* Static in-progress glyph: a half-filled ring, like ◐. An open ring

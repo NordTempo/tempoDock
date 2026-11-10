@@ -24,6 +24,7 @@ import { signedOut } from "./mutations";
 import { followProjectRename, reconcileProjectNames } from "./projectRename";
 import { findService, keys, queries } from "./queries";
 import type {
+  Environment,
   LiveEvent,
   LogLine,
   ProjectOverview,
@@ -69,6 +70,7 @@ const busEvents = [
   "environment_move",
   "server_drain",
   "cloudflare_redirect",
+  "sleep",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -300,6 +302,14 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       // Locked, unlocked or opened for a while (ADR 0044).
       applyLock(queryClient, event);
       return;
+    case "sleep":
+      // Went to sleep, started waking or woke; services' states come
+      // as their own service_status events.
+      patchEnvironment(queryClient, event, (e) => ({
+        ...e,
+        sleep: event.sleep ?? undefined,
+      }));
+      return;
     case "access_request":
       // Only admins (and the token that asked) get these.
       if (event.access_request)
@@ -356,10 +366,19 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
 
 /** An environment's lock changed: patch it into the project overview. */
 function applyLock(queryClient: QueryClient, event: LiveEvent) {
-  const { project, environment } = event;
-  if (!project || !environment) return;
   // The API sends null for an unlocked environment.
   const lock = event.lock ?? undefined;
+  patchEnvironment(queryClient, event, (e) => ({ ...e, lock }));
+}
+
+/** Replaces the event's environment in its cached project overview. */
+function patchEnvironment(
+  queryClient: QueryClient,
+  event: LiveEvent,
+  patch: (e: Environment) => Environment,
+) {
+  const { project, environment } = event;
+  if (!project || !environment) return;
   queryClient.setQueryData<ProjectOverview>(
     keys.overview(project),
     (o) =>
@@ -367,7 +386,7 @@ function applyLock(queryClient: QueryClient, event: LiveEvent) {
         ...o,
         environments: o.environments.map((env) =>
           env.environment.name === environment
-            ? { ...env, environment: { ...env.environment, lock } }
+            ? { ...env, environment: patch(env.environment) }
             : env,
         ),
       },

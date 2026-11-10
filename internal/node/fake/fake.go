@@ -49,16 +49,19 @@ type Runtime struct {
 	nextID   atomic.Int64
 	nextPort int
 
-	buildErr    error
-	pullErr     error
-	startErr    error
-	stopErr     error
-	restartErr  error
-	healthErr   func(node.ContainerSpec) error
-	exitOnStart bool
-	routesErr   error
-	routesHold  *routesHold
-	healthGate  chan struct{}
+	buildErr   error
+	pullErr    error
+	startErr   error
+	stopErr    error
+	restartErr error
+	resumeErr  error
+	// openRequests is what OpenRequests answers (SetOpenRequests).
+	openRequests int
+	healthErr    func(node.ContainerSpec) error
+	exitOnStart  bool
+	routesErr    error
+	routesHold   *routesHold
+	healthGate   chan struct{}
 	// passHealth, when set (PassHealthAfter), turns a started container's
 	// health from starting to healthy that long after it starts.
 	passHealth  time.Duration
@@ -131,6 +134,21 @@ func (r *Runtime) FailStop(err error) { r.mu.Lock(); r.stopErr = err; r.mu.Unloc
 // FailRestart makes every Restart return err, leaving the container
 // running as it was.
 func (r *Runtime) FailRestart(err error) { r.mu.Lock(); r.restartErr = err; r.mu.Unlock() }
+
+// FailResume makes every Resume return err, leaving the container
+// stopped.
+func (r *Runtime) FailResume(err error) { r.mu.Lock(); r.resumeErr = err; r.mu.Unlock() }
+
+// SetOpenRequests makes OpenRequests answer n, as if Caddy proxied n
+// requests (a websocket, say) to the upstreams asked about.
+func (r *Runtime) SetOpenRequests(n int) { r.mu.Lock(); r.openRequests = n; r.mu.Unlock() }
+
+// OpenRequests implements node.Proxy (SetOpenRequests).
+func (r *Runtime) OpenRequests(context.Context, []string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.openRequests, nil
+}
 
 // SetHealth changes the health check state of container id, as Docker's
 // probe would: Health and, when unhealthy, HealthOutput (otherwise
@@ -693,6 +711,33 @@ func (r *Runtime) Restart(_ context.Context, id string, _ time.Duration) error {
 		}
 		r.sendLocked(ev)
 	}
+	return nil
+}
+
+// Resume implements node.Containers. Like Docker, it emits a start event
+// for a container it starts; its health starts over if it has a check.
+// A running container is left alone.
+func (r *Runtime) Resume(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.containers[id]
+	if !ok {
+		return fmt.Errorf("container %s: %w", id, node.ErrNotFound)
+	}
+	if c.State == node.StateRunning {
+		return nil
+	}
+	r.op("resume %s", c.Name)
+	if r.resumeErr != nil {
+		return r.resumeErr
+	}
+	c.State, c.ExitCode, c.StartedAt = node.StateRunning, 0, time.Now()
+	if c.Health != "" {
+		c.Health, c.HealthOutput = node.HealthStarting, ""
+		r.passHealthLater(id, c.StartedAt)
+	}
+	r.notifyLocked()
+	r.sendLocked(node.ContainerEvent{ContainerID: id, Labels: c.Labels, Action: "start"})
 	return nil
 }
 

@@ -41,7 +41,7 @@ func (q *Queries) CountKindEnvironments(ctx context.Context, arg CountKindEnviro
 }
 
 const createEnvironment = `-- name: CreateEnvironment :one
-INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at
+INSERT INTO environments (project_id, name, kind, server_id) VALUES (?, ?, ?, ?) RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by
 `
 
 type CreateEnvironmentParams struct {
@@ -73,6 +73,12 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 		&i.LockReason,
 		&i.OpenUntil,
 		&i.ArchivedAt,
+		&i.SleepAfterMinutes,
+		&i.AsleepAt,
+		&i.SleptBy,
+		&i.FreedBytes,
+		&i.WokeAt,
+		&i.WokeBy,
 	)
 	return i, err
 }
@@ -155,7 +161,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 }
 
 const getEnvironment = `-- name: GetEnvironment :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at FROM environments WHERE id = +?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by FROM environments WHERE id = +?
 `
 
 func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, error) {
@@ -175,12 +181,18 @@ func (q *Queries) GetEnvironment(ctx context.Context, id int64) (Environment, er
 		&i.LockReason,
 		&i.OpenUntil,
 		&i.ArchivedAt,
+		&i.SleepAfterMinutes,
+		&i.AsleepAt,
+		&i.SleptBy,
+		&i.FreedBytes,
+		&i.WokeAt,
+		&i.WokeBy,
 	)
 	return i, err
 }
 
 const getEnvironmentByName = `-- name: GetEnvironmentByName :one
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at FROM environments WHERE project_id = +? AND name = +?
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by FROM environments WHERE project_id = +? AND name = +?
 `
 
 type GetEnvironmentByNameParams struct {
@@ -205,6 +217,12 @@ func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentBy
 		&i.LockReason,
 		&i.OpenUntil,
 		&i.ArchivedAt,
+		&i.SleepAfterMinutes,
+		&i.AsleepAt,
+		&i.SleptBy,
+		&i.FreedBytes,
+		&i.WokeAt,
+		&i.WokeBy,
 	)
 	return i, err
 }
@@ -414,7 +432,7 @@ func (q *Queries) ListEnvironmentLocks(ctx context.Context) ([]ListEnvironmentLo
 }
 
 const listEnvironments = `-- name: ListEnvironments :many
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at FROM environments WHERE project_id = +? AND archived_at IS NULL ORDER BY name
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by FROM environments WHERE project_id = +? AND archived_at IS NULL ORDER BY name
 `
 
 // A project's environments, archived ones (closed previews) left out.
@@ -441,6 +459,12 @@ func (q *Queries) ListEnvironments(ctx context.Context, projectID int64) ([]Envi
 			&i.LockReason,
 			&i.OpenUntil,
 			&i.ArchivedAt,
+			&i.SleepAfterMinutes,
+			&i.AsleepAt,
+			&i.SleptBy,
+			&i.FreedBytes,
+			&i.WokeAt,
+			&i.WokeBy,
 		); err != nil {
 			return nil, err
 		}
@@ -807,7 +831,7 @@ func (q *Queries) RenameServerTunnel(ctx context.Context, arg RenameServerTunnel
 
 const setEnvironmentLock = `-- name: SetEnvironmentLock :one
 UPDATE environments SET locked_at = ?, locked_by = ?, lock_reason = ?, open_until = ?
-WHERE id = +? RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at
+WHERE id = +? RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by
 `
 
 type SetEnvironmentLockParams struct {
@@ -843,6 +867,12 @@ func (q *Queries) SetEnvironmentLock(ctx context.Context, arg SetEnvironmentLock
 		&i.LockReason,
 		&i.OpenUntil,
 		&i.ArchivedAt,
+		&i.SleepAfterMinutes,
+		&i.AsleepAt,
+		&i.SleptBy,
+		&i.FreedBytes,
+		&i.WokeAt,
+		&i.WokeBy,
 	)
 	return i, err
 }

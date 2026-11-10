@@ -411,6 +411,40 @@ func TestFixedHostPortSurvivesRestart(t *testing.T) {
 	}
 }
 
+// A sleeping environment's container (ADR 0070): Stop keeps it, and
+// Resume starts the same container again with its port (pinned, as core
+// pins every release's), ready for the deploy's health check. Resuming a
+// running one changes nothing.
+func TestResumeKeepsContainerAndPort(t *testing.T) {
+	e := newEnv(t)
+	ctx := ctxTimeout(t, time.Minute)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+	c := e.start(node.ContainerSpec{Name: e.name("nap"), Image: httpImage, Port: 80, HostPort: port})
+	if err := e.Stop(ctx, c.ID, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	if err := e.Resume(ctx, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := e.Inspect(ctx, c.ID)
+	if err != nil || after.State != node.StateRunning || after.HostPort != c.HostPort {
+		t.Fatalf("after Resume: %+v, %v; want running on port %d", after, err, c.HostPort)
+	}
+	if err := e.HealthCheck(ctx, after, node.HealthCheck{Path: "/", Timeout: 20 * time.Second, Interval: 200 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("resumed and healthy in %s", time.Since(start))
+	if err := e.Resume(ctx, c.ID); err != nil {
+		t.Errorf("Resume of a running container: %v", err)
+	}
+}
+
 func TestHealthCheckGrace(t *testing.T) {
 	e := newEnv(t)
 	c := e.start(node.ContainerSpec{Name: e.name("grace"), Image: shellImage, Cmd: "sleep 300"})

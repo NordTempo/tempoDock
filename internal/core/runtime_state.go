@@ -184,9 +184,10 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		// superseded already when the daemon replaces or archives it.
 		c.panel.Forget(ss.svc.ID)
 	}
-	if own || rel.Status != string(apitypes.ReleaseActive) || ss.svc.StoppedAt != nil {
-		// The daemon is stopping it, it isn't the active container, or the
-		// service is stopped on purpose (ADR 0050) and stays so.
+	if own || rel.Status != string(apitypes.ReleaseActive) || ss.svc.StoppedAt != nil || ss.env.AsleepAt != nil {
+		// The daemon is stopping it, it isn't the active container, the
+		// service is stopped on purpose (ADR 0050) and stays so, or its
+		// environment sleeps or wakes (sleep.go), which sets its status.
 		return
 	}
 	// The status is changed in place under its lock (changeStatus): a
@@ -437,9 +438,10 @@ func (c *Core) sweepRetired(ctx context.Context, serverID int64, rt node.Runtime
 // one started just before a crash is adopted, a stopped or missing one is
 // replaced (after an interrupted stateful recreate). A failure to start it
 // is reported as drift; isOffline(err) says the server couldn't be
-// reached. A service stopped on purpose (ADR 0050) is left alone.
+// reached. A service stopped on purpose (ADR 0050) is left alone, and so
+// is one whose environment is asleep (its wake starts it).
 func (c *Core) ensureRunning(ctx context.Context, ss svcScope, active store.Release) error {
-	if ss.svc.StoppedAt != nil {
+	if ss.svc.StoppedAt != nil || ss.env.AsleepAt != nil {
 		return nil
 	}
 	rt := c.runtime(ss.env.ServerID)
@@ -502,6 +504,11 @@ func (c *Core) reconcileServer(ctx context.Context, serverID int64, rt node.Runt
 		if ss.svc.StoppedAt != nil {
 			// Stopped on purpose (ADR 0050): no container is expected.
 			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceStopped})
+			continue
+		}
+		if ss.env.AsleepAt != nil {
+			// Asleep (sleep.go): its container is stopped until it wakes.
+			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceAsleep})
 			continue
 		}
 		ct, ok := byID[r.ContainerID]

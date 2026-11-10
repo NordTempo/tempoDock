@@ -274,6 +274,9 @@ type Environment struct {
 	// operators only.
 	Moving   bool   `json:"moving,omitempty"`
 	MovingTo string `json:"moving_to,omitempty"`
+	// Sleep is set on an environment that may sleep on its own or is
+	// asleep (ADR 0070).
+	Sleep *EnvironmentSleep `json:"sleep,omitempty"`
 }
 
 // CreateEnvironmentRequest creates an environment. It goes where the
@@ -296,6 +299,10 @@ const (
 	// service stop`, ADR 0050): its active release has no container until
 	// it is started or deployed again.
 	ServiceStopped ServiceState = "stopped"
+	// ServiceAsleep means the service's environment is asleep: its
+	// container is stopped until the environment wakes (sleeping
+	// environments).
+	ServiceAsleep ServiceState = "asleep"
 	// ServiceNone means no container serves the service: there is no
 	// active release (never deployed, or archived), or its container is
 	// gone or not running without having been stopped through Dock.
@@ -314,7 +321,7 @@ const (
 
 // ServiceStatus is the observed runtime status of a service.
 type ServiceStatus struct {
-	State        ServiceState `json:"state" enum:"running,restarting,crashed,stopped,none"`
+	State        ServiceState `json:"state" enum:"running,restarting,crashed,stopped,asleep,none"`
 	RestartCount int          `json:"restart_count"`
 	OOMKilled    bool         `json:"oom_killed"`
 	// MemoryLimitMB is the active release's memory limit, set along with
@@ -1645,11 +1652,14 @@ const (
 	// (ADR 0068); with Message "removed", it is gone. The platform's
 	// reach operators, an org's its admins.
 	EventCloudflareRedirect EventType = "cloudflare_redirect"
+	// EventSleep: an environment went to sleep, started waking, or woke.
+	// Sleep is its new sleep state.
+	EventSleep EventType = "sleep"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect"`
+	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep"`
 	Time           time.Time           `json:"time"`
 	ProjectRenamed *ProjectRenamed     `json:"project_renamed,omitempty"`
 	Project        string              `json:"project,omitempty"`
@@ -1675,6 +1685,7 @@ type Event struct {
 	Move           *EnvironmentMove    `json:"move,omitempty"`
 	Drain          *ServerDrain        `json:"drain,omitempty"`
 	Redirect       *CloudflareRedirect `json:"redirect,omitempty"`
+	Sleep          *EnvironmentSleep   `json:"sleep,omitempty"`
 	Message        string              `json:"message,omitempty"`
 }
 

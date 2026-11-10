@@ -50,10 +50,14 @@ DELETE FROM domains WHERE id = +?;
 -- Every verified domain of a non-archived service in an environment on
 -- one server, with the host port and ID of the service's active release
 -- (0 if none), the service's access protection (mode '' when public), and
--- its name and whether it is stopped (ADR 0050).
+-- its name and whether it is stopped (ADR 0050), and its environment,
+-- whether that is asleep and whether it may sleep (ADR 0070).
 SELECT domains.hostname, domains.redirect_to, domains.service_id,
        services.name AS service_name,
        CAST(services.stopped_at IS NOT NULL AS BOOLEAN) AS stopped,
+       environments.id AS environment_id,
+       CAST(environments.asleep_at IS NOT NULL AS BOOLEAN) AS asleep,
+       CAST(environments.sleep_after_minutes > 0 OR environments.asleep_at IS NOT NULL AS BOOLEAN) AS sleepable,
        CAST(coalesce((SELECT releases.host_port FROM releases
                       WHERE releases.service_id = services.id AND releases.status = 'active'), 0) AS INTEGER) AS host_port,
        CAST(coalesce((SELECT releases.id FROM releases

@@ -337,19 +337,25 @@ type EnsureRunning struct {
 }
 
 type Environment struct {
-	ID         int64
-	ProjectID  int64
-	Name       string
-	ServerID   int64
-	CreatedAt  time.Time
-	Network    string
-	ApplyError string
-	Kind       string
-	LockedAt   *time.Time
-	LockedBy   string
-	LockReason string
-	OpenUntil  *time.Time
-	ArchivedAt *time.Time
+	ID                int64
+	ProjectID         int64
+	Name              string
+	ServerID          int64
+	CreatedAt         time.Time
+	Network           string
+	ApplyError        string
+	Kind              string
+	LockedAt          *time.Time
+	LockedBy          string
+	LockReason        string
+	OpenUntil         *time.Time
+	ArchivedAt        *time.Time
+	SleepAfterMinutes int64
+	AsleepAt          *time.Time
+	SleptBy           string
+	FreedBytes        int64
+	WokeAt            *time.Time
+	WokeBy            string
 }
 
 type EnvironmentMove struct {
@@ -601,6 +607,7 @@ type PreviewSetting struct {
 	UpdatedBy         string
 	UpdatedAt         time.Time
 	SeedFromSnapshot  string
+	SleepAfterMinutes int64
 }
 
 type Project struct {

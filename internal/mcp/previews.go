@@ -64,6 +64,39 @@ func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 		})
 }
 
+// addSleepTools registers sleep_environment and wake_environment
+// (ADR 0070).
+func (h *handler) addSleepTools(s *mcpkit.Server[core.Actor]) {
+	mcpkit.AddTool(s, "sleep_environment", "Put an environment to sleep",
+		"Stop every service of a non-production environment, keeping its containers, to free their memory. The next request to its domains, a deploy, "+
+			"run_command or the Data panel wakes it. Previews sleep on their own after a while without requests; this is for doing it now, only when asked.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in EnvInput) (mcpkit.Reply, error) {
+			ref, err := envOf(c, in)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			e, err := h.core.SleepEnvironment(ctx, c.Actor, ref)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: fmt.Sprintf("%s/%s is asleep; the next request to its domains wakes it.", e.Project, e.Name), Data: e}, nil
+		})
+	mcpkit.AddTool(s, "wake_environment", "Wake an environment",
+		"Start an asleep environment's services again, databases first, and wait until each passed its health check. Opening one of its addresses does the same; "+
+			"call this before testing a preview whose sleep state (in project_overview or get_preview) is asleep.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in EnvInput) (mcpkit.Reply, error) {
+			ref, err := envOf(c, in)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			e, err := h.core.WakeEnvironment(ctx, c.Actor, ref)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: fmt.Sprintf("%s/%s is awake.", e.Project, e.Name), Data: e}, nil
+		})
+}
+
 // findPreview resolves a PreviewInput: the environment's preview when it
 // is named (or none of the others is), otherwise the one open preview
 // whose pull request number and branch match.

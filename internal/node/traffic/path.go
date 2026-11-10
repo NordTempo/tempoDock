@@ -93,3 +93,10 @@ func normalizeMethod(m string) string {
 	}
 	return "OTHER"
 }
+
+// Endpoint is a request as traffic statistics count it: the method and
+// the path with IDs replaced, "GET /users/:id". Core names the request
+// that woke a sleeping environment with it, so no ID or token is kept.
+func Endpoint(method, uri string) string {
+	return normalizeMethod(method) + " " + normalizePath(uri)
+}

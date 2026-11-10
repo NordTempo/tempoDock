@@ -202,6 +202,17 @@ func (c *Client) Restart(ctx context.Context, id string, timeout time.Duration) 
 	return err
 }
 
+// Resume implements node.Containers. The node link doesn't carry it
+// yet: core sleeps environments on the control plane's own server only,
+// and never asks another server.
+func (c *Client) Resume(context.Context, string) error {
+	return errNoSleep
+}
+
+// errNoSleep is the answer of the node link's sleep calls until it
+// carries them.
+var errNoSleep = errors.New("environments on other servers can't sleep yet")
+
 // Remove implements node.Containers.
 func (c *Client) Remove(ctx context.Context, id string, opts node.RemoveOptions) error {
 	_, err := unaryCall[empty](ctx, c, opRemove, removeRequest{ID: id, DropAnonymousVolumes: !opts.KeepAnonymousVolumes})
@@ -409,6 +420,11 @@ func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, erro
 // protection (ADR 0030). An older node would serve protected routes to
 // everyone, so it isn't sent them.
 const AccessProtocol = 5
+
+// OpenRequests implements node.Proxy; see Resume.
+func (c *Client) OpenRequests(context.Context, []string) (int, error) {
+	return 0, errNoSleep
+}
 
 // ApplyRoutes implements node.Proxy.
 func (c *Client) ApplyRoutes(ctx context.Context, routes []node.Route) error {

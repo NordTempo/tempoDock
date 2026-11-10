@@ -9,14 +9,14 @@ import type {
 import { plural } from "./format";
 
 /** Status colors: green, yellow, red, blue, gray. */
-export type Tone = "ok" | "warn" | "fail" | "prog" | "mut";
+export type Tone = "ok" | "warn" | "fail" | "prog" | "mut" | "info";
 
 /**
  * Status glyphs, one meaning each: ● running, ◐ in progress, ▲ needs action,
  * ✕ failed, ↻ restarting, ○ stopped, ✓ done, – skipped. ◐ renders as a
  * static CSS half circle (see Glyph in ./kit).
  */
-export type GlyphChar = "●" | "◐" | "▲" | "✕" | "↻" | "○" | "✓" | "–";
+export type GlyphChar = "●" | "◐" | "▲" | "✕" | "↻" | "○" | "◌" | "✓" | "–";
 
 export type State = { tone: Tone; glyph?: GlyphChar; label: string };
 
@@ -27,6 +27,7 @@ export const toneText: Record<Tone, string> = {
   fail: "text-fail",
   prog: "text-prog",
   mut: "text-mut",
+  info: "text-info",
 };
 
 type ReleaseStatus = Release["status"];
@@ -152,6 +153,9 @@ export function containerState({
     // Stopped on purpose (ADR 0050): quiet, not a failure.
     case "stopped":
       return { tone: "mut", glyph: "○", label: "stopped" };
+    // Its environment is asleep: quiet too, the next request wakes it.
+    case "asleep":
+      return { tone: "info", glyph: "◌", label: "asleep" };
     // With an active release, no container is a failure.
     case "none":
       return active_release
