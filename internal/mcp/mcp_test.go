@@ -20,6 +20,7 @@ import (
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/NordTempo/tempoDock/internal/api"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -61,7 +62,7 @@ func newFixture(t testing.TB) *fixture {
 	}
 	rt := fake.New()
 	quiet := slog.New(slog.DiscardHandler)
-	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: quiet, CutoverDrain: time.Nanosecond})
+	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: quiet, CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -40,6 +40,7 @@ wait`
 // once, and recovers (resolving the alert). The backoff after that is
 // TestUnhealthyServiceIsRestartedWithBackoff's.
 func TestIntegrationUnhealthyAppIsRestarted(t *testing.T) {
+	t.Parallel()
 	c := dockerHarnessWithProbe(t, buildProbe(t))
 	ctx := context.Background()
 	project := fmt.Sprintf("hc%d", time.Now().UnixNano()%1_000_000)

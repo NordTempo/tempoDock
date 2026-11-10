@@ -86,7 +86,7 @@ func TestErrors(t *testing.T) {
 	})
 
 	t.Run("cancelled", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { time.Sleep(time.Second) }))
+		srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 		defer srv.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()

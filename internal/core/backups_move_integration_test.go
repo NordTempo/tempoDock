@@ -27,6 +27,7 @@ const minioImage = "pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc
 // local repository is empty afterwards, and the next backup goes to the
 // bucket.
 func TestIntegrationMoveBackups(t *testing.T) {
+	t.Parallel()
 	var install string
 	t.Cleanup(func() { removeInstallVolumes(t, install) })
 	c := dockerHarness(t)

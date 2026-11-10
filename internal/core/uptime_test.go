@@ -236,7 +236,9 @@ func TestUptimeDownOpensAnAlertAndRecoveryResolvesIt(t *testing.T) {
 
 func TestUptimeSkipsADueCheckWhoseProbeRuns(t *testing.T) {
 	h := newHarness(t)
-	h.fastUptime()
+	// A minute's interval is 6 ms.
+	h.opts.UptimeSecond = 100 * time.Microsecond
+	h.restart()
 	web := h.uptimeService()
 	release := h.rt.HoldProbes()
 	defer release()
@@ -248,7 +250,7 @@ func TestUptimeSkipsADueCheckWhoseProbeRuns(t *testing.T) {
 	for len(h.rt.Probed()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(2 * time.Millisecond)
 	}
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
 	if n := len(h.rt.Probed()); n != 1 {
 		t.Fatalf("%d probes started, want 1 while it runs", n)
 	}

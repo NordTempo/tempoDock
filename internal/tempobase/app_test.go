@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/tempobase/tbstore"
@@ -16,6 +18,9 @@ import (
 
 // testPassword is long enough for every password check.
 const testPassword = "correct horse battery"
+
+// Tests hash passwords at the lowest cost: a sign-in takes ~1 ms, not 50.
+func init() { bcryptCost = bcrypt.MinCost }
 
 // harness is an App over a temp database with a settable clock.
 type harness struct {

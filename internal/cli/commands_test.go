@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/NordTempo/tempoDock/internal/api"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
@@ -36,6 +38,10 @@ type testServer struct {
 
 // sys is the system actor in the test org, the first one created.
 var sys = core.System.InOrg(1)
+
+// Commands that wait for a backup or snapshot check every few
+// milliseconds in tests, not every 2 s.
+func init() { backupPoll = 5 * time.Millisecond }
 
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
@@ -61,7 +67,7 @@ func newTestServerWith(t *testing.T, opts func(*core.Options)) *testServer {
 		t.Fatal(err)
 	}
 	rt := fake.New()
-	o := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond}
+	o := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost}
 	if opts != nil {
 		opts(&o)
 	}

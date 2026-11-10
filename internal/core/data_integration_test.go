@@ -116,6 +116,7 @@ func (h *harness) auditCount(action string) int {
 }
 
 func TestIntegrationDataReads(t *testing.T) {
+	t.Parallel()
 	h, db, psql := dataHarness(t, "staging")
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
 	dev := h.user("dev@x", apitypes.ScopeDeploy)
@@ -304,6 +305,7 @@ func TestIntegrationDataReads(t *testing.T) {
 }
 
 func TestIntegrationDataChangesets(t *testing.T) {
+	t.Parallel()
 	h, db, psql := dataHarness(t, "production")
 	admin := h.user("admin@x", apitypes.ScopeAdmin)
 	dev := h.user("dev@x", apitypes.ScopeDeploy)

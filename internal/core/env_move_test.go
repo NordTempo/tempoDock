@@ -432,11 +432,11 @@ func TestMoveRefusesALongHold(t *testing.T) {
 			return node.JobResult{Output: "dock-move: kib 4\n"}, nil
 		}
 		if strings.Contains(spec.Script, "send --live") {
-			time.Sleep(400 * time.Millisecond) // a pass this slow, every time
+			time.Sleep(40 * time.Millisecond) // a pass this slow, every time
 		}
 		return node.JobResult{}, fake.ErrDefault
 	})
-	p.c.moves.holdUnit = 100 * time.Millisecond // a hold of 5 is half a second
+	p.c.moves.holdUnit = 10 * time.Millisecond // a hold of 5 is 50 ms
 	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp"), MaxHold: 5}); err != nil {
 		t.Fatal(err)
 	}

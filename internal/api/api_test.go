@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
@@ -48,7 +49,7 @@ func newFixture(t *testing.T) *fixture {
 	cfg := config.Default()
 	cfg.DataDir = dir
 	rt := fake.New()
-	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond})
+	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost})
 	if err != nil {
 		t.Fatal(err)
 	}

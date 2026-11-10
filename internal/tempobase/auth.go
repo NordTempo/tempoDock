@@ -35,8 +35,9 @@ const SessionTTL = 30 * 24 * time.Hour
 // minPassword is the shortest password accepted.
 const minPassword = 12
 
-// bcryptCost is the cost of password hashes.
-const bcryptCost = 10
+// bcryptCost is the cost of new password hashes. A variable so tests can
+// hash at bcrypt.MinCost.
+var bcryptCost = 10
 
 // dummyHash keeps sign-ins for unknown emails as slow as wrong passwords.
 // Lazy, so commands that never check a password don't pay for it.

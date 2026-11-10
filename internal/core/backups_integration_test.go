@@ -26,6 +26,7 @@ import (
 // repository, restore it into a new service and read the data back there.
 // Postgres's backup and restore run in TestIntegrationMoveBackups.
 func TestIntegrationTemplateBackupRestore(t *testing.T) {
+	t.Parallel()
 	// Registered first, so it runs after the harness removed the containers.
 	var install string
 	t.Cleanup(func() { removeInstallVolumes(t, install) })
@@ -77,6 +78,7 @@ func TestIntegrationTemplateBackupRestore(t *testing.T) {
 // the real Docker runtime, and the snapshot is the archive: its manifest
 // reads back with restic dump.
 func TestIntegrationControlPlaneBackup(t *testing.T) {
+	t.Parallel()
 	var install string
 	t.Cleanup(func() { removeInstallVolumes(t, install) })
 	c := dockerHarness(t)

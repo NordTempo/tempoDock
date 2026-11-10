@@ -251,6 +251,10 @@ func TestRunSnapshotsBeforeWriting(t *testing.T) {
 // went away canceled, and one a crash cut short interrupted and audited
 // on the next start.
 func TestRunEnds(t *testing.T) {
+	// Restored after the harness closed, so no run reads it meanwhile.
+	second := runSecond
+	t.Cleanup(func() { runSecond = second })
+	runSecond = 20 * time.Millisecond
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
 	h.deploy(web, "app:1")

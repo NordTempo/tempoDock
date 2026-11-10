@@ -18,6 +18,7 @@ import (
 // private network. A failing one is TestPreDeployFailureKeepsOldRelease's
 // (real exit codes: TestIntegrationRunCommand).
 func TestIntegrationPreDeploy(t *testing.T) {
+	t.Parallel()
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)
@@ -25,9 +26,11 @@ func TestIntegrationPreDeploy(t *testing.T) {
 		t.Fatal(err)
 	}
 	// db stands in for a database: it answers HTTP on the private network.
+	// The loop runs in the background so the TERM trap fires at once
+	// (a foreground nc would hold it off until the stop timeout).
 	db := ServiceRef{project, "production", "db"}
 	if _, err := c.CreateService(ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{
-		Name: "db", StartCommand: `trap 'exit 0' TERM; while true; do printf 'HTTP/1.0 200 OK\r\n\r\nschema-ok\n' | nc -l -p 8080; done`, HealthCheckTimeoutSeconds: 20,
+		Name: "db", StartCommand: `trap 'kill $!; exit 0' TERM; while true; do printf 'HTTP/1.0 200 OK\r\n\r\nschema-ok\n' | nc -l -p 8080; done & wait`, HealthCheckTimeoutSeconds: 20,
 	}); err != nil {
 		t.Fatal(err)
 	}

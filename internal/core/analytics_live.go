@@ -30,8 +30,8 @@ const liveWindow = 5 * time.Minute
 const liveRecount = 30 * time.Second
 
 // liveRefreshEvery is the least time between two loads of a watched
-// site's view while its events arrive.
-const liveRefreshEvery = 2 * time.Second
+// site's view while its events arrive. A variable so tests can wait less.
+var liveRefreshEvery = 2 * time.Second
 
 // liveSites holds the watched sites.
 type liveSites struct {

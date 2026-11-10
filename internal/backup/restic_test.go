@@ -257,7 +257,7 @@ func TestPreludeReach(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "restic"), []byte("#!/bin/sh\n"+tc.stub+"\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			script := strings.NewReplacer(BinDir, dir, "timeout -s KILL "+reachTimeout, "timeout -s KILL 1").Replace(prelude + initRepo)
+			script := strings.NewReplacer(BinDir, dir, "timeout -s KILL "+reachTimeout, "timeout -s KILL 0.1").Replace(prelude + initRepo)
 			cmd := exec.Command("sh", "-c", script)
 			cmd.Env = append(os.Environ(), "RESTIC_REPOSITORY=s3:http://127.0.0.1:9000/bucket", "RESTIC_PASSWORD=pw")
 			out, err := cmd.CombinedOutput()

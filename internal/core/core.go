@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -65,6 +66,10 @@ type Options struct {
 	// check's interval lasts (ADR 0055), so tests probe every few
 	// milliseconds.
 	UptimeSecond time.Duration
+	// PasswordCost, when positive, is the bcrypt cost of new password
+	// hashes instead of bcrypt.DefaultCost; tests use bcrypt.MinCost so
+	// creating and logging in users doesn't take ~50 ms each.
+	PasswordCost int
 	// GitHubAPI overrides the GitHub REST API's base URL
 	// (https://api.github.com) for push-to-deploy; tests point it at a
 	// fake.
@@ -154,6 +159,9 @@ type Core struct {
 	// caps concurrent password checks (each is ~50ms of CPU).
 	loginLimit *httpkit.LoginLimiter
 	bcryptSem  chan struct{}
+	// passwordCost is the bcrypt cost of new password hashes
+	// (Options.PasswordCost).
+	passwordCost int
 
 	// stats holds the latest resource samples and the live samplers.
 	stats *statsState
@@ -302,6 +310,10 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	}
 	if o.UptimeSecond > 0 {
 		c.uptime.second = o.UptimeSecond
+	}
+	c.passwordCost = bcrypt.DefaultCost
+	if o.PasswordCost > 0 {
+		c.passwordCost = o.PasswordCost
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	var err error

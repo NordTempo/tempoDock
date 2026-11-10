@@ -19,6 +19,7 @@ import (
 // Docker: they see its variables, a stateful service's volume read-only
 // by default and writable when asked, and leave no container behind.
 func TestIntegrationRunCommand(t *testing.T) {
+	t.Parallel()
 	c := dockerHarness(t)
 	ctx := context.Background()
 	project := fmt.Sprintf("it-%d", time.Now().UnixNano()%1_000_000)

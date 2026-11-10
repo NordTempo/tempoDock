@@ -331,7 +331,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), c.passwordCost)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -700,7 +700,7 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	if len(pw) < 12 {
 		return out, invalid("password must be at least 12 characters")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), c.passwordCost)
 	if err != nil {
 		return out, err
 	}
@@ -859,7 +859,7 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, o
 	if !validScope(req.Role) {
 		return store.User{}, invalid("role must be read, deploy or admin")
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), c.passwordCost)
 	if err != nil {
 		return store.User{}, err
 	}

@@ -112,14 +112,17 @@ func TestPull(t *testing.T) {
 	if ok, err := e.HasImage(context.Background(), ref); !ok || err != nil {
 		t.Errorf("HasImage = %v, %v", ok, err)
 	}
-	// A digest-pinned ref that is on the server isn't pulled again.
+	// A digest-pinned ref that is on the server isn't pulled again. Other
+	// tests push busybox to registries of their own, so pick its Hub digest.
 	img, err := e.cli.ImageInspect(context.Background(), ref)
-	if err != nil || len(img.RepoDigests) == 0 {
+	i := slices.IndexFunc(img.RepoDigests, func(d string) bool { return strings.HasPrefix(d, "busybox@") })
+	if err != nil || i < 0 {
 		t.Fatalf("inspect %s: %v, digests %v", ref, err, img.RepoDigests)
 	}
+	digest := img.RepoDigests[i]
 	out.Reset()
-	if pinned, err := e.Pull(ctxTimeout(t, time.Minute), img.RepoDigests[0], &out); err != nil || pinned != id {
-		t.Errorf("Pull(%s) = %q, %v; want %q", img.RepoDigests[0], pinned, err, id)
+	if pinned, err := e.Pull(ctxTimeout(t, time.Minute), digest, &out); err != nil || pinned != id {
+		t.Errorf("Pull(%s) = %q, %v; want %q", digest, pinned, err, id)
 	}
 	if !strings.Contains(out.String(), "already on the server") {
 		t.Errorf("digest pull output = %q, want no pull", out.String())

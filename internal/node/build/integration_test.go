@@ -361,7 +361,7 @@ func TestBuildEntitlementsRefused(t *testing.T) {
 // walking fails the build instead of hanging the daemon.
 func TestBuildRailpackSymlinkLoop(t *testing.T) {
 	defer func(d time.Duration) { planTimeout = d }(planTimeout)
-	planTimeout = 10 * time.Second
+	planTimeout = 2 * time.Second
 	b := newBuilder(t, dockerClient(t), 1024)
 	start := time.Now()
 	_, _, err := build(t, b, node.BuildRequest{

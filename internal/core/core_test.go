@@ -17,6 +17,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -29,6 +31,13 @@ import (
 // testSystem is the system actor in the test org, which newHarness creates
 // first (ID 1), so tests can address projects by name.
 var testSystem = System.InOrg(1)
+
+// Waits whose length isn't what a test checks are a few milliseconds in
+// tests: a drain's batch, a watched site's next load.
+func init() {
+	drainBatchWait = 5 * time.Millisecond
+	liveRefreshEvery = 5 * time.Millisecond
+}
 
 type harness struct {
 	t     *testing.T
@@ -69,7 +78,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st, dns: &fakeDNS{}}
-	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, LookupTXT: h.dns.lookupTXT, LookupIP: h.dns.lookupIP}
+	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost, LookupTXT: h.dns.lookupTXT, LookupIP: h.dns.lookupIP}
 	h.c = h.start()
 	t.Cleanup(func() {
 		h.c.Close()
