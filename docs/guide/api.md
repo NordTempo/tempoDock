@@ -36,7 +36,9 @@ Sessions last 30 days. Tokens last until revoked or their expiry.
 
 ## Resources
 
-Addressed by name. Names are unique within their parent and never change.
+Addressed by name. Names are unique within their parent. Only projects can
+be renamed ([below](#project-identity-and-renaming)); the full list of paths
+is in the spec.
 
 ```
 /api/v1/projects/{project}
@@ -46,9 +48,9 @@ Addressed by name. Names are unique within their parent and never change.
     /log-drains, /log-drains/{id}[/test]
     /services/{service}
       /releases, /releases/source, /releases/{number}[/rollback|/build-log]
-      /restart, /archive, /logs, /volumes
-      /domains, /domains/generate, /domains/{hostname}
-/api/v1/tokens, /users, /audit, /servers, /events
+      /restart, /start, /stop, /archive, /logs, /volumes, /runs, /jobs
+      /domains, /domains/generate, /domains/{hostname}[/check]
+/api/v1/tokens, /users, /audit, /servers, /requests, /alerts, /events
 ```
 
 Deploy, rollback and restart return `202` with the queued release right away.
@@ -81,6 +83,10 @@ Validation errors add `errors: [{"message", "location"}]`.
 | `deploy_in_progress` | 409 | Another deploy of the service is running |
 | `hostname_taken` | 409 | The hostname belongs to another service |
 | `too_large` | 413 | Source upload over `max_upload_mb` |
+| `rate_limited` | 429 | Too many attempts (logins); wait and retry |
+| `server_offline` | 503 | The server the operation needs isn't connected |
+| `reauth_required`, `two_factor_required`, `sso_required` | 403 | Confirm who you are again (`POST /api/v1/me/reauth`), or sign in with a second factor or through the identity provider, then retry ([two-factor](two-factor.md)) |
+| `environment_locked` | 423 | A token's change in a locked environment; `request` names the [access request](agents.md#locked-environments-and-access-requests) it became |
 | `internal` | 500 | See the daemon log (`journalctl -u dock`) |
 
 A failed release is not an HTTP error: the release has `status: "failed"`,
@@ -116,6 +122,12 @@ data: {"type":"release","time":"2026-10-21T09:12:03Z","project":"shop","environm
 | `domain` | `domain` | Domain added, removed (`message: "removed"`) or status changed |
 | `audit` | `audit` | A mutating action was recorded |
 | `drift` | `message` | The database and Docker disagree |
+| `project_renamed` | `project_renamed` | A project got a new name ([below](#project-identity-and-renaming)) |
+| `usage`, `traffic` | `usage`, `traffic` | A minute's resource samples or traffic |
+| `run`, `job`, `uptime` | `run`, `job`, `uptime` | A one-off command started or ended, a job was set or removed, an uptime check changed state |
+| `environment_lock`, `access_request` | `lock`, `access_request` | An environment was locked or unlocked; an access request was filed, decided or ran |
+| `environment_move` | `move` | A move went a step further or ended |
+| `server`, `alert`, `update`, `disk`, `analytics`, `server_drain`, `cloudflare_redirect` | `server`, `alert`, `update`, `disk`, (none), `drain`, `redirect` | Platform events, for operators and admins |
 | `lagged` | (none) | The client was too slow and missed events. Refetch |
 
 Two more SSE endpoints use `event: line`:

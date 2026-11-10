@@ -87,9 +87,9 @@ The repository password is made on first use; **store it** in your password
 manager: without it nobody can read the backups, including you after losing
 the server. Operators show it with `dock backup status --reveal`.
 
-Retention per service: 7 daily, 4 weekly and 6 monthly snapshots
-(`--keep-daily`, `--keep-weekly`, `--keep-monthly`). The default hour is
-`--hour`.
+Retention per service: 7 daily, 4 weekly and 6 monthly snapshots. An
+operator changes it, and the hour every service follows by default, with
+`dock backup configure --keep-daily 14 --keep-weekly 4 --keep-monthly 6 --hour 2`.
 
 A store on your LAN (MinIO on a NAS) is a private address: allow it with
 `[network] allow_private` in `config.toml`, since backup jobs run on the
