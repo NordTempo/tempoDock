@@ -2066,6 +2066,10 @@
       "CommandRun": {
         "additionalProperties": false,
         "properties": {
+          "cause": {
+            "description": "A failed run's likely cause (missing variable, program not in the image, out of memory), from the deploy diagnosis's rules; empty when none matched",
+            "type": "string"
+          },
           "command": {
             "type": "string"
           },

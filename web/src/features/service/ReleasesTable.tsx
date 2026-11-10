@@ -119,12 +119,15 @@ export function ReleasesTable({
                       </span>
                     </span>
                     {r.status === "failed" && r.error && (
-                      // The cause wraps: its end ("on :3000") is the useful part.
+                      // Its diagnosis's likely cause when a rule matched
+                      // (ADR 0071), else the error; the title has the error.
                       <div
                         className="text-xs break-words whitespace-normal text-fail"
                         title={r.error}
                       >
-                        {errorSummary(r)}
+                        {r.diagnosis?.rule
+                          ? r.diagnosis.summary
+                          : errorSummary(r)}
                       </div>
                     )}
                   </td>

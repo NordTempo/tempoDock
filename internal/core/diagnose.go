@@ -75,6 +75,24 @@ type diagResult struct {
 	matched []int
 }
 
+// diagRun is the rules' kind for a failed one-off command or job run
+// (runCause): not a stored diagnosis, only its cause is kept.
+const diagRun apitypes.DiagnosisKind = "run"
+
+// runCause is the likely cause of a run of cmd in a release with cfg
+// that exited with code after printing output, or "" when no rule
+// matched: the cause line of a failed run or job (ADR 0071, phase 3).
+// That it exited is not a cause, so exited never is one here.
+func runCause(cmd string, cfg releaseConfig, code int, output string) string {
+	cfg.Cmd = cmd
+	in := diagInput{kind: diagRun, cfg: cfg, container: tailLines(output, diagContainerLines),
+		exit: &apitypes.DiagnosisExit{ExitCode: &code, MemoryLimitMB: cfg.MemoryMB}}
+	if res := diagnose(&in); res.cause.Rule != "" {
+		return res.cause.Summary
+	}
+	return ""
+}
+
 // diagRules in order: the first that matches is the cause.
 var diagRules = []diagRule{
 	{"server_offline", ruleServerOffline},
@@ -148,7 +166,7 @@ func (in *diagInput) exitCode() int {
 	switch {
 	case in.health.Kind == node.HealthFailExited || in.health.Kind == node.HealthFailKilled:
 		return in.health.ExitCode
-	case in.kind == apitypes.DiagnosisCrashLoop && in.exit != nil && in.exit.ExitCode != nil:
+	case (in.kind == apitypes.DiagnosisCrashLoop || in.kind == diagRun) && in.exit != nil && in.exit.ExitCode != nil:
 		return *in.exit.ExitCode
 	}
 	return -1
@@ -157,11 +175,11 @@ func (in *diagInput) exitCode() int {
 // started: a container was started (or tried to), so its exit and
 // output may tell.
 func (in *diagInput) started() bool {
-	return in.step == apitypes.ReleaseStarting || in.inHealthCheck() || in.running()
+	return in.step == apitypes.ReleaseStarting || in.inHealthCheck() || in.running() || in.kind == diagRun
 }
 
 func ruleServerOffline(in *diagInput) diagVerdict {
-	if in.running() {
+	if in.running() || in.kind == diagRun {
 		return diagVerdict{skip: true}
 	}
 	if !in.offline {
@@ -261,7 +279,7 @@ func ruleOOMKilled(in *diagInput) diagVerdict {
 			summary: fmt.Sprintf("Killed for using more than its %d MB memory limit", limit)}
 	case oom:
 		return diagVerdict{matched: true, why: "the kernel's OOM kill", fix: fix, summary: "Killed for running out of memory"}
-	case in.health.Kind == node.HealthFailKilled || in.kind == apitypes.DiagnosisCrashLoop && in.exitCode() == 137 && limit > 0:
+	case in.health.Kind == node.HealthFailKilled || (in.kind == apitypes.DiagnosisCrashLoop || in.kind == diagRun) && in.exitCode() == 137 && limit > 0:
 		return diagVerdict{matched: true, why: "exit 137 with a memory limit", fix: fix,
 			summary: fmt.Sprintf("Killed (exit code 137), most likely for using more than its %d MB memory limit", limit)}
 	}
@@ -288,7 +306,10 @@ func ruleMissingBinary(in *diagInput) diagVerdict {
 		return (strings.Contains(l, "not found") || strings.Contains(l, "no such")) && notFoundLine.MatchString(l)
 	})
 	what := "The start command"
-	if in.cfg.Cmd != "" {
+	switch {
+	case in.kind == diagRun:
+		what = fmt.Sprintf("The command's program (%s)", firstWord(in.cfg.Cmd))
+	case in.cfg.Cmd != "":
 		what = fmt.Sprintf("The start command's program (%s)", firstWord(in.cfg.Cmd))
 	}
 	return diagVerdict{matched: true, why: "exit 127, command not found", lines: idx,
@@ -322,7 +343,7 @@ var (
 )
 
 func ruleMissingVariable(in *diagInput) diagVerdict {
-	if !in.inHealthCheck() && in.pre == nil && in.kind != apitypes.DiagnosisCrashLoop {
+	if !in.inHealthCheck() && in.pre == nil && in.kind != apitypes.DiagnosisCrashLoop && in.kind != diagRun {
 		return diagVerdict{skip: true}
 	}
 	lines, fromPre := in.container, false

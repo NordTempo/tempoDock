@@ -393,12 +393,18 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 	if exit != nil {
 		code = ptr(int64(*exit))
 	}
+	cause := ""
+	if status == apitypes.RunFailed && exit != nil && !r.row.Tty {
+		// Why, by the deploy diagnosis's rules (ADR 0071); a terminal
+		// session keeps no output to judge.
+		cause = runCause(r.row.Command, r.cfg, *exit, output)
+	}
 	if err := c.store.FinishServiceRun(ctx, store.FinishServiceRunParams{
-		Status: string(status), ExitCode: code, Error: msg, Output: output, FinishedAt: &at, ID: r.row.ID,
+		Status: string(status), ExitCode: code, Error: msg, Output: output, Cause: cause, FinishedAt: &at, ID: r.row.ID,
 	}); err != nil {
 		c.log.Error("record the end of a run", "run", r.row.ID, "err", err)
 	}
-	r.row.Status, r.row.ExitCode, r.row.Error, r.row.Output, r.row.FinishedAt = string(status), code, msg, output, &at
+	r.row.Status, r.row.ExitCode, r.row.Error, r.row.Output, r.row.Cause, r.row.FinishedAt = string(status), code, msg, output, cause, &at
 	// The run's slots go before its end is announced: a client that saw
 	// it end may act on the job at once (remove it, run it again).
 	r.release()
@@ -514,7 +520,7 @@ func (c *Core) ListRuns(ctx context.Context, a Actor, ref ServiceRef) ([]apitype
 	for _, row := range rows {
 		out = append(out, c.toRun(ss, store.Release{Number: row.ReleaseNumber}, store.ServiceRun{
 			ID: row.ID, ServiceID: row.ServiceID, ReleaseID: row.ReleaseID, Trigger: row.Trigger, Command: row.Command, Tty: row.Tty,
-			Volumes: row.Volumes, TimeoutSeconds: row.TimeoutSeconds, Status: row.Status, ExitCode: row.ExitCode, Error: row.Error,
+			Volumes: row.Volumes, TimeoutSeconds: row.TimeoutSeconds, Status: row.Status, ExitCode: row.ExitCode, Error: row.Error, Cause: row.Cause,
 			Actor: row.Actor, ActorKind: row.ActorKind, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, SnapshotID: row.SnapshotID,
 		}))
 	}
@@ -564,7 +570,7 @@ func (c *Core) toRun(ss svcScope, rel store.Release, row store.ServiceRun) apity
 		ID: row.ID, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Trigger: apitypes.RunTrigger(row.Trigger), Command: row.Command, Release: rel.Number, TTY: row.Tty,
 		Volumes: apitypes.RunVolumes(row.Volumes), TimeoutSeconds: int(row.TimeoutSeconds), Status: apitypes.RunStatus(row.Status),
-		Error: row.Error, Output: row.Output, CreatedBy: row.Actor, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
+		Error: row.Error, Cause: row.Cause, Output: row.Output, CreatedBy: row.Actor, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
 		Snapshot: deref(row.SnapshotID),
 	}
 	if row.ExitCode != nil {

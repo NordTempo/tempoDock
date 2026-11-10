@@ -45,10 +45,21 @@ state, and the health check's answer only ever lived in the deploy.
 | UI | A release's page shows its diagnosis when it failed, and when it crash looped or turned unhealthy while live ("Crash looped 4m ago, while live"). The service's headline says the likely cause while it crash loops or is unhealthy, and the failed-deploy strip after the failure. The project overview carries each service's newest diagnosis with its release (one more query, one row per service); a crash loop or unhealthy alert refetches it |
 | Not republished | Capturing a running service's diagnosis publishes no release event: the alert engine reads an active release's event as a release going live and would reset the crash count |
 
+## Runs, jobs and the release list (phase 3)
+
+- A failed one-off command or job run gets a cause line: the same rules
+  over its exit code and output's tail, when it ends, kept in
+  `service_runs.cause` (migration 0084) so lists read no output. Only
+  rules that can apply to a command (out of memory, program not in the
+  image, wrong architecture, missing variable); that it exited is not a
+  cause. A terminal session keeps no output, so it gets none. The run's
+  page, `dock runs show`, `dock job history`, MCP `run_command` and a
+  job's `job_failed` alert say it.
+- The release list shows a failed release's likely cause instead of its
+  error when a rule matched (the error stays in its title).
+
 ## Not now
 
-- A cause column in the release list; the rules' cause line on a failed
-  run or job, from its stored output.
 - Database signals (connections, locks) as evidence, from the Data
   panel's insights.
 

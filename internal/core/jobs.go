@@ -168,10 +168,14 @@ func (c *Core) jobEnded(ss svcScope, job store.ServiceJob, row store.ServiceRun)
 			how = fmt.Sprintf("exited with code %d", *row.ExitCode)
 		}
 		svc := serviceKey(ss.project.Name, ss.env.Name, ss.svc.Name)
+		msg := fmt.Sprintf("Run %d (`%s`) %s.", row.ID, cleanLine(job.Command, 120), how)
+		if row.Cause != "" {
+			msg += " Likely cause: " + row.Cause + "."
+		}
 		c.raiseAlert(ctx, alertSignal{
 			Key: key, serviceID: ss.svc.ID, projectID: ss.project.ID, Kind: apitypes.AlertJobFailed, Severity: apitypes.SeverityWarning,
 			Title:   fmt.Sprintf("Job %s of %s failed", job.Name, svc),
-			Message: fmt.Sprintf("Run %d (`%s`) %s.", row.ID, cleanLine(job.Command, 120), how),
+			Message: msg,
 			Command: fmt.Sprintf("dock job history %s %s", job.Name, svcFlags(ss.project.Name, ss.env.Name, ss.svc.Name)),
 			Target:  &apitypes.AlertTarget{Job: job.Name, Run: row.ID},
 			Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
@@ -376,7 +380,7 @@ func (c *Core) JobRuns(ctx context.Context, a Actor, ref ServiceRef, name string
 	for _, row := range rows {
 		run := c.toRun(ss, store.Release{Number: row.ReleaseNumber}, store.ServiceRun{
 			ID: row.ID, ServiceID: row.ServiceID, ReleaseID: row.ReleaseID, Trigger: row.Trigger, Command: row.Command, Tty: row.Tty,
-			Volumes: row.Volumes, TimeoutSeconds: row.TimeoutSeconds, Status: row.Status, ExitCode: row.ExitCode, Error: row.Error,
+			Volumes: row.Volumes, TimeoutSeconds: row.TimeoutSeconds, Status: row.Status, ExitCode: row.ExitCode, Error: row.Error, Cause: row.Cause,
 			Actor: row.Actor, ActorKind: row.ActorKind, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, JobID: row.JobID,
 		})
 		run.Job = name

@@ -95,6 +95,10 @@ type CommandRun struct {
 	// ExitCode is set once it exited by itself.
 	ExitCode *int   `json:"exit_code,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// Cause is a failed run's likely cause, from a deploy diagnosis's
+	// rules over its exit code and output (ADR 0071): the rule's
+	// sentence, never output text.
+	Cause string `json:"cause,omitempty" doc:"A failed run's likely cause (missing variable, program not in the image, out of memory), from the deploy diagnosis's rules; empty when none matched"`
 	// Output is the tail of its output (at most MaxRunOutputBytes); never
 	// kept for terminal sessions, and left out of lists.
 	Output string `json:"output,omitempty"`

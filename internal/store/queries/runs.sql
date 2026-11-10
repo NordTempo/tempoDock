@@ -4,7 +4,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: FinishServiceRun :exec
-UPDATE service_runs SET status = ?, exit_code = ?, error = ?, output = ?, finished_at = ? WHERE id = +?;
+UPDATE service_runs SET status = ?, exit_code = ?, error = ?, output = ?, cause = ?, finished_at = ? WHERE id = +?;
 
 -- name: GetServiceRun :one
 -- A service's run by ID: the service guards IDs from other services.
@@ -15,7 +15,7 @@ SELECT * FROM service_runs WHERE id = +? AND service_id = +?;
 -- own, ListJobRuns), without their output, with the number of the
 -- release each ran in.
 SELECT r.id, r.service_id, r.release_id, r.trigger, r.command, r.tty, r.volumes, r.timeout_seconds, r.status,
-       r.exit_code, r.error, r.actor, r.actor_kind, r.started_at, r.finished_at, r.snapshot_id, COALESCE(rel.number, 0) AS release_number
+       r.exit_code, r.error, r.cause, r.actor, r.actor_kind, r.started_at, r.finished_at, r.snapshot_id, COALESCE(rel.number, 0) AS release_number
 FROM service_runs r LEFT JOIN releases rel ON rel.id = r.release_id
 WHERE r.service_id = +? AND r.job_id IS NULL ORDER BY r.id DESC LIMIT +?;
 

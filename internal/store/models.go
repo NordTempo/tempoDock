@@ -851,6 +851,7 @@ type ServiceRun struct {
 	FinishedAt     *time.Time
 	JobID          *int64
 	SnapshotID     *int64
+	Cause          string
 }
 
 type ServiceStat struct {
