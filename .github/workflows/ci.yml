@@ -46,6 +46,8 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
+      # Go's and the UI's lint suppressions against their budget.
+      - run: scripts/ci/suppressions.sh
       - id: go
         uses: ./.github/actions/setup-go
       - name: Install golangci-lint
