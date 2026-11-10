@@ -31,6 +31,9 @@ type engineConn struct {
 	schemes []string
 	port    int
 	urlVars []string
+	// defaultUser is the owner when a URL names none (Redis' default
+	// user); "" means a URL must name one.
+	defaultUser string
 	// owner reads the owner and database from the container's variables.
 	owner func(env map[string]string) (data.Credentials, string)
 }
@@ -66,6 +69,22 @@ var engineConns = map[apitypes.DataEngine]engineConn{
 		owner: func(env map[string]string) (data.Credentials, string) {
 			return data.Credentials{User: "root", Password: cmp.Or(env["MYSQL_ROOT_PASSWORD"], env["MARIADB_ROOT_PASSWORD"])},
 				cmp.Or(env["MYSQL_DATABASE"], env["MARIADB_DATABASE"])
+		},
+	},
+	apitypes.EngineRedis: {
+		images: map[string]bool{
+			"redis": true, "valkey/valkey": true, "bitnami/redis": true, "bitnami/valkey": true,
+			"redis/redis-stack-server": true,
+		},
+		schemes:     []string{"redis"},
+		port:        6379,
+		urlVars:     []string{"REDIS_URL"},
+		defaultUser: "default",
+		// The default user with REDIS_PASSWORD (the template's and
+		// bitnami's), else no password; logical database 0. A URL's path
+		// names another (/2).
+		owner: func(env map[string]string) (data.Credentials, string) {
+			return data.Credentials{User: "default", Password: env["REDIS_PASSWORD"]}, "0"
 		},
 	},
 }
@@ -177,7 +196,7 @@ func (c *Core) dbConnection(ctx context.Context, ss svcScope) (dbConn, error) {
 		conn.owner, conn.database = ec.owner(cfg.Env)
 		return conn, nil
 	}
-	if err := parseDatabaseURL(raw, ss.svc.Name, ec.schemes, &conn); err != nil {
+	if err := parseDatabaseURL(raw, ss.svc.Name, ec, &conn); err != nil {
 		return dbConn{}, invalid("%s: %v; set database_url_variable to a variable with this database's %s:// URL", name, err, ec.schemes[0])
 	}
 	return conn, nil
@@ -216,10 +235,12 @@ func (c *Core) variableValue(ctx context.Context, ss svcScope, own map[string]st
 }
 
 // parseDatabaseURL reads user, password, database and port from a URL
-// with one of schemes into conn. The host must be this service: the panel
-// always dials the service's own container. Postgres URLs without a
-// database name the user's; MySQL ones mean every user database.
-func parseDatabaseURL(raw, service string, schemes []string, conn *dbConn) error {
+// with one of ec's schemes into conn. The host must be this service: the
+// panel always dials the service's own container. Postgres URLs without a
+// database name the user's; MySQL ones mean every user database; Redis
+// ones database 0, and the default user when they name none.
+func parseDatabaseURL(raw, service string, ec engineConn, conn *dbConn) error {
+	schemes := ec.schemes
 	u, err := url.Parse(raw)
 	if err != nil || !slices.Contains(schemes, u.Scheme) {
 		return fmt.Errorf("not a %s:// URL", schemes[0])
@@ -229,14 +250,22 @@ func parseDatabaseURL(raw, service string, schemes []string, conn *dbConn) error
 	default:
 		return fmt.Errorf("host %s isn't this service; external databases aren't supported", h)
 	}
-	if u.User == nil || u.User.Username() == "" {
+	if (u.User == nil || u.User.Username() == "") && ec.defaultUser == "" {
 		return errors.New("the URL has no user")
 	}
-	conn.owner.User = u.User.Username()
+	conn.owner.User = cmp.Or(u.User.Username(), ec.defaultUser)
 	conn.owner.Password, _ = u.User.Password()
 	conn.database = strings.TrimPrefix(u.Path, "/")
-	if conn.database == "" && slices.Contains(schemes, "postgres") {
+	switch {
+	case conn.database == "" && slices.Contains(schemes, "postgres"):
 		conn.database = conn.owner.User
+	case slices.Contains(schemes, "redis"):
+		if conn.database == "" {
+			conn.database = "0"
+		}
+		if n, err := strconv.Atoi(conn.database); err != nil || n < 0 {
+			return fmt.Errorf("database %q isn't a number", conn.database)
+		}
 	}
 	if p := u.Port(); p != "" {
 		n, err := strconv.Atoi(p)

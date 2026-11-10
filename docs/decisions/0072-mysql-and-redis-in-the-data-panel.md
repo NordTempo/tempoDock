@@ -116,3 +116,14 @@ health.
   by Dock, not the server, which is why masked callers lose the console.
 - Dock owns a small MySQL protocol client (no new dependency), tested
   against MySQL and MariaDB servers in CI.
+
+## Amendment (2026-11-10): Redis in two steps
+
+Redis' keys land in two PRs: the engine, the keys API (`GET /data/keys`,
+`GET /data/keys/value`, in Dock and tempoBase alike), `dock db keys` /
+`dock db key` and MCP `data_keys` / `data_key` (Dock only: tempoBase has no
+Redis) first, with the Data tab showing only the command console; then the
+key browser (mock B) and sensitive key patterns. Console commands run in
+`DataQueryRequest.db`. The `services.database` CHECK of migration 0010
+only allowed `postgres`, so `mysql` failed to save; migration 0087 widens
+it to every engine.

@@ -34,7 +34,8 @@ func newDBCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{
 		Use:   "db",
 		Short: "Browse, query and change a database service's data",
-		Long: `Work with the data in a database service (Postgres, MySQL or MariaDB): tables, schema, rows,
+		Long: `Work with the data in a database service (Postgres, MySQL, MariaDB, Redis or
+Valkey): tables or keys, schema, rows,
 read-only SQL, query history, saved queries and changesets, and how the
 database is doing (health, queries, sessions, storage).
 
@@ -45,7 +46,7 @@ commits need --confirm <environment>.`,
 	})
 	cmd.AddCommand(
 		newDBStatusCmd(g), newDBSetupCmd(g), newDBSettingsCmd(g),
-		newDBTablesCmd(g), newDBSchemaCmd(g), newDBRowsCmd(g), newDBQueryCmd(g), newDBHistoryCmd(g),
+		newDBTablesCmd(g), newDBSchemaCmd(g), newDBRowsCmd(g), newDBKeysCmd(g), newDBKeyCmd(g), newDBQueryCmd(g), newDBHistoryCmd(g),
 		newDBSavedCmd(g), newDBChangesCmd(g), newDBApplyCmd(g),
 		newDBHealthCmd(g), newDBQueriesCmd(g), newDBSessionsCmd(g), newDBStorageCmd(g), newDBCancelCmd(g),
 		newDBPolicyCmd(g), newDBSensitiveCmd(g),
@@ -168,7 +169,7 @@ func newDBSettingsCmd(g *globals) *cobra.Command {
 	var database, urlVariable string
 	var cmd *cobra.Command
 	cmd = dbCmd(g, &cobra.Command{
-		Use:   "settings [--database postgres|mysql|none|detect] [--url-variable NAME]",
+		Use:   "settings [--database postgres|mysql|redis|none|detect] [--url-variable NAME]",
 		Short: "Mark a service as a database, or name its connection URL variable",
 		Long: `Change Dock-side database settings. They apply immediately and never create
 a release. --database overrides detection from the image (detect goes back to
@@ -183,9 +184,9 @@ POSTGRES_*).`,
 			switch database {
 			case "detect":
 				d = apitypes.DatabaseDetect
-			case "postgres", "mysql", "none":
+			case "postgres", "mysql", "redis", "none":
 			default:
-				return usageError(fmt.Sprintf("invalid --database %q", database), "Use postgres, mysql, none or detect.")
+				return usageError(fmt.Sprintf("invalid --database %q", database), "Use postgres, mysql, redis, none or detect.")
 			}
 			req.Database = &d
 		}
@@ -205,7 +206,7 @@ POSTGRES_*).`,
 			return nil
 		})
 	})
-	cmd.Flags().StringVar(&database, "database", "", "postgres, mysql (MariaDB too), none, or detect (from the image)")
+	cmd.Flags().StringVar(&database, "database", "", "postgres, mysql (MariaDB too), redis (Valkey too), none, or detect (from the image)")
 	cmd.Flags().StringVar(&urlVariable, "url-variable", "", "variable with the connection URL, e.g. DATABASE_URL or api.DATABASE_URL")
 	return cmd
 }
@@ -508,6 +509,8 @@ type queryFlags struct {
 	limit   int
 	timeout time.Duration
 	csv     bool
+	// db is the logical database Redis commands run in.
+	db int
 }
 
 func (f *queryFlags) add(cmd *cobra.Command, withFile bool) {
@@ -517,6 +520,7 @@ func (f *queryFlags) add(cmd *cobra.Command, withFile bool) {
 	cmd.Flags().IntVarP(&f.limit, "limit", "n", 1000, fmt.Sprintf("most rows to return (at most %d)", apitypes.DataQueryMaxLimit))
 	cmd.Flags().DurationVar(&f.timeout, "timeout", 0, fmt.Sprintf("statement timeout (default %s, at most %s)", apitypes.DataQueryTimeout, apitypes.DataQueryMaxTimeout))
 	cmd.Flags().BoolVar(&f.csv, "csv", false, "print CSV instead of a table")
+	cmd.Flags().IntVar(&f.db, "db", 0, "logical database (Redis)")
 }
 
 // request builds the query request for sql.
@@ -527,7 +531,7 @@ func (f queryFlags) request(sql string) (apitypes.DataQueryRequest, error) {
 	if f.timeout < 0 || f.timeout > apitypes.DataQueryMaxTimeout {
 		return apitypes.DataQueryRequest{}, usageError(fmt.Sprintf("invalid --timeout %s", f.timeout), fmt.Sprintf("Use at most %s.", apitypes.DataQueryMaxTimeout))
 	}
-	return apitypes.DataQueryRequest{SQL: sql, Limit: f.limit, TimeoutSeconds: int(math.Ceil(f.timeout.Seconds()))}, nil
+	return apitypes.DataQueryRequest{SQL: sql, Limit: f.limit, TimeoutSeconds: int(math.Ceil(f.timeout.Seconds())), DB: f.db}, nil
 }
 
 // readSQL takes SQL from the argument, --file, or stdin ("-", or no

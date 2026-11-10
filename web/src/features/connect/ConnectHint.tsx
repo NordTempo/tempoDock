@@ -19,7 +19,7 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
 
 /**
  * How to reach the service from your machine: the `dock connect` line and
- * whether you may run it, then (for Postgres and MySQL) the client's line,
+ * whether you may run it, then (for Postgres, MySQL and Redis) the client's line,
  * each with Copy.
  */
 export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
@@ -49,7 +49,9 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       ? `psql -h 127.0.0.1 -p ${d.port} -U ${d.user} ${d.database}`
       : d?.engine === "mysql"
         ? `mysql -h 127.0.0.1 -P ${d.port} -u ${d.user} -p ${d.database ?? ""}`.trimEnd()
-        : undefined;
+        : d?.engine === "redis"
+          ? `redis-cli -h 127.0.0.1 -p ${d.port} --user ${d.user ?? "default"} --askpass`
+          : undefined;
   const row = (label: string, line: string) => (
     <div className="flex items-center gap-3">
       <span className="w-16 flex-none text-faint">{label}</span>

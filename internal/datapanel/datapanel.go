@@ -155,6 +155,8 @@ type Ops[A, R any] interface {
 	RejectDataChangeset(ctx context.Context, a A, ref R, id int64, req apitypes.DataRejectRequest) (apitypes.DataChangeset, error)
 	SetSensitiveColumns(ctx context.Context, a A, ref R, req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error)
 	DataInsights(ctx context.Context, a A, ref R, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
+	DataKeys(ctx context.Context, a A, ref R, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error)
+	DataKey(ctx context.Context, a A, ref R, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error)
 	CancelDataSession(ctx context.Context, a A, ref R, session string, req apitypes.DataCancelRequest) (apitypes.DataCancelResult, error)
 	ResetDataQueryStats(ctx context.Context, a A, ref R) error
 	EnableDataQueryStats(ctx context.Context, a A, ref R) (apitypes.DataQueryStatsResult, error)

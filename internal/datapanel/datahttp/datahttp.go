@@ -103,6 +103,11 @@ func Describe(id string, roles data.Roles, w datapanel.Words) (summary, descript
 	case "get-data-rows":
 		return "One page of a table", "A keyset page: sorted by `order` and the primary key, starting after the `after` cursor. Pass the page's `next` as `after` for the following page. " +
 			"Sensitive columns are masked unless `reveal` is set by a caller with sensitive visible. Level read."
+	case "get-data-keys":
+		return "One page of keys", "Keys of a key-value database (Redis), found with bounded SCAN steps: `match` is a glob, `type` keeps one type. " +
+			"A page may hold fewer keys than `limit` and still have a `next`: pass it as `after`. Level read."
+	case "get-data-key":
+		return "One key", "A key's type, TTL, length and sampled memory, and one page of its value as grid rows. Pass `next` as `after` for the following page. Level read."
 	case "get-data-references":
 		return "Rows referencing a row", "For each incoming foreign key, the first rows that reference the row with primary key `key`, and filters that open them. Level read."
 	case "data-query":
@@ -272,4 +277,33 @@ type InsightsQuery struct {
 // Request is the parameters as an insights request.
 func (q InsightsQuery) Request() apitypes.DataInsightsRequest {
 	return apitypes.DataInsightsRequest{Views: q.View, Order: q.Order, Limit: q.Limit}
+}
+
+// KeysQuery is get-data-keys' query parameters, shared by both hosts.
+type KeysQuery struct {
+	DB    int    `query:"db" minimum:"0" maximum:"1024" doc:"Logical database; default 0"`
+	Match string `query:"match" doc:"SCAN glob, e.g. user:*; empty matches every key"`
+	Type  string `query:"type" enum:",string,hash,list,set,zset,stream" doc:"Keep keys of one type"`
+	After string `query:"after" doc:"The previous page's next cursor"`
+	Limit int    `query:"limit" minimum:"0" maximum:"500" doc:"Keys per page; 0 means 100"`
+}
+
+// Request is the query as a DataKeysRequest.
+func (q KeysQuery) Request() apitypes.DataKeysRequest {
+	return apitypes.DataKeysRequest{DB: q.DB, Match: q.Match, Type: q.Type, After: q.After, Limit: q.Limit}
+}
+
+// KeyQuery is get-data-key's query parameters, shared by both hosts.
+type KeyQuery struct {
+	DB    int    `query:"db" minimum:"0" maximum:"1024" doc:"Logical database; default 0"`
+	Key   string `query:"key" required:"true" doc:"The key's name (hex when hex is set)"`
+	Hex   bool   `query:"hex" doc:"key is hex: for names that aren't UTF-8"`
+	After string `query:"after" doc:"The previous page's next cursor"`
+	Limit int    `query:"limit" minimum:"0" maximum:"1000" doc:"Items of the value per page; 0 means 100"`
+	Full  bool   `query:"full" doc:"Values untruncated, up to 1 MB each"`
+}
+
+// Request is the query as a DataKeyRequest.
+func (q KeyQuery) Request() apitypes.DataKeyRequest {
+	return apitypes.DataKeyRequest{DB: q.DB, Key: q.Key, Hex: q.Hex, After: q.After, Limit: q.Limit, Full: q.Full}
 }

@@ -11,7 +11,12 @@ export type DataEngine = DataInfo["engine"];
  */
 export const engines: Record<
   DataEngine,
-  { tabs: readonly DataPanelView["tab"][]; dialect: DataEngine }
+  {
+    tabs: readonly DataPanelView["tab"][];
+    dialect: DataEngine;
+    /** Tab names that differ from the panel's (Redis' SQL is Commands). */
+    labels?: Partial<Record<DataPanelView["tab"], string>>;
+  }
 > = {
   postgres: {
     tabs: ["tables", "sql", "schema", "changes", "health"],
@@ -21,4 +26,6 @@ export const engines: Record<
     tabs: ["tables", "sql", "schema", "changes", "health"],
     dialect: "mysql",
   },
+  // The key browser follows (ADR 0072, mock B); until then the console.
+  redis: { tabs: ["sql"], dialect: "redis", labels: { sql: "Commands" } },
 };

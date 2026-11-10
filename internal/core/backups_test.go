@@ -111,8 +111,9 @@ func TestTemplateRedis(t *testing.T) {
 	if !strings.Contains(spec.Cmd, `--requirepass "$REDIS_PASSWORD" --appendonly yes`) || spec.Mounts[0].Path != "/data" || spec.Env["PORT"] != "6379" {
 		t.Errorf("spec = %q %+v", spec.Cmd, spec.Mounts)
 	}
-	if svc, _ := h.c.GetService(h.ctx, testSystem, cache); svc.DataEngine != "" || svc.Database != "" {
-		t.Errorf("redis detected as %q", svc.DataEngine)
+	// The template marks it for the data panel (ADR 0072).
+	if svc, _ := h.c.GetService(h.ctx, testSystem, cache); svc.DataEngine != apitypes.EngineRedis || svc.Database != apitypes.DatabaseRedis {
+		t.Errorf("redis detected as %q (setting %q)", svc.DataEngine, svc.Database)
 	}
 }
 

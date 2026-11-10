@@ -79,7 +79,8 @@ var templates = map[apitypes.Template]dbTemplate{
 		// is worse than an error.
 		cmd: `exec docker-entrypoint.sh redis-server --requirepass "$REDIS_PASSWORD" --appendonly yes` +
 			" --maxmemory 200mb --maxmemory-policy noeviction",
-		backup: apitypes.BackupRedis,
+		backup:   apitypes.BackupRedis,
+		database: apitypes.DatabaseRedis,
 		vars: func(svc, password string) map[string]string {
 			return map[string]string{
 				"REDIS_PASSWORD": password,
@@ -191,14 +192,15 @@ func (c *Core) deployTemplate(ctx context.Context, a Actor, ss svcScope, done fu
 }
 
 // afterActive runs a template's follow-up once one of its releases went
-// active: Dock sets up data access for a Postgres template that has none
-// yet (ADR 0016: automatic for templates, since Dock owns the
-// credentials), and creates the query stats extension when the start
-// command loads it and it doesn't exist yet (ADR 0069): one owner
-// connection per activation, nothing when it exists.
+// active: Dock sets up data access for a template database (Postgres,
+// Redis) that has none yet (ADR 0016: automatic for templates, since Dock
+// owns the credentials), and for Postgres creates the query stats
+// extension when the start command loads it and it doesn't exist yet
+// (ADR 0069): one owner connection per activation, nothing when it
+// exists.
 func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	t, ok := templateOf(ss.svc)
-	if !ok || t.database != apitypes.DatabasePostgres {
+	if !ok || t.database == "" {
 		return
 	}
 	_, err := c.store.GetDataAccess(ctx, ss.svc.ID)
@@ -206,7 +208,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	if err != nil && !needSetup {
 		return // unknown: leave it to an admin
 	}
-	wantStats := loadsQueryStats(ss.svc.StartCommand)
+	wantStats := t.database == apitypes.DatabasePostgres && loadsQueryStats(ss.svc.StartCommand)
 	if !needSetup && !wantStats {
 		return
 	}

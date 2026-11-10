@@ -372,6 +372,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/connections/{connection}/data/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One page of keys
+         * @description Keys of a key-value database (Redis), found with bounded SCAN steps: `match` is a glob, `type` keeps one type. A page may hold fewer keys than `limit` and still have a `next`: pass it as `after`. Level read.
+         */
+        get: operations["get-data-keys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connections/{connection}/data/keys/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One key
+         * @description A key's type, TTL, length and sampled memory, and one page of its value as grid rows. Pass `next` as `after` for the following page. Level read.
+         */
+        get: operations["get-data-key"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/connections/{connection}/data/query": {
         parameters: {
             query?: never;
@@ -1075,7 +1115,7 @@ export interface components {
             /** @enum {string} */
             detected_by: "setting" | "image";
             /** @enum {string} */
-            engine: "postgres" | "mysql";
+            engine: "postgres" | "mysql" | "redis";
             reason?: string;
             server_version?: string;
             /** Format: date-time */
@@ -1087,7 +1127,7 @@ export interface components {
         };
         DataInsights: {
             /** @enum {string} */
-            engine: "postgres" | "mysql";
+            engine: "postgres" | "mysql" | "redis";
             hints: components["schemas"]["DataHint"][] | null;
             indexes?: components["schemas"]["DataIndexStats"][] | null;
             overview?: components["schemas"]["DataOverview"];
@@ -1103,6 +1143,46 @@ export interface components {
             since_reason?: "reset" | "start";
             tables?: components["schemas"]["DataTableStats"][] | null;
             unavailable: components["schemas"]["DataUnavailable"][] | null;
+        };
+        DataKeyInfo: {
+            /** Format: int64 */
+            bytes: number;
+            hex?: boolean;
+            key: string;
+            /** Format: int64 */
+            length: number;
+            /** Format: int64 */
+            ttl_ms: number;
+            type: string;
+        };
+        DataKeyPage: {
+            keys: components["schemas"]["DataKeyInfo"][] | null;
+            next?: string;
+            /** Format: int64 */
+            total: number;
+        };
+        DataKeyValue: {
+            /** Format: int64 */
+            bytes: number;
+            columns: components["schemas"]["DataResultColumn"][] | null;
+            encoding?: string;
+            hex?: boolean;
+            key: string;
+            /** Format: int64 */
+            length: number;
+            next?: string;
+            rows: unknown[] | null;
+            /** Format: int64 */
+            ttl_ms: number;
+            type: string;
+        };
+        DataKeyspaceDB: {
+            /** Format: int64 */
+            db: number;
+            /** Format: int64 */
+            expires: number;
+            /** Format: int64 */
+            keys: number;
         };
         DataOverview: {
             /** Format: int64 */
@@ -1217,6 +1297,8 @@ export interface components {
         };
         DataQueryRequest: {
             /** Format: int64 */
+            db?: number;
+            /** Format: int64 */
             limit?: number;
             sql: string;
             /** Format: int64 */
@@ -1253,6 +1335,7 @@ export interface components {
             updated_at: string;
         };
         DataSchema: {
+            keyspace?: components["schemas"]["DataKeyspaceDB"][] | null;
             /** Format: date-time */
             read_at: string;
             tables: components["schemas"]["DataTable"][] | null;
@@ -3546,6 +3629,220 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DataCancelResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-data-keys": {
+        parameters: {
+            query?: {
+                /** @description Logical database; default 0 */
+                db?: number;
+                /** @description SCAN glob, e.g. user:*; empty matches every key */
+                match?: string;
+                /** @description Keep keys of one type */
+                type?: "" | "string" | "hash" | "list" | "set" | "zset" | "stream";
+                /** @description The previous page's next cursor */
+                after?: string;
+                /** @description Keys per page; 0 means 100 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The connection's name */
+                connection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataKeyPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-data-key": {
+        parameters: {
+            query: {
+                /** @description Logical database; default 0 */
+                db?: number;
+                /** @description The key's name (hex when hex is set) */
+                key: string;
+                /** @description key is hex: for names that aren't UTF-8 */
+                hex?: boolean;
+                /** @description The previous page's next cursor */
+                after?: string;
+                /** @description Items of the value per page; 0 means 100 */
+                limit?: number;
+                /** @description Values untruncated, up to 1 MB each */
+                full?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The connection's name */
+                connection: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataKeyValue"];
                 };
             };
             /** @description Bad Request */

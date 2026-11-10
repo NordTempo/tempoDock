@@ -370,6 +370,16 @@ func (p *Panel[D]) info(ctx context.Context, tg *target[D]) (apitypes.DataInfo, 
 		}
 	}
 	srv, err := tg.eng.Status(ctx, tg.t)
+	if errors.Is(err, data.ErrNoPrivilege) {
+		// The panel's roles lost their privileges or vanished (Redis keeps
+		// ACL users in memory: a restart drops them). Sync them, as the
+		// owner and with the sensitive marks, and look again.
+		if err = p.loadSensitive(ctx, tg); err == nil {
+			if err = p.syncGrants(ctx, tg, ""); err == nil {
+				srv, err = tg.eng.Status(ctx, tg.t)
+			}
+		}
+	}
 	switch {
 	case err == nil:
 		info.Status, info.ServerVersion = apitypes.DataReady, srv.Version
@@ -441,6 +451,14 @@ func (p *Panel[D]) Schema(ctx context.Context, a Actor, db *Database[D]) (apityp
 	tg, err := p.ready(ctx, db, apitypes.LevelSchema, "reading the schema")
 	if err != nil {
 		return apitypes.DataSchema{}, err
+	}
+	if k, ok := tg.eng.(data.Keys); ok {
+		var s apitypes.DataSchema
+		err := p.withGrants(ctx, tg, func() (err error) {
+			s, err = k.Keyspace(ctx, tg.t, tg.call(a, false))
+			return err
+		})
+		return s, p.dataError(db, err)
 	}
 	t, err := tables(tg, "reading the schema")
 	if err != nil {
@@ -560,13 +578,23 @@ func (p *Panel[D]) Query(ctx context.Context, a Actor, db *Database[D], req apit
 	}
 	return func(ctx context.Context, ready func(), send func(...apitypes.DataQueryFrame) error) error {
 		started := false
-		stats, err := tg.eng.Query(ctx, tg.t, call, req, func(f apitypes.DataQueryFrame) error {
-			if !started {
-				ready()
-				started = true
+		run := func() (data.QueryStats, error) {
+			return tg.eng.Query(ctx, tg.t, call, req, func(f apitypes.DataQueryFrame) error {
+				if !started {
+					ready()
+					started = true
+				}
+				return send(f)
+			})
+		}
+		stats, err := run()
+		if errors.Is(err, data.ErrNoPrivilege) && !started {
+			// A login refused before anything was sent (Redis' users went
+			// with a restart): sync the roles and run once more.
+			if serr := p.syncGrants(ctx, tg, ""); serr == nil {
+				stats, err = run()
 			}
-			return send(f)
-		})
+		}
 		p.auditQuery(ctx, a, db, req.SQL, stats, err)
 		return p.dataError(db, err)
 	}, nil
