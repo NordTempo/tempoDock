@@ -232,6 +232,12 @@ func TestCrashLoopDiagnosis(t *testing.T) {
 
 	// Later restarts keep the cause; the next crash loop is diagnosed anew.
 	restart()
+	h.until("the restart handled", func() bool {
+		h.c.alerts.mu.Lock()
+		defer h.c.alerts.mu.Unlock()
+		l := h.c.alerts.restarts[alertServiceKey(ss.svc.ID, "", "", "")]
+		return l != nil && l.count == 5
+	})
 	if a := h.openAlert(key, true); !strings.Contains(a.Message, "Likely cause") {
 		t.Errorf("after another restart: %q", a.Message)
 	}
