@@ -38,7 +38,7 @@ than on a quiet machine.
 | UI initial CSS (gzip) | ≤ 30 KB | 13.9 KB |
 | UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 63.6 KB (Inter and JetBrains Mono, Latin subsets) |
 | UI fonts (all font files) | ≤ 150 KB | 63.6 KB |
-| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 10% (67.8 MB) | 67.0 MB (2026-11-10): measure before adding a dependency |
+| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 10% (67.8 MB) | 66.3 MB (2026-11-10, with the UI embedded gzipped): measure before adding a dependency |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
 
 `make perf` also prints, without a budget, the daemon's memory after
@@ -67,7 +67,7 @@ and `tempobase-ui`. Measured as above (CI, 2026-11-10).
 
 | What | Budget | Measured |
 |---|---|---|
-| Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 10% (`tempobase_binary_bytes`) | 20.2 MB; embedding the UI pre-gzipped would win back about 0.7 MB |
+| Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 10% (`tempobase_binary_bytes`) | 20.2 MB, its UI embedded gzipped |
 | Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 12.0 MB |
 | Idle CPU | ≤ 1 clock tick in 30 s | 0 |
 | Idle wake-ups | ≤ 0.1/s | 0.03/s (Go's forced GC is ~0.01/s) |
@@ -422,9 +422,11 @@ end) are not listed.
   ([design](design/README.md#fonts-and-performance)). The "UI initial
   fonts" row counts every font the initial CSS declares or `index.html`
   preloads.
-- **Serve assets compressed and cached** (`internal/api/ui.go`). Text
-  files go out gzip-compressed (each compressed once, on its first
-  request, and kept), hashed files under `/assets/` with `Cache-Control:
+- **Serve assets compressed and cached** (`internal/httpkit/ui.go`). The
+  build gzips text files (`web/gzipDist.ts`) and the binary embeds only
+  the `.gz`, which goes out as it is (decompressed on the fly for the rare
+  client without gzip): nothing is compressed or kept at run time, and
+  `bin/dock` is about 1 MB smaller. Hashed files under `/assets/` with `Cache-Control:
   public, max-age=31536000, immutable`, and `index.html` with `no-cache`
   and an ETag. The "UI initial JS as served" row of `make perf` checks it.
 

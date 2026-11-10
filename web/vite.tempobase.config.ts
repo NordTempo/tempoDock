@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { gzipDist } from "./gzipDist";
 
 // tempoBase's UI (ADR 0024 section 4): a second entry in this Vite project
 // that shares web/src's data panel. Run from web/ (the pnpm scripts do):
@@ -13,6 +14,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: "tempobase",
   plugins: [
+    gzipDist(),
     // Must come before react(): generates the route tree from the routes.
     tanstackRouter({
       target: "react",
