@@ -111,8 +111,9 @@ keeps it awake. Uptime checks pause while it sleeps and never wake it.
 - `dock env previews enable staging --sleep-after 2h` changes the time
   for the project's previews, open ones included; `--sleep-after off`
   keeps them up.
-- Other non-production environments can sleep too: `dock env sleep-after
-  staging 2h`. Production never sleeps.
+- Other non-production environments can sleep too: "Sleep after…" in the
+  environment's More menu, or `dock env sleep-after staging 2h`.
+  Production never sleeps.
 
 Sleeping keeps every container, so a preview comes back as it was, except
 for what its apps kept in memory. On a server whose dock is older than
