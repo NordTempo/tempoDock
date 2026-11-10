@@ -316,6 +316,11 @@ func TestDatabaseDetection(t *testing.T) {
 		{"localhost:5000/pgvector/pgvector:pg17", "", apitypes.EnginePostgres, apitypes.DetectedByImage},
 		{"postgres:17", "none", "", ""},
 		{"myorg/db:1", "postgres", apitypes.EnginePostgres, apitypes.DetectedBySetting},
+		{"mysql:8.4", "", apitypes.EngineMySQL, apitypes.DetectedByImage},
+		{"docker.io/library/mariadb:11.4", "", apitypes.EngineMySQL, apitypes.DetectedByImage},
+		{"bitnami/mariadb:11", "", apitypes.EngineMySQL, apitypes.DetectedByImage},
+		{"myorg/db:1", "mysql", apitypes.EngineMySQL, apitypes.DetectedBySetting},
+		{"myorg/db:1", "oracle", "", ""},
 		{"redis:7", "", "", ""},
 		{"", "", "", ""},
 	} {
@@ -323,6 +328,36 @@ func TestDatabaseDetection(t *testing.T) {
 		if engine != tc.want || by != tc.by {
 			t.Errorf("%s (%q): %s %s", tc.image, tc.setting, engine, by)
 		}
+	}
+}
+
+// TestMySQLConnection: a MySQL or MariaDB service's owner is root with
+// the image's root password and database, or comes from a mysql:// URL,
+// whose missing database means every user database.
+func TestMySQLConnection(t *testing.T) {
+	h := newHarness(t)
+	db := h.service("db", apitypes.CreateServiceRequest{Image: "mariadb:11.4"})
+	h.setVars(db, map[string]string{"MARIADB_ROOT_PASSWORD": "pw", "MARIADB_DATABASE": "shop"})
+	h.deploy(db, "mariadb:11.4")
+	conn := func() (dbConn, error) {
+		t.Helper()
+		ss, err := h.c.loadService(h.ctx, 1, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.c.dbConnection(h.ctx, ss)
+	}
+	eventually(t, "the database to run", func() bool { _, err := conn(); return !errors.Is(err, errNotRunning) })
+	if got, err := conn(); err != nil || got.owner.User != "root" || got.owner.Password != "pw" || got.database != "shop" || got.port != 3306 {
+		t.Fatalf("from MARIADB_*: %+v %v", got, err)
+	}
+	h.setVars(db, map[string]string{"MYSQL_URL": "mysql://admin:p%40w@db:3307"})
+	if got, err := conn(); err != nil || got.owner.User != "admin" || got.owner.Password != "p@w" || got.database != "" || got.port != 3307 {
+		t.Fatalf("from MYSQL_URL: %+v %v", got, err)
+	}
+	h.setVars(db, map[string]string{"DATABASE_URL": "postgres://u:p@db/x"})
+	if _, err := conn(); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "mysql://") {
+		t.Fatalf("a postgres URL on MySQL: %v", err)
 	}
 }
 

@@ -160,7 +160,7 @@ func serverInfo(pg *pgx.Conn, num int) data.ServerInfo {
 }
 
 func unsupported(info data.ServerInfo) error {
-	return fmt.Errorf("%w: Postgres %s is older than 14", data.ErrUnsupported, info.Version)
+	return fmt.Errorf("%w: Postgres %s is older than 14; the data panel needs Postgres 14 or later", data.ErrUnsupported, info.Version)
 }
 
 // Forget closes the service's idle connections (busy ones close when

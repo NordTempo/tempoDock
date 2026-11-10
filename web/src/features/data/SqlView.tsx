@@ -12,6 +12,7 @@ import {
   useSaveQuery,
 } from "./api";
 import { toCsv } from "./cells";
+import type { DataEngine } from "./engines";
 import { Grid } from "./Grid";
 import { Act, Btn, ErrorText, Head, Kbd } from "./kit";
 import { SqlEditor } from "./SqlEditor";
@@ -59,10 +60,12 @@ function download(name: string, text: string, type: string) {
  */
 export default function SqlView({
   tables,
+  dialect,
   initialSql = "",
 }: {
   /** For completion. */
   tables: readonly DataTable[];
+  dialect: DataEngine;
   /** Text to open the editor with (Health's "Explain in SQL"). */
   initialSql?: string;
 }) {
@@ -232,6 +235,7 @@ export default function SqlView({
             onChange={setSql}
             onRun={start}
             tables={tables}
+            dialect={dialect}
             errorAt={
               result?.state === "failed" ? result.error?.position : undefined
             }

@@ -10,34 +10,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/data"
 )
 
-func TestAppendCell(t *testing.T) {
-	long := strings.Repeat("a", apitypes.DataCellMaxBytes-1) + "é" // the cut lands inside é
-	cases := []struct {
-		v    []byte
-		kind cellKind
-		full bool
-		want string
-	}{
-		{nil, kindNumber, false, `null`},
-		{[]byte("t"), kindBool, false, `true`},
-		{[]byte("f"), kindBool, false, `false`},
-		{[]byte("-12"), kindNumber, false, `-12`},
-		{[]byte("1.5e-07"), kindNumber, false, `1.5e-07`},
-		{[]byte("NaN"), kindNumber, false, `"NaN"`},
-		{[]byte("-Infinity"), kindNumber, false, `"-Infinity"`},
-		{[]byte("01"), kindNumber, false, `"01"`},
-		{[]byte("12345678901234567890"), kindString, false, `"12345678901234567890"`},
-		{[]byte("a\"b\\c\n\x01é\xff"), kindString, false, `"a\"b\\c\n\u0001é�"`},
-		{[]byte("x"), kindMasked, false, `{"masked":true}`},
-		{[]byte(long), kindString, false, `{"truncated":"` + strings.Repeat("a", apitypes.DataCellMaxBytes-1) + `","bytes":8193}`},
-		{[]byte(long), kindString, true, `"` + long + `"`},
-	}
-	for _, c := range cases {
-		if got := string(appendCell(nil, c.v, c.kind, c.full)); got != c.want {
-			t.Errorf("%q: got %.80s, want %.80s", c.v, got, c.want)
-		}
-	}
-	row := appendRow(nil, [][]byte{[]byte("1"), []byte("x")}, []int{0, -1, 1}, []cellKind{kindNumber, kindMasked, kindString}, false)
+func TestAppendRow(t *testing.T) {
+	row := appendRow(nil, [][]byte{[]byte("1"), []byte("x")}, []int{0, -1, 1}, []data.CellKind{data.CellNumber, data.CellMasked, data.CellString}, false)
 	if string(row) != `[1,{"masked":true},"x"]` {
 		t.Errorf("row: %s", row)
 	}
@@ -198,7 +172,7 @@ func TestPlanPage(t *testing.T) {
 	if plan.sql != want {
 		t.Fatalf("sql\n got %s\nwant %s", plan.sql, want)
 	}
-	if plan.args[0] != `{"paid","new"}` || plan.args[3] != int64(101) || plan.src[3] != -1 || plan.kinds[3] != kindMasked {
+	if plan.args[0] != `{"paid","new"}` || plan.args[3] != int64(101) || plan.src[3] != -1 || plan.kinds[3] != data.CellMasked {
 		t.Fatalf("plan: %+v", plan)
 	}
 	if plan.countSQL != `SELECT count(*) FROM "public"."orders" WHERE "status" = ANY($1) AND "meta"::text = $2 AND "customer_id"::text ILIKE $3` || len(plan.countArgs) != 3 {

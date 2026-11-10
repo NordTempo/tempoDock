@@ -640,16 +640,22 @@ type UpdateDatabaseSettings =
 const databaseChoices: { value: DatabaseSetting; label: string }[] = [
   { value: "", label: "detect" },
   { value: "postgres", label: "postgres" },
+  { value: "mysql", label: "mysql" },
   { value: "none", label: "none" },
 ];
+
+const engineNames: Record<NonNullable<Service["data_engine"]>, string> = {
+  postgres: "Postgres",
+  mysql: "MySQL or MariaDB",
+};
 
 /** What detection decided, in words. */
 function detectedText(service: Service) {
   if (service.database === "none") return "not a database: no Data tab";
-  if (service.database === "postgres") return "Postgres, set here";
+  if (service.database) return `${engineNames[service.database]}, set here`;
   return service.data_engine
-    ? "Postgres, detected from the image"
-    : "not detected from the image; choose postgres if it is one";
+    ? `${engineNames[service.data_engine]}, detected from the image`
+    : "not detected from the image; choose postgres or mysql if it is one";
 }
 
 /**

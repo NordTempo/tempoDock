@@ -285,6 +285,11 @@
       "bytes_op": 1852,
       "allocs_op": 48
     },
+    "data/mysql.BenchmarkAppendRow": {
+      "ns_op": 80088,
+      "bytes_op": 78,
+      "allocs_op": 0
+    },
     "data/pg.BenchmarkAppendRow": {
       "ns_op": 75476,
       "bytes_op": 123,

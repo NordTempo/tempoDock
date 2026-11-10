@@ -19,7 +19,8 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
 
 /**
  * How to reach the service from your machine: the `dock connect` line and
- * whether you may run it, then (for Postgres) the psql line, each with Copy.
+ * whether you may run it, then (for Postgres and MySQL) the client's line,
+ * each with Copy.
  */
 export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
@@ -42,10 +43,13 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     retry: false,
   });
   const cli = connectCli(ref, production);
+  const d = info.data;
   const psql =
-    info.data?.engine === "postgres"
-      ? `psql -h 127.0.0.1 -p ${info.data.port} -U ${info.data.user} ${info.data.database}`
-      : undefined;
+    d?.engine === "postgres"
+      ? `psql -h 127.0.0.1 -p ${d.port} -U ${d.user} ${d.database}`
+      : d?.engine === "mysql"
+        ? `mysql -h 127.0.0.1 -P ${d.port} -u ${d.user} -p ${d.database ?? ""}`.trimEnd()
+        : undefined;
   const row = (label: string, line: string) => (
     <div className="flex items-center gap-3">
       <span className="w-16 flex-none text-faint">{label}</span>

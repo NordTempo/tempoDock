@@ -19,7 +19,8 @@ tables and core holds one engine.
 ### Engines and the interface
 
 - Two engine IDs: `mysql` (MySQL 8.0+, MariaDB 10.6+) and `redis`
-  (Redis 7.0+, Valkey 7.2+), with the flavor in `DataInfo`. Standalone
+  (Redis 7.0+, Valkey 7.2+); MariaDB shows in the server version
+  ("MariaDB 11.4.4"). Standalone
   servers only: no Redis Cluster or Sentinel.
 - `data.Engine` is what every engine does (status, setup, grants,
   statements, changesets, insights, cancel). Capability interfaces add
@@ -42,14 +43,20 @@ tables and core holds one engine.
   its 67.8 MB budget, so it doesn't fit. `go-sql-driver/mysql` is smaller
   but MPL-2.0, which [0008](0008-keep-doors-open.md) rules out. The
   engine needs nothing else: no prepared statements, no binary protocol,
-  no pool.
+  no pool. Measured with it: `bin/dock` 67.0 MB to 67.3 MB, idle memory
+  unchanged.
 - Text protocol only, with one literal renderer for pages, filters and
-  changesets (the review shows the SQL that runs), on sessions pinned to
-  `NO_BACKSLASH_ESCAPES`, UTC, utf8mb4, 1 s lock waits (row and
-  metadata) and `CLIENT_FOUND_ROWS`. Multi-statements are never enabled.
+  changesets (the review shows the SQL that runs). Strings render as
+  `'...'` with quotes doubled, or as a `_utf8mb4 X'...'` hex literal when
+  they hold a backslash or a control byte, so a literal means the same in
+  every `sql_mode`; numbers render bare (MySQL compares a number column
+  with a quoted string as a double). Sessions are UTC and utf8mb4 with 1 s
+  lock waits (row and metadata); `CLIENT_FOUND_ROWS` makes updates count
+  matched rows. Multi-statements are never enabled.
   Reads time out with `max_execution_time` (MariaDB
   `max_statement_time`) and are cancelled with `KILL QUERY`.
-- Roles are users at `'%'` with `MAX_USER_CONNECTIONS 2`: the reader has
+- Roles are users at `'%'` with `MAX_USER_CONNECTIONS 3` (two cached
+  connections and one that sends `KILL QUERY`): the reader has
   `SELECT, SHOW VIEW ON db.*`, the writer DML, the masked reader column
   grants synced per table, the monitor `PROCESS` and `SELECT ON
   performance_schema.*`. None can read `mysql.*`.

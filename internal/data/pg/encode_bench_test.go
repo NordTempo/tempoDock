@@ -3,12 +3,14 @@ package pg
 import (
 	"strconv"
 	"testing"
+
+	"github.com/NordTempo/tempoDock/internal/data"
 )
 
 // BenchmarkAppendRow encodes one rows frame (500 rows of 8 typical columns)
 // into a reused buffer, as Query and Page do.
 func BenchmarkAppendRow(b *testing.B) {
-	kinds := []cellKind{kindNumber, kindString, kindString, kindBool, kindNumber, kindString, kindString, kindString}
+	kinds := []data.CellKind{data.CellNumber, data.CellString, data.CellString, data.CellBool, data.CellNumber, data.CellString, data.CellString, data.CellString}
 	src := []int{0, 1, 2, 3, 4, 5, 6, 7}
 	rows := make([][][]byte, 500)
 	for i := range rows {

@@ -19,6 +19,7 @@ import {
 } from "./api";
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
+import { engines } from "./engines";
 import { Act, ErrorText } from "./kit";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
@@ -46,6 +47,14 @@ export type DataPanelView = {
   filters?: DataFilter[];
   /** The Health tab's view; the overview when unset. */
   insight?: DataInsightView;
+};
+
+const tabLabels: Record<DataPanelView["tab"], string> = {
+  tables: "Tables",
+  sql: "SQL",
+  schema: "Schema",
+  changes: "Changes",
+  health: "Health",
 };
 
 const ranks: Record<DataLevel, number> = {
@@ -109,13 +118,10 @@ export function DataPanel({
     (c) => c.status === "pending",
   ).length;
 
-  const tabList: { tab: DataPanelView["tab"]; label: string }[] = [
-    { tab: "tables", label: "Tables" },
-    { tab: "sql", label: "SQL" },
-    { tab: "schema", label: "Schema" },
-    ...(showChanges ? [{ tab: "changes", label: "Changes" } as const] : []),
-    { tab: "health", label: "Health" },
-  ];
+  const engine = engines[info.data?.engine ?? "postgres"];
+  const tabList = engine.tabs
+    .filter((tab) => tab !== "changes" || showChanges)
+    .map((tab) => ({ tab, label: tabLabels[tab] }));
   // Digits pick the nth tab.
   const tabs = tabList.map((t, i) => ({ ...t, key: String(i + 1) }));
   // SQL the Health tab hands over ("Explain in SQL"); the editor opens
@@ -214,7 +220,7 @@ export function DataPanel({
         <p className="p-5 text-(--g-fail)">{schema.error.message}</p>
       ) : !schema.data ? (
         <p className="p-5 text-(--g-mut)">Reading the catalog</p>
-      ) : view.tab === "health" ? (
+      ) : view.tab === "health" && engine.tabs.includes("health") ? (
         <Suspense
           fallback={<p className="p-5 text-(--g-mut)">Loading Health</p>}
         >
@@ -247,6 +253,7 @@ export function DataPanel({
             <SqlView
               key={sqlDraft?.n}
               tables={tables}
+              dialect={engine.dialect}
               initialSql={sqlDraft?.sql}
             />
           </Suspense>

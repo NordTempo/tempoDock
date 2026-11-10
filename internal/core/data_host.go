@@ -49,7 +49,7 @@ func (c *Core) dataDB(ctx context.Context, a Actor, ref ServiceRef) (*datapanel.
 	}
 	engine, by := detectDatabase(ss.svc)
 	if engine == "" {
-		return nil, notFound("%s is not a database; if it is Postgres, set its database setting to postgres", ss)
+		return nil, notFound("%s is not a database; if it is Postgres or MySQL, set its database setting to postgres or mysql", ss)
 	}
 	perm, err := c.dataPermission(ctx, a, ss.envScope)
 	if err != nil {

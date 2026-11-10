@@ -44,7 +44,7 @@ type pagePlan struct {
 	columns   []apitypes.DataResultColumn
 	// src and kinds are per output column (see appendRow).
 	src   []int
-	kinds []cellKind
+	kinds []data.CellKind
 	order []orderCol
 	limit int
 	full  bool
@@ -153,12 +153,12 @@ func planPage(tm *tableMeta, req apitypes.DataPageRequest, masked map[string]boo
 	selects := make([]string, 0, len(tm.Columns)+2)
 	plan.columns = make([]apitypes.DataResultColumn, len(tm.Columns))
 	plan.src = make([]int, len(tm.Columns))
-	plan.kinds = make([]cellKind, len(tm.Columns))
+	plan.kinds = make([]data.CellKind, len(tm.Columns))
 	at := map[string]int{}
 	for i, col := range tm.Columns {
 		plan.columns[i] = apitypes.DataResultColumn{Name: col.Name, TypeName: col.TypeName}
 		if masked[col.Name] {
-			plan.src[i], plan.kinds[i] = -1, kindMasked
+			plan.src[i], plan.kinds[i] = -1, data.CellMasked
 			continue
 		}
 		at[col.Name] = len(selects)
