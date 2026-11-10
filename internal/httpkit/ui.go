@@ -5,10 +5,11 @@
 package httpkit
 
 import (
-	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/fs"
 	"mime"
@@ -23,16 +24,23 @@ import (
 // index.html for client-side routes, and placeholder (an HTML page) when
 // the UI hasn't been built. Paths under /api/ are 404: the API owns them.
 //
-// Text assets go out gzip-compressed to clients that accept it. Each file
-// is compressed once, on its first request, and kept: dist is embedded and
-// finite, so the cache is bounded (about the size of the gzipped UI).
-// Vite's hashed files under /assets/ never change and are cached for a
-// year; everything else (index.html) is revalidated with an ETag.
+// The build gzips text assets (web/gzipDist.ts): dist holds name.gz in
+// place of name, and those bytes go out as they are to clients that
+// accept gzip (nearly all), and are decompressed on the fly for the rest.
+// Nothing is compressed or kept in memory at run time beyond each file's
+// size and ETag. Vite's hashed files under /assets/ never change and are
+// cached for a year; everything else (index.html) is revalidated with an
+// ETag.
 func UIHandler(dist fs.FS, placeholder string) http.Handler {
 	assets := map[string]*uiAsset{}
 	_ = fs.WalkDir(dist, ".", func(p string, d fs.DirEntry, err error) error {
-		if err == nil && !d.IsDir() {
-			assets[p] = &uiAsset{fsys: dist, name: p}
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if served, ok := strings.CutSuffix(p, ".gz"); ok {
+			assets[served] = &uiAsset{fsys: dist, name: p, served: served, gzipped: true}
+		} else if assets[p] == nil {
+			assets[p] = &uiAsset{fsys: dist, name: p, served: p}
 		}
 		return nil
 	})
@@ -58,24 +66,22 @@ func UIHandler(dist fs.FS, placeholder string) http.Handler {
 // uiAsset is one file of the UI, prepared on its first request.
 type uiAsset struct {
 	fsys fs.FS
-	name string
+	// name is the file in fsys; served the path it answers for (name
+	// without .gz when gzipped).
+	name, served string
+	gzipped      bool
 
-	once        sync.Once
-	err         error
-	size        int
-	gz          []byte // nil when compressing doesn't pay
-	etag, ctype string
+	once sync.Once
+	err  error
+	// size is the uncompressed size; gzSize the file's when gzipped.
+	size, gzSize int
+	etag, ctype  string
 }
 
-// compressible are the file types worth gzipping; fonts and images are
-// compressed already.
-var compressible = map[string]bool{
-	".html": true, ".js": true, ".mjs": true, ".css": true, ".json": true,
-	".svg": true, ".txt": true, ".map": true, ".webmanifest": true, ".xml": true,
-}
-
-// load computes the asset's ETag and gzipped body. The uncompressed body
-// isn't kept: it is read from the embedded files, which are in the binary.
+// load computes the asset's sizes, ETag and type. A gzipped file's
+// uncompressed size is its gzip trailer's (the UI's files are far below
+// 4 GB); its ETag is of the compressed bytes, which the build makes
+// reproducibly. Nothing is kept but these.
 func (a *uiAsset) load() {
 	raw, err := fs.ReadFile(a.fsys, a.name)
 	if err != nil {
@@ -83,25 +89,23 @@ func (a *uiAsset) load() {
 		return
 	}
 	a.size = len(raw)
+	if a.gzipped {
+		if len(raw) < 18 {
+			a.err = errors.New("short gzip file")
+			return
+		}
+		a.gzSize, a.size = len(raw), int(binary.LittleEndian.Uint32(raw[len(raw)-4:]))
+	}
 	sum := sha256.Sum256(raw)
 	a.etag = `"` + hex.EncodeToString(sum[:12]) + `"`
-	ext := path.Ext(a.name)
-	if a.ctype = mime.TypeByExtension(ext); a.ctype == "" {
+	if a.ctype = mime.TypeByExtension(path.Ext(a.served)); a.ctype == "" {
 		a.ctype = "application/octet-stream"
-	}
-	if !compressible[ext] || len(raw) < 512 {
-		return
-	}
-	var buf bytes.Buffer
-	zw, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	_, _ = zw.Write(raw)
-	if zw.Close() == nil && buf.Len() < len(raw)*9/10 {
-		a.gz = bytes.Clone(buf.Bytes())
 	}
 }
 
-// serve writes the asset, gzipped when the client accepts it, or 304 when
-// the client's copy is current. immutable marks a content-hashed file.
+// serve writes the asset, gzipped when it is and the client accepts it,
+// or 304 when the client's copy is current. immutable marks a
+// content-hashed file.
 func (a *uiAsset) serve(w http.ResponseWriter, r *http.Request, immutable bool) {
 	a.once.Do(a.load)
 	if a.err != nil {
@@ -116,10 +120,10 @@ func (a *uiAsset) serve(w http.ResponseWriter, r *http.Request, immutable bool) 
 	} else {
 		h.Set("Cache-Control", "no-cache")
 	}
-	gzipped := false
-	if a.gz != nil {
+	sendGzip := false
+	if a.gzipped {
 		h.Set("Vary", "Accept-Encoding")
-		if gzipped = acceptsGzip(r.Header.Get("Accept-Encoding")); gzipped {
+		if sendGzip = acceptsGzip(r.Header.Get("Accept-Encoding")); sendGzip {
 			h.Set("Content-Encoding", "gzip")
 		}
 	}
@@ -127,14 +131,11 @@ func (a *uiAsset) serve(w http.ResponseWriter, r *http.Request, immutable bool) 
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	if gzipped {
-		h.Set("Content-Length", strconv.Itoa(len(a.gz)))
-		if r.Method != http.MethodHead {
-			_, _ = w.Write(a.gz)
-		}
-		return
+	size := a.size
+	if sendGzip {
+		size = a.gzSize
 	}
-	h.Set("Content-Length", strconv.Itoa(a.size))
+	h.Set("Content-Length", strconv.Itoa(size))
 	if r.Method == http.MethodHead {
 		return
 	}
@@ -143,7 +144,15 @@ func (a *uiAsset) serve(w http.ResponseWriter, r *http.Request, immutable bool) 
 		return
 	}
 	defer func() { _ = f.Close() }()
-	_, _ = io.Copy(w, f)
+	var body io.Reader = f
+	if a.gzipped && !sendGzip {
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			return
+		}
+		body = zr
+	}
+	_, _ = io.Copy(w, body)
 }
 
 // acceptsGzip reports whether an Accept-Encoding header allows gzip.

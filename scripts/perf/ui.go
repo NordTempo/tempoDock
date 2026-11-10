@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -39,7 +41,7 @@ func checkUI(o options, t *table) error {
 		if err != nil || e.IsDir() {
 			return err
 		}
-		switch filepath.Ext(p) {
+		switch filepath.Ext(strings.TrimSuffix(p, ".gz")) {
 		case ".woff2", ".woff", ".ttf", ".otf":
 			info, err := e.Info()
 			if err != nil {
@@ -48,7 +50,7 @@ func checkUI(o options, t *table) error {
 			fonts += info.Size()
 			fontFiles++
 		case ".js":
-			n, err := gzipSize(p)
+			n, err := gzipSize(strings.TrimSuffix(p, ".gz"))
 			if err != nil {
 				return err
 			}
@@ -127,7 +129,7 @@ func initialAssets(dist string) (assets, error) {
 	}
 	for _, m := range stylesheetRe.FindAllSubmatch(index, -1) {
 		sheet := filepath.Join(dist, strings.TrimPrefix(string(m[1]), "/"))
-		b, err := os.ReadFile(sheet)
+		b, err := readDist(sheet)
 		if err != nil {
 			return assets{}, err
 		}
@@ -146,7 +148,12 @@ func initialAssets(dist string) (assets, error) {
 	return a, nil
 }
 
+// gzipSize is a built file's gzipped size: its .gz as the build wrote it
+// (web/gzipDist.ts), else the file gzipped here.
 func gzipSize(path string) (int64, error) {
+	if st, err := os.Stat(path + ".gz"); err == nil {
+		return st.Size(), nil
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err
@@ -160,4 +167,22 @@ func gzipSize(path string) (int64, error) {
 		return 0, err
 	}
 	return int64(buf.Len()), nil
+}
+
+// readDist reads a built file, from its .gz when the build compressed it.
+func readDist(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if !errors.Is(err, fs.ErrNotExist) {
+		return b, err
+	}
+	f, err := os.Open(path + ".gz")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(zr)
 }
