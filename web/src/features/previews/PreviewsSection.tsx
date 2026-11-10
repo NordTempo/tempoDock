@@ -116,6 +116,13 @@ export function PreviewsSection({ project }: { project: string }) {
                   <span className="text-mut">none, volumes start empty</span>
                 )}
               </Item>
+              <Item label="Sleep after">
+                {s.sleep_after_minutes > 0 ? (
+                  `${minutes(s.sleep_after_minutes)} without requests`
+                ) : (
+                  <span className="text-mut">never, previews stay up</span>
+                )}
+              </Item>
               <Item label="Forks">
                 {s.allow_forks ? (
                   <span className="text-warn">previewed</span>
@@ -164,3 +171,7 @@ function Item({ label, children }: { label: string; children: ReactNode }) {
     </>
   );
 }
+
+/** Minutes as people say them: "30 min", "2h". */
+export const minutes = (m: number) =>
+  m % 60 === 0 ? `${m / 60}h` : `${m} min`;

@@ -188,6 +188,11 @@ const askPath = "/internal/caddy/ask"
 // the control plane and on nodes alike.
 const accessPath = "/internal/caddy/access"
 
+// wakePath is where the wake check of asleep environments' routes is
+// served on the internal listener (api.WakePath); on the control plane
+// only, as only its environments sleep.
+const wakePath = "/internal/caddy/wake"
+
 // unjoinedMarker stands in for a server's marker where Caddy needs one
 // before the server knows its own: `dock admin caddy-config` on a tunnel
 // node that hasn't joined yet. The daemon replaces the whole config with
@@ -211,6 +216,7 @@ func caddyOptions(cfg config.Config, marker string) caddy.Options {
 		DisableTLS:     cfg.Caddy.DisableTLS,
 		AskURL:         "http://" + cfg.InternalListen + askPath,
 		AccessURL:      "http://" + cfg.InternalListen + accessPath,
+		WakeURL:        "http://" + cfg.InternalListen + wakePath,
 		PublicIPs:      publicIPs(cfg),
 		ServerMarker:   marker,
 		TunnelHostname: cfg.Ingress.TunnelHostname,

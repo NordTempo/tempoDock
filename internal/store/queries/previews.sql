@@ -4,12 +4,12 @@
 SELECT * FROM preview_settings WHERE project_id = +?;
 
 -- name: UpsertPreviewSettings :exec
-INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, sleep_after_minutes, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET
     base_environment_id = excluded.base_environment_id, max_previews = excluded.max_previews,
     copy_variables = excluded.copy_variables, allow_forks = excluded.allow_forks,
-    seed_from_snapshot = excluded.seed_from_snapshot,
+    seed_from_snapshot = excluded.seed_from_snapshot, sleep_after_minutes = excluded.sleep_after_minutes,
     updated_by = excluded.updated_by, updated_at = excluded.updated_at;
 
 -- name: DeletePreviewSettings :execrows

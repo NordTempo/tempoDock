@@ -40,6 +40,7 @@ func (noProxy) Forward(context.Context, int) (net.Listener, error) {
 	return nil, errors.New("no forwarding in this test")
 }
 func (noProxy) EnsureTunnel(context.Context, *node.TunnelSpec) error { return nil }
+func (noProxy) OpenRequests(context.Context, []string) (int, error)  { return 0, nil }
 
 // noStats keeps the minute statistics tick from sampling (and from calling
 // a nil Stats) during these tests.

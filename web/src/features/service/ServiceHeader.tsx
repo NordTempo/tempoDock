@@ -39,6 +39,7 @@ import {
   stepPhrase,
 } from "../../ui/status";
 import { openDeploy } from "../deploy/start";
+import { sleepCli, useWakeEnvironment } from "../overview/EnvironmentSleep";
 import { EnvServer } from "../servers/parts";
 import { ArchiveConfirm } from "./ArchiveConfirm";
 import { useRestartService, useStartService, useStopService } from "./data";
@@ -577,6 +578,20 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     "rollback" | "stop" | "archive" | "restart" | null
   >(null);
   const stopped = !!service.stopped_at;
+  // Its environment is asleep: anyone who sees it may wake it, as opening
+  // its address does.
+  const wake = useWakeEnvironment();
+  const envRef = { project: ref.project, environment: ref.environment };
+  const wakeButton = service.status.state === "asleep" && (
+    <Act
+      cli={sleepCli("wake", envRef)}
+      disabled={wake.isPending}
+      title={`Start every service of ${ref.environment} again`}
+      onClick={() => wake.mutate(envRef)}
+    >
+      {wake.isPending ? "Waking" : "Wake"}
+    </Act>
+  );
   // An unreachable server blocks every action that starts a release.
   const blocked = useDeployBlock(ref);
   const busy =
@@ -670,7 +685,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   useShortcuts(mayDeploy ? shortcuts : []);
 
   // Read-only callers see the state, not buttons they can't use.
-  if (!mayDeploy) return null;
+  if (!mayDeploy) return wakeButton || null;
 
   const close = () => setConfirming(null);
   // The question in a modal over the page; the buttons stay where they are.
@@ -737,6 +752,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   return (
     <div className="flex flex-wrap items-start gap-2">
       {asking}
+      {wakeButton}
       {stopped ? (
         <Act
           // Stopped, starting it is the next step: it is the primary.

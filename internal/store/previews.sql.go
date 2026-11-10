@@ -371,7 +371,7 @@ func (q *Queries) GetPreviewByEnvironment(ctx context.Context, environmentID int
 
 const getPreviewSettings = `-- name: GetPreviewSettings :one
 
-SELECT project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at, seed_from_snapshot FROM preview_settings WHERE project_id = +?
+SELECT project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at, seed_from_snapshot, sleep_after_minutes FROM preview_settings WHERE project_id = +?
 `
 
 // Preview environments per pull request (ADR 0056).
@@ -387,6 +387,7 @@ func (q *Queries) GetPreviewSettings(ctx context.Context, projectID int64) (Prev
 		&i.UpdatedBy,
 		&i.UpdatedAt,
 		&i.SeedFromSnapshot,
+		&i.SleepAfterMinutes,
 	)
 	return i, err
 }
@@ -858,12 +859,12 @@ func (q *Queries) UpdatePreviewHead(ctx context.Context, arg UpdatePreviewHeadPa
 }
 
 const upsertPreviewSettings = `-- name: UpsertPreviewSettings :exec
-INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, sleep_after_minutes, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET
     base_environment_id = excluded.base_environment_id, max_previews = excluded.max_previews,
     copy_variables = excluded.copy_variables, allow_forks = excluded.allow_forks,
-    seed_from_snapshot = excluded.seed_from_snapshot,
+    seed_from_snapshot = excluded.seed_from_snapshot, sleep_after_minutes = excluded.sleep_after_minutes,
     updated_by = excluded.updated_by, updated_at = excluded.updated_at
 `
 
@@ -874,6 +875,7 @@ type UpsertPreviewSettingsParams struct {
 	CopyVariables     string
 	AllowForks        bool
 	SeedFromSnapshot  string
+	SleepAfterMinutes int64
 	UpdatedBy         string
 	UpdatedAt         time.Time
 }
@@ -886,6 +888,7 @@ func (q *Queries) UpsertPreviewSettings(ctx context.Context, arg UpsertPreviewSe
 		arg.CopyVariables,
 		arg.AllowForks,
 		arg.SeedFromSnapshot,
+		arg.SleepAfterMinutes,
 		arg.UpdatedBy,
 		arg.UpdatedAt,
 	)

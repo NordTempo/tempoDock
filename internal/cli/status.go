@@ -159,6 +159,9 @@ func printEnvironment(g *globals, env apitypes.EnvironmentOverview) error {
 	if l := lockWords(e.Lock); l != "" {
 		header += ", " + l
 	}
+	if s := sleepWords(e.Sleep); s != "" {
+		header += ", " + s
+	}
 	if env.PendingChanges > 0 {
 		header += fmt.Sprintf(", %s (see `dock changes`)", plural(env.PendingChanges, "staged change"))
 	}

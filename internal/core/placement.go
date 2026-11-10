@@ -328,6 +328,8 @@ func (o offlineRuntime) PruneBuildCache(context.Context, int64) (node.PruneResul
 	return node.PruneResult{}, o.err
 }
 func (o offlineRuntime) EnsureNetwork(context.Context, string, node.Labels) error { return o.err }
+func (o offlineRuntime) Resume(context.Context, string) error                     { return o.err }
+func (o offlineRuntime) OpenRequests(context.Context, []string) (int, error)      { return 0, o.err }
 func (o offlineRuntime) RemoveNetwork(context.Context, string, node.Labels) error { return o.err }
 func (o offlineRuntime) EnsureVolume(context.Context, string, node.Labels) error  { return o.err }
 func (o offlineRuntime) RemoveVolume(context.Context, string, node.Labels) error  { return o.err }

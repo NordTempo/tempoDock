@@ -86,6 +86,7 @@ func (c *Core) previewSettings(ctx context.Context, a Actor, p store.Project) (a
 		out.Enabled, out.Base, out.MaxPreviews, out.AllowForks = true, base.Name, int(set.MaxPreviews), set.AllowForks
 		out.CopyVariables, out.UpdatedBy, out.UpdatedAt = copyList(set.CopyVariables), set.UpdatedBy, &t
 		out.SeedFromSnapshot = copyList(set.SeedFromSnapshot)
+		out.SleepAfterMinutes = int(set.SleepAfterMinutes)
 	case !store.IsNotFound(err):
 		return out, err
 	}
@@ -127,6 +128,16 @@ func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req api
 	if max < 1 || max > maxMaxPreviews {
 		return apitypes.PreviewSettings{}, invalid("max previews must be 1-%d", maxMaxPreviews)
 	}
+	sleepAfter := req.SleepAfterMinutes
+	switch sleepAfter {
+	case 0:
+		sleepAfter = apitypes.SleepAfterDefault
+	case -1:
+		sleepAfter = 0
+	}
+	if err := validSleepAfter(sleepAfter); err != nil {
+		return apitypes.PreviewSettings{}, err
+	}
 	vars := make([]string, 0, len(req.CopyVariables))
 	for _, v := range req.CopyVariables {
 		v = strings.TrimSpace(v)
@@ -158,12 +169,20 @@ func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req api
 	if err != nil && !store.IsNotFound(err) {
 		return apitypes.PreviewSettings{}, err
 	}
-	if err := c.store.UpsertPreviewSettings(ctx, store.UpsertPreviewSettingsParams{
-		ProjectID: p.ID, BaseEnvironmentID: es.env.ID, MaxPreviews: int64(max), CopyVariables: string(list),
-		AllowForks: req.AllowForks, SeedFromSnapshot: seedList, UpdatedBy: a.Name, UpdatedAt: now(),
-	}); err != nil {
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.UpsertPreviewSettings(ctx, store.UpsertPreviewSettingsParams{
+			ProjectID: p.ID, BaseEnvironmentID: es.env.ID, MaxPreviews: int64(max), CopyVariables: string(list),
+			AllowForks: req.AllowForks, SeedFromSnapshot: seedList, SleepAfterMinutes: int64(sleepAfter), UpdatedBy: a.Name, UpdatedAt: now(),
+		}); err != nil {
+			return err
+		}
+		// Open previews follow the project's setting.
+		return q.SetPreviewsSleepAfter(ctx, store.SetPreviewsSleepAfterParams{SleepAfterMinutes: int64(sleepAfter), ProjectID: p.ID})
+	})
+	if err != nil {
 		return apitypes.PreviewSettings{}, err
 	}
+	c.reloadSleep(ctx)
 	action, summary := "previews.enable", "previews of pull requests on, "
 	if existed {
 		action, summary = "previews.update", "previews of pull requests: "
@@ -177,6 +196,11 @@ func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req api
 	}
 	if len(seeds) > 0 {
 		summary += "; seeded from snapshots: " + strings.Join(seeds, ", ")
+	}
+	if sleepAfter > 0 {
+		summary += fmt.Sprintf("; they sleep after %d minutes without requests", sleepAfter)
+	} else {
+		summary += "; they never sleep"
 	}
 	c.audit(ctx, a, action, &p, &es.env, es.String(), summary)
 	return c.previewSettings(ctx, a, p)
@@ -678,6 +702,12 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 			}
 			return conflict("server %s's disk is past [retention] prune_disk_percent; free space on it (`dock server prune %s`) before previews go there", srv.Name, srv.Name)
 		}
+		if set.SleepAfterMinutes > 0 {
+			// It sleeps when nobody looks at it (sleep.go).
+			if e, err = q.SetEnvironmentSleepAfter(ctx, store.SetEnvironmentSleepAfterParams{SleepAfterMinutes: set.SleepAfterMinutes, ID: e.ID}); err != nil {
+				return err
+			}
+		}
 		dst = envScope{p, e}
 		if _, err := c.cloneInto(ctx, q, base, dst, rules, base.env.Kind != string(apitypes.KindNonProduction), &clone); err != nil {
 			return err
@@ -716,6 +746,7 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 	if err != nil {
 		return "", err
 	}
+	c.reloadSleep(ctx)
 	summary := fmt.Sprintf("preview of %s#%d (%s) at %s: %s", repo, number, head.title, shortSHA(head.sha), cloneSummary(base, apitypes.CloneResult{
 		Environment: apitypes.Environment{Kind: apitypes.EnvironmentKind(dst.env.Kind)}, Services: clone.Services, Variables: clone.Variables, Volumes: clone.Volumes,
 		Generated: clone.Generated, Skipped: clone.Skipped, SourceKind: apitypes.EnvironmentKind(base.env.Kind),

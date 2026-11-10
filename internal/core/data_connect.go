@@ -89,6 +89,9 @@ func (c *Core) tunnelTarget(ctx context.Context, ss svcScope, withURL bool) (tun
 	if ss.svc.StoppedAt != nil {
 		notRunning = errf(apitypes.CodeConflict, "%s is stopped; start it (`dock service start`) to connect", ss)
 	}
+	// Connecting is a visit: an asleep environment wakes for it.
+	c.wakeFor(ctx, ss.envScope, "data panel")
+	c.touchSleep(ss.env.ID)
 	if engine, _ := detectDatabase(ss.svc); engine == apitypes.EnginePostgres {
 		conn, err := c.dbConnection(ctx, ss)
 		if errors.Is(err, errNotRunning) {

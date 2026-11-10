@@ -228,6 +228,10 @@ function health(o: ProjectOverview | undefined) {
       ).length,
       "stopped",
     ],
+    [
+      services.filter((s) => s.service.status.state === "asleep").length,
+      "asleep",
+    ],
   ] as const;
   // Each part in its own state's colour: green covers only what runs.
   const note: Part[] = idle

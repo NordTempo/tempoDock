@@ -20,10 +20,13 @@ type PreviewSettings struct {
 	AllowForks    bool     `json:"allow_forks" doc:"Also preview pull requests from forks (off by default)"`
 	// SeedFromSnapshot are the base's services whose volumes a new
 	// preview fills from their latest snapshot.
-	SeedFromSnapshot []string   `json:"seed_from_snapshot" doc:"Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty"`
-	UpdatedBy        string     `json:"updated_by,omitempty"`
-	UpdatedAt        *time.Time `json:"updated_at,omitempty"`
-	Previews         []Preview  `json:"previews" doc:"Open previews, newest first"`
+	SeedFromSnapshot []string `json:"seed_from_snapshot" doc:"Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty"`
+	// SleepAfterMinutes is how long a preview may go without requests
+	// before it sleeps; 0 when previews never sleep.
+	SleepAfterMinutes int        `json:"sleep_after_minutes" doc:"Minutes without requests before a preview sleeps; 0 when previews never sleep"`
+	UpdatedBy         string     `json:"updated_by,omitempty"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
+	Previews          []Preview  `json:"previews" doc:"Open previews, newest first"`
 }
 
 // SetPreviewsRequest turns previews on, or changes their settings.
@@ -34,6 +37,8 @@ type SetPreviewsRequest struct {
 	AllowForks    bool     `json:"allow_forks,omitempty" doc:"Also preview pull requests from forks"`
 	// SeedFromSnapshot names base services seeded in each new preview.
 	SeedFromSnapshot []string `json:"seed_from_snapshot,omitempty" maxItems:"20" doc:"Base services whose volumes a new preview fills from their latest snapshot, e.g. db"`
+	// SleepAfterMinutes is 0 for the default (30), -1 for never.
+	SleepAfterMinutes int `json:"sleep_after_minutes,omitempty" minimum:"-1" maximum:"1440" doc:"Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never"`
 }
 
 // PreviewStatus sums up a preview's services.

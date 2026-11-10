@@ -168,6 +168,10 @@ type Containers interface {
 	// by it. Core calls it for a container whose health check keeps
 	// failing (ADR 0043).
 	Restart(ctx context.Context, id string, timeout time.Duration) error
+	// Resume starts a stopped managed container again: same ID, port and
+	// volumes. Core calls it to wake a sleeping environment, whose
+	// containers it stopped with Stop. A running one is left alone.
+	Resume(ctx context.Context, id string) error
 	// Remove removes a stopped container. Its anonymous volumes (an
 	// image's VOLUME no Dock volume covers) go with it, unless
 	// opts.KeepAnonymousVolumes. Never removes a named volume.
@@ -452,6 +456,11 @@ type Proxy interface {
 	// ApplyRoutes replaces the full routing table atomically. If the new
 	// config is rejected, the previous one stays in effect.
 	ApplyRoutes(ctx context.Context, routes []Route) error
+	// OpenRequests returns how many requests Caddy is proxying to
+	// upstreams (host:port) right now, websockets and streams included:
+	// core asks it before an environment sleeps, since the access log
+	// only sees a request once it ends.
+	OpenRequests(ctx context.Context, upstreams []string) (int, error)
 	// CheckDomain reports whether hostname's DNS points at this server and
 	// whether a valid certificate is being served for it.
 	CheckDomain(ctx context.Context, hostname string) (DomainCheck, error)
@@ -944,6 +953,15 @@ type Route struct {
 	// yet started on the other for a few seconds (ADR 0063), and a
 	// forwarded route's listener only accepts once the target serves.
 	Hold bool
+	// Wake, when set, is the key of the asleep environment the route
+	// belongs to: before proxying, after its access check, Caddy asks
+	// the server's wake check (Options.WakeURL), which wakes the
+	// environment and holds the request until it is awake.
+	Wake string
+	// QuietProbes keeps Dock's uptime probes (User-Agent dock-uptime/*)
+	// out of the access log, so they don't count as traffic and can't
+	// keep an environment that sleeps awake.
+	QuietProbes bool
 }
 
 // HoldFor is how long a Hold route waits for its upstream.

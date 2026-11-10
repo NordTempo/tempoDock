@@ -130,8 +130,9 @@ type route struct {
 }
 
 type match struct {
-	Host []string `json:"host"`
-	Path []string `json:"path,omitempty"`
+	Host   []string            `json:"host"`
+	Path   []string            `json:"path,omitempty"`
+	Header map[string][]string `json:"header,omitempty"`
 }
 
 // handler covers the handlers we use: reverse_proxy, static_response,
@@ -418,6 +419,22 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 				handle = append(handle, passwordAccess(r.Access)...)
 			}
 		}
+		if r.Wake != "" && r.RedirectTo == "" && r.Stopped == "" {
+			// After the access check: a stranger at a protected route
+			// never wakes it.
+			handle = append(handle, wakeCheck(opts.wakeCheck, r.Wake)...)
+		}
+		if r.QuietProbes && r.RedirectTo == "" {
+			// Ahead of the route and not terminal: Dock's uptime probes go
+			// on to it, without an access log line.
+			q := route{Match: []match{{Host: r.Hostnames, Header: map[string][]string{"User-Agent": {uptimeAgent}}}}, Handle: []handler{{Handler: "vars", LogSkip: true}}}
+			if public {
+				main = append(main, q)
+			}
+			if tunnelListener {
+				viaTunnel = append(viaTunnel, q)
+			}
+		}
 		// The analytics route goes ahead of the service's, on every listener
 		// that serves the route: tunnel visitors are counted too.
 		if r.RedirectTo == "" && opts.AnalyticsAddr != "" {
@@ -645,6 +662,41 @@ func loginAccess(check accessCheck, a *node.Access) []handler {
 	}
 }
 
+// wakeKeyHeader carries a route's environment key to the wake check,
+// set by Caddy from the route and replacing any a client sent.
+const wakeKeyHeader = "X-Dock-Wake"
+
+// uptimeAgent matches the User-Agent of Dock's uptime probes
+// (internal/node/uptime), which never count as an environment's traffic.
+const uptimeAgent = "dock-uptime/*"
+
+// wakeCheck asks the server's wake check before an asleep environment's
+// route proxies, the way loginAccess asks the access check: the request's
+// method, URI and headers go along (a GET without the body). The check
+// holds the request while the environment wakes; a 2xx lets it on to the
+// app, which is running then, and anything else (the waking page, a 503)
+// goes back to the client as it is.
+func wakeCheck(check accessCheck, key string) []handler {
+	return []handler{
+		{Handler: "headers", Request: &headerOps{Set: map[string][]string{
+			wakeKeyHeader:   {key},
+			forwardedMethod: {"{http.request.method}"},
+			forwardedURI:    {"{http.request.uri}"},
+		}}},
+		{
+			Handler:   "reverse_proxy",
+			Upstreams: []upstream{{Dial: check.dial}},
+			Rewrite:   &rewrite{Method: http.MethodGet, URI: check.path},
+			HandleResponse: []responseHandler{{
+				Match: responseMatch{StatusCode: []int{2}},
+				Routes: []route{{Handle: []handler{{Handler: "headers", Request: &headerOps{
+					Delete: []string{wakeKeyHeader, forwardedMethod, forwardedURI},
+				}}}}},
+			}},
+		},
+	}
+}
+
 func redirect(location string) handler {
 	return handler{
 		Handler:    "static_response",
@@ -714,6 +766,9 @@ func validateRoutes(opts Options, routes []node.Route) error {
 		if r.Upstream == "" && r.RedirectTo == "" && r.Stopped == "" {
 			return fmt.Errorf("route for %s needs an upstream or a redirect target", r.Hostnames[0])
 		}
+		if r.Wake != "" && (opts.wakeCheck.dial == "" || !validWakeKey(r.Wake)) {
+			return fmt.Errorf("route for %s: a wake key needs the wake check URL (Options.WakeURL) and must be digits, not %q", r.Hostnames[0], r.Wake)
+		}
 		if r.Stopped != "" && !validHostname(r.Stopped) {
 			// A service name; it goes into the page, where Caddy would
 			// expand a placeholder.
@@ -736,6 +791,20 @@ func validateRoutes(opts Options, routes []node.Route) error {
 		}
 	}
 	return nil
+}
+
+// validWakeKey reports whether key is an environment key: digits only, so
+// Caddy never expands it as a placeholder.
+func validWakeKey(key string) bool {
+	if key == "" || len(key) > 20 {
+		return false
+	}
+	for _, c := range key {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // validateAccess keeps an access setting complete and free of anything

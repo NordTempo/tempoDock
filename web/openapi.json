@@ -5329,6 +5329,9 @@
               "revoked"
             ],
             "type": "string"
+          },
+          "sleep": {
+            "$ref": "#/components/schemas/EnvironmentSleep"
           }
         },
         "required": [
@@ -5585,6 +5588,56 @@
           "environment",
           "pending_changes",
           "services"
+        ],
+        "type": "object"
+      },
+      "EnvironmentSleep": {
+        "additionalProperties": false,
+        "properties": {
+          "after_minutes": {
+            "description": "Minutes without requests before it sleeps; 0 when it sleeps only when asked",
+            "format": "int64",
+            "type": "integer"
+          },
+          "blocked": {
+            "type": "string"
+          },
+          "freed_bytes": {
+            "description": "Memory its containers used when it went to sleep",
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_request_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sleeps_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "slept_by": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "awake",
+              "sleeping",
+              "asleep",
+              "waking"
+            ],
+            "type": "string"
+          },
+          "woke_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "after_minutes",
+          "state"
         ],
         "type": "object"
       },
@@ -6138,6 +6191,9 @@
           "service_status": {
             "$ref": "#/components/schemas/ServiceStatus"
           },
+          "sleep": {
+            "$ref": "#/components/schemas/EnvironmentSleep"
+          },
           "time": {
             "format": "date-time",
             "type": "string"
@@ -6170,7 +6226,8 @@
               "job",
               "environment_move",
               "server_drain",
-              "cloudflare_redirect"
+              "cloudflare_redirect",
+              "sleep"
             ],
             "type": "string"
           },
@@ -8228,6 +8285,11 @@
               "null"
             ]
           },
+          "sleep_after_minutes": {
+            "description": "Minutes without requests before a preview sleeps; 0 when previews never sleep",
+            "format": "int64",
+            "type": "integer"
+          },
           "updated_at": {
             "format": "date-time",
             "type": "string"
@@ -8242,6 +8304,7 @@
           "copy_variables",
           "allow_forks",
           "seed_from_snapshot",
+          "sleep_after_minutes",
           "previews"
         ],
         "type": "object"
@@ -10910,6 +10973,7 @@
               "restarting",
               "crashed",
               "stopped",
+              "asleep",
               "none"
             ],
             "type": "string"
@@ -11288,6 +11352,13 @@
               "array",
               "null"
             ]
+          },
+          "sleep_after_minutes": {
+            "description": "Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": -1,
+            "type": "integer"
           }
         },
         "required": [
@@ -11330,6 +11401,22 @@
         },
         "required": [
           "columns"
+        ],
+        "type": "object"
+      },
+      "SetSleepRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "after_minutes": {
+            "description": "Minutes without requests before it sleeps, 5 to 1440; 0 turns sleeping off",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "after_minutes"
         ],
         "type": "object"
       },
@@ -46940,6 +47027,316 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/environments/{environment}/sleep": {
+      "post": {
+        "description": "Stops its services' containers, keeping them; the next request to its domains, a deploy or a run wakes it. Production environments never sleep. Scope: deploy.",
+        "operationId": "sleep-environment",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Put an environment to sleep",
+        "tags": [
+          "environments"
+        ]
+      },
+      "put": {
+        "description": "How many minutes without requests a non-production environment may go before it sleeps (5 to 1440); 0 turns it off. Previews take their project's preview setting. Scope: admin.",
+        "operationId": "set-environment-sleep",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSleepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change when an environment sleeps",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/environments/{environment}/unlock": {
       "post": {
         "description": "Unlocks it, or with `minutes` opens it for that long, after which it locks again by itself. The lock applies: a token asking to unlock gets an access request. Scope: admin.",
@@ -47424,6 +47821,157 @@
         "summary": "Stage variable changes",
         "tags": [
           "variables"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/wake": {
+      "post": {
+        "description": "Starts an asleep environment's services again and answers once each passed its health check. Anyone who can see it can wake it, as opening its address does. Scope: read.",
+        "operationId": "wake-environment",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Wake an environment",
+        "tags": [
+          "environments"
         ]
       }
     },

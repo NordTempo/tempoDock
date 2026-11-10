@@ -716,15 +716,23 @@ func TestIntegrationTraffic(t *testing.T) {
 	})
 	up := backend(t, "app")
 	tc.applyRoutes(t, []node.Route{
-		{Hostnames: []string{"counted.test"}, Upstream: up, Traffic: true},
+		{Hostnames: []string{"counted.test"}, Upstream: up, Traffic: true, QuietProbes: true},
 		{Hostnames: []string{"quiet.test"}, Upstream: up},
 	})
 	for range 3 {
 		tc.get(t, tc.url("http", "counted.test", "/items/7?x=1"))
 	}
 	tc.get(t, tc.url("http", "quiet.test", "/"))
+	// Dock's uptime probe on a route with QuietProbes isn't counted.
+	probe, _ := http.NewRequest("GET", tc.url("http", "counted.test", "/"), nil)
+	probe.Header.Set("User-Agent", "dock-uptime/1.0")
+	if resp, err := tc.client.Do(probe); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("probe: %v %v", resp, err)
+	} else {
+		_ = resp.Body.Close()
+	}
 
-	// The three counted lines, then nothing for quiet.test.
+	// The three counted lines, then nothing for quiet.test or the probe.
 	counter := traffic.NewCounter()
 	buf := make([]byte, 64<<10)
 	for i := range 4 {
@@ -845,5 +853,98 @@ func TestIntegrationAnalytics(t *testing.T) {
 		if h.Host == "shop.test" && h.Requests != 1 {
 			t.Errorf("shop.test counted %d requests; the analytics one must not count", h.Requests)
 		}
+	}
+}
+
+// An asleep environment's route holds each request at the wake check
+// (Route.Wake) and passes it on, body and all and without the check's
+// headers, once the check answers 2xx; another answer (the waking page)
+// goes to the client as it is. OpenRequests counts an open websocket
+// until it closes, which is what keeps an environment from sleeping
+// under one.
+func TestIntegrationWake(t *testing.T) {
+	var asked atomic.Int64
+	check := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.Add(1)
+		if r.Header.Get(wakeKeyHeader) != "7" || r.Header.Get(forwardedURI) == "" {
+			http.Error(w, "bad check request", http.StatusBadRequest)
+			return
+		}
+		if strings.HasPrefix(r.Header.Get(forwardedURI), "/waking") {
+			w.Header().Set("Refresh", "2")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = io.WriteString(w, "waking page")
+			return
+		}
+		time.Sleep(300 * time.Millisecond) // the environment wakes
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(check.Close)
+	tc := startCaddyWith(t, func(o *Options) { o.DisableTLS, o.WakeURL = true, check.URL+"/internal/caddy/wake" })
+	app := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ws" {
+			conn, rw, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				return
+			}
+			_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n")
+			_ = rw.Flush()
+			_, _ = io.Copy(io.Discard, conn) // until the client closes
+			_ = conn.Close()
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		_, _ = fmt.Fprintf(w, "%s %s body=%s wake=%s", r.Method, r.URL.RequestURI(), b, r.Header.Get(wakeKeyHeader))
+	}))
+	t.Cleanup(app.Close)
+	upstream := strings.TrimPrefix(app.URL, "http://")
+	tc.applyRoutes(t, []node.Route{
+		{Hostnames: []string{"pr-12.test"}, Upstream: upstream, Wake: "7"},
+		{Hostnames: []string{"awake.test"}, Upstream: upstream},
+	})
+
+	start := time.Now()
+	req, _ := http.NewRequest("POST", tc.url("http", "pr-12.test", "/orders?x=1"), strings.NewReader(`{"n":1}`))
+	resp, err := tc.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != 200 || string(b) != `POST /orders?x=1 body={"n":1} wake=` || time.Since(start) < 300*time.Millisecond {
+		t.Fatalf("held request: %d %q after %s", resp.StatusCode, b, time.Since(start))
+	}
+	if code, h, body := tc.get(t, tc.url("http", "pr-12.test", "/waking")); code != 503 || h.Get("Refresh") != "2" || body != "waking page" {
+		t.Fatalf("waking page: %d %v %q", code, h, body)
+	}
+	n := asked.Load()
+	if code, _, _ := tc.get(t, tc.url("http", "awake.test", "/")); code != 200 || asked.Load() != n {
+		t.Fatalf("an awake route asked the wake check: %d", code)
+	}
+
+	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(tc.opts.HTTPPort)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.WriteString(conn, "GET /ws HTTP/1.1\r\nHost: awake.test\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n")
+	line := make([]byte, 12)
+	if _, err := io.ReadFull(conn, line); err != nil || string(line) != "HTTP/1.1 101" {
+		t.Fatalf("upgrade: %q %v", line, err)
+	}
+	ctx := context.Background()
+	if open, err := tc.proxy.OpenRequests(ctx, []string{upstream}); err != nil || open != 1 {
+		t.Fatalf("open requests with a websocket = %d, %v; want 1", open, err)
+	}
+	_ = conn.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		open, err := tc.proxy.OpenRequests(ctx, []string{upstream})
+		if err == nil && open == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("open requests after the websocket closed = %d, %v", open, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

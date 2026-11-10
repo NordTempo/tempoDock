@@ -29,7 +29,8 @@ Values may reference other variables: ${{shared.KEY}} or ${{service.KEY}}.
 ` + "`dock environment`" + `'s.)`,
 	})
 	cmd.AddCommand(newEnvListCmd(g), newEnvSetCmd(g), newEnvUnsetCmd(g), newEnvImportCmd(g), newEnvironmentCloneCmd(g),
-		newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g))
+		newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g),
+		newEnvironmentSleepCmd(g), newEnvironmentWakeCmd(g), newEnvironmentSleepAfterCmd(g))
 	return cmd
 }
 

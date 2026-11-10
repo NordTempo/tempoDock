@@ -36,6 +36,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -93,6 +94,11 @@ type Options struct {
 	// http://127.0.0.1:7071/internal/caddy/access. Required for such
 	// routes.
 	AccessURL string
+	// WakeURL is the wake check Caddy asks before proxying a request to
+	// an asleep environment's route (Route.Wake), e.g.
+	// http://127.0.0.1:7071/internal/caddy/wake. Required for such
+	// routes.
+	WakeURL string
 	// TrafficAddr is the loopback host:port the node's traffic counter
 	// listens on (traffic.Listen). When set, Caddy sends it the access log
 	// of routes with Traffic set (ADR 0033); empty turns counting off.
@@ -114,8 +120,10 @@ type Options struct {
 	// it in its instructions.
 	TunnelHostname string
 
-	// accessCheck is AccessURL taken apart; set by validate.
+	// accessCheck is AccessURL taken apart, wakeCheck WakeURL; set by
+	// validate.
 	accessCheck accessCheck
+	wakeCheck   accessCheck
 
 	// internalCA makes Caddy issue certificates from its own local CA
 	// instead of ACME. Tests only, so they never contact a real CA.
@@ -134,18 +142,25 @@ func (o Options) tunnel() bool { return o.Ingress == IngressCloudflareTunnel }
 // certificates of its own.
 func (o Options) plainHTTP() bool { return o.DisableTLS || o.tunnel() }
 
-// accessCheck is where Caddy reaches the access check: a host:port to
-// dial and the path to ask.
+// accessCheck is where Caddy reaches the access check (or the wake
+// check): a host:port to dial and the path to ask.
 type accessCheck struct{ dial, path string }
 
-// validate checks the options and sets accessCheck from AccessURL.
+// validate checks the options and sets accessCheck from AccessURL and
+// wakeCheck from WakeURL.
 func (o *Options) validate() error {
-	if o.AccessURL != "" {
-		u, err := url.Parse(o.AccessURL)
-		if err != nil || u.Scheme != "http" || u.Host == "" || !strings.HasPrefix(u.Path, "/") || u.RawQuery != "" {
-			return fmt.Errorf("caddy: access URL %q must look like http://127.0.0.1:7071/internal/caddy/access", o.AccessURL)
+	for _, c := range []struct {
+		url, example string
+		to           *accessCheck
+	}{{o.AccessURL, "access", &o.accessCheck}, {o.WakeURL, "wake", &o.wakeCheck}} {
+		if c.url == "" {
+			continue
 		}
-		o.accessCheck = accessCheck{dial: u.Host, path: u.Path}
+		u, err := url.Parse(c.url)
+		if err != nil || u.Scheme != "http" || u.Host == "" || !strings.HasPrefix(u.Path, "/") || u.RawQuery != "" {
+			return fmt.Errorf("caddy: %s URL %q must look like http://127.0.0.1:7071/internal/caddy/%s", c.example, c.url, c.example)
+		}
+		*c.to = accessCheck{dial: u.Host, path: u.Path}
 	}
 	switch {
 	case o.AdminSocket == "":
@@ -319,6 +334,35 @@ func (p *Proxy) admin(ctx context.Context, method, path string, body []byte) (*h
 		case <-time.After(adminRetryWaits[attempt]):
 		}
 	}
+}
+
+// OpenRequests implements node.Proxy: the requests Caddy proxies to
+// upstreams right now, from its admin API's upstream list
+// (num_requests counts a websocket or a stream until it closes). An
+// upstream no route names has no entry and counts 0.
+func (p *Proxy) OpenRequests(ctx context.Context, upstreams []string) (int, error) {
+	resp, err := p.admin(ctx, http.MethodGet, "/reverse_proxy/upstreams", nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("caddy: read upstreams: %s", resp.Status)
+	}
+	var list []struct {
+		Address     string `json:"address"`
+		NumRequests int    `json:"num_requests"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&list); err != nil {
+		return 0, fmt.Errorf("caddy: read upstreams: %w", err)
+	}
+	n := 0
+	for _, u := range list {
+		if slices.Contains(upstreams, u.Address) {
+			n += u.NumRequests
+		}
+	}
+	return n, nil
 }
 
 // Forward implements node.Proxy: a plain loopback listener, which Caddy

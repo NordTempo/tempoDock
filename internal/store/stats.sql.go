@@ -201,7 +201,7 @@ FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-WHERE releases.status = 'active' AND releases.container_id != ''
+WHERE releases.status = 'active' AND releases.container_id != '' AND environments.asleep_at IS NULL
 `
 
 type ListStatsNamesRow struct {
@@ -253,7 +253,7 @@ SELECT releases.container_id, releases.service_id, environments.server_id,
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE releases.status = 'active' AND releases.container_id != ''
+WHERE releases.status = 'active' AND releases.container_id != '' AND environments.asleep_at IS NULL
 ORDER BY environments.server_id, services.environment_id
 `
 
@@ -266,7 +266,8 @@ type ListStatsTargetsRow struct {
 }
 
 // ListStatsTargets lists the containers of active releases, with their
-// service, environment and server: what the stats collector samples. By
+// service, environment and server: what the stats collector samples,
+// leaving asleep environments out (their containers are stopped). By
 // server, then environment, so usage events group by environment.
 func (q *Queries) ListStatsTargets(ctx context.Context) ([]ListStatsTargetsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listStatsTargets)

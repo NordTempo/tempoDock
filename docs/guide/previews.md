@@ -94,6 +94,30 @@ connection's token Pull requests write access for the comment.
 Events are safe to deliver twice or late: an event older than the last one
 applied changes nothing.
 
+## Sleeping
+
+A preview nobody uses goes to sleep after 30 minutes without requests: its
+services stop (databases too) and give their memory back, and the
+environment reads `asleep` with the memory it freed. The next request to
+one of its addresses wakes it: the request waits a few seconds while the
+services start again, databases first. A browser that waits more than 3
+seconds sees a plain "waking up" page that reloads itself; other
+requests (an API call, a webhook) wait up to 30 seconds. A deploy, a new
+commit, `dock run` and the Data panel wake it too, and an open websocket
+keeps it awake. Uptime checks pause while it sleeps and never wake it.
+
+- `dock env wake pr-12` wakes it and waits; `dock env sleep pr-12` puts
+  it to sleep now.
+- `dock env previews enable staging --sleep-after 2h` changes the time
+  for the project's previews, open ones included; `--sleep-after off`
+  keeps them up.
+- Other non-production environments can sleep too: `dock env sleep-after
+  staging 2h`. Production never sleeps.
+
+Sleeping keeps every container, so a preview comes back as it was, except
+for what its apps kept in memory. Previews on servers other than the
+control plane's don't sleep yet.
+
 ## Locks
 
 A preview starts unlocked, even when its base is locked: it is

@@ -1,5 +1,6 @@
 -- ListStatsTargets lists the containers of active releases, with their
--- service, environment and server: what the stats collector samples. By
+-- service, environment and server: what the stats collector samples,
+-- leaving asleep environments out (their containers are stopped). By
 -- server, then environment, so usage events group by environment.
 -- name: ListStatsTargets :many
 SELECT releases.container_id, releases.service_id, environments.server_id,
@@ -7,7 +8,7 @@ SELECT releases.container_id, releases.service_id, environments.server_id,
 FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
-WHERE releases.status = 'active' AND releases.container_id != ''
+WHERE releases.status = 'active' AND releases.container_id != '' AND environments.asleep_at IS NULL
 ORDER BY environments.server_id, services.environment_id;
 
 -- ListStatsNames names the services ListStatsTargets lists, with their
@@ -20,7 +21,7 @@ FROM releases
 JOIN services ON services.id = releases.service_id
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
-WHERE releases.status = 'active' AND releases.container_id != '';
+WHERE releases.status = 'active' AND releases.container_id != '' AND environments.asleep_at IS NULL;
 
 -- name: AddServerStats :exec
 INSERT OR REPLACE INTO server_stats (res, at, server_id, cpu, memory, disk, load1) VALUES (?, ?, ?, ?, ?, ?, ?);

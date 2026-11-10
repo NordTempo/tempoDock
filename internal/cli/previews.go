@@ -65,6 +65,9 @@ service's latest snapshot (dock volume snapshot) before it starts, and a
 template database keeps the base's credentials, which its copied data
 needs. Without a snapshot it starts empty.
 
+A preview sleeps after 30 minutes without requests (--sleep-after, or off):
+its services stop and the next request wakes it.
+
 Previews run a pull request's code, so no literal variable value of the
 base is copied unless --copy names it (web.PUBLIC_API_URL, or
 shared.SENTRY_DSN for a shared one). References are always copied and
@@ -72,7 +75,8 @@ database templates get new credentials. Pull requests from forks get no
 preview unless --forks. Needs admin on the whole project.`,
 		Example: `  dock env previews enable staging
   dock env previews enable staging --max 5 --copy web.PUBLIC_API_URL --copy shared.SENTRY_DSN
-  dock env previews enable staging --seed db`,
+  dock env previews enable staging --seed db
+  dock env previews enable staging --sleep-after 1h`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needProject)
@@ -98,6 +102,7 @@ preview unless --forks. Needs admin on the whole project.`,
 	cmd.Flags().StringArrayVar(&req.CopyVariables, "copy", nil, "a base variable whose literal value previews copy, as service.KEY or shared.KEY (repeatable)")
 	cmd.Flags().StringArrayVar(&req.SeedFromSnapshot, "seed", nil, "a base service whose volumes each new preview fills from its latest snapshot, e.g. db (repeatable)")
 	cmd.Flags().BoolVar(&req.AllowForks, "forks", false, "also preview pull requests from forks")
+	cmd.Flags().Var(sleepFlag{&req.SleepAfterMinutes}, "sleep-after", "sleep a preview after this long without requests, 5m to 24h, or off (default 30m)")
 	return cmd
 }
 
@@ -227,6 +232,11 @@ func previewRules(set apitypes.PreviewSettings) string {
 	}
 	if set.AllowForks {
 		s += ", forks too"
+	}
+	if set.SleepAfterMinutes > 0 {
+		s += ", sleeping after " + minutesText(set.SleepAfterMinutes) + " without requests"
+	} else {
+		s += ", never sleeping"
 	}
 	return s
 }

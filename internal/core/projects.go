@@ -468,7 +468,7 @@ func toProject(p store.Project) apitypes.Project {
 func (c *Core) toEnvironment(a Actor, p store.Project, e store.Environment, srv store.Server) apitypes.Environment {
 	return apitypes.Environment{
 		ID: e.ID, Project: p.Name, Name: e.Name, Kind: apitypes.EnvironmentKind(e.Kind), Server: a.serverName(srv.Name),
-		ServerStatus: c.serverStatus(srv), CreatedAt: e.CreatedAt, Lock: envLock(e),
+		ServerStatus: c.serverStatus(srv), CreatedAt: e.CreatedAt, Lock: envLock(e), Sleep: c.envSleep(e),
 	}
 }
 

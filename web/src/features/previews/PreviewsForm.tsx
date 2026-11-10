@@ -6,6 +6,7 @@ import {
   PREVIEW_MAX,
   type PreviewSettings,
   previewsCli,
+  SLEEP_DEFAULT,
   useSetPreviews,
 } from "./data";
 
@@ -51,16 +52,32 @@ export default function PreviewsForm({
   const [copy, setCopy] = useState(settings.copy_variables.join("\n"));
   const [seed, setSeed] = useState(settings.seed_from_snapshot.join("\n"));
   const [forks, setForks] = useState(settings.allow_forks);
+  // Previews sleep after a while without requests unless set to never.
+  const [never, setNever] = useState(
+    settings.enabled && settings.sleep_after_minutes === 0,
+  );
+  const [sleep, setSleep] = useState(
+    String(
+      settings.enabled && settings.sleep_after_minutes > 0
+        ? settings.sleep_after_minutes
+        : SLEEP_DEFAULT,
+    ),
+  );
 
   const maxN = Number(max);
   const maxOk = Number.isInteger(maxN) && maxN >= 1 && maxN <= PREVIEW_MAX;
+  const sleepN = Number(sleep);
+  const sleepOk =
+    never || (Number.isInteger(sleepN) && sleepN >= 5 && sleepN <= 1440);
   const list = entries(copy);
   const bad = list.filter((e) => !entryRe.test(e));
   const error = !maxOk
     ? `Open previews must be 1 to ${PREVIEW_MAX}.`
     : bad.length > 0
       ? `Write ${bad[0]} as service.KEY or shared.KEY.`
-      : null;
+      : !sleepOk
+        ? "Previews sleep after 5 to 1440 minutes without requests."
+        : null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -74,6 +91,7 @@ export default function PreviewsForm({
           copy_variables: list,
           seed_from_snapshot: entries(seed),
           allow_forks: forks,
+          sleep_after_minutes: never ? -1 : sleepN,
         },
       },
       { onSuccess: onDone },
@@ -169,6 +187,25 @@ export default function PreviewsForm({
             One service per line. Each new preview fills its copy from the
             service's latest snapshot; other volumes start empty.
           </span>
+        </dd>
+        <dt>
+          <label htmlFor="preview-sleep">Sleep after</label>
+        </dt>
+        <dd className="flex flex-wrap items-baseline gap-2">
+          <input
+            id="preview-sleep"
+            type="number"
+            min={5}
+            max={1440}
+            value={sleep}
+            disabled={never}
+            onChange={(e) => setSleep(e.target.value)}
+            className="field w-16 py-0.5 font-mono text-xs"
+          />
+          <span className="text-xs text-mut">
+            minutes without requests; the next request wakes it
+          </span>
+          <Check label="Never" checked={never} onChange={setNever} />
         </dd>
         <dt>Forks</dt>
         <dd className="flex flex-col gap-1">

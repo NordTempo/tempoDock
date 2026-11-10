@@ -3764,6 +3764,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/sleep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change when an environment sleeps
+         * @description How many minutes without requests a non-production environment may go before it sleeps (5 to 1440); 0 turns it off. Previews take their project's preview setting. Scope: admin.
+         */
+        put: operations["set-environment-sleep"];
+        /**
+         * Put an environment to sleep
+         * @description Stops its services' containers, keeping them; the next request to its domains, a deploy or a run wakes it. Production environments never sleep. Scope: deploy.
+         */
+        post: operations["sleep-environment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/unlock": {
         parameters: {
             query?: never;
@@ -3806,6 +3830,26 @@ export interface paths {
          * @description Sets and unsets variables as staged changes; `apply: true` also applies the environment's staged changes. Values may reference `${{service.KEY}}` or `${{shared.KEY}}`. Scope: deploy.
          */
         patch: operations["set-variables"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/wake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wake an environment
+         * @description Starts an asleep environment's services again and answers once each passed its health check. Anyone who can see it can wake it, as opening its address does. Scope: read.
+         */
+        post: operations["wake-environment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project}/export": {
@@ -6539,6 +6583,7 @@ export interface components {
              * @enum {string}
              */
             server_status: "online" | "offline" | "incompatible" | "joining" | "revoked";
+            sleep?: components["schemas"]["EnvironmentSleep"];
         };
         EnvironmentApplied: {
             environment: string;
@@ -6597,6 +6642,29 @@ export interface components {
             /** Format: int64 */
             pending_changes: number;
             services: components["schemas"]["ServiceOverview"][] | null;
+        };
+        EnvironmentSleep: {
+            /**
+             * Format: int64
+             * @description Minutes without requests before it sleeps; 0 when it sleeps only when asked
+             */
+            after_minutes: number;
+            blocked?: string;
+            /**
+             * Format: int64
+             * @description Memory its containers used when it went to sleep
+             */
+            freed_bytes?: number;
+            /** Format: date-time */
+            last_request_at?: string;
+            /** Format: date-time */
+            since?: string;
+            /** Format: date-time */
+            sleeps_at?: string;
+            slept_by?: string;
+            /** @enum {string} */
+            state: "awake" | "sleeping" | "asleep" | "waking";
+            woke_by?: string;
         };
         Error: {
             /** @example forbidden */
@@ -6771,11 +6839,12 @@ export interface components {
             server?: components["schemas"]["Server"];
             service?: string;
             service_status?: components["schemas"]["ServiceStatus"];
+            sleep?: components["schemas"]["EnvironmentSleep"];
             /** Format: date-time */
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -7373,6 +7442,11 @@ export interface components {
             previews: components["schemas"]["Preview"][] | null;
             /** @description Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty */
             seed_from_snapshot: string[] | null;
+            /**
+             * Format: int64
+             * @description Minutes without requests before a preview sleeps; 0 when previews never sleep
+             */
+            sleep_after_minutes: number;
             /** Format: date-time */
             updated_at?: string;
             updated_by?: string;
@@ -8194,7 +8268,7 @@ export interface components {
              */
             server_status?: "offline" | "incompatible" | "revoked";
             /** @enum {string} */
-            state: "running" | "restarting" | "crashed" | "stopped" | "none";
+            state: "running" | "restarting" | "crashed" | "stopped" | "asleep" | "none";
             /** Format: date-time */
             updated_at?: string;
         };
@@ -8314,6 +8388,11 @@ export interface components {
             max_previews?: number;
             /** @description Base services whose volumes a new preview fills from their latest snapshot, e.g. db */
             seed_from_snapshot?: string[] | null;
+            /**
+             * Format: int64
+             * @description Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never
+             */
+            sleep_after_minutes?: number;
         };
         SetRegistryCredentialRequest: {
             password: string;
@@ -8321,6 +8400,13 @@ export interface components {
         };
         SetSensitiveColumnsRequest: {
             columns: components["schemas"]["DataColumnRef"][] | null;
+        };
+        SetSleepRequest: {
+            /**
+             * Format: int64
+             * @description Minutes without requests before it sleeps, 5 to 1440; 0 turns sleeping off
+             */
+            after_minutes: number;
         };
         SetVariablesRequest: {
             /** @description Also apply all staged changes in the environment */
@@ -31641,6 +31727,216 @@ export interface operations {
             };
         };
     };
+    "set-environment-sleep": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetSleepRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Environment"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "sleep-environment": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Environment"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "unlock-environment": {
         parameters: {
             query?: {
@@ -31877,6 +32173,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChangeResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "wake-environment": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Environment"];
                 };
             };
             /** @description Bad Request */

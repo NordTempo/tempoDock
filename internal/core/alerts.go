@@ -306,19 +306,25 @@ func domainError(project, env, service, hostname, reason string) alertSignal {
 	}
 }
 
+// noContainer reports whether a state means the service has no running
+// container on purpose or at all: nothing to alert on.
+func noContainer(s apitypes.ServiceState) bool {
+	return s == apitypes.ServiceNone || s == apitypes.ServiceStopped || s == apitypes.ServiceAsleep
+}
+
 // onServiceStatus counts a service's restarts and raises a crash loop
 // alert when [alerts] crash_loop_restarts fall within crash_loop_minutes.
-// A service without a container (nothing deployed, archived, or stopped
-// on purpose, ADR 0050) resolves it.
+// A service without a container (nothing deployed, archived, stopped
+// on purpose, ADR 0050, or asleep) resolves it.
 func (c *Core) onServiceStatus(ctx context.Context, ev LiveEvent, svc string, st apitypes.ServiceStatus, now time.Time) {
-	if st.State == apitypes.ServiceNone || st.State == apitypes.ServiceStopped {
+	if noContainer(st.State) {
 		c.alerts.mu.Lock()
 		delete(c.alerts.restarts, svc)
 		c.alerts.mu.Unlock()
 		c.resolveAlert(ctx, "crash:"+svc, now)
 		// This event may be read late: only a service that is still
 		// stopped loses its health check state and alert.
-		if s := c.getStatus(ev.serviceID).State; ev.serviceID != 0 && (s == apitypes.ServiceNone || s == apitypes.ServiceStopped) {
+		if s := c.getStatus(ev.serviceID).State; ev.serviceID != 0 && noContainer(s) {
 			c.resolveAlert(ctx, "health:"+svc, now)
 			c.health.forget(ev.serviceID)
 		}

@@ -338,6 +338,49 @@ func TestRenderAccess(t *testing.T) {
 	}
 }
 
+// An asleep environment's route asks the wake check after its access
+// check and before proxying; Dock's uptime probes on a sleepable route
+// skip the access log in a route of their own ahead of it.
+func TestRenderWake(t *testing.T) {
+	opts := testOptions()
+	opts.AccessURL = "http://127.0.0.1:7071/internal/caddy/access"
+	opts.WakeURL = "http://127.0.0.1:7071/internal/caddy/wake"
+	cfg := render(t, opts, []node.Route{
+		{Hostnames: []string{"pr-12.example.com"}, Upstream: "127.0.0.1:9001", Wake: "42", QuietProbes: true,
+			Access: &node.Access{Key: []byte{1}, LoginURL: "https://dock.example.com/access"}},
+	})
+	routes := cfg.Apps.HTTP.Servers["https"].Routes
+	if len(routes) != 3 {
+		t.Fatalf("routes = %+v", routes)
+	}
+	quiet := routes[0]
+	if quiet.Terminal || quiet.Match[0].Header["User-Agent"][0] != "dock-uptime/*" || !quiet.Handle[0].LogSkip {
+		t.Errorf("probe route = %+v", quiet)
+	}
+	h := routes[1].Handle
+	if len(h) != 5 || h[1].Rewrite.URI != "/internal/caddy/access" || h[3].Rewrite.URI != "/internal/caddy/wake" || h[4].Upstreams[0].Dial != "127.0.0.1:9001" {
+		t.Fatalf("handlers = %+v", h)
+	}
+	if set := h[2].Request.Set; set[wakeKeyHeader][0] != "42" || set[forwardedURI][0] != "{http.request.uri}" {
+		t.Errorf("wake headers = %v", set)
+	}
+	if ok := h[3].HandleResponse[0]; ok.Match.StatusCode[0] != 2 || len(ok.Routes[0].Handle[0].Request.Delete) != 3 {
+		t.Errorf("2xx handling = %+v", ok)
+	}
+	for name, r := range map[string]node.Route{
+		"no wake URL": {Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Wake: "1"},
+		"placeholder": {Hostnames: []string{"a.com"}, Upstream: "127.0.0.1:1", Wake: "{env.X}"},
+	} {
+		o := testOptions()
+		if name != "no wake URL" {
+			o.WakeURL = opts.WakeURL
+		}
+		if _, err := Render(o, []node.Route{r}); err == nil {
+			t.Errorf("%s: Render succeeded, want an error", name)
+		}
+	}
+}
+
 // Counted routes get their access log sent to the traffic counter, without
 // who sent each request; other hostnames aren't logged at all.
 func TestRenderTraffic(t *testing.T) {

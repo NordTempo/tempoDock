@@ -141,12 +141,17 @@ func newEnvironmentCmd(g *globals) *cobra.Command {
 				// The server column is for platform operators, the only ones
 				// the API names servers to.
 				previews := slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return e.Preview != nil })
+				sleeps := slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return e.Sleep != nil })
 				servers := slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return e.Server != "" })
 				headers := []string{"name", "kind"}
 				if servers {
 					headers = append(headers, "server")
 				}
-				headers = append(headers, "lock", "created")
+				headers = append(headers, "lock")
+				if sleeps {
+					headers = append(headers, "sleep")
+				}
+				headers = append(headers, "created")
 				if previews {
 					headers = append(headers, "pull request")
 				}
@@ -156,7 +161,11 @@ func newEnvironmentCmd(g *globals) *cobra.Command {
 					if servers {
 						row = append(row, e.Server)
 					}
-					row = append(row, cmp.Or(lockWords(e.Lock), "-"), ago(e.CreatedAt))
+					row = append(row, cmp.Or(lockWords(e.Lock), "-"))
+					if sleeps {
+						row = append(row, cmp.Or(sleepWords(e.Sleep), "-"))
+					}
+					row = append(row, ago(e.CreatedAt))
 					if previews {
 						row = append(row, pullRequestText(e.Preview))
 					}
@@ -198,7 +207,8 @@ eligible server with the most free memory.`,
 	}
 	createFlags.add(create, needProject)
 	create.Flags().StringVar(&kind, "kind", "", "production or non-production (default: from the name)")
-	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g))
+	cmd.AddCommand(list, create, newEnvironmentCloneCmd(g), newEnvironmentLockCmd(g), newEnvironmentUnlockCmd(g), newPreviewsCmd(g), newEnvironmentMoveCmd(g),
+		newEnvironmentSleepCmd(g), newEnvironmentWakeCmd(g), newEnvironmentSleepAfterCmd(g))
 	return cmd
 }
 

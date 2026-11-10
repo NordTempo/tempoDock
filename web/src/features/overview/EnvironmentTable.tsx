@@ -36,6 +36,7 @@ import { imageLabel, shortImage } from "../service/releases";
 import { CpuUsage, MemoryUsage } from "../service/Usage";
 import { ArchivedServices } from "./Archived";
 import { LockForm, LockStrip } from "./EnvironmentLock";
+import { SleepState, sleepCli, useSleepEnvironment } from "./EnvironmentSleep";
 import { hiddenFailures } from "./failed";
 import { lockRequestDone, useLockRequested } from "./lockRequest";
 
@@ -76,6 +77,13 @@ export function EnvironmentTable({
   const operator = useIsOperator();
   const [moveOpen, setMoveOpen] = useState(false);
   const hidden = hiddenFailures(services);
+  const sleep = useSleepEnvironment();
+  // Production never sleeps; an asleep one wakes from its heading.
+  const canSleep =
+    canDeploy &&
+    environment.kind === "non_production" &&
+    environment.sleep?.state !== "asleep" &&
+    services.some((s) => s.service.status.state === "running");
   const head = `env-head-${environment.id}`;
   const cli = (args: string) => `dock environment ${args} -p ${ref.project}`;
   return (
@@ -98,6 +106,7 @@ export function EnvironmentTable({
           )}
         </h2>
         {pr && <PullRequestLink pr={pr} />}
+        <SleepState environment={environment} />
         {environment.server_status !== "online" && (
           <span className="text-xs">
             <EnvServer environment={environment} />
@@ -198,6 +207,20 @@ export function EnvironmentTable({
                   }}
                 >
                   Clone into a new environment
+                </button>
+              )}
+              {canSleep && (
+                <button
+                  type="button"
+                  className={menuItem}
+                  role="menuitem"
+                  title={sleepCli("sleep", ref)}
+                  onClick={() => {
+                    close();
+                    sleep.mutate(ref);
+                  }}
+                >
+                  Put to sleep now
                 </button>
               )}
               {pr && canClone && (

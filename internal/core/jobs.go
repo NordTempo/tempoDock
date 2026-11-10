@@ -95,6 +95,10 @@ func (c *Core) startJob(ctx context.Context, jobID, serviceID int64, trigger api
 		// Stopped means "don't run this", its schedule too (ADR 0050);
 		// running it now is still asked for explicitly.
 		err = conflict("%s is stopped; `dock service start` runs its jobs again", ss.svc.Name)
+	case trigger == apitypes.TriggerSchedule && ss.env.AsleepAt != nil:
+		// Asleep means nobody uses it: its schedule waits too; running
+		// a job now wakes it (openRun).
+		err = conflict("environment %s is asleep; its scheduled jobs run again once it wakes", ss.env.Name)
 	default:
 		r, err = c.openRun(ctx, a, ss, runSpec{
 			command: job.Command, timeout: int(job.TimeoutSeconds), volumes: apitypes.VolumesNone, trigger: trigger, job: &job,

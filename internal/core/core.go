@@ -204,6 +204,8 @@ type Core struct {
 	runs runState
 	// uptime is the uptime checks' scheduler kick and state (uptime.go).
 	uptime uptimeState
+	// sleep holds the environments that sleep (sleep.go).
+	sleep sleepState
 	// jobs is the job scheduler's kick and the job runs in flight
 	// (jobs.go, jobs_schedule.go).
 	jobs jobState
@@ -418,6 +420,9 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	if err := c.reconcileServer(ctx, c.localID, c.rt, true); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
+	}
+	if err := c.startSleep(ctx); err != nil {
+		return fmt.Errorf("sleeping environments: %w", err)
 	}
 	if err := c.applyRoutes(ctx, c.localID); err != nil {
 		// Caddy keeps its previous config; deploys will retry.

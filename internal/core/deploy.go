@@ -88,6 +88,7 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 	}
 	c.gitDeployDone(ss, d.rel, err)
 	c.previewReleaseDone(ss)
+	c.touchSleep(ss.env.ID)
 }
 
 func (d *deployment) run(ctx context.Context) error {
@@ -106,6 +107,15 @@ func (d *deployment) run(ctx context.Context) error {
 	}
 	if err := d.waitForMove(ctx); err != nil {
 		return err
+	}
+	// Deploying is a request to run it: an asleep environment wakes
+	// first, its other services too (sleep.go).
+	if d.ss.env.AsleepAt != nil || c.isAsleep(d.ss.env.ID) {
+		d.event(ctx, "Waking environment "+d.ss.env.Name+" first")
+		c.wakeFor(ctx, d.ss.envScope, "deploy")
+		if env, err := c.store.GetEnvironment(ctx, d.ss.env.ID); err == nil {
+			d.ss.env = env
+		}
 	}
 	if d.server, err = c.store.GetServer(ctx, d.ss.env.ServerID); err != nil {
 		return err

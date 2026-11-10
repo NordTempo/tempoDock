@@ -135,6 +135,9 @@ func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) 
 	if ss.svc.ArchivedAt != nil {
 		return nil, invalid("service %s is archived; restore it to run commands in it", ss.svc.Name)
 	}
+	// A run is a request to use the environment: an asleep one wakes,
+	// and it stays awake while the run lasts.
+	c.wakeFor(ctx, ss.envScope, a.Name)
 	rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
 	if store.IsNotFound(err) {
 		return nil, conflict("%s has no active release to run the command in; deploy it first", ss.svc.Name)
@@ -161,7 +164,8 @@ func (c *Core) openRun(ctx context.Context, a Actor, ss svcScope, spec runSpec) 
 		endJob()
 		return nil, err
 	}
-	release := func() { endRun(); endJob() }
+	endAwake := c.holdAwake(ss.env.ID)
+	release := func() { endRun(); endJob(); endAwake() }
 	var snapshot *int64
 	if spec.job == nil && volumes == apitypes.VolumesWrite && !spec.noSnapshot {
 		if snapshot, err = c.snapshotBeforeRun(ctx, a, ss, spec.command); err != nil {

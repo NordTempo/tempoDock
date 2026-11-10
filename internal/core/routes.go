@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -15,9 +16,11 @@ import (
 // (ADR 0030), its requests counted (ADR 0033) and, for hostnames of an
 // analytics site, /_dock/a/* sent to the server's ingest tagged with the
 // site, service and release (ADR 0037); redirect domains redirect, and
-// those of a stopped service answer 503 saying so (ADR 0050). On a
-// direct server, domains Dock routes through its Cloudflare tunnel are
-// served to the tunnel only (ADR 0036).
+// those of a stopped service answer 503 saying so (ADR 0050). Those of an
+// asleep environment ask the wake check first, and in environments that
+// sleep Dock's uptime probes aren't counted (sleep.go). On a direct
+// server, domains Dock routes through its Cloudflare tunnel are served
+// to the tunnel only (ADR 0036).
 func (c *Core) applyRoutes(ctx context.Context, serverID int64) error {
 	c.routesMu.Lock()
 	defer c.routesMu.Unlock()
@@ -72,11 +75,11 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	bySvc := map[svcRoute]int{} // → index in routes
 	for _, d := range rows {
 		tunnelOnly := viaTunnel[d.Hostname]
-		port, release, stopped := d.HostPort, d.ReleaseID, d.Stopped
+		port, release, stopped, asleep := d.HostPort, d.ReleaseID, d.Stopped, d.Asleep
 		if o, ok := override[d.ServiceID]; ok {
 			// The release going live runs, whether the service was
 			// stopped or not.
-			port, release, stopped = o.port, o.release, false
+			port, release, stopped, asleep = o.port, o.release, false, false
 		}
 		switch {
 		case d.RedirectTo != "":
@@ -95,9 +98,12 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 				}
 				i = len(routes)
 				bySvc[key] = i
-				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID]})
-				if stopped {
+				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID], QuietProbes: d.Sleepable})
+				switch {
+				case stopped:
 					routes[i].Stopped = d.ServiceName
+				case asleep && !held[d.ServiceID]:
+					routes[i].Wake = strconv.FormatInt(d.EnvironmentID, 10)
 				}
 			}
 			r := &routes[i]

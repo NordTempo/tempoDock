@@ -240,6 +240,11 @@
       "bytes_op": 5810,
       "allocs_op": 190
     },
+    "core.BenchmarkSleepPass50": {
+      "ns_op": 1191,
+      "bytes_op": 0,
+      "allocs_op": 0
+    },
     "core.BenchmarkStatsTick50": {
       "ns_op": 458590,
       "bytes_op": 87653,
