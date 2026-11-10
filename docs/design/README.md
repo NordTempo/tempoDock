@@ -42,6 +42,11 @@ starts from these files.
 | G8 Access | `t3-style/data/G8-access.html` |
 | G9 Activity | `t3-style/data/G9-activity.html` |
 
+Three later files hold the mocks a feature's direction was picked from:
+`environment-lock.html` (ADR 0044), `jobs.html` (ADR 0054) and
+`run-command.html` (ADR 0048). `ui-direction.html` is the superseded v2
+direction.
+
 B1 and B2 are structure references (what the operator console holds, which
 navigation each role sees); style them as A. The console Dock builds is
 B2 for operators ([ADR 0025](../decisions/0025-platform-console.md),
@@ -114,9 +119,9 @@ for everything.
 
 - **Navigation.** The sidebar holds the organization switcher, one search
   (the palette, Cmd+K: pages and `dock` commands in one list), the project
-  tree with its environment, then Analytics, Activity, Requests, Members,
-  Organization settings, Help, the account and the console. There is no
-  second command bar.
+  tree (and archived projects), then Analytics, Errors, Alerts, Activity,
+  Requests (admins), Members, Organization settings, Help, the account and,
+  for operators, the console. There is no second command bar.
 - **Pages.** An organization lists its projects; a project page shows its
   problems, one table per environment and its activity; an environment's
   address (`/org/project/env`) is that environment's own page. A service
@@ -124,7 +129,8 @@ for everything.
   groups with a line between them: watching it (Overview, Logs,
   Resources, Errors, Traffic, Uptime), operating it (Jobs, One-off
   command, Data, Backups), configuring it (Domains, Variables, Build &
-  run), its history (Audit). Tabs every service has come first.
+  run), its history (Activity). Tabs every service has come first; the
+  list is `web/src/features/service/tabs.ts`.
 - **Overview.** One column: status, facts, uptime and visitors, how to
   connect, the deploy in flight, releases. Logs have their own tab.
 - **Width.** Every page uses the one content width. Below 1400px, side

@@ -3,70 +3,80 @@
 "Lightweight" and "Fast" are product pillars: the daemon shares a small
 server with the apps it hosts, so every megabyte and every wake-up it costs
 is taken from them. These rules apply to every change, by people and agents
-alike. `make perf` checks the budgets; CI runs it on every pull request
-and posts the results as a comment on it (the `perf-comment` job), updated
-on each push. Timing budgets only warn on CI's shared runners, so a
+alike. `make perf` checks the budgets. CI runs the same checks on every
+pull request as two jobs (`make perf-artifacts` and `make perf-bench`,
+with `-soft-timing`) and posts the results as a comment on it (the
+`perf-comment` job), updated on each push. On shared runners timing
+budgets only warn, while sizes, memory and allocations still fail, so a
 **warn** row in that comment is a regression to fix, or to explain in the
-PR, before merging.
+PR, before merging. Timing is enforced by running `make perf` locally.
 
 ## Budgets
 
 Checked by `make perf` ([scripts/perf](../scripts/perf)). Product targets are
 in [experience](experience.md#performance-targets); the budgets keep
-headroom below them. Dock and tempoBase are measured with `GOMAXPROCS=4`,
-a small server, so a runner's core count doesn't move their memory.
+headroom below them, except idle memory: its budget (32 MB) is measured
+with Dock Analytics on and sits above the 30 MB target. Dock and tempoBase
+are measured with `GOMAXPROCS=4`, a small server, so a runner's core count
+doesn't move their memory. The daemon is measured with analytics turned
+on.
 
-| What | Budget | Measured (8-core Ryzen VM) |
+"Measured" is CI's `perf-artifacts` job on `main` at 226b1597
+(2026-11-10), a shared 2-CPU runner: timings there are slower and noisier
+than on a quiet machine.
+
+| What | Budget | Measured |
 |---|---|---|
-| Daemon idle memory | ≤ 32 MB anonymous RSS | 27.5-31 MB (analytics on; median 28.9 MB over 10 runs on a 2-CPU slot) |
+| Daemon idle memory | ≤ 32 MB anonymous RSS | 27.0 MB |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
-| Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00-0.03/s; 1.0-2.1/s with 20 streams |
-| Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (35 MB with 20) | 29.4-33.1 MB with 20 streams (median 30.8 MB) |
-| CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 4.5-5 ms |
-| API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.4-6 ms; with a staged change, overview 6-8 ms and changes 3-4.5 ms |
-| UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 128 KB (13 files) |
-| UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 113 KB, then 0 (immutable) |
-| UI initial CSS (gzip) | ≤ 30 KB | 4.6 KB |
-| UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 64 KB (Inter and JetBrains Mono, Latin subsets) |
-| UI fonts (all font files) | ≤ 150 KB | 64 KB |
-| Binary size | ≤ baseline + 10% | 32.1 MB |
+| Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00/s; 0.60/s with 20 streams |
+| Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (34.9 MB with 20) | 27.1 MB with 20 streams |
+| CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 10.5 ms, 11.4 ms |
+| API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.35-8.2 ms (the project overview is the slowest); with a staged change, overview 8.2 ms and changes 4.5 ms |
+| UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 168.9 KB (24 files) |
+| UI initial JS as the daemon serves it | ≤ 200 KB on the wire, cacheable | 164 KB, then 0 (immutable) |
+| UI initial CSS (gzip) | ≤ 30 KB | 13.9 KB |
+| UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 63.6 KB (Inter and JetBrains Mono, Latin subsets) |
+| UI fonts (all font files) | ≤ 150 KB | 63.6 KB |
+| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 10% | 66.1 MB |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
+
+`make perf` also prints, without a budget, the daemon's memory after
+seeding and load (63.7 MB) and the gzipped JS of every route (727 KB in
+172 files).
 
 Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
 
-The idle number moves with GC timing: the daemon's last collection runs
-during start-up, and whatever it allocates after that (the first
-statistics ticks, each SSE handshake) stays in RSS until the next one, as
-do stream handlers' stacks. On a 2-CPU, 8 GB slot like a CI runner's, ten
-runs of v0.34.0 read 27.5-31.0 MB idle and 29.4-33.1 MB with 20 streams;
-the commit before it (808e9b93) 25.5-28.5 and 29.3-32.4. A forced GC
-leaves the sampled live heap at about 10 MB with or without the streams:
-nothing is kept per stream beyond its goroutine. The live heap is mostly
-Huma's schemas of the API types and compiled regexps.
+The idle number moves with GC timing, by up to 3 MB between runs: the
+daemon's last collection runs during start-up, and whatever it allocates
+after that (the first statistics ticks, each SSE handshake) stays in RSS
+until the next one, as do stream handlers' stacks. A forced GC leaves the
+live heap at about 10 MB with or without streams: nothing is kept per
+stream beyond its goroutine. The live heap is mostly Huma's schemas of
+the API types and compiled regexps.
 
 ### tempoBase
 
 tempoBase, the standalone Data panel server ([ADR
 0024](decisions/0024-tempobase-standalone.md)), has no runtime, statistics
-tick or event stream, so its budgets are tighter. Checks `tempobase-binary`,
-`tempobase-daemon` and `tempobase-ui` run by default; `make perf` builds
-`bin/tempobase` once `cmd/tempobase` exists. Until then (and until
-`web/tempobase` exists, for the UI) they report `skipped`, not built yet.
+tick or event stream, so its budgets are tighter. `make perf` builds
+`bin/tempobase` and runs the checks `tempobase-binary`, `tempobase-daemon`
+and `tempobase-ui`. Measured as above (CI, 2026-11-10).
 
 | What | Budget | Measured |
 |---|---|---|
-| Binary (linux/amd64, UI embedded) | ≤ 20 MB, and baseline + 10% once recorded (`tempobase_binary_bytes`) | 19.9 MB |
-| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | not built yet (target 10 MB) |
-| Idle CPU | ≤ 1 clock tick in 30 s | not built yet |
-| Idle wake-ups | ≤ 0.1/s | not built yet (Go's forced GC is ~0.01/s) |
-| API read p95 (`/me`, `/connections`), 8 clients, 50 connections and 20 users | ≤ 10 ms | not built yet |
-| Postgres connections 65 s after use (`-tempobase-pg URL`, CI's `postgres:17`) | 0 | not built yet |
-| UI initial JS (entry + modulepreloads, gzip) | ≤ 120 KB | not built yet (expected ~90 KB) |
-| UI initial CSS (gzip, Dock's `index.css`) | ≤ 30 KB | not built yet |
-| UI initial fonts (as Dock's; style G itself uses system fonts) | ≤ 100 KB | not built yet |
-| Imports (`make tempobase-deps`, CI) | no `core`, `api`, `store`, `node`, `mcp`, `cli`, Docker, BuildKit or gRPC | passes (skipped until `cmd/tempobase` exists) |
+| Binary (linux/amd64, UI embedded) | ≤ 20 MB, and baseline + 10% (`tempobase_binary_bytes`) | 20.0 MB, at its budget |
+| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 12.0 MB |
+| Idle CPU | ≤ 1 clock tick in 30 s | 0 |
+| Idle wake-ups | ≤ 0.1/s | 0.03/s (Go's forced GC is ~0.01/s) |
+| API read p95 (`/me`, `/connections`), 8 clients, 50 connections and 20 users | ≤ 10 ms | 0.6 ms, 2.6 ms |
+| Postgres connections 65 s after use (`-tempobase-pg URL`, CI's `postgres:17`) | 0 | 0 (1 right after use) |
+| UI initial JS (entry + modulepreloads, gzip) | ≤ 120 KB | 116.7 KB (11 files) |
+| UI initial CSS (gzip, Dock's `index.css`) | ≤ 30 KB | 5.4 KB |
+| UI initial fonts (style G uses system fonts) | ≤ 100 KB | 0 |
+| Imports (`make tempobase-deps`, CI's lint job) | no `core`, `api`, `store`, `node`, `mcp`, `cli`, Docker, BuildKit or gRPC | passes |
 
 tempoBase runs with `GOMEMLIMIT=48MiB`, as its image and
 `deploy/tempobase/tempobase.service` set it.
@@ -79,19 +89,21 @@ container on the analytics server, so it has budgets of its own. The
 events (a busy site's year, plus most page loads' Web Vitals and 1% with
 an error) and runs it with the container's settings.
 
+Measured as above (CI, 2026-11-10); a timed row shows its slowest range.
+
 | What | Budget | Measured |
 |---|---|---|
 | Browser script `/_dock/a/s.js`, gzipped | core ≤ 2 KB; errors and Web Vitals ≤ 2 KB more | 1.0 KB; 1.0 KB more |
-| Session recorder `/_dock/a/r.js` (sampled page loads of sites that record), gzipped | ≤ 50 KB | 23 KB |
-| Idle memory, after start | ≤ 60 MB anonymous RSS | 34-38 MB |
-| Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0 |
-| Dashboard p95, 1M events, every range | ≤ 100 ms | 17-42 ms |
-| Filtered dashboard p95, 1M events, up to 30 days | ≤ 200 ms | 22-61 ms |
-| Filtered dashboard p95, 1M events, a year | ≤ 400 ms | 53-274 ms |
-| Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 45-62k events/s (80-97k before A2; a batch now writes up to three tables) |
-| Errors and Web Vitals views p95, 1M events, every range (error groups with their series; vitals overall, by page and device, and LCP over time) | ≤ 200 ms | 13 ms (24 hours) to 84 ms (a year) |
-| Goals and funnels p95, 1M events, every range (five goals and a three-step funnel) | ≤ 200 ms | 8 ms (24 hours) to 69 ms (a year) |
-| Peak memory through all of it | ≤ 512 MB (the container's limit) | 366-397 MB (234-259 MB before A2, mostly the ingest's vitals) |
+| Session recorder `/_dock/a/r.js` (sampled page loads of sites that record), gzipped | ≤ 50 KB | 22.5 KB |
+| Idle memory, after start | ≤ 60 MB anonymous RSS | 46.2 MB |
+| Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0.03/s |
+| Dashboard p95, 1M events, every range | ≤ 100 ms | 42 ms (a year) |
+| Filtered dashboard p95, 1M events, up to 30 days | ≤ 200 ms | 42 ms |
+| Filtered dashboard p95, 1M events, a year | ≤ 400 ms | 166 ms |
+| Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 37k events/s (a batch writes up to three tables) |
+| Errors and Web Vitals views p95, 1M events, every range (error groups with their series; vitals overall, by page and device, and LCP over time) | ≤ 200 ms | 119 ms (a year) |
+| Goals and funnels p95, 1M events, every range (five goals and a three-step funnel) | ≤ 200 ms | 74 ms (a year) |
+| Peak memory through all of it | ≤ 512 MB (the container's limit) | 326 MB |
 
 DuckDB holds memory outside its `memory_limit` (freed operator memory,
 exact distinct counts), so the store runs one query at a time with a
@@ -102,11 +114,15 @@ last request (`Store.Trim`).
 ## Running it
 
 ```sh
-make perf                        # builds the UI and binary, checks everything (~4 min, half of it benchmarks)
-make perf PERF_FLAGS='-checks bench'          # only some checks: binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui
+make perf                        # builds both UIs, dock, dock-analytics and tempobase, checks everything
+make perf-bench                  # only the Go benchmarks; builds nothing
+make perf-artifacts              # everything but the benchmarks (CI's perf-artifacts job)
+make perf PERF_FLAGS='-checks daemon,ui'      # only some checks: binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui
+make perf PERF_FLAGS='-skip bench'            # all but some
 make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable'  # also tempoBase's Postgres idle close
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
-make perf-baseline               # re-record binary size and benchmarks
+make perf PERF_FLAGS='-soft-timing'           # timing budgets warn instead of failing (CI)
+make perf-baseline               # re-record binary sizes and benchmarks
 go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmarks
 ```
 
@@ -116,8 +132,8 @@ windows and waits overlap (an idle window counts only its own process's
 CPU, wake-ups and memory). The CLI's start-up and the benchmarks run
 alone.
 
-- **Benchmarks** live in `*_bench_test.go` files; `make perf` finds them by
-  that name. They cover the hot paths: project overview, service and release
+- **Benchmarks** live in `*_bench_test.go` files; `make perf` runs every
+  benchmark of each package that has one. They cover the hot paths: project overview, service and release
   lists, audit log, variable resolution, event bus fan-out, SSE writes,
   Caddy config rendering, source packing, `dock.toml` parsing, prepared
   SQLite queries, the retention pass, the alert engine's event handling,
@@ -163,8 +179,10 @@ There are no waivers at the moment.
 An idle daemon does nothing: 0 CPU and almost no wake-ups. Live data is
 event driven: Docker's event stream, the in-process event bus and SSE.
 
-- The statistics tick (below) is the one always-on periodic job; alerts
-  and retention ride on it (ADR 0020). `make perf` measures idle windows
+- The statistics tick (below) is the one always-on periodic job; alerts,
+  retention and the other per-minute work ride on it (ADR 0020). The only
+  other always-armed timer is the backup scheduler's, which fires once a
+  day. `make perf` measures idle windows
   between two ticks and budgets the tick with `BenchmarkStatsTick50`.
 - No polling, tickers or timers without a written justification in a doc
   comment, and an entry in the table below with its interval and cost.
@@ -191,7 +209,12 @@ event driven: Docker's event stream, the in-process event bus and SSE.
   run when an operator opens the console or runs `dock update`, and are
   reused for 15 minutes. Nothing checks in the background.
 
-Everything periodic in the daemon, the CLI and tempoBase (which has nothing else: no statistics tick, no session sweeper, no changeset timer):
+Everything periodic or retried on a timer: in the daemon (control plane
+and node), the CLI, the analytics store and the browser. tempoBase has
+only the data connection idle close and its audit prune: no statistics
+tick, no session sweeper, no changeset timer. One-shot timeouts that
+bound a single request or call (a `context.WithTimeout`, a long poll's
+end) are not listed.
 
 | What | Where | Interval | Runs only while | Cost |
 |---|---|---|---|---|
@@ -216,16 +239,20 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
 | Template database setup retry | `internal/core/templates.go` | 1 s, doubling, 5 attempts (about 15 s) | setting up a new template database's data access failed | one setup attempt |
 | Failed release write retry | `internal/core/deploy.go` | 100 ms, doubling, 6 attempts (about 3 s) | writing a failed deploy's outcome to SQLite failed | one `UPDATE` per attempt |
-| Docker event stream reconnect | `internal/node/docker/events.go` | backoff | the stream failed | one reconnect |
+| Docker event stream reconnect | `internal/node/docker/events.go` | 0.5 s doubling to 30 s | the stream failed | one reconnect |
+| Docker disk usage retry | `internal/node/docker/disk.go` | 500 ms, at most 3 tries | a disk breakdown or prune met a container removed meanwhile | one `system df` |
+| Caddy admin retry | `internal/node/caddy/caddy.go` | 100, 200, 400, 800 ms | Caddy's admin socket can't be reached (Caddy restarting) | one request |
+| Registry migration upload retry | `internal/registry/migrate.go` | 1 s, then 2 s | one object of a migration to or from a bucket failed (ADR 0034) | one upload |
 | BuildKit readiness | `internal/node/build/buildkitd.go` | 250 ms | BuildKit is starting for a build | one gRPC call |
 | Node event stream retry | `internal/node/remote/client.go` | 1 s | a node's event stream failed | one reconnect |
-| Node reconnect | `internal/node/remote/node.go` | jittered backoff | a node lost its control plane | one dial |
+| Node reconnect | `internal/node/remote/node.go` | jittered backoff, 1 s doubling to 30 s | a node lost its control plane | one dial (it rereads the control plane's address, so `dock node set-control-plane` needs no restart) |
+| Node link keepalive | `internal/node/remote` (`DefaultKeepAlive`) | after 15 s of silence on the link | a node is connected | one HTTP/2 ping each way, and TCP keepalives; an unanswered ping closes the link after 15 s more |
 | Registry tunnel wait | `internal/node/remote/registry.go` | once, up to 10 s | a registry connection on a node waits for a free tunnel | one timer per waiting connection |
 | Uptime scheduler | `internal/core/uptime_sched.go` | once, at the next due check: each check's interval, 30 s at the least (ADR 0055) | uptime checks exist; with none the goroutine waits on its kick channel and no timer is armed | one goroutine and one timer; per probe one HTTP GET (on another server over the node link, or in process) and one upsert (`BenchmarkUptimeRecord`, ~18 µs) |
 | Uptime rollups on the tick | `internal/core/uptime_sched.go` | with the statistics tick; works at most once an hour | uptime checks exist | an hour's minute rows into hour rows and two trims in one transaction (`BenchmarkUptimeRollup`, ~4 ms for 50 checks at 30 s) |
 | Snapshot claim wait | `internal/core/snapshots.go` | once, up to 5 min | an automatic snapshot (before a pre-deploy command or a `dock run` writing volumes, ADR 0047) waits for a backup, snapshot or restore of the service to end | one timer; the claim's release wakes it, nothing polls |
-| Backup scheduler | `internal/core/backups_schedule.go` | once, at the next due backup (daily per stateful service, and daily for the control plane itself, ADR 0021) | always: the control plane's own daily backup keeps it armed | one goroutine and one timer; a pass is four queries, then one job container per due backup. Each pass also deletes volume snapshots past their age (ADR 0047): one indexed query, and a job per server only when one is due. The control plane's backup is a `VACUUM INTO` of the database streamed with the keys and build logs into one restic job |
-| Job scheduler | `internal/core/jobs_schedule.go` | once, at the next due job of any service (ADR 0054) | an enabled job exists: with none there is no goroutine or timer (one pass at start, then it exits until a job is set) | one goroutine and one timer for every job; a pass is one query and a cron step per job (`BenchmarkJobPass`), then one job container per due job |
+| Backup scheduler | `internal/core/backups_schedule.go` | once, at the next due backup (daily per stateful service, and daily for the control plane itself, ADR 0021); 10 min after its own query failed | always: the control plane's own daily backup keeps it armed | one goroutine and one timer; a pass is four queries, then one job container per due backup. Each pass also deletes volume snapshots past their age (ADR 0047): one indexed query, and a job per server only when one is due. The control plane's backup is a `VACUUM INTO` of the database streamed with the keys and build logs into one restic job |
+| Job scheduler | `internal/core/jobs_schedule.go` | once, at the next due job of any service (ADR 0054); 1 min after its own query failed | an enabled job exists: with none there is no goroutine or timer (one pass at start, then it exits until a job is set) | one goroutine and one timer for every job; a pass is one query and a cron step per job (`BenchmarkJobPass`), then one job container per due job |
 | Environment move retry | `internal/core/env_move.go` (startMove) | 5 s doubling to 5 min | only while a move's rollback or clean-up keeps failing (ADR 0053) | one goroutine per such move, ended by success, a server it waits for, or shutdown |
 | Move hold waits for commands | `internal/core/env_move.go` (moveStop) | 1 s, up to 5 min | a move's hold starts while a command runs in the environment (ADR 0063) | one map read under a lock |
 | Drain busy wait | `internal/core/server_drains.go` | once, 15 s | a drain's next move is kept from starting by a deploy, backup or snapshot (ADR 0063) | one move pre-flight |
@@ -233,11 +260,14 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 | Update pickup | `internal/core/update.go` | once, 30 s after asking | the control plane asked its updater for an update (ADR 0028) | one timer and one stat; the updater normally stops the daemon first |
 | Updater health check | `internal/updater/system.go` | 1 s, up to 90 s | the root updater applies an update or rolls one back (its own process, not the daemon) | one HTTP GET to the local API, or one small file read on a node |
 | CLI update wait | `internal/cli/update.go` | 2 s | `dock update apply` waits for an update | one GET |
-| CLI backup wait | `internal/cli/backup.go` | 2 s | `dock backup run`/`restore` (or `run --control-plane`) waits for a run | one GET |
+| CLI backup and snapshot wait | `internal/cli/backup.go`, `snapshots.go` | 2 s | `dock backup run`/`restore` (or `run --control-plane`) or `dock volume snapshot` / `snapshot restore` waits for a run | one GET |
+| CLI long polls | `internal/cli/login_browser.go`, `request.go` | one request held up to 30 s by the server, then the next; 2 s after a lost connection (login) | `dock login` waits for the browser, or `dock request wait` for a decision | one request per 30 s; the server answers at once on the event, nothing polls inside it |
 | Data connection idle close | `internal/data/pg` | once, 60 s after last use | a database connection is open (Dock and tempoBase) | one timer per connection |
 | tempoBase audit prune | `internal/tempobase` | at most hourly, inline when an event is written; no timer | something is being audited | one indexed delete of events past `audit_retention_days`, at most 1000 |
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | Log stream reconnect (browser) | `web/src/api/events.ts` | once per lost connection, backing off 1 s to 30 s, at most 6 tries in a row | a followed log or build log lost its connection | one timer, then one EventSource that replays the backlog |
+| Replay player clock (browser) | `web/src/features/analytics/ReplayPlayer.tsx` | 250 ms | a session replay is playing | one state update |
+| Session recorder flush (visitor's browser) | `web/src/recorder/recorder.ts` (`/_dock/a/r.js`) | 5 s | a sampled page load of a site that records is open (ADR 0037) | one POST of the recorded chunk, when there is one |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
 | Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events or replay chunks wait to go to the control plane (ADR 0037); each spool has its own tail | one timer; then one spool read of up to 1,000 events |
@@ -261,9 +291,9 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
   B-TREE FOR ORDER BY` on one. Paginate with `id < ?`, never `OFFSET`.
 - **Prepared statements.** sqlc queries are prepared on first use and
   reused (`internal/store/stmts.go`), once per connection they run on, and
-  the pool keeps all connections open. Not up front: preparing all ~460
-  queries at start cost an idle daemon about 4 MB of SQLite memory for
-  queries it never runs. A transaction that meets a query for the first
+  the pool keeps all connections open. Not up front: preparing every query
+  at start (about 460 then, about 700 now) cost an idle daemon about 4 MB
+  of SQLite memory for queries it never runs. A transaction that meets a query for the first
   time runs it unprepared and has it prepared in the background, since
   preparing needs a second connection. Don't build SQL strings at runtime.
 - **The re-prepare pitfall.** The SQLite in `modernc.org/sqlite` is built
@@ -347,8 +377,8 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 - Don't load config, open the database or dial the network for commands
   that don't need it (`--help`, `context list`, `version`).
 - Commands print as they go; follow streams instead of polling.
-- The client-only build (`make build-cli`, tag `dockcli`, 8.5 MB against
-  34 MB) must not pull in the daemon: code that needs `core`, `api`,
+- The client-only build (`make build-cli`, tag `dockcli`, 10 MB against
+  66 MB) must not pull in the daemon: code that needs `core`, `api`,
   `store` or `node/*` goes in `internal/cli` files tagged `//go:build
   !dockcli` (see `server_cmds.go`).
 
@@ -357,9 +387,11 @@ Everything periodic in the daemon, the CLI and tempoBase (which has nothing else
 - **Route splitting.** Every route is its own chunk (TanStack Router
   `autoCodeSplitting`); the entry holds only the shell. Check the "UI
   initial JS" row after adding a dependency or a shared import.
-- **No heavy dependencies.** No date, chart, editor or icon libraries for
+- **No heavy dependencies.** No date, chart or icon libraries for
   something a few lines or the platform can do. A new runtime dependency
-  needs a reason in the PR.
+  needs a reason in the PR. The few heavy ones load only on the routes
+  that use them: CodeMirror and Glide Data Grid in the Data panel, rrweb's
+  player on a replay.
 - **No continuously repainting animations** (spinners, shimmer, pulse,
   blur): they keep the GPU busy on high-refresh displays. Static state
   indicators instead.

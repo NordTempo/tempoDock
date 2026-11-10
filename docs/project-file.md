@@ -2,7 +2,7 @@
 
 A project file describes a whole project: its environments, their
 services, settings, variables, volumes and domains. `dock project export`
-writes one; `dock apply FILE` reads one back, compares it with the live
+(or `dock export`) writes one; `dock apply FILE` reads one back, compares it with the live
 state and stages the difference
 ([ADR 0049](decisions/0049-apply-and-compose-import.md)). It's TOML, or
 the same structure as JSON.
@@ -53,7 +53,7 @@ project = "shop"
 | `shared_values` | environment | Shared variables with their value in the file |
 | `name` | service | Lower case letters, digits and dashes |
 | `template` | service | `postgres` or `redis`. Its settings, volume and credentials come from the template; a setting in the file overrides the template's |
-| `image`, `port`, `start_command`, `dockerfile_path`, `build_command`, `memory_mb`, `cpus`, `health_check_path`, `health_check_timeout_seconds`, `health_check_interval_seconds`, `health_check_probe_timeout_seconds`, `health_check_retries`, `health_check_start_period_seconds`, `pre_deploy_command`, `pre_deploy_timeout_seconds` | service | The service's settings, as `dock service update` names them. Left out means not set |
+| `image`, `port`, `start_command`, `dockerfile_path`, `build_command`, `memory_mb`, `cpus`, `health_check_path`, `health_check_timeout_seconds`, `health_check_interval_seconds`, `health_check_probe_timeout_seconds`, `health_check_retries`, `health_check_start_period_seconds`, `pre_deploy_command`, `pre_deploy_timeout_seconds`, `pre_deploy_snapshot` | service | The service's settings, as `dock service update` names them. Left out means not set |
 | `database`, `database_url_variable` | service | Data panel settings; compared, but changed with `dock db settings` |
 | `variables` | service | Names of the service's variables whose values are set separately (secrets) |
 | `values` | service | Variables with their value in the file: literals and references |
@@ -65,7 +65,10 @@ project = "shop"
 | `log_drains` | environment | `{ name, kind, target }`: where its logs go, without the URL's credentials. Compared; a missing drain is added with `dock logs drain add`, since its URL holds the secret |
 | `registry_credentials` | top | Private registry hosts the project's images pull from with an organization credential. Only the host: the plan says which the organization lacks, and an admin adds them with `dock registry login` |
 
-Parsing is strict: an unknown key, a key in both `variables` and
+Scheduled jobs, uptime checks, previews, alert channels, access settings
+and analytics sites are not part of a project file.
+
+Parsing is strict (`internal/projectfile`): an unknown key, a key in both `variables` and
 `values`, or `depends_on` naming a service that isn't there is an error
 that says where.
 
