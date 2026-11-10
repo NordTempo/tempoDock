@@ -11,6 +11,13 @@ docker/      containers, networks, volumes, logs, events, health checks, jobs
 build/       BuildKit and Railpack builds, image pushes
 caddy/       renders the full Caddy config from routes, the TLS ask endpoint
 stats/       /proc and cgroup v2 reads (Docker only to name a new container)
+traffic/     request counts from Caddy's access log (ADR 0033)
+uptime/      uptime probes run from the server (ADR 0055)
+collect/     the server's analytics spool and the analytics store's
+             container (ADR 0037)
+logarchive/  removed containers' logs kept on their server (ADR 0046)
+probe/       embeds dock-probe (health checks, ADR 0043) and dock-sync
+             (volume copies, ADR 0063) from cmd/
 remote/      the node link (ADR 0014): Hub and Client on the control
              plane, Node on the server, wire types, join
 fake/        in-memory Runtime for core tests and `make dev`
@@ -23,7 +30,8 @@ A new or changed method has to land everywhere at once, or the build or
 a remote server breaks:
 
 1. The interface and its doc comment in `runtime.go`.
-2. The real implementation (`docker/`, `build/`, `caddy/` or `stats/`).
+2. The real implementation (`docker/`, `build/`, `caddy/`, `stats/` or
+   the package that owns it), wired through `local.go`.
 3. `fake/fake.go`, faithful enough for core's tests to mean something.
 4. `remote/`: an `op...` constant in `protocol.go`, request and result
    types in `wire.go`, the `Client` method in `client.go` and its handler
@@ -54,9 +62,10 @@ durations travel as milliseconds.
   removes them otherwise. Containers that never serve (jobs, a failed
   start, infrastructure, tests) are removed with `RemoveVolumes: true`,
   or their volumes pile up on the disk.
-- No polling: follow Docker's event stream. Stats are the one periodic
-  job and read files, not the Docker API (except once per new container,
-  to name it in the memory breakdown).
+- No polling: follow Docker's event stream. Periodic work (stats
+  samples, uptime probes) is scheduled by core and listed in
+  docs/performance.md; stats read files, not the Docker API (except once
+  per new container, to name it in the memory breakdown).
 - Stream logs, build output and image layers; never read them whole.
 - Real-Docker tests are `integration_test.go` / `*_integration_test.go`
   behind `//go:build integration` (`make test-integration`).

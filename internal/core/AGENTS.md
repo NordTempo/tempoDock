@@ -35,7 +35,13 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   skips the lock.
 - Org scoping (ADR 0027): look projects up within `a.OrgID`. A user or
   token must never see or name another org's projects, tokens, policy or
-  audit events, including through live events (`canSee`).
+  audit events, including through live events (`canSee`). Operators
+  administer every org without membership (ADR 0062); an operator's
+  action on an org is recorded in both logs with `c.auditBoth`.
+- Sensitive actions (revealing secrets, creating tokens, unlocking an
+  environment, managing accounts, 2FA and SSO settings) also call
+  `a.requireRecent`: the session must have re-authenticated within
+  `ReauthWindow` (ADR 0057).
 - Errors are `datapanel.Error` with an `apitypes` code; the API maps codes
   to statuses. Messages are for humans and say what to do next.
 - Secret values (variables, org variables, connection URLs) are sealed

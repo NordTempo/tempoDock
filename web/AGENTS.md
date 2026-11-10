@@ -18,6 +18,11 @@ src/features/   one folder per area; a feature's own queries go in its
                 data.ts (see features/org/data.ts)
 src/shell/      sidebar, command palette, keyboard shortcuts, org context
 src/ui/         the small kit (kit.tsx), Dialog, formatting
+src/recorder/   Dock Analytics' session recorder (ADR 0037), not part of
+                the UI: `pnpm build:recorder` writes it to
+                internal/analytics/ingest/recorder/r.js, which is committed
+tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
+                under src/); open them under `pnpm dev`, see tests/README.md
 ```
 
 - Types come from `src/api/schema.d.ts` (`components["schemas"][...]`)
@@ -52,4 +57,4 @@ their server only through a `DataSource` (`api.ts`) given by
   `@source` in `tempobase/src/tempobase.css`.
 
 `pnpm check` typechecks both apps (`tsc -p tempobase` too), runs Biome and
-fails if either generated API client is stale.
+fails if either generated API client or the committed recorder is stale.
