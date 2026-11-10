@@ -421,6 +421,18 @@ func TestDeployTimeoutAndFailure(t *testing.T) {
 	if got.Number != rel.Number || got.Status != "failed" {
 		t.Errorf("release_details = %q %+v", det.summary, got)
 	}
+	if !strings.Contains(res.summary, "likely cause: DATABASE_URL isn't set") || !strings.Contains(res.summary, "Call diagnose") {
+		t.Errorf("failed deploy's summary = %q", res.summary)
+	}
+
+	// diagnose has the cause and its evidence (ADR 0070).
+	diag := call(t, s, "diagnose", map[string]any{"service": "web"})
+	var d apitypes.Diagnosis
+	diag.decode(t, &d)
+	if d.Release != rel.Number || d.Cause.Rule != "missing_variable" || len(d.Checked) == 0 ||
+		!strings.Contains(diag.summary, "Likely cause: DATABASE_URL isn't set. Fix: dock env set DATABASE_URL=") {
+		t.Errorf("diagnose = %q %s", diag.summary, diag.json)
+	}
 }
 
 // stop_service takes a service offline until start_service, which waits

@@ -249,6 +249,20 @@ one never stopped serving. The release is `failed` with `error` and
 `error_code`: `build_failed`, `health_check_failed` or `deploy_failed`. The
 CLI exits with code 6.
 
+**Why it failed.** Dock keeps a diagnosis of every failed release
+([ADR 0070](../decisions/0070-deploy-diagnosis.md)), captured as it
+fails: the likely cause from a small set of rules (the app listening on
+another port than the one checked, an out-of-memory kill, a start command
+the image lacks, a variable the app needs and the release doesn't set, a
+health check path that answers 404, a failing pre-deploy command, ...),
+what was ruled out, and the evidence: the health check's answer, the exit
+code, what changed since the last release that served, and the last lines
+of the container and the build. The release's page shows it with the fix
+as its first button; `dock diagnose` prints it (`-r N` for an older one,
+`--json` for all of it), and agents call MCP `diagnose`. When no rule
+matches it says so and shows the evidence. A service keeps its last 20
+for 30 days.
+
 **If the daemon restarts mid-deploy**, the in-flight release is marked
 `failed` ("daemon restarted during deploy") and the active one keeps
 serving.

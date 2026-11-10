@@ -319,6 +319,17 @@ type DataPolicyRule struct {
 	Sensitive     string
 }
 
+type Diagnosis struct {
+	ID        int64
+	ServiceID int64
+	ReleaseID int64
+	Kind      string
+	Rule      string
+	Summary   string
+	Bundle    string
+	CreatedAt int64
+}
+
 type Domain struct {
 	ID           int64
 	Hostname     string

@@ -38,10 +38,11 @@ access goes through the daemon's API, which enforces permissions.
   signed-in admin for a token. Wrong codes lock code entry for minutes.
 - Secret values are hidden from `read` and `deploy` in the API, UI, logs and
   events. Every variable value is secret; only `admin` can reveal them.
-  Build logs, container logs (live, or kept from a failed release) and live
-  build log events show the values of the release's environment (with
-  references to shared and org variables resolved, and a multi-line value
-  line by line) as `*****` to anyone else, in the UI, CLI and MCP alike.
+  Build logs, container logs (live, or kept from a failed release), live
+  build log events and the log lines a deploy diagnosis quotes show the
+  values of the release's environment (with references to shared and org
+  variables resolved, and a multi-line value line by line) as `*****` to
+  anyone else, in the UI, CLI and MCP alike.
   Values shorter than 6 bytes and the variables the platform injects
   (`PORT`, `DOCK_*`) aren't masked: short values are rarely secrets and
   masking them would shred the logs. The masking protects against

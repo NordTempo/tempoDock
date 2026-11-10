@@ -1037,9 +1037,13 @@ func (c *Core) ListReleases(ctx context.Context, a Actor, ref ServiceRef, limit 
 	if err != nil {
 		return nil, err
 	}
+	diags, err := c.diagnosisRefs(ctx, ss.svc.ID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]apitypes.Release, 0, len(rows))
 	for _, r := range rows {
-		rel, err := c.toRelease(ctx, ss, r, false)
+		rel, err := c.toReleaseWith(ctx, ss, r, false, diags)
 		if err != nil {
 			return nil, err
 		}
@@ -1069,7 +1073,15 @@ func (c *Core) releaseByNumber(ctx context.Context, ss svcScope, number int64) (
 	return r, err
 }
 
+// toRelease is a release as the API returns it. A failed one carries its
+// diagnosis (one indexed lookup); toReleaseWith takes them preloaded.
 func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, withEvents bool) (apitypes.Release, error) {
+	return c.toReleaseWith(ctx, ss, r, withEvents, nil)
+}
+
+// toReleaseWith is toRelease with diags, the service's diagnoses by
+// release ID (diagnosisRefs), or nil to look the release's up.
+func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, withEvents bool, diags map[int64]*apitypes.DiagnosisRef) (apitypes.Release, error) {
 	out := apitypes.Release{
 		ID: r.ID, Number: r.Number, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
@@ -1092,6 +1104,13 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 	}
 	for _, m := range cfg.Mounts {
 		out.Config.Mounts = append(out.Config.Mounts, apitypes.VolumeMount{Volume: m.Volume, Path: m.Path})
+	}
+	if r.Status == string(apitypes.ReleaseFailed) {
+		if diags != nil {
+			out.Diagnosis = diags[r.ID]
+		} else if out.Diagnosis, err = c.diagnosisRef(ctx, r.ID); err != nil {
+			return out, err
+		}
 	}
 	if withEvents {
 		evs, err := c.store.ListReleaseEvents(ctx, r.ID)

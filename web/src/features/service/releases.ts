@@ -205,13 +205,3 @@ export function rollbackLosses(from: Release, to: Release): string[] {
   }
   return out;
 }
-
-/**
- * The port a failed release's error says refused connections ("connection
- * refused on :3000"), when that is why it failed: the app likely listens
- * on another port.
- */
-export function refusedPort(r: Pick<ReleaseSummary, "error">) {
-  const port = /connection refused on :(\d+)/.exec(r.error ?? "")?.[1];
-  return port ? Number(port) : undefined;
-}

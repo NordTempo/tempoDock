@@ -150,6 +150,7 @@ func printRelease(g *globals, v releaseView) error {
 		"release", fmt.Sprintf("%d of %s/%s/%s", r.Number, r.Project, r.Environment, r.Service),
 		"status", string(r.Status),
 		"error", errText,
+		"likely cause", likelyCause(r),
 		"source", describeSource(r),
 		"commit", commit,
 		"image", r.ImageRef,
@@ -192,6 +193,16 @@ func printRelease(g *globals, v releaseView) error {
 		}
 	}
 	return nil
+}
+
+// likelyCause is a failed release's cause from its diagnosis (ADR 0070),
+// with the command that shows the evidence.
+func likelyCause(r apitypes.Release) string {
+	d := r.Diagnosis
+	if d == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s (`dock diagnose -r %d`)", d.Summary, r.Number)
 }
 
 // newReleaseWaitCmd is `dock release wait [N]`: follow a release someone

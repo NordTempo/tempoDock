@@ -251,6 +251,9 @@ func waitSummary(action string, vs []releaseView) string {
 		if v.Status == apitypes.ReleaseFailed && v.ErrorCode != "" {
 			s += " (" + string(v.ErrorCode) + ")"
 		}
+		if d := v.Diagnosis; v.Status == apitypes.ReleaseFailed && d != nil && d.Rule != "" {
+			s += ", likely cause: " + d.Summary
+		}
 		if !v.Status.Done() {
 			unfinished++
 		}
@@ -265,7 +268,7 @@ func waitSummary(action string, vs []releaseView) string {
 	}
 	for _, v := range vs {
 		if v.Status == apitypes.ReleaseFailed {
-			out += ". A failed release never got traffic; the previous one still serves. Read error and logs, fix, deploy again; don't roll back."
+			out += ". A failed release never got traffic; the previous one still serves. Call diagnose for the cause and the evidence (or read error and logs), fix, deploy again; don't roll back."
 			break
 		}
 	}

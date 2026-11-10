@@ -324,7 +324,7 @@ func TestDeployFailureExitCodes(t *testing.T) {
 	}
 	_ = json.Unmarshal([]byte(stderr), &e)
 	if code != int(output.ExitDeployFailed) || failed.Status != apitypes.ReleaseFailed || e.Error.Code != "health_check_failed" ||
-		!strings.Contains(e.Error.Hint, "Release 1 is still serving") || !strings.Contains(e.Error.Hint, "dock release show 2") {
+		!strings.Contains(e.Error.Hint, "Release 1 is still serving") || !strings.Contains(e.Error.Hint, "dock diagnose -r 2") {
 		t.Fatalf("health check failure: exit %d\nstdout %s\nstderr %s", code, stdout, stderr)
 	}
 

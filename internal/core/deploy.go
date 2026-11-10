@@ -46,6 +46,9 @@ type deployment struct {
 	// orphans are containers already labelled for this release when it
 	// started (orphanCheck): never its own, so fail leaves them alone.
 	orphans []string
+	// pre is how the pre-deploy command ran, for a diagnosis (ADR 0070);
+	// nil when none ran.
+	pre *apitypes.DiagnosisPreDeploy
 }
 
 type stepError struct {
@@ -567,6 +570,8 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
+	// What explains the failure, read while its container still exists.
+	captured := d.captureContainer(ctx)
 	if !c.keepsLogs(serverID) {
 		// Removing the container archives its output on servers that can.
 		c.saveContainerLogs(ctx, d.ss, d.rel.ID)
@@ -594,6 +599,9 @@ func (d *deployment) fail(ctx context.Context, err error) {
 			d.event(ctx, fmt.Sprintf("Release %d starts again when the server is back", d.old.Number))
 		}
 	}
+	// Before the release reads as failed, so a failed release always
+	// carries its cause (ADR 0070).
+	d.recordDiagnosis(ctx, code, msg, isOffline(err), captured)
 	// Before the release reads as failed, so "failed" means the changes it
 	// carried are staged again.
 	c.restage(ctx, d.ss, d.rel, msg)

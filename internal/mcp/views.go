@@ -29,6 +29,9 @@ type releaseView struct {
 	Events []string `json:"events,omitempty"`
 	// Logs explain a failed release (release_details and waits).
 	Logs *failureLogs `json:"logs,omitempty"`
+	// Diagnosis names a failed release's likely cause; the diagnose tool
+	// has its evidence (ADR 0070).
+	Diagnosis *apitypes.DiagnosisRef `json:"diagnosis,omitempty"`
 }
 
 // failureLogs are the last lines that explain a failed release.
@@ -44,7 +47,7 @@ func viewRelease(r apitypes.Release) releaseView {
 	v := releaseView{
 		Service: r.Service, Number: r.Number, Status: r.Status, Source: r.Source, FromRelease: r.FromRelease,
 		Image: r.ImageRef, Error: r.Error, ErrorCode: r.ErrorCode, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
-		FinishedAt: r.FinishedAt,
+		FinishedAt: r.FinishedAt, Diagnosis: r.Diagnosis,
 	}
 	for _, e := range r.Events {
 		v.Events = append(v.Events, e.Message)

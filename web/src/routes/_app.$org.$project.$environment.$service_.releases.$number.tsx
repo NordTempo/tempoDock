@@ -4,7 +4,7 @@ import {
   notFound,
   useNavigate,
 } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { api, body } from "../api/client";
 import { useServiceLogs } from "../data/live";
 import { serviceWide, useAction, useStageSettings } from "../data/mutations";
@@ -23,11 +23,16 @@ import type { LogLine, Release, ServiceRef } from "../data/types";
 import { invalid, useValidation } from "../features/create/form";
 import { openDeploy } from "../features/deploy/start";
 import { shortSha, useGitDeploy } from "../features/git/api";
+import {
+  Cause,
+  Evidence,
+  fixEdit,
+  useDiagnosis,
+} from "../features/service/Diagnosis";
 import { LogRow } from "../features/service/LogsPane";
 import { RollbackConfirm } from "../features/service/ReleasesTable";
 import {
   imageLabel,
-  refusedPort,
   releaseDiff,
   servesCopyOf,
   shortImage,
@@ -92,7 +97,17 @@ function ReleasePage() {
   const servingRelease = useReleases(ref).find((x) => x.status === "active");
   const failed = release.status === "failed";
   const r = `r${release.number}`;
-  const fix = failed ? likelyFix(release, ref.service) : undefined;
+  // Its diagnosis (ADR 0070): the likely cause and the fix it points at.
+  const diagnosis = useDiagnosis(ref, release);
+  const edit = failed ? fixEdit(diagnosis?.cause.fix) : undefined;
+  const fix =
+    edit && "inPlace" in edit
+      ? {
+          edit: edit.inPlace,
+          label: edit.label,
+          suggested: diagnosis?.cause.fix?.suggested,
+        }
+      : undefined;
   // What it replaced (or would have): the release before it that served.
   const previous = releases.find(
     (x) =>
@@ -240,13 +255,13 @@ function ReleasePage() {
               {releaseWhat(release)}{" "}
               <span className="font-mono">{release.image_ref}</span>
             </Prop>
-            {previous && (
+            {previous && !(failed && diagnosis?.changes) && (
               <Prop label={`Changed since r${previous.number}`}>
                 <Changes from={previous} to={release} />
               </Prop>
             )}
           </dl>
-          {fix && <p className="text-md leading-normal">{fix.text}</p>}
+          {failed && diagnosis && <Cause d={diagnosis} />}
           {fix && fixing && (
             <FixAndDeploy
               release={release}
@@ -272,10 +287,24 @@ function ReleasePage() {
                   {fix.label}
                 </Link>
               ))}
+            {edit && !("inPlace" in edit) && (
+              <Link
+                {...("setting" in edit
+                  ? {
+                      to: "/$org/$project/$environment/$service/build",
+                      search: { edit: edit.setting },
+                    }
+                  : { to: "/$org/$project/$environment/$service/variables" })}
+                params={{ org, ...ref }}
+                className="btn pri"
+              >
+                {edit.label}
+              </Link>
+            )}
             <Act
               // The next step only while it is building or after it failed;
               // on a healthy release, reading its log is just one option.
-              primary={!fix && (failed || inFlight(release.status))}
+              primary={!edit && (failed || inFlight(release.status))}
               cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
                 navigate({
@@ -366,6 +395,8 @@ function ReleasePage() {
             />
           )}
         </section>
+
+        {failed && diagnosis && <Evidence d={diagnosis} ref={ref} />}
 
         <section aria-labelledby="steps" className="flex flex-col gap-2">
           <SectionHead id="steps">
@@ -500,46 +531,6 @@ function Changes({ from, to }: { from: Release; to: Release }) {
   ));
 }
 
-/**
- * The likely fix for a failed release: a refused port points at the port
- * setting, a failing health check at its path. The release page makes it
- * the primary button, with one line saying why.
- */
-function likelyFix(
-  release: Release,
-  service: string,
-):
-  | { edit: "port" | "health_check_path"; label: string; text: ReactNode }
-  | undefined {
-  const port = refusedPort(release);
-  if (port !== undefined) {
-    return {
-      edit: "port",
-      label: `Change port (now ${release.config.port})`,
-      text: (
-        <>
-          {service} didn't answer on <span className="font-mono">:{port}</span>.
-          If the app listens on another port, change it, then deploy again.
-        </>
-      ),
-    };
-  }
-  const path = release.config.health_check_path;
-  if (path && /^health check/i.test(release.error ?? "")) {
-    return {
-      edit: "health_check_path",
-      label: "Change health check path",
-      text: (
-        <>
-          <span className="font-mono">GET {path}</span> didn't answer with a
-          success. Check the app's last lines below, or change the path.
-        </>
-      ),
-    };
-  }
-  return undefined;
-}
-
 /** Deploys a given image (`dock deploy --image`), taking staged changes with it. */
 const useDeployImage = () =>
   useAction(
@@ -571,7 +562,12 @@ function FixAndDeploy({
   onDeployed,
 }: {
   release: Release;
-  fix: NonNullable<ReturnType<typeof likelyFix>>;
+  /** The setting to change, and the value the diagnosis suggests. */
+  fix: {
+    edit: "port" | "health_check_path";
+    label: string;
+    suggested?: string;
+  };
   onClose: () => void;
   onDeployed: () => void;
 }) {
@@ -583,7 +579,8 @@ function FixAndDeploy({
   const gitDeploy = useGitDeploy(ref);
   const port = fix.edit === "port";
   const [value, setValue] = useState(
-    port ? String(release.config.port) : release.config.health_check_path,
+    fix.suggested ??
+      (port ? String(release.config.port) : release.config.health_check_path),
   );
   const v = useValidation();
   const typed = value.trim();

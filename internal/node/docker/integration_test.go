@@ -296,6 +296,10 @@ func TestHealthCheckOOM(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "out of memory") || !strings.Contains(err.Error(), "limit 16 MB") {
 		t.Fatalf("err = %v", err)
 	}
+	// A deploy diagnosis reads it back (ADR 0070).
+	if f := node.ParseHealthFailure(err.Error()); (f.Kind != node.HealthFailOOM && f.Kind != node.HealthFailKilled) || f.LimitMB != 16 {
+		t.Errorf("parsed as %+v", f)
+	}
 }
 
 // An app's container has no swap, and on systemd hosts its scope unit says

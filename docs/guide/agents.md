@@ -133,7 +133,7 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `list_errors`, `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `diagnose`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `list_errors`, `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
 | Jobs | `list_jobs`, `set_job`, `run_job`, `remove_job`, `job_history` |
 | Previews | `get_previews`, `get_preview` |
@@ -252,8 +252,11 @@ release that is already running (another deploy, or one whose wait was
 cut off), `dock release wait [N]` waits until it is done and exits the
 same way.
 
-A failed deploy needs no rollback. Rollback is for a release that went live
-but misbehaves:
+A failed deploy needs no rollback. To learn why it failed, `dock diagnose
+--json` (MCP `diagnose`) returns one bundle: the likely cause with its fix
+(`cause.rule`, `cause.summary`, `cause.fix.cli`; an empty rule means no
+rule matched), what was ruled out (`checked`), and the evidence. Rollback
+is for a release that went live but misbehaves:
 
 ```sh
 #!/usr/bin/env bash

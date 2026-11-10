@@ -952,20 +952,4 @@ func hostPort(ports network.PortMap) int {
 	return 0
 }
 
-// errExited reports a container that died while being waited on. limit is
-// its memory limit in bytes (0: none).
-func errExited(code int, oom bool, limit int64) error {
-	switch {
-	case oom && limit > 0:
-		return fmt.Errorf("container ran out of memory (limit %d MB) and was killed during health check", limit>>20)
-	case oom:
-		return errors.New("container ran out of memory and was killed during health check")
-	case code == 137 && limit > 0:
-		// SIGKILL. Some kernels don't report the OOM kill to Docker, so
-		// name the likely cause without claiming it.
-		return fmt.Errorf("container was killed (exit code 137) during health check, most likely out of memory (limit %d MB)", limit>>20)
-	}
-	return fmt.Errorf("container exited with code %d during health check", code)
-}
-
 var errRestarted = errors.New("container restarted during health check")

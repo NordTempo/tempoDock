@@ -88,8 +88,21 @@ func TestReleaseWait(t *testing.T) {
 	_ = json.Unmarshal([]byte(stdout), &failed)
 	if code != int(output.ExitDeployFailed) || failed.Status != apitypes.ReleaseFailed || failed.Logs == nil ||
 		len(failed.Logs.Container) != 1 || !strings.HasSuffix(failed.Logs.Container[0], " panic: DATABASE_URL is not set") ||
-		!strings.Contains(stderr, "`dock release show 3 -p shop -e production -s web`") {
+		!strings.Contains(stderr, "Likely cause: DATABASE_URL isn't set. See why: `dock diagnose -r 3 -p shop -e production -s web`") {
 		t.Fatalf("wait for a failed release: exit %d\nstdout %s\nstderr %s", code, stdout, stderr)
+	}
+
+	// Its diagnosis has the cause and the line it matched (ADR 0070).
+	d := ok[apitypes.Diagnosis](t, append([]string{"diagnose", "-r", "3"}, web...)...)
+	if d.Release != 3 || d.Cause.Rule != "missing_variable" || len(d.ContainerTail) != 1 || !d.ContainerTail[0].Matched {
+		t.Fatalf("diagnose -r 3 = %+v", d)
+	}
+	if _, stdout, _ := exec(t, append([]string{"diagnose"}, web...)...); !strings.Contains(stdout, "likely cause  DATABASE_URL isn't set") ||
+		!strings.Contains(stdout, "> ") {
+		t.Errorf("diagnose:\n%s", stdout)
+	}
+	if code, _, stderr := exec(t, append([]string{"diagnose", "-r", "2"}, web...)...); code != int(output.ExitNotFound) {
+		t.Errorf("diagnose -r 2 (live): exit %d\n%s", code, stderr)
 	}
 
 	// release show carries the end of both logs, unless --log-lines 0.

@@ -336,6 +336,47 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: summary + ".", Data: v}, nil
 		})
 
+	mcpkit.AddTool(s, "diagnose", "Diagnose a failed release",
+		"Why a release failed, in one bundle Dock kept when it failed: the likely cause from deterministic rules (cause.rule, cause.summary, a fix with its setting and CLI command), "+
+			"every rule checked with its verdict (checked: what was ruled out and why), the failure with its exit code and OOM kill, the health check's answer, "+
+			"what changed since the last good release (image, variable names, settings), the pre-deploy command, the last lines of the container (matched lines marked) and the build, "+
+			"error issues and memory around it. Default: the service's newest diagnosis; release picks one. Call this first after a failed deploy instead of reading logs. "+
+			"A failed release never got traffic: fix the cause and deploy again, don't roll back. No rule matching (empty cause.rule) means read the evidence.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			Release int64 `json:"release,omitempty" doc:"Release number. Default: the service's newest diagnosis."`
+		}) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in.ServiceInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			list, err := h.core.ListDiagnoses(ctx, c.Actor, ref, in.Release, 1)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			if len(list) == 0 {
+				what := fmt.Sprintf("%s has no diagnoses: Dock keeps one for each failed release, for 30 days", ref)
+				if in.Release > 0 {
+					what = fmt.Sprintf("release %d of %s has no diagnosis: only failed releases have one", in.Release, ref)
+				}
+				return mcpkit.Reply{}, errf(apitypes.CodeNotFound, "%s", what)
+			}
+			d, err := h.core.GetDiagnosis(ctx, c.Actor, ref, list[0].ID)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			summary := fmt.Sprintf("Release %d of %s failed in %s. ", d.Release, ref, d.Failure.Step)
+			if d.Cause.Rule != "" {
+				summary += "Likely cause: " + d.Cause.Summary + "."
+				if f := d.Cause.Fix; f != nil && f.CLI != "" {
+					summary += " Fix: " + f.CLI + "."
+				}
+			} else {
+				summary += "No rule matched; the evidence is below. Error: " + d.Failure.Error
+			}
+			return mcpkit.Reply{Summary: summary, Data: d}, nil
+		})
+
 	h.addReleaseTools(s)
 
 	mcpkit.AddTool(s, "logs", "Service logs",

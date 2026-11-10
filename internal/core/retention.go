@@ -31,6 +31,7 @@ import (
 //   - error issues (ADR 0062): open ones without an occurrence for 7
 //     days resolve by themselves, resolved ones not seen for 30 days go,
 //     and hourly counts older than 7 days;
+//   - deploy diagnoses older than build_log_days (ADR 0070);
 //   - on every online server, log archives past [logs] limits and those
 //     of services that no longer exist (pruneLogs, ADR 0046).
 //
@@ -199,6 +200,7 @@ type retained struct {
 	// quietErrors are error issues that resolved by themselves, errors
 	// resolved ones deleted.
 	quietErrors, errors int64
+	diagnoses           int64
 }
 
 // retain runs one retention pass. Failures are logged; the next pass
@@ -226,10 +228,13 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if out.quietErrors, out.errors, err = c.retainErrors(ctx, now); err != nil {
 		c.log.Warn("retention: error issues", "err", err)
 	}
+	if out.diagnoses, err = c.pruneDiagnoses(ctx, now); err != nil {
+		c.log.Warn("retention: diagnoses", "err", err)
+	}
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {
 		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests,
-			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "took", took)
+			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "diagnoses", out.diagnoses, "took", took)
 	} else {
 		c.log.Debug("retention: nothing to trim", "took", took)
 	}

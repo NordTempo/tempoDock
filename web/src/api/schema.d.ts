@@ -3097,6 +3097,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/diagnoses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List diagnoses
+         * @description A service's deploy diagnoses, newest first, without their bundles: one per failed release, captured when it failed. Scope: read.
+         */
+        get: operations["list-diagnoses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/diagnoses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a diagnosis
+         * @description One failure's bundle: the likely cause and what was ruled out, the failure, the health check, what changed since the last good release, the pre-deploy command, the last lines of the container and the build, error issues and resources around it. Secret values in log lines are masked unless the caller can reveal them. Scope: read.
+         */
+        get: operations["get-diagnosis"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/domains": {
         parameters: {
             query?: never;
@@ -6523,6 +6563,207 @@ export interface components {
             /** @description Image reference; defaults to the service's image setting, which a deploy of another image updates */
             image?: string;
         };
+        Diagnosis: {
+            /** @description Rules that matched after the cause's */
+            also_matched: string[] | null;
+            build_tail: components["schemas"]["DiagnosisLine"][] | null;
+            /** Format: date-time */
+            captured_at: string;
+            cause: components["schemas"]["DiagnosisCause"];
+            /** @description What changed since the last good release; absent when none served before */
+            changes?: components["schemas"]["DiagnosisChanges"];
+            /** @description Every rule that applies to the failed step, with its verdict */
+            checked: components["schemas"]["DiagnosisCheck"][] | null;
+            container_tail: components["schemas"]["DiagnosisLine"][] | null;
+            environment: string;
+            /** @description Error issues of the service seen around the failure, newest first */
+            errors: components["schemas"]["DiagnosisError"][] | null;
+            failure: components["schemas"]["DiagnosisFailure"];
+            /** @description The deploy's health check, when the release got that far */
+            health?: components["schemas"]["DiagnosisHealth"];
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "release";
+            /**
+             * Format: int64
+             * @description The newest earlier release that served, which changes compare with; 0 when none did
+             */
+            last_good_release?: number;
+            /** @description The pre-deploy command, when one ran */
+            pre_deploy?: components["schemas"]["DiagnosisPreDeploy"];
+            project: string;
+            /**
+             * Format: int64
+             * @description The failed release's number
+             */
+            release: number;
+            /** @description The service's memory and CPU before the failure, from its 1-minute samples */
+            resources?: components["schemas"]["DiagnosisResources"];
+            service: string;
+            /** @description Older log lines were left out to keep the bundle under its size limit */
+            truncated: boolean;
+        };
+        DiagnosisCause: {
+            /** @description What matched; may quote a log line (masked) */
+            detail?: string;
+            fix?: components["schemas"]["DiagnosisFix"];
+            rule?: string;
+            /** @description One line, made from the rule's facts (a port, a limit, a variable name), never from log text */
+            summary: string;
+        };
+        DiagnosisChanges: {
+            /** @description Set when the image changed */
+            image?: components["schemas"]["DiagnosisImage"];
+            settings: components["schemas"]["DiagnosisSetting"][] | null;
+            variables: components["schemas"]["DiagnosisVariables"];
+        };
+        DiagnosisCheck: {
+            matched: boolean;
+            rule: string;
+            /** @description The fact the verdict rests on */
+            why: string;
+        };
+        DiagnosisError: {
+            /** Format: int64 */
+            count: number;
+            /**
+             * Format: int64
+             * @description The release it was first seen in
+             */
+            first_release: number;
+            /** Format: int64 */
+            id: number;
+            title: string;
+        };
+        DiagnosisExit: {
+            /** Format: int64 */
+            exit_code: number | null;
+            /** Format: int64 */
+            memory_limit_mb: number;
+            oom_killed: boolean;
+            /** Format: int64 */
+            restarts: number;
+            /** @description Still running when the deploy stopped it */
+            running: boolean;
+        };
+        DiagnosisFailure: {
+            /**
+             * Format: int64
+             * @description From the release's start to its failure
+             */
+            duration_ms: number;
+            error: string;
+            error_code: string;
+            /** @description The container's state, when one was started */
+            exit?: components["schemas"]["DiagnosisExit"];
+            /**
+             * @description The step it failed in
+             * @enum {string}
+             */
+            step: "queued" | "building" | "starting" | "health_checking" | "active";
+        };
+        DiagnosisFix: {
+            /** @description The command that makes the change */
+            cli?: string;
+            /** @enum {string} */
+            setting: "port" | "health_check_path" | "memory" | "start_command" | "image" | "variables" | "pre_deploy_command" | "health_check_timeout";
+            /** @description A value the evidence suggests (the port the app listens on) */
+            suggested?: string;
+        };
+        DiagnosisHealth: {
+            /**
+             * @description http: GET of the path; tcp: a connection; running: a service without a port has to keep running
+             * @enum {string}
+             */
+            kind: "http" | "tcp" | "running";
+            path?: string;
+            /**
+             * Format: int64
+             * @description The container port it checked
+             */
+            port?: number;
+            result?: string;
+            /**
+             * Format: int64
+             * @description The HTTP status the check got
+             */
+            status?: number;
+            /** Format: int64 */
+            timeout_seconds: number;
+        };
+        DiagnosisImage: {
+            /** @description The failed release's commit */
+            commit?: components["schemas"]["Commit"];
+            from: string;
+            to: string;
+        };
+        DiagnosisLine: {
+            matched?: boolean;
+            text: string;
+        };
+        DiagnosisPreDeploy: {
+            command: string;
+            /** Format: int64 */
+            duration_ms: number;
+            /**
+             * Format: int64
+             * @description Null when it couldn't run or timed out
+             */
+            exit_code: number | null;
+            tail: components["schemas"]["DiagnosisLine"][] | null;
+            timed_out?: boolean;
+        };
+        DiagnosisRef: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "release";
+            /** @description The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched */
+            rule?: string;
+            /** @description The likely cause in one line, or that no rule matched */
+            summary: string;
+        };
+        DiagnosisResources: {
+            cpu_percent: number[] | null;
+            /** Format: int64 */
+            memory_limit_mb: number;
+            memory_mb: number[] | null;
+            /**
+             * Format: int64
+             * @description The release the samples are of
+             */
+            of_release?: number;
+            /** Format: int64 */
+            peak_memory_mb: number;
+        };
+        DiagnosisSetting: {
+            from: string;
+            name: string;
+            to: string;
+        };
+        DiagnosisSummary: {
+            /** Format: date-time */
+            captured_at: string;
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "release";
+            /**
+             * Format: int64
+             * @description The failed release's number
+             */
+            release: number;
+            /** @description The matched rule's ID (port_mismatch, oom_killed, ...); empty when no rule matched */
+            rule?: string;
+            /** @description The likely cause in one line, or that no rule matched */
+            summary: string;
+        };
+        DiagnosisVariables: {
+            added: string[] | null;
+            changed: string[] | null;
+            removed: string[] | null;
+        };
         DiscardChangesRequest: {
             domains?: components["schemas"]["DomainRef"][] | null;
             services?: string[] | null;
@@ -7668,6 +7909,8 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            /** @description A failed release's diagnosis and its likely cause; read it whole with GET .../diagnoses/{id} */
+            diagnosis?: components["schemas"]["DiagnosisRef"];
             environment: string;
             error?: string;
             error_code?: string;
@@ -27369,6 +27612,202 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Service"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-diagnoses": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Only this release's */
+                release?: number;
+                limit?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosisSummary"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-diagnosis": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Diagnosis"];
                 };
             };
             /** @description Bad Request */

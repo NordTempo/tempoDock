@@ -67,8 +67,14 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 		}
 	}
 	took := time.Since(start).Round(time.Second)
+	// How it ran, for a diagnosis (ADR 0070).
+	d.pre = &apitypes.DiagnosisPreDeploy{Command: cmd, DurationMS: time.Since(start).Milliseconds(), Tail: diagLines(tailLines(res.Output, diagPreDeployLines))}
+	if err == nil {
+		d.pre.ExitCode = ptr(res.ExitCode)
+	}
 	switch {
 	case err != nil && ctx.Err() == nil && errors.Is(jctx.Err(), context.DeadlineExceeded):
+		d.pre.TimedOut = true
 		return step(apitypes.CodeDeployFailed, "pre-deploy command took longer than %s and was stopped; raise the service's pre-deploy timeout if it needs longer", timeout)
 	case err != nil:
 		return step(apitypes.CodeDeployFailed, "pre-deploy command could not run: %w", d.c.nodeErr(d.ss.env.ServerID, err))

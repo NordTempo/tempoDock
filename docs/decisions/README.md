@@ -83,6 +83,7 @@ line means a later record added to it without changing what it decided.
 | [0068](0068-redirects-on-cloudflare-zones.md) | Redirects on Cloudflare zones | accepted |
 | [0069](0069-database-insights.md) | Database insights | accepted |
 | [0070](0070-sleeping-environments.md) | Sleeping environments (scale to zero) | accepted |
+| [0070](0070-deploy-diagnosis.md) | Deploy diagnosis | accepted |
 
 ## Template
 

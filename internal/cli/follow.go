@@ -202,6 +202,14 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 	if r.ErrorCode == apitypes.CodeBuildFailed {
 		see = fmt.Sprintf("See the build log: `dock logs --build --release %d %s`.", r.Number, t.flags())
 	}
+	if d := r.Diagnosis; d != nil && (r.ErrorCode != apitypes.CodeBuildFailed || d.Rule == "pull_failed") {
+		// Its diagnosis (ADR 0070) says why, with the evidence; a build's
+		// own log says more than "the build failed".
+		see = fmt.Sprintf("See why: `dock diagnose -r %d %s`.", r.Number, t.flags())
+		if d.Rule != "" {
+			see = "Likely cause: " + d.Summary + ". " + see
+		}
+	}
 	code := r.ErrorCode
 	if code == "" {
 		code = apitypes.CodeDeployFailed
