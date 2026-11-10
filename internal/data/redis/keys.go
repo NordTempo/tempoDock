@@ -154,7 +154,8 @@ func rawKey(key string, isHex bool) (string, error) {
 // ScanKeys reads about req.Limit keys: SCAN steps (MATCH and TYPE given
 // to the server) until the limit, scanCalls steps or scanBudget, then one
 // pipeline for the keys' types (when not filtered by type) and one for
-// their TTLs, lengths and sampled memory, with the database's size.
+// their TTLs, lengths and sampled memory, with the database's size. With
+// c.Masked, keys matching a sensitive pattern come as the pattern.
 func (e *Engine) ScanKeys(ctx context.Context, t data.Target, c data.Call, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
 	limit := req.Limit
 	if limit == 0 {
@@ -256,6 +257,9 @@ func (e *Engine) ScanKeys(ctx context.Context, t data.Target, c data.Call, req a
 				info.TTLMs = -1 // no expiry, or the key vanished since
 			}
 			info.Key, info.Hex = keyName(k)
+			if pattern, ok := data.KeySensitive(c.SensitiveKeys, k); ok && c.Masked {
+				info.Key, info.Hex, info.Masked = pattern, false, true
+			}
 			page.Keys[i] = info
 		}
 		if cursor != "0" {

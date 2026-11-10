@@ -213,6 +213,16 @@ func (a *App) SetSensitiveColumns(ctx context.Context, act Actor, name string, r
 	return a.panel.SetSensitiveColumns(ctx, act.panelActor(), db, req)
 }
 
+// SetSensitiveKeys replaces a key-value database's sensitive key
+// patterns; tempoBase has none, so the panel refuses it.
+func (a *App) SetSensitiveKeys(ctx context.Context, act Actor, name string, req apitypes.SetSensitiveKeysRequest) ([]string, error) {
+	db, err := a.dataDB(ctx, act, name)
+	if err != nil {
+		return nil, err
+	}
+	return a.panel.SetSensitiveKeys(ctx, act.panelActor(), db, req)
+}
+
 // DataInsights reads how the connection's database is doing. Overview,
 // tables and indexes need level schema; queries and sessions read.
 func (a *App) DataInsights(ctx context.Context, act Actor, name string, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error) {

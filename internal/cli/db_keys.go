@@ -53,7 +53,10 @@ With --json, the page as the API returns it, including next.`,
 			t := g.io.Table("KEY", "TYPE", "LENGTH", "SIZE", "TTL")
 			for _, k := range page.Keys {
 				name := k.Key
-				if k.Hex {
+				switch {
+				case k.Masked:
+					name += " (masked)"
+				case k.Hex:
 					name = "hex:" + name
 				}
 				t.Row(cut(name, maxCellWidth), k.Type, itoa(k.Length), bytesize(k.Bytes), ttlText(k.TTLMs))
@@ -79,7 +82,7 @@ With --json, the page as the API returns it, including next.`,
 func newDBKeyCmd(g *globals) *cobra.Command {
 	var after string
 	var db, limit int
-	var isHex, full bool
+	var isHex, full, reveal bool
 	cmd := dbCmd(g, &cobra.Command{
 		Use:   "key KEY [--db N] [--limit N] [--after CURSOR] [--full]",
 		Short: "One Redis key: its type, TTL and size, and a page of its value",
@@ -88,7 +91,9 @@ a string, a hash's fields, a list's elements, a set's members, a sorted
 set's members and scores, or a stream's entries (newest first). Values
 over 8 KB are cut unless --full (up to 1 MB). Pass the printed cursor as
 --after for the next page. --hex reads KEY as hex, for names that aren't
-UTF-8 (dock db keys shows them as hex:...).`,
+UTF-8 (dock db keys shows them as hex:...). A key matching a sensitive
+pattern needs --reveal, if your access lets you see sensitive values;
+each reveal is audited.`,
 		Example: `  dock db key user:1042
   dock db key queue:emails --limit 500`,
 		Args: cobra.ExactArgs(1),
@@ -108,6 +113,9 @@ UTF-8 (dock db keys shows them as hex:...).`,
 		}
 		if full {
 			q.Set("full", "true")
+		}
+		if reveal {
+			q.Set("reveal", "true")
 		}
 		v, err := get[apitypes.DataKeyValue](ctx, s, data+"/keys/value?"+q.Encode())
 		if err != nil {
@@ -150,6 +158,7 @@ UTF-8 (dock db keys shows them as hex:...).`,
 	cmd.Flags().StringVar(&after, "after", "", "cursor of the previous page")
 	cmd.Flags().BoolVar(&isHex, "hex", false, "KEY is hex")
 	cmd.Flags().BoolVar(&full, "full", false, "values untruncated, up to 1 MB")
+	cmd.Flags().BoolVar(&reveal, "reveal", false, "read a key matching a sensitive pattern (needs sensitive visible; audited)")
 	return cmd
 }
 

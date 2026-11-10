@@ -154,6 +154,7 @@ type Ops[A, R any] interface {
 	CommitDataChangeset(ctx context.Context, a A, ref R, id int64, req apitypes.DataCommitRequest) (apitypes.DataChangeset, error)
 	RejectDataChangeset(ctx context.Context, a A, ref R, id int64, req apitypes.DataRejectRequest) (apitypes.DataChangeset, error)
 	SetSensitiveColumns(ctx context.Context, a A, ref R, req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error)
+	SetSensitiveKeys(ctx context.Context, a A, ref R, req apitypes.SetSensitiveKeysRequest) ([]string, error)
 	DataInsights(ctx context.Context, a A, ref R, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
 	DataKeys(ctx context.Context, a A, ref R, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error)
 	DataKey(ctx context.Context, a A, ref R, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error)
@@ -267,6 +268,11 @@ type Host[D any] interface {
 	SensitiveColumns(ctx context.Context, id int64) ([]apitypes.DataColumnRef, error)
 	// ReplaceSensitiveColumns replaces them in one transaction.
 	ReplaceSensitiveColumns(ctx context.Context, id int64, cols []apitypes.DataColumnRef) error
+	// SensitiveKeys lists a key-value database's sensitive key patterns;
+	// ReplaceSensitiveKeys replaces them in one transaction. A host
+	// without key-value databases returns none and refuses to store any.
+	SensitiveKeys(ctx context.Context, id int64) ([]string, error)
+	ReplaceSensitiveKeys(ctx context.Context, id int64, patterns []string) error
 
 	// SavedQueryOwner is the user whose saved queries the actor uses: the
 	// user, or the user a token acts for; 0 when there is none (agent

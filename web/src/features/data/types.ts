@@ -1,4 +1,4 @@
-import type { components } from "../../api/schema";
+import type { components, operations } from "../../api/schema";
 
 // Database panel types (ADR 0016): the generated API schemas, except where
 // rows are concerned. The API types a row as json.RawMessage (`unknown`);
@@ -31,6 +31,18 @@ export type DataStatus = DataInfo["status"];
 
 /** GET /data/schema */
 export type DataSchema = Schemas["DataSchema"];
+/** The keys endpoints' query parameters (they have no body schema). */
+export type DataKeysRequest = Omit<
+  NonNullable<operations["get-data-keys"]["parameters"]["query"]>,
+  "org"
+>;
+export type DataKeyPage = Schemas["DataKeyPage"];
+export type DataKeyInfo = Schemas["DataKeyInfo"];
+export type DataKeyRequest = Omit<
+  operations["get-data-key"]["parameters"]["query"],
+  "org"
+>;
+export type DataKeyValue = Schemas["DataKeyValue"];
 export type DataTable = Schemas["DataTable"];
 export type DataColumn = Schemas["DataColumn"];
 export type DataForeignKey = Schemas["DataForeignKey"];

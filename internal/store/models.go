@@ -754,6 +754,11 @@ type SensitiveColumn struct {
 	ColumnName string
 }
 
+type SensitiveKey struct {
+	ServiceID int64
+	Pattern   string
+}
+
 type Server struct {
 	ID                   int64
 	Name                 string

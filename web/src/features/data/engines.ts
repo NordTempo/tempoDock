@@ -26,6 +26,9 @@ export const engines: Record<
     tabs: ["tables", "sql", "schema", "changes", "health"],
     dialect: "mysql",
   },
-  // The key browser follows (ADR 0072, mock B); until then the console.
-  redis: { tabs: ["sql"], dialect: "redis", labels: { sql: "Commands" } },
+  redis: {
+    tabs: ["keys", "sql"],
+    dialect: "redis",
+    labels: { sql: "Commands" },
+  },
 };

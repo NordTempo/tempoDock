@@ -189,3 +189,16 @@ WHERE audit_events.action = 'data.query'
   AND audit_events.id < sqlc.arg(before_id)
 ORDER BY audit_events.id DESC
 LIMIT +sqlc.arg(max_rows);
+
+-- name: ListSensitiveKeys :many
+SELECT pattern FROM sensitive_keys
+WHERE service_id = +sqlc.arg(service_id)
+ORDER BY pattern;
+
+-- name: DeleteSensitiveKeys :exec
+-- Clears a database's key patterns; replacing them is this plus
+-- AddSensitiveKey in one transaction.
+DELETE FROM sensitive_keys WHERE service_id = +sqlc.arg(service_id);
+
+-- name: AddSensitiveKey :exec
+INSERT INTO sensitive_keys (service_id, pattern) VALUES (?, ?);

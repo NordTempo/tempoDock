@@ -164,6 +164,9 @@ type Call struct {
 	// Sensitive is the database's sensitive columns, as an admin marked
 	// them. Only used with Masked.
 	Sensitive []apitypes.DataColumnRef
+	// SensitiveKeys are a key-value database's sensitive key patterns:
+	// with Masked, matching keys are listed by pattern, not name.
+	SensitiveKeys []string
 }
 
 // ServerInfo describes a reachable database server.

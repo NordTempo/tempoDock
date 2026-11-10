@@ -1084,6 +1084,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "masked": {
+            "type": "boolean"
+          },
           "ttl_ms": {
             "format": "int64",
             "type": "integer"
@@ -1155,6 +1158,9 @@
           "length": {
             "format": "int64",
             "type": "integer"
+          },
+          "masked": {
+            "type": "boolean"
           },
           "next": {
             "type": "string"
@@ -1806,6 +1812,15 @@
           "read_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "sensitive_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "tables": {
             "items": {
@@ -2462,6 +2477,25 @@
         },
         "required": [
           "columns"
+        ],
+        "type": "object"
+      },
+      "SetSensitiveKeysRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "patterns": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "patterns"
         ],
         "type": "object"
       },
@@ -5896,6 +5930,16 @@
               "description": "Values untruncated, up to 1 MB each",
               "type": "boolean"
             }
+          },
+          {
+            "description": "Read a key matching a sensitive pattern. Needs sensitive visible (403 otherwise); audited as data.reveal",
+            "explode": false,
+            "in": "query",
+            "name": "reveal",
+            "schema": {
+              "description": "Read a key matching a sensitive pattern. Needs sensitive visible (403 otherwise); audited as data.reveal",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -6913,6 +6957,144 @@
           }
         ],
         "summary": "Set sensitive columns",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/api/v1/connections/{connection}/data/sensitive-keys": {
+      "put": {
+        "description": "Replaces a key-value database's sensitive key patterns (Redis globs, e.g. session:*): matching keys are listed by pattern and read only with an audited reveal. Admin.",
+        "operationId": "set-sensitive-keys",
+        "parameters": [
+          {
+            "description": "The connection's name",
+            "in": "path",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "description": "The connection's name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSensitiveKeysRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set sensitive keys",
         "tags": [
           "data"
         ]

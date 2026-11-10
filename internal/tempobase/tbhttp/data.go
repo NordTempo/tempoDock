@@ -250,6 +250,14 @@ func registerData(s *server, a huma.API) {
 	}) (*out[[]apitypes.DataColumnRef], error) {
 		return reply(s.app.SetSensitiveColumns(ctx, act, in.Connection, in.Body))
 	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "set-sensitive-keys", Method: http.MethodPut, Path: dataPathT + "/sensitive-keys",
+	}), func(ctx context.Context, act tempobase.Actor, in *struct {
+		ConnPath
+		Body apitypes.SetSensitiveKeysRequest
+	}) (*out[[]string], error) {
+		return reply(s.app.SetSensitiveKeys(ctx, act, in.Connection, in.Body))
+	})
 }
 
 // registerDataQuery registers POST /data/query, which streams NDJSON

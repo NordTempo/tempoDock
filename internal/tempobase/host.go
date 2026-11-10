@@ -82,6 +82,14 @@ func (h host) ReplaceSensitiveColumns(ctx context.Context, id int64, cols []apit
 	})
 }
 
+// SensitiveKeys: tempoBase's connections are Postgres, which has no keys.
+func (h host) SensitiveKeys(context.Context, int64) ([]string, error) { return nil, nil }
+
+// ReplaceSensitiveKeys refuses: there are no key-value connections.
+func (h host) ReplaceSensitiveKeys(context.Context, int64, []string) error {
+	return datapanel.Errorf(apitypes.CodeValidation, "tempoBase's connections are Postgres: they have no keys to mark")
+}
+
 // SavedQueryOwner is the person; tokens are agents and have none.
 func (h host) SavedQueryOwner(_ context.Context, a datapanel.Actor) (int64, error) {
 	if a.Kind == "user" {

@@ -39,6 +39,7 @@ type dataCore interface {
 	SaveDataQuery(ctx context.Context, a core.Actor, ref core.ServiceRef, id int64, req apitypes.SaveDataQueryRequest) (apitypes.DataSavedQuery, error)
 	DeleteSavedQuery(ctx context.Context, a core.Actor, ref core.ServiceRef, id int64) error
 	SetSensitiveColumns(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error)
+	SetSensitiveKeys(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.SetSensitiveKeysRequest) ([]string, error)
 	GetDataPolicy(ctx context.Context, a core.Actor, ref core.EnvRef) (apitypes.DataPolicy, error)
 	SetDataPolicy(ctx context.Context, a core.Actor, ref core.EnvRef, req apitypes.UpdateDataPolicyRequest) (apitypes.DataPolicy, error)
 	UpdateToken(ctx context.Context, a core.Actor, id int64, req apitypes.UpdateTokenRequest) (apitypes.Token, error)
@@ -306,6 +307,14 @@ func registerData(s *Server, a huma.API) {
 		Body apitypes.SetSensitiveColumnsRequest
 	}) (*out[[]apitypes.DataColumnRef], error) {
 		return reply(s.dataAPI().SetSensitiveColumns(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "set-sensitive-keys", Method: http.MethodPut, Path: dataPathT + "/sensitive-keys",
+	}), func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.SetSensitiveKeysRequest
+	}) (*out[[]string], error) {
+		return reply(s.dataAPI().SetSensitiveKeys(ctx, actor, in.ref(), in.Body))
 	})
 
 	registerDataPolicy(s, a)

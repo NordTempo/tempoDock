@@ -27,6 +27,10 @@ import type {
   DataHistoryEntry,
   DataInfo,
   DataInsights,
+  DataKeyPage,
+  DataKeyRequest,
+  DataKeysRequest,
+  DataKeyValue,
   DataPage,
   DataPageRequest,
   DataPermission,
@@ -102,6 +106,15 @@ export type DataEndpoints = {
   rejectChangeset(id: number, req: DataRejectRequest): Promise<DataChangeset>;
   /** PUT /data/sensitive-columns (admin): replaces the list. */
   setSensitive(columns: DataColumnRef[]): Promise<DataColumnRef[] | null>;
+  /**
+   * Key-value databases (Redis): GET /data/keys, one page of keys; GET
+   * /data/keys/value, one key with a page of its value; PUT
+   * /data/sensitive-keys (admin). Only hosts with key-value databases
+   * (Dock) have them.
+   */
+  keys?(req: DataKeysRequest, signal: AbortSignal): Promise<DataKeyPage>;
+  keyValue?(req: DataKeyRequest, signal: AbortSignal): Promise<DataKeyValue>;
+  setSensitiveKeys?(patterns: string[]): Promise<string[] | null>;
   /**
    * GET /data/insights?order=: every view the caller may see, read live
    * from the database's statistics.
@@ -286,6 +299,65 @@ export function useTableRows(q: TableQuery | null) {
     enabled: !!q,
     // Rows aren't live: a page stays as read until the view reloads.
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** The source's key-value methods; the panel only shows keys with them. */
+function keySource(source: DataSource) {
+  const { keys, keyValue, setSensitiveKeys } = source;
+  if (!keys || !keyValue || !setSensitiveKeys)
+    throw new Error("This host has no key-value databases.");
+  return { keys, keyValue, setSensitiveKeys };
+}
+
+/**
+ * GET /data/keys, as SCAN pages: fetchNextPage continues the scan. A page
+ * may be short (or empty) and still have a next.
+ */
+export function useKeyPages(q: Omit<DataKeysRequest, "after">) {
+  const source = useDataSource();
+  return useInfiniteQuery({
+    queryKey: [...source.key, "keys", q.db ?? 0, q.match ?? "", q.type ?? ""],
+    queryFn: ({ pageParam, signal }) =>
+      keySource(source).keys({ ...q, after: pageParam || undefined }, signal),
+    initialPageParam: "",
+    getNextPageParam: (page) => page.next || undefined,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** GET /data/keys/value for one key (null: none selected), page by page. */
+export function useKeyValue(q: Omit<DataKeyRequest, "after"> | null) {
+  const source = useDataSource();
+  return useInfiniteQuery({
+    queryKey: [...source.key, "keys", "value", q],
+    queryFn: ({ pageParam, signal }) => {
+      if (!q) throw new Error("No key selected");
+      return keySource(source).keyValue(
+        { ...q, after: pageParam || undefined },
+        signal,
+      );
+    },
+    initialPageParam: "",
+    getNextPageParam: (page) => page.next || undefined,
+    enabled: !!q,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** PUT /data/sensitive-keys (admin); the keyspace and key pages refetch. */
+export function useSetSensitiveKeys() {
+  const source = useDataSource();
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patterns: string[]) =>
+      keySource(source).setSensitiveKeys(patterns),
+    onSettled: () =>
+      Promise.all(
+        (["schema", "keys"] as const).map((part) =>
+          client.invalidateQueries({ queryKey: [...source.key, part] }),
+        ),
+      ),
   });
 }
 
@@ -485,7 +557,10 @@ export type QueryRun = {
 };
 
 /** A query's own row cap and statement timeout; 0 or absent: defaults. */
-export type QueryOptions = Pick<DataQueryRequest, "limit" | "timeout_seconds">;
+export type QueryOptions = Pick<
+  DataQueryRequest,
+  "limit" | "timeout_seconds" | "db"
+>;
 
 /**
  * POST /data/query, streamed: `run` starts a query (canceling one still
