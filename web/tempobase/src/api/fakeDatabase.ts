@@ -4,6 +4,7 @@ import type {
   DataChange,
   DataColumn,
   DataFilter,
+  DataInsights,
   DataQueryFrame,
   DataRow,
   DataTable,
@@ -541,4 +542,205 @@ export function* runQuery(
     yield { type: "rows", rows: rows.slice(i, i + 500) };
   }
   yield end(rows.length, all.length > maxRows && limit > maxRows);
+}
+
+/**
+ * Insights for the in-memory backend: the tables' sizes and indexes, a
+ * worker idle in a transaction that blocks an api session, a few
+ * statements and the hints the server would give for them.
+ */
+export function fakeInsights(
+  tables: readonly FakeTable[],
+  canRead: boolean,
+): DataInsights {
+  const now = Date.now();
+  const at = (s: number) => new Date(now - s * 1000).toISOString();
+  const since = at(3 * 86_400 + 4 * 3600);
+  const views = canRead
+    ? {
+        queries: [
+          {
+            id: "-4785384450269883726",
+            text: "SELECT * FROM orders WHERE customer_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT $3",
+            user: "postgres",
+            calls: 1204,
+            total_ms: 2_468_000,
+            mean_ms: 2050,
+            max_ms: 9800,
+            rows: 60_200,
+            cache_hit: 0.971,
+            temp_bytes: 0,
+          },
+          {
+            id: "7234589265751732083",
+            text: "UPDATE customers SET seen_at = $1 WHERE id = $2",
+            user: "postgres",
+            calls: 2_400_000,
+            total_ms: 760_000,
+            mean_ms: 0.32,
+            max_ms: 880,
+            rows: 2_400_000,
+            cache_hit: 0.999,
+            temp_bytes: 0,
+          },
+          {
+            id: "367282865999414690",
+            text: "SELECT o.*, c.email FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.status = $1",
+            user: "postgres",
+            calls: 8812,
+            total_ms: 362_000,
+            mean_ms: 41,
+            max_ms: 1200,
+            rows: 1_100_000,
+            cache_hit: 0.996,
+            temp_bytes: 38 << 20,
+          },
+        ],
+        queries_tracked: 1812,
+        sessions: [
+          {
+            id: "4121.1",
+            pid: 4121,
+            user: "postgres",
+            application: "worker",
+            client: "10.8.0.4",
+            kind: "client" as const,
+            state: "idle_in_transaction" as const,
+            transaction_at: at(372),
+            query_at: at(372),
+            state_at: at(372),
+            text: "UPDATE orders SET status = $1 WHERE id = $2",
+          },
+          {
+            id: "4188.1",
+            pid: 4188,
+            user: "postgres",
+            application: "api",
+            client: "10.8.0.3",
+            kind: "client" as const,
+            state: "active" as const,
+            transaction_at: at(123),
+            query_at: at(123),
+            state_at: at(123),
+            wait: "Lock: transactionid",
+            blocked_by: ["4121.1"],
+            text: "UPDATE orders SET status = 'paid' WHERE id = 1041",
+          },
+          {
+            id: "4302.1",
+            pid: 4302,
+            user: "postgres",
+            application: "api",
+            client: "10.8.0.3",
+            kind: "client" as const,
+            state: "idle" as const,
+            state_at: at(4),
+            query_at: at(4),
+            text: "SELECT 1",
+          },
+        ],
+      }
+    : {};
+  return {
+    engine: "postgres",
+    read_at: new Date(now).toISOString(),
+    since,
+    since_reason: "start",
+    overview: {
+      connections: {
+        used: 41,
+        max: 50,
+        reserved: 3,
+        active: 3,
+        idle: 37,
+        idle_in_transaction: 1,
+        waiting: 1,
+        oldest_transaction_at: at(372),
+        full: false,
+      },
+      cache_hit: 0.994,
+      bytes:
+        tables.reduce((n, t) => n + (t.meta.size_bytes ?? 0), 0) + (8 << 20),
+      deadlocks: 0,
+      temp_bytes: 41 << 20,
+      transaction_id_age: 212_000_000,
+      query_stats: "on",
+      started_at: since,
+    },
+    ...views,
+    tables: tables.map((t) => ({
+      schema: t.meta.schema,
+      name: t.meta.name,
+      total_bytes: (t.meta.size_bytes ?? 0) + 16_384,
+      index_bytes: 16_384,
+      estimated_bytes: t.meta.size_bytes ?? 0,
+      estimated_rows: t.rows.length,
+      dead_rows: t.meta.name === "orders" ? Math.round(t.rows.length * 0.4) : 0,
+      seq_scans: t.meta.name === "orders" ? 1204 : 12,
+      seq_rows_read: t.meta.name === "orders" ? 1204 * t.rows.length : 120,
+      index_scans: 30,
+      vacuumed_at: at(t.meta.name === "orders" ? 3 * 86_400 : 3600),
+      analyzed_at: at(3600),
+      cache_hit: 0.99,
+    })),
+    indexes: tables.flatMap((t) =>
+      (t.meta.indexes ?? []).map((x) => ({
+        schema: t.meta.schema,
+        table: t.meta.name,
+        name: x.name,
+        bytes: 16_384,
+        scans: x.primary ? 410 : 0,
+        unique: x.unique,
+        primary: x.primary,
+        constraint: x.primary,
+        valid: true,
+        duplicate: false,
+        definition: x.definition,
+      })),
+    ),
+    hints: [
+      ...(canRead
+        ? [
+            {
+              kind: "idle_in_transaction" as const,
+              level: "warn" as const,
+              view: "sessions" as const,
+              subject: "4121.1",
+              title: "Idle in transaction 6m 12s",
+              detail:
+                "worker (postgres), pid 4121; holds its locks and holds back vacuum; blocks 1 session",
+            },
+          ]
+        : []),
+      {
+        kind: "dead_rows",
+        level: "warn",
+        view: "tables",
+        subject: "public.orders",
+        title: "Dead rows",
+        detail: "40% of the rows are dead; last vacuumed 3d 0h ago",
+        copy: 'VACUUM (ANALYZE) "public"."orders";',
+      },
+      {
+        kind: "full_scans",
+        level: "note",
+        view: "tables",
+        subject: "public.orders",
+        title: "Likely missing index",
+        detail: "1,204 full scans, 30 index scans",
+      },
+    ],
+    unavailable: canRead
+      ? []
+      : [
+          {
+            view: "queries",
+            reason: "needs data access level read; yours is schema",
+          },
+          {
+            view: "sessions",
+            reason: "needs data access level read; yours is schema",
+          },
+        ],
+  };
 }

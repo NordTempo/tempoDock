@@ -38,6 +38,8 @@ function dataEndpoints(connection: string): DataEndpoints {
     info: () => body(api.GET(D, params)),
     setup: () => body(api.POST(`${D}/setup`, params)),
     schema: () => body(api.GET(`${D}/schema`, params)),
+    insights: (order) =>
+      body(api.GET(`${D}/insights`, { params: { path, query: { order } } })),
     rows: async (req, signal) =>
       page(
         await body(

@@ -1,19 +1,21 @@
 import type { DataPanelView } from "./DataPanel";
-import type { DataFilter } from "./types";
+import type { DataFilter, DataInsightView } from "./types";
 
 // The panel's view in a route's search params, shared by Dock's Data tab
 // and tempoBase's connection page:
-// ?tab=sql&table=public.orders&order=-total&filter=[...]
+// ?tab=sql&table=public.orders&order=-total&filter=[...], ?tab=health&insight=queries
 
 /** The panel's view in the URL; the Tables tab is the default. */
 export type DataSearch = {
-  tab?: "sql" | "schema" | "changes";
+  tab?: "sql" | "schema" | "changes" | "health";
   table?: string;
   order?: string;
   filter?: DataFilter[];
+  insight?: DataInsightView;
 };
 
-const tabs = ["sql", "schema", "changes"] as const;
+const tabs = ["sql", "schema", "changes", "health"] as const;
+const insights = ["queries", "sessions", "tables", "indexes"] as const;
 const ops = new Set<string>([
   "eq",
   "ne",
@@ -51,6 +53,7 @@ export function validateDataSearch(
     table: text(search.table),
     order: text(search.order),
     filter: filter.length ? filter : undefined,
+    insight: insights.find((v) => v === search.insight),
   };
 }
 
@@ -60,6 +63,7 @@ export const searchView = (search: DataSearch): DataPanelView => ({
   table: search.table,
   order: search.order,
   filters: search.filter,
+  insight: search.insight,
 });
 
 /** The search for a view, leaving defaults out of the URL. */
@@ -68,4 +72,5 @@ export const viewSearch = (view: DataPanelView): DataSearch => ({
   table: view.table,
   order: view.order,
   filter: view.filters?.length ? view.filters : undefined,
+  insight: view.tab === "health" ? view.insight : undefined,
 });

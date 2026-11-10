@@ -119,3 +119,15 @@ export const dataLimits = {
   // Query history entries per page (the server's default too).
   historyRows: 50,
 } as const;
+
+/** GET /data/insights: how the database is doing (ADR 0069). */
+export type DataInsights = Schemas["DataInsights"];
+export type DataInsightView = NonNullable<Schemas["DataUnavailable"]["view"]>;
+export type DataStatementOrder = "total" | "mean" | "calls" | "rows";
+export type DataOverview = Schemas["DataOverview"];
+export type DataPressure = Schemas["DataPressure"];
+export type DataSession = Schemas["DataSession"];
+export type DataStatement = Schemas["DataStatement"];
+export type DataTableStats = Schemas["DataTableStats"];
+export type DataIndexStats = Schemas["DataIndexStats"];
+export type DataHint = Schemas["DataHint"];

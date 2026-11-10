@@ -20,6 +20,7 @@ import {
   applyChanges,
   changeSql,
   type FakeTable,
+  fakeInsights,
   findTable,
   makeTables,
   mask,
@@ -479,6 +480,11 @@ export function memoryBackend(): Backend {
           );
         });
         return info();
+      },
+      insights: async () => {
+        const { perm, tables } = ready();
+        need(perm, "schema", "database insights");
+        return fakeInsights(tables, rank[perm.level] >= rank.read);
       },
       schema: async () => {
         const { c, perm, tables } = ready();
