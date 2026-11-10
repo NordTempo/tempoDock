@@ -11,6 +11,7 @@ import {
 import type { ServiceRef } from "../data/types";
 import { RestoredFrom } from "../features/backups/Restored";
 import { ConnectHint } from "../features/connect/ConnectHint";
+import { VulnStrip } from "../features/images/VulnStrip";
 import { ReleasesTable } from "../features/service/ReleasesTable";
 import { imageLabel } from "../features/service/releases";
 import {
@@ -42,7 +43,12 @@ function ServiceOverview() {
   // lines are on its Data tab.
   return (
     <div className="@container flex min-w-0 flex-col gap-7">
-      <StatusSentence view={service} />
+      {/* The live image's critical or high vulnerabilities (ADR 0074)
+          sit right under the status, like a fresh failure. */}
+      <div className="flex flex-col gap-2">
+        <StatusSentence view={service} />
+        <VulnStrip serviceRef={ref} view={service} />
+      </div>
       <ServiceFacts serviceRef={ref} />
       {service.service.template && <RestoredFrom serviceRef={ref} />}
       <Signals serviceRef={ref} />

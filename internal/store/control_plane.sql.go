@@ -13,7 +13,7 @@ import (
 const detachLocalServer = `-- name: DetachLocalServer :one
 UPDATE servers SET local = 0, key_fingerprint = NULL, next_key_fingerprint = NULL, revoked_at = ?
 WHERE local = 1
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error
 `
 
 // Turns the local server into a remote server waiting to join again,
@@ -47,6 +47,8 @@ func (q *Queries) DetachLocalServer(ctx context.Context, revokedAt *time.Time) (
 		&i.ConnectedAt,
 		&i.DisconnectReason,
 		&i.PlainHttp,
+		&i.ScanDbBuiltAt,
+		&i.ScanError,
 	)
 	return i, err
 }

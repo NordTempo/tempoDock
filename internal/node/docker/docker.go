@@ -53,6 +53,12 @@ type Runtime struct {
 	// (probe.InstallSync), which RunJob bind-mounts for a spec.Sync; ""
 	// fails those jobs with node.ErrNoSync.
 	Sync string
+	// ScanNetwork is the network the vulnerability database is
+	// downloaded on (a builder's BuildKit network, which the app firewall
+	// covers); "" refuses ScanDatabase updates (ADR 0074).
+	ScanNetwork string
+
+	scan scanState
 }
 
 var _ node.Containers = (*Runtime)(nil)

@@ -517,6 +517,10 @@ func (c *Core) startMove(id int64) {
 			delete(c.moves.driving, id)
 			c.moves.mu.Unlock()
 		}()
+		// A move copies volumes and holds requests: no image scan runs
+		// next to it (ADR 0074).
+		c.scanBusy()
+		defer c.scanDone()
 		// A rollback or clean-up that fails is tried again, backing off
 		// from 5 s to 5 min, until it succeeds or waits for a server: a
 		// timer that exists only while a move is failing to finish.

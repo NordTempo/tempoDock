@@ -52,8 +52,8 @@
     },
     "api.BenchmarkNewAPI": {
       "ns_op": 29381792,
-      "bytes_op": 9286866,
-      "allocs_op": 94931
+      "bytes_op": 10801856,
+      "allocs_op": 110466
     },
     "api.BenchmarkPublicPage": {
       "ns_op": 4753,
@@ -240,6 +240,11 @@
       "bytes_op": 497092,
       "allocs_op": 6111
     },
+    "core.BenchmarkListImages": {
+      "ns_op": 192857.1,
+      "bytes_op": 70882,
+      "allocs_op": 1399
+    },
     "core.BenchmarkRedactBuildLog": {
       "ns_op": 1310557,
       "bytes_op": 82175,
@@ -254,6 +259,16 @@
       "ns_op": 152505,
       "bytes_op": 5810,
       "allocs_op": 190
+    },
+    "core.BenchmarkScanBusy": {
+      "ns_op": 51.2,
+      "bytes_op": 0,
+      "allocs_op": 0
+    },
+    "core.BenchmarkScanFindingsWrite": {
+      "ns_op": 9880952.4,
+      "bytes_op": 3151577,
+      "allocs_op": 54690
     },
     "core.BenchmarkSleepPass50": {
       "ns_op": 1191,

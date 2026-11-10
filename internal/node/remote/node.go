@@ -338,6 +338,7 @@ func (n *Node) promoteNext() {
 // requests (RequestWake).
 func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h := func(op string, fn http.HandlerFunc) { mux.Handle("POST /v1/"+op, fn) }
+	scanRoutes(h, rt)
 
 	h(opPull, withLogs(func(ctx context.Context, a pullRequest, _ io.Reader, logs io.Writer) (imageIDResult, error) {
 		id, err := rt.Pull(ctx, a.Ref, logs, node.PullOptions{Token: a.Token, Username: a.Username, Password: a.Password})

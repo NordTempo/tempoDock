@@ -223,6 +223,8 @@ running).
 | `[status] listen` | `127.0.0.1:7079` | Loopback address of [status pages](status-pages.md). Empty turns them off. Control plane only |
 | `[analytics] spool_max_mb` | `256` | Events waiting for the store, at most; past it the oldest go. At least `16` |
 | `[analytics] store_port`, `store_memory_mb` | `7076`, `512` | On the analytics server: the store's loopback port and memory limit (at least `256`) |
+| `[scan] syft_image`, `grype_image` | `anchore/syft:v1.57.1@sha256:0321…`, `anchore/grype:v0.121.3@sha256:1311…` | The image scanners, pinned by digest ([ADR 0074](../decisions/0074-image-vulnerability-scanning.md)). Builders pull them the first time they scan |
+| `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. `dock scanning off` turns scanning off |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
 | `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. A private repository needs one |
 

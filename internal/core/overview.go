@@ -47,6 +47,19 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 	if err != nil {
 		return out, err
 	}
+	// The live images' scans (ADR 0074), for the overview's strip.
+	scanRows, err := c.store.ListProjectImageScans(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	scanOf := make(map[int64]store.ImageScan, len(scanRows)) // by service ID
+	for _, r := range scanRows {
+		scanOf[r.ServiceID] = store.ImageScan{
+			ID: r.ID, ImageKey: r.ImageKey, LocalRef: r.LocalRef, State: r.State, Distro: r.Distro, Packages: r.Packages,
+			MatchedAt: r.MatchedAt, DbBuiltAt: r.DbBuiltAt, Critical: r.Critical, High: r.High, Medium: r.Medium,
+			Low: r.Low, Other: r.Other, Fixable: r.Fixable, Kev: r.Kev, Truncated: r.Truncated, WorstFix: r.WorstFix, Error: r.Error,
+		}
+	}
 	vols, err := c.store.ListProjectVolumes(ctx, p.ID)
 	if err != nil {
 		return out, err
@@ -135,6 +148,10 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 				so.LastFailedDeploy = withDiag(rh.lastFailed)
 			}
 			so.Service = c.serviceOf(ss, link, pending, active, stateful[s.ID])
+			if sc, ok := scanOf[s.ID]; ok && rh.active != nil {
+				scan := toImageScan(sc, c.imageName(rh.active.ImageRef, apitypes.ImageUse{Project: p.Name, Service: s.Name, Release: rh.active.Number}))
+				so.Scan = &scan
+			}
 			if b, ok := backups[s.ID]; ok {
 				run := toBackupRun(b, s.Name, nil)
 				so.Backup = &run

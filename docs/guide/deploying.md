@@ -263,6 +263,20 @@ as its first button; `dock diagnose` prints it (`-r N` for an older one,
 matches it says so and shows the evidence. A service keeps its last 20
 for 30 days.
 
+**What's in the image.** Once a release is live and no build or deploy
+has run for a minute, Dock scans its image for known vulnerabilities on a
+builder ([ADR 0074](../decisions/0074-image-vulnerability-scanning.md)):
+Syft lists every package, Grype matches them against its database. A scan
+never slows a deploy: one that arrives stops it, and it runs again later.
+The service's overview says so only while the live image has critical or
+high findings, with what fixes the worst: rebuilding on a newer base
+image (operating system packages) or upgrading the app's dependencies.
+Images in the sidebar lists every image the organization runs. `dock
+vulns` prints a service's, `dock vulns --all --production` everything
+in production, `dock scan` matches again, `dock sbom` prints the package
+list. Production images are scanned only on builders that accept
+production; CI images by the digest they were pulled by.
+
 The same happens when a live release crash loops, or stays unhealthy
 after Dock restarted it: the alert waits a few seconds for the diagnosis
 and says the likely cause, the service's page names it, and the

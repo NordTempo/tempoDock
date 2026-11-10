@@ -1726,6 +1726,46 @@ export interface paths {
         patch: operations["set-org-analytics-defaults"];
         trace?: never;
     };
+    "/api/v1/org/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List images in use
+         * @description Every image the organization's live releases run, one row per image however many services run it, worst first, with its vulnerability scan. Scans run on builders once no build or deploy has run for a minute. Scope: read.
+         */
+        get: operations["list-images"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/org/images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an image
+         * @description One image: the releases that run it, its scan, its findings grouped by what fixes them, and all of them worst first. Scope: read.
+         */
+        get: operations["get-image"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/org/invites": {
         parameters: {
             query?: never;
@@ -1980,6 +2020,26 @@ export interface paths {
          * @description A config release for every running service that references it, directly or through its environment's shared variables. Services you can't deploy, not running or deploying already are skipped with the reason. Scope: deploy on each.
          */
         post: operations["redeploy-org-variable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/org/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List vulnerabilities in live releases
+         * @description Findings at or above a severity in the organization's live releases, worst first, with where they run and the version that fixes them, and the live services not scanned yet. Scope: read.
+         */
+        get: operations["list-vulnerabilities"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3569,6 +3629,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/sbom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download a service's SBOM
+         * @description The software bill of materials of the live release's image (or release N's) as Syft made it: syft-json, gzipped. Scope: read.
+         */
+        get: operations["get-service-sbom"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan a service's image again
+         * @description Queues the image of the live release (or release N) for a scan: against the current vulnerability database, from its SBOM when it has one. It still waits until no build or deploy has run for a minute. Scope: deploy.
+         */
+        post: operations["scan-service"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots": {
         parameters: {
             query?: never;
@@ -3858,6 +3958,26 @@ export interface paths {
          * @description A service with a volume is stateful: deploys stop the old container before starting the new one. Volumes are never deleted as a side effect. Scope: deploy.
          */
         post: operations["add-volume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/vulnerabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a service's vulnerabilities
+         * @description The scan of the image the service's live release (or release N) runs, with its findings. 404 until it is scanned. Scope: read.
+         */
+        get: operations["get-service-vulnerabilities"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4623,6 +4743,30 @@ export interface paths {
          * @description Nothing runs. Admins in a UI session only.
          */
         post: operations["reject-request"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/scanning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe image scanning
+         * @description Whether image scanning is on, scans by state, and each builder's vulnerability database. Operators only.
+         */
+        get: operations["get-scanning"];
+        /**
+         * Turn image scanning on or off
+         * @description Off stops a running scan at once and starts none; findings already made stay. Operators only.
+         */
+        put: operations["set-scanning"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7259,6 +7403,7 @@ export interface components {
             release?: components["schemas"]["Release"];
             release_event?: components["schemas"]["ReleaseEvent"];
             run?: components["schemas"]["CommandRun"];
+            scan?: components["schemas"]["ImageScan"];
             server?: components["schemas"]["Server"];
             service?: string;
             service_status?: components["schemas"]["ServiceStatus"];
@@ -7267,7 +7412,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -7286,6 +7431,42 @@ export interface components {
         FactorAdded: {
             factor: components["schemas"]["Factor"];
             recovery_codes?: string[] | null;
+        };
+        Finding: {
+            /** Format: double */
+            epss?: number;
+            /** Format: date-time */
+            first_seen: string;
+            fixed_in?: string;
+            /** @description CVE-..., GHSA-... */
+            id: string;
+            kev?: boolean;
+            package: string;
+            /** @enum {string} */
+            severity: "critical" | "high" | "medium" | "low" | "negligible" | "unknown";
+            /** @description An operating system package (apk, deb, rpm), from the base image or the Dockerfile's installs */
+            system: boolean;
+            type: string;
+            version: string;
+        };
+        FixGroup: {
+            /** Format: int64 */
+            critical: number;
+            /** Format: int64 */
+            fixable: number;
+            /** Format: int64 */
+            high: number;
+            /** Format: int64 */
+            kev: number;
+            /** @enum {string} */
+            kind: "rebuild" | "upgrade" | "none";
+            /** Format: int64 */
+            low: number;
+            /** Format: int64 */
+            medium: number;
+            /** Format: int64 */
+            other: number;
+            packages: components["schemas"]["PackageFix"][] | null;
         };
         Funnel: {
             name: string;
@@ -7474,6 +7655,70 @@ export interface components {
             status: string;
             /** @example v0.1.0 */
             version: string;
+        };
+        ImageDetail: {
+            findings: components["schemas"]["Finding"][] | null;
+            fixes: components["schemas"]["FixGroup"][] | null;
+            scan: components["schemas"]["ImageScan"];
+            used_by: components["schemas"]["ImageUse"][] | null;
+        };
+        ImageList: {
+            /** Format: date-time */
+            database_built?: string;
+            images: components["schemas"]["ImageListItem"][] | null;
+        };
+        ImageListItem: {
+            image: string;
+            scan?: components["schemas"]["ImageScan"];
+            used_by: components["schemas"]["ImageUse"][] | null;
+        };
+        ImageScan: {
+            built: boolean;
+            /** Format: int64 */
+            critical: number;
+            /** Format: date-time */
+            database_built?: string;
+            /** @description The image's digest or ID, the one thing a scan is kept by */
+            digest?: string;
+            distro?: string;
+            error?: string;
+            /** Format: int64 */
+            fixable: number;
+            /** Format: int64 */
+            high: number;
+            /** Format: int64 */
+            id: number;
+            image: string;
+            /** Format: int64 */
+            kev: number;
+            /** Format: int64 */
+            low: number;
+            /** Format: int64 */
+            medium: number;
+            /** Format: int64 */
+            other: number;
+            /** Format: int64 */
+            packages: number;
+            /**
+             * Format: date-time
+             * @description When its findings were last matched
+             */
+            scanned_at?: string;
+            /** @enum {string} */
+            state: "queued" | "scanning" | "scanned" | "failed" | "unsupported";
+            /** Format: int64 */
+            truncated?: number;
+            /** @enum {string} */
+            worst_fix?: "rebuild" | "upgrade" | "none" | "";
+        };
+        ImageUse: {
+            environment: string;
+            live: boolean;
+            production: boolean;
+            project: string;
+            /** Format: int64 */
+            release: number;
+            service: string;
         };
         Invite: {
             /** Format: date-time */
@@ -7700,6 +7945,33 @@ export interface components {
             /** @example acme */
             slug: string;
         };
+        OrgFinding: {
+            environment: string;
+            /** Format: double */
+            epss?: number;
+            /** Format: date-time */
+            first_seen: string;
+            fixed_in?: string;
+            /** @description CVE-..., GHSA-... */
+            id: string;
+            kev?: boolean;
+            package: string;
+            production: boolean;
+            project: string;
+            /** Format: int64 */
+            release: number;
+            service: string;
+            /** @enum {string} */
+            severity: "critical" | "high" | "medium" | "low" | "negligible" | "unknown";
+            /** @description An operating system package (apk, deb, rpm), from the base image or the Dockerfile's installs */
+            system: boolean;
+            type: string;
+            version: string;
+        };
+        OrgFindings: {
+            findings: components["schemas"]["OrgFinding"][] | null;
+            unscanned?: string[] | null;
+        };
         OrgLockSettings: {
             /** @description Lock new production environments as they are created */
             lock_production: boolean;
@@ -7764,6 +8036,15 @@ export interface components {
         OrgVariableRollout: {
             skipped: components["schemas"]["RolloutService"][] | null;
             started: components["schemas"]["RolloutService"][] | null;
+        };
+        PackageFix: {
+            findings: string[] | null;
+            fixed_in?: string;
+            kev?: boolean;
+            package: string;
+            version: string;
+            /** @enum {string} */
+            worst: "critical" | "high" | "medium" | "low" | "negligible" | "unknown";
         };
         PasskeyChallenge: {
             ceremony: string;
@@ -8037,7 +8318,10 @@ export interface components {
             new_errors: number;
             /** Format: int64 */
             number: number;
+            pinned_ref?: string;
             project: string;
+            /** @description The image's vulnerability scan, on GET of one release */
+            scan?: components["schemas"]["ImageScan"];
             service: string;
             /** @enum {string} */
             source: "upload" | "image" | "config" | "rollback" | "restart" | "promote";
@@ -8278,6 +8562,32 @@ export interface components {
         SaveDataQueryRequest: {
             name: string;
             sql: string;
+        };
+        ScanRequest: {
+            /**
+             * Format: int64
+             * @description Release number; default the live one
+             */
+            release?: number;
+        };
+        ScanningServer: {
+            /** Format: date-time */
+            database_built?: string;
+            error?: string;
+            /** @description It accepts production, so it may scan production images */
+            production: boolean;
+            server: string;
+        };
+        ScanningSettings: {
+            enabled: boolean;
+        };
+        ScanningStatus: {
+            builders: components["schemas"]["ScanningServer"][] | null;
+            enabled: boolean;
+            images: {
+                [key: string]: number;
+            };
+            waiting?: string;
         };
         Server: {
             accepts_non_production: boolean;
@@ -8620,6 +8930,7 @@ export interface components {
             domains: components["schemas"]["Domain"][] | null;
             last_failed_deploy?: components["schemas"]["ReleaseSummary"];
             latest_release?: components["schemas"]["ReleaseSummary"];
+            scan?: components["schemas"]["ImageScan"];
             service: components["schemas"]["Service"];
             uptime?: components["schemas"]["ServiceUptime"];
         };
@@ -19011,6 +19322,182 @@ export interface operations {
             };
         };
     };
+    "list-images": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Only images in production environments */
+                production?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageList"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-image": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-invites": {
         parameters: {
             query?: {
@@ -20550,6 +21037,95 @@ export interface operations {
             };
             /** @description Locked */
             423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-vulnerabilities": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Only production environments */
+                production?: boolean;
+                min?: "critical" | "high" | "medium" | "low" | "negligible" | "unknown";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrgFindings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -30893,6 +31469,213 @@ export interface operations {
             };
         };
     };
+    "get-service-sbom": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Release number; default the live one */
+                release?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SBOM */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "scan-service": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageScan"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-snapshots": {
         parameters: {
             query?: {
@@ -32748,6 +33531,104 @@ export interface operations {
             };
             /** @description Locked */
             423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-service-vulnerabilities": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Release number; default the live one */
+                release?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -36962,6 +37843,182 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccessRequest"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-scanning": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanningStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-scanning": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanningSettings"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanningStatus"];
                 };
             };
             /** @description Bad Request */

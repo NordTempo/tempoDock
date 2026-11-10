@@ -6902,6 +6902,9 @@
           "run": {
             "$ref": "#/components/schemas/CommandRun"
           },
+          "scan": {
+            "$ref": "#/components/schemas/ImageScan"
+          },
           "server": {
             "$ref": "#/components/schemas/Server"
           },
@@ -6947,7 +6950,8 @@
               "environment_move",
               "server_drain",
               "cloudflare_redirect",
-              "sleep"
+              "sleep",
+              "scan"
             ],
             "type": "string"
           },
@@ -7019,6 +7023,125 @@
         },
         "required": [
           "factor"
+        ],
+        "type": "object"
+      },
+      "Finding": {
+        "additionalProperties": false,
+        "properties": {
+          "epss": {
+            "format": "double",
+            "type": "number"
+          },
+          "first_seen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fixed_in": {
+            "type": "string"
+          },
+          "id": {
+            "description": "CVE-..., GHSA-...",
+            "type": "string"
+          },
+          "kev": {
+            "type": "boolean"
+          },
+          "package": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "negligible",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "system": {
+            "description": "An operating system package (apk, deb, rpm), from the base image or the Dockerfile's installs",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "package",
+          "version",
+          "type",
+          "system",
+          "first_seen"
+        ],
+        "type": "object"
+      },
+      "FixGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "critical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fixable": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "high": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kev": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "rebuild",
+              "upgrade",
+              "none"
+            ],
+            "type": "string"
+          },
+          "low": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "medium": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "other": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "packages": {
+            "items": {
+              "$ref": "#/components/schemas/PackageFix"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "packages",
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "other",
+          "fixable",
+          "kev"
         ],
         "type": "object"
       },
@@ -7649,6 +7772,232 @@
         "required": [
           "status",
           "version"
+        ],
+        "type": "object"
+      },
+      "ImageDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "fixes": {
+            "items": {
+              "$ref": "#/components/schemas/FixGroup"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ImageScan"
+          },
+          "used_by": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "scan",
+          "used_by",
+          "fixes",
+          "findings"
+        ],
+        "type": "object"
+      },
+      "ImageList": {
+        "additionalProperties": false,
+        "properties": {
+          "database_built": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageListItem"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "images"
+        ],
+        "type": "object"
+      },
+      "ImageListItem": {
+        "additionalProperties": false,
+        "properties": {
+          "image": {
+            "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ImageScan"
+          },
+          "used_by": {
+            "items": {
+              "$ref": "#/components/schemas/ImageUse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "image",
+          "used_by"
+        ],
+        "type": "object"
+      },
+      "ImageScan": {
+        "additionalProperties": false,
+        "properties": {
+          "built": {
+            "type": "boolean"
+          },
+          "critical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "database_built": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "The image's digest or ID, the one thing a scan is kept by",
+            "type": "string"
+          },
+          "distro": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "fixable": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "high": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "image": {
+            "type": "string"
+          },
+          "kev": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "low": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "medium": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "other": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "packages": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scanned_at": {
+            "description": "When its findings were last matched",
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "scanning",
+              "scanned",
+              "failed",
+              "unsupported"
+            ],
+            "type": "string"
+          },
+          "truncated": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "worst_fix": {
+            "enum": [
+              "rebuild",
+              "upgrade",
+              "none",
+              ""
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "image",
+          "built",
+          "packages",
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "other",
+          "fixable",
+          "kev"
+        ],
+        "type": "object"
+      },
+      "ImageUse": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "project": {
+            "type": "string"
+          },
+          "release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "service",
+          "release",
+          "production",
+          "live"
         ],
         "type": "object"
       },
@@ -8399,6 +8748,111 @@
         ],
         "type": "object"
       },
+      "OrgFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "epss": {
+            "format": "double",
+            "type": "number"
+          },
+          "first_seen": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "fixed_in": {
+            "type": "string"
+          },
+          "id": {
+            "description": "CVE-..., GHSA-...",
+            "type": "string"
+          },
+          "kev": {
+            "type": "boolean"
+          },
+          "package": {
+            "type": "string"
+          },
+          "production": {
+            "type": "boolean"
+          },
+          "project": {
+            "type": "string"
+          },
+          "release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "service": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "negligible",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "system": {
+            "description": "An operating system package (apk, deb, rpm), from the base image or the Dockerfile's installs",
+            "type": "boolean"
+          },
+          "type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "service",
+          "release",
+          "production",
+          "id",
+          "severity",
+          "package",
+          "version",
+          "type",
+          "system",
+          "first_seen"
+        ],
+        "type": "object"
+      },
+      "OrgFindings": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/OrgFinding"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "unscanned": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "findings"
+        ],
+        "type": "object"
+      },
       "OrgLockSettings": {
         "additionalProperties": false,
         "properties": {
@@ -8596,6 +9050,50 @@
         "required": [
           "started",
           "skipped"
+        ],
+        "type": "object"
+      },
+      "PackageFix": {
+        "additionalProperties": false,
+        "properties": {
+          "findings": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "fixed_in": {
+            "type": "string"
+          },
+          "kev": {
+            "type": "boolean"
+          },
+          "package": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "worst": {
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "negligible",
+              "unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "package",
+          "version",
+          "worst",
+          "findings"
         ],
         "type": "object"
       },
@@ -9600,8 +10098,15 @@
             "format": "int64",
             "type": "integer"
           },
+          "pinned_ref": {
+            "type": "string"
+          },
           "project": {
             "type": "string"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ImageScan",
+            "description": "The image's vulnerability scan, on GET of one release"
           },
           "service": {
             "type": "string"
@@ -10399,6 +10904,86 @@
         "required": [
           "name",
           "sql"
+        ],
+        "type": "object"
+      },
+      "ScanRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "release": {
+            "description": "Release number; default the live one",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ScanningServer": {
+        "additionalProperties": false,
+        "properties": {
+          "database_built": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "production": {
+            "description": "It accepts production, so it may scan production images",
+            "type": "boolean"
+          },
+          "server": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "production"
+        ],
+        "type": "object"
+      },
+      "ScanningSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "ScanningStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "builders": {
+            "items": {
+              "$ref": "#/components/schemas/ScanningServer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "images": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "waiting": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "images",
+          "builders"
         ],
         "type": "object"
       },
@@ -11468,6 +12053,9 @@
           },
           "latest_release": {
             "$ref": "#/components/schemas/ReleaseSummary"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ImageScan"
           },
           "service": {
             "$ref": "#/components/schemas/Service"
@@ -27825,6 +28413,246 @@
         ]
       }
     },
+    "/api/v1/org/images": {
+      "get": {
+        "description": "Every image the organization's live releases run, one row per image however many services run it, worst first, with its vulnerability scan. Scans run on builders once no build or deploy has run for a minute. Scope: read.",
+        "operationId": "list-images",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only images in production environments",
+            "explode": false,
+            "in": "query",
+            "name": "production",
+            "schema": {
+              "description": "Only images in production environments",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List images in use",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/api/v1/org/images/{id}": {
+      "get": {
+        "description": "One image: the releases that run it, its scan, its findings grouped by what fixes them, and all of them worst first. Scope: read.",
+        "operationId": "get-image",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get an image",
+        "tags": [
+          "images"
+        ]
+      }
+    },
     "/api/v1/org/invites": {
       "get": {
         "description": "Newest first, expired ones too until revoked. Scope: admin, unlimited.",
@@ -29881,6 +30709,143 @@
         "summary": "Redeploy the services that use an organization variable",
         "tags": [
           "variables"
+        ]
+      }
+    },
+    "/api/v1/org/vulnerabilities": {
+      "get": {
+        "description": "Findings at or above a severity in the organization's live releases, worst first, with where they run and the version that fixes them, and the live services not scanned yet. Scope: read.",
+        "operationId": "list-vulnerabilities",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only production environments",
+            "explode": false,
+            "in": "query",
+            "name": "production",
+            "schema": {
+              "description": "Only production environments",
+              "type": "boolean"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "min",
+            "schema": {
+              "default": "high",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low",
+                "negligible",
+                "unknown"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgFindings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List vulnerabilities in live releases",
+        "tags": [
+          "images"
         ]
       }
     },
@@ -45935,6 +46900,342 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/sbom": {
+      "get": {
+        "description": "The software bill of materials of the live release's image (or release N's) as Syft made it: syft-json, gzipped. Scope: read.",
+        "operationId": "get-service-sbom",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number; default the live one",
+            "explode": false,
+            "in": "query",
+            "name": "release",
+            "schema": {
+              "description": "Release number; default the live one",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/gzip": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SBOM"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Download a service's SBOM",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/scan": {
+      "post": {
+        "description": "Queues the image of the live release (or release N) for a scan: against the current vulnerability database, from its SBOM when it has one. It still waits until no build or deploy has run for a minute. Scope: deploy.",
+        "operationId": "scan-service",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageScan"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Scan a service's image again",
+        "tags": [
+          "images"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/snapshots": {
       "get": {
         "description": "A stateful service's volume snapshots, newest first, its latest restores, whether snapshots restore into a new service (template databases) and retention: the newest `keep` per service, none older than `keep_days`.",
@@ -48935,6 +50236,169 @@
         "summary": "Stage a volume",
         "tags": [
           "volumes"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/vulnerabilities": {
+      "get": {
+        "description": "The scan of the image the service's live release (or release N) runs, with its findings. 404 until it is scanned. Scope: read.",
+        "operationId": "get-service-vulnerabilities",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Release number; default the live one",
+            "explode": false,
+            "in": "query",
+            "name": "release",
+            "schema": {
+              "description": "Release number; default the live one",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageDetail"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get a service's vulnerabilities",
+        "tags": [
+          "images"
         ]
       }
     },
@@ -55770,6 +57234,234 @@
         "summary": "Reject an access request",
         "tags": [
           "requests"
+        ]
+      }
+    },
+    "/api/v1/scanning": {
+      "get": {
+        "description": "Whether image scanning is on, scans by state, and each builder's vulnerability database. Operators only.",
+        "operationId": "get-scanning",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanningStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Describe image scanning",
+        "tags": [
+          "console"
+        ]
+      },
+      "put": {
+        "description": "Off stops a running scan at once and starts none; findings already made stay. Operators only.",
+        "operationId": "set-scanning",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanningSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanningStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Turn image scanning on or off",
+        "tags": [
+          "console"
         ]
       }
     },

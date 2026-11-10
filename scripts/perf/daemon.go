@@ -216,6 +216,14 @@ traffic_listen = "127.0.0.1:%d"
 store_binary = %q
 ingest_listen = "127.0.0.1:%d"
 stats_listen = "127.0.0.1:%d"
+
+# The fake runtime scans an image in microseconds, so after the seed's 180
+# deploys the scanner would run 180 scans back to back during the API
+# latency measurement; a real builder spends seconds per scan in its job
+# containers (ADR 0074). Its daemon-side costs are benchmarks
+# (BenchmarkScanFindingsWrite, BenchmarkListImages).
+[scan]
+quiet_seconds = 3600
 `, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), ports[3], filepath.Join(dir, "dock-analytics"), ports[4], ports[5])
 	if err := os.WriteFile(filepath.Join(dir, "dock-analytics"), []byte("fake"), 0o755); err != nil {
 		return nil, err

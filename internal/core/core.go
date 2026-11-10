@@ -67,6 +67,10 @@ type Options struct {
 	// check's interval lasts (ADR 0055), so tests probe every few
 	// milliseconds.
 	UptimeSecond time.Duration
+	// ScanQuiet, when positive, replaces [scan] quiet_seconds: how long
+	// nothing may be busy before an image scan starts (ADR 0074), so
+	// tests don't wait a minute.
+	ScanQuiet time.Duration
 	// PasswordCost, when positive, is the bcrypt cost of new password
 	// hashes instead of bcrypt.DefaultCost; tests use bcrypt.MinCost so
 	// creating and logging in users doesn't take ~50 ms each.
@@ -210,6 +214,8 @@ type Core struct {
 	// jobs is the job scheduler's kick and the job runs in flight
 	// (jobs.go, jobs_schedule.go).
 	jobs jobState
+	// scans is the image scanner's state (scans.go, ADR 0074).
+	scans scanState
 	// moves holds the environment moves being driven (ADR 0053).
 	moves moveState
 	// fwd holds the listeners of moved services' forwards (ADR 0063).
@@ -251,7 +257,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
-	for _, dir := range []string{"builds", "uploads", "requests"} {
+	for _, dir := range []string{"builds", "uploads", "requests", "sboms"} {
 		if err := os.MkdirAll(filepath.Join(o.Config.DataDir, dir), 0o700); err != nil {
 			return nil, err
 		}
@@ -288,6 +294,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		uptime:     newUptimeState(),
 		runs:       runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
 		jobs:       newJobState(),
+		scans:      newScanState(),
 		moves:      newMoveState(),
 		fwd:        newForwardState(),
 		drains:     newServerDrainState(),
@@ -313,6 +320,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if o.CutoverDrain > 0 {
 		c.drain = o.CutoverDrain
 	}
+	c.scans.quiet = o.ScanQuiet
 	if o.UptimeSecond > 0 {
 		c.uptime.second = o.UptimeSecond
 	}
@@ -464,6 +472,8 @@ func (c *Core) Start(ctx context.Context) error {
 	go c.scheduleUptime()
 	// Jobs left due by a stop run now; without jobs it exits at once.
 	c.kickJobs()
+	// Scans wait for a quiet minute; with nothing queued it exits.
+	c.startScans(ctx)
 	go c.runCloudflare()
 	// In the background: running the tunnel may pull an image.
 	go func() {

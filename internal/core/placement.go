@@ -395,3 +395,13 @@ func (o offlineRuntime) PruneLogs(context.Context, node.LogPrune) (node.PruneRes
 func (o offlineRuntime) Probe(context.Context, node.ProbeRequest) (node.ProbeResult, error) {
 	return node.ProbeResult{}, o.err
 }
+func (o offlineRuntime) SBOM(context.Context, node.SBOMRequest, io.Writer) (node.SBOMResult, error) {
+	return node.SBOMResult{}, o.err
+}
+func (o offlineRuntime) Match(context.Context, node.MatchRequest, io.Reader, func(node.Finding) error) (node.MatchResult, error) {
+	return node.MatchResult{}, o.err
+}
+func (o offlineRuntime) ScanDatabase(context.Context, node.ScanDatabaseRequest) (node.ScanDatabase, error) {
+	return node.ScanDatabase{}, o.err
+}
+func (o offlineRuntime) ImageDigest(context.Context, string) (string, error) { return "", o.err }

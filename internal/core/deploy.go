@@ -66,6 +66,10 @@ func step(code apitypes.ErrorCode, format string, args ...any) error {
 // deploy runs in its own goroutine; the upload is removed when it finishes.
 func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 	defer c.wg.Done()
+	// Before anything else: a running image scan is killed now, and none
+	// starts until the platform is quiet again (ADR 0074).
+	c.scanBusy()
+	defer c.scanDone()
 	if spec.upload != "" {
 		defer func() { _ = os.Remove(spec.upload) }()
 	}

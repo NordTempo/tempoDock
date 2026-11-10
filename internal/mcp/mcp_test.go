@@ -62,7 +62,7 @@ func newFixture(t testing.TB) *fixture {
 	}
 	rt := fake.New()
 	quiet := slog.New(slog.DiscardHandler)
-	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: quiet, CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost})
+	c, err := core.New(ctx, core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: quiet, CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost, ScanQuiet: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

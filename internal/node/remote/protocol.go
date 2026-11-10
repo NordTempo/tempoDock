@@ -77,8 +77,10 @@ const (
 	// hold, and forward-listen and forward-accept, connections a server
 	// forwards to the server its environment moved to (ADR 0063). 22 adds
 	// resume, open-requests, the routes' wake and quiet probes, and wake
-	// events: environments that sleep (ADR 0070, SleepProtocol).
-	Protocol = 22
+	// events: environments that sleep (ADR 0070, SleepProtocol). 23
+	// adds scan-sbom, scan-match, scan-database and image-digest: image
+	// vulnerability scanning on builders (ADR 0074, ScanProtocol).
+	Protocol = 23
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1
@@ -226,6 +228,8 @@ const (
 	codeNoBinary = "no_analytics_binary"
 	// codeNotRunning is Restart's node.ErrNotRunning (protocol 13).
 	codeNotRunning = "not_running"
+	// codeNoScanDatabase is Match's node.ErrNoScanDatabase (protocol 23).
+	codeNoScanDatabase = "no_scan_database"
 )
 
 func (e *Error) Error() string { return e.Message }
@@ -243,6 +247,8 @@ func (e *Error) Is(target error) bool {
 		return target == errNoAnalyticsBinary
 	case codeNotRunning:
 		return target == node.ErrNotRunning
+	case codeNoScanDatabase:
+		return target == node.ErrNoScanDatabase
 	}
 	return false
 }
@@ -261,6 +267,8 @@ func wireError(err error) *Error {
 		code = codeNoBinary
 	case errors.Is(err, node.ErrNotRunning):
 		code = codeNotRunning
+	case errors.Is(err, node.ErrNoScanDatabase):
+		code = codeNoScanDatabase
 	}
 	return &Error{Code: code, Message: truncate(err.Error(), maxErrorMessage)}
 }

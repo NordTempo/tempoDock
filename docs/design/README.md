@@ -119,7 +119,7 @@ for everything.
 
 - **Navigation.** The sidebar holds the organization switcher, one search
   (the palette, Cmd+K: pages and `dock` commands in one list), the project
-  tree (and archived projects), then Analytics, Errors, Alerts, Activity,
+  tree (and archived projects), then Analytics, Errors, Images, Alerts, Activity,
   Requests (admins), Members, Organization settings, Help, the account and,
   for operators, the console. There is no second command bar.
 - **Pages.** An organization lists its projects; a project page shows its

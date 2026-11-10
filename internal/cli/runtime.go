@@ -108,6 +108,9 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		// this data dir's, and another runtime's is refused.
 		b.Owner = owner
 		builder = b
+		// The vulnerability database downloads on the build network,
+		// which the app firewall covers (ADR 0074).
+		containers.ScanNetwork = buildkitNetwork
 	}
 	coll, in, err := newCollector(cfg, docker.NewAnalyticsStore(containers, cfg.Analytics.StorePort, owner), log)
 	if err != nil {
@@ -115,7 +118,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
 	tunnel := docker.NewCloudflared(containers, cfg.Ingress.CloudflaredImage, owner, proxy.SetTunnelHostname)
-	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false)}, proxy, in, nil
+	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false), Scanner: containers}, proxy, in, nil
 }
 
 // ingestServer serves the analytics ingest on [analytics] ingest_listen,
