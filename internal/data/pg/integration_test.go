@@ -30,6 +30,8 @@ const (
 	ownerPassword  = "owner-pw"
 	readerPassword = "reader-pw"
 	writerPassword = "writer-pw"
+	// monitorPassword is the monitor's, which setup creates.
+	monitorPassword = "monitor-pw"
 )
 
 var pgAddr string
@@ -37,7 +39,8 @@ var pgAddr string
 func TestMain(m *testing.M) {
 	name := fmt.Sprintf("dock-pgtest-%d", time.Now().UnixNano())
 	out, err := exec.Command("docker", "run", "-d", "--rm", "--name", name,
-		"-e", "POSTGRES_PASSWORD="+ownerPassword, "-p", "127.0.0.1::5432", "postgres:17-alpine").CombinedOutput()
+		"-e", "POSTGRES_PASSWORD="+ownerPassword, "-p", "127.0.0.1::5432", "postgres:17-alpine",
+		"postgres", "-c", "shared_preload_libraries=pg_stat_statements").CombinedOutput()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "start postgres: %v: %s\n", err, out)
 		os.Exit(1)
@@ -71,6 +74,7 @@ func target(id int64) data.Target {
 		Database:  "postgres",
 		Reader:    data.Credentials{User: string(data.RoleReader), Password: readerPassword},
 		Writer:    data.Credentials{User: string(data.RoleWriter), Password: writerPassword},
+		Monitor:   data.Credentials{User: string(data.RoleMonitor), Password: monitorPassword},
 	}
 }
 
@@ -125,6 +129,7 @@ INSERT INTO nokey SELECT g, 'x' FROM generate_series(1, 30) g;
 CREATE VIEW cheap AS SELECT id, name FROM items WHERE price < 10;
 CREATE TABLE notes (id int PRIMARY KEY, body text);
 INSERT INTO notes VALUES (1, repeat('é', 6000));
+CREATE EXTENSION pg_stat_statements;
 ANALYZE;
 `
 
@@ -950,7 +955,7 @@ CREATE TABLE later (id serial PRIMARY KEY, v text)`)
 		"SELECT data FROM pg_largeobject",
 		"SELECT lo_get(oid) FROM pg_largeobject_metadata",
 	}
-	for _, cred := range []data.Credentials{tg.Reader, tg.Writer, tg.ReaderMasked} {
+	for _, cred := range []data.Credentials{tg.Reader, tg.Writer, tg.ReaderMasked, tg.Monitor} {
 		pg, err := connect(ctx, tg, cred)
 		if err != nil {
 			t.Fatal(err)

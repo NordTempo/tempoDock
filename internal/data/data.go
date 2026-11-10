@@ -75,6 +75,9 @@ var (
 	// ErrCannotSetUp: the owner can log in but can't create roles
 	// (neither superuser nor CREATEROLE), so setup would fail (Check).
 	ErrCannotSetUp = errors.New("the owner can't create roles")
+	// ErrFull: the server refused the login because every connection is
+	// taken (SQLSTATE 53300).
+	ErrFull = errors.New("every connection is taken")
 )
 
 // Role is which database role a call runs as.
@@ -88,6 +91,10 @@ const (
 	// RoleReaderMasked can select every column but the sensitive ones
 	// (column grants, synced by Engine.SyncGrants).
 	RoleReaderMasked Role = "dock_reader_masked"
+	// RoleMonitor reads the database's statistics for insights: a member
+	// of pg_monitor, with no table privileges, and only ever running SQL
+	// compiled into the engine, never SQL a caller wrote.
+	RoleMonitor Role = "dock_monitor"
 )
 
 // Roles names the roles a host creates in a user's database. Dock and
@@ -96,13 +103,13 @@ const (
 // with one set (pg.Options.Roles) and keep calling them by Dock's names
 // (RoleReader, ...) inside.
 type Roles struct {
-	Reader, Writer, ReaderMasked Role
+	Reader, Writer, ReaderMasked, Monitor Role
 }
 
 // DockRoles are Tempo Dock's roles; TempoBaseRoles are tempoBase's.
 var (
-	DockRoles      = Roles{Reader: RoleReader, Writer: RoleWriter, ReaderMasked: RoleReaderMasked}
-	TempoBaseRoles = Roles{Reader: "tempobase_reader", Writer: "tempobase_writer", ReaderMasked: "tempobase_reader_masked"}
+	DockRoles      = Roles{Reader: RoleReader, Writer: RoleWriter, ReaderMasked: RoleReaderMasked, Monitor: RoleMonitor}
+	TempoBaseRoles = Roles{Reader: "tempobase_reader", Writer: "tempobase_writer", ReaderMasked: "tempobase_reader_masked", Monitor: "tempobase_monitor"}
 )
 
 // Credentials log in to a database. They never leave the daemon: String
@@ -139,6 +146,8 @@ type Target struct {
 	// references. Zero: masked calls can't run SQL (pages and references
 	// still work, masked by the engine).
 	ReaderMasked Credentials
+	// Monitor is RoleMonitor's login, for insights. Zero: no insights.
+	Monitor Credentials
 }
 
 // Call is per-call context the engine needs besides the target.
@@ -248,6 +257,23 @@ type Engine interface {
 	// delete matches the primary key and the Old values; any mismatch
 	// rolls everything back and is reported in Conflicts.
 	Commit(ctx context.Context, t Target, c Call, changes []apitypes.DataChange) (CommitResult, error)
+
+	// Insights reads how the database is doing, as Monitor, for the
+	// requested views (core has filled in defaults and checked the
+	// caller's level per view), with hints from what it read. Texts are
+	// as the server has them: the caller redacts them. ErrNotSetUp when
+	// the monitor can't log in (EnsureMonitor creates it), ErrFull when
+	// every connection is taken.
+	Insights(ctx context.Context, t Target, c Call, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
+	// Pressure reads the connection counts only, as Monitor: one cheap
+	// query. A login refused for too many connections is Full, not an
+	// error.
+	Pressure(ctx context.Context, t Target) (apitypes.DataPressure, error)
+	// EnsureMonitor creates or updates Monitor with the owner's
+	// credentials and tries to make it a member of pg_monitor; a server
+	// that refuses that leaves it without (insights then can't see other
+	// roles' statement texts, and say so).
+	EnsureMonitor(ctx context.Context, t Target, owner Credentials) error
 
 	// Forget drops cached connections and schema of a service (archived,
 	// container replaced, roles rotated).

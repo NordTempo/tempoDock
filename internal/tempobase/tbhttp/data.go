@@ -108,6 +108,15 @@ func registerData(s *server, a huma.API) {
 	})
 
 	authed(s, a, dataOp(huma.Operation{
+		OperationID: "get-data-insights", Method: http.MethodGet, Path: dataPathT + "/insights",
+	}), func(ctx context.Context, act tempobase.Actor, in *struct {
+		ConnPath
+		datahttp.InsightsQuery
+	}) (*out[apitypes.DataInsights], error) {
+		return reply(s.app.DataInsights(ctx, act, in.Connection, in.Request()))
+	})
+
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "list-saved-queries", Method: http.MethodGet, Path: dataPathT + "/saved-queries",
 	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[[]apitypes.DataSavedQuery], error) {
 		return reply(s.app.ListSavedQueries(ctx, act, in.Connection))

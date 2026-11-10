@@ -2836,6 +2836,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/data/insights": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How the database is doing
+         * @description Reads the database's own statistics on demand, as dock_monitor (a member of pg_monitor that runs only Dock's fixed queries): connections against the limit, cache hit ratio and size (overview); the top statements from pg_stat_statements (queries); sessions with what blocks them (sessions); table and index sizes and use (tables, indexes); and hints about what needs a look. Nothing is stored. Overview, tables and indexes need level schema; queries and sessions read, with statement values redacted for callers who see sensitive columns masked. Views the caller may not see, or the server can't give, are listed in `unavailable`.
+         */
+        get: operations["get-data-insights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/data/query": {
         parameters: {
             query?: never;
@@ -6038,6 +6058,18 @@ export interface components {
             ref_schema: string;
             ref_table: string;
         };
+        DataHint: {
+            copy?: string;
+            detail: string;
+            /** @enum {string} */
+            kind: "connections_high" | "idle_in_transaction" | "blocked" | "long_query" | "duplicate_index" | "invalid_index" | "unused_index" | "full_scans" | "dead_rows" | "not_analyzed" | "cache_low" | "temp_spill" | "transaction_id_age" | "query_stats_dropping" | "query_stats_off";
+            /** @enum {string} */
+            level: "warn" | "note";
+            subject?: string;
+            title: string;
+            /** @enum {string} */
+            view: "overview" | "queries" | "sessions" | "tables" | "indexes";
+        };
         DataHistoryEntry: {
             /** Format: int64 */
             audit_id: number;
@@ -6059,6 +6091,23 @@ export interface components {
             primary: boolean;
             unique: boolean;
         };
+        DataIndexStats: {
+            /** Format: int64 */
+            bytes?: number;
+            constraint: boolean;
+            definition: string;
+            duplicate: boolean;
+            /** Format: date-time */
+            last_scan_at?: string;
+            name: string;
+            primary: boolean;
+            /** Format: int64 */
+            scans: number;
+            schema: string;
+            table: string;
+            unique: boolean;
+            valid: boolean;
+        };
         DataInfo: {
             access: components["schemas"]["DataPermission"];
             /** @enum {string} */
@@ -6073,6 +6122,42 @@ export interface components {
             /** @enum {string} */
             status: "ready" | "setup_needed" | "unsupported" | "unreachable" | "not_running";
             used_by: string[] | null;
+        };
+        DataInsights: {
+            /** @enum {string} */
+            engine: "postgres";
+            hints: components["schemas"]["DataHint"][] | null;
+            indexes?: components["schemas"]["DataIndexStats"][] | null;
+            overview?: components["schemas"]["DataOverview"];
+            queries?: components["schemas"]["DataStatement"][] | null;
+            /** Format: int64 */
+            queries_tracked?: number;
+            /** Format: date-time */
+            read_at: string;
+            sessions?: components["schemas"]["DataSession"][] | null;
+            /** Format: date-time */
+            since?: string;
+            /** @enum {string} */
+            since_reason?: "reset" | "start";
+            tables?: components["schemas"]["DataTableStats"][] | null;
+            unavailable: components["schemas"]["DataUnavailable"][] | null;
+        };
+        DataOverview: {
+            /** Format: int64 */
+            bytes: number;
+            /** Format: double */
+            cache_hit?: number;
+            connections: components["schemas"]["DataPressure"];
+            /** Format: int64 */
+            deadlocks: number;
+            /** @enum {string} */
+            query_stats: "on" | "not_loaded" | "no_extension";
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: int64 */
+            temp_bytes: number;
+            /** Format: int64 */
+            transaction_id_age?: number;
         };
         DataPage: {
             columns: components["schemas"]["DataResultColumn"][] | null;
@@ -6126,6 +6211,25 @@ export interface components {
             sensitive: "masked" | "visible";
             /** @enum {string} */
             subject: "role:read" | "role:deploy" | "tokens";
+        };
+        DataPressure: {
+            /** Format: int64 */
+            active: number;
+            full: boolean;
+            /** Format: int64 */
+            idle: number;
+            /** Format: int64 */
+            idle_in_transaction: number;
+            /** Format: int64 */
+            max: number;
+            /** Format: date-time */
+            oldest_transaction_at?: string;
+            /** Format: int64 */
+            reserved: number;
+            /** Format: int64 */
+            used: number;
+            /** Format: int64 */
+            waiting: number;
         };
         DataQueryError: {
             detail?: string;
@@ -6186,6 +6290,46 @@ export interface components {
             read_at: string;
             tables: components["schemas"]["DataTable"][] | null;
         };
+        DataSession: {
+            application: string;
+            blocked_by?: string[] | null;
+            client?: string;
+            id: string;
+            /** @enum {string} */
+            kind: "client" | "dock" | "autovacuum" | "background";
+            /** Format: int64 */
+            pid?: number;
+            /** Format: date-time */
+            query_at?: string;
+            /** @enum {string} */
+            state: "active" | "idle" | "idle_in_transaction" | "other";
+            /** Format: date-time */
+            state_at?: string;
+            text?: string;
+            /** Format: date-time */
+            transaction_at?: string;
+            user: string;
+            wait?: string;
+        };
+        DataStatement: {
+            /** Format: double */
+            cache_hit?: number;
+            /** Format: int64 */
+            calls: number;
+            id: string;
+            /** Format: double */
+            max_ms: number;
+            /** Format: double */
+            mean_ms: number;
+            /** Format: int64 */
+            rows: number;
+            /** Format: int64 */
+            temp_bytes: number;
+            text: string;
+            /** Format: double */
+            total_ms: number;
+            user?: string;
+        };
         DataTable: {
             columns: components["schemas"]["DataColumn"][] | null;
             comment?: string;
@@ -6207,6 +6351,33 @@ export interface components {
             /** Format: int64 */
             size_bytes: number;
         };
+        DataTableStats: {
+            /** Format: date-time */
+            analyzed_at?: string;
+            /** Format: double */
+            cache_hit?: number;
+            /** Format: int64 */
+            dead_rows: number;
+            /** Format: int64 */
+            estimated_bytes: number;
+            /** Format: int64 */
+            estimated_rows: number;
+            /** Format: int64 */
+            index_bytes?: number;
+            /** Format: int64 */
+            index_scans: number;
+            locked?: boolean;
+            name: string;
+            schema: string;
+            /** Format: int64 */
+            seq_rows_read: number;
+            /** Format: int64 */
+            seq_scans: number;
+            /** Format: int64 */
+            total_bytes?: number;
+            /** Format: date-time */
+            vacuumed_at?: string;
+        };
         DataTokenAccess: {
             /** @enum {string} */
             non_production: "none" | "schema" | "read" | "propose" | "write";
@@ -6215,6 +6386,12 @@ export interface components {
             /** @enum {string} */
             sensitive: "masked" | "visible";
         } | null;
+        DataUnavailable: {
+            partial?: boolean;
+            reason: string;
+            /** @enum {string} */
+            view: "overview" | "queries" | "sessions" | "tables" | "indexes";
+        };
         DecideAccessRequest: {
             /** @description Shown to the requester and in the audit log */
             comment?: string;
@@ -25398,6 +25575,117 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DataHistoryEntry"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-data-insights": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Views to read, comma separated; default every view you may see */
+                view?: ("overview" | "queries" | "sessions" | "tables" | "indexes")[] | null;
+                /** @description Order of the queries view: total time (default), mean time, calls or rows */
+                order?: "total" | "mean" | "calls" | "rows";
+                /** @description Statements in the queries view; 0 means 50 */
+                limit?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataInsights"];
                 };
             };
             /** @description Bad Request */

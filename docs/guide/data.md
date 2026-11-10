@@ -138,6 +138,37 @@ dock db policy set deploy.production=inherit -p shop  # remove a rule
 
 `dock db status` shows your effective access with the steps that decided it.
 
+## How the database is doing
+
+```sh
+dock db health                    # connections, cache, size, and what needs a look
+dock db queries --order mean      # slowest statements (pg_stat_statements)
+dock db sessions                  # running, idle in a transaction, waiting, and who blocks
+dock db storage --indexes         # sizes, scans, dead rows, unused and duplicate indexes
+```
+
+Dock reads the database's own statistics when you ask, as `dock_monitor`, a
+role that is a member of `pg_monitor` and can't read table data. Nothing is
+stored and nothing runs while nobody looks. Every read has a 2 second
+timeout and skips the exact size of a table someone holds an exclusive lock
+on, so it never waits in that lock's queue. Counters count since their last
+reset or the server's start.
+
+The overview, tables and indexes need level `schema`; queries and sessions
+show statement texts and need `read`, with values redacted when your access
+masks sensitive columns (texts that mention a password are redacted for
+everyone). Looking at texts is audited as `data.insights`, like browsing.
+Hints come with a statement to copy (`DROP INDEX CONCURRENTLY ...`,
+`VACUUM (ANALYZE) ...`): put it in a migration or run it yourself; Dock never
+does.
+
+The queries view needs `pg_stat_statements`: the server must load it
+(`-c shared_preload_libraries=pg_stat_statements` in the start command,
+which restarts the database when deployed) and the owner must run `CREATE
+EXTENSION pg_stat_statements`. Without `pg_monitor` (some managed services
+refuse the grant) the monitor still reads sizes and counts, but not other
+roles' statement texts; the views say so.
+
 ## Agents
 
 Agents get nothing until you grant it, either in the policy's `tokens` rule

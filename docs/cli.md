@@ -396,6 +396,15 @@ says which level was missing and the rule that decided it.
 | `db apply -f FILE [--dry-run\|--propose] [-m MSG] [--confirm ENV]` (`propose`) | Changes from JSON: preview the SQL, or store and commit them in one transaction (level write), or leave them pending for an admin (level propose, or `--propose`) | level propose |
 | `db policy show\|set [-p P [-e E]]` | The policy at the default, a project or an environment (explicit flags, not the link). `set deploy.production=read tokens.non-production=propose,visible ...` changes the named rules (`inherit` removes one); `--replace` drops the rest | admin to set |
 | `db sensitive list\|set [schema.]table.column...\|--clear` | Columns masked for callers whose access says masked; `set` replaces the list | admin to set |
+| `db health` | Connections against the limit, cache hit ratio, size, and what needs a look (idle transactions, blocked sessions, duplicate, invalid and unused indexes, dead rows, full scans), with statements to copy | level schema |
+| `db queries [--order total\|mean\|calls\|rows] [--limit N]` | The statements that cost the most, from `pg_stat_statements` | level read |
+| `db sessions [--all]` | Sessions running, idle in a transaction or waiting on a lock, and the session that blocks them | level read |
+| `db storage [--indexes]` | Tables (or indexes) by size, with dead rows, scans and the last vacuum | level schema |
+
+`health`, `queries`, `sessions` and `storage` read the database's own
+statistics live, as Dock's `dock_monitor` role; nothing is stored, and
+counters count since their last reset or the server's start. Statement
+values are redacted when your access masks sensitive columns.
 
 Filters (`-w`, `--filter`): `col=value` (equals), `col=op:value` with `eq`,
 `ne`, `lt`, `lte`, `gt`, `gte`, `like`, `ilike`, `in` (comma-separated), or

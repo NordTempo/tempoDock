@@ -81,6 +81,7 @@ line means a later record added to it without changing what it decided.
 | [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs | accepted |
 | [0067](0067-landing-site-and-console-address.md) | The landing site, and the console's address | accepted |
 | [0068](0068-redirects-on-cloudflare-zones.md) | Redirects on Cloudflare zones | accepted |
+| [0069](0069-database-insights.md) | Database insights | accepted |
 
 ## Template
 

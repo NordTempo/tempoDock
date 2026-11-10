@@ -35,7 +35,8 @@ func newDBCmd(g *globals) *cobra.Command {
 		Use:   "db",
 		Short: "Browse, query and change a database service's data",
 		Long: `Work with the data in a database service (Postgres): tables, schema, rows,
-read-only SQL, query history, saved queries and changesets.
+read-only SQL, query history, saved queries and changesets, and how the
+database is doing (health, queries, sessions, storage).
 
 What you may do is the data access policy's decision (dock db status says
 what you have and why). Queries run as Dock's read-only role; changes go
@@ -46,6 +47,7 @@ commits need --confirm <environment>.`,
 		newDBStatusCmd(g), newDBSetupCmd(g), newDBSettingsCmd(g),
 		newDBTablesCmd(g), newDBSchemaCmd(g), newDBRowsCmd(g), newDBQueryCmd(g), newDBHistoryCmd(g),
 		newDBSavedCmd(g), newDBChangesCmd(g), newDBApplyCmd(g),
+		newDBHealthCmd(g), newDBQueriesCmd(g), newDBSessionsCmd(g), newDBStorageCmd(g),
 		newDBPolicyCmd(g), newDBSensitiveCmd(g),
 	)
 	return cmd

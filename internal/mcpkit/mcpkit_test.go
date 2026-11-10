@@ -76,7 +76,7 @@ func TestDataToolsLocator(t *testing.T) {
 			} `json:"tools"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(body), &list); err != nil || len(list.Result.Tools) != 5 {
+	if err := json.Unmarshal([]byte(body), &list); err != nil || len(list.Result.Tools) != 6 {
 		t.Fatalf("tools/list: %v %s", err, body)
 	}
 	for _, tool := range list.Result.Tools {

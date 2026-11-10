@@ -141,7 +141,7 @@ instead; that is your login, so don't hand it to an agent.
 | Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |
 | Project files | `plan_project_file`, `apply_project_file`, `import_compose` |
 | Analytics | `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed only; watched in the UI), `analytics_goals`, `analytics_funnel` |
-| Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `propose_data_changes` |
+| Data | `data_status`, `data_schema`, `data_rows`, `data_query`, `data_insights`, `propose_data_changes` |
 | Ask | `request_access`, `wait_for_request`, `list_requests` |
 
 - **Project and environment default to the token's limits**, so a token

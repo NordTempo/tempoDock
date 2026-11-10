@@ -146,6 +146,7 @@ type Ops[A, R any] interface {
 	CommitDataChangeset(ctx context.Context, a A, ref R, id int64, req apitypes.DataCommitRequest) (apitypes.DataChangeset, error)
 	RejectDataChangeset(ctx context.Context, a A, ref R, id int64, req apitypes.DataRejectRequest) (apitypes.DataChangeset, error)
 	SetSensitiveColumns(ctx context.Context, a A, ref R, req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error)
+	DataInsights(ctx context.Context, a A, ref R, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
 }
 
 // Changeset is a stored changeset, decoded. Hosts store Changes,
