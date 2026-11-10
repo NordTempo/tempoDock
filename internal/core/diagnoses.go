@@ -19,7 +19,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Deploy diagnoses (ADR 0070): when a release fails, deployment.fail
+// Deploy diagnoses (ADR 0071): when a release fails, deployment.fail
 // captures what explains it (captureContainer before its container goes,
 // then recordDiagnosis) and stores it as one bounded bundle, with the
 // likely cause from the rules in diagnose.go. Nothing runs while nothing

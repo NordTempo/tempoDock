@@ -11,7 +11,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 )
 
-// The rules of a deploy diagnosis (ADR 0070): a small, ordered set, each
+// The rules of a deploy diagnosis (ADR 0071): a small, ordered set, each
 // matching on facts the platform has (an exit code, an OOM kill, the
 // health check's answer, the release's variables) and, where it reads
 // the app's output, a log line together with such a fact, never a log

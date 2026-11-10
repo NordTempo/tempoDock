@@ -1,4 +1,4 @@
--- Deploy diagnoses (ADR 0070): what explains a failed release, captured
+-- Deploy diagnoses (ADR 0071): what explains a failed release, captured
 -- when it fails, since its container, exit and health check answer are
 -- gone seconds later. bundle is apitypes.Diagnosis as JSON (at most
 -- 48 KB), log lines as written: they are masked when read, as logs are.

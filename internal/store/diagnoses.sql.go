@@ -25,7 +25,7 @@ type AddDiagnosisParams struct {
 	CreatedAt int64
 }
 
-// Deploy diagnoses (ADR 0070).
+// Deploy diagnoses (ADR 0071).
 func (q *Queries) AddDiagnosis(ctx context.Context, arg AddDiagnosisParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, addDiagnosis,
 		arg.ServiceID,

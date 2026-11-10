@@ -92,7 +92,7 @@ func TestReleaseWait(t *testing.T) {
 		t.Fatalf("wait for a failed release: exit %d\nstdout %s\nstderr %s", code, stdout, stderr)
 	}
 
-	// Its diagnosis has the cause and the line it matched (ADR 0070).
+	// Its diagnosis has the cause and the line it matched (ADR 0071).
 	d := ok[apitypes.Diagnosis](t, append([]string{"diagnose", "-r", "3"}, web...)...)
 	if d.Release != 3 || d.Cause.Rule != "missing_variable" || len(d.ContainerTail) != 1 || !d.ContainerTail[0].Matched {
 		t.Fatalf("diagnose -r 3 = %+v", d)

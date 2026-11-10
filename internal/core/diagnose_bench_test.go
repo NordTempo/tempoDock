@@ -10,7 +10,7 @@ import (
 
 // BenchmarkDiagnoseRules is every rule over a failed health check with a
 // full container tail and 30 variables: the work a failure adds after
-// its reads (ADR 0070).
+// its reads (ADR 0071).
 func BenchmarkDiagnoseRules(b *testing.B) {
 	env := map[string]string{"PORT": "8080"}
 	for i := range 30 {

@@ -547,7 +547,7 @@ type Release struct {
 	// NewErrors counts the service's error issues first seen in this
 	// release (ADR 0062), for "N new errors since this release".
 	NewErrors int `json:"new_errors" doc:"Error issues first seen in this release; only counted when fetching one release"`
-	// Diagnosis names a failed release's diagnosis (ADR 0070) and its
+	// Diagnosis names a failed release's diagnosis (ADR 0071) and its
 	// likely cause.
 	Diagnosis *DiagnosisRef `json:"diagnosis,omitempty" doc:"A failed release's diagnosis and its likely cause; read it whole with GET .../diagnoses/{id}"`
 }

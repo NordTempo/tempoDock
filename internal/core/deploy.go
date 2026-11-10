@@ -46,7 +46,7 @@ type deployment struct {
 	// orphans are containers already labelled for this release when it
 	// started (orphanCheck): never its own, so fail leaves them alone.
 	orphans []string
-	// pre is how the pre-deploy command ran, for a diagnosis (ADR 0070);
+	// pre is how the pre-deploy command ran, for a diagnosis (ADR 0071);
 	// nil when none ran.
 	pre *apitypes.DiagnosisPreDeploy
 }
@@ -600,7 +600,7 @@ func (d *deployment) fail(ctx context.Context, err error) {
 		}
 	}
 	// Before the release reads as failed, so a failed release always
-	// carries its cause (ADR 0070).
+	// carries its cause (ADR 0071).
 	d.recordDiagnosis(ctx, code, msg, isOffline(err), captured)
 	// Before the release reads as failed, so "failed" means the changes it
 	// carried are staged again.

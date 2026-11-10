@@ -67,7 +67,7 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 		}
 	}
 	took := time.Since(start).Round(time.Second)
-	// How it ran, for a diagnosis (ADR 0070).
+	// How it ran, for a diagnosis (ADR 0071).
 	d.pre = &apitypes.DiagnosisPreDeploy{Command: cmd, DurationMS: time.Since(start).Milliseconds(), Tail: diagLines(tailLines(res.Output, diagPreDeployLines))}
 	if err == nil {
 		d.pre.ExitCode = ptr(res.ExitCode)

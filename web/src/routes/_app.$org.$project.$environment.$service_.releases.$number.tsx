@@ -97,7 +97,7 @@ function ReleasePage() {
   const servingRelease = useReleases(ref).find((x) => x.status === "active");
   const failed = release.status === "failed";
   const r = `r${release.number}`;
-  // Its diagnosis (ADR 0070): the likely cause and the fix it points at.
+  // Its diagnosis (ADR 0071): the likely cause and the fix it points at.
   const diagnosis = useDiagnosis(ref, release);
   const edit = failed ? fixEdit(diagnosis?.cause.fix) : undefined;
   const fix =

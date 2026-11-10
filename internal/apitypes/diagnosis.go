@@ -2,7 +2,7 @@ package apitypes
 
 import "time"
 
-// Deploy diagnosis (ADR 0070): when a release fails, Dock keeps what
+// Deploy diagnosis (ADR 0071): when a release fails, Dock keeps what
 // explains it in one bundle, captured at the failure (the container, its
 // exit and the probe's answer are gone seconds later), and names the
 // likely cause with a small set of deterministic rules. The UI's release

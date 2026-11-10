@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// registerDiagnoses adds a service's deploy diagnoses (ADR 0070).
+// registerDiagnoses adds a service's deploy diagnoses (ADR 0071).
 func registerDiagnoses(s *Server, a huma.API) {
 	tags := []string{"releases"}
 	authed(s, a, huma.Operation{

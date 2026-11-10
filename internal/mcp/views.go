@@ -30,7 +30,7 @@ type releaseView struct {
 	// Logs explain a failed release (release_details and waits).
 	Logs *failureLogs `json:"logs,omitempty"`
 	// Diagnosis names a failed release's likely cause; the diagnose tool
-	// has its evidence (ADR 0070).
+	// has its evidence (ADR 0071).
 	Diagnosis *apitypes.DiagnosisRef `json:"diagnosis,omitempty"`
 }
 

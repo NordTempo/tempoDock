@@ -118,7 +118,7 @@ ones.
 | `service_stats` | CPU, memory and I/O: latest sample, averages, peaks, at most 24 points | `ServiceStats` | read |
 | `list_releases` | Releases, newest first | `ListReleases` | read |
 | `release_details` | One release with steps; failed: reason, container and build log tails | `GetRelease`, `ServiceLogs`, `BuildLog` | read |
-| `diagnose` | A failed release's diagnosis: likely cause, what was ruled out, evidence ([0070](0070-deploy-diagnosis.md)) | `ListDiagnoses`, `GetDiagnosis` | read |
+| `diagnose` | A failed release's diagnosis: likely cause, what was ruled out, evidence ([0071](0071-deploy-diagnosis.md)) | `ListDiagnoses`, `GetDiagnosis` | read |
 | `wait_for_release` | Follow a running release (default: the in-flight one) to its end | `ListReleases`, `GetRelease`, `Events` | read |
 | `logs` | Last lines of a release's container | `ServiceLogs` | read |
 | `deploy_image` | Deploy a prebuilt image, wait | `DeployImage` | deploy |

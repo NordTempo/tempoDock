@@ -1,4 +1,4 @@
-# 0070: Deploy diagnosis
+# 0071: Deploy diagnosis
 
 Status: accepted (decided by the agent; Saile picked the release page's
 layout, mock A with a "ruled out" line, 2026-11-10).
@@ -27,7 +27,7 @@ state, and the health check's answer only ever lived in the deploy.
 | The bundle | `apitypes.Diagnosis`: the cause (rule, one-line summary, what matched, the fix as a setting and a CLI command), every rule that applies with its verdict (`checked`: what was ruled out and why), the failure (step, error, exit code, OOM kill), the health check and its answer, what changed since the last release that served (image, variable names, settings), the pre-deploy command's run, the last lines of the container (matched ones marked) and the build, error issues and 1-minute resource samples around it. Shapes only gain fields; `trace` is kept as the name for the trace of the failing request once Dock records traces |
 | Rules | Ordered, the first match is the cause: `server_offline`, `build_failed`, `pull_failed`, `pre_deploy_failed`, `oom_killed`, `missing_binary`, `wrong_arch`, `missing_variable`, `port_mismatch`, `loopback_only`, `health_path`, `not_listening`, `exited`. A rule that reads the app's output needs a fact from the platform too (an exit code, the health check's answer, a variable the release doesn't set), never a log line alone. No match is an answer: "No rule matched", with the evidence. They run in core (`diagnose.go`), so the UI, CLI and MCP say the same |
 | The health check's answer | Read back from its error with `node.ParseHealthFailure`. The messages are the node's own (`node.ExitedError`, the Docker runtime's probes) and are tested together with the parser. No node protocol change: the error already crosses the link as text, and inspect and logs exist since protocol 1 |
-| Storage | `diagnoses` (migration 0081): the bundle as JSON, at most 48 KB (older log lines go first), the rule and summary beside it. A service keeps its newest 20, for `[retention] build_log_days` (30) |
+| Storage | `diagnoses` (migration 0082): the bundle as JSON, at most 48 KB (older log lines go first), the rule and summary beside it. A service keeps its newest 20, for `[retention] build_log_days` (30) |
 | Secrets | Log lines are stored as written and masked when read, with the release's values, exactly as logs are (`logRedactor`): read and deploy tokens see `*****`, admins what logs show them. Variables are names only; values are compared in the sealed configs and never leave them. The summary is made from the rule's facts (a port, a limit, a variable name), never from log text |
 | Permissions | Scope read: everything in a bundle is readable with read already |
 | API | `GET .../services/{s}/diagnoses` (summaries, `?release=N`) and `.../diagnoses/{id}`; a failed release carries `diagnosis: {id, kind, rule, summary}` (`ListReleases` loads them in one query) |

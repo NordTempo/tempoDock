@@ -425,7 +425,7 @@ func TestDeployTimeoutAndFailure(t *testing.T) {
 		t.Errorf("failed deploy's summary = %q", res.summary)
 	}
 
-	// diagnose has the cause and its evidence (ADR 0070).
+	// diagnose has the cause and its evidence (ADR 0071).
 	diag := call(t, s, "diagnose", map[string]any{"service": "web"})
 	var d apitypes.Diagnosis
 	diag.decode(t, &d)

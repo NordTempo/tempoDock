@@ -195,7 +195,7 @@ func printRelease(g *globals, v releaseView) error {
 	return nil
 }
 
-// likelyCause is a failed release's cause from its diagnosis (ADR 0070),
+// likelyCause is a failed release's cause from its diagnosis (ADR 0071),
 // with the command that shows the evidence.
 func likelyCause(r apitypes.Release) string {
 	d := r.Diagnosis

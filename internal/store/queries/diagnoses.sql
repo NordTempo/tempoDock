@@ -1,4 +1,4 @@
--- Deploy diagnoses (ADR 0070).
+-- Deploy diagnoses (ADR 0071).
 
 -- name: AddDiagnosis :one
 INSERT INTO diagnoses (service_id, release_id, kind, rule, summary, bundle, created_at)

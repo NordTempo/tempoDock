@@ -9,7 +9,7 @@ import { plural } from "../../ui/format";
 import { Prop, SectionHead } from "../../ui/kit";
 import type { TextSettingKey } from "../settings/settings";
 
-// A failed release's diagnosis (ADR 0070) on its page: the likely cause
+// A failed release's diagnosis (ADR 0071) on its page: the likely cause
 // with what was ruled out, then the evidence as rows, the rows a rule
 // matched marked. Dock captured it when the release failed; the rules run
 // in core, so the UI, `dock diagnose` and MCP say the same.

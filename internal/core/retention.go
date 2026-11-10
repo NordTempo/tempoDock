@@ -31,7 +31,7 @@ import (
 //   - error issues (ADR 0062): open ones without an occurrence for 7
 //     days resolve by themselves, resolved ones not seen for 30 days go,
 //     and hourly counts older than 7 days;
-//   - deploy diagnoses older than build_log_days (ADR 0070);
+//   - deploy diagnoses older than build_log_days (ADR 0071);
 //   - on every online server, log archives past [logs] limits and those
 //     of services that no longer exist (pruneLogs, ADR 0046).
 //

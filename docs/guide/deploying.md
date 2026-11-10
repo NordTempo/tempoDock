@@ -250,7 +250,7 @@ one never stopped serving. The release is `failed` with `error` and
 CLI exits with code 6.
 
 **Why it failed.** Dock keeps a diagnosis of every failed release
-([ADR 0070](../decisions/0070-deploy-diagnosis.md)), captured as it
+([ADR 0071](../decisions/0071-deploy-diagnosis.md)), captured as it
 fails: the likely cause from a small set of rules (the app listening on
 another port than the one checked, an out-of-memory kill, a start command
 the image lacks, a variable the app needs and the release doesn't set, a

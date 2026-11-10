@@ -844,7 +844,7 @@ func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, _ node.Heal
 		return r.healthErr(r.specs[c.ID])
 	}
 	if port := r.specs[c.ID].Env["DEMO_LISTEN_PORT"]; port != "" && port != r.specs[c.ID].Env["PORT"] {
-		// A `make dev` demo of a deploy diagnosis (ADR 0070): the app
+		// A `make dev` demo of a deploy diagnosis (ADR 0071): the app
 		// says it listens on another port than the one checked.
 		r.logs[c.ID] = append(r.logs[c.ID], node.LogLine{Time: time.Now(), Stream: "stdout", Text: `{"level":30,"msg":"Server listening at http://0.0.0.0:` + port + `"}`})
 		return fmt.Errorf("health check timed out after 1m0s: connect to 127.0.0.1:%d: connection closed, is the app listening on the container port?", cur.HostPort)

@@ -13,7 +13,7 @@ import (
 )
 
 // newDiagnoseCmd is `dock diagnose [-r N]`: a failed release's diagnosis
-// (ADR 0070), the service's newest without -r.
+// (ADR 0071), the service's newest without -r.
 func newDiagnoseCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var release int64
