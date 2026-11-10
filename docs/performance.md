@@ -98,13 +98,19 @@ last request (`Store.Trim`).
 ## Running it
 
 ```sh
-make perf                        # builds the UI and binary, checks everything (~2-3 min)
+make perf                        # builds the UI and binary, checks everything (~4 min, half of it benchmarks)
 make perf PERF_FLAGS='-checks bench'          # only some checks: binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui
 make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable'  # also tempoBase's Postgres idle close
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
 make perf-baseline               # re-record binary size and benchmarks
 go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmarks
 ```
+
+Dock's daemon, the analytics store and tempoBase are checked side by
+side: start-up, seeding and anything timed run one at a time, while idle
+windows and waits overlap (an idle window counts only its own process's
+CPU, wake-ups and memory). The CLI's start-up and the benchmarks run
+alone.
 
 - **Benchmarks** live in `*_bench_test.go` files; `make perf` finds them by
   that name. They cover the hot paths: project overview, service and release
@@ -131,7 +137,8 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
 - **Comparing across machines.** A fixed pure-Go workload is timed next to
   the benchmarks; ns/op is compared relative to it, so a slower CI runner
   doesn't read as a regression. The fastest of 5 runs counts (noise only
-  adds time), and a package over budget is run once more before it fails.
+  adds time), and a benchmark over budget is run once more (alone, not
+  its whole package) before it fails.
   Benchmarks named `parallel=` depend on core count and are gated on
   allocations only. API latency budgets scale with the same factor on
   machines slower than the baseline's.

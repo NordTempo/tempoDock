@@ -20,6 +20,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -83,6 +84,10 @@ type options struct {
 	// CI runners, whose noise and speed make timing unreliable; sizes,
 	// memory and allocation budgets still fail.
 	softTiming bool
+
+	// gate is shared by checks running side by side; nil when a check
+	// runs alone.
+	gate *gate
 }
 
 func main() {
@@ -132,35 +137,101 @@ func main() {
 		o.speed = max(1, min(calibrate(), calibrate(), calibrate())/base.CalibrationNs)
 	}
 	t := &table{waivers: base.Waivers, softTiming: o.softTiming}
-	steps := []struct {
-		name string
-		run  func(options, *table) error
-	}{
-		{"binary", checkBinary},
-		{"cli", checkCLI},
-		{"daemon", checkDaemon},
-		{"ui", checkUI},
-		{"bench", checkBench},
-		{"analytics", checkAnalytics},
-		{"tempobase-binary", checkTempobaseBinary},
-		{"tempobase-daemon", checkTempobaseDaemon},
-		{"tempobase-ui", checkTempobaseUI},
-	}
-	for _, s := range steps {
-		if !slices.Contains(o.checks, s.name) {
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "perf: %s...\n", s.name)
-		if err := s.run(o, t); err != nil {
-			t.add(s.name, "error (below)", "", fail)
-			t.errs = append(t.errs, fmt.Errorf("%s: %w", s.name, err))
-		}
-	}
+	runChecks(o, t)
 	t.print(os.Stdout)
 	if t.failed() {
 		fmt.Println("\nOver budget. See docs/performance.md; if a change is intended, run `make perf-baseline` and commit scripts/perf/baseline.json.")
 		os.Exit(1)
 	}
+}
+
+// checkFuncs are the checks by name, and stages the order they run in. The
+// groups of a stage run side by side under a gate: Dock's daemon, the
+// analytics store and tempoBase are separate processes, and most of their
+// checks' time is idle windows and waits that can overlap. The CLI's
+// start-up and the benchmarks are timed alone, before and after them.
+var (
+	checkFuncs = map[string]func(options, *table) error{
+		"binary": checkBinary, "cli": checkCLI, "daemon": checkDaemon, "ui": checkUI, "bench": checkBench,
+		"analytics": checkAnalytics, "tempobase-binary": checkTempobaseBinary,
+		"tempobase-daemon": checkTempobaseDaemon, "tempobase-ui": checkTempobaseUI,
+	}
+	stages = [][][]string{
+		{{"binary", "cli"}},
+		{{"daemon", "ui"}, {"analytics"}, {"tempobase-binary", "tempobase-daemon", "tempobase-ui"}},
+		{{"bench"}},
+	}
+)
+
+// runChecks runs the checks in o.checks stage by stage and adds their rows
+// to t in stage and group order, whatever order they finish in.
+func runChecks(o options, t *table) {
+	for _, stage := range stages {
+		var groups [][]string
+		for _, g := range stage {
+			if g = slices.DeleteFunc(slices.Clone(g), func(c string) bool { return !slices.Contains(o.checks, c) }); len(g) > 0 {
+				groups = append(groups, g)
+			}
+		}
+		so := o
+		if len(groups) > 1 {
+			so.gate = &gate{}
+		}
+		tables := make([]*table, len(groups))
+		var wg sync.WaitGroup
+		for i, g := range groups {
+			tables[i] = &table{waivers: t.waivers, softTiming: t.softTiming}
+			wg.Go(func() {
+				so.gate.enter()
+				defer so.gate.leave()
+				for _, name := range g {
+					fmt.Fprintf(os.Stderr, "perf: %s...\n", name)
+					if err := checkFuncs[name](so, tables[i]); err != nil {
+						tables[i].add(name, "error (below)", "", fail)
+						tables[i].errs = append(tables[i].errs, fmt.Errorf("%s: %w", name, err))
+					}
+				}
+			})
+		}
+		wg.Wait()
+		for _, gt := range tables {
+			t.rows, t.errs = append(t.rows, gt.rows...), append(t.errs, gt.errs...)
+		}
+	}
+}
+
+// gate keeps checks running side by side from moving each other's
+// numbers. A group holds it by default, so start-up, seeding, load and
+// anything timed run with nothing else busy. Idle windows and waits let go
+// of it (apart): an idle window counts its own process's CPU ticks,
+// voluntary context switches and memory, which another process's load
+// doesn't change. A nil *gate, for a check running alone, only runs.
+type gate struct{ mu sync.Mutex }
+
+func (g *gate) enter() {
+	if g != nil {
+		g.mu.Lock()
+	}
+}
+
+func (g *gate) leave() {
+	if g != nil {
+		g.mu.Unlock()
+	}
+}
+
+// apart runs f, an idle window or a wait, without holding the gate.
+func (g *gate) apart(f func() error) error {
+	if g != nil {
+		g.mu.Unlock()
+		defer g.mu.Lock()
+	}
+	return f()
+}
+
+// pause sleeps for d without holding the gate.
+func (g *gate) pause(d time.Duration) {
+	_ = g.apart(func() error { time.Sleep(d); return nil })
 }
 
 type result string

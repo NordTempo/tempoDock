@@ -87,7 +87,7 @@ func updateBaseline(o options) error {
 		b.TempobaseBinaryBytes = st.Size()
 	}
 	if slices.Contains(o.checks, "bench") {
-		runs, calib, err := runBenchmarks(o, nil)
+		runs, calib, err := runBenchmarks(o, nil, ".")
 		if err != nil {
 			return err
 		}
@@ -112,7 +112,7 @@ func checkBench(o options, t *table) error {
 	if err != nil {
 		return err
 	}
-	runs, calib, err := runBenchmarks(o, nil)
+	runs, calib, err := runBenchmarks(o, nil, ".")
 	if err != nil {
 		return err
 	}
@@ -137,20 +137,27 @@ func checkBench(o options, t *table) error {
 	}
 
 	// Shared machines (CI runners, a busy laptop) have bursts of noise, and
-	// noise only adds time: packages with a regression run once more and
-	// the fastest of all runs counts.
-	var again []string
+	// noise only adds time: benchmarks with a regression run once more and
+	// the fastest of all runs counts. Only those benchmarks (by top-level
+	// function, in their packages) run again, not their whole packages.
+	var again, funcs []string
 	for name, rs := range runs.byName {
 		if _, ok := base.Benchmarks[name]; !ok {
 			continue
 		}
-		if _, _, allocsOK, nsOK := judge(name, summarize(rs)); (!allocsOK || !nsOK) && !slices.Contains(again, runs.dir[name]) {
-			again = append(again, runs.dir[name])
+		if _, _, allocsOK, nsOK := judge(name, summarize(rs)); !allocsOK || !nsOK {
+			if !slices.Contains(again, runs.dir[name]) {
+				again = append(again, runs.dir[name])
+			}
+			if f := topLevel(name); !slices.Contains(funcs, f) {
+				funcs = append(funcs, f)
+			}
 		}
 	}
 	if len(again) > 0 {
-		fmt.Fprintf(os.Stderr, "perf: re-running benchmarks over budget in %s\n", strings.Join(again, " "))
-		more, _, err := runBenchmarks(o, again)
+		pattern := "^(" + strings.Join(funcs, "|") + ")$"
+		fmt.Fprintf(os.Stderr, "perf: re-running benchmarks over budget: %s in %s\n", pattern, strings.Join(again, " "))
+		more, _, err := runBenchmarks(o, again, pattern)
 		if err != nil {
 			return err
 		}
@@ -208,10 +215,19 @@ func summarize(rs []bench) bench {
 	}
 }
 
-// runBenchmarks runs the benchmarks in pkgs (default: every package with a
-// *_bench_test.go file) o.benchCount times, and returns their runs and the
-// fastest calibration ns/op measured around them.
-func runBenchmarks(o options, pkgs []string) (benchRuns, float64, error) {
+// topLevel is the benchmark function of a benchmark's name
+// (<package>.<Benchmark/sub>).
+func topLevel(name string) string {
+	_, f, _ := strings.Cut(name, ".Benchmark")
+	f, _, _ = strings.Cut(f, "/")
+	return "Benchmark" + f
+}
+
+// runBenchmarks runs the benchmarks matching pattern (go test -bench) in
+// pkgs (default: every package with a *_bench_test.go file) o.benchCount
+// times, and returns their runs and the fastest calibration ns/op
+// measured around them.
+func runBenchmarks(o options, pkgs []string, pattern string) (benchRuns, float64, error) {
 	if pkgs == nil {
 		err := filepath.WalkDir(".", func(p string, e fs.DirEntry, err error) error {
 			if err != nil {
@@ -230,7 +246,7 @@ func runBenchmarks(o options, pkgs []string) (benchRuns, float64, error) {
 		}
 	}
 	calib := []float64{calibrate(), calibrate()}
-	args := append([]string{"test", "-run", "^$", "-bench", ".", "-benchmem",
+	args := append([]string{"test", "-run", "^$", "-bench", pattern, "-benchmem",
 		"-benchtime", o.benchTime, "-count", strconv.Itoa(o.benchCount)}, pkgs...)
 	fmt.Fprintf(os.Stderr, "perf: go %s\n", strings.Join(args, " "))
 	var out bytes.Buffer

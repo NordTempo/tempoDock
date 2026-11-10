@@ -122,7 +122,9 @@ func checkAnalytics(o options, t *table) error {
 		return fmt.Errorf("%w: %s", err, log)
 	}
 	time.Sleep(3 * time.Second) // start-up work and the first GC
-	if err := d.idle(t, name, o.idle, idleBudgets{analyticsAnonBudget, analyticsTicksBudget, analyticsWakeupsBudget}); err != nil {
+	if err := o.gate.apart(func() error {
+		return d.idle(t, name, o.idle, idleBudgets{analyticsAnonBudget, analyticsTicksBudget, analyticsWakeupsBudget})
+	}); err != nil {
 		return err
 	}
 
