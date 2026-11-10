@@ -1,7 +1,6 @@
 # 0033: Traffic statistics for a service's domains
 
-Status: accepted (decided by the agent, on Saile's request). Visitors
-removed by [0040](0040-traffic-counts-requests.md).
+Status: accepted (decided by the agent, on Saile's request); superseded in part by [0040](0040-traffic-counts-requests.md) (visitors removed)
 
 ## Context
 

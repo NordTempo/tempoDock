@@ -1,6 +1,6 @@
 # 0021: Control plane backup, restore and move
 
-Status: accepted (decided by the agent, M3)
+Status: accepted (decided by the agent, M3); amended by [0034](0034-registry-object-storage.md) (registry in a bucket)
 
 ## Context
 

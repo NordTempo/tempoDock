@@ -1,6 +1,6 @@
 # 0020: Retention, disk pruning and alerts
 
-Status: accepted (decided by the agent)
+Status: accepted (decided by the agent); superseded in part by [0062](0062-org-alerts-and-operators.md) (who sees alerts, channels per org); amended by [0043](0043-ongoing-health-checks.md) (unhealthy alerts)
 
 ## Context
 

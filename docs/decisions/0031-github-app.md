@@ -1,6 +1,6 @@
 # 0031: Dock's GitHub App
 
-Status: accepted (decided by the agent, on Saile's direction); amended by [0066](0066-github-apps-for-many-orgs.md): public Apps, installs checked against the GitHub user.
+Status: accepted (decided by the agent, on Saile's direction); superseded in part by [0062](0062-org-alerts-and-operators.md) (org admins get install links), [0066](0066-github-apps-for-many-orgs.md) (public Apps, installs checked against the GitHub user)
 
 ## Context
 

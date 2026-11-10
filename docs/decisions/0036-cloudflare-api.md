@@ -3,6 +3,7 @@
 Status: accepted (planned with Saile, 2026-10-30; narrowed the same day
 to tunnels only). Amends [0013](0013-homelab-ingress-cloudflare-tunnel.md),
 [0009](0009-dynamic-domains-and-tls.md) and [0014](0014-node-protocol.md).
+Superseded in part by [0062](0062-org-alerts-and-operators.md) (connections per org, zones on several connections, failure alerts), [0068](0068-redirects-on-cloudflare-zones.md) (redirect placeholders are IP records).
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0029: Dock's public address
 
-Status: accepted (decided by the agent, on Saile's direction)
+Status: accepted (decided by the agent, on Saile's direction); the address moved to console.nordtempo.com in [0067](0067-landing-site-and-console-address.md)
 
 ## Context
 

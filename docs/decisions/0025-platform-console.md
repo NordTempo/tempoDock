@@ -1,6 +1,6 @@
 # 0025: The platform console is Dock's admin panel
 
-Status: accepted (decided by the agent, direction picked by the owner); the console amended by [0062](0062-org-alerts-and-operators.md)
+Status: accepted (decided by the agent, direction picked by the owner); superseded in part by [0027](0027-organizations.md) (item 2: operators), [0038](0038-own-tokens.md) (item 3: tokens), [0062](0062-org-alerts-and-operators.md) (the console's pages and overview)
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0018: GitHub push-to-deploy
 
-Status: accepted (decided by the agent)
+Status: accepted (decided by the agent); superseded in part by [0031](0031-github-app.md) (no GitHub App)
 
 ## Context
 

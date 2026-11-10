@@ -1,6 +1,6 @@
 # 0013: Homelab ingress through Cloudflare Tunnel
 
-Status: accepted
+Status: accepted; superseded in part by [0036](0036-cloudflare-api.md) (Dock makes the tunnel and runs cloudflared in a container)
 
 ## Context
 

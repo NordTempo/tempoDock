@@ -1,6 +1,6 @@
 # 0015: Server pools, placement and the admin dashboard
 
-Status: accepted (refines the placement part of [0010](0010-environments-on-servers.md))
+Status: accepted (refines the placement part of [0010](0010-environments-on-servers.md)); superseded in part by [0025](0025-platform-console.md) (the admin dashboard is the platform console), [0053](0053-moving-environments.md) (environments move; rule 2 is a default)
 
 ## Context
 

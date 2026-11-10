@@ -1,6 +1,6 @@
 # 0027: Organizations and the platform operator
 
-Status: accepted (decided by the agent; direction from the owner); alerts amended by [0062](0062-org-alerts-and-operators.md), slugs by [0064](0064-changing-an-org-slug.md)
+Status: accepted (decided by the agent; direction from the owner); superseded in part by [0062](0062-org-alerts-and-operators.md) (alerts and channels), [0064](0064-changing-an-org-slug.md) (slugs can change), [0065](0065-sign-in-is-the-platforms.md) (signup is the invite-only switch, no `signup` setting)
 
 ## Context
 
