@@ -829,7 +829,7 @@ const setServiceDatabaseSettings = `-- name: SetServiceDatabaseSettings :one
 
 UPDATE services SET database = ?1, database_url_variable = ?2
 WHERE id = ?3
-RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, "database", database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot
+RETURNING id, environment_id, name, image, port, health_check_path, health_check_timeout_seconds, start_command, dockerfile_path, build_command, memory_mb, cpus, pending_settings, created_at, archived_at, database_url_variable, template, health_check_interval_seconds, health_check_probe_timeout_seconds, health_check_retries, health_check_start_period_seconds, pre_deploy_command, pre_deploy_timeout_seconds, staged, stopped_at, stopped_by, pre_deploy_snapshot, "database"
 `
 
 type SetServiceDatabaseSettingsParams struct {
@@ -862,7 +862,6 @@ func (q *Queries) SetServiceDatabaseSettings(ctx context.Context, arg SetService
 		&i.PendingSettings,
 		&i.CreatedAt,
 		&i.ArchivedAt,
-		&i.Database,
 		&i.DatabaseUrlVariable,
 		&i.Template,
 		&i.HealthCheckIntervalSeconds,
@@ -875,6 +874,7 @@ func (q *Queries) SetServiceDatabaseSettings(ctx context.Context, arg SetService
 		&i.StoppedAt,
 		&i.StoppedBy,
 		&i.PreDeploySnapshot,
+		&i.Database,
 	)
 	return i, err
 }

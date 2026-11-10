@@ -359,6 +359,14 @@ func TestMySQLConnection(t *testing.T) {
 	if _, err := conn(); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "mysql://") {
 		t.Fatalf("a postgres URL on MySQL: %v", err)
 	}
+
+	// An image Dock doesn't know takes the mysql setting.
+	other := h.service("other", apitypes.CreateServiceRequest{Image: "myorg/db:1"})
+	mysql := apitypes.DatabaseMySQL
+	if svc, err := h.c.UpdateDatabaseSettings(h.ctx, testSystem, other, apitypes.UpdateDatabaseSettingsRequest{Database: &mysql}); err != nil ||
+		svc.Database != apitypes.DatabaseMySQL || svc.DataEngine != apitypes.EngineMySQL {
+		t.Fatalf("mysql setting: %+v %v", svc, err)
+	}
 }
 
 func TestDataConnection(t *testing.T) {

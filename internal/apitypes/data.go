@@ -73,7 +73,8 @@ const (
 
 // DatabaseSetting is a service's `database` setting: whether it is a
 // database, overriding detection. It applies immediately and never creates
-// a release.
+// a release. The store checks the values (services.database's CHECK,
+// migration 0087): a new one needs a migration too.
 type DatabaseSetting string
 
 // Database settings.

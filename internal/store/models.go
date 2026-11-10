@@ -838,7 +838,6 @@ type Service struct {
 	PendingSettings                *string
 	CreatedAt                      time.Time
 	ArchivedAt                     *time.Time
-	Database                       string
 	DatabaseUrlVariable            string
 	Template                       string
 	HealthCheckIntervalSeconds     int64
@@ -851,6 +850,7 @@ type Service struct {
 	StoppedAt                      *time.Time
 	StoppedBy                      string
 	PreDeploySnapshot              bool
+	Database                       string
 }
 
 type ServiceAccess struct {
