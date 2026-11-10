@@ -74,6 +74,8 @@ type Config struct {
 	Logs Logs `toml:"logs"`
 	// Status is where public status pages are served (ADR 0073).
 	Status Status `toml:"status"`
+	// Scan configures image vulnerability scanning (ADR 0074).
+	Scan Scan `toml:"scan"`
 }
 
 // Status configures public status pages (ADR 0073). Control plane only.
@@ -83,6 +85,20 @@ type Status struct {
 	// those pages, so no other part of Dock is reachable through them.
 	// Empty turns status pages' serving off.
 	Listen string `toml:"listen"`
+}
+
+// Scan configures image vulnerability scanning on builders (ADR 0074).
+// Whether scanning is on is a runtime setting (`dock scanning on|off`).
+type Scan struct {
+	// SyftImage and GrypeImage are the scanners, pinned by digest: Syft
+	// makes an image's SBOM, Grype matches it against its database.
+	SyftImage  string `toml:"syft_image"`
+	GrypeImage string `toml:"grype_image"`
+	// MemoryMB caps each scan job (1024).
+	MemoryMB int `toml:"memory_mb"`
+	// QuietSeconds is how long no build, deploy, wake or move may have
+	// run anywhere before a scan starts (60).
+	QuietSeconds int `toml:"quiet_seconds"`
 }
 
 // Logs bounds log history (ADR 0046): when dock removes a container, its
@@ -408,6 +424,12 @@ func Default() Config {
 			ResticImage: "restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76",
 		},
 		Logs: Logs{KeepMBPerService: 64, KeepMBPerServer: 2048, KeepDays: 30},
+		Scan: Scan{
+			SyftImage:    "anchore/syft:v1.57.1@sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060",
+			GrypeImage:   "anchore/grype:v0.121.3@sha256:13113eeceab017260370cf540e1d25442c59665fd07d1b09b66d63bb0c282887",
+			MemoryMB:     1024,
+			QuietSeconds: 60,
+		},
 		Retention: Retention{
 			BuildLogDays:     30,
 			AuditDays:        365,

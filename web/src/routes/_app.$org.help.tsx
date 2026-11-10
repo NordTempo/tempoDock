@@ -150,6 +150,24 @@ function Help() {
             limited to one project or environment.
           </p>
         </Topic>
+        <Topic
+          id="images"
+          title="Images and vulnerabilities"
+          go={
+            <Link to="/$org/images" params={{ org }} className="lnk">
+              Images
+            </Link>
+          }
+        >
+          <p>
+            Dock scans the image of every live release for known
+            vulnerabilities, once no build or deploy is running. Images lists
+            them worst first. An image's page groups what it found by fix:
+            rebuild on a newer base image, upgrade the app's dependencies, or no
+            fix yet. A service's overview says so when its live image has
+            critical or high ones.
+          </p>
+        </Topic>
         <Topic id="connect" title="Connecting from your machine">
           <p>
             <code className="font-mono">dock connect</code> opens a port on your

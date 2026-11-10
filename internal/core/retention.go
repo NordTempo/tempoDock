@@ -201,6 +201,7 @@ type retained struct {
 	// resolved ones deleted.
 	quietErrors, errors int64
 	diagnoses           int64
+	scans               int
 }
 
 // retain runs one retention pass. Failures are logged; the next pass
@@ -231,10 +232,13 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if out.diagnoses, err = c.pruneDiagnoses(ctx, now); err != nil {
 		c.log.Warn("retention: diagnoses", "err", err)
 	}
+	if out.scans, err = c.trimScans(ctx); err != nil {
+		c.log.Warn("retention: image scans", "err", err)
+	}
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {
 		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests,
-			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "diagnoses", out.diagnoses, "took", took)
+			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "diagnoses", out.diagnoses, "image_scans", out.scans, "took", took)
 	} else {
 		c.log.Debug("retention: nothing to trim", "took", took)
 	}
@@ -269,6 +273,11 @@ func (c *Core) trimReleaseHistory(ctx context.Context, now time.Time) (int, erro
 					return err
 				}
 				if err := q.MarkReleaseHistoryTrimmed(ctx, id); err != nil {
+					return err
+				}
+				// Its image's scan goes once no other release keeps it
+				// (trimScans, ADR 0074).
+				if err := q.ClearTrimmedReleaseScan(ctx, id); err != nil {
 					return err
 				}
 			}

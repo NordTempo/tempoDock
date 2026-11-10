@@ -27,6 +27,7 @@ type Runtime interface {
 	Tunnel
 	Analytics
 	Prober
+	Scanner
 }
 
 // Prober runs uptime checks (ADR 0055): the control plane asks a server

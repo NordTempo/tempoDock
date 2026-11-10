@@ -398,6 +398,7 @@ export function useCommands({
         ] as const)
       : []),
     ["Analytics", "/$org/analytics", "dock analytics sites"],
+    ["Images", "/$org/images", "dock images"],
     ["Organization variables", "/$org/settings/variables", "dock org env list"],
     ["Organization settings", "/$org/settings/general", "dock org list"],
     ...(operator ? [] : ([["Activity", "/$org/audit", "dock audit"]] as const)),

@@ -550,6 +550,10 @@ type Release struct {
 	// Diagnosis names a failed release's diagnosis (ADR 0071) and its
 	// likely cause.
 	Diagnosis *DiagnosisRef `json:"diagnosis,omitempty" doc:"A failed release's diagnosis and its likely cause; read it whole with GET .../diagnoses/{id}"`
+	// Scan is the release's image's scan (ADR 0074), on its own page.
+	Scan *ImageScan `json:"scan,omitempty" doc:"The image's vulnerability scan, on GET of one release"`
+	// PinnedRef is the repo digest a CI image was pulled by.
+	PinnedRef string `json:"pinned_ref,omitempty"`
 }
 
 // ReleaseConfig summarises a release's resolved config without secret values.
@@ -1573,6 +1577,8 @@ type ServiceOverview struct {
 	Backup *BackupRun `json:"backup,omitempty"`
 	// Uptime sums up the service's uptime checks, if it has any.
 	Uptime *ServiceUptime `json:"uptime,omitempty"`
+	// Scan is the live image's scan (ADR 0074), once it has one.
+	Scan *ImageScan `json:"scan,omitempty"`
 }
 
 // ReleaseSummary is the short form of a release.
@@ -1661,11 +1667,13 @@ const (
 	// EventSleep: an environment went to sleep, started waking, or woke.
 	// Sleep is its new sleep state.
 	EventSleep EventType = "sleep"
+	// EventScan: an image's vulnerability scan changed (ADR 0074).
+	EventScan EventType = "scan"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep"`
+	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan"`
 	Time           time.Time           `json:"time"`
 	ProjectRenamed *ProjectRenamed     `json:"project_renamed,omitempty"`
 	Project        string              `json:"project,omitempty"`
@@ -1692,6 +1700,7 @@ type Event struct {
 	Drain          *ServerDrain        `json:"drain,omitempty"`
 	Redirect       *CloudflareRedirect `json:"redirect,omitempty"`
 	Sleep          *EnvironmentSleep   `json:"sleep,omitempty"`
+	Scan           *ImageScan          `json:"scan,omitempty"`
 	Message        string              `json:"message,omitempty"`
 }
 

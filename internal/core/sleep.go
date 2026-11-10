@@ -436,6 +436,8 @@ func (c *Core) wake(_ context.Context, es envScope, by string) error {
 	if op == nil {
 		return nil
 	}
+	c.scanBusy() // a running image scan gives way (ADR 0074)
+	defer c.scanDone()
 	err := c.wakeNow(c.ctx, es, by)
 	c.endOp(es.env.ID, op, err != nil, err)
 	return err

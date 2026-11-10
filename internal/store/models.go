@@ -482,6 +482,51 @@ type GithubInstallation struct {
 	AssignedAt     time.Time
 }
 
+type ImageFinding struct {
+	ScanID      int64
+	Severity    int64
+	VulnID      string
+	Package     string
+	Version     string
+	PkgType     string
+	FixedIn     string
+	Kev         int64
+	Epss        float64
+	FirstSeenAt int64
+}
+
+type ImageScan struct {
+	ID              int64
+	ImageKey        string
+	PullRef         string
+	LocalRef        string
+	BuiltOnServerID *int64
+	OrgID           int64
+	Production      int64
+	State           string
+	Priority        int64
+	Attempts        int64
+	NextAttemptAt   *int64
+	ServerID        *int64
+	Distro          string
+	Packages        int64
+	SbomBytes       int64
+	SbomAt          *int64
+	MatchedAt       *int64
+	DbBuiltAt       *int64
+	Critical        int64
+	High            int64
+	Medium          int64
+	Low             int64
+	Other           int64
+	Fixable         int64
+	Kev             int64
+	Truncated       int64
+	WorstFix        string
+	Error           string
+	CreatedAt       int64
+}
+
 type Install struct {
 	ID            int64
 	InstallID     string
@@ -586,6 +631,7 @@ type PlatformSetting struct {
 	OperatorsTwoFactor bool
 	PasswordSignIn     bool
 	InviteOnly         bool
+	Scanning           int64
 }
 
 type Preview struct {
@@ -680,6 +726,8 @@ type Release struct {
 	CommitAuthor          string
 	HistoryTrimmed        bool
 	LogsServerID          *int64
+	ImageScanID           *int64
+	PinnedRef             string
 }
 
 type ReleaseEvent struct {
@@ -730,6 +778,8 @@ type Server struct {
 	ConnectedAt          *time.Time
 	DisconnectReason     string
 	PlainHttp            bool
+	ScanDbBuiltAt        *int64
+	ScanError            string
 }
 
 type ServerDrain struct {

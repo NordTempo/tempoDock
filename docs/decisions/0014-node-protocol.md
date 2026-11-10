@@ -483,3 +483,14 @@ server, and `dial-analytics` is a raw connection to the store's port
 there, like `dial`, reaching nothing else. Routes gain analytics
 hostnames with their tag; a node below protocol 10 gets its routes
 without them, so its sites go uncounted until it is updated.
+
+## Amendment (2026-11-10): image scanning on builders
+
+[0074](0074-image-vulnerability-scanning.md) scans live images for
+vulnerabilities on builders. Protocol 23 adds `scan-sbom` (Syft's SBOM
+streamed down as log frames), `scan-match` (an SBOM up, Grype's findings
+down as item frames, at most 5,000), `scan-database` and
+`image-digest`. Each runs one job container that cancelling the call
+kills, which is how a build or deploy preempts a scan. Nothing on the
+node keeps state but the extracted Syft binary in its data dir and the
+database volume.

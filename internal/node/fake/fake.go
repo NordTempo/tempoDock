@@ -99,6 +99,9 @@ type Runtime struct {
 
 	// probes are scripted uptime probe results (probe.go).
 	probes fakeProbes
+
+	// scans are scripted image scans (scan.go).
+	scans fakeScans
 }
 
 var _ node.Runtime = (*Runtime)(nil)

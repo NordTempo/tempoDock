@@ -357,6 +357,18 @@ The rules and every timer are in [performance](performance.md).
   node link, exactly once by spool position, and reads dashboards from it
   over loopback HTTP.
 
+## Image scanning
+
+[ADR 0074](decisions/0074-image-vulnerability-scanning.md). Every live
+image is scanned for vulnerabilities on a builder, never next to a build
+or deploy: each build, deploy, wake and move counts itself busy, a scan
+starts only after a quiet minute, one at a time, and a busy cancel kills
+its job container. Syft makes the image's SBOM once, inside a container of
+the image itself; the control plane keeps it gzipped in the data dir, and
+Grype matches it against the builder's vulnerability database. One scan
+per image digest, shared by every release that runs it; the overview, the
+org's Images page, `dock vulns` and MCP `list_vulnerabilities` read it.
+
 ## Backups and updates
 
 - Stateful services are backed up daily by restic job containers, to a
@@ -387,7 +399,7 @@ The rules and every timer are in [performance](performance.md).
 | Registry (control plane server only) | Docker | Image pushes and pulls |
 | cloudflared (tunnel servers): `dock-cloudflared.service`, or the `dock-cloudflared` container Dock runs | systemd or Docker | Traffic through the tunnel |
 | Analytics store (one server, when analytics is on) | Docker, 512 MB limit | Dashboards; events wait in the spools |
-| Job containers (backups, snapshots, volume copies, `dock run`, jobs, pre-deploy) | Docker, removed when done | That job |
+| Job containers (backups, snapshots, volume copies, `dock run`, jobs, pre-deploy, image scans on builders) | Docker, removed when done | That job |
 | App containers | Docker restart policy | That app |
 
 Upgrading the platform means swapping the binary and restarting the systemd

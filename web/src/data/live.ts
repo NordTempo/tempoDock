@@ -7,6 +7,7 @@ import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { applyRedirectEvent, cloudflareKey } from "../features/cloudflare/data";
+import { applyScanEvent } from "../features/images/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { applyMoveEvent } from "../features/move/data";
 import { registryKey } from "../features/registry/data";
@@ -71,6 +72,7 @@ const busEvents = [
   "server_drain",
   "cloudflare_redirect",
   "sleep",
+  "scan",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -195,7 +197,9 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       );
       queryClient.setQueryData<Release>(
         keys.release(ref, release.number),
-        (old) => old && { ...release, events: old.events },
+        // The event's release has no scan (only GET of one has); scan
+        // events keep it.
+        (old) => old && { ...release, events: old.events, scan: old.scan },
       );
       applyRelease(queryClient, ref, release);
       // A queued push leaves the git view as its release starts building
@@ -379,6 +383,16 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
           event.message === "removed",
         );
       return;
+    case "scan": {
+      // An image's scan changed (ADR 0074), once per live service that
+      // runs it: that service's live scan, then its releases, the image's
+      // page and the Images list.
+      const scan = event.scan;
+      if (!ref || !scan) return;
+      patchService(queryClient, ref, (s) => ({ ...s, scan }));
+      applyScanEvent(queryClient, ref, scan);
+      return;
+    }
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

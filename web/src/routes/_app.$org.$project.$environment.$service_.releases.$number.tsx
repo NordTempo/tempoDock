@@ -23,6 +23,7 @@ import type { LogLine, Release, ServiceRef } from "../data/types";
 import { invalid, useValidation } from "../features/create/form";
 import { openDeploy } from "../features/deploy/start";
 import { shortSha, useGitDeploy } from "../features/git/api";
+import { hasFindings, notScanned, summary } from "../features/images/parts";
 import {
   Cause,
   Evidence,
@@ -261,6 +262,11 @@ function ReleasePage() {
               {releaseWhat(release)}{" "}
               <span className="font-mono">{release.image_ref}</span>
             </Prop>
+            {release.scan && (
+              <Prop label="Vulnerabilities">
+                <ScanLine scan={release.scan} />
+              </Prop>
+            )}
             {previous && !diagnosed?.changes && (
               <Prop label={`Changed since r${previous.number}`}>
                 <Changes from={previous} to={release} />
@@ -854,4 +860,39 @@ function collapseRepeats(lines: LogLine[]): Row[] {
     i++;
   }
   return out;
+}
+
+/**
+ * The release's image scan in one line (ADR 0074): "2 critical, 5 high ·
+ * 20 more" and the way to the image's page, or why it isn't scanned.
+ */
+function ScanLine({ scan }: { scan: NonNullable<Release["scan"]> }) {
+  const org = useOrg();
+  if (!hasFindings(scan))
+    return (
+      <span className="text-mut">
+        {scan.state === "queued" || scan.state === "scanning"
+          ? "Not scanned yet"
+          : `Not scanned: ${notScanned(scan)}`}
+      </span>
+    );
+  return (
+    <span>
+      <span
+        className={
+          scan.critical > 0 ? "text-fail" : scan.high > 0 ? "text-warn" : ""
+        }
+      >
+        {summary(scan)}
+      </span>{" "}
+      ·{" "}
+      <Link
+        to="/$org/images/$id"
+        params={{ org, id: String(scan.id) }}
+        className="text-info hover:underline"
+      >
+        Image page
+      </Link>
+    </span>
+  );
 }

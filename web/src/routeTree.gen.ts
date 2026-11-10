@@ -47,6 +47,8 @@ import { Route as AppOrgProjectIndexRouteImport } from './routes/_app.$org.$proj
 import { Route as AppOrgProjectCompareRouteImport } from './routes/_app.$org.$project.compare'
 import { Route as AppOrgProjectSettingsRouteImport } from './routes/_app.$org.$project.settings'
 import { Route as AppOrgAnalyticsIndexRouteImport } from './routes/_app.$org.analytics.index'
+import { Route as AppOrgImagesIndexRouteImport } from './routes/_app.$org.images.index'
+import { Route as AppOrgImagesIdRouteImport } from './routes/_app.$org.images.$id'
 import { Route as AppOrgSettingsIndexRouteImport } from './routes/_app.$org.settings.index'
 import { Route as AppOrgSettingsAnalyticsRouteImport } from './routes/_app.$org.settings.analytics'
 import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org.settings.cloudflare'
@@ -281,6 +283,16 @@ const AppOrgProjectSettingsRoute = AppOrgProjectSettingsRouteImport.update({
 const AppOrgAnalyticsIndexRoute = AppOrgAnalyticsIndexRouteImport.update({
   id: '/analytics/',
   path: '/analytics/',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgImagesIndexRoute = AppOrgImagesIndexRouteImport.update({
+  id: '/images/',
+  path: '/images/',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgImagesIdRoute = AppOrgImagesIdRouteImport.update({
+  id: '/images/$id',
+  path: '/images/$id',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppOrgSettingsIndexRoute = AppOrgSettingsIndexRouteImport.update({
@@ -586,6 +598,7 @@ export interface FileRoutesByFullPath {
   '/console/': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
+  '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
@@ -599,6 +612,7 @@ export interface FileRoutesByFullPath {
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project/': typeof AppOrgProjectIndexRoute
   '/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
+  '/$org/images/': typeof AppOrgImagesIndexRoute
   '/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
@@ -667,6 +681,7 @@ export interface FileRoutesByTo {
   '/$org': typeof AppOrgIndexRoute
   '/console': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
+  '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
@@ -680,6 +695,7 @@ export interface FileRoutesByTo {
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project': typeof AppOrgProjectIndexRoute
   '/$org/analytics': typeof AppOrgAnalyticsIndexRoute
+  '/$org/images': typeof AppOrgImagesIndexRoute
   '/$org/settings': typeof AppOrgSettingsIndexRoute
   '/$org/status-pages': typeof AppOrgStatusPagesIndexRoute
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
@@ -752,6 +768,7 @@ export interface FileRoutesById {
   '/_app/console/': typeof AppConsoleIndexRoute
   '/_app/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/_app/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
+  '/_app/$org/images/$id': typeof AppOrgImagesIdRoute
   '/_app/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/_app/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/_app/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
@@ -765,6 +782,7 @@ export interface FileRoutesById {
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
   '/_app/$org/$project/': typeof AppOrgProjectIndexRoute
   '/_app/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
+  '/_app/$org/images/': typeof AppOrgImagesIndexRoute
   '/_app/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/_app/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
   '/_app/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceRouteWithChildren
@@ -839,6 +857,7 @@ export interface FileRouteTypes {
     | '/console/'
     | '/$org/$project/compare'
     | '/$org/$project/settings'
+    | '/$org/images/$id'
     | '/$org/settings/analytics'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
@@ -852,6 +871,7 @@ export interface FileRouteTypes {
     | '/console/servers/$server'
     | '/$org/$project/'
     | '/$org/analytics/'
+    | '/$org/images/'
     | '/$org/settings/'
     | '/$org/status-pages/'
     | '/$org/$project/$environment/$service'
@@ -920,6 +940,7 @@ export interface FileRouteTypes {
     | '/$org'
     | '/console'
     | '/$org/$project/compare'
+    | '/$org/images/$id'
     | '/$org/settings/analytics'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
@@ -933,6 +954,7 @@ export interface FileRouteTypes {
     | '/console/servers/$server'
     | '/$org/$project'
     | '/$org/analytics'
+    | '/$org/images'
     | '/$org/settings'
     | '/$org/status-pages'
     | '/$org/$project/settings/log-drains'
@@ -1004,6 +1026,7 @@ export interface FileRouteTypes {
     | '/_app/console/'
     | '/_app/$org/$project/compare'
     | '/_app/$org/$project/settings'
+    | '/_app/$org/images/$id'
     | '/_app/$org/settings/analytics'
     | '/_app/$org/settings/cloudflare'
     | '/_app/$org/settings/data-access'
@@ -1017,6 +1040,7 @@ export interface FileRouteTypes {
     | '/_app/console/servers_/$server'
     | '/_app/$org/$project/'
     | '/_app/$org/analytics/'
+    | '/_app/$org/images/'
     | '/_app/$org/settings/'
     | '/_app/$org/status-pages/'
     | '/_app/$org/$project/$environment/$service'
@@ -1330,6 +1354,20 @@ declare module '@tanstack/react-router' {
       path: '/analytics'
       fullPath: '/$org/analytics/'
       preLoaderRoute: typeof AppOrgAnalyticsIndexRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/images/': {
+      id: '/_app/$org/images/'
+      path: '/images'
+      fullPath: '/$org/images/'
+      preLoaderRoute: typeof AppOrgImagesIndexRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/images/$id': {
+      id: '/_app/$org/images/$id'
+      path: '/images/$id'
+      fullPath: '/$org/images/$id'
+      preLoaderRoute: typeof AppOrgImagesIdRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/settings/': {
@@ -1815,9 +1853,11 @@ interface AppOrgRouteChildren {
   AppOrgIndexRoute: typeof AppOrgIndexRoute
   AppOrgProjectCompareRoute: typeof AppOrgProjectCompareRoute
   AppOrgProjectSettingsRoute: typeof AppOrgProjectSettingsRouteWithChildren
+  AppOrgImagesIdRoute: typeof AppOrgImagesIdRoute
   AppOrgStatusPagesPageRoute: typeof AppOrgStatusPagesPageRoute
   AppOrgProjectIndexRoute: typeof AppOrgProjectIndexRoute
   AppOrgAnalyticsIndexRoute: typeof AppOrgAnalyticsIndexRoute
+  AppOrgImagesIndexRoute: typeof AppOrgImagesIndexRoute
   AppOrgStatusPagesIndexRoute: typeof AppOrgStatusPagesIndexRoute
   AppOrgProjectEnvironmentServiceRoute: typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   AppOrgAnalyticsProjectSiteRoute: typeof AppOrgAnalyticsProjectSiteRouteWithChildren
@@ -1835,9 +1875,11 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgIndexRoute: AppOrgIndexRoute,
   AppOrgProjectCompareRoute: AppOrgProjectCompareRoute,
   AppOrgProjectSettingsRoute: AppOrgProjectSettingsRouteWithChildren,
+  AppOrgImagesIdRoute: AppOrgImagesIdRoute,
   AppOrgStatusPagesPageRoute: AppOrgStatusPagesPageRoute,
   AppOrgProjectIndexRoute: AppOrgProjectIndexRoute,
   AppOrgAnalyticsIndexRoute: AppOrgAnalyticsIndexRoute,
+  AppOrgImagesIndexRoute: AppOrgImagesIndexRoute,
   AppOrgStatusPagesIndexRoute: AppOrgStatusPagesIndexRoute,
   AppOrgProjectEnvironmentServiceRoute:
     AppOrgProjectEnvironmentServiceRouteWithChildren,

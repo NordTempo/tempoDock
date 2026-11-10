@@ -152,7 +152,7 @@ the analytics ingest and spool (`BenchmarkIngestEvent`,
 chunk, `BenchmarkIngestReplayMax` 3-10 KB for a full 384 KB one: bodies
 and lines come from a pool of their own) and the
 forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`), and
-masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`), and a deploy diagnosis's rules (`BenchmarkDiagnoseRules`, ~20 µs). Use
+masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`), a deploy diagnosis's rules (`BenchmarkDiagnoseRules`, ~20 µs), and image scanning's hook on every build, deploy, wake and move (`BenchmarkScanBusy`, 47 ns, no allocation), a match's write (`BenchmarkScanFindingsWrite`) and the Images page (`BenchmarkListImages`, 0.18 ms for 180 live releases). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.
@@ -287,6 +287,9 @@ end) are not listed.
 | Analytics store start | `internal/core/analytics_store.go` | 250 ms, doubling to 5 s, for at most 2 minutes | a start or move of the store waits for it to answer | one health request to the store |
 | Analytics live view | `internal/core/analytics_live.go` | 30 s, or 2 s while the site's events arrive | someone watches a site live (ADR 0037) | one live query to the analytics store, one SSE write per viewer when the view changed |
 | Analytics store trim | `cmd/dock-analytics/serve.go` | once, a minute after the last request | the store was asked something (ADR 0037) | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory` |
+| Scan quiet wait | `internal/core/scans.go` (`runScans`) | once, `[scan] quiet_seconds` (60) after the last build, deploy, wake or move ends; reset by the next | live images wait for a scan or scans are queued (ADR 0074); with none the scanner goroutine exits and no timer is armed | one goroutine and one timer; then one query for live releases without a scan, one for the next scan, and one job container on a builder |
+| Scan retry | `internal/core/scans.go` | 10 min doubling to 24 h, at most 5 attempts | a scan failed (a preempted one isn't failed) | one timer to the earliest retry |
+| Scan jobs | Docker on a builder (`internal/node/docker/scan.go`) | per queued image, one at a time platform-wide | nothing has been busy for the quiet period (ADR 0074) | one container at CPU shares 2, at most 1 CPU and `[scan] memory_mb`, no network: an SBOM (alpine 2 s, a node app 3.3 s) then a match (about 10 s, under 256 MB); killed by any build, deploy, wake or move. The daemon streams the SBOM to disk and writes the findings in one transaction (`BenchmarkScanFindingsWrite`, about 9 ms for 2,000). The first scan on a builder downloads Grype's database (65 MB, 3.4 GB on disk) |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 
 ## SQLite

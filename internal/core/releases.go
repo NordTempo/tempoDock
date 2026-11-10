@@ -1062,7 +1062,17 @@ func (c *Core) GetRelease(ctx context.Context, a Actor, ref ServiceRef, number i
 	if err != nil {
 		return apitypes.Release{}, err
 	}
-	return c.toRelease(ctx, ss, r, true)
+	out, err := c.toRelease(ctx, ss, r, true)
+	if err != nil {
+		return out, err
+	}
+	if r.ImageScanID != nil {
+		if scan, err := c.store.GetImageScan(ctx, *r.ImageScanID); err == nil {
+			s := toImageScan(scan, r.ImageRef)
+			out.Scan = &s
+		}
+	}
+	return out, nil
 }
 
 func (c *Core) releaseByNumber(ctx context.Context, ss svcScope, number int64) (store.Release, error) {
@@ -1086,7 +1096,7 @@ func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, 
 	out := apitypes.Release{
 		ID: r.ID, Number: r.Number, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
 		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
-		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
+		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, PinnedRef: r.PinnedRef, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
 		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, Commit: commitOf(r),
 		// An archive on its server, or a failed release's saved last
 		// lines (servers too old to archive) until retention trims them.
