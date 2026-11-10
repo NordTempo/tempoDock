@@ -50,8 +50,11 @@ var templates = map[apitypes.Template]dbTemplate{
 		port:        defaultPostgresPort,
 		mountPath:   "/var/lib/postgresql/data",
 		memoryMB:    512,
+		// queryStatsFlags: pg_stat_statements for the Data panel's Health
+		// tab (ADR 0069); Dock creates the extension once the release is
+		// active (afterActive).
 		cmd: "exec docker-entrypoint.sh postgres -c shared_buffers=128MB -c effective_cache_size=384MB" +
-			" -c work_mem=4MB -c maintenance_work_mem=64MB -c max_connections=50 -c random_page_cost=1.1",
+			" -c work_mem=4MB -c maintenance_work_mem=64MB -c max_connections=50 -c random_page_cost=1.1 " + queryStatsFlags,
 		database: apitypes.DatabasePostgres,
 		backup:   apitypes.BackupPostgres,
 		vars: func(svc, password string) map[string]string {
@@ -189,19 +192,38 @@ func (c *Core) deployTemplate(ctx context.Context, a Actor, ss svcScope, done fu
 
 // afterActive runs a template's follow-up once one of its releases went
 // active: Dock sets up data access for a Postgres template that has none
-// yet (ADR 0016: automatic for templates, since Dock owns the credentials).
+// yet (ADR 0016: automatic for templates, since Dock owns the
+// credentials), and creates the query stats extension when the start
+// command loads it and it doesn't exist yet (ADR 0069): one owner
+// connection per activation, nothing when it exists.
 func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 	t, ok := templateOf(ss.svc)
 	if !ok || t.database != apitypes.DatabasePostgres {
 		return
 	}
-	if _, err := c.store.GetDataAccess(ctx, ss.svc.ID); !store.IsNotFound(err) {
-		return // set up already, or unknown: leave it to an admin
+	_, err := c.store.GetDataAccess(ctx, ss.svc.ID)
+	needSetup := store.IsNotFound(err)
+	if err != nil && !needSetup {
+		return // unknown: leave it to an admin
+	}
+	wantStats := loadsQueryStats(ss.svc.StartCommand)
+	if !needSetup && !wantStats {
+		return
 	}
 	ref := ServiceRef{ss.project.Name, ss.env.Name, ss.svc.Name}
+	sys := System.InOrg(ss.project.OrgID)
 	setup := func() error {
-		_, err := c.SetupData(ctx, System.InOrg(ss.project.OrgID), ref)
-		return err
+		if needSetup {
+			if _, err := c.SetupData(ctx, sys, ref); err != nil {
+				return err
+			}
+			needSetup = false
+		}
+		if wantStats {
+			_, err := c.EnableDataQueryStats(ctx, sys, ref)
+			return err
+		}
+		return nil
 	}
 	if setup() == nil || ctx.Err() != nil {
 		return
@@ -222,7 +244,7 @@ func (c *Core) afterActive(ctx context.Context, ss svcScope) {
 				return
 			}
 			if attempt == setupAttempts {
-				c.log.Warn("set up data access for template database", "service", ss.String(), "err", err)
+				c.log.Warn("set up data access or query stats for template database", "service", ss.String(), "err", err)
 				return
 			}
 			delay *= 2

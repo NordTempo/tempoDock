@@ -47,6 +47,9 @@ export function serviceSource(ref: ServiceRef): DataSource {
       unreachable: "The container runs, but the database didn't answer.",
       notRunning:
         "The service has no running container. Deploy or restart it, then come back.",
+      queryStatsOff:
+        "Dock adds pg_stat_statements to the start command. The change waits to apply and goes live with the next deploy, which restarts the database for a few seconds.",
+      stagesQueryStats: true,
     },
     subjectNames,
     policy: policyQuery({ project: ref.project, environment: ref.environment }),
@@ -60,6 +63,17 @@ export function serviceSource(ref: ServiceRef): DataSource {
           params: { path, query: { order } },
         }),
       ),
+    cancelSession: (session, req) =>
+      body(
+        api.POST(`${P}/insights/sessions/{session}/cancel` as const, {
+          params: { path: { ...path, session } },
+          body: req,
+        }),
+      ),
+    resetQueryStats: () =>
+      done(api.POST(`${P}/insights/queries/reset` as const, params)),
+    enableQueryStats: () =>
+      body(api.POST(`${P}/insights/queries/enable` as const, params)),
     rows: async (req, signal) =>
       page(
         await body(

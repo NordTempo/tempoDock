@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
@@ -95,5 +96,48 @@ func TestInsightsViewsAndTexts(t *testing.T) {
 	}
 	if got := strings.Count(h.actions(), apitypes.AuditDataInsights); got != 2 {
 		t.Errorf("a second look within the window was audited again: %s", h.actions())
+	}
+}
+
+// cancelEngine is fakeEngine with Cancel: session "1.1" is running.
+type cancelEngine struct{ *fakeEngine }
+
+func (cancelEngine) Cancel(_ context.Context, _ data.Target, _ data.Credentials, session string, _ *time.Time, _ bool) (data.CancelResult, error) {
+	if session != "1.1" {
+		return data.CancelResult{}, nil
+	}
+	return data.CancelResult{Found: true, User: "postgres", Application: "worker", Text: "UPDATE t SET v = 'secret'", Running: time.Minute}, nil
+}
+
+// TestCancelSession: cancelling needs level write, ending a session on
+// production confirms with its name, a session that moved on is a
+// conflict, and what happened is audited without the statement's values
+// in the summary.
+func TestCancelSession(t *testing.T) {
+	p, h, base := newTestPanel(t)
+	p.eng = cancelEngine{base}
+	ctx := context.Background()
+
+	reader := apitypes.DataPermission{Level: apitypes.LevelRead, Sensitive: masked}
+	if _, err := p.CancelSession(ctx, agent, testDB(reader), "1.1", apitypes.DataCancelRequest{}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("cancel at level read: %v", err)
+	}
+	prod := adminPerm
+	prod.ConfirmCommit = true
+	if _, err := p.CancelSession(ctx, admin, testDB(prod), "1.1", apitypes.DataCancelRequest{Terminate: true}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("ending a production session without confirm: %v", err)
+	}
+	if _, err := p.CancelSession(ctx, admin, testDB(prod), "2.2", apitypes.DataCancelRequest{}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("a finished query: %v", err)
+	}
+	res, err := p.CancelSession(ctx, admin, testDB(prod), "1.1", apitypes.DataCancelRequest{Terminate: true, Confirm: "orders"})
+	if err != nil || !res.Terminated || res.Application != "worker" || res.RunningMs != 60_000 {
+		t.Fatalf("end session: %+v %v", res, err)
+	}
+	h.mu.Lock()
+	last := h.audits[len(h.audits)-1]
+	h.mu.Unlock()
+	if last.Action != apitypes.AuditDataTerminate || strings.Contains(last.Summary, "secret") || last.Detail == nil || !strings.Contains(last.Detail.SQL, "secret") {
+		t.Fatalf("audit: %+v %+v", last, last.Detail)
 	}
 }

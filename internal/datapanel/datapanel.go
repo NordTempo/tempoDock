@@ -103,6 +103,12 @@ type Words struct {
 	// Database is what a database is to the host, in API docs ("per user
 	// and service"): "service", "connection".
 	Database string
+	// QueryStatsHint says how to make the server load pg_stat_statements,
+	// after "the server doesn't load pg_stat_statements; ".
+	QueryStatsHint string
+	// EnableQueryStats ends the description of turning on query stats
+	// with what else the host does and who may: "Admin."
+	EnableQueryStats string
 }
 
 // Options configure a Panel.
@@ -147,6 +153,9 @@ type Ops[A, R any] interface {
 	RejectDataChangeset(ctx context.Context, a A, ref R, id int64, req apitypes.DataRejectRequest) (apitypes.DataChangeset, error)
 	SetSensitiveColumns(ctx context.Context, a A, ref R, req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error)
 	DataInsights(ctx context.Context, a A, ref R, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
+	CancelDataSession(ctx context.Context, a A, ref R, session string, req apitypes.DataCancelRequest) (apitypes.DataCancelResult, error)
+	ResetDataQueryStats(ctx context.Context, a A, ref R) error
+	EnableDataQueryStats(ctx context.Context, a A, ref R) (apitypes.DataQueryStatsResult, error)
 }
 
 // Changeset is a stored changeset, decoded. Hosts store Changes,

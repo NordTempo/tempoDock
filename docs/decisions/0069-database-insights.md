@@ -59,7 +59,7 @@ of the answer is fixed, read-only SQL over the database's own statistics.
 - **Agents** get one tool, `data_insights`, with tighter caps (10
   statements by default, non-idle sessions, texts at 1 KB).
 
-Later phases, decided now:
+Also built (second and third PRs, 2026-11-10):
 
 - **Query stats.** The Postgres template adds `-c
   shared_preload_libraries=pg_stat_statements -c
@@ -68,7 +68,9 @@ Later phases, decided now:
   template release goes active. Existing template databases get "Turn on
   query stats", which stages the start command change; it applies with the
   next deploy (a restart), never on its own. Elsewhere creating the
-  extension is an explicit admin action, like setup.
+  extension is an explicit admin action, like setup. Every activation of a
+  template release creates the extension if its command loads the
+  library and it is missing: one owner connection, nothing otherwise.
 - **Actions**: cancel a query (`write`; tokens never on production), end a
   session (`write`, production confirms with the environment's name),
   reset query stats (admins). They run as the owner on one uncached

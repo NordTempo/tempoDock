@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -109,6 +110,87 @@ func newDBQueriesCmd(g *globals) *cobra.Command {
 	})
 	cmd.Flags().StringVar(&order, "order", "total", "Sort by total or mean time, calls or rows")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Statements to show (default 50, at most 100)")
+	cmd.AddCommand(newDBQueriesEnableCmd(g), newDBQueriesResetCmd(g))
+	return cmd
+}
+
+func newDBQueriesEnableCmd(g *globals) *cobra.Command {
+	return dbCmd(g, &cobra.Command{
+		Use:   "enable",
+		Short: "Turn on query stats (pg_stat_statements)",
+		Long: `Turn on query stats. For a Postgres template database whose start command
+doesn't load pg_stat_statements yet, this stages the change (deploy): it
+waits to apply and goes live with the next deploy, which restarts the
+database; Dock then creates the extension. Otherwise it creates the
+extension as the owner (admin), which needs the server to load it.`,
+		Args: cobra.NoArgs,
+	}, func(ctx context.Context, s *session, t target, data string, _ []string) error {
+		res, err := send[apitypes.DataQueryStatsResult](ctx, s, http.MethodPost, data+"/insights/queries/enable", nil)
+		if err != nil {
+			return err
+		}
+		return g.io.Print(res, func() error {
+			g.io.Successf("%s", res.Detail)
+			if res.State == "staged" {
+				_, _ = fmt.Fprintf(g.io.Err, "Apply it with `dock apply -e %s` or the next deploy.\n", t.Environment)
+			}
+			return nil
+		})
+	})
+}
+
+func newDBQueriesResetCmd(g *globals) *cobra.Command {
+	var yes bool
+	cmd := dbCmd(g, &cobra.Command{
+		Use:   "reset [--yes]",
+		Short: "Set query stats back to zero (admin)",
+		Args:  cobra.NoArgs,
+	}, func(ctx context.Context, s *session, t target, data string, _ []string) error {
+		if !yes {
+			if err := g.io.Confirm(fmt.Sprintf("Reset the query stats of %s? Every statement counts from zero again.", t), "yes"); err != nil {
+				return err
+			}
+		}
+		if _, err := send[struct{}](ctx, s, http.MethodPost, data+"/insights/queries/reset", nil); err != nil {
+			return err
+		}
+		return g.io.Print(map[string]bool{"reset": true}, func() error {
+			g.io.Successf("Query stats of %s are back at zero", t)
+			return nil
+		})
+	})
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
+}
+
+func newDBCancelCmd(g *globals) *cobra.Command {
+	var terminate bool
+	var confirm string
+	cmd := dbCmd(g, &cobra.Command{
+		Use:   "cancel SESSION [--terminate] [--confirm ENV]",
+		Short: "Cancel a session's query, or end the session",
+		Long: `Cancel the running query of a session from ` + "`dock db sessions`" + ` (the client gets
+an error, its connection stays), or with --terminate end the session (its
+connection drops and its open transaction rolls back). Needs data access
+level write; ending a session on production needs --confirm <environment>.`,
+		Args: cobra.ExactArgs(1),
+	}, func(ctx context.Context, s *session, t target, data string, args []string) error {
+		req := apitypes.DataCancelRequest{Terminate: terminate, Confirm: confirm}
+		res, err := send[apitypes.DataCancelResult](ctx, s, http.MethodPost, data+"/insights/sessions/"+url.PathEscape(args[0])+"/cancel", req)
+		if err != nil {
+			return err
+		}
+		return g.io.Print(res, func() error {
+			verb := "Cancelled the query of"
+			if res.Terminated {
+				verb = "Ended the session of"
+			}
+			g.io.Successf("%s %s (%s), running %s", verb, dash(res.Application), res.User, msText(float64(res.RunningMs)))
+			return nil
+		})
+	})
+	cmd.Flags().BoolVar(&terminate, "terminate", false, "End the session instead of cancelling its query")
+	cmd.Flags().StringVar(&confirm, "confirm", "", "The environment's name, to end a session on production")
 	return cmd
 }
 

@@ -139,6 +139,14 @@ func Describe(id string, roles data.Roles, w datapanel.Words) (summary, descript
 			"table and index sizes and use (tables, indexes); and hints about what needs a look. Nothing is stored. " +
 			"Overview, tables and indexes need level schema; queries and sessions read, with statement values redacted for callers who see sensitive columns masked. " +
 			"Views the caller may not see, or the server can't give, are listed in `unavailable`."
+	case "cancel-data-session":
+		return "Cancel a query or end a session", "Cancels the session's running query, or with `terminate` ends the session (its connection and open transaction), as the owner. " +
+			"`query_started_at` (the session's `query_at`) makes sure only that query is cancelled, never a later one; a session that ended or moved on is 409. " +
+			"Level write, which tokens never have on production; ending a session on production needs `confirm` set to " + w.ConfirmWhat + ". Audited as data.cancel or data.terminate."
+	case "reset-data-query-stats":
+		return "Reset query stats", "Sets pg_stat_statements back to zero, as the owner. Admin; audited as data.stats_reset."
+	case "enable-data-query-stats":
+		return "Turn on query stats", "Creates the pg_stat_statements extension as the owner when the server loads it (state on). " + w.EnableQueryStats
 	}
 	return "", ""
 }

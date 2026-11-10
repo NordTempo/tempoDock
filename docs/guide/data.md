@@ -169,12 +169,26 @@ Hints come with a statement to copy (`DROP INDEX CONCURRENTLY ...`,
 `VACUUM (ANALYZE) ...`): put it in a migration or run it yourself; Dock never
 does.
 
-The queries view needs `pg_stat_statements`: the server must load it
-(`-c shared_preload_libraries=pg_stat_statements` in the start command,
-which restarts the database when deployed) and the owner must run `CREATE
-EXTENSION pg_stat_statements`. Without `pg_monitor` (some managed services
-refuse the grant) the monitor still reads sizes and counts, but not other
-roles' statement texts; the views say so.
+The queries view needs `pg_stat_statements`. New Postgres template
+databases have it on. For one created before, "Turn on query stats" in the
+Queries view (`dock db queries enable`) stages the start command change; it
+goes live with your next deploy, which restarts the database for a few
+seconds, and Dock creates the extension then. Dock never applies it on its
+own. Other Postgres services need `-c shared_preload_libraries=pg_stat_statements`
+in their start command, then an admin creates the extension the same way.
+Without `pg_monitor` (some managed services refuse the grant) the monitor
+still reads sizes and counts, but not other roles' statement texts; the
+views say so.
+
+From a session's side pane, "Cancel query" stops its running statement
+(the app gets an error, its connection stays) and "End session" drops its
+connection and rolls back its open transaction, the usual fix for a
+session idle in a transaction that blocks others. Both need level `write`,
+so by default only admins can on production, and tokens never can there;
+ending a session on production asks for the environment's name. They run
+as the database owner, are audited as `data.cancel` and `data.terminate`,
+and only hit the query you saw: a session that moved on is left alone.
+Admins can reset the query stats (`dock db queries reset`).
 
 ## Agents
 

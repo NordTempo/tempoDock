@@ -117,6 +117,31 @@ func registerData(s *server, a huma.API) {
 	})
 
 	authed(s, a, dataOp(huma.Operation{
+		OperationID: "cancel-data-session", Method: http.MethodPost, Path: dataPathT + "/insights/sessions/{session}/cancel",
+	}), func(ctx context.Context, act tempobase.Actor, in *struct {
+		ConnPath
+		Session string `path:"session" example:"4121.1794328800123456" doc:"Session ID from the sessions view"`
+		Body    *apitypes.DataCancelRequest
+	}) (*out[apitypes.DataCancelResult], error) {
+		var req apitypes.DataCancelRequest
+		if in.Body != nil {
+			req = *in.Body
+		}
+		return reply(s.app.CancelDataSession(ctx, act, in.Connection, in.Session, req))
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "reset-data-query-stats", Method: http.MethodPost, Path: dataPathT + "/insights/queries/reset",
+		DefaultStatus: http.StatusNoContent,
+	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*struct{}, error) {
+		return nil, s.app.ResetDataQueryStats(ctx, act, in.Connection)
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "enable-data-query-stats", Method: http.MethodPost, Path: dataPathT + "/insights/queries/enable",
+	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[apitypes.DataQueryStatsResult], error) {
+		return reply(s.app.EnableDataQueryStats(ctx, act, in.Connection))
+	})
+
+	authed(s, a, dataOp(huma.Operation{
 		OperationID: "list-saved-queries", Method: http.MethodGet, Path: dataPathT + "/saved-queries",
 	}), func(ctx context.Context, act tempobase.Actor, in *ConnPath) (*out[[]apitypes.DataSavedQuery], error) {
 		return reply(s.app.ListSavedQueries(ctx, act, in.Connection))

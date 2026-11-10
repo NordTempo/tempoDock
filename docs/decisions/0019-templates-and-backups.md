@@ -175,3 +175,13 @@ Where backups go is a storage connection and a folder in its bucket, not
 a repository URL with its own keys, and moving them keeps every backup
 restorable ([0039](0039-backups-on-storage-connections.md)).
 
+
+## Amendment (2026-11-10): query stats
+
+The Postgres template's start command also loads `pg_stat_statements`
+(`-c shared_preload_libraries=pg_stat_statements -c
+pg_stat_statements.track_utility=off`), and Dock creates the extension when
+a template release goes active, for the Data panel's Health tab
+([0069](0069-database-insights.md)). Databases created before keep their
+command until someone turns query stats on, which stages the change for
+their next deploy.

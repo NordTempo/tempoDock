@@ -203,3 +203,33 @@ func (a *App) DataInsights(ctx context.Context, act Actor, name string, req apit
 	}
 	return a.panel.Insights(ctx, act.panelActor(), db, req)
 }
+
+// CancelDataSession cancels a session's query or ends the session (level
+// write; a production connection confirms ending one with its name).
+func (a *App) CancelDataSession(ctx context.Context, act Actor, name, session string, req apitypes.DataCancelRequest) (apitypes.DataCancelResult, error) {
+	db, err := a.dataDB(ctx, act, name)
+	if err != nil {
+		return apitypes.DataCancelResult{}, err
+	}
+	return a.panel.CancelSession(ctx, act.panelActor(), db, session, req)
+}
+
+// ResetDataQueryStats sets the connection's query stats back to zero.
+// Admins.
+func (a *App) ResetDataQueryStats(ctx context.Context, act Actor, name string) error {
+	db, err := a.dataDB(ctx, act, name)
+	if err != nil {
+		return err
+	}
+	return a.panel.ResetQueryStats(ctx, act.panelActor(), db)
+}
+
+// EnableDataQueryStats creates the query stats extension when the server
+// loads it. Admins; a server that doesn't load it says what to change.
+func (a *App) EnableDataQueryStats(ctx context.Context, act Actor, name string) (apitypes.DataQueryStatsResult, error) {
+	db, err := a.dataDB(ctx, act, name)
+	if err != nil {
+		return apitypes.DataQueryStatsResult{}, err
+	}
+	return a.panel.EnableQueryStats(ctx, act.panelActor(), db)
+}

@@ -269,6 +269,22 @@ type Engine interface {
 	// query. A login refused for too many connections is Full, not an
 	// error.
 	Pressure(ctx context.Context, t Target) (apitypes.DataPressure, error)
+	// EnableQueryStats creates the query stats extension (Postgres'
+	// pg_stat_statements) as the owner, when the server loads it. It
+	// reports the state after (QueryStatsNotLoaded when the server needs
+	// a configuration change and a restart first) and whether it created
+	// the extension just now.
+	EnableQueryStats(ctx context.Context, t Target, owner Credentials) (state apitypes.DataQueryStatsState, created bool, err error)
+	// ResetQueryStats sets the query stats back to zero, as the owner.
+	// ErrInvalid when they are off.
+	ResetQueryStats(ctx context.Context, t Target, owner Credentials) error
+	// Cancel cancels a session's query (or with terminate ends the
+	// session) as the owner, who can signal the app's sessions even when
+	// they run as a superuser. session is an ID from Insights;
+	// queryStartedAt, when set, must still be the query's start. Found is
+	// false when the session ended (or ran another query) since.
+	Cancel(ctx context.Context, t Target, owner Credentials, session string, queryStartedAt *time.Time, terminate bool) (CancelResult, error)
+
 	// EnsureMonitor creates or updates Monitor with the owner's
 	// credentials and tries to make it a member of pg_monitor; a server
 	// that refuses that leaves it without (insights then can't see other
@@ -280,6 +296,16 @@ type Engine interface {
 	Forget(serviceID int64)
 	// Close closes every connection; the daemon calls it on shutdown.
 	Close()
+}
+
+// CancelResult is the session a Cancel hit.
+type CancelResult struct {
+	Found       bool
+	User        string
+	Application string
+	// Text is the session's statement as the server has it.
+	Text    string
+	Running time.Duration
 }
 
 // GrantsHash identifies what the roles' grants were synced for:

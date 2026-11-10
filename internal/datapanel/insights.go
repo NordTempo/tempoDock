@@ -205,3 +205,100 @@ func (f *flights) do(ctx context.Context, k flightKey, fn func() (apitypes.DataI
 	close(c.done)
 	return c.res, c.err
 }
+
+// EnableQueryStats creates the query stats extension in the database, as
+// the owner, when its server loads it. It writes to the user's database,
+// so it is for admins (Manage), like setup. A server that doesn't load it
+// gets the host's words on what to change (Words.QueryStatsHint).
+func (p *Panel[D]) EnableQueryStats(ctx context.Context, a Actor, db *Database[D]) (apitypes.DataQueryStatsResult, error) {
+	if !db.Perm.Manage {
+		return apitypes.DataQueryStatsResult{}, forbidden("turning on query stats is for admins (%s)", Why(db.Perm))
+	}
+	tg, err := p.load(ctx, db)
+	if err != nil {
+		return apitypes.DataQueryStatsResult{}, err
+	}
+	if err := p.connect(ctx, tg); err != nil {
+		return apitypes.DataQueryStatsResult{}, err
+	}
+	state, created, err := p.eng.EnableQueryStats(ctx, tg.t, tg.conn.Owner)
+	switch {
+	case err != nil:
+		return apitypes.DataQueryStatsResult{}, p.dataError(db, err)
+	case state == apitypes.QueryStatsNotLoaded:
+		return apitypes.DataQueryStatsResult{}, invalid("the server doesn't load pg_stat_statements; %s", p.words.QueryStatsHint)
+	case !created:
+		return apitypes.DataQueryStatsResult{State: "on", Detail: "Query stats were already on."}, nil
+	}
+	p.audit(ctx, a, db, apitypes.AuditDataSetup, "turned on query stats: created the pg_stat_statements extension", nil)
+	return apitypes.DataQueryStatsResult{State: "on", Detail: "Query stats are on; statements count from now."}, nil
+}
+
+// ResetQueryStats sets the query stats back to zero. Admins (Manage);
+// audited as data.stats_reset.
+func (p *Panel[D]) ResetQueryStats(ctx context.Context, a Actor, db *Database[D]) error {
+	if !db.Perm.Manage {
+		return forbidden("resetting query stats is for admins (%s)", Why(db.Perm))
+	}
+	tg, err := p.load(ctx, db)
+	if err != nil {
+		return err
+	}
+	if err := p.connect(ctx, tg); err != nil {
+		return err
+	}
+	if err := p.eng.ResetQueryStats(ctx, tg.t, tg.conn.Owner); err != nil {
+		return p.dataError(db, err)
+	}
+	p.audit(ctx, a, db, apitypes.AuditDataStatsReset, "reset the query stats", nil)
+	return nil
+}
+
+// CancelSession cancels a session's query, or ends the session. It
+// changes what the database does, so it needs level write (which tokens
+// never have on production: there it is propose); ending a session on
+// production also confirms with the environment's or connection's name.
+// Audited as data.cancel or data.terminate, the statement in the detail
+// as the caller may see it.
+func (p *Panel[D]) CancelSession(ctx context.Context, a Actor, db *Database[D], session string, req apitypes.DataCancelRequest) (apitypes.DataCancelResult, error) {
+	verb := "cancelling a query"
+	if req.Terminate {
+		verb = "ending a session"
+	}
+	if err := RequireLevel(db.Perm, apitypes.LevelWrite, verb); err != nil {
+		return apitypes.DataCancelResult{}, err
+	}
+	if req.Terminate && db.Perm.ConfirmCommit && req.Confirm != db.ConfirmName {
+		return apitypes.DataCancelResult{}, invalid("%s is production: ending a session needs confirm set to %s (%q)", db.Name, p.words.ConfirmWhat, db.ConfirmName)
+	}
+	tg, err := p.load(ctx, db)
+	if err != nil {
+		return apitypes.DataCancelResult{}, err
+	}
+	if err := p.connect(ctx, tg); err != nil {
+		return apitypes.DataCancelResult{}, err
+	}
+	res, err := p.eng.Cancel(ctx, tg.t, tg.conn.Owner, session, req.QueryStartedAt, req.Terminate)
+	if err != nil {
+		return apitypes.DataCancelResult{}, p.dataError(db, err)
+	}
+	if !res.Found {
+		if req.Terminate {
+			return apitypes.DataCancelResult{}, conflict("that session already ended; refresh the sessions")
+		}
+		return apitypes.DataCancelResult{}, conflict("that query already finished; refresh the sessions")
+	}
+	who := res.Application
+	if who == "" {
+		who = "a session"
+	}
+	action, summary := apitypes.AuditDataCancel, fmt.Sprintf("cancelled a query of %s (%s), running %s", who, res.User, res.Running.Round(time.Second))
+	if req.Terminate {
+		action, summary = apitypes.AuditDataTerminate, fmt.Sprintf("ended a session of %s (%s), in its transaction for %s", who, res.User, res.Running.Round(time.Second))
+	}
+	text := p.insightText(res.Text, db.Perm.Sensitive != apitypes.SensitiveVisible)
+	p.audit(context.WithoutCancel(ctx), a, db, action, summary, &AuditDetail{SQL: text, Duration: res.Running, Outcome: apitypes.OutcomeOK})
+	return apitypes.DataCancelResult{
+		Session: session, Terminated: req.Terminate, User: res.User, Application: res.Application, RunningMs: res.Running.Milliseconds(),
+	}, nil
+}

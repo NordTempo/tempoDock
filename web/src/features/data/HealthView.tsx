@@ -1,3 +1,4 @@
+import { useMutation } from "@tanstack/react-query";
 import {
   type ReactNode,
   useEffect,
@@ -7,14 +8,16 @@ import {
 } from "react";
 import { useShortcuts } from "../../shell/keys";
 import { clockSec, elapsed } from "../../ui/format";
-import { useCli, useInsights } from "./api";
+import { useCli, useDataSource, useInsights } from "./api";
 import { byteSize } from "./cells";
 import { Act, Btn, CopyBtn, ErrorText, Kbd, Scroll } from "./kit";
+import { ConfirmName } from "./ReviewPanel";
 import type {
   DataHint,
   DataIndexStats,
   DataInsights,
   DataInsightView,
+  DataOverview,
   DataPermission,
   DataSession,
   DataStatement,
@@ -127,7 +130,17 @@ export default function HealthView({
       ) : (
         <>
           {(ins.unavailable ?? [])
-            .filter((u) => u.view === view)
+            .filter(
+              (u) =>
+                u.view === view &&
+                // QueryStatsOff says it, with what to do.
+                !(
+                  view === "queries" &&
+                  ins.overview &&
+                  ins.overview.query_stats !== "on" &&
+                  !u.partial
+                ),
+            )
             .map((u) => (
               <p
                 key={u.reason}
@@ -151,6 +164,8 @@ export default function HealthView({
               onSelect={setSelected}
               onExplain={onExplain}
               canRead={access.level !== "schema"}
+              access={access}
+              onDone={refresh}
             />
           ) : view === "sessions" ? (
             <Sessions
@@ -158,6 +173,7 @@ export default function HealthView({
               selected={selected}
               onSelect={setSelected}
               onRefresh={refresh}
+              access={access}
             />
           ) : view === "tables" ? (
             <Tables ins={ins} onOpen={open} />
@@ -418,6 +434,8 @@ function Queries({
   onSelect,
   onExplain,
   canRead,
+  access,
+  onDone,
 }: {
   ins: DataInsights;
   previous: DataInsights | undefined;
@@ -427,6 +445,9 @@ function Queries({
   onSelect: (id: string | null) => void;
   onExplain: (sql: string) => void;
   canRead: boolean;
+  access: DataPermission;
+  /** Read again after an action. */
+  onDone: () => void;
 }) {
   const [changes, setChanges] = useState(false);
   const showChanges = changes && !!previous;
@@ -485,7 +506,17 @@ function Queries({
               own hidden
             </span>
           )}
+          {access.manage && ins.overview?.query_stats === "on" && (
+            <ResetStats onDone={onDone} />
+          )}
         </div>
+        {ins.overview && ins.overview.query_stats !== "on" && (
+          <QueryStatsOff
+            state={ins.overview.query_stats}
+            access={access}
+            onDone={onDone}
+          />
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto">
           <Scroll>
             <table className="g-table">
@@ -665,11 +696,13 @@ function Sessions({
   selected,
   onSelect,
   onRefresh,
+  access,
 }: {
   ins: DataInsights;
   selected: string | null;
   onSelect: (id: string | null) => void;
   onRefresh: () => void;
+  access: DataPermission;
 }) {
   const [showIdle, setShowIdle] = useState(false);
   const following = useFollow(onRefresh);
@@ -802,6 +835,17 @@ function Sessions({
             <pre className="max-h-64 overflow-auto rounded-lg border border-(--g-line) bg-(--g-raise) p-2 text-xs whitespace-pre-wrap text-(--g-code)">
               {current.text}
             </pre>
+          )}
+          {current.kind === "client" && (
+            <SessionActions
+              key={current.id}
+              session={current}
+              access={access}
+              onDone={() => {
+                onSelect(null);
+                onRefresh();
+              }}
+            />
           )}
         </aside>
       )}
@@ -1066,3 +1110,182 @@ const indexKind = (x: DataIndexStats) =>
         : !x.valid
           ? "invalid"
           : "";
+
+/**
+ * Turning on query stats when they are off: what it involves in the
+ * host's words, and the action where the caller may take it (Dock stages
+ * the start command change; creating the extension is for admins).
+ */
+function QueryStatsOff({
+  state,
+  access,
+  onDone,
+}: {
+  state: DataOverview["query_stats"];
+  access: DataPermission;
+  onDone: () => void;
+}) {
+  const { words } = useDataSource();
+  const cli = useCli();
+  const enable = useEnableQueryStats(onDone);
+  const notLoaded = state === "not_loaded";
+  const canAct = notLoaded ? words.stagesQueryStats : access.manage;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-(--g-line) px-3 py-2.5 text-xs text-(--g-dim)">
+      <span className="max-w-[640px]">
+        {notLoaded
+          ? words.queryStatsOff
+          : "The server loads pg_stat_statements, but its extension isn't created in this database."}
+        {!canAct && !notLoaded && " An admin can create it here."}
+      </span>
+      {enable.data ? (
+        <span className="text-(--g-ok)">{enable.data.detail}</span>
+      ) : (
+        canAct && (
+          <Act
+            small
+            primary
+            cli={cli("dock db queries enable")}
+            disabled={enable.isPending}
+            onClick={() => enable.mutate()}
+          >
+            {notLoaded ? "Turn on query stats" : "Create the extension"}
+          </Act>
+        )
+      )}
+      <ErrorText error={enable.error} />
+    </div>
+  );
+}
+
+/** POST /data/insights/queries/enable, then read again. */
+function useEnableQueryStats(onDone: () => void) {
+  const source = useDataSource();
+  return useMutation({
+    mutationFn: () => source.enableQueryStats(),
+    onSuccess: onDone,
+  });
+}
+
+/** Reset query stats (admins), asking first in place. */
+function ResetStats({ onDone }: { onDone: () => void }) {
+  const source = useDataSource();
+  const cli = useCli();
+  const [asking, setAsking] = useState(false);
+  const reset = useMutation({
+    mutationFn: () => source.resetQueryStats(),
+    onSuccess: () => {
+      setAsking(false);
+      onDone();
+    },
+  });
+  if (!asking)
+    return (
+      <Btn small onClick={() => setAsking(true)}>
+        Reset
+      </Btn>
+    );
+  return (
+    <span className="flex items-center gap-2 text-(--g-text)">
+      Every statement counts from zero again.
+      <Btn small onClick={() => setAsking(false)}>
+        Cancel
+      </Btn>
+      <Act
+        small
+        danger
+        cli={cli("dock db queries reset")}
+        disabled={reset.isPending}
+        onClick={() => reset.mutate()}
+      >
+        Reset query stats
+      </Act>
+      <ErrorText error={reset.error} />
+    </span>
+  );
+}
+
+/**
+ * Cancel a session's query, or end the session, from its side pane.
+ * Needs level write. Cancelling asks nothing (the client just gets an
+ * error); ending the session asks first, and on production for the
+ * name.
+ */
+function SessionActions({
+  session,
+  access,
+  onDone,
+}: {
+  session: DataSession;
+  access: DataPermission;
+  onDone: () => void;
+}) {
+  const source = useDataSource();
+  const cli = useCli();
+  const [ending, setEnding] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const act = useMutation({
+    mutationFn: (terminate: boolean) =>
+      source.cancelSession(session.id, {
+        terminate,
+        query_started_at: terminate ? undefined : session.query_at,
+        confirm: terminate && access.confirm_commit ? confirm : undefined,
+      }),
+    onSuccess: onDone,
+  });
+  if (access.level !== "write")
+    return (
+      <p className="text-2xs text-(--g-mut)">
+        Cancelling queries and ending sessions needs data access level write.
+      </p>
+    );
+  const confirmed = !access.confirm_commit || confirm === source.confirmName;
+  return (
+    <section className="flex flex-col gap-2 border-t border-(--g-line) pt-3">
+      {!ending ? (
+        <div className="flex flex-wrap gap-1.5">
+          {session.state === "active" && (
+            <Act
+              small
+              cli={cli(`dock db cancel ${session.id}`)}
+              disabled={act.isPending}
+              onClick={() => act.mutate(false)}
+            >
+              Cancel query
+            </Act>
+          )}
+          <Btn small danger onClick={() => setEnding(true)}>
+            End session
+          </Btn>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-(--g-dim)">
+            Its connection drops and its open transaction rolls back. The app
+            sees an error and has to reconnect.
+          </p>
+          {access.confirm_commit && (
+            <ConfirmName verb="end it" value={confirm} onChange={setConfirm} />
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <Btn small onClick={() => setEnding(false)}>
+              Keep it
+            </Btn>
+            <Act
+              small
+              danger
+              cli={cli(
+                `dock db cancel ${session.id} --terminate${access.confirm_commit ? ` --confirm ${source.confirmName}` : ""}`,
+              )}
+              disabled={act.isPending || !confirmed}
+              onClick={() => act.mutate(true)}
+            >
+              End session
+            </Act>
+          </div>
+        </>
+      )}
+      <ErrorText error={act.error} />
+    </section>
+  );
+}

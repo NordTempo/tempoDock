@@ -23,12 +23,14 @@ import (
 
 // DataWords are Dock's words in the data panel's messages and API docs.
 var DataWords = datapanel.Words{
-	Product:         "Dock",
-	SetupHint:       "an admin can run `dock db setup`",
-	LoginFailedHint: "If POSTGRES_PASSWORD changed after the database was created, set database_url_variable to a variable with the current postgres:// URL",
-	SetupAction:     "Set up data access (`dock db setup`)",
-	ConfirmWhat:     "the environment's name",
-	Database:        "service",
+	Product:          "Dock",
+	SetupHint:        "an admin can run `dock db setup`",
+	LoginFailedHint:  "If POSTGRES_PASSWORD changed after the database was created, set database_url_variable to a variable with the current postgres:// URL",
+	SetupAction:      "Set up data access (`dock db setup`)",
+	ConfirmWhat:      "the environment's name",
+	Database:         "service",
+	QueryStatsHint:   "add `-c shared_preload_libraries=pg_stat_statements` to the service's start command (Build & run) and deploy it, which restarts the database",
+	EnableQueryStats: "For a Postgres template database whose start command doesn't load it yet, it stages that change instead (state staged; needs deploy): it applies with the next deploy, which restarts the database, and Dock creates the extension then. Otherwise admin.",
 }
 
 // ErrDataNotImplemented was returned by the phase 1 stubs. Nothing returns

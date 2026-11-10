@@ -42,6 +42,9 @@ type dataCore interface {
 	UpdateToken(ctx context.Context, a core.Actor, id int64, req apitypes.UpdateTokenRequest) (apitypes.Token, error)
 	GetAuditDetail(ctx context.Context, a core.Actor, id int64) (apitypes.AuditDetail, error)
 	DataInsights(ctx context.Context, a core.Actor, ref core.ServiceRef, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error)
+	CancelDataSession(ctx context.Context, a core.Actor, ref core.ServiceRef, session string, req apitypes.DataCancelRequest) (apitypes.DataCancelResult, error)
+	ResetDataQueryStats(ctx context.Context, a core.Actor, ref core.ServiceRef) error
+	EnableDataQueryStats(ctx context.Context, a core.Actor, ref core.ServiceRef) (apitypes.DataQueryStatsResult, error)
 }
 
 var _ dataCore = (*core.Core)(nil)
@@ -166,6 +169,31 @@ func registerData(s *Server, a huma.API) {
 		datahttp.InsightsQuery
 	}) (*out[apitypes.DataInsights], error) {
 		return reply(s.dataAPI().DataInsights(ctx, actor, in.ref(), in.Request()))
+	})
+
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "cancel-data-session", Method: http.MethodPost, Path: dataPathT + "/insights/sessions/{session}/cancel",
+	}), func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Session string `path:"session" example:"4121.1794328800123456" doc:"Session ID from the sessions view"`
+		Body    *apitypes.DataCancelRequest
+	}) (*out[apitypes.DataCancelResult], error) {
+		var req apitypes.DataCancelRequest
+		if in.Body != nil {
+			req = *in.Body
+		}
+		return reply(s.dataAPI().CancelDataSession(ctx, actor, in.ref(), in.Session, req))
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "reset-data-query-stats", Method: http.MethodPost, Path: dataPathT + "/insights/queries/reset",
+		DefaultStatus: http.StatusNoContent,
+	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*struct{}, error) {
+		return nil, s.dataAPI().ResetDataQueryStats(ctx, actor, in.ref())
+	})
+	authed(s, a, dataOp(huma.Operation{
+		OperationID: "enable-data-query-stats", Method: http.MethodPost, Path: dataPathT + "/insights/queries/enable",
+	}), func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.DataQueryStatsResult], error) {
+		return reply(s.dataAPI().EnableDataQueryStats(ctx, actor, in.ref()))
 	})
 
 	authed(s, a, dataOp(huma.Operation{

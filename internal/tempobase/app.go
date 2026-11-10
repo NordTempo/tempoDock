@@ -101,12 +101,14 @@ func New(cfg Config, st *tbstore.Store, box *secrets.Box, log *slog.Logger) *App
 
 // Words are tempoBase's wording in the data panel's messages and API docs.
 var Words = datapanel.Words{
-	Product:         "tempoBase",
-	SetupHint:       "an admin can run Set up data access in the connection's settings",
-	LoginFailedHint: "Check the user and password in the connection's URL (connection settings)",
-	SetupAction:     "Set up data access in the connection's settings",
-	ConfirmWhat:     "the connection's name",
-	Database:        "connection",
+	Product:          "tempoBase",
+	SetupHint:        "an admin can run Set up data access in the connection's settings",
+	LoginFailedHint:  "Check the user and password in the connection's URL (connection settings)",
+	SetupAction:      "Set up data access in the connection's settings",
+	ConfirmWhat:      "the connection's name",
+	Database:         "connection",
+	QueryStatsHint:   "turn it on in your provider's settings, or add it to shared_preload_libraries in postgresql.conf and restart the server",
+	EnableQueryStats: "A server that doesn't load it needs a configuration change and a restart, which tempoBase can't make. Admin.",
 }
 
 // Close closes the database connections and the store.
