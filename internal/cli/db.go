@@ -104,7 +104,7 @@ func newDBStatusCmd(g *globals) *cobra.Command {
 			}
 			if err := g.io.Fields(
 				"service", t.String(),
-				"engine", strings.TrimSpace(string(info.Engine)+" "+info.ServerVersion),
+				"engine", engineLabel(info),
 				"status", string(info.Status),
 				"reason", info.Reason,
 				"set up", setUp,
@@ -214,6 +214,16 @@ POSTGRES_*).`,
 // schemaOf reads the database's schema.
 func schemaOf(ctx context.Context, s *session, data string) (apitypes.DataSchema, error) {
 	return get[apitypes.DataSchema](ctx, s, data+"/schema")
+}
+
+// engineLabel is "mysql 8.4.13", or the server's version alone when it
+// names the server itself ("Redis 8.10.2", "MariaDB 11.4.5").
+func engineLabel(info apitypes.DataInfo) string {
+	v := info.ServerVersion
+	if v != "" && (v[0] < '0' || v[0] > '9') {
+		return v
+	}
+	return strings.TrimSpace(string(info.Engine) + " " + v)
 }
 
 func newDBTablesCmd(g *globals) *cobra.Command {
