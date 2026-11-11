@@ -88,6 +88,7 @@ line means a later record added to it without changing what it decided.
 | [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 to 5 |
 | [0074](0074-image-vulnerability-scanning.md) | Image vulnerability scanning | accepted |
 | [0075](0075-tracing-over-otlp.md) | Tracing over OTLP | accepted; phases 1 and 2 |
+| [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built |
 
 ## Template
 

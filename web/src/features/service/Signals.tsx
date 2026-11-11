@@ -77,7 +77,10 @@ function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** The site the service's hostnames count for: visitors in 24 hours. */
+/**
+ * The site the service's hostnames count for: visitors in 24 hours, a way
+ * to Requests' Visitors view.
+ */
 function VisitorsLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const found = useQuery({
@@ -93,10 +96,11 @@ function VisitorsLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   if (!found) return null;
   return (
     <p className="flex flex-wrap items-center gap-x-1.5">
-      <span className="text-faint">Analytics</span>
+      <span className="text-faint">Visitors</span>
       <Link
-        to="/$org/analytics/$project/$site"
-        params={{ org, project: ref.project, site: found.site.name }}
+        to="/$org/$project/$environment/$service/requests/visitors"
+        params={{ org, ...ref }}
+        search={{ site: found.site.name }}
         className={target}
       >
         {found.overview

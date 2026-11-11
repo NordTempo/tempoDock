@@ -1,11 +1,18 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { siteRedirect } from "../features/analytics/loaders";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { analyticsSearch } from "../features/analytics/loaders";
 
-// The service's old Analytics tab: its site's page in the Analytics area
-// now (ADR 0059).
+// The service's old Analytics tab: Requests' Visitors view now, with the
+// site, range and filters it was opened with.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/analytics",
 )({
-  beforeLoad: ({ context: { queryClient }, params, search }) =>
-    siteRedirect(queryClient, params, search, ""),
+  validateSearch: analyticsSearch,
+  beforeLoad: ({ params, search }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/requests/visitors",
+      params,
+      search,
+      replace: true,
+    });
+  },
 });
