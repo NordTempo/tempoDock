@@ -1,9 +1,11 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
   listenPort,
+  queries,
   serviceRef as refOf,
   useCanDeploy,
   useChanges,
@@ -240,27 +242,37 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </span>,
     ],
     [
-      "Address",
-      domain ? (
-        <a
-          key="a"
-          href={`https://${domain.hostname}`}
-          className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
-        >
-          {domain.hostname}
-        </a>
-      ) : (
+      "Domains",
+      // The address, how many more, and the way to all of them (Settings).
+      <span key="a" className="flex flex-wrap items-center gap-x-2">
+        {domain && (
+          <a
+            href={`https://${domain.hostname}`}
+            className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
+          >
+            {domain.hostname}
+          </a>
+        )}
         <Link
-          key="a"
           to="/$org/$project/$environment/$service/settings"
           hash="domains"
           params={{ org, ...ref }}
-          className="text-info hover:underline"
+          className="-my-[4px] inline-flex min-h-[24px] items-center text-mut hover:text-fg"
         >
-          + Add domain
+          {domain
+            ? view.domains.length > 1
+              ? `+${view.domains.length - 1} · manage`
+              : "manage"
+            : "+ Add domain"}
         </Link>
-      ),
+      </span>,
     ],
+    ...(service.stateful
+      ? ([["Backups", <BackupsFact key="b" serviceRef={ref} />]] as [
+          string,
+          ReactNode,
+        ][])
+      : []),
     [
       "Resources",
       <Link
@@ -559,6 +571,29 @@ export function StatusSentence({ view }: { view: ServiceView }) {
       </p>
       {failedLine}
     </div>
+  );
+}
+
+/**
+ * A stateful service's last good backup, and the way to its restore
+ * points (Settings): so backups are found from the Overview.
+ */
+function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const runs = useQuery(queries.backups(ref)).data?.runs ?? [];
+  const last = runs.find(
+    (r) => r.operation === "backup" && r.status === "succeeded",
+  );
+  return (
+    <Link
+      to="/$org/$project/$environment/$service/settings"
+      hash="backups"
+      params={{ org, ...ref }}
+      className="-my-[4px] inline-flex min-h-[24px] items-center hover:underline"
+    >
+      {last?.finished_at ? `last ${ago(last.finished_at)}` : "none yet"}
+      <span className="ml-2 text-mut">restore points →</span>
+    </Link>
   );
 }
 
