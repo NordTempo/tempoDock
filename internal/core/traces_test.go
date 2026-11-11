@@ -34,7 +34,7 @@ func TestTracingRunsTheTraceStore(t *testing.T) {
 	}
 	waitTraceStore(t, h.c, h.c.localName())
 	spec := h.rt.TraceStoreSpec()
-	if spec.Kind != node.StoreTraces || spec.MemoryBytes != 384<<20 || len(spec.Token) < 32 {
+	if spec.Kind != node.StoreTraces || spec.MemoryBytes != 512<<20 || len(spec.Token) < 32 {
 		t.Errorf("trace store spec = %+v", spec)
 	}
 	// Tracing doesn't turn analytics on.

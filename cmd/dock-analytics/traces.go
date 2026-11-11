@@ -26,10 +26,10 @@ func tracesCmd(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("traces", flag.ExitOnError)
 	db := fs.String("db", envOr("DOCK_TRACES_DB", "/data/traces.duckdb"), "the database file")
 	listen := fs.String("listen", envOr("DOCK_TRACES_LISTEN", ":7079"), "address to serve the API on")
-	memoryMB := fs.Int64("memory-mb", 96, "DuckDB's memory_limit in MB; keep it well below the container's limit")
+	memoryMB := fs.Int64("memory-mb", 128, "DuckDB's memory_limit in MB; keep it well below the container's limit")
 	threads := fs.Int("threads", 2, "threads per query")
 	queries := fs.Int("queries", 1, "how many queries may run at once")
-	trimMB := fs.Int64("trim-above-mb", 96, "give cached memory back after a query that leaves the process above this many MB")
+	trimMB := fs.Int64("trim-above-mb", 128, "give cached memory back after a query that leaves the process above this many MB")
 	_ = fs.Parse(args)
 	token := os.Getenv("DOCK_ANALYTICS_TOKEN")
 	if len(token) < 32 {

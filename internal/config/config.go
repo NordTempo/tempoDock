@@ -425,7 +425,7 @@ func Default() Config {
 			StatsListen:   "127.0.0.1:7078",
 		},
 		Traces: Traces{
-			StorePort: 7080, StoreMemoryMB: 384, RetentionDays: 7, IngestListen: "127.0.0.1:4318", SpoolMaxMB: 128,
+			StorePort: 7080, StoreMemoryMB: 512, RetentionDays: 7, IngestListen: "127.0.0.1:4318", SpoolMaxMB: 128,
 			ServiceDaySpans: 2_000_000, OrgDaySpans: 5_000_000, ErrorDaySpans: 200_000, MaxGB: 4,
 		},
 		Status: Status{Listen: "127.0.0.1:7079"},

@@ -87,8 +87,8 @@ type storeKind struct {
 }
 
 // storeKinds are the analytics store (192 MB of a 512 MB container) and
-// the trace store (96 MB of 384 MB: writes at full speed took it to 300
-// MB whatever its limit).
+// the trace store (128 MB of 512 MB: writes at full speed took it to 300
+// to 390 MB whatever its limit).
 var storeKinds = map[node.StoreKind]storeKind{
 	node.StoreAnalytics: {node.StoreAnalytics, node.RoleAnalytics, "serve", "DOCK_ANALYTICS_DB", "DOCK_ANALYTICS_LISTEN", "analytics.duckdb", 3},
 	node.StoreTraces:    {node.StoreTraces, node.RoleTraces, "traces", "DOCK_TRACES_DB", "DOCK_TRACES_LISTEN", "traces.duckdb", 2},

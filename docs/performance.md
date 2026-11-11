@@ -118,8 +118,8 @@ database of its own (`traces.duckdb`), in its own process and container
 beside the analytics store, so the two never share a container's
 headroom: bursts of writes grow DuckDB's memory past its
 `memory_limit`, and in one process a trace backlog on top of analytics
-went past the 512 MB limit on CI. It runs with `memory_limit` 96 MB, one
-query at a time and `GOMEMLIMIT=48MiB`, in a 384 MB container. The
+went past the 512 MB limit on CI. It runs with `memory_limit` 128 MB, one
+query at a time and `GOMEMLIMIT=48MiB`, in a 512 MB container. The
 `traces` check seeds 2M spans (a week of a service at about 3 spans a
 second) and runs it with those settings.
 
@@ -134,7 +134,7 @@ Measured on CI's run of the pull request that added it (#212,
 | The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 48 ms |
 | Opening a trace p95, with its time or without | ≤ 30 ms | 9 ms |
 | Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 24.4k spans/s |
-| Peak memory through all of it | ≤ 384 MB (the container's limit) | 304 MB |
+| Peak memory through all of it | ≤ 512 MB (the container's limit) | 304 to 387 MB |
 
 Spans go in one table per UTC day (dropping a day is the retention, with
 no delete scan). With 10M seeded spans over a week (32 bytes a span on
@@ -146,7 +146,9 @@ then its columns within the box those span. Selecting more columns in
 the first, or looking the page up by trace IDs over the whole range,
 cost two to ten times as much. Writes at full speed take the store to
 250 to 300 MB over 600k spans whatever its `memory_limit` (64 to 128 MB
-tried), hence the container's 384.
+tried), and CI's runs of the check peaked at 304 to 387 MB, hence the
+container's 512: 384 MB was set from the first runs and failed on the
+fourth.
 
 ## Running it
 
