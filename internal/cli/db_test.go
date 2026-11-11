@@ -147,11 +147,14 @@ func TestDBQueryErrors(t *testing.T) {
 	}
 }
 
+// TestDBRows reads a page of a bare-named table, which resolves to its
+// schema: on MySQL a database (shop), not Postgres's public.
 func TestDBRows(t *testing.T) {
 	setup(t)
 	var query string
 	newFakeAPI(t, map[string]http.HandlerFunc{
-		"GET " + dbPath + "/tables/public.orders/rows": func(w http.ResponseWriter, r *http.Request) {
+		"GET " + dbPath + "/schema": jsonReply(apitypes.DataSchema{Tables: []apitypes.DataTable{{Schema: "shop", Name: "orders"}}}),
+		"GET " + dbPath + "/tables/shop.orders/rows": func(w http.ResponseWriter, r *http.Request) {
 			query = r.URL.RawQuery
 			jsonReply(apitypes.DataPage{
 				Columns:       []apitypes.DataResultColumn{{Name: "id"}, {Name: "status"}},

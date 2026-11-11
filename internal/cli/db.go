@@ -461,7 +461,10 @@ With --json, the page as the API returns it, including next.`,
 		if reveal {
 			q.Set("reveal", "true")
 		}
-		table := qualify(args[0])
+		table, err := qualify(ctx, s, data, args[0])
+		if err != nil {
+			return err
+		}
 		page, err := get[apitypes.DataPage](ctx, s, data+"/tables/"+url.PathEscape(table)+"/rows?"+q.Encode())
 		if err != nil {
 			return err
@@ -505,12 +508,22 @@ With --json, the page as the API returns it, including next.`,
 	return cmd
 }
 
-// qualify puts a bare table name in the public schema.
-func qualify(table string) string {
-	if strings.Contains(table, ".") {
-		return table
+// qualify names a table as schema.table: as given when qualified, else the
+// table of that name in the database's schema (findTable: Postgres's public
+// first), so a bare name works on MySQL, whose schemas are databases.
+func qualify(ctx context.Context, s *session, data, name string) (string, error) {
+	if strings.Contains(name, ".") {
+		return name, nil
 	}
-	return "public." + table
+	sc, err := schemaOf(ctx, s, data)
+	if err != nil {
+		return "", err
+	}
+	tb, err := findTable(sc, name)
+	if err != nil {
+		return "", err
+	}
+	return tb.Schema + "." + tb.Name, nil
 }
 
 // queryFlags are the options of commands that run SQL.
@@ -1031,7 +1044,7 @@ rejects them; pending changesets expire after 7 days.`,
 		return g.io.Print(list, func() error {
 			t := g.io.Table("id", "status", "author", "changes", "created", "message")
 			for _, cs := range list {
-				t.Row(itoa(cs.ID), string(cs.Status), cs.Author, strconv.Itoa(len(cs.Changes)), ago(cs.CreatedAt), cut(oneLine(cs.Message), 60))
+				t.Row(itoa(cs.ID), string(cs.Status), cs.Author, strconv.Itoa(len(cs.Changes)+len(cs.KeyChanges)), ago(cs.CreatedAt), cut(oneLine(cs.Message), 60))
 			}
 			return t.Flush()
 		})
@@ -1520,8 +1533,8 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 	set := dbCmd(g, &cobra.Command{
 		Use:   "set [schema.]table.column... | --keys PATTERN... | --clear",
 		Short: "Replace the list of sensitive columns (or, on Redis, key patterns)",
-		Long: `Replace the whole list with the columns named (schema public when left out),
-or empty it with --clear. On Redis, --keys takes key patterns (globs such as
+		Long: `Replace the whole list with the columns named (a bare table name is looked
+up, Postgres's public schema first), or empty it with --clear. On Redis, --keys takes key patterns (globs such as
 session:*): matching keys are masked for callers who see sensitive values
 masked, and read only with an audited --reveal by the others.`,
 		Example: `  dock db sensitive set users.password_hash users.email
@@ -1549,7 +1562,12 @@ masked, and read only with an audited --reveal by the others.`,
 			parts := strings.Split(a, ".")
 			switch len(parts) {
 			case 2:
-				req.Columns = append(req.Columns, apitypes.DataColumnRef{Schema: "public", Table: parts[0], Column: parts[1]})
+				table, err := qualify(ctx, s, data, parts[0])
+				if err != nil {
+					return err
+				}
+				schema, name, _ := strings.Cut(table, ".")
+				req.Columns = append(req.Columns, apitypes.DataColumnRef{Schema: schema, Table: name, Column: parts[1]})
 			case 3:
 				req.Columns = append(req.Columns, apitypes.DataColumnRef{Schema: parts[0], Table: parts[1], Column: parts[2]})
 			default:
