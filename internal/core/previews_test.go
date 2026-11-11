@@ -208,7 +208,7 @@ func TestPreviewLifecycle(t *testing.T) {
 		t.Fatalf("export: %+v, %v", ex.Environments, err)
 	}
 	waitFor(t, func() bool { return strings.Contains(pc.only(t), "**live**") })
-	if body := pc.only(t); !strings.Contains(body, "https://web-shop-pr-7.apps.test") {
+	if body := pc.only(t); !strings.Contains(body, "https://web-shop-pr-7.apps.test") || !strings.Contains(body, "sleeps after 30 min without traffic") {
 		t.Fatalf("comment %q", body)
 	}
 	waitFor(t, func() bool {
