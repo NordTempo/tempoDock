@@ -23,13 +23,17 @@ import {
   incidentState,
   type StatusComponent,
   type StatusComponentInput,
+  type StatusHook,
   type StatusPage,
   statusQueries,
   statusState,
   toInputs,
+  useAddStatusHook,
   useCheckStatusHostname,
   useDeleteStatusPage,
+  useRemoveStatusHook,
   useSetStatusComponents,
+  useTestStatusHook,
   useUpdateStatusPage,
 } from "./data";
 import {
@@ -133,6 +137,7 @@ export function StatusPageEditor({ slug }: { slug: string }) {
         <ErrorText error={publish.error} />
         <Incidents page={page} />
         <Components page={page} admin={admin} onEdit={setEditing} />
+        {admin && <Hooks page={page} />}
         <Settings page={page} admin={admin} />
       </Page>
       {opening && (
@@ -506,6 +511,186 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
         </Confirm>
       )}
     </section>
+  );
+}
+
+/**
+ * Where the page's public updates are posted: Slack, Discord and signed
+ * webhooks, with adding, testing and removing them. Admins only.
+ */
+function Hooks({ page }: { page: StatusPage }) {
+  const hooks = useQuery(statusQueries.hooks(page.slug));
+  const test = useTestStatusHook(page.slug);
+  const remove = useRemoveStatusHook(page.slug);
+  const [adding, setAdding] = useState(false);
+  return (
+    <section>
+      <SectionHead
+        aside="every public update of an incident or maintenance window"
+        right={
+          <Button small onClick={() => setAdding(true)}>
+            Add hook
+          </Button>
+        }
+      >
+        Update hooks
+      </SectionHead>
+      <ErrorText error={hooks.error ?? test.error ?? remove.error} />
+      {hooks.data?.length === 0 && (
+        <p className="text-mut">
+          None. Post updates to Slack, Discord or a webhook; visitors follow the
+          page's Atom feed.
+        </p>
+      )}
+      {hooks.data && hooks.data.length > 0 && (
+        <Panel>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Kind</th>
+                <th>Posts to</th>
+                <th>Last</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {hooks.data.map((h: StatusHook) => (
+                <tr key={h.name}>
+                  <td className="py-2 font-medium">{h.name}</td>
+                  <td>{h.kind}</td>
+                  <td className="font-mono text-sec">{h.target}</td>
+                  <td className="whitespace-normal">
+                    {h.last_error ? (
+                      <span className="text-fail">{h.last_error}</span>
+                    ) : h.last_sent_at ? (
+                      <span className="text-sec">
+                        sent {when(h.last_sent_at)}
+                      </span>
+                    ) : (
+                      <span className="text-faint">nothing yet</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 text-right whitespace-nowrap">
+                    <span className="inline-flex gap-1.5">
+                      <Act
+                        small
+                        cli={`dock status-page hook test ${page.slug} ${h.name}`}
+                        disabled={test.isPending}
+                        onClick={() => test.mutate(h.name)}
+                      >
+                        Test
+                      </Act>
+                      <Act
+                        small
+                        danger
+                        cli={`dock status-page hook rm ${page.slug} ${h.name}`}
+                        disabled={remove.isPending}
+                        onClick={() => remove.mutate(h.name)}
+                      >
+                        Remove
+                      </Act>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
+      {adding && (
+        <HookDialog slug={page.slug} onClose={() => setAdding(false)} />
+      )}
+    </section>
+  );
+}
+
+/** When a hook last posted, in the viewer's time. */
+const when = (iso: string) => `${day(iso)} ${clock(iso)}`;
+
+/** Adds a hook; a webhook's generated secret is shown once. */
+function HookDialog({ slug, onClose }: { slug: string; onClose: () => void }) {
+  const add = useAddStatusHook(slug);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<StatusHook["kind"]>("slack");
+  const [url, setUrl] = useState("");
+  const [secret, setSecret] = useState<string | null>(null);
+  if (secret !== null)
+    return (
+      <Dialog title="Signing secret" onClose={onClose}>
+        <p className="text-sec">
+          Shown once. Check each post's Dock-Signature header with it.
+        </p>
+        <p className="mt-3 font-mono break-all">{secret}</p>
+        <DialogFoot>
+          <Button primary onClick={onClose}>
+            Done
+          </Button>
+        </DialogFoot>
+      </Dialog>
+    );
+  return (
+    <Dialog title="Add hook" onClose={onClose}>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          add.mutate(
+            { name, kind, url },
+            {
+              onSuccess: (created) =>
+                created.secret ? setSecret(created.secret) : onClose(),
+            },
+          );
+        }}
+      >
+        <label className="flex flex-col gap-1 text-xs text-mut">
+          Name
+          <input
+            className="field text-sm text-fg"
+            value={name}
+            maxLength={40}
+            placeholder="team-slack"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-mut">
+          Kind
+          <select
+            className="field py-1 text-sm text-fg"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as StatusHook["kind"])}
+          >
+            <option value="slack">Slack incoming webhook</option>
+            <option value="discord">Discord webhook</option>
+            <option value="webhook">Signed JSON webhook</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-mut">
+          URL, kept encrypted; only its host is shown again
+          <input
+            className="field font-mono text-sm text-fg"
+            value={url}
+            type="url"
+            placeholder="https://hooks.slack.com/services/..."
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </label>
+        <DialogFoot
+          cli={`dock status-page hook add ${slug} ${name || "<name>"} --${kind} -`}
+          note={<ErrorText error={add.error} />}
+        >
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            primary
+            disabled={!name.trim() || !url.trim() || add.isPending}
+          >
+            Add
+          </Button>
+        </DialogFoot>
+      </form>
+    </Dialog>
   );
 }
 

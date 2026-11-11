@@ -50,6 +50,7 @@ type PagePatch = Schema["UpdateStatusPageRequest"];
 
 const statusKeys = {
   all: ["status-pages"],
+  hooks: (slug: string) => ["status-pages", "hooks", slug],
   list: ["status-pages", "list"],
   page: (slug: string) => ["status-pages", "page", slug],
   sources: ["status-pages", "sources"],
@@ -91,6 +92,17 @@ export const statusQueries = {
             params: { path: { page: slug } },
           }),
         ).then(toPage),
+    }),
+  /** A page's update hooks (admins). */
+  hooks: (slug: string) =>
+    queryOptions({
+      queryKey: statusKeys.hooks(slug),
+      queryFn: () =>
+        list(
+          api.GET("/api/v1/status-pages/{page}/hooks", {
+            params: { path: { page: slug } },
+          }),
+        ),
     }),
   /** What components may be built from: services and their checks. */
   sources: () =>
@@ -295,3 +307,45 @@ export const impacts = [
   "partial_outage",
   "major_outage",
 ] as const satisfies StatusImpact["impact"][];
+
+export type StatusHook = Schema["StatusHook"];
+
+export const useAddStatusHook = (slug: string) =>
+  useAction(
+    (req: Schema["AddStatusHookRequest"]) =>
+      body(
+        api.POST("/api/v1/status-pages/{page}/hooks", {
+          params: { path: { page: slug } },
+          body: req,
+        }),
+      ),
+    () => [statusKeys.hooks(slug)],
+    (req) => `Added hook ${req.name}`,
+  );
+
+export const useRemoveStatusHook = (slug: string) =>
+  useAction(
+    (name: string) =>
+      done(
+        api.DELETE("/api/v1/status-pages/{page}/hooks/{hook}", {
+          params: { path: { page: slug, hook: name } },
+        }),
+      ),
+    () => [statusKeys.hooks(slug)],
+    (name) => `Removed hook ${name}`,
+  );
+
+export const useTestStatusHook = (slug: string) =>
+  useAction(
+    (name: string) =>
+      body(
+        api.POST("/api/v1/status-pages/{page}/hooks/{hook}/test", {
+          params: { path: { page: slug, hook: name } },
+        }),
+      ),
+    () => [statusKeys.hooks(slug)],
+    (name, res) =>
+      res.ok
+        ? `Posted a test update to ${name}`
+        : `${name} failed: ${res.error}`,
+  );

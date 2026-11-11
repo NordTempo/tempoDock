@@ -4,7 +4,7 @@ Status: accepted (asked by Saile, 2026-11-10; plan and public page mock
 A picked by Saile, Postplan `mqr6y0crg60j`). Builds on
 [0055](0055-uptime-checks.md) (uptime checks) and
 [0037](0037-analytics.md) (public dashboards, whose serving it copies).
-Phases 1 to 4 of 5; the later phases are under [Later phases](#later-phases).
+Phases 1 to 5 of 5 are in; [Later phases](#later-phases) says what is left.
 
 ## Context
 
@@ -89,6 +89,17 @@ with Dock's.
 | UI | The page's settings: the hostname, its state, the records to add, Check now |
 | Migration | 0093: `status_pages.hostname`, `verify_token`, `verified_at`; `cloudflare_records.status_page_id` |
 
+## Phase 5: update hooks
+
+| Topic | Decision |
+|---|---|
+| Hooks | A page's admins add Slack incoming webhooks, Discord webhooks and JSON webhooks signed like alert webhooks (HMAC-SHA256 in `Dock-Signature`, a secret generated and shown once unless given). The URL and secret are sealed (`sealedStatusHook`, bound to page and name); lists show only the URL's scheme and host |
+| What is posted | Every public update of a published page: an incident opened or updated (not drafts), a window scheduled, started, completed or cancelled, whether by a person or by Dock. Chat hooks get a message (`Incident on Acme: API errors (Identified)`, what it affects, the words and the link; Discord without mentions, at most 2,000 characters); webhooks get `StatusHookPost` JSON. As public as the page: no authors, alerts or services. Edits of past updates aren't posted again |
+| Delivery | Through the alert engine: its client (no redirects, never this server, link-local or metadata addresses), its per-target ordered queue (now `deliveryQueue`, shared by channels and hooks, at most 32 waiting each) and its retries (0, 10 s, 1, 5 and 15 min). The last success and failure show on the hook; **Test** posts once without retries |
+| No subscribe form, no mail | Letting anyone register URLs would have Dock POST wherever a stranger says, and confirming them needs mail, which Dock doesn't send. Visitors follow the Atom feed; a partner sends the page's admins a webhook URL. The public listener stays GET only |
+| API, CLI, UI | `GET`/`POST /status-pages/{page}/hooks`, `DELETE .../hooks/{hook}`, `POST .../hooks/{hook}/test`; `dock status-page hook list\|add\|remove\|test` (URLs from stdin with `-`); the page's **Update hooks** section. Audited as `status_page.hook_add` and `.hook_remove` |
+| Migration | 0094: `status_hooks` |
+
 ## Performance
 
 | What | Cost |
@@ -98,6 +109,7 @@ with Dock's.
 | A render | seven queries and the template (`BenchmarkStatusPage100`, ~12 ms for 100 components, 90 days and 50 incidents, most of it the history query; `BenchmarkRenderStatusPage`, ~3 ms). At most one per page every 5 s while it is viewed and changing, one a minute otherwise |
 | An incident page, history or feed | two or three indexed queries per render, cached like the page |
 | An alert that may draft | one indexed query when an `uptime_down` or crash loop alert opens, one delete when it resolves |
+| Hooks | one indexed query per public update; posting happens on the hook's own goroutine, which exits when its queue is empty |
 | Maintenance | nothing without windows; a time comparison a minute while one is scheduled or running, a map lookup per alert and per probe while one runs; one query to reload the windows when one changes |
 | Day rollup | one statement per finished day and one prune, on the hourly rollup |
 
@@ -123,9 +135,7 @@ Each its own pull request, numbered when it merges.
 2. Incidents (above).
 3. Maintenance windows (above).
 4. Custom hostnames (above).
-5. Update hooks: Slack, Discord and signed webhooks set by admins, through
-   the alert delivery queue. No mail and no public subscribe form: anyone
-   registering URLs would have Dock POST wherever a stranger says.
+5. Update hooks (above).
 6. Surviving the control plane, if wanted.
 
 ## Consequences

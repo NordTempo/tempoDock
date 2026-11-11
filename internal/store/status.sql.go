@@ -108,6 +108,49 @@ func (q *Queries) CreateStatusComponent(ctx context.Context, arg CreateStatusCom
 	return i, err
 }
 
+const createStatusHook = `-- name: CreateStatusHook :one
+INSERT INTO status_hooks (page_id, name, kind, target, config, created_at, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, page_id, name, kind, target, config, created_at, created_by, last_sent_at, last_error, last_error_at
+`
+
+type CreateStatusHookParams struct {
+	PageID    int64
+	Name      string
+	Kind      string
+	Target    string
+	Config    []byte
+	CreatedAt time.Time
+	CreatedBy string
+}
+
+func (q *Queries) CreateStatusHook(ctx context.Context, arg CreateStatusHookParams) (StatusHook, error) {
+	row := q.db.QueryRowContext(ctx, createStatusHook,
+		arg.PageID,
+		arg.Name,
+		arg.Kind,
+		arg.Target,
+		arg.Config,
+		arg.CreatedAt,
+		arg.CreatedBy,
+	)
+	var i StatusHook
+	err := row.Scan(
+		&i.ID,
+		&i.PageID,
+		&i.Name,
+		&i.Kind,
+		&i.Target,
+		&i.Config,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.LastSentAt,
+		&i.LastError,
+		&i.LastErrorAt,
+	)
+	return i, err
+}
+
 const createStatusIncident = `-- name: CreateStatusIncident :one
 INSERT INTO status_incidents (page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, alert_id, created_at, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -308,6 +351,15 @@ func (q *Queries) DeleteStatusComponent(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteStatusHook = `-- name: DeleteStatusHook :exec
+DELETE FROM status_hooks WHERE id = +?
+`
+
+func (q *Queries) DeleteStatusHook(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteStatusHook, id)
+	return err
+}
+
 const deleteStatusIncident = `-- name: DeleteStatusIncident :exec
 DELETE FROM status_incidents WHERE id = +?
 `
@@ -360,6 +412,57 @@ func (q *Queries) EditStatusUpdate(ctx context.Context, arg EditStatusUpdatePara
 		&i.At,
 		&i.CreatedBy,
 		&i.EditedAt,
+	)
+	return i, err
+}
+
+const getStatusHook = `-- name: GetStatusHook :one
+SELECT id, page_id, name, kind, target, config, created_at, created_by, last_sent_at, last_error, last_error_at FROM status_hooks WHERE page_id = +? AND name = +?
+`
+
+type GetStatusHookParams struct {
+	PageID int64
+	Name   string
+}
+
+func (q *Queries) GetStatusHook(ctx context.Context, arg GetStatusHookParams) (StatusHook, error) {
+	row := q.db.QueryRowContext(ctx, getStatusHook, arg.PageID, arg.Name)
+	var i StatusHook
+	err := row.Scan(
+		&i.ID,
+		&i.PageID,
+		&i.Name,
+		&i.Kind,
+		&i.Target,
+		&i.Config,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.LastSentAt,
+		&i.LastError,
+		&i.LastErrorAt,
+	)
+	return i, err
+}
+
+const getStatusHookByID = `-- name: GetStatusHookByID :one
+SELECT id, page_id, name, kind, target, config, created_at, created_by, last_sent_at, last_error, last_error_at FROM status_hooks WHERE id = +?
+`
+
+func (q *Queries) GetStatusHookByID(ctx context.Context, id int64) (StatusHook, error) {
+	row := q.db.QueryRowContext(ctx, getStatusHookByID, id)
+	var i StatusHook
+	err := row.Scan(
+		&i.ID,
+		&i.PageID,
+		&i.Name,
+		&i.Kind,
+		&i.Target,
+		&i.Config,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.LastSentAt,
+		&i.LastError,
+		&i.LastErrorAt,
 	)
 	return i, err
 }
@@ -800,6 +903,46 @@ func (q *Queries) ListStatusHistory(ctx context.Context, arg ListStatusHistoryPa
 	return items, nil
 }
 
+const listStatusHooks = `-- name: ListStatusHooks :many
+SELECT id, page_id, name, kind, target, config, created_at, created_by, last_sent_at, last_error, last_error_at FROM status_hooks WHERE page_id = +? ORDER BY name
+`
+
+// A page's hooks, by name: a handful, read when an update is posted.
+func (q *Queries) ListStatusHooks(ctx context.Context, pageID int64) ([]StatusHook, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusHooks, pageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusHook
+	for rows.Next() {
+		var i StatusHook
+		if err := rows.Scan(
+			&i.ID,
+			&i.PageID,
+			&i.Name,
+			&i.Kind,
+			&i.Target,
+			&i.Config,
+			&i.CreatedAt,
+			&i.CreatedBy,
+			&i.LastSentAt,
+			&i.LastError,
+			&i.LastErrorAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStatusImpacts = `-- name: ListStatusImpacts :many
 SELECT ic.incident_id, ic.component_id, ic.impact, sc.name
 FROM status_incidents AS i
@@ -1179,6 +1322,35 @@ func (q *Queries) ListStatusUpdates(ctx context.Context, arg ListStatusUpdatesPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const setStatusHookFailed = `-- name: SetStatusHookFailed :exec
+UPDATE status_hooks SET last_error = ?, last_error_at = ? WHERE id = +?
+`
+
+type SetStatusHookFailedParams struct {
+	LastError   string
+	LastErrorAt *time.Time
+	ID          int64
+}
+
+func (q *Queries) SetStatusHookFailed(ctx context.Context, arg SetStatusHookFailedParams) error {
+	_, err := q.db.ExecContext(ctx, setStatusHookFailed, arg.LastError, arg.LastErrorAt, arg.ID)
+	return err
+}
+
+const setStatusHookSent = `-- name: SetStatusHookSent :exec
+UPDATE status_hooks SET last_sent_at = ? WHERE id = +?
+`
+
+type SetStatusHookSentParams struct {
+	LastSentAt *time.Time
+	ID         int64
+}
+
+func (q *Queries) SetStatusHookSent(ctx context.Context, arg SetStatusHookSentParams) error {
+	_, err := q.db.ExecContext(ctx, setStatusHookSent, arg.LastSentAt, arg.ID)
+	return err
 }
 
 const setStatusPageHostname = `-- name: SetStatusPageHostname :one

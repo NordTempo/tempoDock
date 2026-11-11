@@ -406,3 +406,92 @@ type PublicFeedEntry struct {
 	Incident, Title string
 	PublicUpdate
 }
+
+// StatusHookKind is where a status page hook posts (phase 5).
+type StatusHookKind string
+
+// Hook kinds: Slack and Discord incoming webhooks, and JSON webhooks
+// signed like alert webhooks.
+const (
+	HookSlack   StatusHookKind = "slack"
+	HookDiscord StatusHookKind = "discord"
+	HookWebhook StatusHookKind = "webhook"
+)
+
+// AddStatusHookRequest adds a hook: Dock posts every public update of
+// the page's incidents and maintenance there.
+type AddStatusHookRequest struct {
+	Name string         `json:"name" minLength:"1" maxLength:"40" example:"slack-status"`
+	Kind StatusHookKind `json:"kind" enum:"slack,discord,webhook"`
+	// URL is the incoming webhook's address; Dock keeps it sealed and
+	// shows only its host.
+	URL string `json:"url" minLength:"1" maxLength:"2000"`
+	// Secret signs a webhook's posts; one is generated without it.
+	Secret string `json:"secret,omitempty" maxLength:"200"`
+}
+
+// StatusHook is a page's hook as lists show it: never its URL's path or
+// its secret.
+type StatusHook struct {
+	Name   string         `json:"name"`
+	Kind   StatusHookKind `json:"kind" enum:"slack,discord,webhook"`
+	Target string         `json:"target" doc:"The URL's scheme and host"`
+	// LastError is the last failed delivery's, while it is newer than the
+	// last good one.
+	LastSentAt  *time.Time `json:"last_sent_at,omitempty"`
+	LastError   string     `json:"last_error,omitempty"`
+	LastErrorAt *time.Time `json:"last_error_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CreatedBy   string     `json:"created_by"`
+}
+
+// CreatedStatusHook is a new hook, with the webhook secret Dock generated
+// (shown only here).
+type CreatedStatusHook struct {
+	Hook   StatusHook `json:"hook"`
+	Secret string     `json:"secret,omitempty"`
+}
+
+// StatusHookTest is how a test post went.
+type StatusHookTest struct {
+	OK    bool       `json:"ok"`
+	Error string     `json:"error,omitempty"`
+	Hook  StatusHook `json:"hook"`
+}
+
+// StatusHookPost is what a webhook hook receives: the page, the incident
+// or maintenance window and the update just posted, as public as the
+// page itself. Signed with the hook's secret in Dock-Signature, like
+// alert webhooks. Event is "update" or "test".
+type StatusHookPost struct {
+	Event    string               `json:"event"`
+	Page     StatusHookPage       `json:"page"`
+	Incident StatusHookIncident   `json:"incident"`
+	Update   StatusHookUpdateBody `json:"update"`
+	SentAt   time.Time            `json:"sent_at"`
+}
+
+// StatusHookPage is the page a hook post is about.
+type StatusHookPage struct {
+	Title string `json:"title"`
+	URL   string `json:"url,omitempty"`
+}
+
+// StatusHookIncident is the incident or window a hook post is about.
+type StatusHookIncident struct {
+	ID         string         `json:"id"`
+	Kind       IncidentKind   `json:"kind"`
+	Title      string         `json:"title"`
+	State      IncidentState  `json:"state"`
+	URL        string         `json:"url,omitempty"`
+	Components []StatusImpact `json:"components"`
+	StartsAt   time.Time      `json:"starts_at"`
+	EndsAt     *time.Time     `json:"ends_at,omitempty"`
+}
+
+// StatusHookUpdateBody is the update a hook post carries.
+type StatusHookUpdateBody struct {
+	State   IncidentState `json:"state"`
+	Message string        `json:"message"`
+	At      time.Time     `json:"at"`
+}

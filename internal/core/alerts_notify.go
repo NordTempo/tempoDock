@@ -45,8 +45,8 @@ import (
 var deliveryBackoff = []time.Duration{0, 10 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute}
 
 const (
-	// maxQueued caps the notifications waiting for one channel; more are
-	// dropped and counted as failures.
+	// maxQueued caps the notifications waiting for one channel (or status
+	// page hook); more are dropped and counted as failures.
 	maxQueued = 32
 	// deliveryTimeout bounds one attempt.
 	deliveryTimeout = 15 * time.Second
@@ -136,62 +136,62 @@ func (c *Core) remind(ctx context.Context, now time.Time) {
 	}
 }
 
-// outbox queues notifications per channel. Each channel with something
-// queued has one goroutine sending its queue in order (an alert's
-// resolution never overtakes its opening), which exits once the queue is
-// empty.
-type outbox struct {
+// deliveryQueue queues what is sent to each target (an alert channel,
+// a status page hook) by its ID. Each target with something queued has
+// one goroutine sending its queue in order (an alert's resolution never
+// overtakes its opening), which exits once the queue is empty.
+type deliveryQueue[T any] struct {
 	mu     sync.Mutex
-	queues map[int64][]apitypes.AlertNotification // by channel ID
+	queues map[int64][]T
 }
 
-// deliver queues n for ch and starts the channel's sender if it isn't
-// running. A channel with maxQueued notifications waiting (it has been
-// failing for a while) drops new ones and records that.
-func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
-	o := &c.alerts.outbox
-	o.mu.Lock()
-	q, running := o.queues[ch.ID]
-	if len(q) >= maxQueued {
-		o.mu.Unlock()
-		c.channelFailed(c.ctx, ch.ID, errors.New("too many notifications waiting to be sent; this one was dropped"))
-		return
+// outbox is the alert channels' queue.
+type outbox = deliveryQueue[apitypes.AlertNotification]
+
+// add queues item for target id. start says the caller must start the
+// target's sender (sendAll); full that maxQueued items wait already, so
+// item was dropped.
+func (q *deliveryQueue[T]) add(id int64, item T) (start, full bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.queues == nil {
+		q.queues = map[int64][]T{}
 	}
-	o.queues[ch.ID] = append(q, n)
-	o.mu.Unlock()
-	if running {
-		return
+	cur, running := q.queues[id]
+	if len(cur) >= maxQueued {
+		return false, true
 	}
-	c.wg.Add(1)
-	go c.sendQueue(ch.ID)
+	q.queues[id] = append(cur, item)
+	return !running, false
 }
 
-// sendQueue sends a channel's queued notifications in order until the
-// queue is empty.
-func (c *Core) sendQueue(id int64) {
-	defer c.wg.Done()
-	o := &c.alerts.outbox
+// sendAll sends target id's queue in order with send until it is empty
+// or ctx ends. The sender add asked for runs it, counted in c.wg.
+func (q *deliveryQueue[T]) sendAll(ctx context.Context, id int64, send func(T)) {
 	for {
-		o.mu.Lock()
-		q := o.queues[id]
-		if len(q) == 0 || c.ctx.Err() != nil {
-			delete(o.queues, id)
-			o.mu.Unlock()
+		q.mu.Lock()
+		cur := q.queues[id]
+		if len(cur) == 0 || ctx.Err() != nil {
+			delete(q.queues, id)
+			q.mu.Unlock()
 			return
 		}
-		n := q[0]
-		o.mu.Unlock()
-		c.sendWithRetries(id, n)
-		o.mu.Lock()
-		o.queues[id] = o.queues[id][1:]
-		o.mu.Unlock()
+		item := cur[0]
+		q.mu.Unlock()
+		send(item)
+		q.mu.Lock()
+		q.queues[id] = q.queues[id][1:]
+		q.mu.Unlock()
 	}
 }
 
-// sendWithRetries makes up to len(deliveryBackoff) attempts at one
-// notification and records the outcome on the channel. A channel removed
-// meanwhile isn't sent to.
-func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
+// errGone stops a delivery's retries: what it was for was removed.
+var errGone = errors.New("removed meanwhile")
+
+// withRetries makes up to len(deliveryBackoff) attempts, waiting between
+// them, until one succeeds, returns errGone or the daemon closes. It
+// returns the last attempt's error.
+func (c *Core) withRetries(attempt func() error) error {
 	var err error
 	for _, wait := range deliveryBackoff {
 		if wait > 0 {
@@ -199,24 +199,55 @@ func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
 			select {
 			case <-c.ctx.Done():
 				t.Stop()
-				return
+				return c.ctx.Err()
 			case <-t.C:
 			}
 		}
-		ch, gerr := c.store.GetAlertChannelByID(c.ctx, id)
-		if gerr != nil {
-			return // removed, or the daemon is closing
-		}
-		if err = c.send(c.ctx, ch, n); err == nil {
-			c.channelSent(c.ctx, id)
-			return
-		}
-		if c.ctx.Err() != nil {
-			return
+		if err = attempt(); err == nil || errors.Is(err, errGone) || c.ctx.Err() != nil {
+			return err
 		}
 	}
-	c.log.Warn("alerts: delivery failed", "channel", id, "alert", n.Alert.Title, "err", err)
-	c.channelFailed(c.ctx, id, err)
+	return err
+}
+
+// deliver queues n for ch and starts the channel's sender if it isn't
+// running. A channel with maxQueued notifications waiting (it has been
+// failing for a while) drops new ones and records that.
+func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
+	start, full := c.alerts.outbox.add(ch.ID, n)
+	if full {
+		c.channelFailed(c.ctx, ch.ID, errors.New("too many notifications waiting to be sent; this one was dropped"))
+		return
+	}
+	if !start {
+		return
+	}
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		c.alerts.outbox.sendAll(c.ctx, ch.ID, func(n apitypes.AlertNotification) { c.sendWithRetries(ch.ID, n) })
+	}()
+}
+
+// sendWithRetries makes up to len(deliveryBackoff) attempts at one
+// notification and records the outcome on the channel. A channel removed
+// meanwhile isn't sent to.
+func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
+	err := c.withRetries(func() error {
+		ch, err := c.store.GetAlertChannelByID(c.ctx, id)
+		if err != nil {
+			return errGone // removed, or the daemon is closing
+		}
+		return c.send(c.ctx, ch, n)
+	})
+	switch {
+	case err == nil:
+		c.channelSent(c.ctx, id)
+	case errors.Is(err, errGone) || c.ctx.Err() != nil:
+	default:
+		c.log.Warn("alerts: delivery failed", "channel", id, "alert", n.Alert.Title, "err", err)
+		c.channelFailed(c.ctx, id, err)
+	}
 }
 
 func (c *Core) channelSent(ctx context.Context, id int64) {

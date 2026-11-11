@@ -69,6 +69,43 @@ func registerStatusPages(s *Server, a huma.API) {
 		return reply(s.core.CheckStatusHostname(ctx, actor, in.Page))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "list-status-hooks", Method: http.MethodGet, Path: statusPagePathT + "/hooks",
+		Summary: "List a status page's hooks", Tags: tags,
+		Description: "Where Dock posts the page's public updates: Slack, Discord and signed webhooks, with only their URLs' hosts. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *StatusPagePath) (*out[[]apitypes.StatusHook], error) {
+		return reply(s.core.ListStatusHooks(ctx, actor, in.Page))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "add-status-hook", Method: http.MethodPost, Path: statusPagePathT + "/hooks",
+		Summary: "Add a status page hook", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "Dock posts every public update of the page's incidents and maintenance there, with the alert channels' retries. A webhook without a secret gets one, shown only in this answer. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		StatusPagePath
+		Body apitypes.AddStatusHookRequest
+	}) (*out[apitypes.CreatedStatusHook], error) {
+		return reply(s.core.AddStatusHook(ctx, actor, in.Page, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-status-hook", Method: http.MethodDelete, Path: statusPagePathT + "/hooks/{hook}",
+		Summary: "Remove a status page hook", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		StatusPagePath
+		Hook string `path:"hook"`
+	}) (*struct{}, error) {
+		return nil, s.core.RemoveStatusHook(ctx, actor, in.Page, in.Hook)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "test-status-hook", Method: http.MethodPost, Path: statusPagePathT + "/hooks/{hook}/test",
+		Summary: "Test a status page hook", Tags: tags,
+		Description: "Posts a test update once, without retries, and says how it went. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		StatusPagePath
+		Hook string `path:"hook"`
+	}) (*out[apitypes.StatusHookTest], error) {
+		return reply(s.core.TestStatusHook(ctx, actor, in.Page, in.Hook))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "set-status-components", Method: http.MethodPut, Path: statusPagePathT + "/components",
 		Summary: "Set a status page's components", Tags: tags,
 		Description: "The whole list, in order: public names, groups and sources (services as project/environment/service, or uptime check IDs; never previews). Organization admins.",

@@ -447,6 +447,7 @@ func (c *Core) OpenIncident(ctx context.Context, a Actor, slug string, req apity
 		params.PublishedAt = &t
 	}
 	var row store.StatusIncident
+	var first store.StatusUpdate
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
 		if row, err = q.CreateStatusIncident(ctx, params); err != nil {
@@ -458,7 +459,7 @@ func (c *Core) OpenIncident(ctx context.Context, a Actor, slug string, req apity
 		if draft {
 			return nil
 		}
-		_, err = q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: row.ID, State: string(state), Body: msg, At: t, CreatedBy: a.Name})
+		first, err = q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: row.ID, State: string(state), Body: msg, At: t, CreatedBy: a.Name})
 		return err
 	})
 	if err != nil {
@@ -470,6 +471,9 @@ func (c *Core) OpenIncident(ctx context.Context, a Actor, slug string, req apity
 	}
 	c.auditIncident(ctx, a, "incident.open", p, row.PublicID, fmt.Sprintf("%s %s %q (%s)", what, row.PublicID, title, state))
 	c.incidentChanged()
+	if !draft {
+		c.statusUpdatePosted(ctx, p, row, first)
+	}
 	return c.incidentView(ctx, p, row)
 }
 
@@ -694,8 +698,11 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 			next.StartsAt = t
 		}
 	}
+	var posted store.StatusUpdate
+	var updated store.StatusIncident
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if _, err := q.UpdateStatusIncident(ctx, next); err != nil {
+		var err error
+		if updated, err = q.UpdateStatusIncident(ctx, next); err != nil {
 			return err
 		}
 		if req.Components != nil {
@@ -703,7 +710,7 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 				return err
 			}
 		}
-		_, err := q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: row.ID, State: string(req.State), Body: msg, At: t, CreatedBy: a.Name})
+		posted, err = q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: row.ID, State: string(req.State), Body: msg, At: t, CreatedBy: a.Name})
 		return err
 	})
 	if err != nil {
@@ -729,6 +736,7 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 	} else {
 		c.incidentChanged()
 	}
+	c.statusUpdatePosted(ctx, p, updated, posted)
 	return c.GetIncident(ctx, a, row.PublicID)
 }
 

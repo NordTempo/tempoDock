@@ -1026,6 +1026,20 @@ type StatusComponent struct {
 	Auto        bool
 }
 
+type StatusHook struct {
+	ID          int64
+	PageID      int64
+	Name        string
+	Kind        string
+	Target      string
+	Config      []byte
+	CreatedAt   time.Time
+	CreatedBy   string
+	LastSentAt  *time.Time
+	LastError   string
+	LastErrorAt *time.Time
+}
+
 type StatusIncident struct {
 	ID          int64
 	PageID      int64
