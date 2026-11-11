@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,7 +330,24 @@ func TestChannelsNeverReachTheServer(t *testing.T) {
 			t.Errorf("channel to %s: %v", u, err)
 		}
 	}
-	h.channel(apitypes.CreateAlertChannelRequest{Name: "lan", Kind: apitypes.ChannelSlack, URL: "http://192.168.1.20/hooks/dock"})
+	// The platform's channels may reach a homelab's LAN; an org's may not
+	// (the LAN, other orgs' containers), nor its status page hooks or SMTP
+	// hosts, unless the operator allows the range for apps.
+	h.platformChannel(apitypes.CreateAlertChannelRequest{Name: "lan", Kind: apitypes.ChannelSlack, URL: "http://192.168.1.20/hooks/dock"})
+	for _, req := range []apitypes.CreateAlertChannelRequest{
+		{Name: "lan", Kind: apitypes.ChannelSlack, URL: "http://192.168.1.20/hooks/dock"},
+		{Name: "bridge", Kind: apitypes.ChannelWebhook, URL: "http://172.17.0.5:8080/admin"},
+		{Name: "mail", Kind: apitypes.ChannelEmail, SMTP: &apitypes.SMTPSettings{Host: "127.0.0.1", Port: 7071, From: "a@x.io", To: []string{"b@x.io"}}},
+		{Name: "mail2", Kind: apitypes.ChannelEmail, SMTP: &apitypes.SMTPSettings{Host: "10.0.0.2", From: "a@x.io", To: []string{"b@x.io"}}},
+	} {
+		if _, err := h.c.CreateAlertChannel(h.ctx, testSystem, false, req); CodeOf(err) != apitypes.CodeValidation {
+			t.Errorf("org channel %s: %v", req.Name, err)
+		}
+	}
+	allowed := newAlertEngine([]netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")})
+	if _, _, _, err := allowed.channelSettings(apitypes.CreateAlertChannelRequest{Name: "lan", Kind: apitypes.ChannelSlack, URL: "http://192.168.1.20/hooks/dock"}, true); err != nil {
+		t.Errorf("an org channel in [network] allow_private: %v", err)
+	}
 
 	// A name that resolves to loopback is refused when dialing.
 	k := newReceiver(h)

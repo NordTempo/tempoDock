@@ -284,7 +284,7 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 		}
 		// Signed at the attempt, not at sent_at: receivers reject old
 		// timestamps, and a retry goes out up to 20 minutes later.
-		return c.alerts.post(ctx, cfg.URL, body, map[string]string{
+		return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, map[string]string{
 			SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": n.Event,
 		})
 	case apitypes.ChannelSlack:
@@ -292,13 +292,14 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 		if err != nil {
 			return err
 		}
-		return c.alerts.post(ctx, cfg.URL, body, nil)
+		return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
 	case apitypes.ChannelEmail:
 		if cfg.SMTP == nil {
 			return errors.New("the channel has no SMTP settings")
 		}
 		subject, text := emailText(n)
-		return sendMail(ctx, *cfg.SMTP, subject, text)
+		g, _ := c.alerts.guardFor(ch.OrgID != nil)
+		return sendMail(ctx, g, *cfg.SMTP, subject, text)
 	}
 	return fmt.Errorf("unknown channel kind %q", ch.Kind)
 }
@@ -315,18 +316,17 @@ func signWebhook(secret string, at time.Time, body []byte) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// newChannelClient is the HTTP client webhook and Slack channels post
+// newChannelClient is an HTTP client webhook and Slack channels post
 // with. It never follows redirects: a channel's URL is where alerts go,
-// nowhere else. It never connects to the server itself or to link-local
-// addresses either (e.guard, checked after DNS), and keeps no idle
-// connections: alerts are rare.
-func newChannelClient(e *alertEngine) *http.Client {
+// nowhere else. It never connects to addresses g refuses either (checked
+// after DNS), and keeps no idle connections: alerts are rare.
+func newChannelClient(g *egressGuard) *http.Client {
 	return &http.Client{
 		Timeout:       deliveryTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: &http.Transport{
 			Proxy:               http.ProxyFromEnvironment,
-			DialContext:         (&net.Dialer{Timeout: deliveryTimeout, Control: e.guard.control}).DialContext,
+			DialContext:         (&net.Dialer{Timeout: deliveryTimeout, Control: g.control}).DialContext,
 			TLSHandshakeTimeout: deliveryTimeout,
 			DisableKeepAlives:   true,
 		},
@@ -336,10 +336,25 @@ func newChannelClient(e *alertEngine) *http.Client {
 // AllowLoopbackAlertChannels lets alert channels deliver to this server's
 // own addresses, which they never may in production (egressGuard.addrErr).
 // For tests whose receivers listen on 127.0.0.1.
-func (c *Core) AllowLoopbackAlertChannels(allow bool) { c.alerts.guard.loopback.Store(allow) }
+func (c *Core) AllowLoopbackAlertChannels(allow bool) {
+	c.alerts.guard.loopback.Store(allow)
+	c.alerts.orgGuard.loopback.Store(allow)
+}
 
-// post sends a JSON body; anything but a 2xx answer is an error.
-func (e *alertEngine) post(ctx context.Context, target string, body []byte, headers map[string]string) error {
+// guardFor is the guard of an org's channels or hooks (org) or the
+// platform's: only the operator's may reach private addresses, where a
+// homelab's ntfy lives (ADR 0020); an org admin's would reach the LAN and
+// other orgs' containers past the app firewall.
+func (e *alertEngine) guardFor(org bool) (*egressGuard, *http.Client) {
+	if org {
+		return &e.orgGuard, e.orgClient
+	}
+	return &e.guard, e.client
+}
+
+// post sends a JSON body, with the org's guard (org) or the platform's
+// (guardFor); anything but a 2xx answer is an error.
+func (e *alertEngine) post(ctx context.Context, org bool, target string, body []byte, headers map[string]string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -349,7 +364,8 @@ func (e *alertEngine) post(ctx context.Context, target string, body []byte, head
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := e.client.Do(req)
+	_, client := e.guardFor(org)
+	resp, err := client.Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
@@ -420,17 +436,17 @@ func emailText(n apitypes.AlertNotification) (subject, text string) {
 	return "dock " + headline(n), b.String()
 }
 
-// sendMail sends one plain-text mail. Port 465 is TLS from the start;
-// on other ports STARTTLS is used when offered, and required before a
-// password is sent.
-func sendMail(ctx context.Context, s apitypes.SMTPSettings, subject, text string) error {
+// sendMail sends one plain-text mail, never to an address g refuses. Port
+// 465 is TLS from the start; on other ports STARTTLS is used when
+// offered, and required before a password is sent.
+func sendMail(ctx context.Context, g *egressGuard, s apitypes.SMTPSettings, subject, text string) error {
 	port := s.Port
 	if port == 0 {
 		port = 587
 	}
 	addr := net.JoinHostPort(s.Host, strconv.Itoa(port))
 	tlsCfg := &tls.Config{ServerName: s.Host, MinVersion: tls.VersionTLS12}
-	d := &net.Dialer{}
+	d := &net.Dialer{Control: g.control}
 	var conn net.Conn
 	var err error
 	if port == 465 {
@@ -577,7 +593,7 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, platform bool, r
 	if err := validName("channel", req.Name); err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
-	cfg, target, generated, err := c.alerts.channelSettings(req)
+	cfg, target, generated, err := c.alerts.channelSettings(req, !platform)
 	if err != nil {
 		return apitypes.CreatedAlertChannel{}, err
 	}
@@ -621,7 +637,8 @@ func (c *Core) CreateAlertChannel(ctx context.Context, a Actor, platform bool, r
 
 // channelSettings validates a new channel's settings and returns what is
 // sealed, what lists show, and a generated webhook secret.
-func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (cfg channelConfig, target, generated string, err error) {
+func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, org bool) (cfg channelConfig, target, generated string, err error) {
+	guard, _ := e.guardFor(org)
 	switch req.Kind {
 	case apitypes.ChannelWebhook, apitypes.ChannelSlack:
 		u, perr := url.Parse(req.URL)
@@ -632,7 +649,7 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (c
 			return cfg, "", "", invalid("SMTP settings are for email channels")
 		}
 		// Named hosts are checked when delivering (newChannelClient), after DNS.
-		if err := e.guard.hostErr(u.Hostname()); err != nil {
+		if err := guard.hostErr(u.Hostname()); err != nil {
 			return cfg, "", "", invalid("%v", err)
 		}
 		cfg.URL, target = req.URL, u.Scheme+"://"+u.Host
@@ -659,6 +676,9 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest) (c
 			if _, perr := mail.ParseAddress(addr); perr != nil || strings.ContainsAny(addr, "\r\n") {
 				return cfg, "", "", invalid("%q is not an email address", addr)
 			}
+		}
+		if err := guard.hostErr(s.Host); err != nil {
+			return cfg, "", "", invalid("%v", err)
 		}
 		smtpCopy := *s
 		cfg.SMTP, target = &smtpCopy, strings.Join(s.To, ", ")

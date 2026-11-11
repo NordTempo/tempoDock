@@ -187,7 +187,10 @@ for the exact rules.
   organization's (failed deploys, crash loops, unhealthy services, failed
   backups and jobs, uptime, domains) go to its channels; the platform's
   (full disks, memory, CPU, offline servers, failed updates) to the
-  operators' channels. Channels are webhooks, Slack or email.
+  operators' channels. Channels are webhooks, Slack or email. An org's
+  channels, status page hooks and log drains never reach the server
+  itself, cloud metadata or private addresses outside `[network]
+  allow_private`; only the platform's channels may reach the LAN.
 - **Platform isolation:** the daemon, Caddy and BuildKit are installed by the
   install script, never deployed through the platform. An agent cannot deploy
   over the control plane.
