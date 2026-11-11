@@ -36,7 +36,8 @@ import type { ServiceSource } from "./open";
 
 const sources = [
   ["image", "Image"],
-  ["source", "Source"],
+  // "Folder", as the Deploy window says: code from this machine.
+  ["source", "Folder"],
   ["github", "GitHub"],
   ["database", "Database"],
 ] as const;

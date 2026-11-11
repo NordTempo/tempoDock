@@ -27,7 +27,7 @@ function Settings() {
   ] as const;
   return (
     <>
-      <nav aria-label="Settings" className="seg self-start">
+      <nav aria-label="Settings" className="seg views self-start">
         {views.map(([label, to], i) => (
           <Link
             key={to}

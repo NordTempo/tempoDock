@@ -697,6 +697,20 @@
     color: var(--color-fg);
   }
 
+  /* A tab's views (Requests' Traffic and Visitors, Settings' Domains):
+     the body size and colour, so they read as places, not as fine print. */
+  .seg.views {
+    font-size: var(--text-xs);
+  }
+
+  .seg.views > * {
+    color: var(--color-sec);
+  }
+
+  .seg.views > *:hover {
+    color: var(--color-fg);
+  }
+
   .seg > [aria-pressed="true"],
   .seg > [aria-selected="true"],
   .seg > [aria-current="page"],

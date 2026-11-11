@@ -22,7 +22,7 @@ function Requests() {
   const ref = servicePath(Route.useParams());
   return (
     <>
-      <nav aria-label="Requests" className="seg self-start">
+      <nav aria-label="Requests" className="seg views self-start">
         {views.map(([label, to], i) => (
           <Link
             key={to}

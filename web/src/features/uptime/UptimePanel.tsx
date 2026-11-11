@@ -78,7 +78,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             )
           }
         >
-          Checks from another server
+          Uptime checks
         </SectionHead>
         {domains.length === 0 ? (
           <p className="text-mut">
