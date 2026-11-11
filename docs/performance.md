@@ -6,7 +6,9 @@ is taken from them. These rules apply to every change, by people and agents
 alike. `make perf` checks the budgets. CI runs the same checks on every
 pull request as two jobs (`make perf-artifacts` and `make perf-bench`,
 with `-soft-timing`) and posts the results as a comment on it (the
-`perf-comment` job), updated on each push. On shared runners timing
+`perf-comment` job), updated on each push. A change to the UI alone
+(`scripts/ci/changes.sh`) runs only the binary and UI checks, and no
+benchmarks. On shared runners timing
 budgets only warn, while sizes, memory and allocations still fail, so a
 **warn** row in that comment is a regression to fix, or to explain in the
 PR, before merging. Timing is enforced by running `make perf` locally.
@@ -159,7 +161,7 @@ fourth.
 make perf                        # builds both UIs, dock, dock-analytics and tempobase, checks everything
 make perf-bench                  # only the Go benchmarks; builds nothing
 make perf-artifacts              # everything but the benchmarks (CI's perf-artifacts job)
-make perf PERF_FLAGS='-checks daemon,ui'      # only some checks: binary,cli,daemon,ui,bench,analytics,traces,tempobase-binary,tempobase-daemon,tempobase-ui
+make perf PERF_FLAGS='-checks daemon,ui'      # only some checks: binary,cli,daemon,served-ui,ui,bench,analytics,traces,tempobase-binary,tempobase-daemon,tempobase-ui
 make perf PERF_FLAGS='-skip bench'            # all but some
 make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable'  # also tempoBase's Postgres idle close
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
