@@ -15,6 +15,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service and switch to it |
 | [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
 | [Single sign-on](sso.md) | Continue with Google, GitHub or any OpenID Connect provider, set up by operators; who gets an account, invite only, turning passwords off |
+| [Tracing](tracing.md) | Apps' traces with no setup: OpenTelemetry SDKs send to Dock, `dock traces` reads them |
 | [Status pages](status-pages.md) | A public page of your services' status and 90 days of uptime, from Dock's uptime checks |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |
 | [API](api.md) | Auth, OpenAPI spec, event stream, errors, curl examples |

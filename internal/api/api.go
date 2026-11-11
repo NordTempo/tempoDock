@@ -133,6 +133,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerOperator(s, a)
 	registerAnalytics(s, a)
 	registerTracing(s, a)
+	registerTraces(s, a)
 	registerSites(s, a)
 	registerSiteLive(s, a)
 	registerConnect(s, a, mux)

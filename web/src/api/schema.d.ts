@@ -4051,6 +4051,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a service's traces
+         * @description The traces that entered the service over the range: each one's entry span (name, route, status, duration, release) and why Dock kept it. Needs tracing on (`dock tracing on`).
+         */
+        get: operations["list-traces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/traces/{trace}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a trace
+         * @description Every span of a trace that went through the service, by start time, with attributes and events: across services too, hiding those the caller can't see. Secret values are masked as in logs.
+         */
+        get: operations["get-trace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/traffic": {
         parameters: {
             query?: never;
@@ -10254,6 +10294,89 @@ export interface components {
             revoked_at?: string;
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
+        };
+        Trace: {
+            /** Format: double */
+            duration_ms: number;
+            spans: components["schemas"]["TraceSpan"][] | null;
+            /** Format: date-time */
+            start: string;
+            trace: string;
+            truncated?: boolean;
+        };
+        TraceEvent: {
+            /**
+             * Format: double
+             * @description After the span's start
+             */
+            at_ms: number;
+            attrs?: {
+                [key: string]: unknown;
+            };
+            name: string;
+        };
+        TraceList: {
+            more?: boolean;
+            /** @enum {string} */
+            range: "1h" | "24h" | "7d";
+            /** Format: date-time */
+            since: string;
+            traces: components["schemas"]["TraceSummary"][] | null;
+        };
+        TraceSpan: {
+            attrs?: {
+                [key: string]: unknown;
+            };
+            /** Format: double */
+            duration_ms: number;
+            environment?: string;
+            events?: components["schemas"]["TraceEvent"][] | null;
+            /** @description A span of a service the caller can't see */
+            hidden?: boolean;
+            /** Format: int64 */
+            http_status?: number;
+            /** @enum {string} */
+            kept: "sampled" | "error" | "slow" | "forced";
+            /** @enum {string} */
+            kind: "unspecified" | "internal" | "server" | "client" | "producer" | "consumer" | "edge";
+            method?: string;
+            name?: string;
+            /** Format: double */
+            offset_ms: number;
+            parent?: string;
+            project?: string;
+            /** Format: int64 */
+            release?: number;
+            route?: string;
+            service?: string;
+            span: string;
+            /** @enum {string} */
+            status: "unset" | "ok" | "error";
+        };
+        TraceSummary: {
+            /** Format: double */
+            duration_ms: number;
+            error: boolean;
+            /** Format: int64 */
+            http_status?: number;
+            /** @enum {string} */
+            kept: "sampled" | "error" | "slow" | "forced";
+            /** @enum {string} */
+            kind: "unspecified" | "internal" | "server" | "client" | "producer" | "consumer" | "edge";
+            method?: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description Release number of the service that served it; 0 when unknown
+             */
+            release: number;
+            route?: string;
+            /** @description The entry span's ID */
+            span: string;
+            /** Format: date-time */
+            start: string;
+            /** @description Trace ID, 32 hex digits */
+            trace: string;
         };
         TracingSettings: {
             enabled: boolean;
@@ -34666,6 +34789,175 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-traces": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description How far back, ending now */
+                range?: "1h" | "24h" | "7d";
+                /** @description Only this release (number) */
+                release?: number;
+                /** @description Only this release (number) and later ones */
+                since_release?: number;
+                /** @description Only this HTTP method */
+                method?: string;
+                /** @description Only this route, as the app names it (http.route), e.g. /orders/{id} */
+                route?: string;
+                /** @description Only traces whose entry span failed: an error status or a 5xx */
+                errors?: boolean;
+                /** @description Only traces at least this long */
+                slower_than_ms?: number;
+                /** @description Slowest first instead of newest first */
+                slowest?: boolean;
+                /** @description At most this many (0: 50) */
+                limit?: number;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceList"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-trace": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description A time in the trace (RFC 3339), which makes finding it quick; a trace list's start */
+                at?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+                /** @description Trace ID, 32 hex digits */
+                trace: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
