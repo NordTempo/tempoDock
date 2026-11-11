@@ -37,7 +37,11 @@ type Store struct {
 // pending migrations. WAL mode lets the admin CLI write while the daemon runs.
 func Open(ctx context.Context, path string) (*Store, error) {
 	q := url.Values{}
-	for _, p := range []string{"foreign_keys(1)", "journal_mode(WAL)", "busy_timeout(10000)", "synchronous(NORMAL)"} {
+	// cache_size: each of the pool's connections keeps its own page cache
+	// (2 MB by default, outside Go's heap). 512 KB holds the hot pages of
+	// a control plane's database, and the OS page cache holds the rest:
+	// an idle daemon keeps about 2 MB less (docs/performance.md).
+	for _, p := range []string{"foreign_keys(1)", "journal_mode(WAL)", "busy_timeout(10000)", "synchronous(NORMAL)", "cache_size(-512)"} {
 		q.Add("_pragma", p)
 	}
 	// Writers take the lock up front, so read-then-write transactions never

@@ -355,6 +355,12 @@ end) are not listed.
   of SQLite memory for queries it never runs. A transaction that meets a query for the first
   time runs it unprepared and has it prepared in the background, since
   preparing needs a second connection. Don't build SQL strings at runtime.
+- **A small page cache per connection.** Each of the pool's 8 connections
+  keeps its own page cache, outside Go's heap. SQLite's default is 2 MB;
+  Dock sets 512 KB (`cache_size(-512)` in `internal/store/store.go`), which
+  holds a control plane's hot pages while the OS page cache holds the
+  rest. An idle daemon kept about 2 MB less (2026-11-11), with the query
+  benchmarks unchanged.
 - **The re-prepare pitfall.** The SQLite in `modernc.org/sqlite` is built
   with `SQLITE_ENABLE_STAT4`, so the planner looks at bound values for
   `column = ?` on an indexed column, for `LIMIT ?` and for `LIKE ?`, and
