@@ -56,7 +56,10 @@ const (
 	// Fonts a first load can fetch: style A's Inter and JetBrains Mono,
 	// Latin subsets (docs/design/README.md).
 	initialFontsBudget = 100 << 10
-	binaryGrowthLimit  = 0.10
+	// binaryGrowthLimit is how far a binary may grow past its recorded
+	// baseline. Kept small so the baseline, not this margin, is the
+	// budget: re-recording it is a visible, reviewed raise.
+	binaryGrowthLimit = 0.03
 )
 
 type options struct {
