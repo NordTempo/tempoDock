@@ -615,8 +615,10 @@ function AddCheck({
             className="field w-[96px] py-[7px] font-mono"
           />
         </label>
+        {/* With a check of this URL already there, changing it is the
+            likelier intent, so that is the primary; adding a second isn't. */}
         <Act
-          primary
+          primary={existing.length === 0}
           type="submit"
           cli={addCli(ref, req)}
           disabled={req.url === "" || repeat || add.isPending}
@@ -650,6 +652,7 @@ function AddCheck({
           {first && !repeat && (
             <Button
               small
+              primary
               disabled={update.isPending}
               title={`dock uptime update ${first.id} --interval ${intervalS}s --status ${status} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
@@ -670,7 +673,7 @@ function AddCheck({
                 )
               }
             >
-              Or change the existing one to every {every(intervalS)}
+              Change it to every {every(intervalS)}
               {status !== first.expect_status ? `, expects ${status}` : ""}
             </Button>
           )}
