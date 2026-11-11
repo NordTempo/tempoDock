@@ -38,7 +38,7 @@ than on a quiet machine.
 | UI initial CSS (gzip) | ≤ 30 KB | 13.9 KB |
 | UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 63.6 KB (Inter and JetBrains Mono, Latin subsets) |
 | UI fonts (all font files) | ≤ 150 KB | 63.6 KB |
-| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 10% (67.8 MB) | 66.3 MB (2026-11-10, with the UI embedded gzipped): measure before adding a dependency |
+| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 3% (62.3 MB) | 60.5 MB (2026-11-11, Huma's `Register` no longer generic, see below): measure before adding a dependency |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
 
 `make perf` also prints, without a budget, the daemon's memory after
@@ -70,7 +70,7 @@ and `tempobase-ui`. Measured as above (CI, 2026-11-10).
 
 | What | Budget | Measured |
 |---|---|---|
-| Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 10% (`tempobase_binary_bytes`) | 20.2 MB, its UI embedded gzipped |
+| Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 3% (`tempobase_binary_bytes`) | 18.9 MB, its UI embedded gzipped |
 | Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 12.0 MB |
 | Idle CPU | ≤ 1 clock tick in 30 s | 0 |
 | Idle wake-ups | ≤ 0.1/s | 0.03/s (Go's forced GC is ~0.01/s) |
@@ -451,6 +451,20 @@ end) are not listed.
   allocs/op; the baseline gates them.
 - **GOMEMLIMIT** is set by the systemd unit; don't fight it with manual
   `runtime.GC()` calls.
+
+## Binary size
+
+- Generic functions are compiled once per shape of their type
+  arguments, and every struct type is a shape of its own. Upstream
+  Huma's `Register` copied about 25 KB per API operation, 9.6 MB for
+  Dock's ~330, so Dock builds Huma from `third_party/huma`
+  (`PATCHED.md`), whose `Register` is a small wrapper around a
+  non-generic body: an operation now costs about 1 KB. Check a generic
+  helper the same way before calling it from every handler:
+  `go tool nm -size -sort size` on a build without `-s -w`.
+- Measure a new dependency with `go run ./scripts/perf -checks binary`
+  before adding it ([ADR 0072](decisions/0072-mysql-and-redis-in-the-data-panel.md)
+  ruled one out on its 1.9 MB).
 
 ## CLI
 
