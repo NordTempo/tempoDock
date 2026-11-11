@@ -244,11 +244,16 @@ func vulnAlert(key string, scan store.ImageScan, u store.ListImageScanLiveUsesRo
 			msg += fmt.Sprintf("; %d known exploited", kev)
 		}
 	}
-	switch countFindings(nodes).worstFix {
-	case apitypes.FixRebuild:
+	// worstFix fixes some of the worst findings, not necessarily all.
+	switch fix := countFindings(nodes).worstFix; {
+	case fix == apitypes.FixRebuild && len(found) == 1:
 		msg += ". Fixed by rebuilding."
-	case apitypes.FixUpgrade:
+	case fix == apitypes.FixRebuild:
+		msg += ". Rebuilding fixes some."
+	case fix == apitypes.FixUpgrade && len(found) == 1:
 		msg += ". Fixed by upgrading the app's dependencies."
+	case fix == apitypes.FixUpgrade:
+		msg += ". Upgrading the app's dependencies fixes some."
 	default:
 		msg += ". No fix is known yet."
 	}

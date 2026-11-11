@@ -135,17 +135,21 @@ export function UsedBy({ uses }: { uses: readonly ImageUse[] }) {
 
 /**
  * The sentence after "N fixable." on the overview: what fixes the worst
- * findings (criticals, else highs).
+ * findings (criticals, else highs). worst_fix fixes some of them, not
+ * necessarily all, so with several it says "some".
  */
 export function worstFixSentence(scan: ImageScan) {
   const n = scan.critical || scan.high;
   const word = scan.critical > 0 ? "critical" : "high";
-  const which = n === 1 ? `The ${word} is` : `The ${word}s are`;
   switch (scan.worst_fix) {
     case "rebuild":
-      return `${which} fixed by rebuilding on a newer base image.`;
+      return n === 1
+        ? `The ${word} is fixed by rebuilding on a newer base image.`
+        : `Rebuilding on a newer base image fixes some of the ${word}s.`;
     case "upgrade":
-      return `${which} fixed by upgrading the app's dependencies.`;
+      return n === 1
+        ? `The ${word} is fixed by upgrading the app's dependencies.`
+        : `Upgrading the app's dependencies fixes some of the ${word}s.`;
     case "none":
       return `No fix is known for the ${n === 1 ? word : `${word}s`} yet.`;
     default:
