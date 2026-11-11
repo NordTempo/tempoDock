@@ -235,6 +235,8 @@ type Core struct {
 	previews previewState
 	// analytics is Dock Analytics' state (analytics.go).
 	analytics analyticsState
+	// traces is the trace store (traces.go).
+	traces tracesState
 	// statusPages is which hostname is which status page (status.go).
 	statusPages statusState
 	// maint is the status pages' maintenance windows (ADR 0073).

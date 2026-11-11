@@ -3,15 +3,17 @@ import { AnalyticsConsole } from "../features/analytics/AnalyticsConsole";
 import {
   analyticsDefaultsQuery,
   analyticsStatusQuery,
+  tracingStatusQuery,
 } from "../features/analytics/loaders";
 
 // Dock Analytics for operators: the store, its server and the site
-// defaults (ADR 0037).
+// defaults (ADR 0037), and tracing's trace store beside it.
 export const Route = createFileRoute("/_app/console/analytics")({
   loader: ({ context: { queryClient } }) =>
     Promise.all([
       queryClient.ensureQueryData(analyticsStatusQuery()),
       queryClient.ensureQueryData(analyticsDefaultsQuery()),
+      queryClient.ensureQueryData(tracingStatusQuery()),
     ]),
   component: AnalyticsConsole,
 });

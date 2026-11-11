@@ -93,7 +93,7 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 		t.Fatalf("a mismatched binary: %v", err)
 	}
 	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return h.client.DialAnalyticsStore(ctx)
+		return h.client.DialAnalyticsStore(ctx, node.StoreAnalytics)
 	}}}
 	resp, err := hc.Get("http://analytics/v1/health")
 	if err != nil {
@@ -106,10 +106,63 @@ func TestAnalyticsOverTheLink(t *testing.T) {
 	}
 
 	// Removing the store takes its binaries with it.
-	if err := h.client.RemoveAnalyticsStore(ctx); err != nil || fk.AnalyticsStoreSpec() != nil {
+	if err := h.client.RemoveAnalyticsStore(ctx, node.StoreAnalytics); err != nil || fk.AnalyticsStoreSpec() != nil {
 		t.Fatalf("remove: %v, node has %+v", err, fk.AnalyticsStoreSpec())
 	}
 	if _, err := os.Stat(onNode); !os.IsNotExist(err) {
 		t.Errorf("the binary stayed on the node: %v", err)
+	}
+}
+
+// The trace store runs beside the analytics store from the same binary,
+// apart in everything else: its own container and data, which removing it
+// takes without the analytics store or the binary. A node from before it
+// is never asked: it would read the call as the analytics store's.
+func TestTraceStoreOverTheLink(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	fk := h.rt.Runtime
+	bin := filepath.Join(t.TempDir(), "dock-analytics")
+	if err := os.WriteFile(bin, []byte("the store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("the store"))
+	spec := node.AnalyticsStoreSpec{Binary: bin, SHA256: hex.EncodeToString(sum[:]), Token: strings.Repeat("t", 32), MemoryBytes: 512 << 20}
+	if err := h.client.EnsureAnalyticsStore(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	spec.Kind, spec.MemoryBytes = node.StoreTraces, 384<<20
+	if err := h.client.EnsureAnalyticsStore(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	if got := fk.TraceStoreSpec(); got == nil || got.Kind != node.StoreTraces || got.MemoryBytes != 384<<20 {
+		t.Fatalf("the node runs the trace store as %+v", got)
+	}
+	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return h.client.DialAnalyticsStore(ctx, node.StoreTraces)
+	}}}
+	resp, err := hc.Get("http://traces/v1/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	if err := h.client.RemoveAnalyticsStore(ctx, node.StoreTraces); err != nil || fk.TraceStoreSpec() != nil {
+		t.Fatalf("remove: %v, node has %+v", err, fk.TraceStoreSpec())
+	}
+	onNode := filepath.Join(h.dataDir, "analytics", "bin", "dock-analytics-"+spec.SHA256)
+	if _, err := os.Stat(onNode); err != nil || fk.AnalyticsStoreSpec() == nil {
+		t.Fatalf("removing the trace store took the binary (%v) or the analytics store (%+v)", err, fk.AnalyticsStoreSpec())
+	}
+
+	h.stopNode()
+	h.startNode(func(n *Node) { n.protocol = TraceStoreProtocol - 1 })
+	waitFor(t, "the older node", func() bool { return h.hub.State(h.id).Hello.Protocol == TraceStoreProtocol-1 && h.client.Online() })
+	if err := h.client.RemoveAnalyticsStore(ctx, node.StoreTraces); err == nil || !strings.Contains(err.Error(), "the trace store") {
+		t.Fatalf("removing the trace store on an older node = %v", err)
+	}
+	if fk.AnalyticsStoreSpec() == nil {
+		t.Fatal("the older node removed its analytics store")
 	}
 }

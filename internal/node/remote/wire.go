@@ -892,6 +892,15 @@ type wireAnalyticsStoreSpec struct {
 	SHA256      string `json:"sha256"`
 	Token       string `json:"token"`
 	MemoryBytes int64  `json:"memory_bytes"`
+	// Kind is the store, "" for analytics (protocol 24).
+	Kind string `json:"kind,omitempty"`
+}
+
+// storeKindRequest names the store remove-analytics-store and
+// dial-analytics act on, "" for analytics (protocol 24). An older node
+// reads it as an empty request, so the client never sends a kind to one.
+type storeKindRequest struct {
+	Kind string `json:"kind,omitempty"`
 }
 
 // putAnalyticsBinaryRequest precedes the binary's bytes.

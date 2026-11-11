@@ -736,6 +736,21 @@ const AnalyticsProtocol = 10
 // store from the release's binary (ADR 0037); a node on 10 can't run it.
 const AnalyticsBinaryProtocol = 11
 
+// TraceStoreProtocol is the first protocol whose nodes run the trace
+// store beside the analytics store: the store kind on its calls.
+const TraceStoreProtocol = 24
+
+// needStoreKind checks the node can act on the store of kind: any
+// analytics node for the analytics store, TraceStoreProtocol for the
+// trace store (an older node would take the call for the analytics
+// store's).
+func (c *Client) needStoreKind(ctx context.Context, kind node.StoreKind, min int, what string) error {
+	if kind == node.StoreTraces {
+		return c.needProtocol(ctx, TraceStoreProtocol, what+" (the trace store)")
+	}
+	return c.needProtocol(ctx, min, what)
+}
+
 // ReplayProtocol is the first protocol whose nodes record session
 // replays: they have a replay spool (ADR 0037, A3).
 const ReplayProtocol = 12
@@ -797,10 +812,10 @@ func (c *Client) AckSpool(ctx context.Context, spool node.Spool, position uint64
 // binary it has with spec's hash; one it doesn't have is sent first, from
 // spec.Binary on this server, once per release.
 func (c *Client) EnsureAnalyticsStore(ctx context.Context, spec node.AnalyticsStoreSpec) error {
-	if err := c.needProtocol(ctx, AnalyticsBinaryProtocol, "run the analytics store"); err != nil {
+	if err := c.needStoreKind(ctx, spec.Kind, AnalyticsBinaryProtocol, "run the analytics store"); err != nil {
 		return err
 	}
-	req := analyticsStoreRequest{Spec: wireAnalyticsStoreSpec{SHA256: spec.SHA256, Token: spec.Token, MemoryBytes: spec.MemoryBytes}}
+	req := analyticsStoreRequest{Spec: wireAnalyticsStoreSpec{SHA256: spec.SHA256, Token: spec.Token, MemoryBytes: spec.MemoryBytes, Kind: string(spec.Kind)}}
 	_, err := callWithLogs[empty](ctx, c, opRunAnalytics, analyticsStoreTimeout, req, nil, io.Discard)
 	if !errors.Is(err, errNoAnalyticsBinary) {
 		return err
@@ -829,19 +844,20 @@ func (c *Client) putAnalyticsBinary(ctx context.Context, path, sum string) error
 }
 
 // RemoveAnalyticsStore implements node.Analytics: the node removes the
-// container, its data and the binaries it received.
-func (c *Client) RemoveAnalyticsStore(ctx context.Context) error {
-	if err := c.needProtocol(ctx, AnalyticsBinaryProtocol, "remove the analytics store"); err != nil {
+// container of kind and its data, and for the analytics store the
+// binaries it received.
+func (c *Client) RemoveAnalyticsStore(ctx context.Context, kind node.StoreKind) error {
+	if err := c.needStoreKind(ctx, kind, AnalyticsBinaryProtocol, "remove the analytics store"); err != nil {
 		return err
 	}
-	_, err := callWithLogs[empty](ctx, c, opRemoveAnalytics, analyticsStoreTimeout, empty{}, nil, nil)
+	_, err := callWithLogs[empty](ctx, c, opRemoveAnalytics, analyticsStoreTimeout, storeKindRequest{Kind: string(kind)}, nil, nil)
 	return err
 }
 
 // DialAnalyticsStore implements node.Analytics: a raw connection to the
 // store's port on the node, over the link like Dial.
-func (c *Client) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
-	if err := c.needProtocol(ctx, AnalyticsProtocol, "run the analytics store"); err != nil {
+func (c *Client) DialAnalyticsStore(ctx context.Context, kind node.StoreKind) (net.Conn, error) {
+	if err := c.needStoreKind(ctx, kind, AnalyticsProtocol, "run the analytics store"); err != nil {
 		return nil, err
 	}
 	s, err := c.session(ctx)
@@ -852,7 +868,7 @@ func (c *Client) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
 		s.dials.Add(-1)
 		return nil, fmt.Errorf("server %s: %w", s.name(), errTooManyDials)
 	}
-	lc, err := openConn(ctx, s, opDialAnalytics, empty{}, s.name()+"/analytics", func() { s.dials.Add(-1) })
+	lc, err := openConn(ctx, s, opDialAnalytics, storeKindRequest{Kind: string(kind)}, s.name()+"/analytics", func() { s.dials.Add(-1) })
 	if err != nil {
 		s.dials.Add(-1)
 		return nil, err

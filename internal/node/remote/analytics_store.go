@@ -53,8 +53,10 @@ func (n *Node) analyticsStoreRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /v1/"+opPutAnalyticsBinary, withLogs(func(_ context.Context, a putAnalyticsBinaryRequest, body io.Reader, _ io.Writer) (empty, error) {
 		return empty{}, n.receiveAnalyticsBinary(a, body)
 	}))
-	mux.Handle("POST /v1/"+opRemoveAnalytics, unary(func(ctx context.Context, _ empty) (empty, error) {
-		if err := n.Runtime.RemoveAnalyticsStore(ctx); err != nil {
+	mux.Handle("POST /v1/"+opRemoveAnalytics, unary(func(ctx context.Context, a storeKindRequest) (empty, error) {
+		kind := node.StoreKind(a.Kind)
+		if err := n.Runtime.RemoveAnalyticsStore(ctx, kind); err != nil || kind != node.StoreAnalytics {
+			// The trace store runs the analytics store's binary: it stays.
 			return empty{}, err
 		}
 		return empty{}, os.RemoveAll(n.analyticsBinDir())
@@ -73,7 +75,7 @@ func (n *Node) ensureAnalyticsStore(ctx context.Context, w wireAnalyticsStoreSpe
 	} else if err != nil {
 		return err
 	}
-	if err := n.Runtime.EnsureAnalyticsStore(ctx, node.AnalyticsStoreSpec{Binary: bin, SHA256: w.SHA256, Token: w.Token, MemoryBytes: w.MemoryBytes}); err != nil {
+	if err := n.Runtime.EnsureAnalyticsStore(ctx, node.AnalyticsStoreSpec{Kind: node.StoreKind(w.Kind), Binary: bin, SHA256: w.SHA256, Token: w.Token, MemoryBytes: w.MemoryBytes}); err != nil {
 		return err
 	}
 	entries, err := os.ReadDir(n.analyticsBinDir())

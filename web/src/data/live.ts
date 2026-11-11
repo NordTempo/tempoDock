@@ -322,8 +322,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       }
       return;
     case "analytics":
-      // Only operators get these: the analytics store started or failed.
+      // Only operators get these: the analytics or the trace store
+      // started or failed.
       queryClient.invalidateQueries({ queryKey: ["analytics", "status"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics", "tracing"] });
       return;
     case "environment_lock":
       // Locked, unlocked or opened for a while (ADR 0044).

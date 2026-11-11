@@ -70,6 +70,8 @@ type Config struct {
 	Updates Updates `toml:"updates"`
 	// Analytics is this server's part in Dock Analytics (ADR 0037).
 	Analytics Analytics `toml:"analytics"`
+	// Traces configures the trace store, tracing over OTLP.
+	Traces Traces `toml:"traces"`
 	// Logs bounds the history of removed containers' output (ADR 0046).
 	Logs Logs `toml:"logs"`
 	// Status is where public status pages are served (ADR 0073).
@@ -140,6 +142,20 @@ type Analytics struct {
 	// serving nothing but those pages, so no other part of Dock is
 	// reachable through a dashboard's hostname. Empty turns them off.
 	StatsListen string `toml:"stats_listen"`
+}
+
+// Traces configures the trace store: spans for tracing over OTLP, kept by
+// dock-analytics in a container of its own on the analytics server.
+// Whether tracing is on is a runtime setting on the control plane.
+type Traces struct {
+	// StorePort is the loopback port the trace store is published on, on
+	// the analytics server.
+	StorePort int `toml:"store_port"`
+	// StoreMemoryMB is the trace store container's memory limit.
+	StoreMemoryMB int `toml:"store_memory_mb"`
+	// RetentionDays is how long spans are kept, in whole UTC days.
+	// Control plane only.
+	RetentionDays int `toml:"retention_days"`
 }
 
 // DefaultUpdateSource is the GitHub repository releases are published to
@@ -393,6 +409,7 @@ func Default() Config {
 			StoreMemoryMB: 512,
 			StatsListen:   "127.0.0.1:7078",
 		},
+		Traces: Traces{StorePort: 7080, StoreMemoryMB: 384, RetentionDays: 7},
 		Status: Status{Listen: "127.0.0.1:7079"},
 		BuildKit: BuildKit{
 			Enabled:        true,
@@ -532,6 +549,12 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[analytics] store_port %d is not a port", c.Analytics.StorePort)
 	case c.Analytics.StoreMemoryMB < 256:
 		return fmt.Errorf("[analytics] store_memory_mb is %d; the store needs at least 256", c.Analytics.StoreMemoryMB)
+	case c.Traces.StorePort <= 0 || c.Traces.StorePort > 65535 || c.Traces.StorePort == c.Analytics.StorePort:
+		return fmt.Errorf("[traces] store_port %d must be a port other than [analytics] store_port", c.Traces.StorePort)
+	case c.Traces.StoreMemoryMB < 256:
+		return fmt.Errorf("[traces] store_memory_mb is %d; the trace store needs at least 256", c.Traces.StoreMemoryMB)
+	case c.Traces.RetentionDays < 1 || c.Traces.RetentionDays > 30:
+		return fmt.Errorf("[traces] retention_days is %d; keep spans for 1 to 30 days", c.Traces.RetentionDays)
 	}
 	if err := c.Retention.validate(); err != nil {
 		return err

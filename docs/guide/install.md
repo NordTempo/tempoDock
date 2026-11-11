@@ -223,6 +223,7 @@ running).
 | `[status] listen` | `127.0.0.1:7079` | Loopback address of [status pages](status-pages.md). Empty turns them off. Control plane only |
 | `[analytics] spool_max_mb` | `256` | Events waiting for the store, at most; past it the oldest go. At least `16` |
 | `[analytics] store_port`, `store_memory_mb` | `7076`, `512` | On the analytics server: the store's loopback port and memory limit (at least `256`) |
+| `[traces] store_port`, `store_memory_mb`, `retention_days` | `7080`, `384`, `7` | The trace store, beside the analytics store on the analytics server (`dock tracing on`): its loopback port and memory limit (at least `256`), and how many days of spans it keeps (1 to 30; control plane only) |
 | `[scan] syft_image`, `grype_image` | `anchore/syft:v1.57.1@sha256:0321…`, `anchore/grype:v0.121.3@sha256:1311…` | The image scanners, pinned by digest ([ADR 0074](../decisions/0074-image-vulnerability-scanning.md)). Builders pull them the first time they scan |
 | `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. `dock scanning off` turns scanning off |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |

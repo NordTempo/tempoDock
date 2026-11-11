@@ -203,13 +203,13 @@ func serveDial(rt node.Runtime) http.HandlerFunc {
 // reachable through it.
 func serveDialAnalytics(rt node.Runtime) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, up, err := readArgs[empty](r)
+		a, up, err := readArgs[storeKindRequest](r)
 		if err != nil {
 			newResponder(w).fail(&Error{Code: codeBadRequest, Message: err.Error()})
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), dialTimeout)
-		conn, err := rt.DialAnalyticsStore(ctx)
+		conn, err := rt.DialAnalyticsStore(ctx, node.StoreKind(a.Kind))
 		cancel()
 		if err != nil {
 			newResponder(w).fail(wireError(err))

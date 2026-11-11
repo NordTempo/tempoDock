@@ -34,7 +34,8 @@ type Collector struct {
 	// Rules are the sites' rules the ingest applies; SetAnalytics
 	// replaces them.
 	Rules *ingest.Rules
-	Store Store
+	// Store runs the analytics store and Traces the trace store.
+	Store, Traces Store
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
 }
@@ -135,31 +136,42 @@ func (c *Collector) spool(which node.Spool) (*spool.Spool, error) {
 	return nil, fmt.Errorf("this server has no %q spool", which)
 }
 
-// errNoStore is the answer of a server that can't run the store.
-var errNoStore = errors.New("this server can't run the analytics store: it has no Docker runtime")
+// errNoStore is the answer of a server that can't run a store.
+var errNoStore = errors.New("this server can't run the analytics or trace store: it has no Docker runtime")
+
+// store is the Store of kind, nil if this server has none.
+func (c *Collector) store(kind node.StoreKind) Store {
+	if kind == node.StoreTraces {
+		return c.Traces
+	}
+	return c.Store
+}
 
 // EnsureAnalyticsStore implements node.Analytics.
 func (c *Collector) EnsureAnalyticsStore(ctx context.Context, spec node.AnalyticsStoreSpec) error {
-	if c.Store == nil {
+	s := c.store(spec.Kind)
+	if s == nil {
 		return errNoStore
 	}
-	return c.Store.Ensure(ctx, spec)
+	return s.Ensure(ctx, spec)
 }
 
 // RemoveAnalyticsStore implements node.Analytics: the container and its
 // data. The binary is the caller's: the control plane's staged copy, or
 // the one the node link received.
-func (c *Collector) RemoveAnalyticsStore(ctx context.Context) error {
-	if c.Store == nil {
+func (c *Collector) RemoveAnalyticsStore(ctx context.Context, kind node.StoreKind) error {
+	s := c.store(kind)
+	if s == nil {
 		return nil
 	}
-	return c.Store.Remove(ctx)
+	return s.Remove(ctx)
 }
 
 // DialAnalyticsStore implements node.Analytics.
-func (c *Collector) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
-	if c.Store == nil {
+func (c *Collector) DialAnalyticsStore(ctx context.Context, kind node.StoreKind) (net.Conn, error) {
+	s := c.store(kind)
+	if s == nil {
 		return nil, errNoStore
 	}
-	return c.Store.Dial(ctx)
+	return s.Dial(ctx)
 }

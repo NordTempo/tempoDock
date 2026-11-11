@@ -381,8 +381,10 @@ func (o offlineRuntime) AckSpool(context.Context, node.Spool, uint64, int) error
 func (o offlineRuntime) EnsureAnalyticsStore(context.Context, node.AnalyticsStoreSpec) error {
 	return o.err
 }
-func (o offlineRuntime) RemoveAnalyticsStore(context.Context) error           { return o.err }
-func (o offlineRuntime) DialAnalyticsStore(context.Context) (net.Conn, error) { return nil, o.err }
+func (o offlineRuntime) RemoveAnalyticsStore(context.Context, node.StoreKind) error { return o.err }
+func (o offlineRuntime) DialAnalyticsStore(context.Context, node.StoreKind) (net.Conn, error) {
+	return nil, o.err
+}
 func (o offlineRuntime) ArchiveLogs(context.Context, string, node.LogLimits) (node.LogArchive, error) {
 	return node.LogArchive{}, o.err
 }
