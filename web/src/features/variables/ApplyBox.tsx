@@ -76,7 +76,9 @@ function useStaged({
     );
     return serving && setting && serving !== setting && !staged
       ? [
-          `${s.service.name}'s new release runs ${shortImage(serving)}, the image serving now.`,
+          // Applying never retries the image setting (a failed new tag);
+          // say what does, so a fixed setting isn't taken for a fixed deploy.
+          `${s.service.name}'s new release runs ${shortImage(serving)}, the image serving now. To try ${shortImage(setting)} again with these changes, deploy instead.`,
         ]
       : [];
   });
