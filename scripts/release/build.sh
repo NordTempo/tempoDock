@@ -44,15 +44,17 @@ build() {
 # internal/node/probe for its own architecture: build them right before
 # each server binary, and remove them after, so no binary embeds another
 # architecture's.
+# They are embedded gzipped, as `make probe` builds them.
 probe=internal/node/probe/bin/dock-probe
 sync=internal/node/probe/bin/dock-sync
-trap 'rm -f "$probe" "$sync"' EXIT
+trap 'rm -f "$probe.gz" "$sync.gz"' EXIT
 for arch in amd64 arm64; do
   GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -buildid=" -o "$probe" ./cmd/dock-probe
   GOOS=linux GOARCH="$arch" go build -trimpath -ldflags "-s -w -buildid=" -o "$sync" ./cmd/dock-sync
+  gzip -9nf "$probe" "$sync"
   build "dock-linux-$arch" linux "$arch"
 done
-rm -f "$probe" "$sync"
+rm -f "$probe.gz" "$sync.gz"
 for platform in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
   build "dock-cli-${platform%/*}-${platform#*/}" "${platform%/*}" "${platform#*/}" dockcli
 done
@@ -64,7 +66,7 @@ fi
 
 echo "dist/dock-install-$version.tar.gz"
 stage="$(mktemp -d)"
-trap 'rm -rf "$stage" "$probe" "$sync"' EXIT
+trap 'rm -rf "$stage" "$probe.gz" "$sync.gz"' EXIT
 cp -R deploy "$stage/deploy"
 rm -rf "$stage/deploy/tempobase" # tempoBase's image and examples, not Dock's install
 # install.sh downloads this version when DOCK_BINARY isn't given.
