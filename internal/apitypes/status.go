@@ -46,6 +46,9 @@ type UpdateStatusPageRequest struct {
 	// Drafts: an uptime_down or crash_loop alert about a component's
 	// sources opens a draft incident.
 	Drafts *bool `json:"drafts,omitempty"`
+	// Hostname is a custom hostname the page also answers on once it is
+	// verified; "" removes it.
+	Hostname *string `json:"hostname,omitempty" maxLength:"253" example:"status.acme.com" doc:"A custom hostname; empty removes it"`
 }
 
 // StatusSourceRef names what a component is built from: a service, or one
@@ -104,6 +107,26 @@ type StatusPage struct {
 	// Incidents are those open or resolved in the last StatusDays days,
 	// newest first, drafts included.
 	Incidents []StatusIncident `json:"incidents"`
+	// Hostname is the page's custom hostname, if it has one.
+	Hostname *StatusHostname `json:"hostname,omitempty"`
+}
+
+// StatusHostname is a page's custom hostname (phase 4) and what it takes
+// to serve it.
+type StatusHostname struct {
+	Hostname string `json:"hostname"`
+	// Verified: the page answers on it (once published).
+	Verified bool `json:"verified"`
+	// Reason says what is missing while it isn't verified.
+	Reason string `json:"reason,omitempty"`
+	// URL is where the page is served on it, once verified.
+	URL string `json:"url,omitempty"`
+	// Records are the DNS records to add: the TXT that proves control
+	// (until verified) and the CNAME to the page's own address. None
+	// when Dock makes the record in Cloudflare (DNS).
+	Records []DNSRecord `json:"records"`
+	// DNS is the record Dock makes in a connected Cloudflare zone.
+	DNS *DomainDNS `json:"dns,omitempty"`
 }
 
 // StatusComponent is a component with its sources and status.

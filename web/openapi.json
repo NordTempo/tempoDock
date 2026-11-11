@@ -14607,6 +14607,41 @@
         ],
         "type": "object"
       },
+      "StatusHostname": {
+        "additionalProperties": false,
+        "properties": {
+          "dns": {
+            "$ref": "#/components/schemas/DomainDNS"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/DNSRecord"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "verified": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hostname",
+          "verified",
+          "records"
+        ],
+        "type": "object"
+      },
       "StatusImpact": {
         "additionalProperties": false,
         "properties": {
@@ -14752,6 +14787,9 @@
           },
           "drafts": {
             "type": "boolean"
+          },
+          "hostname": {
+            "$ref": "#/components/schemas/StatusHostname"
           },
           "incidents": {
             "items": {
@@ -15966,6 +16004,14 @@
         "properties": {
           "drafts": {
             "type": "boolean"
+          },
+          "hostname": {
+            "description": "A custom hostname; empty removes it",
+            "examples": [
+              "status.acme.com"
+            ],
+            "maxLength": 253,
+            "type": "string"
           },
           "published": {
             "type": "boolean"
@@ -62243,7 +62289,7 @@
         ]
       },
       "patch": {
-        "description": "Its title, whether it shows percentages, and whether it is published. Organization admins.",
+        "description": "Its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
         "operationId": "update-status-page",
         "parameters": [
           {
@@ -62516,6 +62562,136 @@
           }
         ],
         "summary": "Set a status page's components",
+        "tags": [
+          "status pages"
+        ]
+      }
+    },
+    "/api/v1/status-pages/{page}/hostname/check": {
+      "post": {
+        "description": "Looks for the TXT record that proves the organization controls the page's custom hostname now, and verifies it when it is there. Organization admins.",
+        "operationId": "check-status-hostname",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The page's slug",
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "description": "The page's slug",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusPage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Check a status page's hostname",
         "tags": [
           "status pages"
         ]

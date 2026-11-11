@@ -5226,7 +5226,7 @@ export interface paths {
         head?: never;
         /**
          * Change a status page
-         * @description Its title, whether it shows percentages, and whether it is published. Organization admins.
+         * @description Its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.
          */
         patch: operations["update-status-page"];
         trace?: never;
@@ -5245,6 +5245,26 @@ export interface paths {
          */
         put: operations["set-status-components"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/status-pages/{page}/hostname/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a status page's hostname
+         * @description Looks for the TXT record that proves the organization controls the page's custom hostname now, and verifies it when it is there. Organization admins.
+         */
+        post: operations["check-status-hostname"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9845,6 +9865,14 @@ export interface components {
             /** Format: double */
             uptime?: number;
         };
+        StatusHostname: {
+            dns?: components["schemas"]["DomainDNS"];
+            hostname: string;
+            reason?: string;
+            records: components["schemas"]["DNSRecord"][] | null;
+            url?: string;
+            verified: boolean;
+        };
         StatusImpact: {
             /** @example API */
             component: string;
@@ -9884,6 +9912,7 @@ export interface components {
             created_at: string;
             created_by: string;
             drafts: boolean;
+            hostname?: components["schemas"]["StatusHostname"];
             incidents: components["schemas"]["StatusIncident"][] | null;
             published: boolean;
             show_uptime: boolean;
@@ -10258,6 +10287,11 @@ export interface components {
         };
         UpdateStatusPageRequest: {
             drafts?: boolean;
+            /**
+             * @description A custom hostname; empty removes it
+             * @example status.acme.com
+             */
+            hostname?: string;
             published?: boolean;
             show_uptime?: boolean;
             title?: string;
@@ -41428,6 +41462,104 @@ export interface operations {
                 "application/json": components["schemas"]["SetStatusComponentsRequest"];
             };
         };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "check-status-hostname": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The page's slug */
+                page: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description OK */
             200: {

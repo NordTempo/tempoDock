@@ -29,10 +29,19 @@ export type StatusImpact = Schema["StatusImpact"];
 export type IncidentState = IncidentSchema["state"];
 /** The states an update may post. */
 export type PostState = Schema["PostIncidentUpdateRequest"]["state"];
-/** A page with its components and incidents. */
-export type StatusPage = Omit<PageSchema, "components" | "incidents"> & {
+type HostnameSchema = Schema["StatusHostname"];
+/** A page's custom hostname, its records as an array. */
+type StatusHostname = Omit<HostnameSchema, "records"> & {
+  records: NonNullable<HostnameSchema["records"]>;
+};
+/** A page with its components, incidents and custom hostname. */
+export type StatusPage = Omit<
+  PageSchema,
+  "components" | "incidents" | "hostname"
+> & {
   components: StatusComponent[];
   incidents: StatusIncident[];
+  hostname?: StatusHostname;
 };
 export type StatusComponentInput = Schema["StatusComponentInput"];
 export type StatusSourceRef = Schema["StatusSourceRef"];
@@ -62,6 +71,9 @@ const toPage = (p: PageSchema): StatusPage => ({
     sources: c.sources ?? [],
   })),
   incidents: (p.incidents ?? []).map(toIncident),
+  hostname: p.hostname
+    ? { ...p.hostname, records: p.hostname.records ?? [] }
+    : undefined,
 });
 
 export const statusQueries = {
@@ -115,6 +127,21 @@ export const useUpdateStatusPage = (slug: string) =>
         : patch.published === false
           ? `Unpublished ${slug}`
           : `Saved ${slug}`,
+  );
+
+export const useCheckStatusHostname = (slug: string) =>
+  useAction(
+    () =>
+      body(
+        api.POST("/api/v1/status-pages/{page}/hostname/check", {
+          params: { path: { page: slug } },
+        }),
+      ).then(toPage),
+    () => [statusKeys.all],
+    (_, p) =>
+      p.hostname?.verified
+        ? `${p.hostname.hostname} is verified`
+        : "The TXT record isn't there yet",
   );
 
 export const useDeleteStatusPage = (slug: string) =>

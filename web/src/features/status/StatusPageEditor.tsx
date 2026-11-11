@@ -27,6 +27,7 @@ import {
   statusQueries,
   statusState,
   toInputs,
+  useCheckStatusHostname,
   useDeleteStatusPage,
   useSetStatusComponents,
   useUpdateStatusPage,
@@ -462,6 +463,7 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
             onChange={(on) => update.mutate({ show_uptime: on })}
           />
         </div>
+        <Hostname page={page} admin={admin} />
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="w-40 text-sec">Drafts</span>
           <Check
@@ -504,6 +506,122 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
         </Confirm>
       )}
     </section>
+  );
+}
+
+/**
+ * The page's custom hostname: set, change or remove it, the records it
+ * waits for, and checking its TXT record.
+ */
+function Hostname({ page, admin }: { page: StatusPage; admin: boolean }) {
+  const update = useUpdateStatusPage(page.slug);
+  const check = useCheckStatusHostname(page.slug);
+  const [editing, setEditing] = useState<string | null>(null);
+  const h = page.hostname;
+  return (
+    <div className="flex flex-wrap items-start gap-2.5">
+      <span className="w-40 pt-1 text-sec">Custom hostname</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {editing === null ? (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {h ? (
+              <>
+                <span className="font-mono">{h.hostname}</span>
+                <StateText
+                  state={
+                    h.verified
+                      ? { tone: "ok", glyph: "●", label: "verified" }
+                      : { tone: "warn", glyph: "○", label: "waiting for DNS" }
+                  }
+                />
+              </>
+            ) : (
+              <span className="text-mut">none</span>
+            )}
+            {admin && (
+              <Button small onClick={() => setEditing(h?.hostname ?? "")}>
+                {h ? "Change" : "Add"}
+              </Button>
+            )}
+            {admin && h && !h.verified && (
+              <Act
+                small
+                cli={`dock status-page hostname ${page.slug} --check`}
+                disabled={check.isPending}
+                onClick={() => check.mutate()}
+              >
+                Check now
+              </Act>
+            )}
+            {admin && h && (
+              <Act
+                small
+                danger
+                cli={`dock status-page hostname ${page.slug} --remove`}
+                disabled={update.isPending}
+                onClick={() => update.mutate({ hostname: "" })}
+              >
+                Remove
+              </Act>
+            )}
+          </div>
+        ) : (
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              update.mutate(
+                { hostname: editing },
+                { onSuccess: () => setEditing(null) },
+              );
+            }}
+          >
+            <input
+              className="field w-64 font-mono"
+              aria-label="Custom hostname"
+              placeholder="status.example.com"
+              value={editing}
+              onKeyDown={(e) => e.key === "Escape" && setEditing(null)}
+              onChange={(e) => setEditing(e.target.value)}
+            />
+            <Button small onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Act
+              small
+              primary
+              type="submit"
+              cli={`dock status-page hostname ${page.slug} ${editing || "<hostname>"}`}
+              disabled={!editing.trim() || update.isPending}
+            >
+              Save
+            </Act>
+          </form>
+        )}
+        {h?.dns && (
+          <p className="text-xs text-mut">
+            Dock makes its record in Cloudflare zone {h.dns.zone}:{" "}
+            {h.dns.status}
+            {h.dns.reason && ` (${h.dns.reason})`}
+          </p>
+        )}
+        {h && h.records.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-mut">
+              {h.verified
+                ? "Point it at the page:"
+                : "Add these records, then check:"}
+            </span>
+            {h.records.map((r) => (
+              <span key={r.type} className="font-mono text-xs text-sec">
+                {r.type} {r.name} {r.value}
+              </span>
+            ))}
+          </div>
+        )}
+        <ErrorText error={update.error ?? check.error} />
+      </div>
+    </div>
   );
 }
 

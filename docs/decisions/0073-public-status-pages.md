@@ -4,7 +4,7 @@ Status: accepted (asked by Saile, 2026-11-10; plan and public page mock
 A picked by Saile, Postplan `mqr6y0crg60j`). Builds on
 [0055](0055-uptime-checks.md) (uptime checks) and
 [0037](0037-analytics.md) (public dashboards, whose serving it copies).
-Phases 1 to 3 of 5; the later phases are under [Later phases](#later-phases).
+Phases 1 to 4 of 5; the later phases are under [Later phases](#later-phases).
 
 ## Context
 
@@ -75,6 +75,20 @@ with Dock's.
 | UI | **Schedule maintenance** on the page; a window's screen offers a note, starting, completing or cancelling it, and its times |
 | Migration | 0092: `alerts.muted_by`, and an index of the windows not finished |
 
+## Phase 4: custom hostnames
+
+| Topic | Decision |
+|---|---|
+| Hostname | A page may also answer on one hostname of its org's (`hostname`, set with `PATCH /status-pages/{page}`), pointed at the page's own address with a CNAME. Organization admins |
+| Proof | As for a service's custom domain ([0042](0042-domain-verification.md)): the TXT record `_dock-challenge.<hostname>` = `dock-verify=<token>`. Until it is verified it isn't routed and gets no certificate. No proof when Dock knows who controls the name: an operator sets it, it is under the base domain, or Dock makes its record in a Cloudflare zone the org may use |
+| Checking | No checker of its own: Dock looks for the record when the hostname is set and whenever someone asks (`POST /status-pages/{page}/hostname/check`, `--check`, "Check now"). Service domains need the domain checker for their DNS and certificate states; a page's hostname has only the TXT to wait for, once |
+| Who holds it | At most one page holds a hostname verified (a partial unique index); unverified claims don't block. A service can't add a page's verified hostname, nor a page a service's verified domain, Dock's own names, a dashboard's, another page's address or a Cloudflare redirect |
+| Cloudflare | In a zone the org may use, when the control plane can take a tunnel, Dock makes a proxied CNAME to the control plane's tunnel like a domain's (`cloudflare_records.status_page_id`), and the tunnel reaches Caddy, which routes the hostname to `[status] listen`. Changing or removing the hostname, or the page, deletes the record |
+| Serving | The verified hostname joins the page's address in the hosts Dock routes to the status listener, with on-demand certificates; the page, its incidents, history and feed answer on both |
+| CLI | `dock status-page hostname PAGE [HOSTNAME] [--check] [--remove]`; `show` prints the records to add |
+| UI | The page's settings: the hostname, its state, the records to add, Check now |
+| Migration | 0093: `status_pages.hostname`, `verify_token`, `verified_at`; `cloudflare_records.status_page_id` |
+
 ## Performance
 
 | What | Cost |
@@ -108,9 +122,7 @@ Each its own pull request, numbered when it merges.
 1. Pages, components, status, history, the public page (this).
 2. Incidents (above).
 3. Maintenance windows (above).
-4. Custom hostnames: TXT verification ([0042](0042-domain-verification.md)),
-   certificates, a Cloudflare record when the zone is connected
-   ([0036](0036-cloudflare-api.md)).
+4. Custom hostnames (above).
 5. Update hooks: Slack, Discord and signed webhooks set by admins, through
    the alert delivery queue. No mail and no public subscribe form: anyone
    registering URLs would have Dock POST wherever a stranger says.

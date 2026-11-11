@@ -104,6 +104,9 @@ func (c *Core) loadStatusHosts(ctx context.Context) (map[string]statusHost, erro
 	}
 	for _, r := range rows {
 		hosts[statusHostname(r.Slug, base)] = statusHost{id: r.ID, published: r.Published}
+		if r.Hostname != "" {
+			hosts[r.Hostname] = statusHost{id: r.ID, published: r.Published}
+		}
 	}
 	return hosts, nil
 }
@@ -287,6 +290,32 @@ func (c *Core) UpdateStatusPage(ctx context.Context, a Actor, slug string, req a
 		next.Drafts = *req.Drafts
 		changes = append(changes, map[bool]string{true: "alerts draft incidents", false: "alerts draft no incidents"}[next.Drafts])
 	}
+	if req.Hostname != nil {
+		what, err := c.setStatusHostname(ctx, a, p, *req.Hostname)
+		if err != nil {
+			return apitypes.StatusPage{}, err
+		}
+		if what != "" {
+			changes = append(changes, what)
+			if p, err = c.store.GetStatusPageByID(ctx, p.ID); err != nil {
+				return apitypes.StatusPage{}, err
+			}
+			next.Title, next.Published, next.ShowUptime, next.Drafts = p.Title, p.Published, p.ShowUptime, p.Drafts
+			if req.Title != nil {
+				next.Title = strings.TrimSpace(*req.Title)
+			}
+			if req.ShowUptime != nil {
+				next.ShowUptime = *req.ShowUptime
+			}
+			if req.Drafts != nil {
+				next.Drafts = *req.Drafts
+			}
+			// The TXT record may be there already.
+			if _, _, err := c.proveStatusHostname(ctx, p); err != nil {
+				return apitypes.StatusPage{}, err
+			}
+		}
+	}
 	action := "status_page.update"
 	if req.Published != nil && *req.Published != p.Published {
 		next.Published = *req.Published
@@ -325,8 +354,17 @@ func (c *Core) DeleteStatusPage(ctx context.Context, a Actor, slug string) error
 	if err != nil {
 		return err
 	}
-	if err := c.store.DeleteStatusPage(ctx, p.ID); err != nil {
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.SetStatusPageRecordAbsent(ctx, store.SetStatusPageRecordAbsentParams{UpdatedAt: now(), StatusPageID: &p.ID}); err != nil {
+			return err
+		}
+		return q.DeleteStatusPage(ctx, p.ID)
+	})
+	if err != nil {
 		return err
+	}
+	if p.Hostname != nil {
+		c.kickCloudflare()
 	}
 	c.audit(ctx, a, "status_page.delete", nil, nil, "status page "+p.Slug, "removed status page "+p.Slug)
 	c.statusPagesChanged(ctx)
@@ -771,6 +809,9 @@ func (c *Core) statusPage(ctx context.Context, a Actor, p store.StatusPage) (api
 	}
 	out := apitypes.StatusPage{StatusPageSummary: c.toStatusSummary(p, base, len(comps)), ShowUptime: p.ShowUptime, Drafts: p.Drafts,
 		Status: pageStatus(comps), Components: make([]apitypes.StatusComponent, len(comps)), Incidents: make([]apitypes.StatusIncident, len(incs))}
+	if out.Hostname, err = c.statusHostnameView(ctx, p, base); err != nil {
+		return apitypes.StatusPage{}, err
+	}
 	url := ""
 	if p.Published {
 		url = out.URL

@@ -44,6 +44,20 @@ the percentages; the colours stay.
 A component added with `--manual` reads operational whatever its
 services do; only incidents change it.
 
+## Your own hostname
+
+```sh
+dock status-page hostname acme status.acme.com
+```
+
+It prints two records to add at your DNS provider: a TXT record that
+proves you control the name, and a CNAME to the page's own address
+(`status-acme.<base domain>`). Then `dock status-page hostname acme
+--check` (or **Check now** in the page's settings) verifies it, and the
+page answers on both names with its own certificate. If the name is in a
+Cloudflare zone your organization has connected, Dock makes the record
+itself and nothing needs proving.
+
 ## Incidents
 
 An incident is what you tell visitors about an outage, update by update.

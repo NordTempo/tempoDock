@@ -47,7 +47,7 @@ func registerStatusPages(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "update-status-page", Method: http.MethodPatch, Path: statusPagePathT,
 		Summary: "Change a status page", Tags: tags,
-		Description: "Its title, whether it shows percentages, and whether it is published. Organization admins.",
+		Description: "Its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		StatusPagePath
 		Body apitypes.UpdateStatusPageRequest
@@ -60,6 +60,13 @@ func registerStatusPages(s *Server, a huma.API) {
 		Description: "With its components; its address answers 404 at once. Organization admins.",
 	}, func(ctx context.Context, actor core.Actor, in *StatusPagePath) (*struct{}, error) {
 		return nil, s.core.DeleteStatusPage(ctx, actor, in.Page)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "check-status-hostname", Method: http.MethodPost, Path: statusPagePathT + "/hostname/check",
+		Summary: "Check a status page's hostname", Tags: tags,
+		Description: "Looks for the TXT record that proves the organization controls the page's custom hostname now, and verifies it when it is there. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *StatusPagePath) (*out[apitypes.StatusPage], error) {
+		return reply(s.core.CheckStatusHostname(ctx, actor, in.Page))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "set-status-components", Method: http.MethodPut, Path: statusPagePathT + "/components",
