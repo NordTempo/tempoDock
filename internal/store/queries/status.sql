@@ -132,8 +132,8 @@ FROM status_pages AS sp JOIN status_components AS sc ON sc.page_id = sp.id
 WHERE sp.org_id = +? GROUP BY sc.page_id;
 
 -- name: CreateStatusIncident :one
-INSERT INTO status_incidents (page_id, public_id, title, state, draft, starts_at, published_at, alert_id, created_at, created_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO status_incidents (page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, alert_id, created_at, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetStatusIncident :one
@@ -142,8 +142,13 @@ SELECT sqlc.embed(status_incidents), sqlc.embed(status_pages)
 FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
 WHERE status_incidents.public_id = +?;
 
+-- name: GetStatusIncidentByID :one
+SELECT sqlc.embed(status_incidents), sqlc.embed(status_pages)
+FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
+WHERE status_incidents.id = +?;
+
 -- name: UpdateStatusIncident :one
-UPDATE status_incidents SET title = ?, state = ?, draft = ?, published_at = ?, resolved_at = ? WHERE id = +?
+UPDATE status_incidents SET title = ?, state = ?, draft = ?, starts_at = ?, ends_at = ?, published_at = ?, resolved_at = ? WHERE id = +?
 RETURNING *;
 
 -- name: DeleteStatusIncident :exec
@@ -237,3 +242,17 @@ ORDER BY sp.id, sc.position;
 -- The drafts Dock opened from an alert, once it resolved first.
 DELETE FROM status_incidents WHERE alert_id = +? AND state = 'draft'
 RETURNING page_id, public_id, title;
+
+-- name: ListMaintenanceWindows :many
+-- Every maintenance window not finished yet, one row per source of its
+-- components (sources NULL for a component without any): what Dock
+-- holds in memory to start and end windows and to mute alerts and
+-- probes during them. Ordered as status_incidents_maintenance is, so it
+-- is read through it; a window's rows come together.
+SELECT i.id, i.page_id, i.state, i.starts_at, i.ends_at,
+  src.service_id, src.check_id
+FROM status_incidents AS i
+LEFT JOIN status_incident_components AS ic ON ic.incident_id = i.id
+LEFT JOIN status_sources AS src ON src.component_id = ic.component_id
+WHERE i.kind = 'maintenance' AND i.resolved_at IS NULL
+ORDER BY i.starts_at, i.id;

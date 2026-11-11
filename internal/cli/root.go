@@ -89,7 +89,7 @@ func newRoot(g *globals) *cobra.Command {
 		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newOrgCmd(g), newLogoutCmd(g), newVersionCmd(g),
 		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
-		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newErrorsCmd(g), newTrafficCmd(g), newUptimeCmd(g), newStatusPageCmd(g), newIncidentCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g), newDiagnoseCmd(g), newVulnsCmd(g), newImagesCmd(g), newScanCmd(g), newSBOMCmd(g),
+		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newErrorsCmd(g), newTrafficCmd(g), newUptimeCmd(g), newStatusPageCmd(g), newIncidentCmd(g), newMaintenanceCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g), newDiagnoseCmd(g), newVulnsCmd(g), newImagesCmd(g), newScanCmd(g), newSBOMCmd(g),
 		newRollbackCmd(g), newRestartCmd(g), newDBCmd(g), newConnectCmd(g), newRunCmd(g), newRunsCmd(g), newJobCmd(g), newGitCmd(g), newBackupCmd(g), newRequestCmd(g))
 	addGroup(root, "config", "Configure (changes are staged until applied):",
 		newEnvCmd(g), newChangesCmd(g), newApplyCmd(g), newImportCmd(g), newProjectExportCmd(g), newDiscardCmd(g), newDomainCmd(g), newAccessCmd(g), newVolumeCmd(g),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
@@ -105,6 +106,54 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 			}
 			return mcpkit.Reply{Summary: incidentLine(inc), Data: inc}, nil
 		})
+
+	mcpkit.AddTool(s, "status_maintenance", "Schedule or run a maintenance window",
+		"Maintenance windows on a status page, public at once. action schedule (page, title, components, starts_at, ends_at, message): "+
+			"while it is in progress its components read maintenance, alerts about their services are held until it ends and their uptime isn't counted. "+
+			"action start, complete or cancel (id, message) moves a window sooner than its times; extend (id, ends_at) moves its end.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			Action     string     `json:"action" enum:"schedule,start,complete,extend,cancel"`
+			Page       string     `json:"page,omitempty" doc:"The page's name (slug), for schedule"`
+			ID         string     `json:"id,omitempty" doc:"The window's ID, for start, complete, extend and cancel"`
+			Title      string     `json:"title,omitempty" maxLength:"120"`
+			Components []string   `json:"components,omitempty" maxItems:"100" doc:"Public component names, for schedule"`
+			StartsAt   *time.Time `json:"starts_at,omitempty" doc:"For schedule; default now"`
+			EndsAt     *time.Time `json:"ends_at,omitempty" doc:"For schedule and extend"`
+			Message    string     `json:"message,omitempty" maxLength:"5000" doc:"What visitors read"`
+		}) (mcpkit.Reply, error) {
+			var inc apitypes.StatusIncident
+			var err error
+			moves := map[string]apitypes.IncidentState{"start": apitypes.MaintenanceInProgress, "complete": apitypes.MaintenanceCompleted, "cancel": apitypes.MaintenanceCancelled}
+			switch {
+			case in.Action == "schedule":
+				if in.EndsAt == nil {
+					return mcpkit.Reply{}, mcpkit.Invalid("schedule needs ends_at")
+				}
+				start := time.Now()
+				if in.StartsAt != nil {
+					start = *in.StartsAt
+				}
+				inc, err = h.core.ScheduleMaintenance(ctx, c.Actor, in.Page, apitypes.ScheduleMaintenanceRequest{Title: in.Title, Components: in.Components,
+					StartsAt: start, EndsAt: *in.EndsAt, Message: in.Message})
+			case in.Action == "extend":
+				if in.EndsAt == nil {
+					return mcpkit.Reply{}, mcpkit.Invalid("extend needs ends_at")
+				}
+				inc, err = h.core.UpdateIncident(ctx, c.Actor, in.ID, apitypes.UpdateIncidentRequest{EndsAt: in.EndsAt})
+			case moves[in.Action] != "":
+				msg := in.Message
+				if msg == "" {
+					msg = map[string]string{"start": "Maintenance started.", "complete": "Maintenance completed.", "cancel": "This maintenance is cancelled."}[in.Action]
+				}
+				inc, err = h.core.PostIncidentUpdate(ctx, c.Actor, in.ID, apitypes.PostIncidentUpdateRequest{State: moves[in.Action], Message: msg})
+			default:
+				return mcpkit.Reply{}, mcpkit.Invalid("action is schedule, start, complete, extend or cancel")
+			}
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: incidentLine(inc), Data: inc}, nil
+		})
 }
 
 // incidentLine is an incident in a sentence for the model.
@@ -116,5 +165,9 @@ func incidentLine(inc apitypes.StatusIncident) string {
 	if inc.URL != "" {
 		where = " at " + inc.URL
 	}
-	return fmt.Sprintf("Incident %s %q on %s is %s, public%s.", inc.ID, inc.Title, inc.Page, inc.State, where)
+	what := "Incident"
+	if inc.Kind == apitypes.KindMaintenance {
+		what = "Maintenance"
+	}
+	return fmt.Sprintf("%s %s %q on %s is %s, public%s.", what, inc.ID, inc.Title, inc.Page, strings.ReplaceAll(string(inc.State), "_", " "), where)
 }

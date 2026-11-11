@@ -104,6 +104,18 @@ func registerIncidents(s *Server, a huma.API) {
 		return reply(s.core.OpenIncident(ctx, actor, in.Page, in.Body))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "schedule-maintenance", Method: http.MethodPost, Path: statusPagePathT + "/maintenance",
+		Summary: "Schedule maintenance", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "A maintenance window over some of the page's components, public at once. Dock starts it at its start and completes it at its end; " +
+			"while it is in progress its components read maintenance, their services' alerts are held until it ends and their uptime isn't counted. " +
+			"Change its times with PATCH /incidents/{id}; start, complete or cancel it sooner with an update. Deploy scope.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		StatusPagePath
+		Body apitypes.ScheduleMaintenanceRequest
+	}) (*out[apitypes.StatusIncident], error) {
+		return reply(s.core.ScheduleMaintenance(ctx, actor, in.Page, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-incident", Method: http.MethodGet, Path: incidentPathT,
 		Summary: "Get an incident", Tags: tags,
 		Description: "With its updates, who posted them, and the alert a draft came from.",

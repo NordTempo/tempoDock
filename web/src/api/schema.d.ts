@@ -5271,6 +5271,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/status-pages/{page}/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Schedule maintenance
+         * @description A maintenance window over some of the page's components, public at once. Dock starts it at its start and completes it at its end; while it is in progress its components read maintenance, their services' alerts are held until it ends and their uptime isn't counted. Change its times with PATCH /incidents/{id}; start, complete or cancel it sooner with an update. Deploy scope.
+         */
+        post: operations["schedule-maintenance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/status-sources": {
         parameters: {
             query?: never;
@@ -7977,7 +7997,7 @@ export interface components {
             id: number;
             message: string;
             /** @enum {string} */
-            state: "investigating" | "identified" | "monitoring" | "resolved";
+            state: "investigating" | "identified" | "monitoring" | "resolved" | "scheduled" | "in_progress" | "completed" | "cancelled";
         };
         Invite: {
             /** Format: date-time */
@@ -8376,7 +8396,7 @@ export interface components {
             /** @description Plain text; blank lines separate paragraphs and https links become links */
             message: string;
             /** @enum {string} */
-            state: "investigating" | "identified" | "monitoring" | "resolved";
+            state: "investigating" | "identified" | "monitoring" | "resolved" | "scheduled" | "in_progress" | "completed" | "cancelled";
         };
         Preview: {
             author: string;
@@ -8866,6 +8886,28 @@ export interface components {
                 [key: string]: number;
             };
             waiting?: string;
+        };
+        ScheduleMaintenanceRequest: {
+            /**
+             * @example [
+             *       "Database"
+             *     ]
+             */
+            components: string[] | null;
+            /**
+             * Format: date-time
+             * @description When it is planned to end, at most 7 days after its start
+             */
+            ends_at: string;
+            /** @description What visitors read; plain text */
+            message?: string;
+            /**
+             * Format: date-time
+             * @description When it starts; one in the past starts now
+             */
+            starts_at: string;
+            /** @example Database upgrade */
+            title: string;
         };
         Server: {
             accepts_non_production: boolean;
@@ -9777,7 +9819,7 @@ export interface components {
             name: string;
             sources: components["schemas"]["StatusSource"][] | null;
             /** @enum {string} */
-            status: "operational" | "idle" | "degraded" | "partial_outage" | "major_outage";
+            status: "operational" | "idle" | "maintenance" | "degraded" | "partial_outage" | "major_outage";
             /** Format: double */
             uptime?: number;
         };
@@ -9799,22 +9841,30 @@ export interface components {
             /** @enum {string} */
             impact?: "degraded" | "partial_outage" | "major_outage";
             incident?: string;
+            maintenance?: boolean;
             /** Format: double */
             uptime?: number;
         };
         StatusImpact: {
             /** @example API */
             component: string;
-            /** @enum {string} */
-            impact: "degraded" | "partial_outage" | "major_outage";
+            /**
+             * @description maintenance only for a maintenance window's components
+             * @enum {string}
+             */
+            impact: "degraded" | "partial_outage" | "major_outage" | "maintenance";
         };
         StatusIncident: {
             alert?: components["schemas"]["IncidentAlert"];
             components: components["schemas"]["StatusImpact"][] | null;
             created_by: string;
             draft?: string;
+            /** Format: date-time */
+            ends_at?: string;
             /** @example 4f2kqz7mna */
             id: string;
+            /** @enum {string} */
+            kind: "incident" | "maintenance";
             page: string;
             /** Format: date-time */
             published_at?: string;
@@ -9823,7 +9873,7 @@ export interface components {
             /** Format: date-time */
             started_at: string;
             /** @enum {string} */
-            state: "draft" | "investigating" | "identified" | "monitoring" | "resolved";
+            state: "draft" | "investigating" | "identified" | "monitoring" | "resolved" | "scheduled" | "in_progress" | "completed" | "cancelled";
             title: string;
             updates: components["schemas"]["IncidentUpdate"][] | null;
             url?: string;
@@ -9839,7 +9889,7 @@ export interface components {
             show_uptime: boolean;
             slug: string;
             /** @enum {string} */
-            status: "operational" | "idle" | "degraded" | "partial_outage" | "major_outage";
+            status: "operational" | "idle" | "maintenance" | "degraded" | "partial_outage" | "major_outage";
             title: string;
             url: string;
         };
@@ -10076,6 +10126,10 @@ export interface components {
             components?: components["schemas"]["StatusImpact"][];
             /** @description A draft's words, posted as its first update when it is published */
             draft?: string;
+            /** Format: date-time */
+            ends_at?: string;
+            /** Format: date-time */
+            starts_at?: string;
             title?: string;
         };
         UpdateMeRequest: {
@@ -41474,6 +41528,108 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["OpenIncidentRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusIncident"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "schedule-maintenance": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The page's slug */
+                page: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleMaintenanceRequest"];
             };
         };
         responses: {

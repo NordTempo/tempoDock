@@ -11,10 +11,12 @@ import "time"
 type ComponentStatus string
 
 // Component statuses, from good to bad. Idle is a component whose
-// environments are asleep (ADR 0070): neutral, never down.
+// environments are asleep (ADR 0070): neutral, never down. Maintenance is
+// one a maintenance window in progress names.
 const (
 	StatusOperational   ComponentStatus = "operational"
 	StatusIdle          ComponentStatus = "idle"
+	StatusMaintenance   ComponentStatus = "maintenance"
 	StatusDegraded      ComponentStatus = "degraded"
 	StatusPartialOutage ComponentStatus = "partial_outage"
 	StatusMajorOutage   ComponentStatus = "major_outage"
@@ -97,7 +99,7 @@ type StatusPage struct {
 	ShowUptime bool `json:"show_uptime"`
 	Drafts     bool `json:"drafts"`
 	// Status is the page's worst component (idle ones aside).
-	Status     ComponentStatus   `json:"status" enum:"operational,idle,degraded,partial_outage,major_outage"`
+	Status     ComponentStatus   `json:"status" enum:"operational,idle,maintenance,degraded,partial_outage,major_outage"`
 	Components []StatusComponent `json:"components"`
 	// Incidents are those open or resolved in the last StatusDays days,
 	// newest first, drafts included.
@@ -111,7 +113,7 @@ type StatusComponent struct {
 	Group       string          `json:"group"`
 	Description string          `json:"description"`
 	Auto        bool            `json:"auto"`
-	Status      ComponentStatus `json:"status" enum:"operational,idle,degraded,partial_outage,major_outage"`
+	Status      ComponentStatus `json:"status" enum:"operational,idle,maintenance,degraded,partial_outage,major_outage"`
 	Sources     []StatusSource  `json:"sources"`
 	// Uptime is over the days shown, nil without probes.
 	Uptime *float64 `json:"uptime,omitempty"`
@@ -140,6 +142,8 @@ type StatusDay struct {
 	// that day, Incident that incident's title.
 	Impact   ComponentStatus `json:"impact,omitempty" enum:"degraded,partial_outage,major_outage"`
 	Incident string          `json:"incident,omitempty"`
+	// Maintenance: a maintenance window ran that day.
+	Maintenance bool `json:"maintenance,omitempty"`
 }
 
 // PublicStatusPage is what a published page shows anyone: names people
@@ -151,10 +155,12 @@ type PublicStatusPage struct {
 	Status     ComponentStatus
 	ShowUptime bool
 	Groups     []PublicStatusGroup
-	// Open are the published incidents not resolved yet, Recent those
-	// resolved in the last StatusRecentDays days; newest first.
-	Open, Recent []PublicIncident
-	GeneratedAt  time.Time
+	// Open are the published incidents not resolved yet, Maintenance the
+	// windows scheduled or in progress (soonest first), Recent the
+	// incidents resolved and windows completed in the last
+	// StatusRecentDays days, newest first.
+	Open, Maintenance, Recent []PublicIncident
+	GeneratedAt               time.Time
 }
 
 // StatusRecentDays is how far back a page lists resolved incidents; its
@@ -204,16 +210,48 @@ const (
 	IncidentResolved      IncidentState = "resolved"
 )
 
-// IncidentStates are the states an update may post, for validation and
-// help texts.
+// IncidentStates are the states an update may post on an incident, for
+// validation and help texts.
 var IncidentStates = []IncidentState{IncidentInvestigating, IncidentIdentified, IncidentMonitoring, IncidentResolved}
+
+// A maintenance window's states (phase 3): Dock moves it to in progress at
+// its start and completes it at its end; people may start, complete or
+// cancel it sooner.
+const (
+	MaintenanceScheduled  IncidentState = "scheduled"
+	MaintenanceInProgress IncidentState = "in_progress"
+	MaintenanceCompleted  IncidentState = "completed"
+	MaintenanceCancelled  IncidentState = "cancelled"
+)
+
+// IncidentKind is what an incident is: an incident, or a maintenance
+// window.
+type IncidentKind string
+
+const (
+	KindIncident    IncidentKind = "incident"
+	KindMaintenance IncidentKind = "maintenance"
+)
+
+// ScheduleMaintenanceRequest schedules a maintenance window over some of
+// a page's components: public at once. While it is in progress its
+// components read maintenance, their services' alerts are held and
+// their uptime isn't counted.
+type ScheduleMaintenanceRequest struct {
+	Title string `json:"title" minLength:"1" maxLength:"120" example:"Database upgrade"`
+	// Components are their public names.
+	Components []string  `json:"components" minItems:"1" maxItems:"100" example:"[\"Database\"]"`
+	StartsAt   time.Time `json:"starts_at" doc:"When it starts; one in the past starts now"`
+	EndsAt     time.Time `json:"ends_at" doc:"When it is planned to end, at most 7 days after its start"`
+	Message    string    `json:"message,omitempty" maxLength:"5000" doc:"What visitors read; plain text"`
+}
 
 // StatusImpact is what an incident does to one component: degraded,
 // partial_outage or major_outage.
 type StatusImpact struct {
 	// Component is the component's public name on the incident's page.
 	Component string          `json:"component" minLength:"1" maxLength:"60" example:"API"`
-	Impact    ComponentStatus `json:"impact" enum:"degraded,partial_outage,major_outage"`
+	Impact    ComponentStatus `json:"impact" enum:"degraded,partial_outage,major_outage,maintenance" doc:"maintenance only for a maintenance window's components"`
 }
 
 // OpenIncidentRequest opens an incident on a page: published at once
@@ -234,12 +272,19 @@ type UpdateIncidentRequest struct {
 	Title      *string         `json:"title,omitempty" minLength:"1" maxLength:"120"`
 	Components *[]StatusImpact `json:"components,omitempty" maxItems:"100"`
 	Draft      *string         `json:"draft,omitempty" maxLength:"5000" doc:"A draft's words, posted as its first update when it is published"`
+	// StartsAt moves a scheduled maintenance window; EndsAt extends or
+	// shortens one not finished yet.
+	StartsAt *time.Time `json:"starts_at,omitempty"`
+	EndsAt   *time.Time `json:"ends_at,omitempty"`
 }
 
 // PostIncidentUpdateRequest posts an update: public at once. On a draft
 // it publishes the incident.
 type PostIncidentUpdateRequest struct {
-	State   IncidentState `json:"state" enum:"investigating,identified,monitoring,resolved"`
+	// State is an incident's (investigating to resolved) or a maintenance
+	// window's: scheduled or in_progress for a note, in_progress to start
+	// it now, completed to end it now, cancelled.
+	State   IncidentState `json:"state" enum:"investigating,identified,monitoring,resolved,scheduled,in_progress,completed,cancelled"`
 	Message string        `json:"message" minLength:"1" maxLength:"5000" doc:"Plain text; blank lines separate paragraphs and https links become links"`
 	// Components, when set, replaces the incident's impact with this one.
 	Components *[]StatusImpact `json:"components,omitempty" maxItems:"100"`
@@ -256,13 +301,17 @@ type StatusIncident struct {
 	// ID is the incident's public ID, in its public URL and the CLI.
 	ID    string        `json:"id" example:"4f2kqz7mna"`
 	Page  string        `json:"page"`
+	Kind  IncidentKind  `json:"kind" enum:"incident,maintenance"`
 	Title string        `json:"title"`
-	State IncidentState `json:"state" enum:"draft,investigating,identified,monitoring,resolved"`
+	State IncidentState `json:"state" enum:"draft,investigating,identified,monitoring,resolved,scheduled,in_progress,completed,cancelled"`
 	// Components are what it does to each component it names.
 	Components []StatusImpact `json:"components"`
 	// Draft is a draft's words.
-	Draft       string     `json:"draft,omitempty"`
+	Draft string `json:"draft,omitempty"`
+	// StartedAt is when it began, or a maintenance window's start; EndsAt
+	// a window's planned end.
 	StartedAt   time.Time  `json:"started_at"`
+	EndsAt      *time.Time `json:"ends_at,omitempty"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	ResolvedAt  *time.Time `json:"resolved_at,omitempty"`
 	// URL is its public page, "" while unpublished.
@@ -283,7 +332,7 @@ type IncidentAlert struct {
 // IncidentUpdate is an update as posted, oldest first in an incident.
 type IncidentUpdate struct {
 	ID       int64         `json:"id"`
-	State    IncidentState `json:"state" enum:"investigating,identified,monitoring,resolved"`
+	State    IncidentState `json:"state" enum:"investigating,identified,monitoring,resolved,scheduled,in_progress,completed,cancelled"`
 	Message  string        `json:"message"`
 	At       time.Time     `json:"at"`
 	By       string        `json:"by"`
@@ -294,9 +343,12 @@ type IncidentUpdate struct {
 // the components' public names and when. No authors, no alerts.
 type PublicIncident struct {
 	ID, Title  string
+	Kind       IncidentKind
 	State      IncidentState
 	Components []StatusImpact
 	StartedAt  time.Time
+	// EndsAt is a maintenance window's planned end.
+	EndsAt     *time.Time
 	ResolvedAt *time.Time
 	// Updates are newest first.
 	Updates []PublicUpdate

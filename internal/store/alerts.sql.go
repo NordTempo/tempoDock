@@ -132,7 +132,7 @@ func (q *Queries) DeleteAlertNotices(ctx context.Context, alertID int64) error {
 }
 
 const getAlert = `-- name: GetAlert :one
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id FROM alerts WHERE id = +?
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by FROM alerts WHERE id = +?
 `
 
 func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
@@ -157,6 +157,7 @@ func (q *Queries) GetAlert(ctx context.Context, id int64) (Alert, error) {
 		&i.Command,
 		&i.Target,
 		&i.OrgID,
+		&i.MutedBy,
 	)
 	return i, err
 }
@@ -308,7 +309,7 @@ func (q *Queries) ListAlertChannels(ctx context.Context, org int64) ([]AlertChan
 }
 
 const listAlerts = `-- name: ListAlerts :many
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id FROM alerts
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by FROM alerts
 WHERE coalesce(org_id, 0) = +CAST(?1 AS INTEGER) AND id < +?2
 ORDER BY id DESC LIMIT +?3
 `
@@ -349,6 +350,7 @@ func (q *Queries) ListAlerts(ctx context.Context, arg ListAlertsParams) ([]Alert
 			&i.Command,
 			&i.Target,
 			&i.OrgID,
+			&i.MutedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -521,7 +523,7 @@ func (q *Queries) ListNoticedChannels(ctx context.Context, alertID int64) ([]Ale
 }
 
 const listOpenAlerts = `-- name: ListOpenAlerts :many
-SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC
+SELECT id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by FROM alerts WHERE resolved_at IS NULL ORDER BY id DESC
 `
 
 // Read once when the daemon starts; the alert engine keeps them in memory.
@@ -553,6 +555,7 @@ func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
 			&i.Command,
 			&i.Target,
 			&i.OrgID,
+			&i.MutedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -568,9 +571,9 @@ func (q *Queries) ListOpenAlerts(ctx context.Context) ([]Alert, error) {
 }
 
 const openAlert = `-- name: OpenAlert :one
-INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id
+INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id, muted_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by
 `
 
 type OpenAlertParams struct {
@@ -590,6 +593,7 @@ type OpenAlertParams struct {
 	Command     string
 	Target      string
 	OrgID       *int64
+	MutedBy     *int64
 }
 
 func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, error) {
@@ -610,6 +614,7 @@ func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, er
 		arg.Command,
 		arg.Target,
 		arg.OrgID,
+		arg.MutedBy,
 	)
 	var i Alert
 	err := row.Scan(
@@ -631,6 +636,7 @@ func (q *Queries) OpenAlert(ctx context.Context, arg OpenAlertParams) (Alert, er
 		&i.Command,
 		&i.Target,
 		&i.OrgID,
+		&i.MutedBy,
 	)
 	return i, err
 }
@@ -652,7 +658,7 @@ UPDATE alerts SET project = ?1,
     title = replace(title, ?2 || '/' || environment || '/' || service, ?1 || '/' || environment || '/' || service),
     command = replace(command, '-p ' || ?2 || ' ', '-p ' || ?1 || ' ')
 WHERE project_id = +?3 AND resolved_at IS NULL
-RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id
+RETURNING id, "key", kind, severity, title, message, project, environment, service, server, opened_at, updated_at, resolved_at, project_id, service_id, command, target, org_id, muted_by
 `
 
 type RenameProjectAlertsParams struct {
@@ -690,6 +696,7 @@ func (q *Queries) RenameProjectAlerts(ctx context.Context, arg RenameProjectAler
 			&i.Command,
 			&i.Target,
 			&i.OrgID,
+			&i.MutedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -744,6 +751,16 @@ type SetAlertChannelSentParams struct {
 
 func (q *Queries) SetAlertChannelSent(ctx context.Context, arg SetAlertChannelSentParams) error {
 	_, err := q.db.ExecContext(ctx, setAlertChannelSent, arg.LastSentAt, arg.ID)
+	return err
+}
+
+const unmuteAlert = `-- name: UnmuteAlert :exec
+UPDATE alerts SET muted_by = NULL WHERE id = +?
+`
+
+// An alert held by a maintenance window, sent once the window ended.
+func (q *Queries) UnmuteAlert(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, unmuteAlert, id)
 	return err
 }
 

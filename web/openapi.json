@@ -8393,7 +8393,11 @@
               "investigating",
               "identified",
               "monitoring",
-              "resolved"
+              "resolved",
+              "scheduled",
+              "in_progress",
+              "completed",
+              "cancelled"
             ],
             "type": "string"
           }
@@ -9835,7 +9839,11 @@
               "investigating",
               "identified",
               "monitoring",
-              "resolved"
+              "resolved",
+              "scheduled",
+              "in_progress",
+              "completed",
+              "cancelled"
             ],
             "type": "string"
           }
@@ -11464,6 +11472,57 @@
           "enabled",
           "images",
           "builders"
+        ],
+        "type": "object"
+      },
+      "ScheduleMaintenanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "examples": [
+              [
+                "Database"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ends_at": {
+            "description": "When it is planned to end, at most 7 days after its start",
+            "format": "date-time",
+            "type": "string"
+          },
+          "message": {
+            "description": "What visitors read; plain text",
+            "maxLength": 5000,
+            "type": "string"
+          },
+          "starts_at": {
+            "description": "When it starts; one in the past starts now",
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": {
+            "examples": [
+              "Database upgrade"
+            ],
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "components",
+          "starts_at",
+          "ends_at"
         ],
         "type": "object"
       },
@@ -14445,6 +14504,7 @@
             "enum": [
               "operational",
               "idle",
+              "maintenance",
               "degraded",
               "partial_outage",
               "major_outage"
@@ -14534,6 +14594,9 @@
           "incident": {
             "type": "string"
           },
+          "maintenance": {
+            "type": "boolean"
+          },
           "uptime": {
             "format": "double",
             "type": "number"
@@ -14556,10 +14619,12 @@
             "type": "string"
           },
           "impact": {
+            "description": "maintenance only for a maintenance window's components",
             "enum": [
               "degraded",
               "partial_outage",
-              "major_outage"
+              "major_outage",
+              "maintenance"
             ],
             "type": "string"
           }
@@ -14591,9 +14656,20 @@
           "draft": {
             "type": "string"
           },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
           "id": {
             "examples": [
               "4f2kqz7mna"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "incident",
+              "maintenance"
             ],
             "type": "string"
           },
@@ -14618,7 +14694,11 @@
               "investigating",
               "identified",
               "monitoring",
-              "resolved"
+              "resolved",
+              "scheduled",
+              "in_progress",
+              "completed",
+              "cancelled"
             ],
             "type": "string"
           },
@@ -14641,6 +14721,7 @@
         "required": [
           "id",
           "page",
+          "kind",
           "title",
           "state",
           "components",
@@ -14694,6 +14775,7 @@
             "enum": [
               "operational",
               "idle",
+              "maintenance",
               "degraded",
               "partial_outage",
               "major_outage"
@@ -15446,6 +15528,14 @@
           "draft": {
             "description": "A draft's words, posted as its first update when it is published",
             "maxLength": 5000,
+            "type": "string"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
             "type": "string"
           },
           "title": {
@@ -62566,6 +62656,146 @@
           }
         ],
         "summary": "Open an incident",
+        "tags": [
+          "status pages"
+        ]
+      }
+    },
+    "/api/v1/status-pages/{page}/maintenance": {
+      "post": {
+        "description": "A maintenance window over some of the page's components, public at once. Dock starts it at its start and completes it at its end; while it is in progress its components read maintenance, their services' alerts are held until it ends and their uptime isn't counted. Change its times with PATCH /incidents/{id}; start, complete or cancel it sooner with an update. Deploy scope.",
+        "operationId": "schedule-maintenance",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The page's slug",
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "description": "The page's slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleMaintenanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusIncident"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Schedule maintenance",
         "tags": [
           "status pages"
         ]

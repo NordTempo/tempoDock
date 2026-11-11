@@ -43,18 +43,18 @@ h1 a{color:inherit;font-size:15px}
 .state{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 12px;font-size:20px;font-weight:600;margin:18px 0 6px}
 .upd{font-size:13px;font-weight:400;color:#8b8b94}
 .dot{display:inline-block;width:10px;height:10px;border-radius:999px;align-self:center}
-.dot.operational{background:#4ade80}.dot.degraded{background:#fbbf24}.dot.partial_outage{background:#fb923c}.dot.major_outage{background:#f87171}
+.dot.operational{background:#4ade80}.dot.maintenance{background:#60a5fa}.dot.degraded{background:#fbbf24}.dot.partial_outage{background:#fb923c}.dot.major_outage{background:#f87171}
 h2{font-size:15px;font-weight:600;margin:24px 0 2px}
 section{padding:9px 0 10px;border-bottom:1px solid #161618}
 .row{display:flex;justify-content:space-between;gap:12px;margin-bottom:6px}
 .name{min-width:0}
 .desc{color:#8b8b94;font-size:13px}
-.operational{color:#4ade80}.idle{color:#8b8b94}.degraded{color:#fbbf24}.partial_outage{color:#fb923c}.major_outage{color:#f87171}
+.operational{color:#4ade80}.idle{color:#8b8b94}.maintenance{color:#60a5fa}.degraded{color:#fbbf24}.partial_outage{color:#fb923c}.major_outage{color:#f87171}
 .bar{display:flex;gap:2px;height:28px}
 .bar i{flex:1;min-width:1px;border-radius:1px;background:#1c1c1f}
-.bar .g{background:#1d4d31}.bar .w{background:#fbbf24}.bar .o{background:#fb923c}.bar .r{background:#f87171}
+.bar .g{background:#1d4d31}.bar .w{background:#fbbf24}.bar .o{background:#fb923c}.bar .b{background:#2563eb}.bar .r{background:#f87171}
 .inc{border-left:2px solid #3f3f46;padding:2px 0 2px 14px;margin:0 0 16px}
-.inc.b-degraded{border-color:#fbbf24}.inc.b-partial_outage{border-color:#fb923c}.inc.b-major_outage{border-color:#f87171}
+.inc.b-degraded{border-color:#fbbf24}.inc.b-partial_outage{border-color:#fb923c}.inc.b-major_outage{border-color:#f87171}.inc.b-maintenance{border-color:#60a5fa}
 .inc-t{font-weight:600;margin-bottom:4px}
 .inc-t span{font-weight:400;margin-left:8px}
 .u{margin:6px 0;font-size:13.5px}
@@ -79,7 +79,7 @@ var statusCSP = func() string {
 // statusData is what the page template shows.
 type statusData struct {
 	Title, Headline, Tone, Updated string
-	Open                           []statusIncidentView
+	Open, Maintenance              []statusIncidentView
 	Groups                         []statusGroup
 	Past                           []statusPast
 }
@@ -87,9 +87,10 @@ type statusData struct {
 // statusIncidentView is an incident as the pages show it: Tone is its
 // worst impact's border, Link whether its title links to its own page.
 type statusIncidentView struct {
-	ID, Title, State, Tone, Affects string
-	Link                            bool
-	Updates                         []statusUpdateView
+	// Window is a maintenance window's time ("13 Nov 02:00 to 02:30 UTC").
+	ID, Title, State, Tone, Affects, Window string
+	Link                                    bool
+	Updates                                 []statusUpdateView
 }
 
 // statusUpdateView is a posted update; Body is its words as paragraphs
@@ -124,12 +125,15 @@ type statusDay struct{ Class, Title string }
 var statusLabels = map[apitypes.ComponentStatus]string{
 	apitypes.StatusOperational: "Operational", apitypes.StatusIdle: "Idle", apitypes.StatusDegraded: "Degraded",
 	apitypes.StatusPartialOutage: "Partial outage", apitypes.StatusMajorOutage: "Major outage",
+	apitypes.StatusMaintenance: "Maintenance",
 }
 
 // incidentStateLabels are the words for an incident's states.
 var incidentStateLabels = map[apitypes.IncidentState]string{
 	apitypes.IncidentInvestigating: "Investigating", apitypes.IncidentIdentified: "Identified",
 	apitypes.IncidentMonitoring: "Monitoring", apitypes.IncidentResolved: "Resolved",
+	apitypes.MaintenanceScheduled: "Scheduled", apitypes.MaintenanceInProgress: "In progress",
+	apitypes.MaintenanceCompleted: "Completed", apitypes.MaintenanceCancelled: "Cancelled",
 }
 
 // renderStatusPage renders a page's HTML.
@@ -138,6 +142,9 @@ func renderStatusPage(p apitypes.PublicStatusPage) ([]byte, error) {
 	d := statusData{Title: p.Title, Tone: string(p.Status), Headline: statusHeadline(p), Updated: now.Format("15:04 MST")}
 	for _, inc := range p.Open {
 		d.Open = append(d.Open, incidentView(inc, now, true))
+	}
+	for _, w := range p.Maintenance {
+		d.Maintenance = append(d.Maintenance, incidentView(w, now, true))
 	}
 	d.Past = statusPastDays(p.Recent, now)
 	for _, g := range p.Groups {
@@ -168,7 +175,16 @@ func execStatus(name string, d any) ([]byte, error) {
 // first with times relative to now's day.
 func incidentView(inc apitypes.PublicIncident, now time.Time, link bool) statusIncidentView {
 	v := statusIncidentView{ID: inc.ID, Title: inc.Title, State: incidentStateLabels[inc.State], Link: link, Tone: "b-operational"}
-	if inc.ResolvedAt == nil {
+	if inc.Kind == apitypes.KindMaintenance {
+		v.Tone, v.Window = "b-maintenance", statusWindow(inc)
+		names := make([]string, len(inc.Components))
+		for i, im := range inc.Components {
+			names[i] = im.Component
+		}
+		if len(names) > 0 {
+			v.Affects = "Affects " + strings.Join(names, ", ")
+		}
+	} else if inc.ResolvedAt == nil {
 		worst := apitypes.ComponentStatus("")
 		var names []string
 		for _, im := range inc.Components {
@@ -188,6 +204,26 @@ func incidentView(inc apitypes.PublicIncident, now time.Time, link bool) statusI
 		v.Updates = append(v.Updates, statusUpdateView{When: statusWhen(u.At, now), State: incidentStateLabels[u.State], Edited: u.Edited, Body: statusText(u.Message)})
 	}
 	return v
+}
+
+// statusWindow is a maintenance window's time as "Thu 13 Nov 02:00 to
+// 02:30 UTC": its planned end, or its real one once over.
+func statusWindow(w apitypes.PublicIncident) string {
+	start := w.StartedAt.UTC()
+	var end time.Time
+	switch {
+	case w.ResolvedAt != nil && w.State == apitypes.MaintenanceCompleted:
+		end = w.ResolvedAt.UTC()
+	case w.EndsAt != nil:
+		end = w.EndsAt.UTC()
+	default:
+		return start.Format("Mon 2 Jan 15:04 MST")
+	}
+	layout := "15:04 MST"
+	if end.YearDay() != start.YearDay() || end.Year() != start.Year() {
+		layout = "Mon 2 Jan 15:04 MST"
+	}
+	return start.Format("Mon 2 Jan 15:04") + " to " + end.Format(layout)
 }
 
 // statusRank orders impacts from none to a major outage.
@@ -296,6 +332,9 @@ type statusOneData struct {
 // renderIncidentPage renders an incident's own page on the page titled
 // title.
 func renderIncidentPage(title string, inc apitypes.PublicIncident, now time.Time) ([]byte, error) {
+	if inc.Kind == apitypes.KindMaintenance {
+		return execStatus("one", statusOneData{Title: title, Span: statusWindow(inc), Incident: incidentView(inc, now.UTC(), false)})
+	}
 	start := inc.StartedAt.UTC()
 	span := "since " + start.Format("2 Jan 15:04 MST")
 	if inc.ResolvedAt != nil {
@@ -342,6 +381,10 @@ func statusHeadline(p apitypes.PublicStatusPage) string {
 	if p.Status == apitypes.StatusOperational || p.Status == apitypes.StatusIdle {
 		return "All systems operational"
 	}
+	label := statusLabels[p.Status]
+	if p.Status == apitypes.StatusMaintenance {
+		label = "Under maintenance"
+	}
 	var names []string
 	for _, g := range p.Groups {
 		for _, c := range g.Components {
@@ -350,7 +393,7 @@ func statusHeadline(p apitypes.PublicStatusPage) string {
 			}
 		}
 	}
-	return statusLabels[p.Status] + ": " + strings.Join(names, ", ")
+	return label + ": " + strings.Join(names, ", ")
 }
 
 // statusBar is a component's days as the bar's cells. Dock's own words
@@ -424,6 +467,13 @@ func statusDayOf(d apitypes.StatusDay, numbers bool) statusDay {
 		}
 		out.Title += ", " + template.HTMLEscapeString(d.Incident)
 	}
+	if d.Maintenance {
+		// Planned work is blue unless something worse happened.
+		if out.Class == "n" || out.Class == "g" {
+			out.Class = "b"
+		}
+		out.Title += ", maintenance"
+	}
 	return out
 }
 
@@ -444,6 +494,9 @@ type statusJSONPage struct {
 	UpdatedAt  time.Time             `json:"updated_at"`
 	Components []statusJSONComponent `json:"components"`
 	Incidents  []statusJSONIncident  `json:"incidents"`
+	// Maintenance are the windows scheduled or in progress, soonest
+	// first.
+	Maintenance []statusJSONIncident `json:"maintenance"`
 }
 
 // statusJSONIncident is an open incident in status.json, updates newest
@@ -454,6 +507,7 @@ type statusJSONIncident struct {
 	Title      string                  `json:"title"`
 	State      apitypes.IncidentState  `json:"state"`
 	StartedAt  time.Time               `json:"started_at"`
+	EndsAt     *time.Time              `json:"ends_at,omitempty"`
 	Components []apitypes.StatusImpact `json:"components"`
 	Updates    []statusJSONUpdate      `json:"updates"`
 }
@@ -472,17 +526,29 @@ type statusJSONComponent struct {
 	Uptime *float64 `json:"uptime_90d,omitempty"`
 }
 
+// jsonIncident is an incident or window in status.json.
+func jsonIncident(inc apitypes.PublicIncident) statusJSONIncident {
+	ji := statusJSONIncident{ID: inc.ID, URL: "/incidents/" + inc.ID, Title: inc.Title, State: inc.State, StartedAt: inc.StartedAt.UTC(),
+		Components: inc.Components, Updates: make([]statusJSONUpdate, len(inc.Updates))}
+	if inc.EndsAt != nil {
+		end := inc.EndsAt.UTC()
+		ji.EndsAt = &end
+	}
+	for i, u := range inc.Updates {
+		ji.Updates[i] = statusJSONUpdate{State: u.State, Message: u.Message, At: u.At.UTC(), Edited: u.Edited}
+	}
+	return ji
+}
+
 // renderStatusJSON renders a page's status.json.
 func renderStatusJSON(p apitypes.PublicStatusPage) ([]byte, error) {
 	out := statusJSONPage{Page: p.Title, Status: string(p.Status), UpdatedAt: p.GeneratedAt.UTC(), Components: []statusJSONComponent{},
-		Incidents: []statusJSONIncident{}}
+		Incidents: []statusJSONIncident{}, Maintenance: []statusJSONIncident{}}
 	for _, inc := range p.Open {
-		ji := statusJSONIncident{ID: inc.ID, URL: "/incidents/" + inc.ID, Title: inc.Title, State: inc.State, StartedAt: inc.StartedAt.UTC(),
-			Components: inc.Components, Updates: make([]statusJSONUpdate, len(inc.Updates))}
-		for i, u := range inc.Updates {
-			ji.Updates[i] = statusJSONUpdate{State: u.State, Message: u.Message, At: u.At.UTC(), Edited: u.Edited}
-		}
-		out.Incidents = append(out.Incidents, ji)
+		out.Incidents = append(out.Incidents, jsonIncident(inc))
+	}
+	for _, w := range p.Maintenance {
+		out.Maintenance = append(out.Maintenance, jsonIncident(w))
 	}
 	for _, g := range p.Groups {
 		for _, c := range g.Components {

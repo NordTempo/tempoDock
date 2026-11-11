@@ -4,7 +4,7 @@ Status: accepted (asked by Saile, 2026-11-10; plan and public page mock
 A picked by Saile, Postplan `mqr6y0crg60j`). Builds on
 [0055](0055-uptime-checks.md) (uptime checks) and
 [0037](0037-analytics.md) (public dashboards, whose serving it copies).
-Phases 1 and 2 of 5; the later phases are under [Later phases](#later-phases).
+Phases 1 to 3 of 5; the later phases are under [Later phases](#later-phases).
 
 ## Context
 
@@ -61,6 +61,20 @@ with Dock's.
 | UI | The page's editor lists its incidents, each draft as a strip with "Review draft", and **New incident**. An incident's screen (mock E2): post an update with its state and impact, the timeline with who posted (and who drafted), and "Affected now": the named components' status and what they are built from, private |
 | Migration | 0091: `status_incidents` (kinds and states for phase 3's maintenance too), `status_incident_components`, `status_updates`; `status_pages.drafts` |
 
+## Phase 3: maintenance windows
+
+| Topic | Decision |
+|---|---|
+| Window | An incident of kind `maintenance` (0091 made room): a title, a start, a planned end (at most 7 days later) and the components it takes down, public as soon as it is scheduled. States: scheduled, in progress, completed, cancelled. A window whose start has passed starts as it is scheduled |
+| Start and end | A step on the minute statistics tick (`maintenanceTick`): with no window scheduled or in progress, nothing; otherwise one comparison with the next boundary kept in memory. At a boundary Dock moves the window and posts its own update ("Maintenance started.", "Maintenance completed."), audited as `maintenance.start` and `.complete` by Dock. Within a minute of the time, which is fine for maintenance. People start, complete or cancel sooner with an update, and move its times (`PATCH /incidents/{id}`: start while scheduled, end until it is over) |
+| Alerts | While a window is in progress, alerts about the services its components show, and uptime alerts of its single checks, are recorded with `alerts.muted_by` and shown in Dock but sent to no channel, so they get no reminders either, and draft no incident. When the window is no longer in progress (completed, cancelled, removed, or ended while Dock was down) the alerts it held that are still open are sent as opened: a deploy that broke something during maintenance still pages someone. One map lookup per alert opening while a window runs |
+| Uptime | The muted checks keep being probed, so Dock shows their state, but a probe writes no row and a failure doesn't count: planned downtime neither turns the component red nor dents its 90-day percentage |
+| Status | A component a window in progress names reads **maintenance** (blue), over whatever else it would say; the page's headline is "Under maintenance: <components>" unless something is worse. The days a window ran have a blue mark unless something worse happened |
+| Public side | Windows scheduled and in progress follow the open incidents at the top, soonest first, with their time ("Fri 13 Nov 02:00 to 02:30 UTC") and components; completed ones join the past incidents, cancelled ones only the history. `status.json` gains `maintenance` |
+| API, CLI, MCP | `POST /status-pages/{page}/maintenance`; updates take the window's states. `dock maintenance schedule\|start\|complete\|extend\|cancel`; `dock incident list` shows windows with incidents. MCP `status_maintenance` (schedule, start, complete, extend, cancel). Deploy scope, with the incidents' rule for limited tokens |
+| UI | **Schedule maintenance** on the page; a window's screen offers a note, starting, completing or cancelling it, and its times |
+| Migration | 0092: `alerts.muted_by`, and an index of the windows not finished |
+
 ## Performance
 
 | What | Cost |
@@ -70,6 +84,7 @@ with Dock's.
 | A render | seven queries and the template (`BenchmarkStatusPage100`, ~12 ms for 100 components, 90 days and 50 incidents, most of it the history query; `BenchmarkRenderStatusPage`, ~3 ms). At most one per page every 5 s while it is viewed and changing, one a minute otherwise |
 | An incident page, history or feed | two or three indexed queries per render, cached like the page |
 | An alert that may draft | one indexed query when an `uptime_down` or crash loop alert opens, one delete when it resolves |
+| Maintenance | nothing without windows; a time comparison a minute while one is scheduled or running, a map lookup per alert and per probe while one runs; one query to reload the windows when one changes |
 | Day rollup | one statement per finished day and one prune, on the hourly rollup |
 
 The history query reads one row per check and day, so a 10-component
@@ -92,9 +107,7 @@ Each its own pull request, numbered when it merges.
 
 1. Pages, components, status, history, the public page (this).
 2. Incidents (above).
-3. Maintenance windows on the minute tick: alerts of their services
-   raised but held, sent at the end if still open; no uptime rows during
-   the window.
+3. Maintenance windows (above).
 4. Custom hostnames: TXT verification ([0042](0042-domain-verification.md)),
    certificates, a Cloudflare record when the zone is connected
    ([0036](0036-cloudflare-api.md)).
