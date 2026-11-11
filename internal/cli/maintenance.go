@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,9 +17,9 @@ import (
 func newMaintenanceCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "maintenance", Short: "Schedule maintenance windows on status pages"})
 	cmd.AddCommand(newMaintenanceScheduleCmd(g),
-		newMaintenanceMoveCmd(g, "start", "Start a scheduled window now", apitypes.MaintenanceInProgress, "Maintenance started."),
-		newMaintenanceMoveCmd(g, "complete", "Complete a window now; held alerts still open are sent", apitypes.MaintenanceCompleted, "Maintenance completed."),
-		newMaintenanceMoveCmd(g, "cancel", "Cancel a window, scheduled or in progress", apitypes.MaintenanceCancelled, "This maintenance is cancelled."),
+		newMaintenanceMoveCmd(g, "start", "Started", "Start a scheduled window now", apitypes.MaintenanceInProgress, "Maintenance started."),
+		newMaintenanceMoveCmd(g, "complete", "Completed", "Complete a window now; held alerts still open are sent", apitypes.MaintenanceCompleted, "Maintenance completed."),
+		newMaintenanceMoveCmd(g, "cancel", "Cancelled", "Cancel a window, scheduled or in progress", apitypes.MaintenanceCancelled, "This maintenance is cancelled."),
 		newMaintenanceExtendCmd(g))
 	return cmd
 }
@@ -99,8 +98,9 @@ uptime isn't counted. Times are UTC unless they carry an offset.`,
 	return cmd
 }
 
-// newMaintenanceMoveCmd posts an update moving a window to state to.
-func newMaintenanceMoveCmd(g *globals, use, short string, to apitypes.IncidentState, def string) *cobra.Command {
+// newMaintenanceMoveCmd posts an update moving a window to state to;
+// done is the verb its success line starts with ("Completed").
+func newMaintenanceMoveCmd(g *globals, use, done, short string, to apitypes.IncidentState, def string) *cobra.Command {
 	var message string
 	cmd := &cobra.Command{
 		Use:   use + " <id>",
@@ -108,7 +108,7 @@ func newMaintenanceMoveCmd(g *globals, use, short string, to apitypes.IncidentSt
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return postUpdate(cmd.Context(), g, args[0], apitypes.PostIncidentUpdateRequest{State: to, Message: message},
-				strings.ToUpper(use[:1])+use[1:]+" maintenance")
+				done+" maintenance")
 		},
 	}
 	cmd.Flags().StringVarP(&message, "message", "m", def, "the update, public")

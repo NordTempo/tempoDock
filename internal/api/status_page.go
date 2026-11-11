@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"html/template"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -146,7 +147,7 @@ func renderStatusPage(p apitypes.PublicStatusPage) ([]byte, error) {
 	for _, w := range p.Maintenance {
 		d.Maintenance = append(d.Maintenance, incidentView(w, now, true))
 	}
-	d.Past = statusPastDays(p.Recent, now)
+	d.Past = statusPastDays(p, now)
 	for _, g := range p.Groups {
 		sg := statusGroup{Name: g.Name}
 		for _, c := range g.Components {
@@ -249,13 +250,21 @@ func statusWhen(t, now time.Time) string {
 }
 
 // statusPastDays are the page's last StatusRecentDays days, newest
-// first: each day's resolved incidents (by the day they started, or the
-// window's first day for older ones), or a line saying it had none.
-func statusPastDays(recent []apitypes.PublicIncident, now time.Time) []statusPast {
+// first: each day's incidents and windows that began (by the day they
+// started, or the window's first day for older ones), or a line saying it
+// had none. Open incidents and windows in progress count too, so a day
+// with one never reads "No incidents"; scheduled windows haven't begun.
+func statusPastDays(p apitypes.PublicStatusPage, now time.Time) []statusPast {
 	today := now.Truncate(24 * time.Hour)
 	first := today.AddDate(0, 0, -(apitypes.StatusRecentDays - 1))
 	byDay := map[string][]apitypes.PublicIncident{}
-	for _, inc := range recent {
+	begun := slices.Concat(p.Open, p.Recent)
+	for _, w := range p.Maintenance {
+		if w.State == apitypes.MaintenanceInProgress {
+			begun = append(begun, w)
+		}
+	}
+	for _, inc := range begun {
 		day := inc.StartedAt.UTC().Truncate(24 * time.Hour)
 		if day.Before(first) {
 			day = first

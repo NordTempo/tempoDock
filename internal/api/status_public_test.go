@@ -270,7 +270,8 @@ func TestStatusIncidentPages(t *testing.T) {
 	html := statusGet(h, host, "/", true).Body.String()
 	for _, want := range []string{`<a href="/incidents/4f2kqz7mna">API &lt;errors&gt;</a>`, "Affects API", "b-partial_outage",
 		`<a href="https://acme.example/post" rel="nofollow noopener">https://acme.example/post</a>.`, "Moving &lt;b&gt;traffic&lt;/b&gt;.",
-		"<time>14:02</time>", "· edited", `class="r" title="10 Nov: 99.50%, Jobs &#34;stuck&#34;"`, `href="/history"`} {
+		"<time>14:02</time>", "· edited", `class="r" title="10 Nov: 99.50%, Jobs &#34;stuck&#34;"`, `href="/history"`,
+		`<span class="desc">10 Nov</span><a href="/incidents/4f2kqz7mna">API &lt;errors&gt;</a><span class="desc">Identified</span>`} {
 		if !strings.Contains(html, want) {
 			t.Errorf("page has no %q", want)
 		}
