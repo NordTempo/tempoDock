@@ -233,6 +233,9 @@ type Proxy struct {
 	// wake holds the asleep environments of the last applied routes, for
 	// a node's wake check (NodeWaker).
 	wake wakeState
+	// traced maps the hostnames of the last applied traced routes to
+	// their trace tokens (TraceToken).
+	traced atomic.Pointer[map[string]string]
 
 	// Overridable in tests.
 	lookupIP   func(ctx context.Context, host string) ([]net.IPAddr, error)
@@ -282,7 +285,26 @@ func (p *Proxy) ApplyRoutes(ctx context.Context, routes []node.Route) error {
 	}
 	p.hosts.Store(routeHosts(routes))
 	p.setWakeKeys(routes)
+	traced := map[string]string{}
+	for _, r := range routes {
+		if r.Trace != "" && r.RedirectTo == "" && r.Stopped == "" {
+			for _, h := range r.Hostnames {
+				traced[strings.ToLower(h)] = r.Trace
+			}
+		}
+	}
+	p.traced.Store(&traced)
 	return nil
+}
+
+// TraceToken is the trace token of the traced route serving host, or ""
+// when the last applied routes don't trace it: the trace ingest's edge
+// spans are attributed with it (ADR 0075).
+func (p *Proxy) TraceToken(host string) string {
+	if m := p.traced.Load(); m != nil {
+		return (*m)[host]
+	}
+	return ""
 }
 
 // load POSTs cfg to Caddy's /load endpoint, which validates it and swaps

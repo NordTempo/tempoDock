@@ -168,6 +168,8 @@ type handler struct {
 	// LoadBalancing holds requests while the one upstream is down
 	// (Route.Hold).
 	LoadBalancing *loadBalancing `json:"load_balancing,omitempty"`
+	// Span names the tracing handler's spans (edgeTrace).
+	Span string `json:"span,omitempty"`
 }
 
 // loadBalancing is reverse_proxy's retry settings: Caddy tries the
@@ -429,6 +431,11 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 			// After the access check: a stranger at a protected route
 			// never wakes it.
 			handle = append(handle, wakeCheck(opts.wakeCheck, r.Wake)...)
+		}
+		if r.Trace != "" && r.RedirectTo == "" && r.Stopped == "" {
+			// After the access and wake checks: refused and held requests
+			// make no trace.
+			handle = append(handle, edgeTrace()...)
 		}
 		if r.QuietProbes && r.RedirectTo == "" {
 			// Ahead of the route and not terminal: Dock's uptime probes go
@@ -738,6 +745,20 @@ func redirect(location string) handler {
 		Handler:    "static_response",
 		StatusCode: 308,
 		Headers:    map[string][]string{"Location": {location}},
+	}
+}
+
+// edgeTrace starts a trace at the edge (ADR 0075): the visitor's trace
+// headers are dropped, so the internet can't pick trace IDs or force
+// sampling, then Caddy's tracing handler starts a span, passes its
+// traceparent to the app and puts the trace and span IDs in the request's
+// access log line, from which the server's trace ingest makes the edge
+// span. Caddy exports nothing itself: dock-caddy.service sets
+// OTEL_TRACES_EXPORTER=none.
+func edgeTrace() []handler {
+	return []handler{
+		{Handler: "headers", Request: &headerOps{Delete: []string{"traceparent", "tracestate", "baggage"}}},
+		{Handler: "tracing", Span: "edge"},
 	}
 }
 

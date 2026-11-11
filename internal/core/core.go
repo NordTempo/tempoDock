@@ -475,6 +475,12 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.startAnalytics(ctx); err != nil {
 		// Apps are served either way; only analytics waits.
 		c.log.Error("start analytics", "err", err)
+	} else if cl, _ := c.tracesClient(); cl != nil {
+		// The routes went out above, before tracing's key was read: again,
+		// with their edge traces (ADR 0075).
+		if err := c.applyRoutes(ctx, c.localID); err != nil {
+			c.log.Error("apply routes with edge traces on start", "err", err)
+		}
 	}
 	c.wg.Add(7)
 	go c.watchRuntime(events)

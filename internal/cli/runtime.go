@@ -80,13 +80,14 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	}
 	opts := caddyOptions(cfg, marker)
 	var counter node.Traffic = noTraffic{}
+	var lines *traffic.Counter
 	if opts.TrafficAddr != "" {
 		// Apps are served either way; only their traffic goes uncounted.
 		if c, err := traffic.Listen(ctx, opts.TrafficAddr, log); err != nil {
 			log.Error("traffic statistics are off", "traffic_listen", opts.TrafficAddr, "err", err)
 			opts.TrafficAddr = ""
 		} else {
-			counter = c
+			counter, lines = c, c
 		}
 	}
 	proxy, err := caddy.New(opts)
@@ -123,6 +124,17 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 		return nil, nil, ingests{}, err
 	}
 	coll.Traces = docker.NewTraceStore(containers, cfg.Traces.StorePort, owner)
+	if lines != nil {
+		// Traced routes' requests become their traces' edge spans (ADR
+		// 0075), from the access log lines traffic already reads.
+		edge := &traces.Edge{In: in.traces}
+		lines.OnEdge(func(e traffic.Edge) {
+			if tok := proxy.TraceToken(e.Host); tok != "" {
+				edge.Request(traces.EdgeRequest{Token: tok, Method: e.Method, Route: e.Route, Status: e.Status,
+					End: e.End, Duration: e.Duration, TraceID: e.TraceID, SpanID: e.SpanID})
+			}
+		})
+	}
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
 	tunnel := docker.NewCloudflared(containers, cfg.Ingress.CloudflaredImage, owner, proxy.SetTunnelHostname)
 	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false), Scanner: containers}, proxy, in, nil

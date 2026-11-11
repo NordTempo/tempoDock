@@ -19,10 +19,12 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"log/slog"
+	"math"
 	"net"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -51,6 +53,8 @@ type Counter struct {
 	hosts map[string]*hostCount
 	// addr is where Listen listens.
 	addr net.Addr
+	// edge gets traced requests (OnEdge).
+	edge atomic.Pointer[func(Edge)]
 }
 
 // hostCount is one hostname's counts since the last drain.
@@ -79,7 +83,27 @@ type accessLine struct {
 	Duration float64 `json:"duration"`
 	Size     uint64  `json:"size"`
 	Status   int     `json:"status"`
+	// TS is when Caddy wrote the line, the request's end, in seconds;
+	// TraceID and SpanID are set on traced routes (ADR 0075).
+	TS      float64 `json:"ts"`
+	TraceID string  `json:"traceID"`
+	SpanID  string  `json:"spanID"`
 }
+
+// Edge is a traced request, from its access log line: what the trace
+// ingest makes its edge span from (ADR 0075). Route is the path as
+// traffic counts it, IDs as ":id".
+type Edge struct {
+	Host, Method, Route string
+	Status              int
+	End                 time.Time
+	Duration            time.Duration
+	TraceID, SpanID     string
+}
+
+// OnEdge sends each traced request's Edge to fn, on the reader's
+// goroutine: fn must not block.
+func (c *Counter) OnEdge(fn func(Edge)) { c.edge.Store(&fn) }
 
 // Add counts one access log line. Lines that don't parse are ignored.
 func (c *Counter) Add(line []byte) {
@@ -102,6 +126,11 @@ func (c *Counter) Add(line []byte) {
 		class = 1
 	}
 	key := pathKey{normalizeMethod(l.Request.Method), normalizePath(l.Request.URI)}
+	if fn := c.edge.Load(); fn != nil && l.TraceID != "" {
+		d := time.Duration(l.Duration * float64(time.Second))
+		(*fn)(Edge{Host: host, Method: key.method, Route: key.path, Status: l.Status,
+			End: time.UnixMicro(int64(math.Round(l.TS * 1e6))), Duration: d, TraceID: l.TraceID, SpanID: l.SpanID})
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

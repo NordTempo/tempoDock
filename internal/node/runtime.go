@@ -997,6 +997,13 @@ type Route struct {
 	// out of the access log, so they don't count as traffic and can't
 	// keep an environment that sleeps awake.
 	QuietProbes bool
+	// Trace, when set, traces the route's requests from the edge (ADR
+	// 0075): Caddy drops the visitor's trace headers, starts a trace and
+	// passes its traceparent to the app, and the server's trace ingest
+	// turns the request's access log line into the trace's edge span,
+	// for the service and release this token names (a trace token,
+	// internal/traces). Redirect and stopped routes ignore it.
+	Trace string
 }
 
 // HoldFor is how long a Hold route waits for its upstream.

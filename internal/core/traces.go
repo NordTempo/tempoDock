@@ -314,6 +314,7 @@ func (c *Core) EnableTraces(ctx context.Context, a Actor) (apitypes.TracingStatu
 		if err := c.runTraces(st); err != nil {
 			return apitypes.TracingStatus{}, err
 		}
+		c.applyAllRoutes(ctx) // routes start traces at the edge
 		c.audit(ctx, a.platform(), "tracing.enable", nil, nil, "tracing", "turned tracing on")
 	}
 	return c.TracingStatus(ctx, a)
@@ -343,6 +344,7 @@ func (c *Core) DisableTraces(ctx context.Context, a Actor) (apitypes.TracingStat
 		c.traces.mu.Unlock()
 		c.wakeForwarders()
 		c.pushAnalyticsToAll(ctx) // the servers' ingests stop taking spans
+		c.applyAllRoutes(ctx)     // and Caddy stops starting traces
 		c.audit(ctx, a.platform(), "tracing.disable", nil, nil, "tracing", "turned tracing off and removed the trace store with its spans")
 		c.publishAnalytics()
 	}

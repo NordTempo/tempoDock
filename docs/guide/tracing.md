@@ -44,6 +44,11 @@ Dock's, so it keeps doing that and `dock traces` says so.
 Services on a server behind a Cloudflare Tunnel don't get the variables
 yet.
 
+Requests to a service's domains are traced from Dock's proxy too, so a
+trace starts where the request reached the server, and an app with no
+SDK at all still gets one span per request: its method, path, status
+and time. The visitor's own trace headers are dropped.
+
 ## Reading traces
 
 ```sh

@@ -531,6 +531,7 @@ func runCaddy(t *testing.T, bin, dir string, opts Options) (cmd *exec.Cmd, portT
 		"HOME="+dir,
 		"XDG_DATA_HOME="+filepath.Join(dir, "data"),
 		"XDG_CONFIG_HOME="+filepath.Join(dir, "config"),
+		"OTEL_TRACES_EXPORTER=none", // as dock-caddy.service
 	)
 	logPath := filepath.Join(dir, "caddy.log")
 	logs, err := os.Create(logPath)
@@ -764,6 +765,52 @@ func TestIntegrationTraffic(t *testing.T) {
 	}
 	if p := got[0].Paths; len(p) != 1 || p[0].Path != "/items/:id" || p[0].Method != "GET" {
 		t.Errorf("paths = %+v", p)
+	}
+}
+
+// TestIntegrationEdgeTrace serves a traced route with a real Caddy (ADR
+// 0075): the visitor's traceparent never reaches the app, Caddy's own
+// does, and the access log line has the trace and span IDs it passed on,
+// which the trace ingest makes the edge span from.
+func TestIntegrationEdgeTrace(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	tc := startCaddyWith(t, func(o *Options) {
+		o.DisableTLS, o.TrafficAddr = true, conn.LocalAddr().String()
+	})
+	got := make(chan string, 1)
+	app := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got <- r.Header.Get("traceparent") }))
+	t.Cleanup(app.Close)
+	tc.applyRoutes(t, []node.Route{{Hostnames: []string{"traced.test"}, Upstream: strings.TrimPrefix(app.URL, "http://"), Traffic: true, Trace: "dtr1.x"}})
+	visitor := "00-11111111111111111111111111111111-2222222222222222-01"
+	req, _ := http.NewRequest("GET", tc.url("http", "traced.test", "/orders/7"), nil)
+	req.Header.Set("traceparent", visitor)
+	resp, err := tc.client.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("request: %v %v", resp, err)
+	}
+	_ = resp.Body.Close()
+	tp := <-got
+	if len(tp) != 55 || tp == visitor || strings.Contains(tp, "1111111111111111") {
+		t.Fatalf("the app got traceparent %q", tp)
+	}
+	buf := make([]byte, 64<<10)
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	n, _, err := conn.ReadFrom(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter := traffic.NewCounter()
+	var edge traffic.Edge
+	counter.OnEdge(func(e traffic.Edge) { edge = e })
+	counter.Add(buf[:n])
+	// traceparent is 00-<trace>-<parent span>-<flags>: the app's parent is
+	// Caddy's span.
+	if edge.TraceID != tp[3:35] || edge.SpanID != tp[36:52] || edge.Route != "/orders/:id" || edge.End.IsZero() {
+		t.Errorf("edge = %+v from %s, the app's traceparent %s", edge, buf[:n], tp)
 	}
 }
 

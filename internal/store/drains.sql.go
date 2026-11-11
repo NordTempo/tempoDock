@@ -331,7 +331,7 @@ const listForwardedDomains = `-- name: ListForwardedDomains :many
 SELECT domains.hostname, domains.redirect_to, domains.service_id,
        services.name AS service_name,
        CAST(services.stopped_at IS NOT NULL AS BOOLEAN) AS stopped,
-       environments.id AS environment_id,
+       environments.id AS environment_id, environments.project_id, projects.org_id,
        CAST(environments.asleep_at IS NOT NULL AS BOOLEAN) AS asleep,
        CAST(environments.sleep_after_minutes > 0 OR environments.asleep_at IS NOT NULL AS BOOLEAN) AS sleepable,
        server_forwards.host_port,
@@ -344,6 +344,7 @@ SELECT domains.hostname, domains.redirect_to, domains.service_id,
 FROM server_forwards
 JOIN services ON services.id = server_forwards.service_id
 JOIN environments ON environments.id = services.environment_id
+JOIN projects ON projects.id = environments.project_id
 JOIN domains ON domains.service_id = services.id
 LEFT JOIN service_access ON service_access.service_id = services.id
 WHERE server_forwards.server_id = +? AND services.archived_at IS NULL AND domains.verified_at IS NOT NULL
@@ -357,6 +358,8 @@ type ListForwardedDomainsRow struct {
 	ServiceName        string
 	Stopped            bool
 	EnvironmentID      int64
+	ProjectID          int64
+	OrgID              int64
 	Asleep             bool
 	Sleepable          bool
 	HostPort           int64
@@ -385,6 +388,8 @@ func (q *Queries) ListForwardedDomains(ctx context.Context, serverID int64) ([]L
 			&i.ServiceName,
 			&i.Stopped,
 			&i.EnvironmentID,
+			&i.ProjectID,
+			&i.OrgID,
 			&i.Asleep,
 			&i.Sleepable,
 			&i.HostPort,

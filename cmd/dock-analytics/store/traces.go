@@ -622,7 +622,9 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 	if q.MinDuration > 0 {
 		add("dur_us >= $%d", "", q.MinDuration)
 	}
-	args = append(args, limit+1)
+	// Twice the page: a trace can enter the service twice (Caddy's edge
+	// span and the app's, or a call to itself), and is listed once.
+	args = append(args, 2*limit+1)
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	days := s.daysIn(q.From, q.To)
@@ -649,8 +651,8 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 	if err := rows.Err(); err != nil {
 		return res, err
 	}
-	if len(page) > limit {
-		page, res.More = page[:limit], true
+	if len(page) > 2*limit {
+		page, res.More = page[:2*limit], true
 	}
 	if len(page) == 0 {
 		return res, nil
@@ -700,6 +702,9 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 		return res, err
 	}
 	res.Traces = analytics.OnePerTrace(res.Traces, entries)
+	if len(res.Traces) > limit {
+		res.Traces, res.More = res.Traces[:limit], true
+	}
 	return res, nil
 }
 

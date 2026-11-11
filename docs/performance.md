@@ -429,6 +429,10 @@ end) are not listed.
   most 50 fingerprints per service and 2,000 in all, dropping and
   counting past them; a tick opens at most 10 issues per service, and a
   service has at most 1,000.
+- Edge spans (ADR 0075) cost Caddy nothing measurable (its tracing
+  handler exports nothing) and the daemon one span per traced request,
+  made from the access log line the traffic counter already parses and
+  sampled and rate-limited like an app's span.
 - The trace ingest takes OTLP/HTTP from apps on every server, so it is
   capped (`internal/traces`): a body is at most 2 MB as sent and 4 MB
   unpacked (413 past it), at most two are read and decoded at once (503
