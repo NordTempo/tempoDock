@@ -1,0 +1,316 @@
+package traces
+
+import (
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/NordTempo/tempoDock/internal/analytics"
+)
+
+// Sampling, at ingest (ADR 0075). Apps send every span and the ingest
+// decides, per trace:
+//
+//   - A trace's first span decides it: kept when the trace ID's random
+//     bits fall under the service's threshold, so every span of a trace
+//     gets the same answer for the same threshold. The threshold adapts
+//     each minute to keep about Budget traces a minute a service, and
+//     never more than that in a minute. Later spans, of any service on
+//     this server, follow the decision.
+//   - A span with an error, an exception or a 5xx, or an entry span at
+//     least Slow long, rescues its trace: the trace's dropped spans are
+//     pulled out of a ring of recently dropped ones, and later spans
+//     follow. Children end before their parents, so a slow or failing
+//     root still finds its children there.
+//   - Dock's health probe sends its own trace context, unsampled, so a
+//     stock SDK doesn't record probe requests at all; spans of a probe
+//     trace that still arrive are never sampled (an error still rescues
+//     them).
+//
+// The ring, the decisions and the per-service state exist only while
+// spans arrive: one timer frees them two quiet minutes after the last.
+
+// Defaults of the sampler's limits (Limits' zero values).
+const (
+	// DefaultBudget is the traces a minute a service keeps by sampling.
+	DefaultBudget = 3000
+	// DefaultSlow is how long an entry span takes to rescue its trace.
+	DefaultSlow = time.Second
+	// DefaultRescues caps the traces a service rescues from the ring a
+	// minute; past it the rescuing span and later ones are still kept.
+	DefaultRescues = 600
+	// DefaultRingBytes is the ring of dropped spans, per server.
+	DefaultRingBytes = 4 << 20
+)
+
+// ProbeTraceHi is the first half of the trace IDs Dock's health probe
+// (cmd/dock-probe) sends: "dockprbe".
+const ProbeTraceHi = 0x646f636b70726265
+
+const (
+	// ringChunk is the unit the ring is allocated and recycled in.
+	ringChunk = 1 << 20
+	// decidedCap is how many decisions each of the two generations
+	// holds: about 1.5 MB at most for both.
+	decidedCap = 32 << 10
+	// idleRelease is how long the sampler keeps its memory after the
+	// last span.
+	idleRelease = 2 * time.Minute
+	// randomBits are the bits of a trace ID W3C requires to be random,
+	// the rightmost 56.
+	randomBits = 56
+)
+
+// sampler holds the ingest's sampling state.
+type sampler struct {
+	mu       sync.Mutex
+	services map[int64]*serviceSample
+	// decided maps trace IDs to their decision, in two generations: when
+	// the newer fills it becomes the older and the older is dropped.
+	decided, older map[analytics.TraceID]decision
+	ring           ring
+	// last is the last span's arrival, release the timer that frees the
+	// state after idleRelease without one.
+	last    time.Time
+	release *time.Timer
+	// line is the buffer a rescued span is rewritten in.
+	line []byte
+}
+
+// decision is what a trace got: dropped, or kept for a reason.
+type decision struct {
+	kept   bool
+	reason analytics.Kept
+}
+
+// serviceSample is a service's sampling state in the current minute.
+type serviceSample struct {
+	minute time.Time
+	// seen and kept count the service's new traces this minute;
+	// rescued its rescues.
+	seen, kept, rescued int
+	// threshold keeps a trace when its random bits are below it; set
+	// at each minute's start from the minute before.
+	threshold uint64
+}
+
+// sampleLimits are the sampler's limits with their defaults applied.
+type sampleLimits struct {
+	budget, rescues, ringBytes int
+	slow                       time.Duration
+}
+
+// emit is where kept spans go, as JSON lines.
+type emit func(line []byte) error
+
+// span decides one span: emits it (and any of its trace's dropped spans
+// it rescues), or keeps it in the ring. line is the span as JSON, with
+// Kept unset.
+func (sm *sampler) span(s *analytics.Span, line []byte, exception bool, l sampleLimits, now time.Time, out emit) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.touch(now)
+	svc := sm.service(s.Service, l, now)
+	d, ok := sm.lookup(s.Trace)
+	if !ok {
+		d = sm.decide(s.Trace, svc, l)
+	}
+	if !d.kept {
+		if reason, rescue := trigger(s, exception, l); rescue {
+			d = decision{kept: true, reason: reason}
+			sm.remember(s.Trace, d)
+			if svc.rescued < l.rescues {
+				svc.rescued++
+				if err := sm.rescue(s.Trace, reason, out); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if !d.kept {
+		sm.ring.add(s.Trace, line, l.ringBytes)
+		return nil
+	}
+	return out(withKept(&sm.line, line, d.reason))
+}
+
+// trigger reports whether s rescues its trace, and why.
+func trigger(s *analytics.Span, exception bool, l sampleLimits) (analytics.Kept, bool) {
+	switch {
+	case s.Error() || exception:
+		return analytics.KeptError, true
+	case s.Entry && s.Duration >= l.slow.Microseconds():
+		return analytics.KeptSlow, true
+	}
+	return 0, false
+}
+
+// decide decides a trace from its first span, of service svc.
+func (sm *sampler) decide(id analytics.TraceID, svc *serviceSample, l sampleLimits) decision {
+	hi, lo := id.Halves()
+	svc.seen++
+	d := decision{}
+	if hi != ProbeTraceHi && lo&(1<<randomBits-1) < svc.threshold && svc.kept < l.budget {
+		svc.kept++
+		d = decision{kept: true, reason: analytics.KeptSampled}
+	}
+	sm.remember(id, d)
+	return d
+}
+
+// service is a service's state, rolled over to now's minute: the new
+// minute's threshold keeps about the budget of the last minute's traces.
+func (sm *sampler) service(id int64, l sampleLimits, now time.Time) *serviceSample {
+	minute := now.Truncate(time.Minute)
+	svc := sm.services[id]
+	if svc == nil {
+		svc = &serviceSample{minute: minute, threshold: 1 << randomBits}
+		sm.services[id] = svc
+	}
+	if minute.After(svc.minute) {
+		share := 1.0
+		if minute.Sub(svc.minute) == time.Minute && svc.seen > l.budget {
+			share = float64(l.budget) / float64(svc.seen)
+		}
+		*svc = serviceSample{minute: minute, threshold: uint64(share * (1 << randomBits))}
+	}
+	return svc
+}
+
+// lookup is a trace's decision, if it has one.
+func (sm *sampler) lookup(id analytics.TraceID) (decision, bool) {
+	if d, ok := sm.decided[id]; ok {
+		return d, true
+	}
+	d, ok := sm.older[id]
+	return d, ok
+}
+
+// remember records a trace's decision.
+func (sm *sampler) remember(id analytics.TraceID, d decision) {
+	if _, ok := sm.decided[id]; !ok && len(sm.decided) >= decidedCap {
+		sm.older, sm.decided = sm.decided, make(map[analytics.TraceID]decision, decidedCap)
+	}
+	sm.decided[id] = d
+	delete(sm.older, id)
+}
+
+// rescue emits the trace's spans in the ring, kept for reason.
+func (sm *sampler) rescue(id analytics.TraceID, reason analytics.Kept, out emit) error {
+	var err error
+	sm.ring.take(id, func(line []byte) {
+		if err == nil {
+			err = out(withKept(&sm.line, line, reason))
+		}
+	})
+	return err
+}
+
+// withKept is a span's JSON line with its reason for being kept: the
+// line has none (Kept's zero value, sampled, is omitted), so a reason is
+// written first in the object. buf is reused.
+func withKept(buf *[]byte, line []byte, reason analytics.Kept) []byte {
+	if reason == analytics.KeptSampled || len(line) < 2 {
+		return line
+	}
+	b := append((*buf)[:0], `{"kept":`...)
+	b = strconv.AppendUint(b, uint64(reason), 10)
+	b = append(b, ',')
+	b = append(b, line[1:]...)
+	*buf = b
+	return b
+}
+
+// touch notes a span's arrival, allocating the state on the first and
+// arming the timer that frees it.
+func (sm *sampler) touch(now time.Time) {
+	sm.last = now
+	if sm.services != nil {
+		return
+	}
+	sm.services = map[int64]*serviceSample{}
+	sm.decided = make(map[analytics.TraceID]decision, 1024)
+	if sm.release == nil {
+		// Freeing the sampler's memory after the last span: one timer,
+		// armed while spans arrive (docs/performance.md).
+		sm.release = time.AfterFunc(idleRelease, sm.free)
+	} else {
+		sm.release.Reset(idleRelease)
+	}
+}
+
+// free drops the sampler's state once spans stopped two minutes ago,
+// and otherwise waits for the rest of the two minutes.
+func (sm *sampler) free() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if left := idleRelease - time.Since(sm.last); left > 0 {
+		sm.release.Reset(left)
+		return
+	}
+	sm.services, sm.decided, sm.older, sm.line = nil, nil, nil, nil
+	sm.ring = ring{}
+}
+
+// ring holds recently dropped spans, so a trace that turns out to matter
+// can be rescued: chunks of 1 MB, allocated as needed up to its size,
+// the oldest recycled whole when they're all full.
+type ring struct {
+	chunks []*chunk
+	cur    int
+}
+
+// chunk is a ring's unit: span lines back to back, with their traces.
+type chunk struct {
+	data []byte
+	recs []rec
+}
+
+// rec is a span line in a chunk; a taken one has a zero trace.
+type rec struct {
+	trace     analytics.TraceID
+	off, size int32
+}
+
+// add keeps a dropped span's line, for a ring of at most size bytes.
+func (r *ring) add(trace analytics.TraceID, line []byte, size int) {
+	if len(line) > ringChunk {
+		return
+	}
+	if len(r.chunks) == 0 {
+		r.chunks = append(r.chunks, newChunk())
+	}
+	c := r.chunks[r.cur]
+	if len(c.data)+len(line) > ringChunk {
+		r.cur++
+		if r.cur == len(r.chunks) && len(r.chunks) < max(size/ringChunk, 1) {
+			r.chunks = append(r.chunks, newChunk())
+		}
+		r.cur %= len(r.chunks)
+		c = r.chunks[r.cur]
+		c.data, c.recs = c.data[:0], c.recs[:0]
+	}
+	c.recs = append(c.recs, rec{trace: trace, off: int32(len(c.data)), size: int32(len(line))})
+	c.data = append(c.data, line...)
+}
+
+// newChunk allocates a ring chunk.
+func newChunk() *chunk {
+	return &chunk{data: make([]byte, 0, ringChunk), recs: make([]rec, 0, ringChunk/512)}
+}
+
+// take calls fn with each of trace's lines, oldest first, and forgets
+// them.
+func (r *ring) take(trace analytics.TraceID, fn func(line []byte)) {
+	for i := range r.chunks {
+		c := r.chunks[(r.cur+1+i)%len(r.chunks)]
+		for j := range c.recs {
+			rc := &c.recs[j]
+			if rc.trace != trace {
+				continue
+			}
+			fn(c.data[rc.off : rc.off+rc.size])
+			rc.trace = analytics.TraceID{}
+		}
+	}
+}

@@ -449,6 +449,11 @@
       "ns_op": 1884615,
       "bytes_op": 1151500,
       "allocs_op": 14249
+    },
+    "traces.BenchmarkSampleRescue": {
+      "ns_op": 4000,
+      "bytes_op": 41,
+      "allocs_op": 0
     }
   }
 }

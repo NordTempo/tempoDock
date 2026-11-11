@@ -13,7 +13,9 @@ import (
 // failure says.
 func TestRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/up" {
+		// The probe's trace context: not sampled, a probe trace ID.
+		tp := r.Header.Get("traceparent")
+		if r.URL.Path != "/up" || len(tp) != 55 || !strings.HasPrefix(tp, "00-646f636b70726265") || !strings.HasSuffix(tp, "-00") {
 			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 	}))
