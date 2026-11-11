@@ -126,15 +126,18 @@ for everything.
   problems, one table per environment and its activity; an environment's
   address (`/org/project/env`) is that environment's own page. A service
   has one header (name, environment, state, actions) and its tabs in four
-  groups with a line between them: watching it (Overview, Logs,
-  Resources, Errors, Requests, Uptime), operating it (Jobs, One-off
-  command, Data, Backups), configuring it (Domains, Variables, Build &
-  run), its history (Activity). Tabs every service has come first; the
-  list is `web/src/features/service/tabs.ts`. ADR 0076 merges these into
-  nine tabs screen by screen; a tab's views (Requests' Traffic and
-  Visitors) are underlined links under it, each with its own URL.
-- **Overview.** One column: status, facts, uptime and visitors, how to
-  connect, the deploy in flight, releases. Logs have their own tab.
+  groups with a line between them (ADR 0076): watching it (Overview,
+  Logs, Requests, Errors, Metrics), operating it (Jobs, Data), configuring
+  it (Variables, Settings), its history (History). Pages that answer one
+  question are one tab: Metrics is Resources and Uptime, Jobs is one-off
+  commands and scheduled jobs, Settings is Build & run, Domains and
+  restore points with an index, History is releases and activity, and a
+  release opens under it in the shell. A tab's views (Requests' Traffic
+  and Visitors) are underlined links under it, each with its own URL. The
+  list is `web/src/features/service/tabs.ts`.
+- **Overview.** One column: status, what needs attention, facts, uptime
+  and visitors, how to connect, the deploy in flight, the newest releases.
+  Logs have their own tab; all releases are on History.
 - **Width.** Every page uses the one content width. Below 1400px, side
   columns (members' roles, analytics' side panel) move under the main one.
 - **Help.** `/org/help` explains Dock's words; "What's this?" links point

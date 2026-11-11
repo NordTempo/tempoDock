@@ -19,10 +19,10 @@ looks.
 
 | Topic | Decision |
 |---|---|
-| Tabs | Overview, Logs, Requests, Errors, Metrics, Jobs, Data, Variables, Settings, History. A web service shows 9, a worker 6, a database 8 |
+| Tabs | Overview, Logs, Requests, Errors, Metrics, Jobs, Data, Variables, Settings, History, in that order. A web service shows 9, a worker 7, a database 8 |
 | Requests | `…/<service>/requests`, G T: views under one tab, each its own route. Traffic (the index, ADR 0033), Visitors (the site's dashboard, ADR 0037, in the service's shell; Vitals, Funnels and Replays stay in the Analytics area) and Traces (ADR 0075, built by tracing into this tab). Only for services with a domain |
-| Merged pages | Metrics is Resources and Uptime; Jobs holds scheduled jobs and one-off commands; Data gains Backups for databases; Settings is Build & run, Domains and (for stateful services that aren't databases) Backups on one page with an index; History is releases and the audit trail, and a release opens in it |
-| Old addresses | Every old tab redirects to its new place with its search: `…/traffic` to Requests, `…/analytics` to Requests' Visitors, and the others as their screens move |
+| Merged pages | Metrics is Resources, then Uptime (`#uptime`) where a service has a domain or checks; Jobs is Run a command (`#run`), then the scheduled jobs; Settings is Build & run, Domains (`#domains`) and, for every stateful service, its restore points (`#backups`) on one page with an index; History is the releases, then the activity (`#activity`), and a release opens under it (`…/history/<n>`) inside the shell. The Overview keeps the newest 5 releases. Backups sit with volumes in Settings for databases too: one rule, and the Data panel (shared with tempoBase) stays as it is |
+| Old addresses | Every old tab redirects to its new place with its search or anchor: `…/traffic` and `…/analytics` to Requests, `…/resources` and `…/uptime` to Metrics, `…/run` to Jobs, `…/build`, `…/domains` and `…/backups` to Settings, `…/releases`, `…/releases/<n>` and `…/audit` to History |
 | Save model | Every setting is a row with Edit: Enter saves, Esc cancels. A setting that changes a running service is staged until Apply; every other saves at once. Checkboxes save at once only outside services |
 | Staged changes | One control in the service header (the count and Apply, Ctrl Enter), a review drawer with the diff, the downtime warning and Discard. Nothing pushes the page |
 | Failures | Said once, on the service's Overview, in a "Needs attention" list; elsewhere a dot, chip or count. In the organization, Inbox is the one list: Alerts and access requests together |
@@ -32,7 +32,8 @@ looks.
 
 - Requests is a service's word for HTTP requests; access requests are
   approvals in the Inbox.
-- Keys: G T Requests, G Y its Visitors view. The other G keys follow the
-  merged tabs as their screens move.
+- Keys: G O, G L, G T (Requests; G Y its Visitors), G E, G M, G J, G B
+  (Data), G V, G S (and S), G H. G U, G C, G K, G D, G A and G R are gone
+  with their tabs.
 - `web/src/features/service/tabs.ts` stays the one list the strip, the
   palette and the ? help read.
