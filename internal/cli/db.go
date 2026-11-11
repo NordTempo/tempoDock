@@ -1044,7 +1044,7 @@ rejects them; pending changesets expire after 7 days.`,
 		return g.io.Print(list, func() error {
 			t := g.io.Table("id", "status", "author", "changes", "created", "message")
 			for _, cs := range list {
-				t.Row(itoa(cs.ID), string(cs.Status), cs.Author, strconv.Itoa(len(cs.Changes)), ago(cs.CreatedAt), cut(oneLine(cs.Message), 60))
+				t.Row(itoa(cs.ID), string(cs.Status), cs.Author, strconv.Itoa(len(cs.Changes)+len(cs.KeyChanges)), ago(cs.CreatedAt), cut(oneLine(cs.Message), 60))
 			}
 			return t.Flush()
 		})
