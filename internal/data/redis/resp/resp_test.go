@@ -73,3 +73,31 @@ func FuzzRead(f *testing.F) {
 		_, _ = c.read(0)
 	})
 }
+
+// A whole reply is capped, not only each array: 64 arrays of 200 000
+// empty arrays (48 MB sent) decoded to ~860 MB before.
+func TestReplyBudget(t *testing.T) {
+	a, b := net.Pipe()
+	t.Cleanup(func() { _ = a.Close() })
+	go func() {
+		defer func() { _ = b.Close() }()
+		inner := "*200000\r\n" + strings.Repeat("*0\r\n", 200_000)
+		if _, err := b.Write([]byte("*64\r\n")); err != nil {
+			return
+		}
+		for range 64 {
+			if _, err := b.Write([]byte(inner)); err != nil {
+				return
+			}
+		}
+	}()
+	c := New(a)
+	if _, err := c.Receive(); !errors.Is(err, ErrBadConn) || !c.Broken() {
+		t.Fatalf("got %v, want ErrBadConn", err)
+	}
+	// Status lines count against the bytes: 5 000 of 15 KB is 75 MB.
+	c = pipeConn(t, "*5000\r\n"+strings.Repeat("+"+strings.Repeat("x", 15<<10)+"\r\n", 5000))
+	if _, err := c.Receive(); !errors.Is(err, ErrBadConn) {
+		t.Fatalf("status lines: got %v, want ErrBadConn", err)
+	}
+}

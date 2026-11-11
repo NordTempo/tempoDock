@@ -202,6 +202,25 @@ func checkSize(rc *conn, args []string, max int64) error {
 			}
 		}
 		return nil
+	case "scan", "hscan", "sscan", "zscan", "xinfo|stream", "memory|usage":
+		// SCAN's COUNT, XINFO STREAM's FULL (all entries unless COUNT) and
+		// MEMORY USAGE's SAMPLES 0 (every element) make one command walk a
+		// whole value, blocking the app's Redis meanwhile.
+		count := int64(-1)
+		if i := slices.IndexFunc(args, func(a string) bool { return strings.EqualFold(a, "COUNT") || strings.EqualFold(a, "SAMPLES") }); i > 0 {
+			if i+1 >= len(args) {
+				return nil // the server refuses it
+			}
+			n, err := strconv.ParseInt(args[i+1], 10, 64)
+			if err != nil || n <= 0 || n > max {
+				return fmt.Errorf("%w: %s takes 1 to %d", data.ErrInvalid, strings.ToUpper(args[i]), max)
+			}
+			count = n
+		}
+		if name == "xinfo|stream" && count < 0 && slices.ContainsFunc(args, func(a string) bool { return strings.EqualFold(a, "FULL") }) {
+			return fmt.Errorf("%w: XINFO STREAM FULL needs COUNT, 1 to %d", data.ErrInvalid, max)
+		}
+		return nil
 	case "mget":
 		if int64(len(args)-1) > max {
 			return fmt.Errorf("%w: MGET at most %d keys", data.ErrInvalid, max)

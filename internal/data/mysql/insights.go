@@ -68,14 +68,14 @@ func readStatus(ctx context.Context, c *conn) (status, error) {
 	st := status{now: time.Now().UTC(), vars: map[string]int64{}}
 	err := c.query(ctx, `SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected', 'Threads_running', 'Uptime',
   'Innodb_buffer_pool_read_requests', 'Innodb_buffer_pool_reads', 'Innodb_deadlocks',
-  'Performance_schema_digest_lost', 'Innodb_history_list_length')`, func(r [][]byte) error {
+  'Performance_schema_digest_lost', 'Innodb_history_list_length')`, 2, func(r [][]byte) error {
 		st.vars[strings.ToLower(string(r[0]))] = atoi64(r[1])
 		return nil
 	})
 	if err != nil {
 		return st, err
 	}
-	err = c.query(ctx, "SELECT @@max_connections, @@performance_schema, @@innodb_page_size", func(r [][]byte) error {
+	err = c.query(ctx, "SELECT @@max_connections, @@performance_schema, @@innodb_page_size", 3, func(r [][]byte) error {
 		st.maxConns, st.perfSchema, st.pageSize = int(atoi64(r[0])), string(r[1]) == "1", atoi64(r[2])
 		return nil
 	})
@@ -84,7 +84,7 @@ func readStatus(ctx context.Context, c *conn) (status, error) {
 	}
 	if !c.mariadb {
 		err = c.query(ctx, "SELECT NAME, COUNT FROM information_schema.INNODB_METRICS WHERE NAME IN ('lock_deadlocks', 'trx_rseg_history_len')",
-			func(r [][]byte) error {
+			2, func(r [][]byte) error {
 				name := map[string]string{"lock_deadlocks": "innodb_deadlocks", "trx_rseg_history_len": "innodb_history_list_length"}[string(r[0])]
 				st.vars[name] = atoi64(r[1])
 				return nil
@@ -210,7 +210,7 @@ func pressure(ctx context.Context, c *conn, st status) (apitypes.DataPressure, e
 	p := apitypes.DataPressure{Used: int(st.vars["threads_connected"]), Max: st.maxConns}
 	// The monitor's own connection runs this.
 	p.Active = max(int(st.vars["threads_running"])-1, 0)
-	err := c.query(ctx, pressureSQL, func(r [][]byte) error {
+	err := c.query(ctx, pressureSQL, 4, func(r [][]byte) error {
 		p.Waiting, p.IdleInTransaction = int(atoi64(r[1])), int(atoi64(r[2]))
 		if r[3] != nil {
 			if at, err := time.ParseInLocation(time.DateTime, string(r[3]), time.UTC); err == nil {
@@ -258,7 +258,7 @@ func (ic *insightCall) overview() error {
 	rd, err := ic.reader()
 	if err == nil {
 		err = rd.query(ic.ctx, "SELECT COALESCE(SUM(DATA_LENGTH + INDEX_LENGTH), 0) FROM information_schema.TABLES WHERE "+databasesFilter("TABLE_SCHEMA", ic.t.Database),
-			func(r [][]byte) error { ov.Bytes = atoi64(r[0]); return nil })
+			1, func(r [][]byte) error { ov.Bytes = atoi64(r[0]); return nil })
 	}
 	if err != nil {
 		ic.unavailable(apitypes.InsightOverview, true, "the database's size couldn't be read: "+dbError(err).Error())
@@ -303,7 +303,7 @@ func (ic *insightCall) statements(req apitypes.DataInsightsRequest) error {
   SUM_ROWS_SENT, SUM_NO_INDEX_USED, SUM_CREATED_TMP_DISK_TABLES
 FROM performance_schema.events_statements_summary_by_digest
 WHERE DIGEST IS NOT NULL AND `+digestFilter(ic.t.Database)+`
-ORDER BY `+cmp.Or(order, "SUM_TIMER_WAIT")+` DESC LIMIT `+strconv.Itoa(limit), func(r [][]byte) error {
+ORDER BY `+cmp.Or(order, "SUM_TIMER_WAIT")+` DESC LIMIT `+strconv.Itoa(limit), 9, func(r [][]byte) error {
 		s := apitypes.DataStatement{ID: string(r[0]), Text: cutText(string(r[1])), Calls: atoi64(r[2]), Rows: atoi64(r[6])}
 		s.TotalMs, _ = strconv.ParseFloat(string(r[3]), 64)
 		s.MeanMs, _ = strconv.ParseFloat(string(r[4]), 64)
@@ -316,7 +316,7 @@ ORDER BY `+cmp.Or(order, "SUM_TIMER_WAIT")+` DESC LIMIT `+strconv.Itoa(limit), f
 		return err
 	}
 	return ic.mon.query(ic.ctx, "SELECT COUNT(*) FROM performance_schema.events_statements_summary_by_digest",
-		func(r [][]byte) error { ic.out.QueriesTracked = atoi64(r[0]); return nil })
+		1, func(r [][]byte) error { ic.out.QueriesTracked = atoi64(r[0]); return nil })
 }
 
 // cutText cuts a statement at DataInsightTextMaxBytes, on a rune.
@@ -348,7 +348,7 @@ func (ic *insightCall) sessions() error {
 	}
 	trxs := map[int64]trx{}
 	err := ic.mon.query(ic.ctx, "SELECT trx_mysql_thread_id, trx_started, trx_state, trx_id FROM information_schema.INNODB_TRX",
-		func(r [][]byte) error {
+		4, func(r [][]byte) error {
 			trxs[atoi64(r[0])] = trx{started: string(r[1]), state: string(r[2]), id: string(r[3])}
 			return nil
 		})
@@ -367,7 +367,7 @@ func (ic *insightCall) sessions() error {
 			sql = "SELECT requesting_trx_id, blocking_trx_id FROM information_schema.INNODB_LOCK_WAITS"
 		}
 		if ic.mon.mariadb || ic.st.perfSchema {
-			err := ic.mon.query(ic.ctx, sql, func(r [][]byte) error {
+			err := ic.mon.query(ic.ctx, sql, 2, func(r [][]byte) error {
 				w, b := byTrx[string(r[0])], byTrx[string(r[1])]
 				if w != 0 && b != 0 && !slices.Contains(blockedBy[w], b) {
 					blockedBy[w] = append(blockedBy[w], b)
@@ -382,7 +382,7 @@ func (ic *insightCall) sessions() error {
 	apps := map[int64]string{}
 	if ic.st.perfSchema {
 		err := ic.mon.query(ic.ctx, "SELECT PROCESSLIST_ID, ATTR_VALUE FROM performance_schema.session_connect_attrs WHERE ATTR_NAME = 'program_name'",
-			func(r [][]byte) error { apps[atoi64(r[0])] = string(r[1]); return nil })
+			2, func(r [][]byte) error { apps[atoi64(r[0])] = string(r[1]); return nil })
 		if err != nil {
 			return err
 		}
@@ -401,7 +401,7 @@ func (ic *insightCall) sessions() error {
 	now := ic.st.now
 	err = ic.mon.query(ic.ctx, "SELECT ID, USER, HOST, DB, COMMAND, "+timeCol+", STATE, INFO FROM "+src+
 		" WHERE ID <> CONNECTION_ID() ORDER BY TIME DESC LIMIT "+strconv.Itoa(apitypes.DataInsightSessionsLimit),
-		func(r [][]byte) error {
+		8, func(r [][]byte) error {
 			id, user, command := atoi64(r[0]), string(r[1]), string(r[4])
 			ms, _ := strconv.ParseFloat(string(r[5]), 64)
 			since := now.Add(-time.Duration(ms) * time.Millisecond)
@@ -467,7 +467,7 @@ func (ic *insightCall) indexUse() (map[[3]string]int64, error) {
 	use := map[[3]string]int64{}
 	err := ic.mon.query(ic.ctx, `SELECT OBJECT_SCHEMA, OBJECT_NAME, COALESCE(INDEX_NAME, ''), COUNT_READ
 FROM performance_schema.table_io_waits_summary_by_index_usage WHERE OBJECT_TYPE = 'TABLE' AND `+databasesFilter("OBJECT_SCHEMA", ic.t.Database),
-		func(r [][]byte) error {
+		4, func(r [][]byte) error {
 			use[[3]string{string(r[0]), string(r[1]), string(r[2])}] = atoi64(r[3])
 			return nil
 		})
@@ -485,7 +485,7 @@ func (ic *insightCall) tables() error {
 	err = rd.query(ic.ctx, `SELECT TABLE_SCHEMA, TABLE_NAME, COALESCE(TABLE_ROWS, 0), COALESCE(DATA_LENGTH, 0), COALESCE(INDEX_LENGTH, 0)
 FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND `+databasesFilter("TABLE_SCHEMA", ic.t.Database)+`
 ORDER BY COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0) DESC LIMIT `+strconv.Itoa(apitypes.DataInsightTablesLimit),
-		func(r [][]byte) error {
+		5, func(r [][]byte) error {
 			total, index := atoi64(r[3])+atoi64(r[4]), atoi64(r[4])
 			ic.out.Tables = append(ic.out.Tables, apitypes.DataTableStats{
 				Schema: string(r[0]), Name: string(r[1]), EstimatedRows: atoi64(r[2]),
@@ -534,7 +534,7 @@ func (ic *insightCall) indexes() error {
 	cols := map[key][]string{}
 	err = rd.query(ic.ctx, `SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, NON_UNIQUE, COALESCE(COLUMN_NAME, '(expression)'), SUB_PART
 FROM information_schema.STATISTICS WHERE `+databasesFilter("TABLE_SCHEMA", ic.t.Database)+`
-ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`, func(r [][]byte) error {
+ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`, 6, func(r [][]byte) error {
 		k := key{string(r[0]), string(r[1]), string(r[2])}
 		if _, ok := byKey[k]; !ok {
 			if len(order) == apitypes.DataInsightIndexesLimit {
@@ -557,7 +557,7 @@ ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`, func(r [][]byte) e
 	}
 	sizes := map[key]int64{}
 	err = ic.mon.query(ic.ctx, `SELECT database_name, table_name, index_name, stat_value FROM mysql.innodb_index_stats
-WHERE stat_name = 'size' AND `+databasesFilter("database_name", ic.t.Database), func(r [][]byte) error {
+WHERE stat_name = 'size' AND `+databasesFilter("database_name", ic.t.Database), 4, func(r [][]byte) error {
 		sizes[key{string(r[0]), string(r[1]), string(r[2])}] = atoi64(r[3]) * ic.st.pageSize
 		return nil
 	})
@@ -719,7 +719,7 @@ func (e *Engine) EnableQueryStats(ctx context.Context, t data.Target, owner data
 	}
 	defer func() { _ = c.Close() }()
 	on := false
-	if err := c.query(ctx, "SELECT @@performance_schema", func(r [][]byte) error { on = string(r[0]) == "1"; return nil }); err != nil {
+	if err := c.query(ctx, "SELECT @@performance_schema", 1, func(r [][]byte) error { on = string(r[0]) == "1"; return nil }); err != nil {
 		return "", false, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
 	}
 	if !on {
@@ -771,7 +771,7 @@ func (e *Engine) Cancel(ctx context.Context, t data.Target, owner data.Credentia
 	var res data.CancelResult
 	var running time.Duration
 	err = c.query(ctx, "SELECT USER, COMMAND, TIME, COALESCE(INFO, '') FROM information_schema.PROCESSLIST WHERE ID = "+strconv.FormatInt(id, 10),
-		func(r [][]byte) error {
+		4, func(r [][]byte) error {
 			res.Found, res.User, res.Text = true, string(r[0]), cutText(string(r[3]))
 			running = time.Duration(atoi64(r[2])) * time.Second
 			if !terminate && string(r[1]) != "Query" && string(r[1]) != "Execute" {
@@ -792,7 +792,7 @@ func (e *Engine) Cancel(ctx context.Context, t data.Target, owner data.Credentia
 	}
 	if st.perfSchema {
 		_ = c.query(ctx, "SELECT ATTR_VALUE FROM performance_schema.session_connect_attrs WHERE ATTR_NAME = 'program_name' AND PROCESSLIST_ID = "+strconv.FormatInt(id, 10),
-			func(r [][]byte) error { res.Application = string(r[0]); return nil })
+			1, func(r [][]byte) error { res.Application = string(r[0]); return nil })
 	}
 	kill := "KILL QUERY "
 	if terminate {
