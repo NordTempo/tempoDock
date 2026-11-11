@@ -91,6 +91,19 @@ func whoLine(me apitypes.Me) string {
 	return fmt.Sprintf("%s %q, scope %s, limited to %s: may %s.", me.Kind, me.Name, me.Scope, where, can)
 }
 
+// filterLimits fills a filter's project and environment from the token's
+// limits, as envOf does for the tools that act on one: tools/list leaves
+// both out for a token limited to them.
+func filterLimits(c *call, project, env string) (string, string) {
+	if project == "" {
+		project = c.Actor.ProjectName
+	}
+	if env == "" && project == c.Actor.ProjectName {
+		env = c.Actor.EnvironmentName
+	}
+	return project, env
+}
+
 // addPlatformTools registers the tools for projects, services, releases,
 // logs, variables, domains, previews, servers, the audit log and alerts.
 func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
@@ -381,7 +394,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Release int64  `json:"release,omitempty"`
-			Tail    int    `json:"tail,omitempty" doc:"Default 100, at most 1000."`
+			Tail    int    `json:"tail,omitempty" doc:"Default 100, or 1000 with grep or stderr; at most 1000."`
 			Since   string `json:"since,omitempty" doc:"e.g. 10m or an RFC 3339 time."`
 			Grep    string `json:"grep,omitempty" doc:"Plain text, after tail; lower case matches any case."`
 			Stderr  bool   `json:"stderr,omitempty"`
@@ -390,7 +403,12 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			n, err := mcpkit.Limit("tail", in.Tail, 100, 1000)
+			// A filter over the last 100 lines rarely finds what it's for.
+			def := 100
+			if in.Grep != "" || in.Stderr {
+				def = 1000
+			}
+			n, err := mcpkit.Limit("tail", in.Tail, def, 1000)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
@@ -469,8 +487,9 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
+			p, e := filterLimits(c, in.Project, in.Environment)
 			evs, err := h.core.ListAudit(ctx, c.Actor, core.AuditFilter{
-				Project: in.Project, Environment: in.Environment, Service: in.Service, Action: in.Action, Before: in.Before, Limit: n,
+				Project: p, Environment: e, Service: in.Service, Action: in.Action, Before: in.Before, Limit: n,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err
@@ -769,7 +788,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "set_variables", "Stage variables",
-		"Stage variables on a service, or shared ones without service. Values may reference ${{shared.KEY}} or ${{service.KEY}} and are never shown back.",
+		"Stage variables on a service, or without service shared ones, which every service of the environment gets (new ones too). Values may reference ${{shared.KEY}} or ${{service.KEY}} and are never shown back.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
 			Service string            `json:"service,omitempty"`
@@ -866,15 +885,12 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 
 	mcpkit.AddTool(s, "discard_changes", "Discard staged changes",
 		"Drop staged changes: the ones named, or all.",
-		mcpkit.Destructive, func(ctx context.Context, c *call, in struct {
-			EnvInput
-			apitypes.DiscardChangesRequest
-		}) (mcpkit.Reply, error) {
+		mcpkit.Destructive, func(ctx context.Context, c *call, in discardInput) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			p, err := h.core.DiscardChanges(ctx, c.Actor, ref, in.DiscardChangesRequest)
+			p, err := h.core.DiscardChanges(ctx, c.Actor, ref, in.request())
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
@@ -900,31 +916,25 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "add_domain", "Add a domain",
-		"Add a custom hostname to a service. The result has the DNS records the user must create, including a TXT record unless verified.",
+		"Add a hostname to a service. Without hostname, a generated one under its server's base domain, which needs no DNS. A custom one's result has the DNS records the user must create, including a TXT record unless verified.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Hostname   string `json:"hostname"`
+			Hostname   string `json:"hostname,omitempty"`
 			RedirectTo string `json:"redirect_to,omitempty" doc:"Redirect to this hostname instead of serving."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			dc, err := h.core.AddDomain(ctx, c.Actor, ref, apitypes.AddDomainRequest{Hostname: in.Hostname, RedirectTo: in.RedirectTo})
-			if err != nil {
-				return mcpkit.Reply{}, err
+			var dc apitypes.DomainChange
+			if in.Hostname == "" {
+				if in.RedirectTo != "" {
+					return mcpkit.Reply{}, mcpkit.Invalid("pass hostname: only a custom hostname redirects")
+				}
+				dc, err = h.core.GenerateDomain(ctx, c.Actor, ref)
+			} else {
+				dc, err = h.core.AddDomain(ctx, c.Actor, ref, apitypes.AddDomainRequest{Hostname: in.Hostname, RedirectTo: in.RedirectTo})
 			}
-			return h.domainReply(ctx, c, ref, dc)
-		})
-
-	mcpkit.AddTool(s, "generate_domain", "Generate a domain",
-		"Give a service a generated hostname under its server's base domain; needs no DNS.",
-		mcpkit.Mutating, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
-			ref, err := serviceOf(c, in)
-			if err != nil {
-				return mcpkit.Reply{}, err
-			}
-			dc, err := h.core.GenerateDomain(ctx, c.Actor, ref)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
@@ -1005,4 +1015,43 @@ func planSummary(p apitypes.ApplyPlan) string {
 		s += fmt.Sprintf(" %s/%s %s %s: %s.", m.Environment, m.Service, m.Kind, m.Name, m.Note)
 	}
 	return s
+}
+
+// discardInput names staged changes as short strings rather than the
+// API's objects, which cost an agent's context in every tools/list:
+// variables KEY (shared) or service.KEY, settings service.field, volumes
+// service.name, domains service or service.hostname. Variable keys and
+// service names have no dots, so the first one splits.
+type discardInput struct {
+	EnvInput
+	Variables []string `json:"variables,omitempty" doc:"KEY (shared) or service.KEY."`
+	Settings  []string `json:"settings,omitempty" doc:"service.field, e.g. web.port."`
+	Volumes   []string `json:"volumes,omitempty" doc:"service.name."`
+	Domains   []string `json:"domains,omitempty" doc:"service or service.hostname."`
+	Services  []string `json:"services,omitempty" doc:"Staged services to drop, with all staged on them."`
+}
+
+// request is the API's discard request.
+func (in discardInput) request() apitypes.DiscardChangesRequest {
+	r := apitypes.DiscardChangesRequest{Services: in.Services}
+	for _, v := range in.Variables {
+		svc, key, ok := strings.Cut(v, ".")
+		if !ok {
+			svc, key = "", v
+		}
+		r.Variables = append(r.Variables, apitypes.VariableRef{Service: svc, Key: key})
+	}
+	for _, v := range in.Settings {
+		svc, field, _ := strings.Cut(v, ".")
+		r.Settings = append(r.Settings, apitypes.SettingRef{Service: svc, Field: field})
+	}
+	for _, v := range in.Volumes {
+		svc, name, _ := strings.Cut(v, ".")
+		r.Volumes = append(r.Volumes, apitypes.VolumeRef{Service: svc, Name: name})
+	}
+	for _, v := range in.Domains {
+		svc, host, _ := strings.Cut(v, ".")
+		r.Domains = append(r.Domains, apitypes.DomainRef{Service: svc, Hostname: host})
+	}
+	return r
 }

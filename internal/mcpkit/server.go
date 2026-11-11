@@ -56,7 +56,10 @@ type Options[A any] struct {
 	// e.g. its scope and limits, so the model needs no call to learn them.
 	Caller func(A) string
 	// View, when set, tailors tools/list to the caller (see View).
-	View func(A) View
+	View func(context.Context, A) View
+	// WithReason, when set, lets every tool take a reason argument (why the
+	// caller makes the change), passed to it in the context instead.
+	WithReason func(context.Context, string) context.Context
 	// Authenticate resolves a bearer token to the caller. An error with
 	// code unauthorized answers 401 with its message; others are logged
 	// and answer 500.
@@ -311,7 +314,7 @@ func (s *Server[A]) dispatch(ctx context.Context, out *responder, a A, msg rpcMe
 		return struct{}{}, nil
 	case "tools/list":
 		if s.o.View != nil {
-			return json.RawMessage(s.viewList(s.o.View(a))), nil
+			return json.RawMessage(s.viewList(s.o.View(ctx, a))), nil
 		}
 		return json.RawMessage(s.toolsList), nil
 	case "tools/call":

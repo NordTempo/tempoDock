@@ -60,3 +60,12 @@ a check of the outcome rather than of the tools used: an agent that gets
 there another way still passes. Refusal cases check that nothing changed
 and that the answer says why. Mine real failures: when an agent misuses
 Dock, the misuse is a case.
+
+## Other agents
+
+`-mode manual` runs the cases for an agent outside the harness, such as
+another vendor's: for each case it sets up the daemon and writes
+`<out>/tasks/<case>.json` (the prompt, `DOCK_URL`, `DOCK_TOKEN` and where
+the answer goes), then waits up to 90 minutes for
+`<out>/tasks/<case>.answer.txt` and checks the result. The agent uses
+the CLI. Tool calls and tokens aren't recorded in this mode.

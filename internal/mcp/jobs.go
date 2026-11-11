@@ -23,11 +23,17 @@ type JobInput struct {
 // addJobTools registers the job tools.
 func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "list_jobs", "List a service's jobs",
-		"A service's scheduled jobs.",
-		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct{ ServiceInput }) (mcpkit.Reply, error) {
+		"A service's scheduled jobs; with job, that job's latest runs.",
+		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			Job string `json:"job,omitempty"`
+		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
+			}
+			if in.Job != "" {
+				return h.jobHistory(ctx, c, ref, in.Job)
 			}
 			jobs, err := h.core.ListJobs(ctx, c.Actor, ref)
 			if err != nil {
@@ -86,7 +92,7 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 		"Run a scheduled job now and wait.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			JobInput
-			WaitSeconds *int `json:"wait_seconds,omitempty" doc:"Default 300, at most 900."`
+			WaitSeconds *int `json:"wait_seconds,omitempty"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -108,32 +114,27 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 			}
 			summary := runSummary(run)
 			if run.Status == apitypes.RunRunning {
-				summary = fmt.Sprintf("Run %d of job %s is still running; job_history shows its end.", run.ID, in.Job)
+				summary = fmt.Sprintf("Run %d of job %s is still running; list_jobs with job shows its end.", run.ID, in.Job)
 			}
 			return mcpkit.Reply{Summary: summary, Data: run}, nil
 		})
+}
 
-	mcpkit.AddTool(s, "job_history", "A job's history",
-		"A scheduled job's latest runs.",
-		mcpkit.ReadOnly, func(ctx context.Context, c *call, in JobInput) (mcpkit.Reply, error) {
-			ref, err := serviceOf(c, in.ServiceInput)
-			if err != nil {
-				return mcpkit.Reply{}, err
-			}
-			runs, err := h.core.JobRuns(ctx, c.Actor, ref, in.Job)
-			if err != nil {
-				return mcpkit.Reply{}, err
-			}
-			var failed []string
-			for _, r := range runs {
-				if r.Status == apitypes.RunFailed || r.Status == apitypes.RunTimedOut {
-					failed = append(failed, fmt.Sprint(r.ID))
-				}
-			}
-			summary := fmt.Sprintf("%d runs of job %s.", len(runs), in.Job)
-			if len(failed) > 0 {
-				summary += " Failed: " + strings.Join(failed, ", ") + "."
-			}
-			return mcpkit.Reply{Summary: summary, Data: runs}, nil
-		})
+// jobHistory is a scheduled job's latest runs, failed ones named.
+func (h *handler) jobHistory(ctx context.Context, c *call, ref core.ServiceRef, job string) (mcpkit.Reply, error) {
+	runs, err := h.core.JobRuns(ctx, c.Actor, ref, job)
+	if err != nil {
+		return mcpkit.Reply{}, err
+	}
+	var failed []string
+	for _, r := range runs {
+		if r.Status == apitypes.RunFailed || r.Status == apitypes.RunTimedOut {
+			failed = append(failed, fmt.Sprint(r.ID))
+		}
+	}
+	summary := fmt.Sprintf("%d runs of job %s.", len(runs), job)
+	if len(failed) > 0 {
+		summary += " Failed: " + strings.Join(failed, ", ") + "."
+	}
+	return mcpkit.Reply{Summary: summary, Data: runs}, nil
 }

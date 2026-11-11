@@ -93,7 +93,7 @@ type Result struct {
 func main() {
 	var (
 		pattern  = flag.String("cases", "", "run cases whose name matches this regexp")
-		mode     = flag.String("mode", "mcp", "mcp, cli or both")
+		mode     = flag.String("mode", "mcp", "mcp, cli, both, or manual (another agent answers task files; README)")
 		model    = flag.String("model", "claude-sonnet-5-5", "the model the agent runs on")
 		parallel = flag.Int("parallel", 4, "cases at once (each one daemon and one claude)")
 		runs     = flag.Int("runs", 1, "runs of each case")
@@ -248,11 +248,15 @@ func runCase(ctx context.Context, c Case, m Mode, model, bin, log string, dry bo
 		return fail(fmt.Errorf("token: %w", err))
 	}
 	if !dry {
-		cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		timeout := 10 * time.Minute
+		if m == ModeManual {
+			timeout = 90 * time.Minute
+		}
+		cctx, cancel := context.WithTimeout(ctx, timeout)
 		if c.Admin != nil {
 			go c.Admin.decide(cctx, w)
 		}
-		res.Transcript = agentRun{Mode: m, Model: model, Prompt: c.Prompt, Token: token, D: d, Log: log}.run(cctx)
+		res.Transcript = agentRun{Mode: m, Model: model, Prompt: c.Prompt, Token: token, D: d, Log: log, Case: c.Name}.run(cctx)
 		cancel()
 		if res.Error != "" {
 			return fail(fmt.Errorf("agent: %s", res.Error))
@@ -416,7 +420,7 @@ func (r report) print() {
 	}
 	fmt.Println("| mode | pass | tool calls / task | tokens in / task | tokens out / task |")
 	fmt.Println("|---|---|---|---|---|")
-	for _, m := range []Mode{ModeMCP, ModeCLI} {
+	for _, m := range []Mode{ModeMCP, ModeCLI, ModeManual} {
 		rs := byMode[m]
 		if len(rs) == 0 {
 			continue

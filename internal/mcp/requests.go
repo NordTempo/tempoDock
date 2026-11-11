@@ -128,14 +128,20 @@ func (h *handler) addRequestTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: requestLine(r) + " Follow it with wait_for_request.", Data: viewRequest(r)}, nil
 		})
 
+	// Read-only though reason annotates the request: only the caller's
+	// own, which it filed; clients shouldn't ask a person to allow a wait.
 	mcpkit.AddTool(s, "wait_for_request", "Wait for an access request",
 		"Wait for an access request's decision and, if approved, its run. A rejection is final: report it.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			ID int64 `json:"id" minimum:"1"`
+			ID     int64  `json:"id" minimum:"1"`
+			Reason string `json:"reason,omitempty" maxLength:"500" doc:"Why, for the approver, if the request has no reason yet."`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			wait, err := in.duration()
 			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			if err := h.core.GiveRequestReason(ctx, c.Actor, in.ID, in.Reason); err != nil {
 				return mcpkit.Reply{}, err
 			}
 			c.Notify(fmt.Sprintf("waiting for access request #%d", in.ID))

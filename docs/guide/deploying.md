@@ -454,7 +454,7 @@ read in the job's timezone (default UTC).
 
 Jobs can live in `dock.toml` as `[[jobs]]` ([reference](../dock-toml.md));
 they follow the active release. The service's Jobs tab edits them in the
-UI, and agents have `list_jobs`, `set_job`, `run_job`, `remove_job` and `job_history`.
+UI, and agents have `list_jobs` (with `job`, its runs), `set_job`, `run_job` and `remove_job`.
 Design: [ADR 0054](../decisions/0054-scheduled-jobs.md).
 
 ## Promote

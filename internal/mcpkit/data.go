@@ -91,7 +91,7 @@ func capRows(rows []apitypes.DataRow) ([]apitypes.DataRow, bool) {
 // messages name that database.
 func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error), name func(R) string) {
 	addLocatedTool(s, "data_status", "Database status",
-		"A database service's state and your data access level (none, schema, read, propose, write) and why. Call before other data tools.",
+		"A database service's state and your data access level (none, schema, read, propose, write) and why; the other data tools say the same when they refuse.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, _ struct{}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {

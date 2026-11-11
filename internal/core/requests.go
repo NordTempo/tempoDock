@@ -409,6 +409,28 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 	return out, nil
 }
 
+// GiveRequestReason gives the caller's own pending request a reason when it
+// has none, as an identical call with one would: what the approver reads.
+// A request that has a reason keeps it.
+func (c *Core) GiveRequestReason(ctx context.Context, a Actor, id int64, reason string) error {
+	r, es, err := c.loadRequest(ctx, a, id)
+	if err != nil {
+		return err
+	}
+	switch {
+	case a.TokenID == 0 || derefOr(r.TokenID) != a.TokenID:
+		return errf(apitypes.CodeForbidden, "only the token that filed access request #%d gives it a reason", id)
+	case r.Status != string(apitypes.RequestPending) || r.Reason != "" || reason == "":
+		return nil
+	}
+	if err := c.store.SetAccessRequestReason(ctx, store.SetAccessRequestReasonParams{Reason: reason, ID: r.ID}); err != nil {
+		return err
+	}
+	r.Reason = reason
+	c.publishRequest(r, es.project.Name, es.env.Name)
+	return nil
+}
+
 // WaitRequest returns a request once it is decided and done (or failed),
 // or as it is after wait.
 func (c *Core) WaitRequest(ctx context.Context, a Actor, id int64, wait time.Duration) (apitypes.AccessRequest, error) {

@@ -8,7 +8,7 @@ import (
 )
 
 // TestJobTools: set_job creates a job with its next time, run_job waits
-// for the run and returns its output, job_history and list_jobs show it,
+// for the run and returns its output, list_jobs (with job: its runs) shows it,
 // remove_job removes it.
 func TestJobTools(t *testing.T) {
 	f := newFixture(t)
@@ -33,9 +33,9 @@ func TestJobTools(t *testing.T) {
 		t.Fatalf("run_job = %q %+v", res.summary, run)
 	}
 	var runs []apitypes.CommandRun
-	call(t, s, "job_history", map[string]any{"service": "web", "job": "nightly"}).decode(t, &runs)
+	call(t, s, "list_jobs", map[string]any{"service": "web", "job": "nightly"}).decode(t, &runs)
 	if len(runs) != 1 || runs[0].ID != run.ID {
-		t.Fatalf("job_history = %+v", runs)
+		t.Fatalf("list_jobs with job = %+v", runs)
 	}
 	var jobs []apitypes.Job
 	call(t, s, "list_jobs", map[string]any{"service": "web"}).decode(t, &jobs)
