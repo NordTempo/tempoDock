@@ -8,12 +8,14 @@ on:
   # run of the tagged commit (scripts/release/wait-for-ci.sh).
   workflow_call:
 
-# A newer push to a pull request supersedes a running one: only its latest
-# commit is checked. Every commit on main gets its own run, as a release
-# of that commit needs main's result.
+# A newer push to a pull request cancels its running run: only the latest
+# commit is checked. On main a running run always finishes, but a newer
+# merge replaces one still waiting, so a burst of merges runs CI on the
+# first and the last commit, not on each. Releases tag the newest commit
+# on main, whose run is never dropped (scripts/release/wait-for-ci.sh).
 concurrency:
-  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Jobs run on the org's self-hosted runners (label nordtempo): ephemeral,
 # each with its own Docker daemon. If they're down, set the repo variable
