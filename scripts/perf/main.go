@@ -39,8 +39,9 @@ const (
 	// mostly its handler goroutine's stack, about 0.11 MB, which the
 	// runtime keeps after the handshake. Measured on a 2-CPU, 8 GB slot
 	// like a CI runner's, where GC timing moves the idle number by up to
-	// 3 MB between runs (docs/performance.md).
-	idleAnonBudget      = 32 << 20
+	// 3 MB between runs (docs/performance.md); main read 31.6-32.2 MB on
+	// 2026-11-11, so the budget keeps 2 MB above that.
+	idleAnonBudget      = 34 << 20
 	sseClientAnonBudget = 150 << 10
 	idleTicksBudget     = 2 // clock ticks (usually 10 ms each) per idle window
 	// Wake-ups (voluntary context switches) per second: what a forgotten
