@@ -1,7 +1,9 @@
 package datapanel
 
 import (
+	"cmp"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -17,8 +19,21 @@ func (keysEngine) Keyspace(context.Context, data.Target, data.Call) (apitypes.Da
 	return apitypes.DataSchema{Keyspace: []apitypes.DataKeyspaceDB{{DB: 0, Keys: 2}}}, nil
 }
 
-func (keysEngine) ScanKeys(context.Context, data.Target, data.Call, apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
-	return apitypes.DataKeyPage{}, nil
+// ScanKeys lists session:1 and user:1 under req.Match, as Redis does:
+// sensitive ones masked to their pattern for masked calls.
+func (keysEngine) ScanKeys(_ context.Context, _ data.Target, c data.Call, req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
+	var page apitypes.DataKeyPage
+	for _, k := range []string{"session:1", "user:1"} {
+		if !data.KeyMatch(cmp.Or(req.Match, "*"), k) {
+			continue
+		}
+		info := apitypes.DataKeyInfo{Key: k, Type: "string", Length: 32, Bytes: 80}
+		if pattern, ok := data.KeySensitive(c.SensitiveKeys, k); ok && c.Masked {
+			info.Key, info.Masked = pattern, true
+		}
+		page.Keys = append(page.Keys, info)
+	}
+	return page, nil
 }
 
 func (keysEngine) Key(_ context.Context, _ data.Target, _ data.Call, req apitypes.DataKeyRequest) (apitypes.DataKeyValue, error) {
@@ -52,6 +67,21 @@ func TestSensitiveKeys(t *testing.T) {
 		t.Fatalf("patterns: %v %v", got, err)
 	}
 
+	// A masked caller sees that a session key exists, not its size, and
+	// can't spell its name out with matches.
+	for match, want := range map[string]string{"": "session:* user:1", "session:1*": "", "*:1": "user:1"} {
+		page, err := p.Keys(ctx, agent, redisDB(reader), apitypes.DataKeysRequest{Match: match})
+		var got []string
+		for _, k := range page.Keys {
+			got = append(got, k.Key)
+			if k.Masked && (k.Length != 0 || k.Bytes != 0) {
+				t.Errorf("match %q: a masked key's size: %+v", match, k)
+			}
+		}
+		if err != nil || strings.Join(got, " ") != want {
+			t.Errorf("match %q: %v %v, want %q", match, got, err, want)
+		}
+	}
 	if _, err := p.Key(ctx, agent, redisDB(reader), apitypes.DataKeyRequest{Key: "user:1"}); err != nil {
 		t.Fatalf("an unmarked key: %v", err)
 	}

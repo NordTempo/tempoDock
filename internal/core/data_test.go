@@ -11,6 +11,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/data"
 	"github.com/NordTempo/tempoDock/internal/data/pg"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -796,4 +797,56 @@ func (h *harness) sealedRoles(serviceID int64) (reader, writer []byte) {
 		h.t.Fatal(err)
 	}
 	return reader, writer
+}
+
+// A Redis database's sensitive key patterns redact the audit details a
+// masked caller reads, as sensitive columns do: an admin's commit of
+// session:1 doesn't show its value to a deploy member.
+func TestRedisAuditDetailMasked(t *testing.T) {
+	h, _, _, _ := fakeDatabase(t)
+	admin := h.user("admin@x", apitypes.ScopeAdmin)
+	dev := h.user("dev@x", apitypes.ScopeDeploy)
+	cache := h.service("cache", apitypes.CreateServiceRequest{Image: "redis:7"})
+	h.deploy(cache, "redis:7")
+	ss, err := h.c.loadService(h.ctx, 1, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.AddSensitiveKey(h.ctx, store.AddSensitiveKeyParams{ServiceID: ss.svc.ID, Pattern: "session:*"}); err != nil {
+		t.Fatal(err)
+	}
+	dataHost{h.c}.Audit(h.ctx, panelActor(admin), &svcData{ss}, datapanel.AuditEntry{
+		Action: apitypes.AuditDataCommit, Summary: "committed changeset 1",
+		Detail: &datapanel.AuditDetail{SQL: "SET session:1 s3cret-token KEEPTTL", Outcome: apitypes.OutcomeOK},
+	})
+	evs, err := h.c.ListAudit(h.ctx, admin, AuditFilter{Action: apitypes.AuditDataCommit})
+	if err != nil || len(evs) != 1 || evs[0].DetailID == nil {
+		t.Fatalf("events: %+v %v", evs, err)
+	}
+	d, err := h.c.GetAuditDetail(h.ctx, dev, *evs[0].DetailID)
+	if err != nil || strings.Contains(d.SQL, "s3cret") || strings.Contains(d.SQL, "session:1") {
+		t.Fatalf("a masked caller read %q %v", d.SQL, err)
+	}
+}
+
+// In a suspended org (ADR 0062) the data panel reads and changes nothing,
+// admins included.
+func TestSuspendedOrgDataReadOnly(t *testing.T) {
+	h, _, db, _ := fakeDatabase(t)
+	op := h.operator("op@x")
+	if _, err := h.c.SuspendOrg(h.ctx, op, "test", true); err != nil {
+		t.Fatal(err)
+	}
+	admin := h.in(h.member("ada@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	if _, err := h.c.DataRows(h.ctx, admin, db, apitypes.DataPageRequest{Table: "public.customers"}); err != nil {
+		t.Fatalf("a read in a suspended org: %v", err)
+	}
+	if _, err := h.c.SetSensitiveColumns(h.ctx, admin, db, apitypes.SetSensitiveColumnsRequest{}); err == nil {
+		t.Fatal("an admin changed sensitive columns in a suspended org")
+	}
+	if _, err := h.c.CreateDataChangeset(h.ctx, admin, db, apitypes.DataChangesetRequest{
+		Changes: []apitypes.DataChange{{Op: apitypes.DataChangeInsert, Table: "public.customers"}},
+	}); err == nil {
+		t.Fatal("an admin proposed a change in a suspended org")
+	}
 }

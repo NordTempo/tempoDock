@@ -123,8 +123,9 @@ func commandName(args []string) string {
 	return name
 }
 
-// redact keeps a command's name (and subcommand) and its first key, and
-// replaces every other argument with ?.
+// redact keeps a command's name (and subcommand) and replaces every
+// argument with ?. Key names are data, as values are (a session ID is
+// both): audit summaries, which any org member reads, never show them.
 func redact(line string) string {
 	args, err := parseCommand(line)
 	if err != nil {
@@ -135,17 +136,13 @@ func redact(line string) string {
 	if containers[strings.ToLower(args[0])] && len(rest) > 0 {
 		out, rest = append(out, strings.ToUpper(rest[0])), rest[1:]
 	}
-	for i, a := range rest {
-		if i == 0 {
-			out = append(out, strconv.Quote(a))
-		} else {
-			out = append(out, "?")
-		}
+	for range rest {
+		out = append(out, "?")
 	}
 	return strings.Join(out, " ")
 }
 
-// Redact keeps a command's name and first key and hides the rest.
+// Redact keeps a command's name and hides its arguments.
 func (e *Engine) Redact(line string) string { return redact(line) }
 
 // checkSize refuses a command that reads a whole value when the value is

@@ -156,6 +156,14 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 	if a.lockedOut(es.env) {
 		perm = lockedData(perm, es)
 	}
+	if a.suspended {
+		// ADR 0062: in a suspended org the actor reads, nothing more.
+		perm.Level, perm.Approve, perm.Manage = perm.Level.Min(apitypes.LevelRead), false, false
+		perm.Why = append(perm.Why, apitypes.DataPermissionStep{
+			Source: apitypes.PermissionCap, Level: perm.Level, Sensitive: perm.Sensitive,
+			Detail: fmt.Sprintf("organization %s is suspended by the platform's operator: data reads only until it is unsuspended", a.OrgSlug),
+		})
+	}
 	return perm, nil
 }
 

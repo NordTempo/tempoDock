@@ -351,7 +351,7 @@ func TestConsole(t *testing.T) {
 		if f, err := run(t, e, tg, "LRANGE queue 0 -1"); err != nil || f[2].RowCount != 250 {
 			t.Errorf("small lrange: %+v %v", f, err)
 		}
-		if got := e.Redact(`HSET user:1 email "ada@x.io"`); got != `HSET "user:1" ? ?` {
+		if got := e.Redact(`HSET user:1 email "ada@x.io"`); got != `HSET ? ? ?` {
 			t.Errorf("redact: %s", got)
 		}
 	})
