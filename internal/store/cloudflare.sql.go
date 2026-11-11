@@ -350,7 +350,7 @@ func (q *Queries) GetCloudflareConnectionByID(ctx context.Context, id int64) (Cl
 }
 
 const getCloudflareRecord = `-- name: GetCloudflareRecord :one
-SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at FROM cloudflare_records WHERE hostname = +?
+SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE hostname = +?
 `
 
 func (q *Queries) GetCloudflareRecord(ctx context.Context, hostname string) (CloudflareRecord, error) {
@@ -373,6 +373,7 @@ func (q *Queries) GetCloudflareRecord(ctx context.Context, hostname string) (Clo
 		&i.RetryAt,
 		&i.Gen,
 		&i.UpdatedAt,
+		&i.StatusPageID,
 	)
 	return i, err
 }
@@ -492,6 +493,35 @@ func (q *Queries) GetCloudflareTunnelByServer(ctx context.Context, serverID *int
 	return i, err
 }
 
+const getStatusPageRecord = `-- name: GetStatusPageRecord :one
+SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE status_page_id = +? AND want = 'present'
+`
+
+func (q *Queries) GetStatusPageRecord(ctx context.Context, statusPageID *int64) (CloudflareRecord, error) {
+	row := q.db.QueryRowContext(ctx, getStatusPageRecord, statusPageID)
+	var i CloudflareRecord
+	err := row.Scan(
+		&i.ID,
+		&i.Hostname,
+		&i.DomainID,
+		&i.ServerID,
+		&i.ConnectionID,
+		&i.ZoneID,
+		&i.RecordID,
+		&i.Content,
+		&i.RouteTunnel,
+		&i.Want,
+		&i.Status,
+		&i.Reason,
+		&i.Attempts,
+		&i.RetryAt,
+		&i.Gen,
+		&i.UpdatedAt,
+		&i.StatusPageID,
+	)
+	return i, err
+}
+
 const listCloudflareConnections = `-- name: ListCloudflareConnections :many
 SELECT id, org_id, name, shared, account_id, account_name, token, status, status_reason, created_at, updated_at, updated_by FROM cloudflare_connections ORDER BY name
 `
@@ -576,7 +606,7 @@ func (q *Queries) ListCloudflareConnectionsOf(ctx context.Context, org int64) ([
 }
 
 const listCloudflareRecords = `-- name: ListCloudflareRecords :many
-SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at, CAST(COALESCE(servers.name, '') AS TEXT) AS server_name, cloudflare_connections.name AS connection_name
+SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at, cloudflare_records.status_page_id, CAST(COALESCE(servers.name, '') AS TEXT) AS server_name, cloudflare_connections.name AS connection_name
 FROM cloudflare_records
 JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
 LEFT JOIN servers ON servers.id = cloudflare_records.server_id
@@ -618,6 +648,7 @@ func (q *Queries) ListCloudflareRecords(ctx context.Context, max int64) ([]ListC
 			&i.CloudflareRecord.RetryAt,
 			&i.CloudflareRecord.Gen,
 			&i.CloudflareRecord.UpdatedAt,
+			&i.CloudflareRecord.StatusPageID,
 			&i.ServerName,
 			&i.ConnectionName,
 		); err != nil {
@@ -843,7 +874,7 @@ func (q *Queries) ListConnectionRedirects(ctx context.Context, connectionID int6
 }
 
 const listDueCloudflareRecords = `-- name: ListDueCloudflareRecords :many
-SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at FROM cloudflare_records
+SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at, cloudflare_records.status_page_id FROM cloudflare_records
 JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
 WHERE cloudflare_records.status = 'pending' AND cloudflare_connections.status = 'ok'
   AND (cloudflare_records.retry_at IS NULL OR cloudflare_records.retry_at <= +?1)
@@ -884,6 +915,7 @@ func (q *Queries) ListDueCloudflareRecords(ctx context.Context, arg ListDueCloud
 			&i.RetryAt,
 			&i.Gen,
 			&i.UpdatedAt,
+			&i.StatusPageID,
 		); err != nil {
 			return nil, err
 		}
@@ -1004,7 +1036,7 @@ func (q *Queries) ListDueCloudflareTunnels(ctx context.Context, now *time.Time) 
 }
 
 const listServerCloudflareRecords = `-- name: ListServerCloudflareRecords :many
-SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at FROM cloudflare_records WHERE server_id = +? AND want = 'present'
+SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE server_id = +? AND want = 'present'
 `
 
 // The domains Dock routes through a server's tunnel.
@@ -1034,6 +1066,7 @@ func (q *Queries) ListServerCloudflareRecords(ctx context.Context, serverID *int
 			&i.RetryAt,
 			&i.Gen,
 			&i.UpdatedAt,
+			&i.StatusPageID,
 		); err != nil {
 			return nil, err
 		}
@@ -1049,7 +1082,7 @@ func (q *Queries) ListServerCloudflareRecords(ctx context.Context, serverID *int
 }
 
 const listServiceCloudflareRecords = `-- name: ListServiceCloudflareRecords :many
-SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at FROM cloudflare_records WHERE domain_id IN (SELECT id FROM domains WHERE service_id = +?)
+SELECT id, hostname, domain_id, server_id, connection_id, zone_id, record_id, content, route_tunnel, want, status, reason, attempts, retry_at, gen, updated_at, status_page_id FROM cloudflare_records WHERE domain_id IN (SELECT id FROM domains WHERE service_id = +?)
 `
 
 // The records of a service's domains, for its domain list.
@@ -1079,6 +1112,7 @@ func (q *Queries) ListServiceCloudflareRecords(ctx context.Context, serviceID in
 			&i.RetryAt,
 			&i.Gen,
 			&i.UpdatedAt,
+			&i.StatusPageID,
 		); err != nil {
 			return nil, err
 		}
@@ -1094,7 +1128,7 @@ func (q *Queries) ListServiceCloudflareRecords(ctx context.Context, serviceID in
 }
 
 const listStrandedCloudflareRecords = `-- name: ListStrandedCloudflareRecords :many
-SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at,
+SELECT cloudflare_records.id, cloudflare_records.hostname, cloudflare_records.domain_id, cloudflare_records.server_id, cloudflare_records.connection_id, cloudflare_records.zone_id, cloudflare_records.record_id, cloudflare_records.content, cloudflare_records.route_tunnel, cloudflare_records.want, cloudflare_records.status, cloudflare_records.reason, cloudflare_records.attempts, cloudflare_records.retry_at, cloudflare_records.gen, cloudflare_records.updated_at, cloudflare_records.status_page_id,
     CAST(coalesce(projects.org_id, cloudflare_connections.org_id, 0) AS INTEGER) AS org_id
 FROM cloudflare_records
 JOIN cloudflare_connections ON cloudflare_connections.id = cloudflare_records.connection_id
@@ -1145,6 +1179,7 @@ func (q *Queries) ListStrandedCloudflareRecords(ctx context.Context) ([]ListStra
 			&i.CloudflareRecord.RetryAt,
 			&i.CloudflareRecord.Gen,
 			&i.CloudflareRecord.UpdatedAt,
+			&i.CloudflareRecord.StatusPageID,
 			&i.OrgID,
 		); err != nil {
 			return nil, err
@@ -1413,7 +1448,7 @@ ON CONFLICT (hostname) DO UPDATE SET
     want = 'present', status = 'pending', reason = '',
     attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
 WHERE cloudflare_records.connection_id = excluded.connection_id
-   OR cloudflare_records.want = 'absent' OR cloudflare_records.domain_id IS NULL
+   OR cloudflare_records.want = 'absent' OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL)
 `
 
 type SaveCloudflareRecordParams struct {
@@ -1499,6 +1534,46 @@ type SaveCloudflareZoneParams struct {
 func (q *Queries) SaveCloudflareZone(ctx context.Context, arg SaveCloudflareZoneParams) error {
 	_, err := q.db.ExecContext(ctx, saveCloudflareZone, arg.ConnectionID, arg.ZoneID, arg.Name)
 	return err
+}
+
+const saveStatusPageRecord = `-- name: SaveStatusPageRecord :execrows
+INSERT INTO cloudflare_records (hostname, status_page_id, server_id, connection_id, zone_id, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (hostname) DO UPDATE SET
+    status_page_id = excluded.status_page_id, domain_id = NULL, server_id = excluded.server_id,
+    record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
+    connection_id = excluded.connection_id, zone_id = excluded.zone_id,
+    want = 'present', status = 'pending', reason = '',
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
+   OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL)
+`
+
+type SaveStatusPageRecordParams struct {
+	Hostname     string
+	StatusPageID *int64
+	ServerID     *int64
+	ConnectionID int64
+	ZoneID       string
+	UpdatedAt    time.Time
+}
+
+// Routes a status page's hostname through the control plane's tunnel,
+// pending, as SaveCloudflareRecord does a domain's. A live record of
+// anything else is never taken over.
+func (q *Queries) SaveStatusPageRecord(ctx context.Context, arg SaveStatusPageRecordParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, saveStatusPageRecord,
+		arg.Hostname,
+		arg.StatusPageID,
+		arg.ServerID,
+		arg.ConnectionID,
+		arg.ZoneID,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setCloudflareConnectionShared = `-- name: SetCloudflareConnectionShared :exec
@@ -1649,6 +1724,22 @@ type SetServiceRecordsAbsentParams struct {
 // The service is archived: delete the records Dock made for its domains.
 func (q *Queries) SetServiceRecordsAbsent(ctx context.Context, arg SetServiceRecordsAbsentParams) error {
 	_, err := q.db.ExecContext(ctx, setServiceRecordsAbsent, arg.UpdatedAt, arg.ServiceID)
+	return err
+}
+
+const setStatusPageRecordAbsent = `-- name: SetStatusPageRecordAbsent :exec
+UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE status_page_id = +?
+`
+
+type SetStatusPageRecordAbsentParams struct {
+	UpdatedAt    time.Time
+	StatusPageID *int64
+}
+
+// The page's hostname goes: delete the record Dock made for it.
+func (q *Queries) SetStatusPageRecordAbsent(ctx context.Context, arg SetStatusPageRecordAbsentParams) error {
+	_, err := q.db.ExecContext(ctx, setStatusPageRecordAbsent, arg.UpdatedAt, arg.StatusPageID)
 	return err
 }
 

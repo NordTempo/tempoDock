@@ -19,7 +19,8 @@ import (
 func newStatusPageCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "status-page", Short: "Public status pages of the organization's services"})
 	cmd.AddCommand(newStatusPageListCmd(g), newStatusPageShowCmd(g), newStatusPageCreateCmd(g), newStatusPageUpdateCmd(g),
-		newStatusPagePublishCmd(g, true), newStatusPagePublishCmd(g, false), newStatusPageRemoveCmd(g), newStatusComponentCmd(g))
+		newStatusPagePublishCmd(g, true), newStatusPagePublishCmd(g, false), newStatusPageRemoveCmd(g), newStatusComponentCmd(g),
+		newStatusHostnameCmd(g))
 	return cmd
 }
 
@@ -82,7 +83,11 @@ func printStatusPage(g *globals, p apitypes.StatusPage) error {
 	if p.Published {
 		state = "published at " + orDash(p.URL)
 	}
-	_, _ = fmt.Fprintf(g.io.Out, "%s (%s): %s, %s\n\n", p.Title, p.Slug, state, strings.ReplaceAll(string(p.Status), "_", " "))
+	_, _ = fmt.Fprintf(g.io.Out, "%s (%s): %s, %s\n", p.Title, p.Slug, state, strings.ReplaceAll(string(p.Status), "_", " "))
+	if p.Hostname != nil {
+		printStatusHostname(g, p)
+	}
+	_, _ = fmt.Fprintln(g.io.Out)
 	if len(p.Components) == 0 {
 		_, _ = fmt.Fprintf(g.io.Out, "No components. Add one with `dock status-page component add %s <name> --service <project/environment/service>`.\n", p.Slug)
 		return nil
@@ -389,5 +394,78 @@ func newStatusComponentMoveCmd(g *globals) *cobra.Command {
 	}
 	cmd.Flags().IntVar(&to, "to", 0, "the position, 1 being the top")
 	_ = cmd.MarkFlagRequired("to")
+	return cmd
+}
+
+// printStatusHostname shows a page's custom hostname: served, or the
+// records it waits for.
+func printStatusHostname(g *globals, p apitypes.StatusPage) {
+	h := p.Hostname
+	w := g.io.Out
+	switch {
+	case h.Verified && p.Published:
+		_, _ = fmt.Fprintf(w, "also at %s\n", h.URL)
+	case h.Verified:
+		_, _ = fmt.Fprintf(w, "hostname %s verified; served once the page is published\n", h.Hostname)
+	default:
+		_, _ = fmt.Fprintf(w, "hostname %s not verified yet: %s\n", h.Hostname, h.Reason)
+	}
+	if h.DNS != nil {
+		_, _ = fmt.Fprintf(w, "Dock makes its record in Cloudflare zone %s: %s%s\n", h.DNS.Zone, h.DNS.Status, map[bool]string{true: " (" + h.DNS.Reason + ")"}[h.DNS.Reason != ""])
+	}
+	for _, r := range h.Records {
+		_, _ = fmt.Fprintf(w, "  %-5s %s  %s\n", r.Type, r.Name, r.Value)
+	}
+}
+
+func newStatusHostnameCmd(g *globals) *cobra.Command {
+	var remove, check bool
+	cmd := &cobra.Command{
+		Use:   "hostname <page> [hostname]",
+		Short: "Serve a status page on a hostname of yours too (admin)",
+		Long: `Give a status page a custom hostname, like status.example.com. Add the
+TXT record it prints to prove you control the name and a CNAME to the
+page's own address, then run it with --check (Dock also looks when the
+hostname is set). In a Cloudflare zone the organization may use, Dock
+makes the record itself and the hostname needs no TXT record.`,
+		Example: `  dock status-page hostname acme status.acme.com
+  dock status-page hostname acme --check
+  dock status-page hostname acme --remove`,
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			var p apitypes.StatusPage
+			switch {
+			case len(args) == 2 && (remove || check):
+				return &output.Error{Exit: output.ExitUsage, Message: "pass a hostname, --check or --remove, one of them"}
+			case len(args) == 2 || remove:
+				host := ""
+				if len(args) == 2 {
+					host = args[1]
+				}
+				p, err = send[apitypes.StatusPage](cmd.Context(), s, http.MethodPatch, statusPagePath(args[0]), apitypes.UpdateStatusPageRequest{Hostname: &host})
+			case check:
+				p, err = send[apitypes.StatusPage](cmd.Context(), s, http.MethodPost, statusPagePath(args[0])+"/hostname/check", nil)
+			default:
+				p, err = get[apitypes.StatusPage](cmd.Context(), s, statusPagePath(args[0]))
+			}
+			if err != nil {
+				return err
+			}
+			return g.io.Print(p.Hostname, func() error {
+				if p.Hostname == nil {
+					g.io.Successf("Status page %s has no custom hostname", p.Slug)
+					return nil
+				}
+				printStatusHostname(g, p)
+				return nil
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&remove, "remove", false, "remove the page's custom hostname")
+	cmd.Flags().BoolVar(&check, "check", false, "look for its TXT record now")
 	return cmd
 }

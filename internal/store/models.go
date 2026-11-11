@@ -237,6 +237,7 @@ type CloudflareRecord struct {
 	RetryAt      *time.Time
 	Gen          int64
 	UpdatedAt    time.Time
+	StatusPageID *int64
 }
 
 type CloudflareRedirect struct {
@@ -1049,15 +1050,18 @@ type StatusIncidentComponent struct {
 }
 
 type StatusPage struct {
-	ID         int64
-	OrgID      int64
-	Slug       string
-	Title      string
-	Published  bool
-	ShowUptime bool
-	CreatedAt  time.Time
-	CreatedBy  string
-	Drafts     bool
+	ID          int64
+	OrgID       int64
+	Slug        string
+	Title       string
+	Published   bool
+	ShowUptime  bool
+	CreatedAt   time.Time
+	CreatedBy   string
+	Drafts      bool
+	Hostname    *string
+	VerifyToken string
+	VerifiedAt  *time.Time
 }
 
 type StatusSource struct {

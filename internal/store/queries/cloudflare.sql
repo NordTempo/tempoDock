@@ -123,7 +123,30 @@ ON CONFLICT (hostname) DO UPDATE SET
     want = 'present', status = 'pending', reason = '',
     attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
 WHERE cloudflare_records.connection_id = excluded.connection_id
-   OR cloudflare_records.want = 'absent' OR cloudflare_records.domain_id IS NULL;
+   OR cloudflare_records.want = 'absent' OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
+
+-- name: SaveStatusPageRecord :execrows
+-- Routes a status page's hostname through the control plane's tunnel,
+-- pending, as SaveCloudflareRecord does a domain's. A live record of
+-- anything else is never taken over.
+INSERT INTO cloudflare_records (hostname, status_page_id, server_id, connection_id, zone_id, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (hostname) DO UPDATE SET
+    status_page_id = excluded.status_page_id, domain_id = NULL, server_id = excluded.server_id,
+    record_id = CASE WHEN cloudflare_records.zone_id = excluded.zone_id THEN cloudflare_records.record_id ELSE '' END,
+    connection_id = excluded.connection_id, zone_id = excluded.zone_id,
+    want = 'present', status = 'pending', reason = '',
+    attempts = 0, retry_at = NULL, gen = cloudflare_records.gen + 1, updated_at = excluded.updated_at
+WHERE cloudflare_records.want = 'absent' OR cloudflare_records.status_page_id = excluded.status_page_id
+   OR (cloudflare_records.domain_id IS NULL AND cloudflare_records.status_page_id IS NULL);
+
+-- name: SetStatusPageRecordAbsent :exec
+-- The page's hostname goes: delete the record Dock made for it.
+UPDATE cloudflare_records SET want = 'absent', status = 'pending', reason = '', attempts = 0, retry_at = NULL, gen = gen + 1, updated_at = ?
+WHERE status_page_id = +?;
+
+-- name: GetStatusPageRecord :one
+SELECT * FROM cloudflare_records WHERE status_page_id = +? AND want = 'present';
 
 -- name: GetCloudflareRecord :one
 SELECT * FROM cloudflare_records WHERE hostname = +?;

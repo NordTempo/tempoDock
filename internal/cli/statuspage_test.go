@@ -157,3 +157,24 @@ func TestMaintenanceCommands(t *testing.T) {
 		t.Fatalf("completed = %+v", w)
 	}
 }
+
+// A page's hostname is set, checked and removed from the CLI.
+func TestStatusHostnameCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	ok[apitypes.StatusPage](t, "status-page", "create", "acme")
+	if h := ok[*apitypes.StatusHostname](t, "status-page", "hostname", "acme", "status.acme.com"); h == nil || h.Hostname != "status.acme.com" {
+		t.Fatalf("set = %+v", h)
+	}
+	if code, stdout, _ := exec(t, "status-page", "hostname", "acme", "--check"); code != 0 || !strings.Contains(stdout, "status.acme.com") {
+		t.Fatalf("check = %d\n%s", code, stdout)
+	}
+	if code, _, _ := exec(t, "status-page", "hostname", "acme", "x.example.com", "--remove"); code != int(output.ExitUsage) {
+		t.Fatalf("a hostname and --remove: %d", code)
+	}
+	if h := ok[*apitypes.StatusHostname](t, "status-page", "hostname", "acme", "--remove"); h != nil {
+		t.Fatalf("removed = %+v", h)
+	}
+}

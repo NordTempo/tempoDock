@@ -23,9 +23,11 @@ SELECT * FROM status_pages WHERE org_id = +? ORDER BY slug;
 SELECT count(*) FROM status_pages WHERE org_id = +?;
 
 -- name: ListStatusPageHosts :many
--- Every page's slug, for the hostnames Dock holds and serves (a few rows
--- per org, read when Dock starts and when a page changes).
-SELECT id, slug, published FROM status_pages;
+-- Every page's slug and verified hostname, for the hostnames Dock holds
+-- and serves (a few rows per org, read when Dock starts and when a page
+-- changes).
+SELECT id, slug, published, CAST(CASE WHEN verified_at IS NULL THEN '' ELSE coalesce(hostname, '') END AS TEXT) AS hostname
+FROM status_pages;
 
 -- name: UpdateStatusPage :one
 UPDATE status_pages SET title = ?, published = ?, show_uptime = ?, drafts = ? WHERE id = +?
@@ -256,3 +258,18 @@ LEFT JOIN status_incident_components AS ic ON ic.incident_id = i.id
 LEFT JOIN status_sources AS src ON src.component_id = ic.component_id
 WHERE i.kind = 'maintenance' AND i.resolved_at IS NULL
 ORDER BY i.starts_at, i.id;
+
+-- name: SetStatusPageHostname :one
+-- A page's custom hostname (NULL: none), with its verification token
+-- and when it was verified (NULL until it is).
+UPDATE status_pages SET hostname = ?, verify_token = ?, verified_at = ? WHERE id = +?
+RETURNING *;
+
+-- name: VerifyStatusPageHostname :execrows
+-- Marks a page's hostname verified, unless it changed or was verified
+-- meanwhile.
+UPDATE status_pages SET verified_at = ? WHERE id = +? AND hostname = +? AND verified_at IS NULL;
+
+-- name: StatusHostnameVerified :one
+-- Whether a page holds hostname verified.
+SELECT EXISTS (SELECT 1 FROM status_pages WHERE hostname = +? AND verified_at IS NOT NULL);
