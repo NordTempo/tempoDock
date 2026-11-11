@@ -15,6 +15,12 @@ import (
 // its keys are the generated queries' SQL constants.
 type stmts struct {
 	db *sql.DB
+	// mu guards the maps only: nothing holding it calls into
+	// database/sql. Closing a statement takes the lock of each connection
+	// it was prepared on; a BEGIN waiting for SQLite's write lock holds
+	// its connection's, and the writer holding the write lock may be
+	// waiting for mu (warm, from txStmts). Holding mu there deadlocks
+	// until busy_timeout, and the BEGIN fails with SQLITE_BUSY.
 	mu sync.RWMutex
 	m  map[string]*sql.Stmt
 	// warming are queries being prepared in the background (warm).
@@ -51,7 +57,8 @@ func (s *stmts) warm(query string) {
 }
 
 // get returns query's statement, preparing it on first use. Two callers
-// that prepare it at once keep the first one stored.
+// that prepare it at once keep the first one stored; the other's is
+// closed outside mu.
 func (s *stmts) get(ctx context.Context, query string) (*sql.Stmt, error) {
 	if st := s.cached(query); st != nil {
 		return st, nil
@@ -61,12 +68,15 @@ func (s *stmts) get(ctx context.Context, query string) (*sql.Stmt, error) {
 		return nil, err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if prev := s.m[query]; prev != nil {
+	prev := s.m[query]
+	if prev == nil {
+		s.m[query] = st
+	}
+	s.mu.Unlock()
+	if prev != nil {
 		_ = st.Close()
 		return prev, nil
 	}
-	s.m[query] = st
 	return st, nil
 }
 
@@ -106,11 +116,12 @@ func (s *stmts) PrepareContext(ctx context.Context, query string) (*sql.Stmt, er
 // Close closes every statement prepared so far.
 func (s *stmts) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	all := s.m
+	s.m = map[string]*sql.Stmt{}
+	s.mu.Unlock()
 	var errs []error
-	for q, st := range s.m {
+	for _, st := range all {
 		errs = append(errs, st.Close())
-		delete(s.m, q)
 	}
 	return errors.Join(errs...)
 }
