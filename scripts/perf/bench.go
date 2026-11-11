@@ -104,6 +104,9 @@ func updateBaseline(o options) error {
 		return err
 	}
 	fmt.Printf("wrote %s: binary %s, tempobase %s, %d benchmarks\n", o.baseline, mb(b.BinaryBytes), mb(b.TempobaseBinaryBytes), len(b.Benchmarks))
+	for _, r := range budgetChanges(o, old, b) {
+		fmt.Printf("%s: %s %s (%s)\n", r.result, r.check, r.measured, r.budget)
+	}
 	return nil
 }
 
