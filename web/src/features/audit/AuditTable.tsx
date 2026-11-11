@@ -224,6 +224,8 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "token.cli_login_denied": ["deny dock login", "denied a dock login as"],
   "token.create": ["create token", "created"],
   "token.revoke": ["revoke token", "revoked"],
+  "tracing.disable": ["turn off tracing", "turned off"],
+  "tracing.enable": ["turn on tracing", "turned on"],
   "uptime.add": ["add uptime check", "added an uptime check to"],
   "uptime.remove": ["remove uptime check", "removed an uptime check from"],
   "uptime.update": ["change uptime check", "changed an uptime check of"],

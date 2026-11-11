@@ -21,15 +21,18 @@ import {
   analyticsDefaultsQuery,
   analyticsStatusQuery,
   orgAnalyticsDefaultsQuery,
+  tracingStatusQuery,
   useSetAnalyticsServer,
   useSetDefaults,
   useSetOrgDefaults,
+  useSetTracing,
 } from "./data";
 import { SettingInput } from "./SettingInput";
 import { type Field, fields, flags, text, valid, value } from "./settings";
 
 // The console's Analytics page (ADR 0037), for operators: the analytics
-// store's state, the server it runs on, and every site's default settings.
+// store's state, the server it runs on, every site's default settings,
+// and tracing's trace store, which runs beside the analytics store.
 
 export function AnalyticsConsole() {
   const { data: status, refetch } = useSuspenseQuery(analyticsStatusQuery());
@@ -115,6 +118,7 @@ export function AnalyticsConsole() {
           moving={!!status.moving_to}
         />
         <Defaults />
+        <Tracing />
         <p className="text-2xs text-faint">
           IP Geolocation by DB-IP, CC BY 4.0
         </p>
@@ -190,6 +194,75 @@ function ServerPicker({
           {online
             ? `Its data is copied to ${server} and checked, then the store and its data are removed from ${current}. Events wait on each server meanwhile.`
             : `${current} is offline, so its data can't be copied: the store on ${server} starts empty, and the old one is removed when ${current} is back.`}
+        </Confirm>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Tracing over OTLP: whether it is on, and its trace store, which runs
+ * beside the analytics store on the analytics server. Turning it off
+ * asks first: the spans go with the store.
+ */
+function Tracing() {
+  const { data: st } = useSuspenseQuery(tracingStatusQuery());
+  const set = useSetTracing();
+  const [asking, setAsking] = useState(false);
+  const cli = st.enabled ? "dock tracing off" : "dock tracing on";
+  return (
+    <section aria-labelledby="tracing" className="flex flex-col gap-2">
+      <SectionHead id="tracing">Tracing</SectionHead>
+      <Facts>
+        <Fact label="Tracing">{st.enabled ? "on" : "off"}</Fact>
+        <Fact
+          label="Trace store"
+          note={st.store_running ? bytes(st.store_bytes) : undefined}
+        >
+          {st.store_running ? (
+            "running"
+          ) : st.starting ? (
+            "starting"
+          ) : !st.enabled ? (
+            "not started"
+          ) : st.server_online ? (
+            <span className="text-warn-text">not answering</span>
+          ) : (
+            <span className="text-fail">{st.server} is offline</span>
+          )}
+        </Fact>
+        <Fact label="Keeps" note={`${st.memory_mb} MB of memory`}>
+          {st.retention_days} days of spans
+        </Fact>
+      </Facts>
+      {st.error && <ErrorText error={new Error(st.error)} />}
+      <span className="flex flex-wrap items-center gap-2.5">
+        <Act
+          cli={cli}
+          small
+          disabled={set.isPending}
+          onClick={() => (st.enabled ? setAsking(true) : set.mutate(true))}
+        >
+          {st.enabled ? "Turn tracing off" : "Turn tracing on"}
+        </Act>
+        {!asking && <ErrorText error={set.error} />}
+      </span>
+      {asking && (
+        <Confirm
+          action="Turn tracing off"
+          cli="dock tracing off --yes"
+          danger
+          pending={set.isPending}
+          error={set.error}
+          onConfirm={() =>
+            set.mutate(false, { onSuccess: () => setAsking(false) })
+          }
+          onCancel={() => {
+            set.reset();
+            setAsking(false);
+          }}
+        >
+          The trace store on {st.server} is removed, with every span it holds.
         </Confirm>
       )}
     </section>

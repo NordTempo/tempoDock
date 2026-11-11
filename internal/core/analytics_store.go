@@ -215,7 +215,7 @@ func (c *Core) removeStrayStore(serverID int64, wait bool) {
 		if busy {
 			return
 		}
-		if err := c.runtime(serverID).RemoveAnalyticsStore(ctx); err != nil && c.ctx.Err() == nil {
+		if err := c.runtime(serverID).RemoveAnalyticsStore(ctx, node.StoreAnalytics); err != nil && c.ctx.Err() == nil {
 			c.log.Warn("analytics: remove the store from a server that isn't the analytics server", "server", serverID, "err", err)
 		}
 	})
@@ -337,7 +337,17 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 	cl, old := c.analyticsClient()
 	switch {
 	case cl == nil:
-		// The first time: straight onto the chosen server.
+		// The first time: straight onto the chosen server. Tracing may
+		// have made the settings with another server: the trace store
+		// follows.
+		if prev, err := c.store.GetAnalyticsSettings(ctx); err == nil && c.settingsServer(prev) != target.ID {
+			if err := c.store.SetAnalyticsServer(ctx, store.SetAnalyticsServerParams{ServerID: id, UpdatedBy: a.Name, UpdatedAt: now()}); err != nil {
+				return apitypes.AnalyticsStatus{}, err
+			}
+			c.moveTraceStore(c.settingsServer(prev), target.ID)
+		} else if err != nil && !store.IsNotFound(err) {
+			return apitypes.AnalyticsStatus{}, err
+		}
 		if err := c.enableAnalytics(ctx, a.Name, id); err != nil {
 			return apitypes.AnalyticsStatus{}, err
 		}
@@ -352,6 +362,15 @@ func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.Set
 		}
 	}
 	return c.AnalyticsStatus(ctx, a)
+}
+
+// settingsServer is the analytics server st names: the control plane's
+// own when it names none.
+func (c *Core) settingsServer(st store.AnalyticsSetting) int64 {
+	if st.ServerID != nil {
+		return *st.ServerID
+	}
+	return c.localID
 }
 
 // startStoreMove checks a move can run and starts it in the background.
@@ -444,14 +463,14 @@ func (c *Core) moveStore(ctx context.Context, a Actor, m *analyticsMove, copyDat
 		if events, bytes, err = c.copyStore(ctx, m, string(token)); err != nil {
 			rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), storeStartTimeout)
 			defer rcancel()
-			if rerr := c.runtime(m.to.ID).RemoveAnalyticsStore(rctx); rerr != nil {
+			if rerr := c.runtime(m.to.ID).RemoveAnalyticsStore(rctx, node.StoreAnalytics); rerr != nil {
 				c.log.Warn("analytics: remove the partial copy; it goes when that server next connects", "server", m.to.Name, "err", rerr)
 			}
 			return "", err
 		}
 	} else {
 		// Empty means empty: not a store an earlier move left there.
-		if err := c.runtime(m.to.ID).RemoveAnalyticsStore(ctx); err != nil {
+		if err := c.runtime(m.to.ID).RemoveAnalyticsStore(ctx, node.StoreAnalytics); err != nil {
 			return "", err
 		}
 		if err := c.startStore(ctx, m.to.ID, string(token)); err != nil {
@@ -469,6 +488,7 @@ func (c *Core) moveStore(ctx context.Context, a Actor, m *analyticsMove, copyDat
 		return "", err
 	}
 	st.ServerID = id
+	c.moveTraceStore(m.from.ID, m.to.ID)
 	if err := c.runAnalytics(ctx, st); err != nil {
 		// The next daemon start picks it up from the settings.
 		c.log.Error("analytics: forward to the moved store", "err", err)
@@ -477,7 +497,7 @@ func (c *Core) moveStore(ctx context.Context, a Actor, m *analyticsMove, copyDat
 		return fmt.Sprintf("moved the analytics store from %s to %s, starting empty; the old store is removed when %s is back", m.from.Name, m.to.Name, m.from.Name), nil
 	}
 	summary := fmt.Sprintf("moved the analytics store from %s to %s with %d events (%s)", m.from.Name, m.to.Name, events, humanBytes(bytes))
-	if err := c.runtime(m.from.ID).RemoveAnalyticsStore(ctx); err != nil {
+	if err := c.runtime(m.from.ID).RemoveAnalyticsStore(ctx, node.StoreAnalytics); err != nil {
 		c.log.Warn("analytics: remove the old store; it goes when that server next connects", "server", m.from.Name, "err", err)
 		return summary + "; removing it from " + m.from.Name + " failed: " + err.Error(), nil
 	}
@@ -495,7 +515,7 @@ func (c *Core) copyStore(ctx context.Context, m *analyticsMove, token string) (i
 	}
 	// A store left there by a move that stopped part way goes first: the
 	// copy fills an empty store only.
-	if err := c.runtime(m.to.ID).RemoveAnalyticsStore(ctx); err != nil {
+	if err := c.runtime(m.to.ID).RemoveAnalyticsStore(ctx, node.StoreAnalytics); err != nil {
 		return 0, 0, err
 	}
 	if err := c.startStore(ctx, m.to.ID, token); err != nil {

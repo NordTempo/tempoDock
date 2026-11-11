@@ -36,6 +36,32 @@ func registerAnalytics(s *Server, a huma.API) {
 	})
 }
 
+// registerTracing registers tracing's platform switch: the trace store
+// beside the analytics store, and whether it answers.
+func registerTracing(s *Server, a huma.API) {
+	tags := []string{"tracing"}
+	authed(s, a, huma.Operation{
+		OperationID: "get-tracing", Method: http.MethodGet, Path: Prefix + "/tracing",
+		Summary: "Show tracing's state", Tags: tags,
+		Description: "Whether tracing is on, the server the trace store runs on (the analytics server) and whether it answers (asked now). Operators only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.TracingStatus], error) {
+		return reply(s.core.TracingStatus(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-tracing", Method: http.MethodPut, Path: Prefix + "/tracing",
+		Summary: "Turn tracing on or off", Tags: tags,
+		Description: "On starts the trace store on the analytics server; it doesn't turn analytics on. Off removes the trace store and every span it holds, and needs the analytics server online. Operators only.",
+		Errors:      []int{http.StatusServiceUnavailable},
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.TracingSettings
+	}) (*out[apitypes.TracingStatus], error) {
+		if in.Body.Enabled {
+			return reply(s.core.EnableTraces(ctx, actor))
+		}
+		return reply(s.core.DisableTraces(ctx, actor))
+	})
+}
+
 // SitePath addresses a site of a project.
 type SitePath struct {
 	ProjectPath

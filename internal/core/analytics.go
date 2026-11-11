@@ -117,11 +117,19 @@ func (c *Core) startAnalytics(ctx context.Context) error {
 	}
 	c.rotateSalts(ctx, now())
 	st, err := c.store.GetAnalyticsSettings(ctx)
-	if store.IsNotFound(err) || (err == nil && !st.Enabled) {
+	if store.IsNotFound(err) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+	if st.TracesEnabled {
+		if err := c.runTraces(st); err != nil {
+			return err
+		}
+	}
+	if !st.Enabled {
+		return nil
 	}
 	return c.runAnalytics(ctx, st)
 }
@@ -170,7 +178,7 @@ func (c *Core) storeClient(serverID int64, token string) *analytics.Client {
 		Token:   token,
 		HTTP: &http.Client{Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return c.runtime(serverID).DialAnalyticsStore(ctx)
+				return c.runtime(serverID).DialAnalyticsStore(ctx, node.StoreAnalytics)
 			},
 			// A dashboard has dashboardParallel queries in flight.
 			MaxIdleConnsPerHost: dashboardParallel,
@@ -275,6 +283,7 @@ func (c *Core) updateGeoIP() {
 func (c *Core) analyticsServerChanged(serverID int64, online bool) {
 	c.analyticsServersChanged()
 	if online {
+		c.tracesServerChanged(serverID)
 		c.pushSalts(serverID)
 		if cl, storeServer := c.analyticsClient(); cl != nil {
 			if serverID == storeServer {
@@ -338,6 +347,7 @@ func (c *Core) rotateSalts(ctx context.Context, t time.Time) {
 	c.analytics.mu.Unlock()
 	c.updateGeoIP()
 	c.pruneAnalytics()
+	c.pruneTraces()
 	c.pushSalts(c.localID)
 	if c.nodes == nil {
 		return

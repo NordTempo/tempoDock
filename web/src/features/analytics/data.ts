@@ -34,6 +34,7 @@ export {
   type StatsRange,
   sitesQuery,
   statsRanges,
+  tracingStatusQuery,
   type Vital,
   vitals,
 } from "./loaders";
@@ -183,6 +184,12 @@ export const useSetAnalyticsServer = () =>
     (move: { server: string; start_empty?: boolean }) =>
       body(api.PUT("/api/v1/analytics/server", { body: move })),
     [keys.servers],
+  );
+
+/** Turns tracing on or off (off removes the trace store's spans). */
+export const useSetTracing = () =>
+  useAnalyticsAction((enabled: boolean) =>
+    body(api.PUT("/api/v1/tracing", { body: { enabled } })),
   );
 
 /**

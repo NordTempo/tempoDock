@@ -58,7 +58,7 @@ func (q *Queries) DeleteAnalyticsSaltsBefore(ctx context.Context, day int64) err
 }
 
 const getAnalyticsSettings = `-- name: GetAnalyticsSettings :one
-SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults FROM analytics_settings WHERE id = 1
+SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults, traces_enabled FROM analytics_settings WHERE id = 1
 `
 
 func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, error) {
@@ -72,6 +72,7 @@ func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, e
 		&i.UpdatedBy,
 		&i.UpdatedAt,
 		&i.SiteDefaults,
+		&i.TracesEnabled,
 	)
 	return i, err
 }
@@ -130,5 +131,21 @@ type SetAnalyticsServerParams struct {
 
 func (q *Queries) SetAnalyticsServer(ctx context.Context, arg SetAnalyticsServerParams) error {
 	_, err := q.db.ExecContext(ctx, setAnalyticsServer, arg.ServerID, arg.UpdatedBy, arg.UpdatedAt)
+	return err
+}
+
+const setTracesEnabled = `-- name: SetTracesEnabled :exec
+UPDATE analytics_settings SET traces_enabled = ?, updated_by = ?, updated_at = ? WHERE id = 1
+`
+
+type SetTracesEnabledParams struct {
+	TracesEnabled bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
+}
+
+// SetTracesEnabled turns the trace store on or off.
+func (q *Queries) SetTracesEnabled(ctx context.Context, arg SetTracesEnabledParams) error {
+	_, err := q.db.ExecContext(ctx, setTracesEnabled, arg.TracesEnabled, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }

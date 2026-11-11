@@ -13,6 +13,10 @@ UPDATE analytics_settings SET server_id = ?, updated_by = ?, updated_at = ? WHER
 -- name: SetAnalyticsEnabled :exec
 UPDATE analytics_settings SET enabled = 1, updated_by = ?, updated_at = ? WHERE id = 1;
 
+-- SetTracesEnabled turns the trace store on or off.
+-- name: SetTracesEnabled :exec
+UPDATE analytics_settings SET traces_enabled = ?, updated_by = ?, updated_at = ? WHERE id = 1;
+
 -- ListAnalyticsSalts returns the salts of day and later, oldest first.
 -- name: ListAnalyticsSalts :many
 SELECT day, salt FROM analytics_salts WHERE day >= +sqlc.arg(day) ORDER BY day;

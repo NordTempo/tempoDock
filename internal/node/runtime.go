@@ -252,6 +252,11 @@ const RoleCloudflared = "cloudflared"
 // container (ADR 0037).
 const RoleAnalytics = "analytics"
 
+// RoleTraces is the LabelRole value of the trace store's container and
+// volume (dock-analytics traces): spans for tracing over OTLP, in a
+// container of their own beside the analytics store.
+const RoleTraces = "traces"
+
 // RoleRegistryGC is the LabelRole value of the registry's garbage
 // collection container.
 const RoleRegistryGC = "registry-gc"
@@ -1037,18 +1042,20 @@ type Analytics interface {
 	// AckSpool records that the store has everything of a spool up to
 	// position, events in all; the spool deletes what it no longer needs.
 	AckSpool(ctx context.Context, spool Spool, position uint64, events int) error
-	// EnsureAnalyticsStore runs the store's container as spec says. It
-	// returns once the container runs; the store may take a moment more
-	// to answer.
+	// EnsureAnalyticsStore runs the container of the store spec.Kind
+	// names as spec says. It returns once the container runs; the store
+	// may take a moment more to answer.
 	EnsureAnalyticsStore(ctx context.Context, spec AnalyticsStoreSpec) error
-	// RemoveAnalyticsStore removes the store from this server: its
-	// container, its data and its binary. Dock calls it once the store
-	// moved to another server and the copy there was checked, and on a
-	// server that holds a store it shouldn't (a move that stopped).
-	RemoveAnalyticsStore(ctx context.Context) error
-	// DialAnalyticsStore connects to the store's API on this server. On a
-	// remote server the bytes go over the node link.
-	DialAnalyticsStore(ctx context.Context) (net.Conn, error)
+	// RemoveAnalyticsStore removes the store of kind from this server:
+	// its container and its data, and for the analytics store the binary
+	// too. Dock calls it once the analytics store moved to another server
+	// and the copy there was checked, on a server that holds a store it
+	// shouldn't (a move that stopped), and for the trace store when
+	// tracing is turned off or the analytics server changes.
+	RemoveAnalyticsStore(ctx context.Context, kind StoreKind) error
+	// DialAnalyticsStore connects to the API of the store of kind on this
+	// server. On a remote server the bytes go over the node link.
+	DialAnalyticsStore(ctx context.Context, kind StoreKind) (net.Conn, error)
 }
 
 // AnalyticsBaseImage is what the store's container runs on: the C and
@@ -1108,10 +1115,22 @@ type SpoolBatch struct {
 	Skipped bool
 }
 
-// AnalyticsStoreSpec is how the analytics store's container runs: the
-// dock-analytics binary, mounted read-only into a container of
-// AnalyticsBaseImage.
+// StoreKind names one of the stores the dock-analytics binary runs, each
+// in a container of its own on the analytics server.
+type StoreKind string
+
+const (
+	// StoreAnalytics is Dock Analytics' store (ADR 0037).
+	StoreAnalytics StoreKind = ""
+	// StoreTraces is the trace store: spans for tracing over OTLP.
+	StoreTraces StoreKind = "traces"
+)
+
+// AnalyticsStoreSpec is how a store's container runs: the dock-analytics
+// binary, mounted read-only into a container of AnalyticsBaseImage.
 type AnalyticsStoreSpec struct {
+	// Kind is the store: StoreAnalytics or StoreTraces.
+	Kind StoreKind
 	// Binary is the dock-analytics binary on this server: the release's
 	// for its arch, which the control plane downloads when analytics is
 	// turned on. Over the node link it names the control plane's copy,

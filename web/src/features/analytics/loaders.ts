@@ -64,6 +64,13 @@ export const analyticsStatusQuery = () =>
     queryFn: () => body(api.GET("/api/v1/analytics")),
   });
 
+/** Tracing over OTLP and its trace store, for operators. */
+export const tracingStatusQuery = () =>
+  queryOptions({
+    queryKey: ["analytics", "tracing"],
+    queryFn: () => body(api.GET("/api/v1/tracing")),
+  });
+
 /** The org's defaults for new sites, over the platform's. */
 export const orgAnalyticsDefaultsQuery = () =>
   queryOptions({

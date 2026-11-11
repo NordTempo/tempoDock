@@ -79,8 +79,10 @@ const (
 	// resume, open-requests, the routes' wake and quiet probes, and wake
 	// events: environments that sleep (ADR 0070, SleepProtocol). 23
 	// adds scan-sbom, scan-match, scan-database and image-digest: image
-	// vulnerability scanning on builders (ADR 0074, ScanProtocol).
-	Protocol = 23
+	// vulnerability scanning on builders (ADR 0074, ScanProtocol). 24
+	// adds the trace store: the kind of run-analytics-store,
+	// remove-analytics-store and dial-analytics (TraceStoreProtocol).
+	Protocol = 24
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

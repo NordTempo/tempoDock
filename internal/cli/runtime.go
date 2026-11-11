@@ -121,6 +121,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	coll.Traces = docker.NewTraceStore(containers, cfg.Traces.StorePort, owner)
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
 	tunnel := docker.NewCloudflared(containers, cfg.Ingress.CloudflaredImage, owner, proxy.SetTunnelHostname)
 	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false), Scanner: containers}, proxy, in, nil

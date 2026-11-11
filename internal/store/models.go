@@ -91,13 +91,14 @@ type AnalyticsSalt struct {
 }
 
 type AnalyticsSetting struct {
-	ID           int64
-	ServerID     *int64
-	Token        []byte
-	Enabled      bool
-	UpdatedBy    string
-	UpdatedAt    time.Time
-	SiteDefaults string
+	ID            int64
+	ServerID      *int64
+	Token         []byte
+	Enabled       bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
+	SiteDefaults  string
+	TracesEnabled bool
 }
 
 type AuditDetail struct {

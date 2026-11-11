@@ -23,13 +23,19 @@ import (
 // (CI builds it before the integration tests).
 var analyticsTestBinary = filepath.Join("..", "..", "..", "bin", "dock-analytics-linux-"+runtime.GOARCH)
 
-// testAnalyticsStore is a store of its own for the test, on a free port.
+// testAnalyticsStore is an analytics store of its own for the test, on a
+// free port.
 func testAnalyticsStore(t *testing.T, e *testEnv, name string) *AnalyticsStore {
+	return testStore(t, e, name, node.StoreAnalytics)
+}
+
+// testStore is a store of kind of its own for the test, on a free port.
+func testStore(t *testing.T, e *testEnv, name string, kind node.StoreKind) *AnalyticsStore {
 	t.Helper()
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	_ = ln.Close()
-	a := &AnalyticsStore{cli: e.cli, name: e.name(name), volume: e.name(name + "-data"), port: port, owner: "/test/" + e.prefix}
+	a := &AnalyticsStore{cli: e.cli, name: e.name(name), volume: e.name(name + "-data"), kind: storeKinds[kind], port: port, owner: "/test/" + e.prefix}
 	t.Cleanup(func() { _ = a.Remove(context.Background()) })
 	return a
 }
@@ -141,4 +147,65 @@ func containerID(t *testing.T, e *testEnv, name string) string {
 		t.Fatal(err)
 	}
 	return res.Container.ID
+}
+
+// The trace store's container: the same binary as `dock-analytics
+// traces`, with its own volume, answering the trace API on its port,
+// keeping spans across a recreate and going with them on Remove.
+func TestIntegrationTraceStore(t *testing.T) {
+	e := newEnv(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	bin, err := filepath.Abs(analyticsTestBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := update.HashFile(bin)
+	if err != nil {
+		t.Skipf("no store binary (%v); build it with `make analytics-binary`", err)
+	}
+	a := testStore(t, e, "traces", node.StoreTraces)
+	spec := node.AnalyticsStoreSpec{Kind: node.StoreTraces, Binary: bin, SHA256: sum, Token: strings.Repeat("a", 32), MemoryBytes: 384 << 20}
+	if err := a.Ensure(ctx, node.AnalyticsStoreSpec{Binary: bin, SHA256: sum, Token: spec.Token, MemoryBytes: spec.MemoryBytes}); err == nil {
+		t.Error("the trace store's container took an analytics store's spec")
+	}
+	if err := a.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	c := storeClient(a, spec.Token)
+	waitTraceStore(t, c)
+	sp := analytics.Span{Org: 1, Service: 10, Trace: analytics.TraceID{15: 1}, ID: 1, Start: time.Now().UnixMicro(), Duration: 1000, Name: "GET /", Entry: true}
+	if res, err := c.WriteSpans(ctx, "spans:server:1", 1, []analytics.Span{sp}, analytics.TraceLimits{}); err != nil || res.Written != 1 {
+		t.Fatalf("write = %+v, %v", res, err)
+	}
+
+	// A new limit: a new container, the same spans.
+	spec.MemoryBytes = 512 << 20
+	if err := a.Ensure(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	waitTraceStore(t, c)
+	if tr, err := c.Trace(ctx, analytics.TraceQuery{Org: 1, Trace: sp.Trace}); err != nil || len(tr.Spans) != 1 {
+		t.Errorf("after the recreate: %+v, %v", tr, err)
+	}
+
+	if err := a.Remove(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.cli.VolumeInspect(ctx, a.volume, client.VolumeInspectOptions{}); err == nil {
+		t.Error("the trace store's volume is still there")
+	}
+}
+
+// waitTraceStore waits for the trace store to answer, as it opens its
+// database.
+func waitTraceStore(t *testing.T, c *analytics.Client) {
+	t.Helper()
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+		if _, err := c.SpansCursor(context.Background(), "x"); err == nil {
+			return
+		} else if time.Now().After(deadline) {
+			t.Fatalf("the trace store didn't answer: %v", err)
+		}
+	}
 }

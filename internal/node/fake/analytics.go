@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net"
 	"net/http"
@@ -31,6 +32,11 @@ type fakeAnalytics struct {
 	failSet   error
 	// failEnsure makes EnsureAnalyticsStore fail.
 	failEnsure error
+	// traces is the trace store's spec, and traceStore the in-memory
+	// trace store that runs for it on traceLn.
+	traces     *node.AnalyticsStoreSpec
+	traceStore *fakestore.Traces
+	traceLn    net.Listener
 	// demo appends DOCK_FAKE_SPOOL's lines once, on the first tail.
 	demo sync.Once
 }
@@ -108,6 +114,21 @@ func (r *Runtime) AnalyticsStore() *fakestore.Store {
 	r.analytics.mu.Lock()
 	defer r.analytics.mu.Unlock()
 	return r.analytics.fakeStore
+}
+
+// TraceStoreSpec is the trace store's spec, nil when it doesn't run.
+func (r *Runtime) TraceStoreSpec() *node.AnalyticsStoreSpec {
+	r.analytics.mu.Lock()
+	defer r.analytics.mu.Unlock()
+	return r.analytics.traces
+}
+
+// TraceStore is the in-memory trace store running for its spec, nil when
+// none runs.
+func (r *Runtime) TraceStore() *fakestore.Traces {
+	r.analytics.mu.Lock()
+	defer r.analytics.mu.Unlock()
+	return r.analytics.traceStore
 }
 
 // FailSetAnalytics makes SetAnalytics return err.
@@ -200,8 +221,8 @@ func (r *Runtime) AckSpool(_ context.Context, which node.Spool, position uint64,
 }
 
 // EnsureAnalyticsStore implements node.Analytics: it records spec and
-// runs an in-memory store (fakestore) with spec's token, on a loopback
-// port. A new token starts a new, empty store.
+// runs an in-memory store (fakestore) of spec's kind with spec's token, on
+// a loopback port. A new token starts a new, empty store.
 func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec node.AnalyticsStoreSpec) error {
 	if spec.Binary == "" || len(spec.SHA256) != 64 {
 		return errors.New("the analytics store needs its binary and its SHA-256")
@@ -212,35 +233,60 @@ func (r *Runtime) EnsureAnalyticsStore(_ context.Context, spec node.AnalyticsSto
 		a.mu.Unlock()
 		return a.failEnsure
 	}
-	if a.store != nil && a.store.Token != spec.Token {
-		a.stopStore()
-	}
-	if a.store == nil {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			a.mu.Unlock()
-			return err
+	op := "ensure-analytics-store"
+	if spec.Kind == node.StoreTraces {
+		op = "ensure-trace-store"
+		if a.traces != nil && a.traces.Token != spec.Token {
+			a.stopTraces()
 		}
-		fs := fakestore.New(spec.Token)
-		go func() { _ = http.Serve(ln, fs.Handler()) }()
-		a.fakeStore, a.storeLn = fs, ln
+		if a.traces == nil {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				a.mu.Unlock()
+				return err
+			}
+			ts := fakestore.NewTraces(spec.Token)
+			go func() { _ = http.Serve(ln, ts.Handler()) }()
+			a.traceStore, a.traceLn = ts, ln
+		}
+		a.traces = &spec
+	} else {
+		if a.store != nil && a.store.Token != spec.Token {
+			a.stopStore()
+		}
+		if a.store == nil {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				a.mu.Unlock()
+				return err
+			}
+			fs := fakestore.New(spec.Token)
+			go func() { _ = http.Serve(ln, fs.Handler()) }()
+			a.fakeStore, a.storeLn = fs, ln
+		}
+		a.store = &spec
 	}
-	a.store = &spec
 	a.mu.Unlock()
 	r.mu.Lock()
-	r.ops = append(r.ops, "ensure-analytics-store")
+	r.ops = append(r.ops, op)
 	r.mu.Unlock()
 	return nil
 }
 
-// RemoveAnalyticsStore implements node.Analytics: the in-memory store and
-// its events go.
-func (r *Runtime) RemoveAnalyticsStore(context.Context) error {
+// RemoveAnalyticsStore implements node.Analytics: the in-memory store of
+// kind and its data go.
+func (r *Runtime) RemoveAnalyticsStore(_ context.Context, kind node.StoreKind) error {
+	op := "remove-analytics-store"
 	r.analytics.mu.Lock()
-	r.analytics.stopStore()
+	if kind == node.StoreTraces {
+		op = "remove-trace-store"
+		r.analytics.stopTraces()
+	} else {
+		r.analytics.stopStore()
+	}
 	r.analytics.mu.Unlock()
 	r.mu.Lock()
-	r.ops = append(r.ops, "remove-analytics-store")
+	r.ops = append(r.ops, op)
 	r.mu.Unlock()
 	return nil
 }
@@ -253,14 +299,25 @@ func (a *fakeAnalytics) stopStore() {
 	a.store, a.fakeStore, a.storeLn = nil, nil, nil
 }
 
+// stopTraces stops the in-memory trace store; mu is held.
+func (a *fakeAnalytics) stopTraces() {
+	if a.traceLn != nil {
+		_ = a.traceLn.Close()
+	}
+	a.traces, a.traceStore, a.traceLn = nil, nil, nil
+}
+
 // DialAnalyticsStore implements node.Analytics: it connects to the
-// in-memory store.
-func (r *Runtime) DialAnalyticsStore(ctx context.Context) (net.Conn, error) {
+// in-memory store of kind.
+func (r *Runtime) DialAnalyticsStore(ctx context.Context, kind node.StoreKind) (net.Conn, error) {
 	r.analytics.mu.Lock()
 	ln := r.analytics.storeLn
+	if kind == node.StoreTraces {
+		ln = r.analytics.traceLn
+	}
 	r.analytics.mu.Unlock()
 	if ln == nil {
-		return nil, errors.New("the analytics store isn't running on this server")
+		return nil, fmt.Errorf("the %q store isn't running on this server", kind)
 	}
 	var d net.Dialer
 	return d.DialContext(ctx, "tcp", ln.Addr().String())
