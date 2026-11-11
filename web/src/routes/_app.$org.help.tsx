@@ -99,15 +99,15 @@ function Help() {
           id="locks"
           title="Locks and access requests"
           go={
-            <Link to="/$org/requests" params={{ org }} className="lnk">
-              Requests
+            <Link to="/$org/inbox" params={{ org }} className="lnk">
+              Inbox
             </Link>
           }
         >
           <p>
             Locking an environment makes changes by tokens (CI, scripts, agents)
             wait for an admin's approval as access requests. People signed in
-            are not stopped. Requests in the sidebar lists what waits.
+            are not stopped. The Inbox lists what waits.
           </p>
         </Topic>
         <Topic id="domains" title="Domains and DNS">

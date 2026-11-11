@@ -25,6 +25,7 @@ import { Route as AppOrgAlertsRouteImport } from './routes/_app.$org.alerts'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
 import { Route as AppOrgErrorsRouteImport } from './routes/_app.$org.errors'
 import { Route as AppOrgHelpRouteImport } from './routes/_app.$org.help'
+import { Route as AppOrgInboxRouteImport } from './routes/_app.$org.inbox'
 import { Route as AppOrgRequestsRouteImport } from './routes/_app.$org.requests'
 import { Route as AppOrgSettingsRouteImport } from './routes/_app.$org.settings'
 import { Route as AppConsoleIndexRouteImport } from './routes/_app.console.index'
@@ -51,6 +52,7 @@ import { Route as AppOrgImagesIndexRouteImport } from './routes/_app.$org.images
 import { Route as AppOrgImagesIdRouteImport } from './routes/_app.$org.images.$id'
 import { Route as AppOrgImagesIgnoresRouteImport } from './routes/_app.$org.images.ignores'
 import { Route as AppOrgSettingsIndexRouteImport } from './routes/_app.$org.settings.index'
+import { Route as AppOrgSettingsAlertsRouteImport } from './routes/_app.$org.settings.alerts'
 import { Route as AppOrgSettingsAnalyticsRouteImport } from './routes/_app.$org.settings.analytics'
 import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org.settings.cloudflare'
 import { Route as AppOrgSettingsDataAccessRouteImport } from './routes/_app.$org.settings.data-access'
@@ -178,6 +180,11 @@ const AppOrgErrorsRoute = AppOrgErrorsRouteImport.update({
 const AppOrgHelpRoute = AppOrgHelpRouteImport.update({
   id: '/help',
   path: '/help',
+  getParentRoute: () => AppOrgRoute,
+} as any)
+const AppOrgInboxRoute = AppOrgInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => AppOrgRoute,
 } as any)
 const AppOrgRequestsRoute = AppOrgRequestsRouteImport.update({
@@ -308,6 +315,11 @@ const AppOrgImagesIgnoresRoute = AppOrgImagesIgnoresRouteImport.update({
 const AppOrgSettingsIndexRoute = AppOrgSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppOrgSettingsRoute,
+} as any)
+const AppOrgSettingsAlertsRoute = AppOrgSettingsAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
 const AppOrgSettingsAnalyticsRoute = AppOrgSettingsAnalyticsRouteImport.update({
@@ -611,6 +623,7 @@ export interface FileRoutesByFullPath {
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/errors': typeof AppOrgErrorsRoute
   '/$org/help': typeof AppOrgHelpRoute
+  '/$org/inbox': typeof AppOrgInboxRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/$org/settings': typeof AppOrgSettingsRouteWithChildren
   '/console/address': typeof AppConsoleAddressRoute
@@ -634,6 +647,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
+  '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
@@ -701,6 +715,7 @@ export interface FileRoutesByTo {
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/errors': typeof AppOrgErrorsRoute
   '/$org/help': typeof AppOrgHelpRoute
+  '/$org/inbox': typeof AppOrgInboxRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
   '/console/alerts': typeof AppConsoleAlertsRoute
@@ -722,6 +737,7 @@ export interface FileRoutesByTo {
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
+  '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
@@ -790,6 +806,7 @@ export interface FileRoutesById {
   '/_app/$org/audit': typeof AppOrgAuditRoute
   '/_app/$org/errors': typeof AppOrgErrorsRoute
   '/_app/$org/help': typeof AppOrgHelpRoute
+  '/_app/$org/inbox': typeof AppOrgInboxRoute
   '/_app/$org/requests': typeof AppOrgRequestsRoute
   '/_app/$org/settings': typeof AppOrgSettingsRouteWithChildren
   '/_app/console/address': typeof AppConsoleAddressRoute
@@ -813,6 +830,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/_app/$org/images/$id': typeof AppOrgImagesIdRoute
   '/_app/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
+  '/_app/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/_app/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/_app/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
   '/_app/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
@@ -884,6 +902,7 @@ export interface FileRouteTypes {
     | '/$org/audit'
     | '/$org/errors'
     | '/$org/help'
+    | '/$org/inbox'
     | '/$org/requests'
     | '/$org/settings'
     | '/console/address'
@@ -907,6 +926,7 @@ export interface FileRouteTypes {
     | '/$org/$project/settings'
     | '/$org/images/$id'
     | '/$org/images/ignores'
+    | '/$org/settings/alerts'
     | '/$org/settings/analytics'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
@@ -974,6 +994,7 @@ export interface FileRouteTypes {
     | '/$org/audit'
     | '/$org/errors'
     | '/$org/help'
+    | '/$org/inbox'
     | '/$org/requests'
     | '/console/address'
     | '/console/alerts'
@@ -995,6 +1016,7 @@ export interface FileRouteTypes {
     | '/$org/$project/compare'
     | '/$org/images/$id'
     | '/$org/images/ignores'
+    | '/$org/settings/alerts'
     | '/$org/settings/analytics'
     | '/$org/settings/cloudflare'
     | '/$org/settings/data-access'
@@ -1062,6 +1084,7 @@ export interface FileRouteTypes {
     | '/_app/$org/audit'
     | '/_app/$org/errors'
     | '/_app/$org/help'
+    | '/_app/$org/inbox'
     | '/_app/$org/requests'
     | '/_app/$org/settings'
     | '/_app/console/address'
@@ -1085,6 +1108,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/settings'
     | '/_app/$org/images/$id'
     | '/_app/$org/images/ignores'
+    | '/_app/$org/settings/alerts'
     | '/_app/$org/settings/analytics'
     | '/_app/$org/settings/cloudflare'
     | '/_app/$org/settings/data-access'
@@ -1262,6 +1286,13 @@ declare module '@tanstack/react-router' {
       path: '/help'
       fullPath: '/$org/help'
       preLoaderRoute: typeof AppOrgHelpRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/inbox': {
+      id: '/_app/$org/inbox'
+      path: '/inbox'
+      fullPath: '/$org/inbox'
+      preLoaderRoute: typeof AppOrgInboxRouteImport
       parentRoute: typeof AppOrgRoute
     }
     '/_app/$org/requests': {
@@ -1444,6 +1475,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/$org/settings/'
       preLoaderRoute: typeof AppOrgSettingsIndexRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
+    '/_app/$org/settings/alerts': {
+      id: '/_app/$org/settings/alerts'
+      path: '/alerts'
+      fullPath: '/$org/settings/alerts'
+      preLoaderRoute: typeof AppOrgSettingsAlertsRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
     '/_app/$org/settings/analytics': {
@@ -1793,6 +1831,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppOrgSettingsRouteChildren {
+  AppOrgSettingsAlertsRoute: typeof AppOrgSettingsAlertsRoute
   AppOrgSettingsAnalyticsRoute: typeof AppOrgSettingsAnalyticsRoute
   AppOrgSettingsCloudflareRoute: typeof AppOrgSettingsCloudflareRoute
   AppOrgSettingsDataAccessRoute: typeof AppOrgSettingsDataAccessRoute
@@ -1806,6 +1845,7 @@ interface AppOrgSettingsRouteChildren {
 }
 
 const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
+  AppOrgSettingsAlertsRoute: AppOrgSettingsAlertsRoute,
   AppOrgSettingsAnalyticsRoute: AppOrgSettingsAnalyticsRoute,
   AppOrgSettingsCloudflareRoute: AppOrgSettingsCloudflareRoute,
   AppOrgSettingsDataAccessRoute: AppOrgSettingsDataAccessRoute,
@@ -1966,6 +2006,7 @@ interface AppOrgRouteChildren {
   AppOrgAuditRoute: typeof AppOrgAuditRoute
   AppOrgErrorsRoute: typeof AppOrgErrorsRoute
   AppOrgHelpRoute: typeof AppOrgHelpRoute
+  AppOrgInboxRoute: typeof AppOrgInboxRoute
   AppOrgRequestsRoute: typeof AppOrgRequestsRoute
   AppOrgSettingsRoute: typeof AppOrgSettingsRouteWithChildren
   AppOrgIndexRoute: typeof AppOrgIndexRoute
@@ -1990,6 +2031,7 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgAuditRoute: AppOrgAuditRoute,
   AppOrgErrorsRoute: AppOrgErrorsRoute,
   AppOrgHelpRoute: AppOrgHelpRoute,
+  AppOrgInboxRoute: AppOrgInboxRoute,
   AppOrgRequestsRoute: AppOrgRequestsRoute,
   AppOrgSettingsRoute: AppOrgSettingsRouteWithChildren,
   AppOrgIndexRoute: AppOrgIndexRoute,

@@ -1,15 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { AlertsPage } from "../features/alerts/AlertsPage";
-import { alertQueries } from "../features/alerts/data";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// The organization's alerts: its projects' and services' (ADR 0062), for
-// every member; channels for its admins.
+// The organization's old Alerts page: its alerts are in the Inbox now,
+// where they go under Settings, Alerts (ADR 0076).
 export const Route = createFileRoute("/_app/$org/alerts")({
-  loader: ({ context: { queryClient } }) =>
-    Promise.all([
-      queryClient.ensureQueryData(alertQueries.open("org")),
-      queryClient.ensureQueryData(alertQueries.all("org")),
-      queryClient.ensureQueryData(alertQueries.vulns()),
-    ]),
-  component: () => <AlertsPage scope="org" />,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/$org/inbox", params, replace: true });
+  },
 });

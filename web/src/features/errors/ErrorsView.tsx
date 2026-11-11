@@ -3,8 +3,6 @@ import { useState } from "react";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
 import { Button, ErrorText, SectionHead } from "../../ui/kit";
-import { type Alert, useOrgOpenAlerts } from "../alerts/data";
-import { AlertLink, alertText } from "../alerts/source";
 import {
   byState,
   type ErrorFacet,
@@ -15,8 +13,9 @@ import {
   useResolveError,
 } from "./data";
 
-// The errors view (ADR 0062, mock B): the org's open alerts on top, then
-// error issues grouped by service, new and regressed first. On the org's
+// The errors view (ADR 0062, mock B): error issues grouped by service, new
+// and regressed first. Open alerts are the Inbox's (ADR 0076), so they
+// aren't repeated here. On the org's
 // Errors page a tree of projects and services (with counts) picks what
 // the list shows; a service's Errors tab is the same view fixed to it,
 // without the tree.
@@ -42,22 +41,9 @@ export function ErrorsView({
   fixed?: boolean;
 }) {
   const list = useErrors(filter);
-  const alerts = useOrgOpenAlerts().filter(
-    (a) =>
-      (!filter.project || a.project === filter.project) &&
-      (!filter.environment || a.environment === filter.environment) &&
-      (!filter.service || a.service === filter.service),
-  );
   const groups = groupByService(list.issues ?? []);
   const content = (
     <div className="flex min-w-0 flex-col gap-4">
-      {alerts.length > 0 && (
-        <section aria-label="Open alerts" className="flex flex-col gap-1">
-          {alerts.map((a) => (
-            <AlertStrip key={a.id} alert={a} />
-          ))}
-        </section>
-      )}
       {groups.length === 0 ? (
         <p className="text-mut">
           {filter.all
@@ -88,25 +74,6 @@ export function ErrorsView({
     <div className="grid gap-x-8 gap-y-6 md:grid-cols-[220px_minmax(0,1fr)]">
       <Facets facets={list.facets ?? []} filter={filter} onFilter={onFilter} />
       {content}
-    </div>
-  );
-}
-
-/** One open alert as a ruled, tinted strip with the way to it. */
-function AlertStrip({ alert: a }: { alert: Alert }) {
-  const critical = a.severity === "critical";
-  const { text } = alertText(a);
-  return (
-    <div
-      className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-r-[6px] border-l-2 px-3 py-2 ${critical ? "border-fail bg-fail-bg" : "border-warn bg-warn-bg"}`}
-    >
-      <span className={critical ? "text-fail" : "text-warn"}>{a.severity}</span>
-      <span className="min-w-0 flex-1">
-        {a.title}
-        {text && <span className="block text-xs text-sec">{text}</span>}
-      </span>
-      <span className="text-xs text-mut">{since(a.opened_at)}</span>
-      <AlertLink alert={a} className="btn sm no-underline" />
     </div>
   );
 }
