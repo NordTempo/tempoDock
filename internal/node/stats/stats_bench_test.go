@@ -12,7 +12,8 @@ import (
 )
 
 // BenchmarkHostStats is one server sample with its memory breakdown, on a
-// server with 40 systemd units and 50 containers already described.
+// server with 40 systemd units and 50 containers already described. Its
+// time is file reads (io=files: the perf check gates only its allocations).
 func BenchmarkHostStats(b *testing.B) {
 	root := b.TempDir()
 	files := memoryTree()
@@ -35,10 +36,12 @@ func BenchmarkHostStats(b *testing.B) {
 	if _, err := r.HostStats(ctx); err != nil {
 		b.Fatal(err)
 	}
-	b.ReportAllocs()
-	for b.Loop() {
-		if h, err := r.HostStats(ctx); err != nil || len(h.MemoryParts) == 0 {
-			b.Fatal(err)
+	b.Run("io=files", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if h, err := r.HostStats(ctx); err != nil || len(h.MemoryParts) == 0 {
+				b.Fatal(err)
+			}
 		}
-	}
+	})
 }

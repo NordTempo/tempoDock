@@ -138,7 +138,8 @@ func TestReadGrowsBuffer(t *testing.T) {
 }
 
 // BenchmarkContainerStats50 is one collector tick's container reads for a
-// server running 50 containers.
+// server running 50 containers. Its time is file reads (io=files: the
+// perf check gates only its allocations).
 func BenchmarkContainerStats50(b *testing.B) {
 	root := b.TempDir()
 	ids := make([]string, 50)
@@ -156,10 +157,12 @@ func BenchmarkContainerStats50(b *testing.B) {
 	}
 	r := New(Options{Cgroup: root})
 	ctx := context.Background()
-	b.ReportAllocs()
-	for b.Loop() {
-		if got, err := r.ContainerStats(ctx, ids); err != nil || len(got) != 50 {
-			b.Fatal(len(got), err)
+	b.Run("io=files", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if got, err := r.ContainerStats(ctx, ids); err != nil || len(got) != 50 {
+				b.Fatal(len(got), err)
+			}
 		}
-	}
+	})
 }

@@ -360,12 +360,12 @@
       "bytes_op": 217876,
       "allocs_op": 712
     },
-    "node/stats.BenchmarkContainerStats50": {
+    "node/stats.BenchmarkContainerStats50/io=files": {
       "ns_op": 1306520,
       "bytes_op": 4098,
       "allocs_op": 1
     },
-    "node/stats.BenchmarkHostStats": {
+    "node/stats.BenchmarkHostStats/io=files": {
       "ns_op": 681575,
       "bytes_op": 6480,
       "allocs_op": 4
