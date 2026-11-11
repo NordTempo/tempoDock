@@ -15,6 +15,7 @@ export const Route = createFileRoute(
 const views = [
   ["Traffic", "/$org/$project/$environment/$service/requests"],
   ["Visitors", "/$org/$project/$environment/$service/requests/visitors"],
+  ["Traces", "/$org/$project/$environment/$service/requests/traces"],
 ] as const;
 
 function Requests() {
