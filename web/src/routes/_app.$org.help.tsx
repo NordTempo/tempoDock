@@ -91,8 +91,9 @@ function Help() {
           <p>
             Variables, settings, domains and volumes you change are saved first
             and change nothing yet. A service's header counts them ("2 to
-            apply"); open the count (A) to review them, Ctrl Enter applies. Apply puts them live
-            together as one new release per service, and Discard drops them.
+            apply"); open the count (A) to review them, Ctrl Enter applies.
+            Apply puts them live together as one new release per service, and
+            Discard drops them.
           </p>
         </Topic>
         <Topic
