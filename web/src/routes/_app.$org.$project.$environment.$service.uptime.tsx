@@ -1,18 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { servicePath } from "../data/queries";
-import { uptimeChecks } from "../features/uptime/data";
-import { UptimePanel } from "../features/uptime/UptimePanel";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// A service's uptime checks (ADR 0055).
-// /shop/production/web/uptime
+// The service's old Uptime tab: part of Metrics now (ADR 0076).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/uptime",
 )({
-  loader: ({ context: { queryClient }, params }) =>
-    queryClient.ensureQueryData(uptimeChecks(servicePath(params))),
-  component: UptimeTab,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/metrics",
+      params,
+      hash: "uptime",
+      replace: true,
+    });
+  },
 });
-
-function UptimeTab() {
-  return <UptimePanel serviceRef={servicePath(Route.useParams())} />;
-}

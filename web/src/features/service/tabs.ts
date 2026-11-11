@@ -23,11 +23,12 @@ export const serviceTabs = [
     key: "g l",
     group: "watch",
   },
-  // CPU and memory. G M, from its old name Metrics: G R is the releases.
+  // Services with a domain only: what reached them. Traffic (ADR 0033),
+  // Visitors (ADR 0037) and, with tracing, Traces (ADR 0075).
   {
-    label: "Resources",
-    to: "/$org/$project/$environment/$service/resources",
-    key: "g m",
+    label: "Requests",
+    to: "/$org/$project/$environment/$service/requests",
+    key: "g t",
     group: "watch",
   },
   // Services with a domain only: their site's browser errors for now
@@ -38,19 +39,13 @@ export const serviceTabs = [
     key: "g e",
     group: "watch",
   },
-  // Services with a domain only: what reached them. Traffic (ADR 0033),
-  // Visitors (ADR 0037) and, with tracing, Traces (ADR 0075).
+  // CPU and memory, and where a service has them its uptime checks
+  // (ADR 0055) and the health check on its server: Resources and Uptime
+  // in one (ADR 0076).
   {
-    label: "Requests",
-    to: "/$org/$project/$environment/$service/requests",
-    key: "g t",
-    group: "watch",
-  },
-  // Services with a domain or uptime checks: their checks (ADR 0055).
-  {
-    label: "Uptime",
-    to: "/$org/$project/$environment/$service/uptime",
-    key: "g u",
+    label: "Metrics",
+    to: "/$org/$project/$environment/$service/metrics",
+    key: "g m",
     group: "watch",
   },
   // Scheduled jobs (ADR 0054). G J, "jobs".
@@ -112,11 +107,8 @@ export const serviceTabs = [
 
 export type ServiceTab = (typeof serviceTabs)[number];
 
-/** The tabs this service has: Data, Backups, Errors, Requests and Uptime only where they apply. */
-export const tabsFor = (
-  view: Pick<ServiceView, "service" | "domains"> &
-    Partial<Pick<ServiceView, "uptime">>,
-) =>
+/** The tabs this service has: Data, Backups, Errors and Requests only where they apply. */
+export const tabsFor = (view: Pick<ServiceView, "service" | "domains">) =>
   serviceTabs.filter((tab) => {
     switch (tab.label) {
       case "Data":
@@ -126,8 +118,6 @@ export const tabsFor = (
       case "Errors":
       case "Requests":
         return view.domains.length > 0;
-      case "Uptime":
-        return view.domains.length > 0 || !!view.uptime;
       default:
         return true;
     }

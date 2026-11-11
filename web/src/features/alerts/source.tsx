@@ -222,8 +222,9 @@ export function AlertLink({
       if (!svc) break;
       return (
         <Link
-          to="/$org/$project/$environment/$service/uptime"
+          to="/$org/$project/$environment/$service/metrics"
           params={svc}
+          hash="uptime"
           {...props}
         >
           Open uptime

@@ -79,6 +79,7 @@ import { Route as AppOrgProjectEnvironmentServiceDomainsRouteImport } from './ro
 import { Route as AppOrgProjectEnvironmentServiceErrorsRouteImport } from './routes/_app.$org.$project.$environment.$service.errors'
 import { Route as AppOrgProjectEnvironmentServiceJobsRouteImport } from './routes/_app.$org.$project.$environment.$service.jobs'
 import { Route as AppOrgProjectEnvironmentServiceLogsRouteImport } from './routes/_app.$org.$project.$environment.$service.logs'
+import { Route as AppOrgProjectEnvironmentServiceMetricsRouteImport } from './routes/_app.$org.$project.$environment.$service.metrics'
 import { Route as AppOrgProjectEnvironmentServiceReleasesRouteImport } from './routes/_app.$org.$project.$environment.$service.releases'
 import { Route as AppOrgProjectEnvironmentServiceRequestsRouteImport } from './routes/_app.$org.$project.$environment.$service.requests'
 import { Route as AppOrgProjectEnvironmentServiceResourcesRouteImport } from './routes/_app.$org.$project.$environment.$service.resources'
@@ -469,6 +470,12 @@ const AppOrgProjectEnvironmentServiceLogsRoute =
     path: '/logs',
     getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceMetricsRoute =
+  AppOrgProjectEnvironmentServiceMetricsRouteImport.update({
+    id: '/metrics',
+    path: '/metrics',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceReleasesRoute =
   AppOrgProjectEnvironmentServiceReleasesRouteImport.update({
     id: '/releases',
@@ -665,6 +672,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/errors': typeof AppOrgProjectEnvironmentServiceErrorsRoute
   '/$org/$project/$environment/$service/jobs': typeof AppOrgProjectEnvironmentServiceJobsRoute
   '/$org/$project/$environment/$service/logs': typeof AppOrgProjectEnvironmentServiceLogsRoute
+  '/$org/$project/$environment/$service/metrics': typeof AppOrgProjectEnvironmentServiceMetricsRoute
   '/$org/$project/$environment/$service/releases': typeof AppOrgProjectEnvironmentServiceReleasesRoute
   '/$org/$project/$environment/$service/requests': typeof AppOrgProjectEnvironmentServiceRequestsRouteWithChildren
   '/$org/$project/$environment/$service/resources': typeof AppOrgProjectEnvironmentServiceResourcesRoute
@@ -751,6 +759,7 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/errors': typeof AppOrgProjectEnvironmentServiceErrorsRoute
   '/$org/$project/$environment/$service/jobs': typeof AppOrgProjectEnvironmentServiceJobsRoute
   '/$org/$project/$environment/$service/logs': typeof AppOrgProjectEnvironmentServiceLogsRoute
+  '/$org/$project/$environment/$service/metrics': typeof AppOrgProjectEnvironmentServiceMetricsRoute
   '/$org/$project/$environment/$service/releases': typeof AppOrgProjectEnvironmentServiceReleasesRoute
   '/$org/$project/$environment/$service/resources': typeof AppOrgProjectEnvironmentServiceResourcesRoute
   '/$org/$project/$environment/$service/run': typeof AppOrgProjectEnvironmentServiceRunRoute
@@ -844,6 +853,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/errors': typeof AppOrgProjectEnvironmentServiceErrorsRoute
   '/_app/$org/$project/$environment/$service/jobs': typeof AppOrgProjectEnvironmentServiceJobsRoute
   '/_app/$org/$project/$environment/$service/logs': typeof AppOrgProjectEnvironmentServiceLogsRoute
+  '/_app/$org/$project/$environment/$service/metrics': typeof AppOrgProjectEnvironmentServiceMetricsRoute
   '/_app/$org/$project/$environment/$service/releases': typeof AppOrgProjectEnvironmentServiceReleasesRoute
   '/_app/$org/$project/$environment/$service/requests': typeof AppOrgProjectEnvironmentServiceRequestsRouteWithChildren
   '/_app/$org/$project/$environment/$service/resources': typeof AppOrgProjectEnvironmentServiceResourcesRoute
@@ -938,6 +948,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/errors'
     | '/$org/$project/$environment/$service/jobs'
     | '/$org/$project/$environment/$service/logs'
+    | '/$org/$project/$environment/$service/metrics'
     | '/$org/$project/$environment/$service/releases'
     | '/$org/$project/$environment/$service/requests'
     | '/$org/$project/$environment/$service/resources'
@@ -1024,6 +1035,7 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/errors'
     | '/$org/$project/$environment/$service/jobs'
     | '/$org/$project/$environment/$service/logs'
+    | '/$org/$project/$environment/$service/metrics'
     | '/$org/$project/$environment/$service/releases'
     | '/$org/$project/$environment/$service/resources'
     | '/$org/$project/$environment/$service/run'
@@ -1116,6 +1128,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/$environment/$service/errors'
     | '/_app/$org/$project/$environment/$service/jobs'
     | '/_app/$org/$project/$environment/$service/logs'
+    | '/_app/$org/$project/$environment/$service/metrics'
     | '/_app/$org/$project/$environment/$service/releases'
     | '/_app/$org/$project/$environment/$service/requests'
     | '/_app/$org/$project/$environment/$service/resources'
@@ -1642,6 +1655,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectEnvironmentServiceLogsRouteImport
       parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
     }
+    '/_app/$org/$project/$environment/$service/metrics': {
+      id: '/_app/$org/$project/$environment/$service/metrics'
+      path: '/metrics'
+      fullPath: '/$org/$project/$environment/$service/metrics'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceMetricsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRoute
+    }
     '/_app/$org/$project/$environment/$service/releases': {
       id: '/_app/$org/$project/$environment/$service/releases'
       path: '/releases'
@@ -1873,6 +1893,7 @@ interface AppOrgProjectEnvironmentServiceRouteChildren {
   AppOrgProjectEnvironmentServiceErrorsRoute: typeof AppOrgProjectEnvironmentServiceErrorsRoute
   AppOrgProjectEnvironmentServiceJobsRoute: typeof AppOrgProjectEnvironmentServiceJobsRoute
   AppOrgProjectEnvironmentServiceLogsRoute: typeof AppOrgProjectEnvironmentServiceLogsRoute
+  AppOrgProjectEnvironmentServiceMetricsRoute: typeof AppOrgProjectEnvironmentServiceMetricsRoute
   AppOrgProjectEnvironmentServiceReleasesRoute: typeof AppOrgProjectEnvironmentServiceReleasesRoute
   AppOrgProjectEnvironmentServiceRequestsRoute: typeof AppOrgProjectEnvironmentServiceRequestsRouteWithChildren
   AppOrgProjectEnvironmentServiceResourcesRoute: typeof AppOrgProjectEnvironmentServiceResourcesRoute
@@ -1905,6 +1926,8 @@ const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServ
       AppOrgProjectEnvironmentServiceJobsRoute,
     AppOrgProjectEnvironmentServiceLogsRoute:
       AppOrgProjectEnvironmentServiceLogsRoute,
+    AppOrgProjectEnvironmentServiceMetricsRoute:
+      AppOrgProjectEnvironmentServiceMetricsRoute,
     AppOrgProjectEnvironmentServiceReleasesRoute:
       AppOrgProjectEnvironmentServiceReleasesRoute,
     AppOrgProjectEnvironmentServiceRequestsRoute:

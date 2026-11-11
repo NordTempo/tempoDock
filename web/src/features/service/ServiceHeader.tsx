@@ -167,7 +167,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     ...(view.domains.some(domainNeedsAttention) && {
       Domains: "a domain needs attention",
     }),
-    ...(view.uptime?.state === "down" && { Uptime: "a check is down" }),
+    ...(view.uptime?.state === "down" && { Metrics: "a check is down" }),
   };
   return (
     <nav
@@ -276,7 +276,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       "Resources",
       <Link
         key="r"
-        to="/$org/$project/$environment/$service/resources"
+        to="/$org/$project/$environment/$service/metrics"
         params={{ org, ...ref }}
         title="Memory and CPU, latest sample against the limit"
         className="hover:text-fg"
