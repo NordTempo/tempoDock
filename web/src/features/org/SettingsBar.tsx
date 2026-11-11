@@ -22,7 +22,8 @@ type Section = {
     | "/$org/settings/github"
     | "/$org/settings/cloudflare"
     | "/$org/settings/data-access"
-    | "/$org/settings/analytics";
+    | "/$org/settings/analytics"
+    | "/$org/settings/alerts";
   label: string;
   /** Only admins can use it; hidden from everyone else. */
   admin: boolean;
@@ -42,6 +43,7 @@ export const settingsGroups: { label: string; sections: Section[] }[] = [
     sections: [
       { to: "/$org/settings/members", label: "Members", admin: true },
       { to: "/$org/settings/tokens", label: "Tokens", admin: true },
+      { to: "/$org/settings/alerts", label: "Alerts", admin: false },
     ],
   },
   {

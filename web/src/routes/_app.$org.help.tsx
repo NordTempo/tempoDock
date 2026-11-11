@@ -90,7 +90,8 @@ function Help() {
         <Topic id="apply" title="Saved changes and Apply">
           <p>
             Variables, settings, domains and volumes you change are saved first
-            and change nothing yet. A strip under a service's tabs lists them;
+            and change nothing yet. A service's header counts them ("2 to
+            apply"); open the count (A) to review them, Ctrl Enter applies.
             Apply puts them live together as one new release per service, and
             Discard drops them.
           </p>
@@ -99,15 +100,15 @@ function Help() {
           id="locks"
           title="Locks and access requests"
           go={
-            <Link to="/$org/requests" params={{ org }} className="lnk">
-              Requests
+            <Link to="/$org/inbox" params={{ org }} className="lnk">
+              Inbox
             </Link>
           }
         >
           <p>
             Locking an environment makes changes by tokens (CI, scripts, agents)
             wait for an admin's approval as access requests. People signed in
-            are not stopped. Requests in the sidebar lists what waits.
+            are not stopped. The Inbox lists what waits.
           </p>
         </Topic>
         <Topic id="domains" title="Domains and DNS">

@@ -717,7 +717,7 @@ function Following({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          to="/$org/$project/$environment/$service/releases/$number"
+          to="/$org/$project/$environment/$service/history/$number"
           params={{ org, ...ref, number: String(number) }}
           className="btn"
           onClick={onClose}

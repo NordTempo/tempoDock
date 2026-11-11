@@ -29,8 +29,9 @@ import {
 } from "./data";
 
 /**
- * A service's One-off command tab (ADR 0048): a command box over the
- * latest runs, the selected one opened under its row with its output.
+ * Running a command once (ADR 0048), at the top of a service's Jobs tab:
+ * a command box over the latest runs, the selected one opened under its
+ * row with its output.
  * Runs go in the background; run events keep the list current. One line
  * points at the start command, which this tab doesn't change.
  */
@@ -45,12 +46,12 @@ export function RunPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <p className="text-mut">
         Runs once. To change how {ref.service} starts, edit{" "}
         <Link
-          to="/$org/$project/$environment/$service/build"
+          to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
           className="text-info underline underline-offset-2"
         >
-          Start command in Build &amp; run
+          Start command in Settings
         </Link>
         .
       </p>

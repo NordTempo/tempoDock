@@ -70,12 +70,14 @@ export function PlatformPolicyPage() {
     set: (next: Record<string, Cell>) => void,
     k: string,
     none: string,
+    name: string,
   ) => {
     const c = which[k] ?? { level: "", sensitive: "masked" };
     const update = (next: Cell) => set({ ...which, [k]: next });
     return (
       <span className="flex items-center gap-1.5">
         <select
+          aria-label={name}
           className="field min-h-[24px] py-0.5 text-xs"
           value={c.level}
           onChange={(e) => update({ ...c, level: e.target.value as Level })}
@@ -138,10 +140,17 @@ export function PlatformPolicyPage() {
                           setDefaults,
                           k,
                           `built-in (${b?.level ?? "none"})`,
+                          `Default for ${label} in ${kindLabel}`,
                         )}
                       </td>
                       <td className="py-2">
-                        {cell(ceilings, setCeilings, k, "no ceiling")}
+                        {cell(
+                          ceilings,
+                          setCeilings,
+                          k,
+                          "no ceiling",
+                          `Ceiling for ${label} in ${kindLabel}`,
+                        )}
                       </td>
                     </tr>
                   );

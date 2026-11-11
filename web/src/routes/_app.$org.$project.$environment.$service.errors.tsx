@@ -4,8 +4,8 @@ import { errorsQuery } from "../features/errors/data";
 import { ErrorsView } from "../features/errors/ErrorsView";
 
 // A service's Errors tab (ADR 0062): the org's errors view fixed to this
-// service: its open alerts, then its issues from the browser, its logs
-// and 5xx spikes. …/web/errors?all=1 shows resolved ones too.
+// service: its issues from the browser, its logs and 5xx spikes (open
+// alerts are the Inbox's, ADR 0076). …/web/errors?all=1 shows resolved ones too.
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/errors",
 )({

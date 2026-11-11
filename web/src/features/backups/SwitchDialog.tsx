@@ -58,7 +58,7 @@ export default function SwitchDialog({
               <li key={r.service}>
                 {r.service}{" "}
                 <Link
-                  to="/$org/$project/$environment/$service/releases/$number"
+                  to="/$org/$project/$environment/$service/history/$number"
                   params={{
                     org,
                     project: ref.project,

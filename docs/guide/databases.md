@@ -128,7 +128,7 @@ are not rewritten; use references so a switch catches them.
 
 Restores read only the repository backups go to now. A backup whose
 snapshot is in another one (its storage connection's endpoint or bucket
-changed, say) says so on the Backups tab, Restore is off for it, and it is
+changed, say) says so on Settings, Backups, Restore is off for it, and it is
 restored by hand like the backups below.
 
 Backups of other volumes are restored by hand for now: with the repository

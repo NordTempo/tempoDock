@@ -1,6 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useSession } from "../../data/queries";
 import type { AccessRequest } from "../../data/types";
 import { useOrg } from "../../shell/location";
@@ -11,17 +11,17 @@ import {
   Button,
   Confirm,
   ErrorText,
-  Page,
-  PageBar,
   Panel,
+  SectionHead,
   StateText,
 } from "../../ui/kit";
 import type { Tone } from "../../ui/status";
 import { isPending, requestQueries, useDecideRequest } from "./data";
 
-// The access request inbox (ADR 0044): a table of requests, the selected
-// one opened under its row with its exact call and arguments, what changed
-// since, and Approve and run or Reject. Live over `access_request` events.
+// Access requests (ADR 0044) in the Inbox (ADR 0076): a table of requests,
+// the selected one opened under its row with its exact call and arguments,
+// what changed since, and Approve and run or Reject. Live over
+// `access_request` events.
 
 type Status = AccessRequest["status"];
 
@@ -57,59 +57,86 @@ function sentence(text: string) {
 }
 
 /**
- * The inbox; `selected` is the request in the URL (?id=), else the oldest
- * pending one.
+ * The organization's access requests, as the Inbox's first section (for
+ * admins): the waiting ones, then on request the decided ones. `selected`
+ * is the request in the URL (?request=), else the oldest waiting one,
+ * opened under its row. Nothing renders while none waits and none is
+ * selected, unless decided ones are asked for.
  */
-export function RequestsPage({ selected }: { selected?: number }) {
+export function AccessRequests({ selected }: { selected?: number }) {
   const requests = useSuspenseQuery(requestQueries.list()).data;
-  // Without a selection, the oldest pending one is the next to decide.
-  const id =
-    selected ?? (requests.findLast((r) => isPending(r)) ?? requests[0])?.id;
+  const [decided, setDecided] = useState(false);
+  const waiting = requests.filter((r) => isPending(r));
+  // Without a selection, the oldest waiting one is the next to decide.
+  // The one opened last stays open once decided, so its result shows
+  // (running, done, failed) instead of the list jumping away from it.
+  const next = waiting.at(-1)?.id;
+  const [last, setLast] = useState(selected ?? next);
+  const id = selected ?? next ?? last;
+  useEffect(() => {
+    if (id !== undefined && id !== last) setLast(id);
+  }, [id, last]);
+  const opened = requests.find((r) => r.id === id);
+  // A decided request stays listed while it is the one opened.
+  const shown = decided
+    ? requests
+    : requests.filter((r) => isPending(r) || r.id === id);
+  const rest = requests.length - shown.length;
+  if (shown.length === 0 && id === undefined && rest === 0) return null;
   return (
-    <>
-      <PageBar title="Requests" />
-      <Page>
-        {requests.length === 0 ? (
-          <p className="text-mut">
-            No access requests. Tokens ask here when a locked environment stops
-            them.
-          </p>
-        ) : (
-          <Panel>
-            {/* Fixed widths: a decision changes a row's text, not the layout. */}
-            <table className="table-fixed">
-              <colgroup>
-                <col className="w-[38%]" />
-                <col className="w-[18%]" />
-                <col className="w-[20%]" />
-                <col className="w-[12%]" />
-                <col className="w-[12%]" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Request</th>
-                  <th>Who</th>
-                  <th>Where</th>
-                  <th>Asked</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {requests.map((r) => (
-                  <RequestRow key={r.id} request={r} open={r.id === id} />
-                ))}
-              </tbody>
-            </table>
-            {id !== undefined && !requests.some((r) => r.id === id) && (
-              // One older than the list, opened from a link.
-              <div className="border-b border-soft">
-                <Detail id={id} />
-              </div>
-            )}
-          </Panel>
-        )}
-      </Page>
-    </>
+    <section aria-labelledby="requests">
+      <SectionHead
+        id="requests"
+        aside={waiting.length > 0 && `${waiting.length} waiting`}
+        right={
+          (rest > 0 || decided) && (
+            <Button small onClick={() => setDecided(!decided)}>
+              {decided ? "Hide decided" : `Show ${rest} decided`}
+            </Button>
+          )
+        }
+      >
+        Access requests
+      </SectionHead>
+      {shown.length === 0 && !opened && id === undefined ? (
+        <p className="text-mut">
+          None waiting. Tokens ask here when a locked environment stops them.
+        </p>
+      ) : (
+        <Panel>
+          {/* Fixed widths: a decision changes a row's text, not the layout. */}
+          <table className="table-fixed">
+            <colgroup>
+              <col className="w-[38%]" />
+              <col className="w-[18%]" />
+              <col className="w-[20%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Request</th>
+                <th>Who</th>
+                <th>Where</th>
+                <th>Asked</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <RequestRow key={r.id} request={r} open={r.id === id} />
+              ))}
+            </tbody>
+          </table>
+          {id !== undefined && !opened && (
+            // One older than the list, opened from a link.
+            <div className="border-b border-soft">
+              <Detail id={id} />
+            </div>
+          )}
+        </Panel>
+      )}
+    </section>
   );
 }
 
@@ -128,9 +155,9 @@ function RequestRow({
       <tr className={open ? "bg-sel" : undefined}>
         <td>
           <Link
-            to="/$org/requests"
+            to="/$org/inbox"
             params={{ org }}
-            search={{ id: r.id }}
+            search={{ request: r.id }}
             replace
             aria-current={open ? "true" : undefined}
             className="hover:underline"

@@ -1,24 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { queries, servicePath } from "../data/queries";
-import { BackupsPanel } from "../features/backups/BackupsPanel";
-import { snapshotsQuery } from "../features/backups/data";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// A stateful service's restore points (ADR 0061): its backups and volume
-// snapshots in one list, and the restores that ran.
+// The service's old Backups tab: Settings' Backups view now (ADR 0076).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/backups",
 )({
-  loader: ({ context: { queryClient }, params }) => {
-    const ref = servicePath(params);
-    return Promise.all([
-      queryClient.ensureQueryData(queries.backups(ref)),
-      queryClient.ensureQueryData(snapshotsQuery(ref)),
-    ]);
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/settings/backups",
+      params,
+      replace: true,
+    });
   },
-  component: BackupsTab,
 });
-
-function BackupsTab() {
-  const ref = servicePath(Route.useParams());
-  return <BackupsPanel serviceRef={ref} />;
-}

@@ -1,20 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { requestQueries } from "../features/requests/data";
-import { RequestsPage } from "../features/requests/RequestsPage";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// Access requests (ADR 0044): what tokens asked to do in locked
-// environments, for the organization's admins to approve or reject.
-// ?id= selects one.
+// The old access requests page: the Inbox's first section now
+// (ADR 0076); ?id= opens the same request there.
 export const Route = createFileRoute("/_app/$org/requests")({
-  validateSearch: (s: Record<string, unknown>): { id?: number } => {
-    const id = Number(s.id);
-    return Number.isInteger(id) && id > 0 ? { id } : {};
+  beforeLoad: ({ params, search }) => {
+    const id = Number((search as { id?: unknown }).id);
+    throw redirect({
+      to: "/$org/inbox",
+      params,
+      search: Number.isInteger(id) && id > 0 ? { request: id } : {},
+      replace: true,
+    });
   },
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(requestQueries.list()),
-  component: Requests,
 });
-
-function Requests() {
-  return <RequestsPage selected={Route.useSearch().id} />;
-}

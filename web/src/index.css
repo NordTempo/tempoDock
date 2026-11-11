@@ -348,6 +348,15 @@
   tr:hover > td {
     background: var(--color-hover);
   }
+
+  /*
+   * Anchors (#set-run, #domains), focus moved by the keyboard and
+   * scrolled-to controls stop below the sticky service header instead of
+   * under it (WCAG 2.4.11, focus not obscured).
+   */
+  html {
+    scroll-padding-top: 112px;
+  }
 }
 
 @layer components {
@@ -685,6 +694,20 @@
   }
 
   .seg > *:hover {
+    color: var(--color-fg);
+  }
+
+  /* A tab's views (Requests' Traffic and Visitors, Settings' Domains):
+     the body size and colour, so they read as places, not as fine print. */
+  .seg.views {
+    font-size: var(--text-xs);
+  }
+
+  .seg.views > * {
+    color: var(--color-sec);
+  }
+
+  .seg.views > *:hover {
     color: var(--color-fg);
   }
 

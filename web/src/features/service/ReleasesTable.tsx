@@ -55,7 +55,7 @@ export function ReleasesTable({
     return <p className="text-mut">Not deployed yet.</p>;
   }
   const page = (r: Release) => ({
-    to: "/$org/$project/$environment/$service/releases/$number" as const,
+    to: "/$org/$project/$environment/$service/history/$number" as const,
     params: { org, ...ref, number: String(r.number) },
   });
   return (

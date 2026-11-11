@@ -1,16 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { queries, servicePath, useAuditLog } from "../data/queries";
-import { AuditTable } from "../features/audit/AuditTable";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// The service's own events: releases, settings, variables, volumes, domains.
+// The service's old Activity tab: History's second section now (ADR 0076).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/audit",
 )({
-  loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(queries.audit(servicePath(params))),
-  component: AuditTab,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/history",
+      params,
+      hash: "activity",
+      replace: true,
+    });
+  },
 });
-
-function AuditTab() {
-  return <AuditTable events={useAuditLog(servicePath(Route.useParams()))} />;
-}

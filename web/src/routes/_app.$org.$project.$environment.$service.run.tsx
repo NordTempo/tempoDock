@@ -1,18 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { servicePath } from "../data/queries";
-import { runQueries } from "../features/runs/data";
-import { RunPanel } from "../features/runs/RunPanel";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// One-off commands in the service's active release (ADR 0048): the
-// command box, the latest runs and the selected run's output.
+// The service's old One-off command tab: the top of Jobs now (ADR 0076).
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/run",
 )({
-  loader: ({ context: { queryClient }, params }) =>
-    queryClient.ensureQueryData(runQueries.list(servicePath(params))),
-  component: RunTab,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/$org/$project/$environment/$service/jobs",
+      params,
+      hash: "run",
+      replace: true,
+    });
+  },
 });
-
-function RunTab() {
-  return <RunPanel serviceRef={servicePath(Route.useParams())} />;
-}

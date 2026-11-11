@@ -1,9 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
+  envPath,
   listenPort,
+  queries,
   serviceRef as refOf,
   useCanDeploy,
   useChanges,
@@ -41,6 +44,7 @@ import {
 import { openDeploy } from "../deploy/start";
 import { sleepCli, useWakeEnvironment } from "../overview/EnvironmentSleep";
 import { EnvServer } from "../servers/parts";
+import { ApplyControl } from "../variables/ApplyBox";
 import { ArchiveConfirm } from "./ArchiveConfirm";
 import { useRestartService, useStartService, useStopService } from "./data";
 import { RollbackConfirm } from "./ReleasesTable";
@@ -116,25 +120,13 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       label: tab.label.toLowerCase(),
       run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
-    // The release history on the Overview, and the service's site in the
-    // Analytics area (the old tab's address redirects there), ADR 0059.
-    {
-      key: "g r",
-      label: "releases",
-      run: () =>
-        navigate({
-          to: "/$org/$project/$environment/$service",
-          params: { org, ...ref },
-          hash: "releases",
-        }),
-    },
-    // S means settings everywhere: here, Build & run.
+    // S means settings everywhere: here, the Settings tab.
     {
       key: "s",
-      label: "build & run",
+      label: "settings",
       run: () =>
         navigate({
-          to: "/$org/$project/$environment/$service/build",
+          to: "/$org/$project/$environment/$service/settings",
           params: { org, ...ref },
         }),
     },
@@ -157,17 +149,17 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // Two marks: the staged-change dot ("1 change staged") for changes not
   // yet applied, and ▲ for something that needs a look. Each says which.
   const staged: Partial<Record<ServiceTab["label"], boolean>> = {
-    Domains: changes.domains.some((d) => d.service === ref.service),
     Variables: changes.variables.some(mine),
-    "Build & run":
+    Settings:
       changes.settings.some(mine) ||
-      changes.volumes.some((v) => v.service === ref.service),
+      changes.volumes.some((v) => v.service === ref.service) ||
+      changes.domains.some((d) => d.service === ref.service),
   };
   const warnings: Partial<Record<ServiceTab["label"], string>> = {
     ...(view.domains.some(domainNeedsAttention) && {
-      Domains: "a domain needs attention",
+      Settings: "a domain needs attention",
     }),
-    ...(view.uptime?.state === "down" && { Uptime: "a check is down" }),
+    ...(view.uptime?.state === "down" && { Metrics: "a check is down" }),
   };
   return (
     <nav
@@ -191,11 +183,13 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             title={`${tab.label} (${tab.key.toUpperCase()})`}
           >
             {tab.label}
+            {/* A mark's name follows the label as its own phrase
+                ("Settings, changes waiting to apply"), not run into it. */}
             {staged[tab.label] && (
               <span
                 className="ml-1.5 text-warn"
                 role="img"
-                aria-label="changes waiting to apply"
+                aria-label=", changes waiting to apply"
                 title="Changes waiting to apply"
               >
                 <span className="dot" />
@@ -205,7 +199,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <span
                 className="ml-1 text-warn"
                 role="img"
-                aria-label={warnings[tab.label]}
+                aria-label={`, ${warnings[tab.label]}`}
                 title={warnings[tab.label]}
               >
                 ▲
@@ -252,31 +246,42 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </span>,
     ],
     [
-      "Address",
-      domain ? (
-        <a
-          key="a"
-          href={`https://${domain.hostname}`}
-          className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
-        >
-          {domain.hostname}
-        </a>
-      ) : (
+      "Domains",
+      // The address, how many more, and the way to all of them (Settings).
+      <span key="a" className="flex flex-wrap items-center gap-x-2">
+        {domain && (
+          <a
+            href={`https://${domain.hostname}`}
+            className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
+          >
+            {domain.hostname}
+          </a>
+        )}
         <Link
-          key="a"
-          to="/$org/$project/$environment/$service/domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={{ org, ...ref }}
-          className="text-info hover:underline"
+          // A button, not faint text: it is where domains are added.
+          className="btn sm -my-[4px]"
         >
-          + Add domain
+          {domain
+            ? view.domains.length > 1
+              ? `+${view.domains.length - 1} · Manage`
+              : "Manage"
+            : "Add domain"}
         </Link>
-      ),
+      </span>,
     ],
+    ...(service.stateful
+      ? ([["Backups", <BackupsFact key="b" serviceRef={ref} />]] as [
+          string,
+          ReactNode,
+        ][])
+      : []),
     [
       "Resources",
       <Link
         key="r"
-        to="/$org/$project/$environment/$service/resources"
+        to="/$org/$project/$environment/$service/metrics"
         params={{ org, ...ref }}
         title="Memory and CPU, latest sample against the limit"
         className="hover:text-fg"
@@ -295,7 +300,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <EnvServer environment={environment} />
       </span>,
     ],
-    // How it starts, a full row: the One-off command tab runs a command
+    // How it starts, a full row: Jobs' Run a command runs a command
     // once; this is where the start command changes.
     [
       "Start command",
@@ -306,7 +311,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-mut">the image's default</span>
         )}
         <Link
-          to="/$org/$project/$environment/$service/build"
+          to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
           className="btn sm"
@@ -363,7 +368,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   // A release named in the sentence links to its page, which says why.
   const releaseLink = (number: number, text: string) => (
     <Link
-      to="/$org/$project/$environment/$service/releases/$number"
+      to="/$org/$project/$environment/$service/history/$number"
       params={{ org, ...refOf(service), number: String(number) }}
       className="text-inherit underline decoration-faint underline-offset-2 hover:decoration-current"
     >
@@ -385,49 +390,6 @@ export function StatusSentence({ view }: { view: ServiceView }) {
       </>
     );
   };
-  // The failed deploy, while it matters: the overview's last_failed_deploy
-  // survives a rollback and clears once a new image or config deploys;
-  // else the latest attempt when it failed. Its own strip under the
-  // headline, in the releases table's red.
-  const lastFailed =
-    view.last_failed_deploy ??
-    (latest?.status === "failed" && latest.number > (serving ?? 0)
-      ? latest
-      : undefined);
-  // Red while it is the news (the latest release, or the one before the
-  // rollback that answered it); quiet once more releases came after.
-  const fresh = !!lastFailed && (serving ?? 0) <= lastFailed.number + 1;
-  const failedLine =
-    lastFailed &&
-    serving !== lastFailed.number &&
-    (fresh ? (
-      // A problem row like the project page's: a tinted strip, with the
-      // way to the cause as a button, so it isn't lost under the headline.
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-fail bg-fail-bg py-1.5 pr-1.5 pl-3 text-sm">
-        <span className="flex-1">
-          <span className="text-fail">
-            ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
-            {ago(lastFailed.created_at)}
-          </span>
-          {lastFailed.diagnosis?.rule && (
-            // Its diagnosis's likely cause (ADR 0071).
-            <>. {lastFailed.diagnosis.summary}</>
-          )}
-        </span>
-        <Link
-          to="/$org/$project/$environment/$service/releases/$number"
-          params={{ org, ...refOf(service), number: String(lastFailed.number) }}
-          className="btn sm"
-        >
-          See why
-        </Link>
-      </p>
-    ) : (
-      <p className="text-xs text-mut">
-        Last failed deploy: r{lastFailed.number}, {ago(lastFailed.created_at)} ·{" "}
-        {releaseLink(lastFailed.number, "See why")}
-      </p>
-    ));
   const mono = (text: string) => (
     <b className="font-mono font-medium">{text}</b>
   );
@@ -564,12 +526,31 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   return (
     // The overview's focal point (chosen in a blind trial, 2026-11): what
     // serves and since when, larger than everything under it.
-    <div className="flex flex-col gap-1">
-      <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
-        {sentence}
-      </p>
-      {failedLine}
-    </div>
+    <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
+      {sentence}
+    </p>
+  );
+}
+
+/**
+ * A stateful service's last good backup, and the way to its restore
+ * points (Settings): so backups are found from the Overview.
+ */
+function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const runs = useQuery(queries.backups(ref)).data?.runs ?? [];
+  const last = runs.find(
+    (r) => r.operation === "backup" && r.status === "succeeded",
+  );
+  return (
+    <Link
+      to="/$org/$project/$environment/$service/settings/backups"
+      params={{ org, ...ref }}
+      className="-my-[4px] inline-flex min-h-[24px] items-center hover:underline"
+    >
+      {last?.finished_at ? `last ${ago(last.finished_at)}` : "none yet"}
+      <span className="ml-2 text-mut">backups →</span>
+    </Link>
   );
 }
 
@@ -577,7 +558,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
  * equivalents, and a menu with the rarer actions (Archive, for admins).
  * Stop, roll back and archive ask first, and restart does in production.
- * Stop and Start have no key (S opens Build & run, see ServiceTabs).
+ * Stop and Start have no key (S opens Settings, see ServiceTabs).
  * Buttons that can't apply (Roll back with nothing to go back to) are
  * left out; one line says why the others wait.
  */
@@ -590,7 +571,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const production = useEnvironment(ref).environment.kind === "production";
   const releases = useReleases(ref);
   const mayDeploy = useCanDeploy(ref);
-  // One primary per view: while changes wait, Apply in the bar is it.
+  // One primary per view: while changes wait, the header's Apply is it.
   const waiting = useChanges(ref).count > 0;
   const restart = useRestartService();
   // The release a restart started, until it serves or fails.
@@ -658,7 +639,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           label: "See why",
           run: () =>
             navigate({
-              to: "/$org/$project/$environment/$service/releases/$number",
+              to: "/$org/$project/$environment/$service/history/$number",
               params: { org, ...ref, number: String(failed) },
             }),
         },
@@ -704,7 +685,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           },
         ]
       : []),
-    // Stop and Start have no key: S opens Build & run (settings
+    // Stop and Start have no key: S opens Settings (settings
     // everywhere), and stopping is rare and destructive.
   ];
   useShortcuts(mayDeploy ? shortcuts : []);
@@ -775,8 +756,10 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     ) : null;
 
   return (
-    <div className="flex flex-wrap items-start gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {asking}
+      {/* Changes waiting to apply: their count and Apply, first in the row. */}
+      <ApplyControl env={envPath(ref)} service={ref.service} />
       {wakeButton}
       {stopped ? (
         <Act

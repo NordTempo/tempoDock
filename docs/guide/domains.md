@@ -163,7 +163,7 @@ dock access public                     # anyone again
 dock access                            # which one is set
 ```
 
-In the UI it is the line above the domain list on the Domains tab ("Open
+In the UI it is the line above the domain list on Settings, Domains ("Open
 to anyone", "Password for team", "Dock login") with Change. It covers
 every domain of the service, generated ones included, and takes effect at
 once. Each environment's service has its own setting, so staging
@@ -213,7 +213,7 @@ probe could reach it. Removing the domain removes its check; you can
 remove an auto check like any other (Dock doesn't add it again) or replace
 it with your own. Uptime checks aren't part of `dock.toml`, so `dock apply`
 and `dock project export` leave them alone. For domains verified before
-this, the Uptime tab's **Check all domains** (or `dock uptime domains`)
+this, **Check all domains** on its Metrics tab (or `dock uptime domains`)
 adds the missing checks.
 
 - A probe is one `GET`, redirects not followed. Up means the expected
@@ -234,7 +234,7 @@ adds the missing checks.
 - An organization has at most 50 checks; a server runs at most 8 probes
   at once and 2 per organization, and skips a probe rather than queue it.
 - Project admins add and remove checks; everyone who can read the service
-  sees them: the service's Uptime tab (checks, a 24-hour strip, uptime
+  sees them: the service's Metrics tab (checks, a 24-hour strip, uptime
   over 24 hours, 7 and 30 days, the last incidents, and next to them
   Dock's own health check of the container, the view from inside), the
   service's Overview (up or down and the last incident) and `dock status`.

@@ -119,22 +119,28 @@ for everything.
 
 - **Navigation.** The sidebar holds the organization switcher, one search
   (the palette, Cmd+K: pages and `dock` commands in one list), the project
-  tree (and archived projects), then Analytics, Errors, Images, Alerts, Activity,
-  Requests (admins), Members, Organization settings, Help, the account and,
-  for operators, the console. There is no second command bar.
+  tree (and archived projects), then Inbox (open alerts and, for admins,
+  access requests to decide), Errors, Analytics, Images, Status pages,
+  Activity, Organization settings (members, tokens and where alerts go),
+  Help, the account and, for operators, the console (ADR 0076). There is
+  no second command bar.
 - **Pages.** An organization lists its projects; a project page shows its
   problems, one table per environment and its activity; an environment's
   address (`/org/project/env`) is that environment's own page. A service
   has one header (name, environment, state, actions) and its tabs in four
-  groups with a line between them: watching it (Overview, Logs,
-  Resources, Errors, Requests, Uptime), operating it (Jobs, One-off
-  command, Data, Backups), configuring it (Domains, Variables, Build &
-  run), its history (Activity). Tabs every service has come first; the
-  list is `web/src/features/service/tabs.ts`. ADR 0076 merges these into
-  nine tabs screen by screen; a tab's views (Requests' Traffic and
-  Visitors) are underlined links under it, each with its own URL.
-- **Overview.** One column: status, facts, uptime and visitors, how to
-  connect, the deploy in flight, releases. Logs have their own tab.
+  groups with a line between them (ADR 0076): watching it (Overview,
+  Logs, Requests, Errors, Metrics), operating it (Jobs, Data), configuring
+  it (Variables, Settings), its history (History). Pages that answer one
+  question are one tab: Metrics is Resources and Uptime, Jobs is one-off
+  commands and scheduled jobs, Settings has Build & run, Domains and
+  Backups views, History is releases and activity, and a
+  release opens under it in the shell. A tab's views (Requests' Traffic
+  and Visitors, Settings' Build & run, Domains and Backups) are underlined
+  links under it, each with its own URL. The
+  list is `web/src/features/service/tabs.ts`.
+- **Overview.** One column: status, what needs attention, facts, uptime
+  and visitors, how to connect, the deploy in flight, the newest releases.
+  Logs have their own tab; all releases are on History.
 - **Width.** Every page uses the one content width. Below 1400px, side
   columns (members' roles, analytics' side panel) move under the main one.
 - **Help.** `/org/help` explains Dock's words; "What's this?" links point
@@ -147,11 +153,16 @@ for everything.
   D deploys, R restarts, B rolls back, digits pick the nth item or view, G
   then a letter switches tabs, ? lists the keys, Cmd+K searches.
 - **One primary per view.** The header's Deploy is primary until changes
-  wait to apply; then Apply in the bar is. Page actions next to it are
+  wait to apply; then the header's Apply is. Page actions next to it are
   secondary.
 - **Changes wait to apply.** Variables, settings, domains and volumes are
-  saved first ("waiting to apply") and go live together with Apply; the
-  strip under a service's tabs stays one line until opened.
+  saved first ("waiting to apply") and go live together with Apply. A
+  service's header holds the count and Apply (Ctrl Enter) in its action
+  row; the count (A) opens a review drawer from the right with the list,
+  the downtime warning and Discard. Nothing pushes the page (ADR 0076).
+  Where applying stops a service for a moment, Apply opens the review
+  first. Shared variables, with no service header, keep the review as a
+  panel on the page.
 - **Settings rows.** A label with a short line under it, the values as
   text, and one Edit per row that opens a small form; Save, Cancel, Esc.
 - **Tables and lists** sit on the page under a hairline, with no box; status in tables and headers is a tinted chip; the page header is two lines, the way up over the title (chosen in blind direction trials, 2026-11).
@@ -162,9 +173,12 @@ for everything.
   only inside running text is it a link. Segmented choices (ranges,
   views) are underlined like the section tabs. Key hints stay on buttons
   (a blind trial that hid them lost discoverability).
-- **A fresh failure** on a service's overview is a red-tinted strip with
-  a ruled left edge under the status line, the way to the cause as a
-  button; elsewhere it is said once, in the project's problems.
+- **A failure is said once** (ADR 0076). On a service's Overview,
+  everything that needs a look is one "Needs attention" list under the
+  status line: a row each (a fresh failed deploy, vulnerabilities in the
+  live image, a down uptime check, a domain), a coloured mark, what is
+  wrong and its one action. Elsewhere it is state: a chip, a dot, a count,
+  or the project's problems.
 - **Destructive buttons** are red outlined on pages and filled red in the
   confirmation that runs them; every removal that can't be undone asks
   first, saying what stops working. A confirmation leads with what is
