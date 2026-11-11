@@ -1147,6 +1147,17 @@ type TrafficPath struct {
 	Method    string
 	Path      string
 	Requests  int64
+	Errors    int64
+	Lat0      int64
+	Lat1      int64
+	Lat2      int64
+	Lat3      int64
+	Lat4      int64
+	Lat5      int64
+	Lat6      int64
+	Lat7      int64
+	Lat8      int64
+	Lat9      int64
 }
 
 type TrafficStat struct {

@@ -45,9 +45,7 @@ type DiagnosisSummary struct {
 	CapturedAt time.Time `json:"captured_at"`
 }
 
-// Diagnosis is one failure's bundle. Shapes only gain fields; the name
-// trace is kept for the trace of the failing request, once Dock records
-// traces.
+// Diagnosis is one failure's bundle. Shapes only gain fields.
 type Diagnosis struct {
 	ID          int64         `json:"id"`
 	Kind        DiagnosisKind `json:"kind" enum:"release,crash_loop,unhealthy"`
@@ -79,6 +77,21 @@ type Diagnosis struct {
 	Errors        []DiagnosisError    `json:"errors" doc:"Error issues of the service seen around the failure, newest first"`
 	Resources     *DiagnosisResources `json:"resources,omitempty" doc:"The service's memory and CPU before the failure, from its 1-minute samples"`
 	Truncated     bool                `json:"truncated" doc:"Older log lines were left out to keep the bundle under its size limit"`
+	// Trace is the release's newest failed trace around the failure
+	// (ADR 0075), looked up when the diagnosis is read: apps send spans
+	// seconds after the request, and a failing health check's probe
+	// request is traced too.
+	Trace *DiagnosisTrace `json:"trace,omitempty" doc:"The release's newest failed trace around the failure, while tracing is on"`
+}
+
+// DiagnosisTrace names a failed trace, with a time in it for finding it
+// quickly (dock traces show ID --at AT).
+type DiagnosisTrace struct {
+	ID         string    `json:"id"`
+	At         time.Time `json:"at"`
+	Name       string    `json:"name" doc:"The trace's entry: method and route, or its span's name"`
+	HTTPStatus int       `json:"http_status,omitempty"`
+	DurationMS float64   `json:"duration_ms"`
 }
 
 // Headline says what the diagnosis is about in one line: "Release 62 of

@@ -44,7 +44,9 @@ func TestTrafficTickStoresAndServes(t *testing.T) {
 	h.trafficTick(col, base,
 		node.HostTraffic{
 			Host: "shop.example.com", Requests: 10, Status: [4]uint64{7, 1, 1, 1}, Bytes: 5000, Duration: 100 * time.Millisecond,
-			Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 6}, {Method: "GET", Path: "/items/:id", Requests: 4}},
+			// /items/:id: one 5xx, two requests of 25 to 50 ms and two of
+			// 50 to 100 ms.
+			Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 6}, {Method: "GET", Path: "/items/:id", Requests: 4, Errors: 1, Latency: [10]uint64{3: 2, 4: 2}}},
 		},
 		node.HostTraffic{Host: "www.shop.example.com", Requests: 2, Status: [4]uint64{2}, Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 2}}},
 		node.HostTraffic{Host: "elsewhere.example.com", Requests: 99},
@@ -66,7 +68,7 @@ func TestTrafficTickStoresAndServes(t *testing.T) {
 	if tot := got.Totals; tot.Requests != 15 || tot.Status2xx != 12 {
 		t.Errorf("totals = %+v; want 15 requests", tot)
 	}
-	want := []apitypes.TrafficPath{{Method: "GET", Path: "/", Requests: 8}, {Method: "GET", Path: "/items/:id", Requests: 4}, {Method: "POST", Path: "/cart", Requests: 3}}
+	want := []apitypes.TrafficPath{{Method: "GET", Path: "/", Requests: 8}, {Method: "GET", Path: "/items/:id", Requests: 4, Errors: 1, P50MS: 50, P95MS: 95, P99MS: 99}, {Method: "POST", Path: "/cart", Requests: 3}}
 	if fmt.Sprint(got.Paths) != fmt.Sprint(want) {
 		t.Errorf("paths = %+v, want %+v", got.Paths, want)
 	}

@@ -561,3 +561,30 @@ func TestRenderTraceIngest(t *testing.T) {
 		t.Error("a trace ingest that isn't on loopback was rendered")
 	}
 }
+
+// A traced route drops the visitor's trace headers and starts a trace
+// after its access check, just before proxying; a redirect or a stopped
+// service isn't traced.
+func TestRenderEdgeTrace(t *testing.T) {
+	cfg := render(t, testOptions(), []node.Route{
+		{Hostnames: []string{"shop.example.com"}, Upstream: "127.0.0.1:9001", Trace: "dtr1.x", Access: &node.Access{Username: "u", PasswordHash: "$2a$06$x"}},
+		{Hostnames: []string{"old.example.com"}, RedirectTo: "shop.example.com", Trace: "dtr1.x"},
+		{Hostnames: []string{"off.example.com"}, Upstream: "127.0.0.1:9002", Stopped: "web", Trace: "dtr1.x"},
+	})
+	routes := cfg.Apps.HTTP.Servers["https"].Routes
+	h := routes[0].Handle
+	n := len(h)
+	if n < 4 || h[0].Handler != "authentication" || h[n-3].Handler != "headers" || h[n-2].Handler != "tracing" || h[n-2].Span != "edge" || h[n-1].Handler != "reverse_proxy" {
+		t.Fatalf("traced handlers = %+v", h)
+	}
+	if del := h[n-3].Request.Delete; len(del) != 3 || del[0] != "traceparent" {
+		t.Errorf("trace headers dropped = %v", del)
+	}
+	for _, r := range routes[1:] {
+		for _, x := range r.Handle {
+			if x.Handler == "tracing" {
+				t.Errorf("%v is traced: %+v", r.Match, r.Handle)
+			}
+		}
+	}
+}

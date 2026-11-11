@@ -19,10 +19,12 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"log/slog"
+	"math"
 	"net"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -51,12 +53,20 @@ type Counter struct {
 	hosts map[string]*hostCount
 	// addr is where Listen listens.
 	addr net.Addr
+	// edge gets traced requests (OnEdge).
+	edge atomic.Pointer[func(Edge)]
 }
 
 // hostCount is one hostname's counts since the last drain.
 type hostCount struct {
 	node.HostTraffic
-	paths map[pathKey]uint64
+	paths map[pathKey]*pathCount
+}
+
+// pathCount is one path's counts since the last drain.
+type pathCount struct {
+	n, errors uint64
+	latency   [len(node.LatencyBounds) + 1]uint64
 }
 
 type pathKey struct{ method, path string }
@@ -79,7 +89,27 @@ type accessLine struct {
 	Duration float64 `json:"duration"`
 	Size     uint64  `json:"size"`
 	Status   int     `json:"status"`
+	// TS is when Caddy wrote the line, the request's end, in seconds;
+	// TraceID and SpanID are set on traced routes (ADR 0075).
+	TS      float64 `json:"ts"`
+	TraceID string  `json:"traceID"`
+	SpanID  string  `json:"spanID"`
 }
+
+// Edge is a traced request, from its access log line: what the trace
+// ingest makes its edge span from (ADR 0075). Route is the path as
+// traffic counts it, IDs as ":id".
+type Edge struct {
+	Host, Method, Route string
+	Status              int
+	End                 time.Time
+	Duration            time.Duration
+	TraceID, SpanID     string
+}
+
+// OnEdge sends each traced request's Edge to fn, on the reader's
+// goroutine: fn must not block.
+func (c *Counter) OnEdge(fn func(Edge)) { c.edge.Store(&fn) }
 
 // Add counts one access log line. Lines that don't parse are ignored.
 func (c *Counter) Add(line []byte) {
@@ -102,6 +132,11 @@ func (c *Counter) Add(line []byte) {
 		class = 1
 	}
 	key := pathKey{normalizeMethod(l.Request.Method), normalizePath(l.Request.URI)}
+	if fn := c.edge.Load(); fn != nil && l.TraceID != "" {
+		d := time.Duration(l.Duration * float64(time.Second))
+		(*fn)(Edge{Host: host, Method: key.method, Route: key.path, Status: l.Status,
+			End: time.UnixMicro(int64(math.Round(l.TS * 1e6))), Duration: d, TraceID: l.TraceID, SpanID: l.SpanID})
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -110,36 +145,49 @@ func (c *Counter) Add(line []byte) {
 		if len(c.hosts) >= maxHosts {
 			return
 		}
-		h = &hostCount{HostTraffic: node.HostTraffic{Host: strings.Clone(host)}, paths: map[pathKey]uint64{}}
+		h = &hostCount{HostTraffic: node.HostTraffic{Host: strings.Clone(host)}, paths: map[pathKey]*pathCount{}}
 		c.hosts[h.Host] = h
 	}
 	h.Requests++
 	h.Status[class]++
 	h.Bytes += l.Size
-	h.Duration += time.Duration(l.Duration * float64(time.Second))
-	h.countPath(key)
+	d := time.Duration(l.Duration * float64(time.Second))
+	h.Duration += d
+	p := h.countPath(key)
+	p.latency[node.LatencyBucket(d)]++
+	if class == 3 {
+		p.errors++
+	}
 }
 
-// countPath adds a request to key, making room with Space-Saving when the
-// table is full: the least requested path is replaced, and the new one
-// inherits its count plus one, an upper bound on its real count.
-func (h *hostCount) countPath(key pathKey) {
-	if n, ok := h.paths[key]; ok {
-		h.paths[key] = n + 1
-		return
+// countPath adds a request to key and returns its counts, making room
+// with Space-Saving when the table is full: the least requested path is
+// replaced, and the new one inherits its count plus one, an upper bound
+// on its real count (its errors and latency start over).
+func (h *hostCount) countPath(key pathKey) *pathCount {
+	if p, ok := h.paths[key]; ok {
+		p.n++
+		return p
 	}
 	var start uint64
+	var p *pathCount
 	if len(h.paths) >= maxPaths {
 		var least pathKey
 		start = ^uint64(0)
-		for k, n := range h.paths {
-			if n < start {
-				least, start = k, n
+		for k, c := range h.paths {
+			if c.n < start {
+				least, start = k, c.n
 			}
 		}
+		p = h.paths[least]
 		delete(h.paths, least)
+		*p = pathCount{}
+	} else {
+		p = new(pathCount)
 	}
-	h.paths[pathKey{key.method, strings.Clone(key.path)}] = start + 1
+	p.n = start + 1
+	h.paths[pathKey{key.method, strings.Clone(key.path)}] = p
+	return p
 }
 
 // DrainTraffic implements node.Traffic.
@@ -153,8 +201,8 @@ func (c *Counter) DrainTraffic(context.Context) ([]node.HostTraffic, error) {
 	for _, h := range hosts {
 		t := h.HostTraffic
 		t.Paths = make([]node.PathCount, 0, len(h.paths))
-		for k, n := range h.paths {
-			t.Paths = append(t.Paths, node.PathCount{Method: k.method, Path: k.path, Requests: n})
+		for k, p := range h.paths {
+			t.Paths = append(t.Paths, node.PathCount{Method: k.method, Path: k.path, Requests: p.n, Errors: p.errors, Latency: p.latency})
 		}
 		slices.SortFunc(t.Paths, func(a, b node.PathCount) int {
 			return cmp.Or(cmp.Compare(b.Requests, a.Requests), strings.Compare(a.Path, b.Path), strings.Compare(a.Method, b.Method))

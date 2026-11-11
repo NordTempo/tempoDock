@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -567,7 +568,31 @@ func (c *Core) GetDiagnosis(ctx context.Context, a Actor, ref ServiceRef, id int
 		return b, err
 	}
 	maskDiagnosis(&b, red)
+	b.Trace = c.failedTrace(ctx, ss, rel, b.CapturedAt)
 	return b, nil
+}
+
+// failedTrace is rel's newest failed trace from 10 minutes before at to 2
+// after, or nil: tracing off, none, or the trace store not answering (a
+// diagnosis reads without it).
+func (c *Core) failedTrace(ctx context.Context, ss svcScope, rel store.Release, at time.Time) *apitypes.DiagnosisTrace {
+	cl, _ := c.tracesClient()
+	if cl == nil {
+		return nil
+	}
+	res, err := cl.Traces(ctx, analytics.TracesQuery{
+		Org: ss.project.OrgID, Services: []int64{ss.svc.ID}, Release: rel.ID, Status: analytics.TraceError,
+		From: at.Add(-10 * time.Minute).UnixMicro(), To: at.Add(2 * time.Minute).UnixMicro(), Limit: 1,
+	})
+	if err != nil || len(res.Traces) == 0 {
+		return nil
+	}
+	t := res.Traces[0]
+	name := t.Name
+	if t.Route != "" {
+		name = strings.TrimSpace(t.Method + " " + t.Route)
+	}
+	return &apitypes.DiagnosisTrace{ID: t.Trace.String(), At: time.UnixMicro(t.Start).UTC(), Name: name, HTTPStatus: t.HTTPStatus, DurationMS: ms(t.Duration)}
 }
 
 // maskDiagnosis masks secret values in what a bundle quotes from logs.

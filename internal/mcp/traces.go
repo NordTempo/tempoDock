@@ -55,7 +55,11 @@ func (h *handler) addTraceTools(s *mcpkit.Server[core.Actor]) {
 			for _, t := range l.Traces[:min(len(l.Traces), 3)] {
 				top = append(top, fmt.Sprintf("%s %.0f ms (r%d, %s)", entryOf(t), t.DurationMS, t.Release, t.Kept))
 			}
-			sum := fmt.Sprintf("%d traces of %s in the last %s: %s.", len(l.Traces), ref, l.Range, list(top))
+			noun := "traces"
+			if len(l.Traces) == 1 {
+				noun = "trace"
+			}
+			sum := fmt.Sprintf("%d %s of %s in the last %s: %s.", len(l.Traces), noun, ref, l.Range, list(top))
 			if l.More {
 				sum += " More match; narrow the filters."
 			}

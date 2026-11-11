@@ -239,3 +239,51 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 		t.Errorf("list = %+v, %v", l, err)
 	}
 }
+
+// While tracing is on a service's route starts traces at the edge, with
+// a token for the service and its live release; one that sends its traces
+// elsewhere isn't traced at the edge either (its backend would get spans
+// with a parent it never sees), and tracing off stops it.
+func TestRoutesTraceAtTheEdge(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1", Port: 8080})
+	rel := h.wait(web, h.deploy(web, "app:1").Number)
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.routeOf("shop.example.com"); r.Trace != "" {
+		t.Fatalf("tracing off, the route traces: %q", r.Trace)
+	}
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) > 0 })
+	claims, err := traces.Parse(h.rt.TraceKey(), h.routeOf("shop.example.com").Trace)
+	if err != nil || claims.Org != 1 || claims.Service == 0 {
+		t.Fatalf("route token claims = %+v, %v", claims, err)
+	}
+	if r, err := h.store.GetReleaseByNumber(h.ctx, store.GetReleaseByNumberParams{ServiceID: claims.Service, Number: rel.Number}); err != nil || r.ID != claims.Release {
+		t.Errorf("the token's release is %d, the live one %d (%v)", claims.Release, r.ID, err)
+	}
+
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp.vendor.example"}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, rel.Number+1)
+	if r := h.routeOf("shop.example.com"); r.Trace != "" {
+		t.Errorf("exporting elsewhere, the route traces: %q", r.Trace)
+	}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Unset: []string{"OTEL_EXPORTER_OTLP_ENDPOINT"}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, rel.Number+2)
+	if h.routeOf("shop.example.com").Trace == "" {
+		t.Fatal("back to Dock, the route isn't traced")
+	}
+	if _, err := h.c.DisableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	if r := h.routeOf("shop.example.com"); r.Trace != "" {
+		t.Errorf("tracing off, the route traces: %q", r.Trace)
+	}
+}

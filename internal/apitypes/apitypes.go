@@ -1527,6 +1527,13 @@ type TrafficPath struct {
 	Method   string `json:"method"`
 	Path     string `json:"path"`
 	Requests int64  `json:"requests"`
+	// Errors are the requests answered 5xx. P50MS, P95MS and P99MS are
+	// how long requests took, from a histogram of every request (ADR
+	// 0075), never sampled; 0 for paths counted before Dock kept it.
+	Errors int64   `json:"errors"`
+	P50MS  float64 `json:"p50_ms,omitempty"`
+	P95MS  float64 `json:"p95_ms,omitempty"`
+	P99MS  float64 `json:"p99_ms,omitempty"`
 }
 
 // TrafficUpdate is one minute tick's traffic of the services of one

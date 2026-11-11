@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -48,9 +49,12 @@ type trafficState struct {
 // hostnames.
 type serviceTraffic struct {
 	host   store.ListTrafficHostsRow
-	counts node.HostTraffic          // without Paths
-	paths  map[node.PathCount]uint64 // keyed without Requests
+	counts node.HostTraffic // without Paths
+	paths  map[trafficPathKey]*node.PathCount
 }
+
+// trafficPathKey is a path's method and path.
+type trafficPathKey struct{ method, path string }
 
 // loadHosts reads the hostname map again.
 func (tr *trafficState) loadHosts(ctx context.Context, q *store.Queries) error {
@@ -83,7 +87,7 @@ func (tr *trafficState) addUp(ctx context.Context, q *store.Queries, serverID in
 		}
 		st := tr.services[row.ServiceID]
 		if st == nil {
-			st = &serviceTraffic{host: row, paths: map[node.PathCount]uint64{}}
+			st = &serviceTraffic{host: row, paths: map[trafficPathKey]*node.PathCount{}}
 			tr.services[row.ServiceID] = st
 		}
 		st.counts.Requests += h.Requests
@@ -93,7 +97,17 @@ func (tr *trafficState) addUp(ctx context.Context, q *store.Queries, serverID in
 		st.counts.Bytes += h.Bytes
 		st.counts.Duration += h.Duration
 		for _, p := range h.Paths[:min(len(h.Paths), traffic.DrainPaths)] {
-			st.paths[node.PathCount{Method: p.Method, Path: p.Path}] += p.Requests
+			k := trafficPathKey{p.Method, p.Path}
+			sum := st.paths[k]
+			if sum == nil {
+				sum = &node.PathCount{Method: p.Method, Path: p.Path}
+				st.paths[k] = sum
+			}
+			sum.Requests += p.Requests
+			sum.Errors += p.Errors
+			for i, n := range p.Latency {
+				sum.Latency[i] += n
+			}
 		}
 	}
 	return nil
@@ -144,8 +158,13 @@ func (c *Core) trafficTick(ctx context.Context, col *collector, now time.Time, a
 			if err := q.AddTraffic(ctx, p); err != nil {
 				return err
 			}
-			for k, n := range st.paths {
-				err := q.AddTrafficPath(ctx, store.AddTrafficPathParams{ServiceID: id, At: tr.hour, Method: k.Method, Path: k.Path, Requests: toInt64(n)})
+			for _, p := range st.paths {
+				l := p.Latency
+				err := q.AddTrafficPath(ctx, store.AddTrafficPathParams{
+					ServiceID: id, At: tr.hour, Method: p.Method, Path: p.Path, Requests: toInt64(p.Requests), Errors: toInt64(p.Errors),
+					Lat0: toInt64(l[0]), Lat1: toInt64(l[1]), Lat2: toInt64(l[2]), Lat3: toInt64(l[3]), Lat4: toInt64(l[4]),
+					Lat5: toInt64(l[5]), Lat6: toInt64(l[6]), Lat7: toInt64(l[7]), Lat8: toInt64(l[8]), Lat9: toInt64(l[9]),
+				})
 				if err != nil {
 					return err
 				}
@@ -265,7 +284,42 @@ func (c *Core) ServiceTraffic(ctx context.Context, a Actor, ref ServiceRef, r ap
 		out.Points[i] = trafficPoint(p.At, p.Requests, p.Status2xx, p.Status3xx, p.Status4xx, p.Status5xx, p.Bytes, p.DurationMs)
 	}
 	for i, p := range paths {
-		out.Paths[i] = apitypes.TrafficPath{Method: p.Method, Path: p.Path, Requests: p.Requests}
+		lat := [...]int64{p.Lat0, p.Lat1, p.Lat2, p.Lat3, p.Lat4, p.Lat5, p.Lat6, p.Lat7, p.Lat8, p.Lat9}
+		out.Paths[i] = apitypes.TrafficPath{Method: p.Method, Path: p.Path, Requests: p.Requests, Errors: p.Errors,
+			P50MS: latencyQuantile(lat, 0.5), P95MS: latencyQuantile(lat, 0.95), P99MS: latencyQuantile(lat, 0.99)}
 	}
 	return out, nil
+}
+
+// latencyQuantile is the q quantile, in milliseconds, of requests counted
+// in node.LatencyBounds' buckets: linear within the bucket it falls in
+// (the last, unbounded one taken as twice its lower bound), and 0 without
+// requests.
+func latencyQuantile(counts [len(node.LatencyBounds) + 1]int64, q float64) float64 {
+	var total int64
+	for _, n := range counts {
+		total += n
+	}
+	if total == 0 {
+		return 0
+	}
+	rank := q * float64(total)
+	var seen float64
+	for i, n := range counts {
+		if n == 0 || seen+float64(n) < rank {
+			seen += float64(n)
+			continue
+		}
+		lo, hi := 0.0, 0.0
+		if i > 0 {
+			lo = float64(node.LatencyBounds[i-1].Milliseconds())
+		}
+		if i < len(node.LatencyBounds) {
+			hi = float64(node.LatencyBounds[i].Milliseconds())
+		} else {
+			hi = 2 * lo
+		}
+		return math.Round((lo+(hi-lo)*(rank-seen)/float64(n))*10) / 10
+	}
+	return float64(node.LatencyBounds[len(node.LatencyBounds)-1].Milliseconds()) * 2
 }

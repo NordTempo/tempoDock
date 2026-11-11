@@ -46,9 +46,10 @@ func newTrafficCmd(g *globals) *cobra.Command {
 					return err
 				}
 				_, _ = io.WriteString(g.io.Out, "\n")
-				tb := g.io.Table("method", "path", "requests", "share")
+				tb := g.io.Table("method", "path", "requests", "share", "5xx", "p50", "p95", "p99")
 				for _, p := range tr.Paths {
-					tb.Row(p.Method, p.Path, itoa(p.Requests), share(p.Requests, tot.Requests))
+					tb.Row(p.Method, p.Path, itoa(p.Requests), share(p.Requests, tot.Requests), share(p.Errors, p.Requests),
+						latency(p.P50MS), latency(p.P95MS), latency(p.P99MS))
 				}
 				return tb.Flush()
 			})
@@ -57,6 +58,14 @@ func newTrafficCmd(g *globals) *cobra.Command {
 	f.add(cmd, needService)
 	cmd.Flags().StringVar(&r, "range", "24h", "24h, 7d or 30d")
 	return cmd
+}
+
+// latency is a path's percentile, or "" when Dock has none for it.
+func latency(ms float64) string {
+	if ms == 0 {
+		return ""
+	}
+	return msString(ms)
 }
 
 // share is n as a percentage of total, "12%" or "<1%".

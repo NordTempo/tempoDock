@@ -5409,6 +5409,10 @@
           "service": {
             "type": "string"
           },
+          "trace": {
+            "$ref": "#/components/schemas/DiagnosisTrace",
+            "description": "The release's newest failed trace around the failure, while tracing is on"
+          },
           "truncated": {
             "description": "Older log lines were left out to keep the bundle under its size limit",
             "type": "boolean"
@@ -5882,6 +5886,37 @@
           "id",
           "kind",
           "summary"
+        ],
+        "type": "object"
+      },
+      "DiagnosisTrace": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "http_status": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "description": "The trace's entry: method and route, or its span's name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "name",
+          "duration_ms"
         ],
         "type": "object"
       },
@@ -15865,8 +15900,24 @@
       "TrafficPath": {
         "additionalProperties": false,
         "properties": {
+          "errors": {
+            "format": "int64",
+            "type": "integer"
+          },
           "method": {
             "type": "string"
+          },
+          "p50_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "p95_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "p99_ms": {
+            "format": "double",
+            "type": "number"
           },
           "path": {
             "type": "string"
@@ -15879,7 +15930,8 @@
         "required": [
           "method",
           "path",
-          "requests"
+          "requests",
+          "errors"
         ],
         "type": "object"
       },

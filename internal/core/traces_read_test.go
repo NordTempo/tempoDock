@@ -2,12 +2,14 @@ package core
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -154,5 +156,41 @@ func TestBigTracesOpen(t *testing.T) {
 	tr, err := h.c.GetTrace(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, spans[0].Trace.String(), time.UnixMicro(start))
 	if err != nil || len(tr.Spans) != 600 || tr.Truncated || tr.Spans[599].Span != analytics.SpanID(600).String() {
 		t.Fatalf("trace: %d spans, truncated %v, %v", len(tr.Spans), tr.Truncated, err)
+	}
+}
+
+// A failed release's diagnosis names its newest failed trace around the
+// failure, read when the diagnosis is: SDKs send spans seconds later.
+func TestDiagnosisNamesTheFailedTrace(t *testing.T) {
+	h := newHarness(t)
+	web := tracedService(t, h, "web")
+	ref := ServiceRef{"shop", "production", "web"}
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	h.rt.FailHealthCheck(func(node.ContainerSpec) error { return errors.New("health check: GET /health returned 500") })
+	rel, err := h.c.DeployImage(h.ctx, testSystem, ref, apitypes.DeployImageRequest{Image: "shop:2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(ref, rel.Number); r.Status != apitypes.ReleaseFailed || r.Diagnosis == nil {
+		t.Fatalf("release = %+v", r)
+	}
+	r2, err := h.store.GetReleaseByNumber(h.ctx, store.GetReleaseByNumberParams{ServiceID: web.Service, Number: rel.Number})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := h.c.GetRelease(h.ctx, testSystem, ref, rel.Number)
+	if d, err := h.c.GetDiagnosis(h.ctx, testSystem, ref, got.Diagnosis.ID); err != nil || d.Trace != nil {
+		t.Fatalf("before any span: %+v, %v", d.Trace, err)
+	}
+	probe := web
+	probe.Release, probe.Trace, probe.ID, probe.Start, probe.Duration = r2.ID, analytics.TraceIDOf(0x646f636b70726265, 1), 1, now().UnixMicro(), 3_000
+	probe.Name, probe.Kind, probe.Entry, probe.Method, probe.Route, probe.HTTPStatus, probe.Kept = "GET /health", analytics.SpanServer, true, "GET", "/health", 500, analytics.KeptError
+	spool(t, h, probe)
+	eventually(t, "the span in the trace store", func() bool { ts := h.rt.TraceStore(); return ts != nil && len(ts.Spans()) == 1 })
+	d, err := h.c.GetDiagnosis(h.ctx, testSystem, ref, got.Diagnosis.ID)
+	if err != nil || d.Trace == nil || d.Trace.ID != probe.Trace.String() || d.Trace.Name != "GET /health" || d.Trace.HTTPStatus != 500 {
+		t.Fatalf("diagnosis trace = %+v, %v", d.Trace, err)
 	}
 }

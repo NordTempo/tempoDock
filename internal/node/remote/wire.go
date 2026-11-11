@@ -621,6 +621,9 @@ type wireRoute struct {
 	// plane sleeps no environment on an older node.
 	Wake        string `json:"wake,omitempty"`
 	QuietProbes bool   `json:"quiet_probes,omitempty"`
+	// Trace is new with edge traces (ADR 0075); nodes before them ignore
+	// it and serve the route untraced, so it needs no protocol version.
+	Trace string `json:"trace,omitempty"`
 }
 
 // wireAnalyticsHosts is node.AnalyticsHosts.
@@ -641,7 +644,7 @@ func toWireRoutes(rs []node.Route) []wireRoute {
 	out := make([]wireRoute, len(rs))
 	for i, r := range rs {
 		out[i] = wireRoute{Hostnames: r.Hostnames, Upstream: r.Upstream, RedirectTo: r.RedirectTo, PathPrefix: r.PathPrefix, Traffic: r.Traffic, TunnelOnly: r.TunnelOnly, Stopped: r.Stopped, Hold: r.Hold,
-			Wake: r.Wake, QuietProbes: r.QuietProbes}
+			Wake: r.Wake, QuietProbes: r.QuietProbes, Trace: r.Trace}
 		if a := r.Access; a != nil {
 			out[i].Access = &wireAccess{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -656,7 +659,7 @@ func fromWireRoutes(ws []wireRoute) []node.Route {
 	out := make([]node.Route, len(ws))
 	for i, w := range ws {
 		out[i] = node.Route{Hostnames: w.Hostnames, Upstream: w.Upstream, RedirectTo: w.RedirectTo, PathPrefix: w.PathPrefix, Traffic: w.Traffic, TunnelOnly: w.TunnelOnly, Stopped: w.Stopped, Hold: w.Hold,
-			Wake: w.Wake, QuietProbes: w.QuietProbes}
+			Wake: w.Wake, QuietProbes: w.QuietProbes, Trace: w.Trace}
 		if a := w.Access; a != nil {
 			out[i].Access = &node.Access{Username: a.Username, PasswordHash: a.PasswordHash, Key: a.Key, LoginURL: a.LoginURL}
 		}
@@ -699,6 +702,10 @@ type wirePathCount struct {
 	Method   string `json:"method"`
 	Path     string `json:"path"`
 	Requests uint64 `json:"requests"`
+	// Errors and Latency are new with per-route numbers (ADR 0075);
+	// older nodes send neither, and the path counts without them.
+	Errors  uint64   `json:"errors,omitempty"`
+	Latency []uint64 `json:"latency,omitempty"`
 }
 
 func toWireTraffic(hs []node.HostTraffic) []wireHostTraffic {
@@ -709,7 +716,7 @@ func toWireTraffic(hs []node.HostTraffic) []wireHostTraffic {
 			DurationMS: h.Duration.Milliseconds(), Paths: make([]wirePathCount, len(h.Paths)),
 		}
 		for j, p := range h.Paths {
-			out[i].Paths[j] = wirePathCount(p)
+			out[i].Paths[j] = wirePathCount{Method: p.Method, Path: p.Path, Requests: p.Requests, Errors: p.Errors, Latency: p.Latency[:]}
 		}
 	}
 	return out
@@ -723,7 +730,8 @@ func fromWireTraffic(ws []wireHostTraffic) []node.HostTraffic {
 			Duration: time.Duration(w.DurationMS) * time.Millisecond, Paths: make([]node.PathCount, len(w.Paths)),
 		}
 		for j, p := range w.Paths {
-			out[i].Paths[j] = node.PathCount(p)
+			out[i].Paths[j] = node.PathCount{Method: p.Method, Path: p.Path, Requests: p.Requests, Errors: p.Errors}
+			copy(out[i].Paths[j].Latency[:], p.Latency)
 		}
 	}
 	return out

@@ -7,6 +7,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // line is a Caddy access log line as caddy.Render's filter leaves it.
@@ -111,5 +113,33 @@ func TestListenCountsDatagrams(t *testing.T) {
 			t.Fatal("datagram not counted")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A traced request's line, with Caddy's trace and span IDs, goes to
+// OnEdge as well as into the counts; an untraced one only counts.
+func TestCounterSendsTracedRequests(t *testing.T) {
+	c := NewCounter()
+	var got []Edge
+	c.OnEdge(func(e Edge) { got = append(got, e) })
+	c.Add([]byte(`{"ts":1800000000.25,"request":{"method":"GET","host":"Shop.example.com:443","uri":"/orders/12?x=1"},"duration":0.05,"status":502,"traceID":"0102030405060708090a0b0c0d0e0f10","spanID":"0102030405060708"}`))
+	c.Add([]byte(`{"request":{"method":"GET","host":"shop.example.com","uri":"/"},"status":200}`))
+	if len(got) != 1 {
+		t.Fatalf("edges = %+v", got)
+	}
+	e := got[0]
+	if e.Host != "shop.example.com" || e.Method != "GET" || e.Route != "/orders/:id" || e.Status != 502 || e.Duration != 50*time.Millisecond ||
+		e.End.UnixMilli() != 1_800_000_000_250 || e.TraceID != "0102030405060708090a0b0c0d0e0f10" || e.SpanID != "0102030405060708" {
+		t.Errorf("edge = %+v", e)
+	}
+	h, _ := c.DrainTraffic(t.Context())
+	if len(h) != 1 || h[0].Requests != 2 {
+		t.Fatalf("counts = %+v", h)
+	}
+	// Each path counts its 5xx answers and how long its requests took.
+	for _, p := range h[0].Paths {
+		if p.Path == "/orders/:id" && (p.Errors != 1 || p.Latency[node.LatencyBucket(50*time.Millisecond)] != 1) {
+			t.Errorf("/orders/:id = %+v", p)
+		}
 	}
 }

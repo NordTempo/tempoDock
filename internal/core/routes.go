@@ -65,6 +65,10 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	for _, h := range hosts {
 		siteOf[h.Hostname] = h.SiteID
 	}
+	traced, err := c.edgeTraced(ctx, rows, fwd, override)
+	if err != nil {
+		return err
+	}
 	routes := []node.Route{}
 	// A service's domains share a route, one for those served to the
 	// tunnel only and one for the rest.
@@ -99,6 +103,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 				i = len(routes)
 				bySvc[key] = i
 				routes = append(routes, node.Route{Upstream: fmt.Sprintf("127.0.0.1:%d", port), Access: acc, Traffic: true, TunnelOnly: tunnelOnly, Hold: held[d.ServiceID], QuietProbes: d.Sleepable})
+				routes[i].Trace = traced[d.ServiceID]
 				switch {
 				case stopped:
 					routes[i].Stopped = d.ServiceName
@@ -155,4 +160,23 @@ func addAnalyticsHost(r *node.Route, hostname, tag string) {
 		}
 	}
 	r.Analytics = append(r.Analytics, node.AnalyticsHosts{Hostnames: []string{hostname}, Tag: tag})
+}
+
+// applyAllRoutes applies the routes of every online server, for a change
+// that touches all of them (tracing on or off). A server that fails keeps
+// its routes until its next change, and says so in the log.
+func (c *Core) applyAllRoutes(ctx context.Context) {
+	servers, err := c.store.ListServers(ctx)
+	if err != nil {
+		c.log.Error("apply routes on every server", "err", err)
+		return
+	}
+	for _, s := range servers {
+		if !c.online(s.ID) {
+			continue
+		}
+		if err := c.applyRoutes(ctx, s.ID); err != nil {
+			c.log.Error("apply routes", "server", s.Name, "err", err)
+		}
+	}
 }

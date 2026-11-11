@@ -312,7 +312,9 @@ func (s *Traces) WriteSpans(ctx context.Context, source string, position uint64,
 			d.rejected++
 			continue
 		}
-		important := sp.Kept == analytics.KeptError || sp.Kept == analytics.KeptForced
+		// A failed span is an error span whatever it says it was kept
+		// for: nodes before kept reasons left them unset.
+		important := sp.Kept == analytics.KeptError || sp.Kept == analytics.KeptForced || sp.Error()
 		switch {
 		case important && lim.ErrorDay > 0 && u.errors+d.errors >= lim.ErrorDay,
 			!important && lim.ServiceDay > 0 && u.spans+d.spans >= lim.ServiceDay,
@@ -622,7 +624,9 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 	if q.MinDuration > 0 {
 		add("dur_us >= $%d", "", q.MinDuration)
 	}
-	args = append(args, limit+1)
+	// Twice the page: a trace can enter the service twice (Caddy's edge
+	// span and the app's, or a call to itself), and is listed once.
+	args = append(args, 2*limit+1)
 	s.gate.RLock()
 	defer s.gate.RUnlock()
 	days := s.daysIn(q.From, q.To)
@@ -649,8 +653,8 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 	if err := rows.Err(); err != nil {
 		return res, err
 	}
-	if len(page) > limit {
-		page, res.More = page[:limit], true
+	if len(page) > 2*limit {
+		page, res.More = page[:2*limit], true
 	}
 	if len(page) == 0 {
 		return res, nil
@@ -700,6 +704,9 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 		return res, err
 	}
 	res.Traces = analytics.OnePerTrace(res.Traces, entries)
+	if len(res.Traces) > limit {
+		res.Traces, res.More = res.Traces[:limit], true
+	}
 	return res, nil
 }
 
