@@ -722,6 +722,9 @@ func (c *Core) reconcileAlerts(ctx context.Context, now time.Time) {
 // went up, is sent to the channels.
 func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	t := now.UTC()
+	// A maintenance window in progress holds alerts about what it covers:
+	// recorded, sent when it ends (status_maintenance.go).
+	muted := c.maintMutedBy(s)
 	e := c.alerts
 	e.mu.Lock()
 	if name := c.bus.projectName(s.projectID, s.Project); name != s.Project {
@@ -754,12 +757,15 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 		e.open[s.Key] = cur
 		e.mu.Unlock()
 		c.publishAlert(cur)
-		if escalated {
+		if escalated && cur.MutedBy == nil {
 			c.notify(ctx, cur, "escalated", now)
 		}
 		return
 	}
-	var pid, sid *int64
+	var pid, sid, mid *int64
+	if muted != 0 {
+		mid = &muted
+	}
 	if s.projectID != 0 {
 		pid = &s.projectID
 	}
@@ -769,7 +775,7 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	row, err := c.store.OpenAlert(ctx, store.OpenAlertParams{
 		Key: s.Key, Kind: string(s.Kind), Severity: string(s.Severity), Title: s.Title, Message: s.Message,
 		Project: s.Project, Environment: s.Environment, Service: s.Service, Server: s.Server, OpenedAt: t, UpdatedAt: t, ProjectID: pid, ServiceID: sid,
-		Command: s.Command, Target: target, OrgID: c.alertOrg(ctx, s),
+		Command: s.Command, Target: target, OrgID: c.alertOrg(ctx, s), MutedBy: mid,
 	})
 	if err != nil {
 		e.mu.Unlock()
@@ -781,6 +787,10 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	c.log.Info("alert opened", "alert", s.Key, "severity", s.Severity, "title", s.Title)
 	c.publishAlert(row)
 	c.statusAlertOpened(ctx, row)
+	if mid != nil {
+		c.log.Info("alert held by maintenance", "alert", s.Key, "window", muted)
+		return
+	}
 	c.notify(ctx, row, "opened", now)
 }
 

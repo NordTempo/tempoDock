@@ -52,7 +52,10 @@ func parseImpacts(flags []string) ([]apitypes.StatusImpact, error) {
 func impactsLine(ims []apitypes.StatusImpact) string {
 	parts := make([]string, len(ims))
 	for i, im := range ims {
-		parts[i] = im.Component + " " + strings.ReplaceAll(string(im.Impact), "_", " ")
+		parts[i] = im.Component
+		if im.Impact != apitypes.StatusMaintenance {
+			parts[i] += " " + strings.ReplaceAll(string(im.Impact), "_", " ")
+		}
 	}
 	return orDash(strings.Join(parts, ", "))
 }
@@ -91,9 +94,9 @@ func newIncidentListCmd(g *globals) *cobra.Command {
 					g.io.Successf("No incidents in the last 90 days.")
 					return nil
 				}
-				t := g.io.Table("id", "page", "title", "state", "components", "started")
+				t := g.io.Table("id", "page", "kind", "title", "state", "components", "starts")
 				for _, inc := range out {
-					t.Row(inc.ID, inc.Page, inc.Title, string(inc.State), impactsLine(inc.Components), ago(inc.StartedAt))
+					t.Row(inc.ID, inc.Page, string(inc.Kind), inc.Title, string(inc.State), impactsLine(inc.Components), startsText(inc))
 				}
 				return t.Flush()
 			})
@@ -120,11 +123,22 @@ func newIncidentShowCmd(g *globals) *cobra.Command {
 	}
 }
 
+// startsText is when an incident started, or a window's time.
+func startsText(inc apitypes.StatusIncident) string {
+	if inc.Kind == apitypes.KindMaintenance && inc.EndsAt != nil {
+		return inc.StartedAt.UTC().Format("2 Jan 15:04") + " to " + inc.EndsAt.UTC().Format("15:04 MST")
+	}
+	return ago(inc.StartedAt)
+}
+
 // printIncident shows an incident: what it is and does, then its
 // updates oldest first.
 func printIncident(g *globals, inc apitypes.StatusIncident) error {
 	w := g.io.Out
-	_, _ = fmt.Fprintf(w, "%s %q on %s: %s\n", inc.ID, inc.Title, inc.Page, inc.State)
+	_, _ = fmt.Fprintf(w, "%s %q on %s: %s %s\n", inc.ID, inc.Title, inc.Page, inc.Kind, inc.State)
+	if inc.Kind == apitypes.KindMaintenance {
+		_, _ = fmt.Fprintf(w, "window: %s\n", startsText(inc))
+	}
 	_, _ = fmt.Fprintf(w, "components: %s\n", impactsLine(inc.Components))
 	if inc.URL != "" {
 		_, _ = fmt.Fprintf(w, "public at %s\n", inc.URL)

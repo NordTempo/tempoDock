@@ -109,18 +109,20 @@ func (q *Queries) CreateStatusComponent(ctx context.Context, arg CreateStatusCom
 }
 
 const createStatusIncident = `-- name: CreateStatusIncident :one
-INSERT INTO status_incidents (page_id, public_id, title, state, draft, starts_at, published_at, alert_id, created_at, created_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO status_incidents (page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, alert_id, created_at, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, resolved_at, alert_id, created_at, created_by
 `
 
 type CreateStatusIncidentParams struct {
 	PageID      int64
 	PublicID    string
+	Kind        string
 	Title       string
 	State       string
 	Draft       string
 	StartsAt    time.Time
+	EndsAt      *time.Time
 	PublishedAt *time.Time
 	AlertID     *int64
 	CreatedAt   time.Time
@@ -131,10 +133,12 @@ func (q *Queries) CreateStatusIncident(ctx context.Context, arg CreateStatusInci
 	row := q.db.QueryRowContext(ctx, createStatusIncident,
 		arg.PageID,
 		arg.PublicID,
+		arg.Kind,
 		arg.Title,
 		arg.State,
 		arg.Draft,
 		arg.StartsAt,
+		arg.EndsAt,
 		arg.PublishedAt,
 		arg.AlertID,
 		arg.CreatedAt,
@@ -400,6 +404,48 @@ func (q *Queries) GetStatusIncident(ctx context.Context, publicID string) (GetSt
 	return i, err
 }
 
+const getStatusIncidentByID = `-- name: GetStatusIncidentByID :one
+SELECT status_incidents.id, status_incidents.page_id, status_incidents.public_id, status_incidents.kind, status_incidents.title, status_incidents.state, status_incidents.draft, status_incidents.starts_at, status_incidents.ends_at, status_incidents.published_at, status_incidents.resolved_at, status_incidents.alert_id, status_incidents.created_at, status_incidents.created_by, status_pages.id, status_pages.org_id, status_pages.slug, status_pages.title, status_pages.published, status_pages.show_uptime, status_pages.created_at, status_pages.created_by, status_pages.drafts
+FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
+WHERE status_incidents.id = +?
+`
+
+type GetStatusIncidentByIDRow struct {
+	StatusIncident StatusIncident
+	StatusPage     StatusPage
+}
+
+func (q *Queries) GetStatusIncidentByID(ctx context.Context, id int64) (GetStatusIncidentByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getStatusIncidentByID, id)
+	var i GetStatusIncidentByIDRow
+	err := row.Scan(
+		&i.StatusIncident.ID,
+		&i.StatusIncident.PageID,
+		&i.StatusIncident.PublicID,
+		&i.StatusIncident.Kind,
+		&i.StatusIncident.Title,
+		&i.StatusIncident.State,
+		&i.StatusIncident.Draft,
+		&i.StatusIncident.StartsAt,
+		&i.StatusIncident.EndsAt,
+		&i.StatusIncident.PublishedAt,
+		&i.StatusIncident.ResolvedAt,
+		&i.StatusIncident.AlertID,
+		&i.StatusIncident.CreatedAt,
+		&i.StatusIncident.CreatedBy,
+		&i.StatusPage.ID,
+		&i.StatusPage.OrgID,
+		&i.StatusPage.Slug,
+		&i.StatusPage.Title,
+		&i.StatusPage.Published,
+		&i.StatusPage.ShowUptime,
+		&i.StatusPage.CreatedAt,
+		&i.StatusPage.CreatedBy,
+		&i.StatusPage.Drafts,
+	)
+	return i, err
+}
+
 const getStatusPage = `-- name: GetStatusPage :one
 SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts FROM status_pages WHERE org_id = +? AND slug = +?
 `
@@ -530,6 +576,62 @@ func (q *Queries) ListIncidentUpdates(ctx context.Context, incidentID int64) ([]
 			&i.At,
 			&i.CreatedBy,
 			&i.EditedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMaintenanceWindows = `-- name: ListMaintenanceWindows :many
+SELECT i.id, i.page_id, i.state, i.starts_at, i.ends_at,
+  src.service_id, src.check_id
+FROM status_incidents AS i
+LEFT JOIN status_incident_components AS ic ON ic.incident_id = i.id
+LEFT JOIN status_sources AS src ON src.component_id = ic.component_id
+WHERE i.kind = 'maintenance' AND i.resolved_at IS NULL
+ORDER BY i.starts_at, i.id
+`
+
+type ListMaintenanceWindowsRow struct {
+	ID        int64
+	PageID    int64
+	State     string
+	StartsAt  time.Time
+	EndsAt    *time.Time
+	ServiceID *int64
+	CheckID   *int64
+}
+
+// Every maintenance window not finished yet, one row per source of its
+// components (sources NULL for a component without any): what Dock
+// holds in memory to start and end windows and to mute alerts and
+// probes during them. Ordered as status_incidents_maintenance is, so it
+// is read through it; a window's rows come together.
+func (q *Queries) ListMaintenanceWindows(ctx context.Context) ([]ListMaintenanceWindowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMaintenanceWindows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMaintenanceWindowsRow
+	for rows.Next() {
+		var i ListMaintenanceWindowsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PageID,
+			&i.State,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.ServiceID,
+			&i.CheckID,
 		); err != nil {
 			return nil, err
 		}
@@ -1231,7 +1333,7 @@ func (q *Queries) UpdateStatusComponent(ctx context.Context, arg UpdateStatusCom
 }
 
 const updateStatusIncident = `-- name: UpdateStatusIncident :one
-UPDATE status_incidents SET title = ?, state = ?, draft = ?, published_at = ?, resolved_at = ? WHERE id = +?
+UPDATE status_incidents SET title = ?, state = ?, draft = ?, starts_at = ?, ends_at = ?, published_at = ?, resolved_at = ? WHERE id = +?
 RETURNING id, page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, resolved_at, alert_id, created_at, created_by
 `
 
@@ -1239,6 +1341,8 @@ type UpdateStatusIncidentParams struct {
 	Title       string
 	State       string
 	Draft       string
+	StartsAt    time.Time
+	EndsAt      *time.Time
 	PublishedAt *time.Time
 	ResolvedAt  *time.Time
 	ID          int64
@@ -1249,6 +1353,8 @@ func (q *Queries) UpdateStatusIncident(ctx context.Context, arg UpdateStatusInci
 		arg.Title,
 		arg.State,
 		arg.Draft,
+		arg.StartsAt,
+		arg.EndsAt,
 		arg.PublishedAt,
 		arg.ResolvedAt,
 		arg.ID,

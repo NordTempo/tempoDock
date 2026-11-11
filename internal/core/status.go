@@ -716,8 +716,8 @@ func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, 
 // statusRank orders statuses from good to bad; idle ranks with
 // operational for a page's overall status.
 var statusRank = map[apitypes.ComponentStatus]int{
-	"": 0, apitypes.StatusOperational: 1, apitypes.StatusIdle: 1, apitypes.StatusDegraded: 2,
-	apitypes.StatusPartialOutage: 3, apitypes.StatusMajorOutage: 4,
+	"": 0, apitypes.StatusOperational: 1, apitypes.StatusIdle: 1, apitypes.StatusMaintenance: 2, apitypes.StatusDegraded: 3,
+	apitypes.StatusPartialOutage: 4, apitypes.StatusMajorOutage: 5,
 }
 
 // worseStatus is the worse of two statuses, a when they rank the same.
@@ -809,14 +809,19 @@ func (c *Core) PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicS
 	out := apitypes.PublicStatusPage{Title: p.Title, Status: pageStatus(comps), ShowUptime: p.ShowUptime, GeneratedAt: t}
 	recent := t.AddDate(0, 0, -apitypes.StatusRecentDays)
 	for _, inc := range incs {
+		maint := inc.row.Kind == string(apitypes.KindMaintenance)
 		switch {
-		case !inc.published():
+		case !inc.published() || inc.row.State == string(apitypes.MaintenanceCancelled):
+		case maint && inc.row.ResolvedAt == nil:
+			out.Maintenance = append(out.Maintenance, toPublicIncident(inc))
 		case inc.row.ResolvedAt == nil:
 			out.Open = append(out.Open, toPublicIncident(inc))
 		case inc.row.ResolvedAt.After(recent):
 			out.Recent = append(out.Recent, toPublicIncident(inc))
 		}
 	}
+	// Windows soonest first.
+	slices.Reverse(out.Maintenance)
 	for _, cc := range comps {
 		if n := len(out.Groups); n == 0 || out.Groups[n-1].Name != cc.comp.Grp {
 			out.Groups = append(out.Groups, apitypes.PublicStatusGroup{Name: cc.comp.Grp})

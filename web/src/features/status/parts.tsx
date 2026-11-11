@@ -4,7 +4,13 @@ import type { StatusComponent, StatusImpact } from "./data";
 
 /** What an incident does, in a line: "API partial outage, Jobs degraded". */
 export const impactText = (ims: StatusImpact[]) =>
-  ims.map((im) => `${im.component} ${im.impact.replace("_", " ")}`).join(", ");
+  ims
+    .map((im) =>
+      im.impact === "maintenance"
+        ? im.component
+        : `${im.component} ${im.impact.replace("_", " ")}`,
+    )
+    .join(", ");
 
 /** What a component is built from, as the editor may show it. */
 export function Sources({ component }: { component: StatusComponent }) {

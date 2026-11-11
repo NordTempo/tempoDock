@@ -15,13 +15,13 @@
 </body>
 </html>{{end}}
 {{define "incident"}}<div class="inc {{.Tone}}">{{if .Link}}<div class="inc-t"><a href="/incidents/{{.ID}}">{{.Title}}</a> <span>{{.State}}</span></div>{{end}}
-{{if .Affects}}<div class="desc">{{.Affects}}</div>{{end}}
+{{if .Window}}<div class="desc">{{.Window}}</div>{{end}}{{if .Affects}}<div class="desc">{{.Affects}}</div>{{end}}
 {{range .Updates}}<div class="u"><time>{{.When}}</time><span class="desc">{{.State}}</span>{{if .Edited}} <span class="desc">· edited</span>{{end}}{{.Body}}</div>
 {{end}}</div>{{end}}
 {{define "page"}}{{template "head" (print .Title " status")}}
 <header><h1>{{.Title}}</h1><a href="/feed.atom">Atom</a><a href="/status.json">JSON</a></header>
 <p class="state"><span class="dot {{.Tone}}"></span><span>{{.Headline}}</span><span class="upd">updated {{.Updated}}</span></p>
-{{range .Open}}{{template "incident" .}}{{end}}
+{{range .Open}}{{template "incident" .}}{{end}}{{range .Maintenance}}{{template "incident" .}}{{end}}
 {{range .Groups}}{{if .Name}}<h2>{{.Name}}</h2>{{end}}{{range .Components}}<section>
 <div class="row"><span class="name">{{.Name}}{{if .Description}} <span class="desc">{{.Description}}</span>{{end}}</span><span class="{{.Tone}}">{{.Label}}</span></div>
 <div class="bar">{{.Bar}}</div>

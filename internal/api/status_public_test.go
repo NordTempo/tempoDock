@@ -306,3 +306,30 @@ func TestStatusIncidentPages(t *testing.T) {
 		t.Errorf("status.json incidents: %+v, %v", js.Incidents, err)
 	}
 }
+
+// A window shows with its time and components, in blue; its days are
+// marked; status.json lists it under maintenance.
+func TestStatusMaintenancePage(t *testing.T) {
+	page := testStatusPage()
+	start := time.Date(2026, 11, 13, 2, 0, 0, 0, time.UTC)
+	end := start.Add(30 * time.Minute)
+	page.Maintenance = []apitypes.PublicIncident{{ID: "m2kqz7mnab", Title: "Database upgrade", Kind: apitypes.KindMaintenance,
+		State: apitypes.MaintenanceScheduled, StartedAt: start, EndsAt: &end,
+		Components: []apitypes.StatusImpact{{Component: "API", Impact: apitypes.StatusMaintenance}},
+		Updates:    []apitypes.PublicUpdate{{State: apitypes.MaintenanceScheduled, Message: "Writes pause.", At: start.Add(-48 * time.Hour)}}}}
+	page.Groups[0].Components[0].Days[88].Maintenance = true
+	b, err := renderStatusPage(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(b)
+	for _, want := range []string{"b-maintenance", "Fri 13 Nov 02:00 to 02:30 UTC", "Affects API", ">Scheduled<", `class="b" title="9 Nov: 100%, maintenance"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("page has no %q", want)
+		}
+	}
+	js, err := renderStatusJSON(page)
+	if err != nil || !strings.Contains(string(js), `"maintenance":[{"id":"m2kqz7mnab"`) || !strings.Contains(string(js), `"ends_at":"2026-11-13T02:30:00Z"`) {
+		t.Errorf("status.json: %s, %v", js, err)
+	}
+}

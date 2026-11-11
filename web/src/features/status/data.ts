@@ -27,6 +27,8 @@ export type StatusIncident = Omit<IncidentSchema, "components" | "updates"> & {
 };
 export type StatusImpact = Schema["StatusImpact"];
 export type IncidentState = IncidentSchema["state"];
+/** The states an update may post. */
+export type PostState = Schema["PostIncidentUpdateRequest"]["state"];
 /** A page with its components and incidents. */
 export type StatusPage = Omit<PageSchema, "components" | "incidents"> & {
   components: StatusComponent[];
@@ -156,6 +158,7 @@ export const toInputs = (p: StatusPage): StatusComponentInput[] =>
 export const statusState: Record<ComponentStatus, State> = {
   operational: { tone: "ok", glyph: "●", label: "operational" },
   idle: { tone: "info", glyph: "◌", label: "idle" },
+  maintenance: { tone: "info", glyph: "◐", label: "maintenance" },
   degraded: { tone: "warn", glyph: "▲", label: "degraded" },
   partial_outage: { tone: "warn", glyph: "▲", label: "partial outage" },
   major_outage: { tone: "fail", glyph: "✕", label: "major outage" },
@@ -175,6 +178,27 @@ export const useOpenIncident = (slug: string) =>
       i.state === "draft" ? `Saved draft ${i.title}` : `Opened ${i.title}`,
   );
 
+/** What a toast says after an update that moves an incident or window on. */
+const postedText: Partial<Record<IncidentState, string>> = {
+  resolved: "Resolved",
+  in_progress: "Started",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export const useScheduleMaintenance = (slug: string) =>
+  useAction(
+    (req: Schema["ScheduleMaintenanceRequest"]) =>
+      body(
+        api.POST("/api/v1/status-pages/{page}/maintenance", {
+          params: { path: { page: slug } },
+          body: req,
+        }),
+      ).then(toIncident),
+    () => [statusKeys.all],
+    (_, w) => `Scheduled ${w.title}`,
+  );
+
 export const usePostIncidentUpdate = (id: string) =>
   useAction(
     (req: Schema["PostIncidentUpdateRequest"]) =>
@@ -185,7 +209,7 @@ export const usePostIncidentUpdate = (id: string) =>
         }),
       ).then(toIncident),
     () => [statusKeys.all],
-    (req) => (req.state === "resolved" ? "Resolved" : "Posted update"),
+    (req) => postedText[req.state] ?? "Posted update",
   );
 
 export const useUpdateIncident = (id: string) =>
@@ -232,6 +256,10 @@ export const incidentState: Record<IncidentState, State> = {
   identified: { tone: "warn", glyph: "▲", label: "identified" },
   monitoring: { tone: "info", glyph: "◐", label: "monitoring" },
   resolved: { tone: "ok", glyph: "●", label: "resolved" },
+  scheduled: { tone: "info", glyph: "○", label: "scheduled" },
+  in_progress: { tone: "info", glyph: "◐", label: "in progress" },
+  completed: { tone: "ok", glyph: "●", label: "completed" },
+  cancelled: { tone: "mut", glyph: "○", label: "cancelled" },
 };
 
 /** The impacts an incident may have on a component, mildest first. */

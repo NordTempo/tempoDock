@@ -80,6 +80,28 @@ the words are yours. If the alert resolves before anyone publishes the
 draft, the draft goes. `dock status-page update acme --drafts=false`
 turns this off.
 
+## Maintenance
+
+```sh
+dock maintenance schedule acme "Database upgrade" --component Database --from 2026-11-13T02:00Z --for 30m -m "Writes pause for up to 5 minutes."
+dock maintenance extend 4f2kqz7mna --by 15m
+dock maintenance complete 4f2kqz7mna
+```
+
+Or **Schedule maintenance** on the page in Dock. A window is public as
+soon as it is scheduled. Dock starts it at its start and completes it at
+its end (within a minute); you can start, complete or cancel it sooner,
+or move its times. While it runs:
+
+- its components read **maintenance** (blue), whatever their checks say;
+- alerts about their services are kept in Dock but not sent; those still
+  open when the window ends are sent then, so something that broke during
+  the work still reaches you;
+- their uptime checks keep running but don't count, so planned downtime
+  doesn't dent the 90-day percentage. The day gets a blue mark.
+
+Times are UTC unless they carry an offset.
+
 Agents can open and update incidents too (`status_incident_open`,
 `status_incident_update`); asked to, they write drafts for a person to
 publish.

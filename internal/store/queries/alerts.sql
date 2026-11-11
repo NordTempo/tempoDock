@@ -1,7 +1,11 @@
 -- name: OpenAlert :one
-INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO alerts (key, kind, severity, title, message, project, environment, service, server, opened_at, updated_at, project_id, service_id, command, target, org_id, muted_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
+
+-- name: UnmuteAlert :exec
+-- An alert held by a maintenance window, sent once the window ended.
+UPDATE alerts SET muted_by = NULL WHERE id = +?;
 
 -- name: UpdateAlert :exec
 UPDATE alerts SET severity = ?, title = ?, message = ?, project = ?, command = ?, target = ?, updated_at = ? WHERE id = +?;

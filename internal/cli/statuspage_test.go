@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
@@ -116,5 +117,43 @@ func TestIncidentCommands(t *testing.T) {
 	ok[map[string]string](t, "incident", "remove", inc.ID, "-y")
 	if code, _, _ := exec(t, "incident", "show", inc.ID); code != int(output.ExitNotFound) {
 		t.Fatalf("show a removed incident: %d", code)
+	}
+}
+
+// A window is scheduled, extended and completed from the CLI.
+func TestMaintenanceCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	exec(t, "project", "create", "shop")
+	if _, err := srv.core.CreateService(context.Background(), sys, core.EnvRef{Project: "shop", Environment: "production"}, apitypes.CreateServiceRequest{Name: "db", Port: 5432}); err != nil {
+		t.Fatal(err)
+	}
+	ok[apitypes.StatusPage](t, "status-page", "create", "acme")
+	ok[apitypes.StatusPage](t, "status-page", "component", "add", "acme", "Database", "--service", "shop/production/db")
+
+	if code, _, stderr := exec(t, "maintenance", "schedule", "acme", "Upgrade", "--component", "Database"); code != int(output.ExitUsage) || !strings.Contains(stderr, "--for") {
+		t.Fatalf("a window without an end: %d %q", code, stderr)
+	}
+	if code, _, stderr := exec(t, "maintenance", "schedule", "acme", "Upgrade", "--component", "Database", "--from", "tomorrow", "--for", "1h"); code != int(output.ExitUsage) || !strings.Contains(stderr, "2026-11-13T02:00Z") {
+		t.Fatalf("a bad time: %d %q", code, stderr)
+	}
+	from := time.Now().UTC().Add(48 * time.Hour).Format("2006-01-02T15:04Z")
+	w := ok[apitypes.StatusIncident](t, "maintenance", "schedule", "acme", "Database upgrade", "--component", "Database", "--from", from, "--for", "30m", "-m", "Writes pause.")
+	if w.State != apitypes.MaintenanceScheduled || w.EndsAt == nil || w.EndsAt.Sub(w.StartedAt) != 30*time.Minute {
+		t.Fatalf("scheduled = %+v", w)
+	}
+	if w = ok[apitypes.StatusIncident](t, "maintenance", "extend", w.ID, "--by", "15m"); w.EndsAt.Sub(w.StartedAt) != 45*time.Minute {
+		t.Fatalf("extended = %+v", w)
+	}
+	if w = ok[apitypes.StatusIncident](t, "maintenance", "start", w.ID); w.State != apitypes.MaintenanceInProgress {
+		t.Fatalf("started = %+v", w)
+	}
+	if code, stdout, _ := exec(t, "incident", "list"); code != 0 || !strings.Contains(stdout, "maintenance") || !strings.Contains(stdout, "in_progress") {
+		t.Fatalf("list = %d\n%s", code, stdout)
+	}
+	if w = ok[apitypes.StatusIncident](t, "maintenance", "complete", w.ID); w.State != apitypes.MaintenanceCompleted || w.Updates[len(w.Updates)-1].Message != "Maintenance completed." {
+		t.Fatalf("completed = %+v", w)
 	}
 }

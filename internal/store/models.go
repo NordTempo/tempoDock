@@ -55,6 +55,7 @@ type Alert struct {
 	Command     string
 	Target      string
 	OrgID       *int64
+	MutedBy     *int64
 }
 
 type AlertChannel struct {

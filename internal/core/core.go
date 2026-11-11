@@ -237,6 +237,8 @@ type Core struct {
 	analytics analyticsState
 	// statusPages is which hostname is which status page (status.go).
 	statusPages statusState
+	// maint is the status pages' maintenance windows (ADR 0073).
+	maint maintState
 	// updates is updating Dock (update.go).
 	updates updates
 	// address is Dock's public address, "" for none (address.go).
@@ -454,9 +456,15 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.loadPlatformPolicy(ctx); err != nil {
 		return err
 	}
+	// Maintenance windows before the alerts, which they may hold.
+	if err := c.loadMaintenance(ctx); err != nil {
+		c.log.Error("maintenance: read the windows; none is applied until one changes", "err", err)
+	}
 	if err := c.startAlerts(ctx); err != nil {
 		return err
 	}
+	// Alerts a window held while Dock was down, if it has ended.
+	c.releaseHeld(ctx, time.Now())
 	if err := c.startLogDrains(ctx); err != nil {
 		return err
 	}

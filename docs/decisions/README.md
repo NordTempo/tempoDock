@@ -85,7 +85,7 @@ line means a later record added to it without changing what it decided.
 | [0070](0070-sleeping-environments.md) | Sleeping environments (scale to zero) | accepted |
 | [0071](0071-deploy-diagnosis.md) | Deploy diagnosis | accepted |
 | [0072](0072-mysql-and-redis-in-the-data-panel.md) | MySQL/MariaDB and Redis/Valkey in the Data panel | accepted |
-| [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 and 2 |
+| [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 to 3 |
 | [0074](0074-image-vulnerability-scanning.md) | Image vulnerability scanning | accepted |
 
 ## Template

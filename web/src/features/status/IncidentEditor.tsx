@@ -10,6 +10,7 @@ import {
   Actor,
   actorKind,
   Button,
+  Check,
   Confirm,
   DialogFoot,
   ErrorText,
@@ -23,6 +24,7 @@ import {
   type IncidentState,
   impacts,
   incidentState,
+  type PostState,
   type StatusImpact,
   type StatusIncident,
   type StatusPage,
@@ -32,6 +34,7 @@ import {
   useEditIncidentUpdate,
   useOpenIncident,
   usePostIncidentUpdate,
+  useScheduleMaintenance,
   useUpdateIncident,
 } from "./data";
 import { Sources } from "./parts";
@@ -50,6 +53,59 @@ const postStates = [
   "monitoring",
   "resolved",
 ] as const satisfies IncidentState[];
+
+/** The states an incident may open in, besides draft. */
+const openStates = [
+  "investigating",
+  "identified",
+  "monitoring",
+] as const satisfies IncidentState[];
+type OpenState = (typeof openStates)[number];
+
+/**
+ * The states an update may post on a maintenance window, by where it is:
+ * a note in its state, or a move on.
+ */
+const windowStates: Partial<Record<IncidentState, PostState[]>> = {
+  scheduled: ["scheduled", "in_progress", "cancelled"],
+  in_progress: ["in_progress", "completed", "cancelled"],
+};
+
+/** What posting moves a window to, on its button. */
+const windowAction: Partial<Record<PostState, string>> = {
+  scheduled: "Post note",
+  in_progress: "Start now",
+  completed: "Complete now",
+  cancelled: "Cancel window",
+};
+
+/** The `dock maintenance` command for each move. */
+const windowVerb: Partial<Record<PostState, string>> = {
+  in_progress: "start",
+  completed: "complete",
+  cancelled: "cancel",
+};
+
+/** A time as a datetime-local input's value, in the viewer's zone. */
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
+    .toISOString()
+    .slice(0, 16);
+};
+
+/** A datetime-local input's value as an ISO time. */
+const fromLocalInput = (v: string) => new Date(v).toISOString();
+
+/** A datetime-local input's value in UTC for a CLI hint, as typed until valid. */
+const cliTime = (v: string) =>
+  Number.isNaN(Date.parse(v)) ? v : `${fromLocalInput(v).slice(0, 16)}Z`;
+
+/** A window's time as "Nov 13 02:00 to 02:30". */
+export const windowText = (inc: StatusIncident) =>
+  inc.ends_at
+    ? `${when(inc.started_at)} to ${clock(inc.ends_at)}`
+    : when(inc.started_at);
 
 /** --component flags for an incident's impact. */
 const componentFlags = (ims: StatusImpact[]) =>
@@ -172,7 +228,7 @@ export function NewIncidentDialog({
   const org = useOrg();
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
-  const [state, setState] = useState<IncidentState>("investigating");
+  const [state, setState] = useState<OpenState>("investigating");
   const first = page.components[0];
   const [ims, setIms] = useState<StatusImpact[]>(
     first ? [{ component: first.name, impact: "degraded" }] : [],
@@ -183,7 +239,7 @@ export function NewIncidentDialog({
         title,
         message,
         components: ims,
-        state: draft ? "draft" : (state as "investigating"),
+        state: draft ? "draft" : state,
       },
       {
         onSuccess: (inc) =>
@@ -229,15 +285,13 @@ export function NewIncidentDialog({
           <select
             className="field w-48 py-1 text-sm text-fg"
             value={state}
-            onChange={(e) => setState(e.target.value as IncidentState)}
+            onChange={(e) => setState(e.target.value as OpenState)}
           >
-            {postStates
-              .filter((s) => s !== "resolved")
-              .map((s) => (
-                <option key={s} value={s}>
-                  {incidentState[s].label}
-                </option>
-              ))}
+            {openStates.map((s) => (
+              <option key={s} value={s}>
+                {incidentState[s].label}
+              </option>
+            ))}
           </select>
         </label>
         <MessageBox
@@ -422,6 +476,7 @@ function IncidentView({
  * instead.
  */
 function PostUpdate({ page, inc }: { page: StatusPage; inc: StatusIncident }) {
+  if (inc.kind === "maintenance") return <PostWindowUpdate inc={inc} />;
   const draft = inc.state === "draft";
   const post = usePostIncidentUpdate(inc.id);
   const save = useUpdateIncident(inc.id);
@@ -589,7 +644,13 @@ function Timeline({ inc, canPost }: { inc: StatusIncident; canPost: boolean }) {
             {when(inc.started_at)}
           </span>
           <span className="text-sec">
-            {inc.alert ? (
+            {inc.kind === "maintenance" ? (
+              <>
+                Scheduled by{" "}
+                <Actor name={inc.created_by} kind={actorKind(inc.created_by)} />{" "}
+                for {windowText(inc)}
+              </>
+            ) : inc.alert ? (
               <>
                 Drafted by {inc.created_by}, from alert {inc.alert.kind} on{" "}
                 <span className="font-mono">
@@ -641,5 +702,235 @@ function Affected({ page, inc }: { page: StatusPage; inc: StatusIncident }) {
         </table>
       </Panel>
     </section>
+  );
+}
+
+/**
+ * A maintenance window's controls: a note, starting, completing or
+ * cancelling it, and moving its times.
+ */
+function PostWindowUpdate({ inc }: { inc: StatusIncident }) {
+  const post = usePostIncidentUpdate(inc.id);
+  const move = useUpdateIncident(inc.id);
+  const states = windowStates[inc.state] ?? [];
+  const [state, setState] = useState<PostState>(states[0] ?? "scheduled");
+  const [message, setMessage] = useState("");
+  const [starts, setStarts] = useState(toLocalInput(inc.started_at));
+  const [ends, setEnds] = useState(toLocalInput(inc.ends_at ?? inc.started_at));
+  const cli =
+    state === inc.state
+      ? `dock incident update ${inc.id} -m "..."`
+      : `dock maintenance ${windowVerb[state] ?? "update"} ${inc.id} -m "..."`;
+  return (
+    <section>
+      <SectionHead>Post an update</SectionHead>
+      <form
+        className="flex flex-col gap-3 border-t border-line pt-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          post.mutate({ state, message }, { onSuccess: () => setMessage("") });
+        }}
+      >
+        <div className="flex flex-wrap gap-1.5" role="radiogroup">
+          {states.map((s) => (
+            <Button
+              key={s}
+              small
+              role="radio"
+              aria-checked={state === s}
+              primary={state === s}
+              onClick={() => setState(s)}
+            >
+              {s === inc.state ? "Note" : windowAction[s]}
+            </Button>
+          ))}
+        </div>
+        <MessageBox value={message} onChange={setMessage} label="Update" />
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 flex-1 text-xs text-mut">
+            Public as soon as you post.
+            {state === "completed" &&
+              " Alerts held during the window and still open are sent."}
+          </span>
+          <ErrorText error={post.error} />
+          <Act
+            primary
+            type="submit"
+            cli={cli}
+            disabled={!message.trim() || post.isPending}
+          >
+            {state === inc.state ? "Post note" : windowAction[state]}
+          </Act>
+        </div>
+      </form>
+      <form
+        className="mt-4 flex flex-wrap items-center gap-2.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          move.mutate({
+            starts_at:
+              inc.state === "scheduled" ? fromLocalInput(starts) : undefined,
+            ends_at: fromLocalInput(ends),
+          });
+        }}
+      >
+        {inc.state === "scheduled" && (
+          <label className="flex items-center gap-2 text-sec">
+            Starts
+            <input
+              type="datetime-local"
+              className="field py-1"
+              value={starts}
+              onChange={(e) => setStarts(e.target.value)}
+            />
+          </label>
+        )}
+        <label className="flex items-center gap-2 text-sec">
+          Ends
+          <input
+            type="datetime-local"
+            className="field py-1"
+            value={ends}
+            onChange={(e) => setEnds(e.target.value)}
+          />
+        </label>
+        <Act
+          small
+          type="submit"
+          cli={`dock maintenance extend ${inc.id} --to ${cliTime(ends)}`}
+          disabled={!ends || move.isPending}
+        >
+          Change times
+        </Act>
+        <ErrorText error={move.error} />
+      </form>
+    </section>
+  );
+}
+
+/**
+ * Schedules a maintenance window: public at once, started and completed
+ * by Dock at its times.
+ */
+export function ScheduleMaintenanceDialog({
+  page,
+  onClose,
+}: {
+  page: StatusPage;
+  onClose: () => void;
+}) {
+  const schedule = useScheduleMaintenance(page.slug);
+  const navigate = useNavigate();
+  const org = useOrg();
+  const hour = new Date(Math.ceil(Date.now() / 3_600_000) * 3_600_000);
+  const [title, setTitle] = useState("");
+  const [message, setMessage] = useState("");
+  const [starts, setStarts] = useState(toLocalInput(hour.toISOString()));
+  const [ends, setEnds] = useState(
+    toLocalInput(new Date(hour.getTime() + 3_600_000).toISOString()),
+  );
+  const [names, setNames] = useState<string[]>([]);
+  const cli = [
+    `dock maintenance schedule ${page.slug} "${title || "<title>"}"`,
+    ...names.map((n) => `--component "${n}"`),
+    `--from ${cliTime(starts)} --to ${cliTime(ends)}`,
+  ].join(" ");
+  return (
+    <Dialog title="Schedule maintenance" onClose={onClose} wide>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          schedule.mutate(
+            {
+              title,
+              message,
+              components: names,
+              starts_at: fromLocalInput(starts),
+              ends_at: fromLocalInput(ends),
+            },
+            {
+              onSuccess: (w) =>
+                navigate({
+                  to: "/$org/status-pages/$page/incidents/$incident",
+                  params: { org, page: page.slug, incident: w.id },
+                }),
+            },
+          );
+        }}
+      >
+        <label className="flex flex-col gap-1 text-xs text-mut">
+          Title, public
+          <input
+            className="field text-sm text-fg"
+            value={title}
+            maxLength={120}
+            placeholder="Database upgrade"
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </label>
+        <div className="flex flex-wrap gap-3">
+          <label className="flex flex-col gap-1 text-xs text-mut">
+            Starts
+            <input
+              type="datetime-local"
+              className="field text-sm text-fg"
+              value={starts}
+              onChange={(e) => setStarts(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-mut">
+            Ends
+            <input
+              type="datetime-local"
+              className="field text-sm text-fg"
+              value={ends}
+              onChange={(e) => setEnds(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-mut">Takes down</span>
+          {page.components.map((c) => (
+            <Check
+              key={c.id}
+              label={c.name}
+              checked={names.includes(c.name)}
+              onChange={(on) =>
+                setNames(
+                  on ? [...names, c.name] : names.filter((n) => n !== c.name),
+                )
+              }
+            />
+          ))}
+        </div>
+        <MessageBox value={message} onChange={setMessage} label="Message" />
+        <DialogFoot
+          cli={cli}
+          note={
+            schedule.error ? (
+              <ErrorText error={schedule.error} />
+            ) : (
+              "Public at once. While it runs, these components read maintenance, their services' alerts wait for its end and their uptime isn't counted."
+            )
+          }
+        >
+          <Button onClick={onClose}>Cancel</Button>
+          <Button
+            type="submit"
+            primary
+            disabled={
+              !title.trim() ||
+              names.length === 0 ||
+              !starts ||
+              !ends ||
+              schedule.isPending
+            }
+          >
+            Schedule
+          </Button>
+        </DialogFoot>
+      </form>
+    </Dialog>
   );
 }

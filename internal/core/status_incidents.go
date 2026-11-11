@@ -151,7 +151,12 @@ func applyIncidents(out []statusComputed, incs []statusIncident, since int64, at
 	for i, cc := range out {
 		index[cc.comp.ID] = i
 	}
+	var maint []statusIncident
 	for _, inc := range incs {
+		if inc.row.Kind == string(apitypes.KindMaintenance) {
+			maint = append(maint, inc)
+			continue
+		}
 		if !inc.published() {
 			continue
 		}
@@ -181,13 +186,43 @@ func applyIncidents(out []statusComputed, incs []statusIncident, since int64, at
 			}
 		}
 	}
+	// A window in progress shows on its components whatever else they
+	// say; its days, and a completed one's, are marked.
+	for _, w := range maint {
+		var end int64
+		switch apitypes.IncidentState(w.row.State) {
+		case apitypes.MaintenanceInProgress:
+			end = at.Unix()
+		case apitypes.MaintenanceCompleted:
+			end = w.row.ResolvedAt.Unix()
+		default:
+			continue
+		}
+		if end < since {
+			continue
+		}
+		first := max(0, (w.row.StartsAt.Unix()-since)/uptimeDay)
+		last := min(apitypes.StatusDays-1, (end-since)/uptimeDay)
+		for _, im := range w.impacts {
+			i, ok := index[im.component]
+			if !ok {
+				continue
+			}
+			if w.row.State == string(apitypes.MaintenanceInProgress) {
+				out[i].status = apitypes.StatusMaintenance
+			}
+			for d := first; d <= last; d++ {
+				out[i].days[d].Maintenance = true
+			}
+		}
+	}
 }
 
 // toStatusIncident is an incident as the editor shows it; url is its
 // public page, "" when it has none.
 func toStatusIncident(inc statusIncident, slug, url string) apitypes.StatusIncident {
 	r := inc.row
-	out := apitypes.StatusIncident{ID: r.PublicID, Page: slug, Title: r.Title, State: apitypes.IncidentState(r.State),
+	out := apitypes.StatusIncident{ID: r.PublicID, Page: slug, Kind: apitypes.IncidentKind(r.Kind), EndsAt: r.EndsAt, Title: r.Title, State: apitypes.IncidentState(r.State),
 		Components: toImpacts(inc.impacts), Draft: r.Draft, StartedAt: r.StartsAt, PublishedAt: r.PublishedAt,
 		ResolvedAt: r.ResolvedAt, CreatedBy: r.CreatedBy, Alert: inc.alert, Updates: make([]apitypes.IncidentUpdate, len(inc.updates))}
 	if inc.published() && url != "" {
@@ -213,7 +248,7 @@ func toImpacts(ims []statusImpact) []apitypes.StatusImpact {
 // wrote it or which alert drafted it.
 func toPublicIncident(inc statusIncident) apitypes.PublicIncident {
 	r := inc.row
-	out := apitypes.PublicIncident{ID: r.PublicID, Title: r.Title, State: apitypes.IncidentState(r.State),
+	out := apitypes.PublicIncident{ID: r.PublicID, Title: r.Title, Kind: apitypes.IncidentKind(r.Kind), EndsAt: r.EndsAt, State: apitypes.IncidentState(r.State),
 		Components: toImpacts(inc.impacts), StartedAt: r.StartsAt, ResolvedAt: r.ResolvedAt,
 		Updates: make([]apitypes.PublicUpdate, len(inc.updates))}
 	for i, u := range inc.updates {
@@ -256,7 +291,7 @@ func (c *Core) loadIncidentFor(ctx context.Context, a Actor, id string, need api
 
 // resolveImpacts finds the components a request names on a page, with
 // the impact on each, and checks the actor may speak for them.
-func (c *Core) resolveImpacts(ctx context.Context, a Actor, p store.StatusPage, in []apitypes.StatusImpact) ([]statusImpact, error) {
+func (c *Core) resolveImpacts(ctx context.Context, a Actor, p store.StatusPage, in []apitypes.StatusImpact, kind apitypes.IncidentKind) ([]statusImpact, error) {
 	if len(in) == 0 {
 		return nil, c.checkIncidentScope(ctx, a, p, nil)
 	}
@@ -275,8 +310,11 @@ func (c *Core) resolveImpacts(ctx context.Context, a Actor, p store.StatusPage, 
 		if !ok {
 			return nil, notFound("status page %s has no component %q; `dock status-page show %s` lists them", p.Slug, im.Component, p.Slug)
 		}
-		switch im.Impact {
-		case apitypes.StatusDegraded, apitypes.StatusPartialOutage, apitypes.StatusMajorOutage:
+		switch {
+		case kind == apitypes.KindMaintenance:
+			// A window's components are under maintenance, whatever was asked.
+			im.Impact = apitypes.StatusMaintenance
+		case im.Impact == apitypes.StatusDegraded || im.Impact == apitypes.StatusPartialOutage || im.Impact == apitypes.StatusMajorOutage:
 		default:
 			return nil, invalid("%q isn't an impact; use degraded, partial_outage or major_outage", im.Impact)
 		}
@@ -396,12 +434,12 @@ func (c *Core) OpenIncident(ctx context.Context, a Actor, slug string, req apity
 	case !draft && msg == "":
 		return apitypes.StatusIncident{}, invalid("an incident's first update says what is going on: pass a message, or open it as a draft")
 	}
-	ims, err := c.resolveImpacts(ctx, a, p, req.Components)
+	ims, err := c.resolveImpacts(ctx, a, p, req.Components, apitypes.KindIncident)
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
 	t := now()
-	params := store.CreateStatusIncidentParams{PageID: p.ID, PublicID: newPublicID(), Title: title, State: string(state),
+	params := store.CreateStatusIncidentParams{PageID: p.ID, PublicID: newPublicID(), Kind: string(apitypes.KindIncident), Title: title, State: string(state),
 		StartsAt: t, CreatedAt: t, CreatedBy: a.Name}
 	if draft {
 		params.Draft = msg
@@ -433,6 +471,13 @@ func (c *Core) OpenIncident(ctx context.Context, a Actor, slug string, req apity
 	c.auditIncident(ctx, a, "incident.open", p, row.PublicID, fmt.Sprintf("%s %s %q (%s)", what, row.PublicID, title, state))
 	c.incidentChanged()
 	return c.incidentView(ctx, p, row)
+}
+
+// incidentNext is an incident's row as UpdateStatusIncident takes it, for
+// a change to start from.
+func incidentNext(r store.StatusIncident) store.UpdateStatusIncidentParams {
+	return store.UpdateStatusIncidentParams{ID: r.ID, Title: r.Title, State: r.State, Draft: r.Draft, StartsAt: r.StartsAt,
+		EndsAt: r.EndsAt, PublishedAt: r.PublishedAt, ResolvedAt: r.ResolvedAt}
 }
 
 // writeImpacts replaces what an incident does to components.
@@ -492,9 +537,33 @@ func (c *Core) UpdateIncident(ctx context.Context, a Actor, id string, req apity
 	if err := c.checkIncidentScope(ctx, a, p, inc.impacts); err != nil {
 		return apitypes.StatusIncident{}, err
 	}
-	next := store.UpdateStatusIncidentParams{ID: row.ID, Title: row.Title, State: row.State, Draft: row.Draft,
-		PublishedAt: row.PublishedAt, ResolvedAt: row.ResolvedAt}
+	next := incidentNext(row)
+	maint := row.Kind == string(apitypes.KindMaintenance)
 	var changes []string
+	if req.StartsAt != nil || req.EndsAt != nil {
+		if !maint || row.ResolvedAt != nil {
+			return apitypes.StatusIncident{}, conflict("only a maintenance window not finished yet has times to change")
+		}
+		if req.StartsAt != nil {
+			if row.State != string(apitypes.MaintenanceScheduled) {
+				return apitypes.StatusIncident{}, conflict("maintenance %s has started; change its end instead", row.PublicID)
+			}
+			next.StartsAt = req.StartsAt.UTC()
+			changes = append(changes, "starts "+next.StartsAt.Format(time.RFC3339))
+		}
+		if req.EndsAt != nil {
+			end := req.EndsAt.UTC()
+			next.EndsAt = &end
+			changes = append(changes, "ends "+end.Format(time.RFC3339))
+		}
+		end := next.StartsAt
+		if next.EndsAt != nil {
+			end = *next.EndsAt
+		}
+		if err := checkWindow(next.StartsAt, end, now()); err != nil {
+			return apitypes.StatusIncident{}, err
+		}
+	}
 	if req.Title != nil {
 		t, err := cleanTitle(*req.Title)
 		if err != nil {
@@ -520,7 +589,7 @@ func (c *Core) UpdateIncident(ctx context.Context, a Actor, id string, req apity
 	}
 	var ims []statusImpact
 	if req.Components != nil {
-		if ims, err = c.resolveImpacts(ctx, a, p, *req.Components); err != nil {
+		if ims, err = c.resolveImpacts(ctx, a, p, *req.Components, apitypes.IncidentKind(row.Kind)); err != nil {
 			return apitypes.StatusIncident{}, err
 		}
 		changes = append(changes, "components "+impactsText(ims))
@@ -540,8 +609,17 @@ func (c *Core) UpdateIncident(ctx context.Context, a Actor, id string, req apity
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
-	c.auditIncident(ctx, a, "incident.edit", p, row.PublicID, "incident "+row.PublicID+": "+strings.Join(changes, ", "))
-	c.incidentChanged()
+	action := "incident.edit"
+	if maint {
+		action = "maintenance.edit"
+	}
+	c.auditIncident(ctx, a, action, p, row.PublicID, row.Kind+" "+row.PublicID+": "+strings.Join(changes, ", "))
+	if maint {
+		c.maintenanceChanged(ctx)
+		c.maintenanceTick(ctx, now())
+	} else {
+		c.incidentChanged()
+	}
 	return c.GetIncident(ctx, a, row.PublicID)
 }
 
@@ -564,11 +642,20 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
-	if row.ResolvedAt != nil {
+	maint := row.Kind == string(apitypes.KindMaintenance)
+	switch {
+	case row.ResolvedAt != nil && maint:
+		return apitypes.StatusIncident{}, conflict("maintenance %s is %s; schedule a new window (`dock maintenance schedule`)", row.PublicID, row.State)
+	case row.ResolvedAt != nil:
 		return apitypes.StatusIncident{}, conflict("incident %s is resolved; open a new one (`dock incident open`)", row.PublicID)
-	}
-	if !postable(req.State) {
+	case !maint && !postable(req.State):
 		return apitypes.StatusIncident{}, invalid("an update's state is investigating, identified, monitoring or resolved, not %q", req.State)
+	}
+	action := ""
+	if maint {
+		if action, err = maintTransition(row.PublicID, apitypes.IncidentState(row.State), req.State); err != nil {
+			return apitypes.StatusIncident{}, err
+		}
 	}
 	msg, err := cleanMessage(req.Message)
 	if err != nil {
@@ -586,18 +673,26 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 	}
 	var ims []statusImpact
 	if req.Components != nil {
-		if ims, err = c.resolveImpacts(ctx, a, p, *req.Components); err != nil {
+		if ims, err = c.resolveImpacts(ctx, a, p, *req.Components, apitypes.IncidentKind(row.Kind)); err != nil {
 			return apitypes.StatusIncident{}, err
 		}
 	}
 	t := now()
 	wasDraft := !inc.published()
-	next := store.UpdateStatusIncidentParams{ID: row.ID, Title: row.Title, State: string(req.State), PublishedAt: row.PublishedAt}
+	next := incidentNext(row)
+	next.State, next.Draft = string(req.State), ""
 	if wasDraft {
 		next.PublishedAt = &t
 	}
-	if req.State == apitypes.IncidentResolved {
+	switch req.State {
+	case apitypes.IncidentResolved, apitypes.MaintenanceCancelled:
 		next.ResolvedAt = &t
+	case apitypes.MaintenanceCompleted:
+		next.ResolvedAt, next.EndsAt = &t, &t
+	case apitypes.MaintenanceInProgress:
+		if row.State == string(apitypes.MaintenanceScheduled) {
+			next.StartsAt = t
+		}
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.UpdateStatusIncident(ctx, next); err != nil {
@@ -614,18 +709,26 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
-	action, what := "incident.update", "posted "+string(req.State)
+	what := "posted " + string(req.State)
 	switch {
+	case maint:
+		what = strings.TrimPrefix(action, "maintenance.")
 	case wasDraft:
 		action, what = "incident.publish", "published as "+string(req.State)
 	case req.State == apitypes.IncidentResolved:
 		action, what = "incident.resolve", "resolved"
+	default:
+		action = "incident.update"
 	}
 	if req.Components != nil {
 		what += "; components " + impactsText(ims)
 	}
-	c.auditIncident(ctx, a, action, p, row.PublicID, "incident "+row.PublicID+" "+what)
-	c.incidentChanged()
+	c.auditIncident(ctx, a, action, p, row.PublicID, row.Kind+" "+row.PublicID+" "+what)
+	if maint {
+		c.maintenanceChanged(ctx)
+	} else {
+		c.incidentChanged()
+	}
 	return c.GetIncident(ctx, a, row.PublicID)
 }
 
@@ -688,8 +791,12 @@ func (c *Core) DeleteIncident(ctx context.Context, a Actor, id string) error {
 	if err := c.store.DeleteStatusIncident(ctx, row.ID); err != nil {
 		return err
 	}
-	c.auditIncident(ctx, a, "incident.delete", p, row.PublicID, fmt.Sprintf("removed incident %s %q", row.PublicID, row.Title))
-	c.incidentChanged()
+	c.auditIncident(ctx, a, "incident.delete", p, row.PublicID, fmt.Sprintf("removed %s %s %q", row.Kind, row.PublicID, row.Title))
+	if row.Kind == string(apitypes.KindMaintenance) {
+		c.maintenanceChanged(ctx)
+	} else {
+		c.incidentChanged()
+	}
 	return nil
 }
 
@@ -700,7 +807,8 @@ func (c *Core) DeleteIncident(ctx context.Context, a Actor, id string) error {
 // alert's words. One indexed query, when such an alert opens.
 func (c *Core) statusAlertOpened(ctx context.Context, al store.Alert) {
 	kind := apitypes.AlertKind(al.Kind)
-	if (kind != apitypes.AlertUptimeDown && kind != apitypes.AlertCrashLoop) || al.ServiceID == nil {
+	if (kind != apitypes.AlertUptimeDown && kind != apitypes.AlertCrashLoop) || al.ServiceID == nil || al.MutedBy != nil {
+		// A held alert is planned work's: no draft.
 		return
 	}
 	var check int64
@@ -735,7 +843,7 @@ func (c *Core) statusAlertOpened(ctx context.Context, al store.Alert) {
 	}
 	for _, d := range drafts {
 		names := andList(d.names)
-		params := store.CreateStatusIncidentParams{PageID: d.page.PageID, PublicID: newPublicID(), Title: clip(fmt.Sprintf(title, names), statusMaxTitle),
+		params := store.CreateStatusIncidentParams{PageID: d.page.PageID, PublicID: newPublicID(), Kind: string(apitypes.KindIncident), Title: clip(fmt.Sprintf(title, names), statusMaxTitle),
 			State: string(apitypes.IncidentDraft), Draft: "We are investigating problems with " + names + ".",
 			StartsAt: al.OpenedAt, AlertID: &al.ID, CreatedAt: now(), CreatedBy: statusDraftBy}
 		var row store.StatusIncident

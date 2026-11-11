@@ -653,9 +653,14 @@ func (c *Core) recordProbe(ctx context.Context, chk store.ListUptimeScheduleRow,
 	if res.Up {
 		up = 1
 	}
+	// During a maintenance window over the check (ADR 0073), a probe is
+	// shown but neither counted nor a failure.
+	muted := c.checkMuted(chk.ID, chk.ServiceID)
 	minute := at.Unix() - at.Unix()%uptimeMinute
-	if err := c.store.AddUptimeProbe(ctx, store.AddUptimeProbeParams{CheckID: chk.ID, At: minute, Up: up, LatencyMsSum: res.Latency.Milliseconds()}); err != nil {
-		c.log.Warn("uptime: record probe", "check", chk.ID, "err", err)
+	if !muted {
+		if err := c.store.AddUptimeProbe(ctx, store.AddUptimeProbeParams{CheckID: chk.ID, At: minute, Up: up, LatencyMsSum: res.Latency.Milliseconds()}); err != nil {
+			c.log.Warn("uptime: record probe", "check", chk.ID, "err", err)
+		}
 	}
 	res.Error = sanitizeProbeError(res.Error)
 	probe := &apitypes.UptimeProbe{At: at.UTC(), Up: res.Up, Status: res.Status, LatencyMS: res.Latency.Milliseconds(), Error: res.Error, Server: server}
@@ -669,6 +674,10 @@ func (c *Core) recordProbe(ctx context.Context, chk store.ListUptimeScheduleRow,
 	}
 	before := st.state
 	st.last = probe
+	if muted && !res.Up {
+		u.mu.Unlock()
+		return
+	}
 	if res.Up {
 		st.failures, st.state = 0, apitypes.UptimeUp
 	} else {

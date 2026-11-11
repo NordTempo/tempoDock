@@ -416,6 +416,8 @@ func (c *Core) statsTick(ctx context.Context, col *collector, now time.Time) {
 	// Error issues are written on the tick too (ADR 0062).
 	c.errorsTick(ctx, now)
 
+	// Maintenance windows start and end before alerts are looked at.
+	c.maintenanceTick(ctx, now)
 	// Alerts and retention ride on the tick (ADR 0020).
 	c.alertTick(ctx, now, servers, hosts)
 	c.healthTick(ctx, now)

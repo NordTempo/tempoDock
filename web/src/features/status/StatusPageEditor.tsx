@@ -31,7 +31,11 @@ import {
   useSetStatusComponents,
   useUpdateStatusPage,
 } from "./data";
-import { NewIncidentDialog } from "./IncidentEditor";
+import {
+  NewIncidentDialog,
+  ScheduleMaintenanceDialog,
+  windowText,
+} from "./IncidentEditor";
 import { impactText, Sources } from "./parts";
 
 /**
@@ -49,6 +53,7 @@ export function StatusPageEditor({ slug }: { slug: string }) {
   // The component being edited: its index, or "new".
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [opening, setOpening] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   useShortcuts([
     ...(admin
       ? [{ key: "n", label: "add component", run: () => setEditing("new") }]
@@ -92,6 +97,11 @@ export function StatusPageEditor({ slug }: { slug: string }) {
               </Act>
             )}
             {canPost && (
+              <Button onClick={() => setScheduling(true)}>
+                Schedule maintenance
+              </Button>
+            )}
+            {canPost && (
               <Button onClick={() => setOpening(true)}>
                 New incident <kbd>I</kbd>
               </Button>
@@ -126,6 +136,12 @@ export function StatusPageEditor({ slug }: { slug: string }) {
       </Page>
       {opening && (
         <NewIncidentDialog page={page} onClose={() => setOpening(false)} />
+      )}
+      {scheduling && (
+        <ScheduleMaintenanceDialog
+          page={page}
+          onClose={() => setScheduling(false)}
+        />
       )}
       {editing !== null && (
         <ComponentDialog
@@ -200,6 +216,11 @@ function Incidents({ page }: { page: StatusPage }) {
                 <tr key={i.id}>
                   <td className="py-2 font-medium">
                     <Link {...link(i.id)}>{i.title}</Link>
+                    {i.kind === "maintenance" && (
+                      <span className="ml-2 font-normal text-mut">
+                        maintenance
+                      </span>
+                    )}
                   </td>
                   <td>
                     <StateText state={incidentState[i.state]} />
@@ -208,7 +229,9 @@ function Incidents({ page }: { page: StatusPage }) {
                     {impactText(i.components) || "-"}
                   </td>
                   <td className="text-right font-mono text-sec tabular-nums">
-                    {day(i.started_at)} {clock(i.started_at)}
+                    {i.kind === "maintenance"
+                      ? windowText(i)
+                      : `${day(i.started_at)} ${clock(i.started_at)}`}
                   </td>
                 </tr>
               ))}
@@ -348,19 +371,21 @@ function DayBar({ days }: { days: StatusComponent["days"] }) {
           className={`inline-block h-3.5 w-[2px] ${
             d.impact === "major_outage" || d.impact === "partial_outage"
               ? "bg-fail"
-              : d.uptime === undefined
-                ? d.impact
-                  ? "bg-warn"
-                  : "bg-line"
-                : d.uptime >= 100
+              : d.maintenance && (d.uptime === undefined || d.uptime >= 100)
+                ? "bg-info"
+                : d.uptime === undefined
                   ? d.impact
                     ? "bg-warn"
-                    : "bg-ok"
-                  : d.uptime >= 99
-                    ? "bg-warn"
-                    : "bg-fail"
+                    : "bg-line"
+                  : d.uptime >= 100
+                    ? d.impact
+                      ? "bg-warn"
+                      : "bg-ok"
+                    : d.uptime >= 99
+                      ? "bg-warn"
+                      : "bg-fail"
           }`}
-          title={`${d.date}: ${d.uptime === undefined ? "no probes" : percent(d.uptime)}${d.incident ? `, ${d.incident}` : ""}`}
+          title={`${d.date}: ${d.uptime === undefined ? "no probes" : percent(d.uptime)}${d.incident ? `, ${d.incident}` : ""}${d.maintenance ? ", maintenance" : ""}`}
         />
       ))}
     </span>
