@@ -300,13 +300,13 @@ type ControlPlaneBackup struct {
 
 type DataAccess struct {
 	ServiceID        int64
-	Engine           string
 	ServerVersion    string
 	ReaderSecret     []byte
 	WriterSecret     []byte
 	GrantsSyncedHash string
 	SetUpAt          time.Time
 	SetUpBy          string
+	Engine           string
 }
 
 type DataPolicyRule struct {

@@ -431,7 +431,7 @@ func (q *Queries) GetChangeset(ctx context.Context, arg GetChangesetParams) (Cha
 }
 
 const getDataAccess = `-- name: GetDataAccess :one
-SELECT service_id, engine, server_version, reader_secret, writer_secret, grants_synced_hash, set_up_at, set_up_by FROM data_access WHERE service_id = ?
+SELECT service_id, server_version, reader_secret, writer_secret, grants_synced_hash, set_up_at, set_up_by, engine FROM data_access WHERE service_id = ?
 `
 
 func (q *Queries) GetDataAccess(ctx context.Context, serviceID int64) (DataAccess, error) {
@@ -439,13 +439,13 @@ func (q *Queries) GetDataAccess(ctx context.Context, serviceID int64) (DataAcces
 	var i DataAccess
 	err := row.Scan(
 		&i.ServiceID,
-		&i.Engine,
 		&i.ServerVersion,
 		&i.ReaderSecret,
 		&i.WriterSecret,
 		&i.GrantsSyncedHash,
 		&i.SetUpAt,
 		&i.SetUpBy,
+		&i.Engine,
 	)
 	return i, err
 }
@@ -1017,7 +1017,7 @@ ON CONFLICT (service_id) DO UPDATE SET
     engine = excluded.engine, server_version = excluded.server_version,
     reader_secret = excluded.reader_secret, writer_secret = excluded.writer_secret,
     grants_synced_hash = '', set_up_at = excluded.set_up_at, set_up_by = excluded.set_up_by
-RETURNING service_id, engine, server_version, reader_secret, writer_secret, grants_synced_hash, set_up_at, set_up_by
+RETURNING service_id, server_version, reader_secret, writer_secret, grants_synced_hash, set_up_at, set_up_by, engine
 `
 
 type UpsertDataAccessParams struct {
@@ -1045,13 +1045,13 @@ func (q *Queries) UpsertDataAccess(ctx context.Context, arg UpsertDataAccessPara
 	var i DataAccess
 	err := row.Scan(
 		&i.ServiceID,
-		&i.Engine,
 		&i.ServerVersion,
 		&i.ReaderSecret,
 		&i.WriterSecret,
 		&i.GrantsSyncedHash,
 		&i.SetUpAt,
 		&i.SetUpBy,
+		&i.Engine,
 	)
 	return i, err
 }

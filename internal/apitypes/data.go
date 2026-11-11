@@ -72,6 +72,11 @@ const (
 	EngineRedis    DataEngine = "redis"
 )
 
+// DataEngines lists every engine. The store's CHECK constraints list them
+// too (services.database, data_access.engine); its tests check each one
+// takes every engine here, so a new engine needs a migration widening them.
+var DataEngines = []DataEngine{EnginePostgres, EngineMySQL, EngineRedis}
+
 // DatabaseSetting is a service's `database` setting: whether it is a
 // database, overriding detection. It applies immediately and never creates
 // a release. The store checks the values (services.database's CHECK,

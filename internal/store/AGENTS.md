@@ -15,6 +15,9 @@ migrates it; `stmts.go` prepares each query on first use and reuses it.
   commits only if `foreign_key_check` is clean.
 - A migration that moves existing rows gets a test that migrates a
   database holding those rows: `openBefore` in `data_test.go`.
+- A CHECK that lists values from `apitypes` (database engines) lists all
+  of them, and `database_setting_test.go` checks it against the list
+  (`apitypes.DataEngines`). A new value widens every such CHECK.
 - Every column a query filters or sorts on is covered by an index.
   Partial indexes (`WHERE revoked_at IS NULL`) for "open" subsets.
 
