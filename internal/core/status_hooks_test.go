@@ -18,6 +18,9 @@ func TestStatusHooks(t *testing.T) {
 	if _, err := h.c.AddStatusHook(h.ctx, admin, "acme", apitypes.AddStatusHookRequest{Name: "lan", Kind: apitypes.HookSlack, URL: "https://169.254.169.254/hook"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("a hook to a link-local address: %v", err)
 	}
+	if _, err := h.c.AddStatusHook(h.ctx, admin, "acme", apitypes.AddStatusHookRequest{Name: "lan", Kind: apitypes.HookWebhook, URL: "http://172.18.0.7:8080/admin"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("a hook to another org's container: %v", err)
+	}
 	if _, err := h.c.AddStatusHook(h.ctx, h.user("dev@example.com", apitypes.ScopeDeploy), "acme", apitypes.AddStatusHookRequest{Name: "x", Kind: apitypes.HookSlack, URL: k.srv.URL}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Errorf("a deployer added a hook: %v", err)
 	}

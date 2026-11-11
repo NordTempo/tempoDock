@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -100,10 +101,12 @@ type alertEngine struct {
 	// status pages' updates being posted (status_hooks.go).
 	outbox outbox
 	hooks  deliveryQueue[hookDelivery]
-	// client posts to webhook and Slack channels (newChannelClient),
-	// never to addresses guard refuses.
-	client *http.Client
-	guard  egressGuard
+	// client posts to the platform's webhook and Slack channels
+	// (newChannelClient), never to addresses guard refuses; orgClient to
+	// orgs' channels and status page hooks, never to what orgGuard
+	// refuses, which also keeps private addresses out (ADR 0062).
+	client, orgClient *http.Client
+	guard, orgGuard   egressGuard
 }
 
 // alertCause is an alert's diagnosis: its release, the likely cause
@@ -168,14 +171,17 @@ type restartLog struct {
 	times []time.Time
 }
 
-func newAlertEngine() *alertEngine {
+// newAlertEngine is the alerts' state; allow is the private CIDRs orgs'
+// channels and hooks may reach (`[network] allow_private`).
+func newAlertEngine(allow []netip.Prefix) *alertEngine {
 	e := &alertEngine{
 		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{}, hot: map[string]time.Time{},
 		causes: map[string]alertCause{}, diagnosing: map[string]bool{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
 	e.guard.what = "alerts"
-	e.client = newChannelClient(e)
+	e.orgGuard.what, e.orgGuard.private, e.orgGuard.allow = "alerts", true, allow
+	e.client, e.orgClient = newChannelClient(&e.guard), newChannelClient(&e.orgGuard)
 	return e
 }
 

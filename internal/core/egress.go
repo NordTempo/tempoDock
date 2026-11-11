@@ -13,8 +13,8 @@ import (
 )
 
 // egressGuard keeps the connections the daemon makes to user-given
-// addresses (alert channels, log drains) away from the server itself and
-// from link-local and cloud metadata addresses. Literal addresses are
+// addresses (alert channels, status page hooks, log drains) away from the
+// server itself and from link-local and cloud metadata addresses. Literal addresses are
 // refused when a destination is added (hostErr); every connection is
 // checked again after DNS (control, a net.Dialer's Control), so a name
 // that resolves to one of them is refused too.
@@ -23,8 +23,10 @@ type egressGuard struct {
 	what string
 	// private also refuses what the app firewall keeps apps from (RFC 1918,
 	// CGNAT and the tailnet, unique local IPv6, the Docker bridges): set
-	// for log drains, which any environment admin adds. Alert channels,
-	// which only operators configure, may reach a homelab's LAN (ADR 0020).
+	// for everything an org configures (log drains, its alert channels,
+	// status page hooks), which would otherwise reach the LAN and other
+	// orgs' containers. Only the platform's alert channels, which the
+	// operator configures, may reach a homelab's LAN (ADR 0020).
 	private bool
 	// allow are the private CIDRs the operator lets apps reach
 	// (`[network] allow_private`); private doesn't refuse them, as the
@@ -38,9 +40,9 @@ type egressGuard struct {
 // reach the daemon's own loopback-only services (the internal listener,
 // the registry) past the app firewall; link-local holds cloud metadata
 // (169.254.169.254). Private, CGNAT and tailnet addresses are fine for
-// alerts, where a homelab's ntfy or chat bridge lives (ADR 0020), and
-// refused for log drains (g.private, ADR 0046) unless the operator allows
-// them for apps (g.allow). Uptime probes refuse the
+// the platform's alerts, where a homelab's ntfy or chat bridge lives (ADR
+// 0020), and refused for what orgs configure (g.private, ADR 0046, ADR
+// 0062) unless the operator allows them for apps (g.allow). Uptime probes refuse the
 // same addresses (httpkit.IsSelfAddr, IsInternalAddr).
 func (g *egressGuard) addrErr(ip netip.Addr) error {
 	ip = ip.Unmap()

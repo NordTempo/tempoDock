@@ -85,7 +85,7 @@ func (c *Core) AddStatusHook(ctx context.Context, a Actor, slug string, req apit
 		return apitypes.CreatedStatusHook{}, invalid("a hook needs an https:// URL: the %s incoming webhook's address", req.Kind)
 	}
 	// Named hosts are checked when posting (newChannelClient), after DNS.
-	if err := c.alerts.guard.hostErr(u.Hostname()); err != nil {
+	if err := c.alerts.orgGuard.hostErr(u.Hostname()); err != nil {
 		return apitypes.CreatedStatusHook{}, invalid("%v", err)
 	}
 	cfg := hookConfig{URL: req.URL}
@@ -275,20 +275,20 @@ func (c *Core) sendHook(ctx context.Context, h store.StatusHook, post apitypes.S
 		if err != nil {
 			return err
 		}
-		return c.alerts.post(ctx, cfg.URL, body, map[string]string{SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": "status." + post.Event})
+		return c.alerts.post(ctx, true, cfg.URL, body, map[string]string{SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": "status." + post.Event})
 	case apitypes.HookSlack:
 		body, err := json.Marshal(map[string]string{"text": hookText(post, true)})
 		if err != nil {
 			return err
 		}
-		return c.alerts.post(ctx, cfg.URL, body, nil)
+		return c.alerts.post(ctx, true, cfg.URL, body, nil)
 	case apitypes.HookDiscord:
 		// Discord takes at most 2000 characters, and mentions nobody.
 		body, err := json.Marshal(map[string]any{"content": clip(hookText(post, false), 1990), "allowed_mentions": map[string][]string{"parse": {}}})
 		if err != nil {
 			return err
 		}
-		return c.alerts.post(ctx, cfg.URL, body, nil)
+		return c.alerts.post(ctx, true, cfg.URL, body, nil)
 	}
 	return fmt.Errorf("unknown hook kind %q", h.Kind)
 }

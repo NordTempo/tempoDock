@@ -56,6 +56,17 @@ and a private one, without reading its contents.
   (`copyPlatformChannels`, from `alert_channel_copies`) and audits it in
   the org's log. A platform channel's sealed settings keep their AAD
   (its name); an org channel's is `<org ID>/<name>`.
+- **Where an org's channels may post** (added after the security review
+  of status page hooks): an org's webhook, Slack and SMTP addresses, and
+  its status page hooks, keep off private addresses (RFC 1918, CGNAT and
+  the tailnet, unique local IPv6, the Docker bridges) like log drains,
+  unless the operator allows the range for apps (`[network]
+  allow_private`). Org admins would otherwise reach the LAN and other
+  orgs' containers past the app firewall, and a channel test answers with
+  what the address said. Only the platform's channels, which operators
+  configure, may reach a homelab's LAN (ADR 0020). A copied channel that
+  posts to the LAN fails until its range is allowed or it moves to the
+  platform.
 
 ### Platform alerts cover what the operator runs
 
