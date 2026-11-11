@@ -10,9 +10,17 @@ import (
 )
 
 // webCheck is the schedule row of web's uptime check chk, as the
-// scheduler hands it to recordProbe.
+// scheduler hands it to recordProbe: once the scheduler has loaded chk
+// (loadUptime runs after AddUptimeCheck's kick, in the background).
 func (h *harness) webCheck(chk apitypes.UptimeCheck) store.ListUptimeScheduleRow {
 	h.t.Helper()
+	if chk.ID != 0 {
+		eventually(h.t, "the scheduler to load the check", func() bool {
+			h.c.uptime.mu.Lock()
+			defer h.c.uptime.mu.Unlock()
+			return h.c.uptime.checks[chk.ID] != nil
+		})
+	}
 	var r store.ListUptimeScheduleRow
 	if err := h.store.DB.QueryRowContext(h.ctx, `SELECT s.id, e.id, e.project_id FROM services s JOIN environments e ON e.id = s.environment_id WHERE s.name = 'web'`).
 		Scan(&r.ServiceID, &r.EnvironmentID, &r.ProjectID); err != nil {
