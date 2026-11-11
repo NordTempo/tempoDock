@@ -11,21 +11,32 @@ import "time"
 type DataInsightView string
 
 // Insight views. Overview, tables and indexes need data access level
-// schema; queries and sessions carry statement texts and need read.
+// schema; queries and sessions carry statement texts, and keys (Redis'
+// key prefixes) key names, so they need read.
 const (
 	InsightOverview DataInsightView = "overview"
 	InsightQueries  DataInsightView = "queries"
 	InsightSessions DataInsightView = "sessions"
 	InsightTables   DataInsightView = "tables"
 	InsightIndexes  DataInsightView = "indexes"
+	InsightKeys     DataInsightView = "keys"
 )
 
 // DataInsightViews lists every view, in the order the panel shows them.
-var DataInsightViews = []DataInsightView{InsightOverview, InsightQueries, InsightSessions, InsightTables, InsightIndexes}
+var DataInsightViews = []DataInsightView{InsightOverview, InsightQueries, InsightSessions, InsightTables, InsightIndexes, InsightKeys}
+
+// InsightViewsOf lists the views an engine has: tables and indexes for
+// the SQL engines, keys for Redis.
+func InsightViewsOf(e DataEngine) []DataInsightView {
+	if e == EngineRedis {
+		return []DataInsightView{InsightOverview, InsightQueries, InsightSessions, InsightKeys}
+	}
+	return DataInsightViews[:5]
+}
 
 // Level is the data access level a view needs.
 func (v DataInsightView) Level() DataLevel {
-	if v == InsightQueries || v == InsightSessions {
+	if v == InsightQueries || v == InsightSessions || v == InsightKeys {
 		return LevelRead
 	}
 	return LevelSchema
@@ -84,6 +95,8 @@ type DataInsights struct {
 	Sessions       []DataSession    `json:"sessions,omitempty"`
 	Tables         []DataTableStats `json:"tables,omitempty"`
 	Indexes        []DataIndexStats `json:"indexes,omitempty"`
+	// Keys are Redis' key prefixes, from a sample of each database.
+	Keys []DataKeyPrefix `json:"keys,omitempty"`
 	// Hints are what needs a look, from the views read, warnings first.
 	Hints []DataHint `json:"hints"`
 	// Unavailable says why a requested view is empty or partial.
@@ -103,6 +116,14 @@ type DataOverview struct {
 	TransactionIDAge *int64              `json:"transaction_id_age,omitempty"`
 	QueryStats       DataQueryStatsState `json:"query_stats" enum:"on,not_loaded,no_extension"`
 	StartedAt        *time.Time          `json:"started_at,omitempty"`
+	// Redis: the memory limit (maxmemory, 0 for none) and what happens at
+	// it, keys evicted since the counters' start, commands per second
+	// now, and the keys of every database.
+	MaxBytes       int64  `json:"max_bytes,omitempty"`
+	EvictionPolicy string `json:"eviction_policy,omitempty"`
+	EvictedKeys    int64  `json:"evicted_keys,omitempty"`
+	OpsPerSec      int64  `json:"ops_per_sec,omitempty"`
+	Keys           int64  `json:"keys,omitempty"`
 }
 
 // DataQueryStatsState is whether the queries view can work: Postgres
@@ -223,6 +244,25 @@ type DataIndexStats struct {
 	Definition string `json:"definition"`
 }
 
+// DataKeyPrefix is one key prefix of a Redis database ("user:", or ""
+// for keys without one), from a sample of its keys: what the sample
+// found, scaled up to the database's key count.
+type DataKeyPrefix struct {
+	DB     int    `json:"db"`
+	Prefix string `json:"prefix"`
+	// SampledKeys and SampledBytes are what the sample found
+	// (MEMORY USAGE, 5 samples each).
+	SampledKeys  int64 `json:"sampled_keys"`
+	SampledBytes int64 `json:"sampled_bytes"`
+	// EstimatedKeys and EstimatedBytes scale the sample to the database.
+	EstimatedKeys  int64 `json:"estimated_keys"`
+	EstimatedBytes int64 `json:"estimated_bytes"`
+	// Biggest is the sample's biggest key with this prefix (its sensitive
+	// pattern for callers who see those masked), and its size.
+	Biggest      string `json:"biggest"`
+	BiggestBytes int64  `json:"biggest_bytes"`
+}
+
 // DataHintKind is what a hint is about.
 type DataHintKind string
 
@@ -245,14 +285,20 @@ const (
 	HintQueryStatsOff      DataHintKind = "query_stats_off"
 	// HintHistoryLong: MySQL's purge falls behind (a long undo history).
 	HintHistoryLong DataHintKind = "history_long"
+	// Redis: memory near its limit, keys evicted, saves failing, a big
+	// key in the sample.
+	HintMemoryHigh         DataHintKind = "memory_high"
+	HintEvictions          DataHintKind = "evictions"
+	HintPersistenceFailing DataHintKind = "persistence_failing"
+	HintBigKey             DataHintKind = "big_key"
 )
 
 // DataHint is one thing that needs a look. Its words carry no values
 // from the data: only names and numbers.
 type DataHint struct {
-	Kind  DataHintKind    `json:"kind" enum:"connections_high,idle_in_transaction,blocked,long_query,duplicate_index,invalid_index,unused_index,full_scans,dead_rows,not_analyzed,cache_low,temp_spill,transaction_id_age,query_stats_dropping,query_stats_off,history_long"`
+	Kind  DataHintKind    `json:"kind" enum:"connections_high,idle_in_transaction,blocked,long_query,duplicate_index,invalid_index,unused_index,full_scans,dead_rows,not_analyzed,cache_low,temp_spill,transaction_id_age,query_stats_dropping,query_stats_off,history_long,memory_high,evictions,persistence_failing,big_key"`
 	Level string          `json:"level" enum:"warn,note"`
-	View  DataInsightView `json:"view" enum:"overview,queries,sessions,tables,indexes"`
+	View  DataInsightView `json:"view" enum:"overview,queries,sessions,tables,indexes,keys"`
 	// Subject is what it is about: "public.orders_status2", a session or
 	// statement ID, or empty for the database.
 	Subject string `json:"subject,omitempty"`
@@ -267,7 +313,7 @@ type DataHint struct {
 // DataUnavailable says why a requested view is empty (or, with Partial,
 // incomplete) and what to do.
 type DataUnavailable struct {
-	View    DataInsightView `json:"view" enum:"overview,queries,sessions,tables,indexes"`
+	View    DataInsightView `json:"view" enum:"overview,queries,sessions,tables,indexes,keys"`
 	Partial bool            `json:"partial,omitempty"`
 	Reason  string          `json:"reason"`
 }

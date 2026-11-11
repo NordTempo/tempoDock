@@ -175,12 +175,18 @@ export function SqlText({ children }: { children: ReactNode }) {
   );
 }
 
-/** Generated SQL behind a "Show SQL" toggle. */
-export function ShowSql({ children }: { children: ReactNode }) {
+/** Generated SQL (or Redis commands) behind a "Show SQL" toggle. */
+export function ShowSql({
+  label = "Show SQL",
+  children,
+}: {
+  label?: string;
+  children: ReactNode;
+}) {
   return (
     <details className="mt-1.5">
       <summary className="flex h-[30px] cursor-pointer items-center text-(--g-dim) hover:text-(--g-text)">
-        Show SQL
+        {label}
       </summary>
       <SqlText>{children}</SqlText>
     </details>
@@ -262,6 +268,8 @@ export function ReviewPanel({
   const confirming = confirmCommit && !proposeOnly;
   const signature = JSON.stringify(body);
   const count = (body.changes?.length ?? 0) + (body.key_changes?.length ?? 0);
+  // Redis' changes run as commands, not SQL.
+  const keyed = !!body.key_changes?.length;
 
   useEffect(() => {
     let current = true;
@@ -319,11 +327,13 @@ export function ReviewPanel({
         changes={body.key_changes ?? []}
         onRestore={onRestoreKey}
       />
-      <ShowSql>{sql.text ?? (sql.error ? "" : "Rendering SQL")}</ShowSql>
+      <ShowSql label={keyed ? "Show commands" : "Show SQL"}>
+        {sql.text ?? (sql.error ? "" : "Rendering")}
+      </ShowSql>
       <ErrorText error={sql.error ?? null} />
       {tooMany && (
         <p className="text-(--g-fail)">
-          At most {dataLimits.changesetRows} rows per changeset. Commit in
+          At most {dataLimits.changesetRows} changes per changeset. Commit in
           parts.
         </p>
       )}

@@ -140,3 +140,17 @@ watched key changed, one conflict with change -1). `SET` keeps the TTL;
 Values are text up to 512 KB; the UI doesn't edit binary values or keys
 named in hex. Masked callers see a sensitive key's changes by pattern,
 without values.
+
+## Amendment (2026-11-11): Redis health
+
+Insight views are per engine (`apitypes.InsightViewsOf`): Postgres and
+MySQL have tables and indexes, Redis a `keys` view (level `read`, audited
+like statement texts) of key prefixes sampled as the reader (bounded SCAN
+steps, at most 1,000 keys, 200 ms). Commands carry no arguments: the
+queries view is `INFO commandstats` plus each command's slowest call in
+the slow log, read by command name only, so nothing is redacted. Redis has
+no reset time, so `since` stays unset. A monitor login refused (a restart
+drops ACL users) is `ErrNotSetUp`, which recreates it. `data_access.engine`
+only allowed `postgres` (0010), so setting up MySQL and Redis failed until
+migration 0090 (#222).
+

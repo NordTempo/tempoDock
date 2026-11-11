@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -435,6 +436,86 @@ func TestCommitKeys(t *testing.T) {
 			if _, err := e.RenderKeys(ctx, tg, bad); !errors.Is(err, data.ErrInvalid) {
 				t.Errorf("%+v: %v", bad, err)
 			}
+		}
+	})
+}
+
+func TestInsights(t *testing.T) {
+	each(t, func(t *testing.T, e *Engine, s *redistest.Server, tg data.Target) {
+		ctx := t.Context()
+		// An app client in the middle of a MULTI.
+		nc, err := s.Dial(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		app := resp.New(nc)
+		defer func() { _ = app.Close() }()
+		if _, err := app.Pipeline([]string{"AUTH", redistest.Password}, []string{"CLIENT", "SETNAME", "shop"}, []string{"MULTI"}); err != nil {
+			t.Fatal(err)
+		}
+		all := apitypes.InsightViewsOf(apitypes.EngineRedis)
+		ins, err := e.Insights(ctx, tg, data.Call{}, apitypes.DataInsightsRequest{Views: all, Order: apitypes.OrderCalls, Limit: 50})
+		if err != nil || len(ins.Unavailable) != 0 {
+			t.Fatalf("insights: %+v %v", ins.Unavailable, err)
+		}
+		if ov := ins.Overview; ov == nil || ov.Keys < 300 || ov.Bytes == 0 || ov.Connections.Max == 0 || ov.EvictionPolicy == "" {
+			t.Fatalf("overview: %+v", ins.Overview)
+		}
+		if len(ins.Queries) == 0 || ins.Queries[0].Calls < ins.Queries[len(ins.Queries)-1].Calls || !slices.ContainsFunc(ins.Queries, func(q apitypes.DataStatement) bool { return q.Text == "SET" }) {
+			t.Fatalf("queries: %+v", ins.Queries)
+		}
+		i := slices.IndexFunc(ins.Sessions, func(s apitypes.DataSession) bool { return s.Application == "shop" })
+		if i < 0 || ins.Sessions[i].State != "idle_in_transaction" || ins.Sessions[i].Kind != "client" ||
+			!slices.ContainsFunc(ins.Sessions, func(s apitypes.DataSession) bool { return s.Kind == "dock" }) {
+			t.Fatalf("sessions: %+v", ins.Sessions)
+		}
+		cache := slices.IndexFunc(ins.Keys, func(p apitypes.DataKeyPrefix) bool { return p.DB == 0 && p.Prefix == "cache:" })
+		if cache < 0 || ins.Keys[cache].EstimatedKeys < 250 || ins.Keys[cache].Biggest == "" ||
+			!slices.ContainsFunc(ins.Keys, func(p apitypes.DataKeyPrefix) bool { return p.DB == 1 }) {
+			t.Fatalf("keys: %+v", ins.Keys)
+		}
+
+		// Sensitive keys show by pattern to masked callers.
+		masked, err := e.Insights(ctx, tg, data.Call{Masked: true, SensitiveKeys: []string{"session:*"}}, apitypes.DataInsightsRequest{Views: []apitypes.DataInsightView{apitypes.InsightKeys}})
+		if err != nil || !slices.ContainsFunc(masked.Keys, func(p apitypes.DataKeyPrefix) bool { return p.Biggest == "session:*" }) {
+			t.Fatalf("masked keys: %+v %v", masked.Keys, err)
+		}
+
+		// Ending the client; cancelling a command is refused.
+		id := ins.Sessions[i].ID
+		if _, err := e.Cancel(ctx, tg, owner, id, nil, false); !errors.Is(err, data.ErrInvalid) {
+			t.Fatalf("cancel: %v", err)
+		}
+		res, err := e.Cancel(ctx, tg, owner, id, nil, true)
+		if err != nil || !res.Found || res.Application != "shop" {
+			t.Fatalf("terminate: %+v %v", res, err)
+		}
+		if res, err := e.Cancel(ctx, tg, owner, id, nil, true); err != nil || res.Found {
+			t.Fatalf("terminate again: %+v %v", res, err)
+		}
+
+		if err := e.ResetQueryStats(ctx, tg, owner); err != nil {
+			t.Fatal(err)
+		}
+		after, err := e.Insights(ctx, tg, data.Call{}, apitypes.DataInsightsRequest{Views: []apitypes.DataInsightView{apitypes.InsightQueries}})
+		if err != nil || slices.ContainsFunc(after.Queries, func(q apitypes.DataStatement) bool { return q.Text == "SET" }) {
+			t.Fatalf("after reset: %+v %v", after.Queries, err)
+		}
+
+		// A dropped monitor (a restart drops ACL users) is not set up, and
+		// EnsureMonitor creates it again.
+		if _, err := ownerDo(s, []string{"ACL", "DELUSER", string(data.RoleMonitor)}); err != nil {
+			t.Fatal(err)
+		}
+		e.Forget(tg.ServiceID)
+		if _, err := e.Pressure(ctx, tg); !errors.Is(err, data.ErrNotSetUp) {
+			t.Fatalf("pressure without monitor: %v", err)
+		}
+		if err := e.EnsureMonitor(ctx, tg, owner); err != nil {
+			t.Fatal(err)
+		}
+		if p, err := e.Pressure(ctx, tg); err != nil || p.Used == 0 {
+			t.Fatalf("pressure: %+v %v", p, err)
 		}
 	})
 }

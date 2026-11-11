@@ -39,7 +39,7 @@ func TestInsights(t *testing.T) {
 	each(t, func(t *testing.T, e *Engine, tg data.Target) {
 		ctx := t.Context()
 		tg = monitorTarget(tg)
-		all := apitypes.DataInsightsRequest{Views: apitypes.DataInsightViews}
+		all := apitypes.DataInsightsRequest{Views: apitypes.InsightViewsOf(apitypes.EngineMySQL)}
 
 		// No monitor yet: not set up, which the panel answers with
 		// EnsureMonitor.

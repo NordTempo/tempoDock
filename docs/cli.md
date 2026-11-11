@@ -406,12 +406,12 @@ says which level was missing and the rule that decided it.
 | `db policy show\|set [-p P [-e E]]` | The policy at the default, a project or an environment (explicit flags, not the link). `set deploy.production=read tokens.non-production=propose,visible ...` changes the named rules (`inherit` removes one); `--replace` drops the rest | admin to set |
 | `db sensitive list\|set [schema.]table.column...\|--clear` | Columns masked for callers whose access says masked; `set` replaces the list | admin to set |
 | `db health` | Connections against the limit, cache hit ratio, size, and what needs a look (idle transactions, blocked sessions, duplicate, invalid and unused indexes, dead rows, full scans), with statements to copy | level schema |
-| `db queries [--order total\|mean\|calls\|rows] [--limit N]` | The statements that cost the most, from `pg_stat_statements` | level read |
+| `db queries [--order total\|mean\|calls\|rows] [--limit N]` | The statements that cost the most, from `pg_stat_statements` (MySQL: statement digests; Redis: commands) | level read |
 | `db sessions [--all]` | Sessions running, idle in a transaction or waiting on a lock, and the session that blocks them | level read |
-| `db storage [--indexes]` | Tables (or indexes) by size, with dead rows, scans and the last vacuum | level schema |
+| `db storage [--indexes\|--keys]` | Tables (or indexes) by size, with dead rows, scans and the last vacuum; `--keys`: Redis key prefixes by size, estimated from a sample (level read) | level schema |
 | `db queries enable` | Turn on query stats: for a Postgres template database, stage adding `pg_stat_statements` to its start command (it applies with the next deploy, which restarts the database, and Dock creates the extension then); otherwise create the extension as the owner | deploy (template), else admin |
 | `db queries reset [--yes]` | Set query stats back to zero | admin |
-| `db cancel SESSION [--terminate] [--confirm ENV]` | Cancel a session's running query, or end the session (its connection and open transaction). Ending one on production needs `--confirm` | level write |
+| `db cancel SESSION [--terminate] [--confirm ENV]` | Cancel a session's running query, or end the session (its connection and open transaction). Ending one on production needs `--confirm`. Redis can only end a client (`--terminate`) | level write |
 
 `health`, `queries`, `sessions` and `storage` read the database's own
 statistics live, as Dock's `dock_monitor` role; nothing is stored, and

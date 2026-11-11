@@ -57,7 +57,7 @@ SELECT count(*) FROM ins_orders WHERE status = 'paid'`)
 	})
 
 	started := time.Now()
-	ins, err := e.Insights(ctx, tg, data.Call{Actor: "test"}, apitypes.DataInsightsRequest{Views: apitypes.DataInsightViews, Limit: 50})
+	ins, err := e.Insights(ctx, tg, data.Call{Actor: "test"}, apitypes.DataInsightsRequest{Views: apitypes.InsightViewsOf(apitypes.EnginePostgres), Limit: 50})
 	if err != nil {
 		t.Fatal(err)
 	}

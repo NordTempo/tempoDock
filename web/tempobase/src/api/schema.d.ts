@@ -1086,13 +1086,13 @@ export interface components {
             copy?: string;
             detail: string;
             /** @enum {string} */
-            kind: "connections_high" | "idle_in_transaction" | "blocked" | "long_query" | "duplicate_index" | "invalid_index" | "unused_index" | "full_scans" | "dead_rows" | "not_analyzed" | "cache_low" | "temp_spill" | "transaction_id_age" | "query_stats_dropping" | "query_stats_off" | "history_long";
+            kind: "connections_high" | "idle_in_transaction" | "blocked" | "long_query" | "duplicate_index" | "invalid_index" | "unused_index" | "full_scans" | "dead_rows" | "not_analyzed" | "cache_low" | "temp_spill" | "transaction_id_age" | "query_stats_dropping" | "query_stats_off" | "history_long" | "memory_high" | "evictions" | "persistence_failing" | "big_key";
             /** @enum {string} */
             level: "warn" | "note";
             subject?: string;
             title: string;
             /** @enum {string} */
-            view: "overview" | "queries" | "sessions" | "tables" | "indexes";
+            view: "overview" | "queries" | "sessions" | "tables" | "indexes" | "keys";
         };
         DataHistoryEntry: {
             /** Format: int64 */
@@ -1152,6 +1152,7 @@ export interface components {
             engine: "postgres" | "mysql" | "redis";
             hints: components["schemas"]["DataHint"][] | null;
             indexes?: components["schemas"]["DataIndexStats"][] | null;
+            keys?: components["schemas"]["DataKeyPrefix"][] | null;
             overview?: components["schemas"]["DataOverview"];
             queries?: components["schemas"]["DataStatement"][] | null;
             /** Format: int64 */
@@ -1200,6 +1201,22 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        DataKeyPrefix: {
+            biggest: string;
+            /** Format: int64 */
+            biggest_bytes: number;
+            /** Format: int64 */
+            db: number;
+            /** Format: int64 */
+            estimated_bytes: number;
+            /** Format: int64 */
+            estimated_keys: number;
+            prefix: string;
+            /** Format: int64 */
+            sampled_bytes: number;
+            /** Format: int64 */
+            sampled_keys: number;
+        };
         DataKeyValue: {
             /** Format: int64 */
             bytes: number;
@@ -1232,6 +1249,15 @@ export interface components {
             connections: components["schemas"]["DataPressure"];
             /** Format: int64 */
             deadlocks: number;
+            /** Format: int64 */
+            evicted_keys?: number;
+            eviction_policy?: string;
+            /** Format: int64 */
+            keys?: number;
+            /** Format: int64 */
+            max_bytes?: number;
+            /** Format: int64 */
+            ops_per_sec?: number;
             /** @enum {string} */
             query_stats: "on" | "not_loaded" | "no_extension";
             /** Format: date-time */
@@ -1481,7 +1507,7 @@ export interface components {
             partial?: boolean;
             reason: string;
             /** @enum {string} */
-            view: "overview" | "queries" | "sessions" | "tables" | "indexes";
+            view: "overview" | "queries" | "sessions" | "tables" | "indexes" | "keys";
         };
         Error: {
             /** @example forbidden */
@@ -3361,8 +3387,8 @@ export interface operations {
     "get-data-insights": {
         parameters: {
             query?: {
-                /** @description Views to read, comma separated; default every view you may see */
-                view?: ("overview" | "queries" | "sessions" | "tables" | "indexes")[] | null;
+                /** @description Views to read, comma separated (keys: Redis only; tables and indexes: SQL only); default every view the database has that you may see */
+                view?: ("overview" | "queries" | "sessions" | "tables" | "indexes" | "keys")[] | null;
                 /** @description Order of the queries view: total time (default), mean time, calls or rows */
                 order?: "total" | "mean" | "calls" | "rows";
                 /** @description Statements in the queries view; 0 means 50 */

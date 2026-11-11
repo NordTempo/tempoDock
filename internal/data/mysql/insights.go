@@ -184,7 +184,7 @@ func (e *Engine) Insights(ctx context.Context, t data.Target, c data.Call, req a
 		apitypes.InsightTables:   ic.tables,
 		apitypes.InsightIndexes:  ic.indexes,
 	}
-	for _, v := range apitypes.DataInsightViews {
+	for _, v := range apitypes.InsightViewsOf(apitypes.EngineMySQL) {
 		if !slices.Contains(req.Views, v) {
 			continue
 		}

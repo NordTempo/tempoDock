@@ -26,10 +26,11 @@ func addInsightsTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate 
 	addLocatedTool(s, "data_insights", "How the database is doing",
 		"Read a database's health from its own statistics, live: connections against the limit, cache hit ratio and size (overview); the slowest or most frequent statements (queries); "+
 			"sessions that are running, idle in a transaction or blocked, with who blocks them (sessions); the largest tables and their dead rows and full scans (tables); index sizes and use (indexes). "+
+			"Redis has overview (memory against its limit, evictions), queries (commands), sessions (clients) and keys (key prefixes by size, from a sample). "+
 			"Hints come first: what needs a look, with a statement to copy where one helps (Dock never runs it). Use it when an app is slow, a deploy failed on database errors or connections run out. "+
-			"Overview, tables and indexes need data access level schema; queries and sessions read. Statement values are redacted unless you see sensitive columns. Nothing here changes the database.",
+			"Overview, tables and indexes need data access level schema; queries, sessions and keys read. Statement values are redacted unless you see sensitive columns. Nothing here changes the database.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Views []apitypes.DataInsightView  `json:"views,omitempty" enum:"overview,queries,sessions,tables,indexes" doc:"Any of overview, queries, sessions, tables, indexes. Default: all you may see."`
+			Views []apitypes.DataInsightView  `json:"views,omitempty" enum:"overview,queries,sessions,tables,indexes,keys" doc:"Any of overview, queries, sessions, tables, indexes (SQL databases) or keys (Redis key prefixes). Default: all you may see."`
 			Order apitypes.DataStatementOrder `json:"order,omitempty" enum:"total,mean,calls,rows" doc:"Queries by total (default), mean, calls or rows."`
 			Limit int                         `json:"limit,omitempty" doc:"Statements to return. Default 10, at most 20."`
 		}) (Reply, error) {
@@ -56,7 +57,7 @@ func addCancelTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate fu
 	addLocatedTool(s, "data_cancel", "Cancel a query or end a session",
 		"Cancel a session's running query (the client gets an error, its connection stays), or with terminate end the session (its connection drops and its open transaction rolls back). "+
 			"Take session and query_started_at (its query_at) from data_insights' sessions, so only the query you saw is cancelled. "+
-			"Needs data access level write; tokens never have it on production or in a locked environment, so there ask a person to do it in the Data panel's Health tab. Audited.",
+			"Redis can't cancel a command: terminate ends the client. Needs data access level write; tokens never have it on production or in a locked environment, so there ask a person to do it in the Data panel's Health tab. Audited.",
 		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
 			Session        string     `json:"session" doc:"Session ID from data_insights' sessions."`
 			QueryStartedAt *time.Time `json:"query_started_at,omitempty" doc:"The session's query_at, so a later query is never cancelled."`
@@ -80,7 +81,7 @@ func addCancelTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate fu
 }
 
 // trimInsights cuts the lists to what a model needs: sessions that aren't
-// idle, the largest tables, the indexes a hint names, texts at 1 KB.
+// idle, the largest tables and key prefixes, the indexes a hint names, texts at 1 KB.
 func trimInsights(ins apitypes.DataInsights) apitypes.DataInsights {
 	var sessions []apitypes.DataSession
 	for _, s := range ins.Sessions {
@@ -98,6 +99,9 @@ func trimInsights(ins apitypes.DataInsights) apitypes.DataInsights {
 	ins.Queries = queries
 	if len(ins.Tables) > insightTablesMax {
 		ins.Tables = ins.Tables[:insightTablesMax]
+	}
+	if len(ins.Keys) > insightTablesMax {
+		ins.Keys = ins.Keys[:insightTablesMax]
 	}
 	named := map[string]bool{}
 	for _, h := range ins.Hints {
@@ -133,9 +137,16 @@ func insightsSummary(db string, ins apitypes.DataInsights) string {
 	var parts []string
 	if ov := ins.Overview; ov != nil {
 		p := ov.Connections
-		if p.Full {
+		switch {
+		case p.Full:
 			parts = append(parts, "every connection is taken")
-		} else {
+		case ins.Engine == apitypes.EngineRedis:
+			mem := fmt.Sprintf("%d of %d connections in use; %d MB of memory used", p.Used, p.Max, ov.Bytes>>20)
+			if ov.MaxBytes > 0 {
+				mem += fmt.Sprintf(" of %d MB (%s)", ov.MaxBytes>>20, ov.EvictionPolicy)
+			}
+			parts = append(parts, mem)
+		default:
 			parts = append(parts, fmt.Sprintf("%d of %d connections in use (%d idle in a transaction, %d waiting on locks)", p.Used, p.Max, p.IdleInTransaction, p.Waiting))
 		}
 		if ov.CacheHit != nil {

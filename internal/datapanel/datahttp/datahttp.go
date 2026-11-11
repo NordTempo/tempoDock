@@ -271,7 +271,7 @@ func (w *ndjsonWriter) problem(err error) {
 // InsightsQuery is the insights endpoint's query parameters; both hosts
 // embed it.
 type InsightsQuery struct {
-	View  []apitypes.DataInsightView  `query:"view" enum:"overview,queries,sessions,tables,indexes" doc:"Views to read, comma separated; default every view you may see"`
+	View  []apitypes.DataInsightView  `query:"view" enum:"overview,queries,sessions,tables,indexes,keys" doc:"Views to read, comma separated (keys: Redis only; tables and indexes: SQL only); default every view the database has that you may see"`
 	Order apitypes.DataStatementOrder `query:"order" enum:"total,mean,calls,rows" doc:"Order of the queries view: total time (default), mean time, calls or rows"`
 	Limit int                         `query:"limit" minimum:"0" maximum:"100" doc:"Statements in the queries view; 0 means 50"`
 }
