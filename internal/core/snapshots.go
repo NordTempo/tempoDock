@@ -190,8 +190,7 @@ func (c *Core) CreateSnapshot(ctx context.Context, a Actor, ref ServiceRef, req 
 	}
 	c.audit(ctx, a, "snapshot.create", &ss.project, &ss.env, ss.String(), fmt.Sprintf("taking snapshot %d of %s", row.ID, strings.Join(volumeNames(vols), ", ")))
 	c.wg.Go(func() {
-		defer c.releaseService(ss.svc.ID)
-		_ = c.runSnapshot(c.ctx, ss, row, vols)
+		_, _ = c.takeClaimed(c.ctx, ss, row, vols, func() { c.releaseService(ss.svc.ID) })
 	})
 	names, err := c.serverNamesFor(ctx, a)
 	return toSnapshot(row, ss.svc.Name, names), err
@@ -218,8 +217,7 @@ func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger
 	if err != nil {
 		return nil, err
 	}
-	defer c.releaseService(ss.svc.ID)
-	row, err = c.takeClaimed(ctx, ss, row, vols, true)
+	row, err = c.takeClaimed(ctx, ss, row, vols, func() { c.releaseService(ss.svc.ID) })
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +242,8 @@ func volumeNames(vols []store.Volume) []string {
 
 // startSnapshot checks a snapshot can be taken, claims the service
 // (waiting up to wait for another claim on it to end) and records it
-// running. The caller must release the claim (releaseService) once
-// runSnapshot or takeClaimed returns.
+// running. The caller hands the claim to takeClaimed, or releases it
+// (releaseService) if it doesn't get that far.
 func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger apitypes.SnapshotTrigger, note string, wait time.Duration) (store.VolumeSnapshot, []store.Volume, error) {
 	if err := notArchived(ss.project); err != nil {
 		return store.VolumeSnapshot{}, nil, err
@@ -291,21 +289,26 @@ func (c *Core) claimWithin(ctx context.Context, serviceID int64, wait time.Durat
 	return c.claimServiceWait(wctx, serviceID)
 }
 
-// runSnapshot takes a recorded snapshot to the end, audits the outcome and
-// prunes the service's old snapshots. The caller holds the claim.
-func (c *Core) runSnapshot(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume) error {
-	_, err := c.takeClaimed(ctx, ss, row, vols, true)
-	return err
-}
-
 // takeClaimed runs the snapshot job for a recorded snapshot, pausing the
-// service's running containers for it, records and audits how it went,
-// and with prune applies retention. The caller holds the claim on the
-// service.
-func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume, prune bool) (store.VolumeSnapshot, error) {
+// service's running containers for it, and records and audits how it
+// went. The caller holds the claim on the service. With end, the snapshot
+// is the last of the claimed work: retention is applied and end releases
+// the claim, both before the outcome is recorded, so whoever reads it
+// (the CLI's wait, MCP) may restore or delete at once. Without end the
+// caller keeps the claim (an in-place restore's safety snapshot).
+func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSnapshot, vols []store.Volume, end func()) (store.VolumeSnapshot, error) {
 	size, paused, out, err := c.snapshotJob(ctx, ss, row, vols)
 	if ctx.Err() != nil {
+		if end != nil {
+			end()
+		}
 		return row, ctx.Err() // shutting down: the next start marks it failed
+	}
+	if end != nil {
+		if err == nil {
+			c.pruneSnapshots(ctx, ss, row.ID)
+		}
+		end()
 	}
 	fin := store.FinishSnapshotParams{Status: string(apitypes.SnapshotReady), SizeBytes: size, PausedMs: paused.Milliseconds(), FinishedAt: ptr(now()), ID: row.ID}
 	if err != nil {
@@ -328,9 +331,6 @@ func (c *Core) takeClaimed(ctx context.Context, ss svcScope, row store.VolumeSna
 		c.audit(ctx, System, "snapshot.created", &ss.project, &ss.env, ss.String(), summary)
 	}
 	row.Status, row.Error, row.SizeBytes, row.PausedMs, row.FinishedAt = fin.Status, fin.Error, fin.SizeBytes, fin.PausedMs, fin.FinishedAt
-	if err == nil && prune {
-		c.pruneSnapshots(ctx, ss)
-	}
 	return row, err
 }
 
@@ -571,14 +571,15 @@ func (c *Core) restoreInPlace(ctx context.Context, a Actor, ss svcScope, snap st
 	c.audit(ctx, a, "snapshot.restore", &ss.project, &ss.env, ss.String(),
 		fmt.Sprintf("restoring snapshot %d in place; %s stops, and snapshot %d keeps the data it holds now", snap.ID, ss.svc.Name, safety.ID))
 	c.wg.Go(func() {
-		defer c.releaseService(ss.svc.ID)
 		err := c.runRestoreInPlace(c.ctx, ss, snap, safety, safetyVols, mounts)
-		// Deploys and stops may go ahead once the restore reads as done.
-		c.unlockVolumes(ss.svc.ID)
-		c.finishSnapshotRestore(c.ctx, ss, row, ss.svc.Name, err)
 		if c.ctx.Err() == nil {
-			c.pruneSnapshots(c.ctx, ss)
+			c.pruneSnapshots(c.ctx, ss, 0)
 		}
+		// Deploys, stops, snapshots and deletes may go ahead once the
+		// restore reads as done, so it ends before it is recorded.
+		c.unlockVolumes(ss.svc.ID)
+		c.releaseService(ss.svc.ID)
+		c.finishSnapshotRestore(c.ctx, ss, row, ss.svc.Name, err)
 	})
 	return apitypes.SnapshotRestoreResult{Restore: toSnapshotRestore(row, map[int64]string{ss.svc.ID: ss.svc.Name})}, nil
 }
@@ -613,7 +614,7 @@ func (c *Core) runRestoreInPlace(ctx context.Context, ss svcScope, snap, safety 
 	}
 	// Stopped, so nothing is paused for it. Retention waits for the end:
 	// it could take the snapshot being restored.
-	if _, err := c.takeClaimed(ctx, ss, safety, safetyVols, false); err != nil {
+	if _, err := c.takeClaimed(ctx, ss, safety, safetyVols, nil); err != nil {
 		return errors.Join(fmt.Errorf("snapshot the data it replaces, so nothing was restored: %w", err), start())
 	}
 	if err := c.copySnapshot(ctx, ss, snap, mounts); err != nil {
@@ -847,9 +848,10 @@ func (c *Core) deleteSnapshots(ctx context.Context, serverID int64, snaps []stor
 // pruneSnapshots applies retention to a service after a new snapshot:
 // the newest ready ones up to keep, none older than the age limit, and
 // no failed ones but the newest (its error stays readable). Failures are
-// logged; the next snapshot or the daily pass tries again. The caller
-// holds the claim on the service.
-func (c *Core) pruneSnapshots(ctx context.Context, ss svcScope) {
+// logged; the next snapshot or the daily pass tries again. taken is a
+// snapshot just taken but not recorded as ready yet (0 for none), which
+// counts as ready. The caller holds the claim on the service.
+func (c *Core) pruneSnapshots(ctx context.Context, ss svcScope, taken int64) {
 	keep, days := c.snapshotKeep()
 	rows, err := c.store.ListServiceSnapshots(ctx, store.ListServiceSnapshotsParams{ServiceID: ss.svc.ID, Limit: snapshotListLimit})
 	if err != nil {
@@ -860,7 +862,11 @@ func (c *Core) pruneSnapshots(ctx context.Context, ss svcScope) {
 	ready, failed := 0, 0
 	byServer := map[int64][]store.VolumeSnapshot{}
 	for _, r := range rows { // newest first
-		switch r.Status {
+		status := r.Status
+		if r.ID == taken {
+			status = string(apitypes.SnapshotReady)
+		}
+		switch status {
 		case string(apitypes.SnapshotReady):
 			ready++
 			if ready <= keep && !r.StartedAt.Before(cutoff) {
@@ -913,7 +919,7 @@ func (c *Core) pruneExpiredSnapshots(ctx context.Context) {
 		if !c.claimService(ss.svc.ID) {
 			continue
 		}
-		c.pruneSnapshots(ctx, ss)
+		c.pruneSnapshots(ctx, ss, 0)
 		c.releaseService(ss.svc.ID)
 	}
 }
