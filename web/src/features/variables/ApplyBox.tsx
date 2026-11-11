@@ -327,10 +327,15 @@ export function ApplyControl({
             <span className="text-warn">
               <span className="dot" />
             </span>
-            {changes.count} waiting
+            {/* Says what waits: "2 to apply", and that applying stops a
+                service for a moment. */}
+            {changes.count} to apply
             {downtimes.length > 0 && (
-              <span className="text-warn" role="img" aria-label="with downtime">
-                ▲
+              <span
+                className="text-warn"
+                title="Applying stops a service for a few seconds"
+              >
+                ▲ downtime
               </span>
             )}
           </button>
