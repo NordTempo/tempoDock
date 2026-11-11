@@ -195,14 +195,18 @@ function Count({
 function Row({ item }: { item: ImageListItem }) {
   const org = useOrg();
   const { scan } = item;
+  // A pinned digest shows its first 7 characters, as elsewhere; the full
+  // reference is the title.
+  const [ref = "", digest] = item.image.split("@sha256:");
   const name = (
     <span className="font-mono break-all" title={item.image}>
-      {item.image}
+      {ref}
+      {digest && <span className="text-mut">@{digest.slice(0, 7)}</span>}
     </span>
   );
   return (
     <tr className={scan ? "row-link" : ""}>
-      <td className="max-w-[360px]">
+      <td className="max-w-[360px] whitespace-normal">
         {scan ? (
           <Link
             to="/$org/images/$id"
