@@ -63,6 +63,10 @@ func (c *Core) setStatusHostname(ctx context.Context, a Actor, p store.StatusPag
 	if host == statusHostname(p.Slug, ing.baseDomain) {
 		return "", invalid("%s is the page's own address already; a custom hostname is one of yours, like status.example.com", host)
 	}
+	if ing.baseDomain != "" && strings.HasPrefix(host, "status-") && strings.HasSuffix(host, "."+ing.baseDomain) {
+		// Pages' own addresses, taken or not: another org's page may get it.
+		return "", errf(apitypes.CodeHostnameTaken, "%s is a status page's own address; a custom hostname is one of yours, like status.example.com", host)
+	}
 	if err := c.checkStatusHost(ctx, host); err != nil {
 		return "", err
 	}

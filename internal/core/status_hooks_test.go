@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -30,6 +31,19 @@ func TestStatusHooks(t *testing.T) {
 	}
 	if _, err := h.c.AddStatusHook(h.ctx, admin, "acme", apitypes.AddStatusHookRequest{Name: "slack", Kind: apitypes.HookSlack, URL: k.srv.URL}); err != nil {
 		t.Fatal(err)
+	}
+	// At most statusMaxHooks, each update a post to every one.
+	for i := range statusMaxHooks - 1 {
+		name := fmt.Sprintf("extra%d", i)
+		_, err := h.c.AddStatusHook(h.ctx, admin, "acme", apitypes.AddStatusHookRequest{Name: name, Kind: apitypes.HookSlack, URL: "https://hooks.example.com/" + name})
+		if want := i < statusMaxHooks-2; (err == nil) != want {
+			t.Fatalf("hook %d: %v", i+3, err)
+		}
+	}
+	for i := range statusMaxHooks - 2 {
+		if err := h.c.RemoveStatusHook(h.ctx, admin, "acme", fmt.Sprintf("extra%d", i)); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if _, err := h.c.OpenIncident(h.ctx, testSystem, "acme", apitypes.OpenIncidentRequest{Title: "Draft", State: apitypes.IncidentDraft,

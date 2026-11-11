@@ -203,6 +203,16 @@ func TestStatusIncidentDrafts(t *testing.T) {
 		strings.Contains(got[0].Draft, "secret") {
 		t.Fatalf("draft = %+v", got)
 	}
+	// A token limited to another project doesn't see the alert's details.
+	for want, a := range map[bool]Actor{
+		true:  {Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeRead, ProjectID: project, ProjectName: "shop"},
+		false: {Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeRead, ProjectID: project + 100, ProjectName: "other"},
+	} {
+		p, err := h.c.GetStatusPage(h.ctx, a, "acme")
+		if err != nil || len(p.Incidents) != 1 || (p.Incidents[0].Alert != nil) != want {
+			t.Errorf("%s sees the draft's alert: %+v %v, want %t", a.ProjectName, p.Incidents, err, want)
+		}
+	}
 	h.c.raiseAlert(h.ctx, down(checks[1].ID), time.Now())
 	if got := incidents(); len(got) != 1 {
 		t.Errorf("a second alert on the same component drafted again: %d incidents", len(got))
