@@ -11,7 +11,7 @@ import {
 import type { ServiceRef } from "../data/types";
 import { RestoredFrom } from "../features/backups/Restored";
 import { ConnectHint } from "../features/connect/ConnectHint";
-import { VulnStrip } from "../features/images/VulnStrip";
+import { NeedsAttention } from "../features/service/Attention";
 import { ReleasesTable } from "../features/service/ReleasesTable";
 import { imageLabel } from "../features/service/releases";
 import {
@@ -24,7 +24,8 @@ import { useOrg } from "../shell/location";
 import { elapsed } from "../ui/format";
 import { Act, Actor, actorKind, ErrorText, SectionHead } from "../ui/kit";
 
-// A service at a glance (A2): status, facts, uptime and visitors, the
+// A service at a glance (A2): status, what needs attention, facts, uptime
+// and visitors, the
 // deploy in flight and the release history (ADR 0059: the Releases tab
 // was folded in; G R and …/releases come here, #releases).
 export const Route = createFileRoute(
@@ -43,11 +44,10 @@ function ServiceOverview() {
   // lines are on its Data tab.
   return (
     <div className="@container flex min-w-0 flex-col gap-7">
-      {/* The live image's critical or high vulnerabilities (ADR 0074)
-          sit right under the status, like a fresh failure. */}
-      <div className="flex flex-col gap-2">
+      {/* What serves, then what needs a look, said once (ADR 0076). */}
+      <div className="flex flex-col gap-3">
         <StatusSentence view={service} />
-        <VulnStrip serviceRef={ref} view={service} />
+        <NeedsAttention serviceRef={ref} view={service} />
       </div>
       <ServiceFacts serviceRef={ref} />
       {service.service.template && <RestoredFrom serviceRef={ref} />}

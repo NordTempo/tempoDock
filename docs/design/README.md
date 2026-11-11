@@ -167,9 +167,12 @@ for everything.
   only inside running text is it a link. Segmented choices (ranges,
   views) are underlined like the section tabs. Key hints stay on buttons
   (a blind trial that hid them lost discoverability).
-- **A fresh failure** on a service's overview is a red-tinted strip with
-  a ruled left edge under the status line, the way to the cause as a
-  button; elsewhere it is said once, in the project's problems.
+- **A failure is said once** (ADR 0076). On a service's Overview,
+  everything that needs a look is one "Needs attention" list under the
+  status line: a row each (a fresh failed deploy, vulnerabilities in the
+  live image, a down uptime check, a domain), a coloured mark, what is
+  wrong and its one action. Elsewhere it is state: a chip, a dot, a count,
+  or the project's problems.
 - **Destructive buttons** are red outlined on pages and filled red in the
   confirmation that runs them; every removal that can't be undone asks
   first, saying what stops working. A confirmation leads with what is

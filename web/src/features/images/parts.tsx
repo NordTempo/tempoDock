@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import { plural } from "../../ui/format";
 import type { Finding, ImageScan, ImageUse } from "./data";
 
-// Pieces the scanning screens share: the service overview's strip, the
+// Pieces the scanning screens share: the service overview's row, the
 // Images page, an image's page and a release's line.
 
 /** Counts by severity, as a scan and a fix group carry them. */

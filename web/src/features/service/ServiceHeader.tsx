@@ -389,49 +389,6 @@ export function StatusSentence({ view }: { view: ServiceView }) {
       </>
     );
   };
-  // The failed deploy, while it matters: the overview's last_failed_deploy
-  // survives a rollback and clears once a new image or config deploys;
-  // else the latest attempt when it failed. Its own strip under the
-  // headline, in the releases table's red.
-  const lastFailed =
-    view.last_failed_deploy ??
-    (latest?.status === "failed" && latest.number > (serving ?? 0)
-      ? latest
-      : undefined);
-  // Red while it is the news (the latest release, or the one before the
-  // rollback that answered it); quiet once more releases came after.
-  const fresh = !!lastFailed && (serving ?? 0) <= lastFailed.number + 1;
-  const failedLine =
-    lastFailed &&
-    serving !== lastFailed.number &&
-    (fresh ? (
-      // A problem row like the project page's: a tinted strip, with the
-      // way to the cause as a button, so it isn't lost under the headline.
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-fail bg-fail-bg py-1.5 pr-1.5 pl-3 text-sm">
-        <span className="flex-1">
-          <span className="text-fail">
-            ✕ r{lastFailed.number} {failurePhrase(lastFailed)}{" "}
-            {ago(lastFailed.created_at)}
-          </span>
-          {lastFailed.diagnosis?.rule && (
-            // Its diagnosis's likely cause (ADR 0071).
-            <>. {lastFailed.diagnosis.summary}</>
-          )}
-        </span>
-        <Link
-          to="/$org/$project/$environment/$service/releases/$number"
-          params={{ org, ...refOf(service), number: String(lastFailed.number) }}
-          className="btn sm"
-        >
-          See why
-        </Link>
-      </p>
-    ) : (
-      <p className="text-xs text-mut">
-        Last failed deploy: r{lastFailed.number}, {ago(lastFailed.created_at)} ·{" "}
-        {releaseLink(lastFailed.number, "See why")}
-      </p>
-    ));
   const mono = (text: string) => (
     <b className="font-mono font-medium">{text}</b>
   );
@@ -568,12 +525,9 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   return (
     // The overview's focal point (chosen in a blind trial, 2026-11): what
     // serves and since when, larger than everything under it.
-    <div className="flex flex-col gap-1">
-      <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
-        {sentence}
-      </p>
-      {failedLine}
-    </div>
+    <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
+      {sentence}
+    </p>
   );
 }
 
