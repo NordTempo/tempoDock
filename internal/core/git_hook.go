@@ -237,6 +237,9 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 	if err := json.Unmarshal(d.Body, &p); err != nil {
 		return "", invalid("push payload is not JSON: %v", err)
 	}
+	if err := c.adoptAppConnections(ctx, p.Repository.ID, p.Installation.ID); err != nil {
+		return "", err
+	}
 	conns, err := c.store.GetAppGitConnections(ctx, store.GetAppGitConnectionsParams{RepoID: p.Repository.ID, InstallationID: p.Installation.ID})
 	if err != nil {
 		return "", err
@@ -256,6 +259,23 @@ func (c *Core) gitAppWebhook(ctx context.Context, app store.GithubApp, d GitDeli
 		msgs = append(msgs, msg)
 	}
 	return strings.Join(msgs, "\n"), nil
+}
+
+// adoptAppConnections moves a repository's App connections off an
+// installation Dock no longer knows onto the one a delivery for it came
+// from, if that one is assigned to their org (AdoptAppGitConnections).
+// Replacing the App (CreateGitHubApp) or reinstalling it forgets the old
+// installations; without this their connections would silently stop
+// deploying on pushes until someone reconnected each one.
+func (c *Core) adoptAppConnections(ctx context.Context, repoID, installationID int64) error {
+	if repoID == 0 || installationID == 0 {
+		return nil
+	}
+	n, err := c.store.AdoptAppGitConnections(ctx, store.AdoptAppGitConnectionsParams{InstallationID: installationID, RepoID: repoID})
+	if n > 0 {
+		c.log.Info("git connections moved to the GitHub App's current installation", "installation", installationID, "repo_id", repoID, "connections", n)
+	}
+	return err
 }
 
 // gitAppInstallation handles the App's installation events: an

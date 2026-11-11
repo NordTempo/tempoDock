@@ -27,6 +27,39 @@ func (q *Queries) AddGitDelivery(ctx context.Context, arg AddGitDeliveryParams) 
 	return err
 }
 
+const adoptAppGitConnections = `-- name: AdoptAppGitConnections :execrows
+UPDATE git_connections SET installation_id = ?1
+WHERE git_connections.repo_id = +?2
+  AND git_connections.installation_id IN (SELECT DISTINCT g.installation_id FROM git_connections g
+                          WHERE g.installation_id > 0
+                            AND g.installation_id NOT IN (SELECT installation_id FROM github_installations))
+  AND git_connections.service_id IN (SELECT services.id FROM services
+                     JOIN environments ON environments.id = services.environment_id
+                     JOIN projects ON projects.id = environments.project_id
+                     WHERE projects.org_id = (SELECT org_id FROM github_installations
+                                              WHERE github_installations.installation_id = +?1))
+`
+
+type AdoptAppGitConnectionsParams struct {
+	InstallationID int64
+	RepoID         int64
+}
+
+// Moves a repository's App connections whose installation Dock no longer
+// knows (the App was replaced, or uninstalled and installed again) to
+// the installation an App delivery for that repository came from, when
+// that installation is assigned to the connection's org. The delivery
+// proves the installation reaches the repository; the org check keeps
+// one org from taking another's. Stale installations are found through
+// git_connections_app; the table has a row per connected service.
+func (q *Queries) AdoptAppGitConnections(ctx context.Context, arg AdoptAppGitConnectionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, adoptAppGitConnections, arg.InstallationID, arg.RepoID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const clearGitPending = `-- name: ClearGitPending :execrows
 UPDATE git_connections
 SET pending_sha = '', pending_message = '', pending_author = '', pending_by = '', pending_force = 0, pending_approved = 0

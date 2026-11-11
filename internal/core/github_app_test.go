@@ -431,6 +431,57 @@ func TestGitAppStaysInItsOrg(t *testing.T) {
 	}
 }
 
+// Connections through an installation Dock forgot (the App was replaced)
+// move to the installation a push for their repository comes from, when
+// that one is assigned to their org, and deploy again. Another org's
+// installation doesn't take them.
+func TestGitAppAdoptsStaleConnections(t *testing.T) {
+	h, _, appHook := appHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Name: "web"})
+	if _, err := h.c.GitConnect(h.ctx, testSystem, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	// The old App's installation is gone; the new App's is 8.
+	const newInstall = fakeInstall + 1
+	if _, err := h.store.DB.ExecContext(h.ctx, "DELETE FROM github_installations"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assign := func(org int64) {
+		t.Helper()
+		if err := h.store.SetGitHubInstallation(h.ctx, store.SetGitHubInstallationParams{InstallationID: newInstall, OrgID: org, Account: "acme", AssignedBy: "test", AssignedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	push := func(id, sha string) string {
+		var p map[string]any
+		_ = json.Unmarshal(pushBody("refs/heads/main", sha), &p)
+		p["repository"] = map[string]any{"id": fakeRepoID, "full_name": "acme/shop"}
+		p["installation"] = map[string]any{"id": newInstall}
+		body, _ := json.Marshal(p)
+		msg, err := h.c.GitWebhook(h.ctx, GitDelivery{HookID: appHook, Event: "push", ID: id, Signature: sign("app-secret", body), Body: body})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return msg
+	}
+	assign(other.ID)
+	if msg := push("p1", shaA); !strings.Contains(msg, "no service deploys") {
+		t.Fatalf("another org's installation: %q", msg)
+	}
+	if _, err := h.store.DB.ExecContext(h.ctx, "DELETE FROM github_installations"); err != nil {
+		t.Fatal(err)
+	}
+	assign(1)
+	if msg := push("p2", shaB); !strings.Contains(msg, "shop/production/web: push bbbbbbb: queued") {
+		t.Fatalf("own org's installation: %q", msg)
+	}
+	h.wait(web, h.waitReleases(web, 1)[0].Number)
+}
+
 // An installation event resent under a new delivery ID does nothing: a
 // captured "deleted" can't unassign a reassigned installation again.
 func TestGitAppInstallationReplay(t *testing.T) {

@@ -461,6 +461,9 @@ func (c *Core) gitAppPullRequest(ctx context.Context, body []byte) (string, erro
 	if !slices.Contains(previewActions, p.Action) {
 		return fmt.Sprintf("ignored: pull request %s", cleanLine(p.Action, 40)), nil
 	}
+	if err := c.adoptAppConnections(ctx, p.Repository.ID, p.Installation.ID); err != nil {
+		return "", err
+	}
 	conns, err := c.store.ListAppPreviewConnections(ctx, store.ListAppPreviewConnectionsParams{RepoID: p.Repository.ID, InstallationID: p.Installation.ID})
 	if err != nil {
 		return "", err

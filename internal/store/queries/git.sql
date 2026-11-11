@@ -13,6 +13,25 @@ WHERE repo_id = +? AND installation_id = +?
   AND NOT EXISTS (SELECT 1 FROM services JOIN previews ON previews.environment_id = services.environment_id
                   WHERE services.id = git_connections.service_id);
 
+-- name: AdoptAppGitConnections :execrows
+-- Moves a repository's App connections whose installation Dock no longer
+-- knows (the App was replaced, or uninstalled and installed again) to
+-- the installation an App delivery for that repository came from, when
+-- that installation is assigned to the connection's org. The delivery
+-- proves the installation reaches the repository; the org check keeps
+-- one org from taking another's. Stale installations are found through
+-- git_connections_app; the table has a row per connected service.
+UPDATE git_connections SET installation_id = sqlc.arg(installation_id)
+WHERE git_connections.repo_id = +sqlc.arg(repo_id)
+  AND git_connections.installation_id IN (SELECT DISTINCT g.installation_id FROM git_connections g
+                          WHERE g.installation_id > 0
+                            AND g.installation_id NOT IN (SELECT installation_id FROM github_installations))
+  AND git_connections.service_id IN (SELECT services.id FROM services
+                     JOIN environments ON environments.id = services.environment_id
+                     JOIN projects ON projects.id = environments.project_id
+                     WHERE projects.org_id = (SELECT org_id FROM github_installations
+                                              WHERE github_installations.installation_id = +sqlc.arg(installation_id)));
+
 -- name: CreateGitConnection :one
 INSERT INTO git_connections (service_id, hook_id, repo, branch, dir, secret, token, post_status, installation_id, repo_id, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
