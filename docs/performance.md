@@ -341,6 +341,7 @@ end) are not listed.
 | Scan database refresh | `internal/core/scans.go` (`kickScanRefresh`, from the retention pass) | daily per scanning builder, at the first quiet minute | a builder has a vulnerability database it last refreshed a day ago (ADR 0074) | no timer and no query: each scanner pass notes when the next builder is due, and the hourly retention pass starts the scanner once that time has passed; then a `grype db update` job (about 200 MB when there is a newer database) and a match from the stored SBOM for each live image matched against an older one; then one manifest request per live base image, through the builder's Docker, to see whether its tag moved (ADR 0074 phase 3) |
 | Scan retry | `internal/core/scans.go` | 10 min doubling to 24 h, at most 5 attempts | a scan failed (a preempted one isn't failed) | one timer to the earliest retry |
 | Scan jobs | Docker on a builder (`internal/node/docker/scan.go`) | per queued image, one at a time platform-wide | nothing has been busy for the quiet period (ADR 0074) | one container at CPU shares 2, at most 1 CPU and `[scan] memory_mb`, no network: an SBOM (alpine 2 s, a node app 3.3 s) then a match (about 10 s, under 256 MB); killed by any build, deploy, wake or move. The daemon streams the SBOM to disk and writes the findings in one transaction (`BenchmarkScanFindingsWrite`, about 9 ms for 2,000). The first scan on a builder downloads Grype's database (about 200 MB, 3.4 GB on disk), or with `[scan] offline` imports the one an operator uploaded (`dock scanning import`) as a step of its own |
+| Trace sampler release | `internal/traces/sample.go` | once, two minutes after the last span, re-armed for what is left while spans still arrive | the server's ingest took spans | one timer; frees the ring of dropped spans (up to 4 MB), the trace decisions (up to about 1.5 MB) and the per-service state |
 | Trace store trim | `cmd/dock-analytics/serve.go` (`api.serve`), in `dock-analytics traces` | once, a minute after the last request | the trace store was asked something | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory`, as for the analytics store |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 
@@ -432,7 +433,10 @@ end) are not listed.
   SDKs don't send again, so an app never waits and nothing queues. Each
   span is cut on the way in: a name of 256 bytes, 64 attributes in 4 KB,
   values of 1 KB (2 KB for URLs and statements, 8 KB for an exception's
-  stack), 16 events in 12 KB. Kept spans go to the spans spool, capped
+  stack), 16 events in 12 KB. The sampler (ADR 0075) holds a ring of dropped spans of
+  at most 4 MB, two generations of at most 32k trace decisions and a few
+  counters per service, all freed two minutes after the last span. Kept
+  spans go to the spans spool, capped
   on its own (`[traces] spool_max_mb`, 128), so spans never push out
   page views.
 - Deploy diagnoses ([ADR 0071](decisions/0071-deploy-diagnosis.md))

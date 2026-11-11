@@ -12,6 +12,8 @@ import (
 	common "go.opentelemetry.io/proto/otlp/common/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/NordTempo/tempoDock/internal/analytics"
 )
 
 // discard is a spool that keeps nothing.
@@ -73,4 +75,28 @@ func BenchmarkIngestProto512(b *testing.B) {
 		}
 	}
 	b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N)/512, "ns/span")
+}
+
+// BenchmarkSampleRescue is a rescue from a full ring of 4 MB: one span's
+// decision and a scan of every chunk.
+func BenchmarkSampleRescue(b *testing.B) {
+	var sm sampler
+	l := sampleLimits{budget: 1, rescues: 1 << 30, ringBytes: DefaultRingBytes, slow: time.Second}
+	now := time.Unix(1_800_000_000, 0)
+	line := make([]byte, 600)
+	line[0], line[len(line)-1] = '{', '}'
+	drop := func([]byte) error { return nil }
+	sp := analytics.Span{Service: 1, Trace: trace(1), ID: 1, Entry: true}
+	_ = sm.span(&sp, line, signals{}, l, now, drop) // the budget's one trace
+	for i := range 8000 {
+		sp := analytics.Span{Service: 1, Trace: trace(uint64(i%400) + 2), ID: 2}
+		_ = sm.span(&sp, line, signals{}, l, now, drop)
+	}
+	b.ReportAllocs()
+	i := uint64(0)
+	for b.Loop() {
+		i++
+		sp := analytics.Span{Service: 1, Trace: trace(1<<40 + i), ID: 1, Entry: true, HTTPStatus: 500}
+		_ = sm.span(&sp, line, signals{}, l, now, drop)
+	}
 }

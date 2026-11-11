@@ -101,7 +101,8 @@ func probeHTTP(port int, path string, deadline time.Time) error {
 	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(deadline)
 	host := "127.0.0.1:" + strconv.Itoa(port)
-	req := "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: dock-probe\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+	req := "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: dock-probe\r\nAccept: */*\r\n" +
+		"traceparent: " + traceparent(uint64(time.Now().UnixNano())^uint64(os.Getpid())<<40) + "\r\nConnection: close\r\n\r\n"
 	what := "GET " + path
 	if _, err := conn.Write([]byte(req)); err != nil {
 		return describe(what, err)
@@ -130,6 +131,24 @@ func probeHTTP(port int, path string, deadline time.Time) error {
 		return errors.New(what + " returned " + strconv.Itoa(code))
 	}
 	return nil
+}
+
+// traceparent is the W3C trace context the probe sends: a trace ID that
+// starts with "dockprbe" (internal/traces.ProbeTraceHi). An app's
+// OpenTelemetry SDK continues the trace, and Dock's ingest knows every
+// span of it for a probe's: it never samples one, but keeps one that
+// fails, so a failing health check can be read like any other request.
+func traceparent(random uint64) string {
+	return "00-646f636b70726265" + hex16(random) + "-" + hex16(random|1) + "-01"
+}
+
+// hex16 is v as 16 hex digits.
+func hex16(v uint64) string {
+	s := strconv.FormatUint(v, 16)
+	for len(s) < 16 {
+		s = "0" + s
+	}
+	return s
 }
 
 // describe turns a network error into a short reason.

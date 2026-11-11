@@ -45,6 +45,9 @@ const (
 type Limits struct {
 	MaxBody, MaxDecoded, Decoders int
 	ServiceRate                   float64
+	// Budget, Slow, Rescues and RingBytes are the sampler's (sample.go).
+	Budget, Rescues, RingBytes int
+	Slow                       time.Duration
 }
 
 // Spool is where kept spans go, a JSON line each: the server's spans
@@ -68,6 +71,8 @@ type Ingest struct {
 	readers  readers
 	bufs     sync.Pool
 	rates    rates
+	sample   sampler
+	sampling sampleLimits
 }
 
 // init applies the limits' defaults.
@@ -78,6 +83,11 @@ func (in *Ingest) init() {
 		if l.ServiceRate <= 0 {
 			l.ServiceRate = DefaultServiceRate
 		}
+		l.Budget, l.Rescues, l.RingBytes = cmpOr(l.Budget, DefaultBudget), cmpOr(l.Rescues, DefaultRescues), cmpOr(l.RingBytes, DefaultRingBytes)
+		if l.Slow <= 0 {
+			l.Slow = DefaultSlow
+		}
+		in.sampling = sampleLimits{budget: l.Budget, rescues: l.Rescues, ringBytes: l.RingBytes, slow: l.Slow}
 		in.decoders = make(chan struct{}, l.Decoders)
 		in.bufs.New = func() any { return new(bytes.Buffer) }
 		in.rates.by = map[int64]*bucket{}
@@ -152,7 +162,8 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var kept, rejected int
+	// accepted counts spans taken, whether sampling kept or dropped them.
+	var accepted, rejected int
 	line := in.bufs.Get().(*bytes.Buffer)
 	defer in.bufs.Put(line)
 	now := in.Now()
@@ -166,7 +177,7 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 		err := json.MarshalWrite(line, &s)
 		if err == nil {
 			// MarshalWrite ends the line with a newline; the spool adds its own.
-			err = in.Spool.Append(bytes.TrimSuffix(line.Bytes(), []byte{'\n'}))
+			err = in.sample.span(&s, bytes.TrimSuffix(line.Bytes(), []byte{'\n'}), signalsOf(sp), in.sampling, now, in.Spool.Append)
 		}
 		if err != nil {
 			rejected++
@@ -175,7 +186,7 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 			}
 			return nil
 		}
-		kept++
+		accepted++
 		return nil
 	}
 	if asJSON {
@@ -183,7 +194,7 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 	} else {
 		err = decodeProto(buf.Bytes(), add)
 	}
-	if err != nil && kept == 0 {
+	if err != nil && accepted == 0 {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

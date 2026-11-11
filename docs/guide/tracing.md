@@ -55,8 +55,14 @@ Agents get the same through MCP: `traces_list` and `trace_get`.
 
 ## What Dock keeps
 
-- Everything an app sends, up to 2 million spans a service and 5 million
-  an organization a day; past that only spans with an error. Past 5,000
+- About 3,000 traces a minute a service: every trace of a quieter
+  service, a fair share of a busier one, all spans of a trace together.
+  Traces that fail (an error, an exception, a 5xx) or take a second or
+  more are kept whatever the share, and `dock traces` says why each was
+  kept. Dock's health checks and uptime checks are kept only when they
+  fail.
+- At most 2 million spans a service and 5 million an organization a
+  day; past that only spans with an error. Past 5,000
   spans a second a service's spans are dropped, and its SDK is told so.
 - Attribute values whose names look secret (`db.password`, `x-api-key`,
   `authorization` headers, `token` URL parameters) are masked before they

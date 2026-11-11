@@ -116,7 +116,10 @@ func TestTracesListsEntriesWithTheirTraces(t *testing.T) {
 	foreign.Org = 2
 	// Service 12 isn't asked for.
 	other := entry(mkSpan(4, 5, 0, 12, 4*time.Minute, time.Second), "GET", "/", 200)
-	writeSpans(t, s, 1, analytics.TraceLimits{}, slowErr, db, fast, newer, foreign, other)
+	// Trace 2 enters service 10 again (it calls itself): listed once, by
+	// its outer entry.
+	inner := entry(mkSpan(2, 6, 3, 10, 2*time.Minute+5*time.Millisecond, 10*time.Millisecond), "GET", "/inner", 200)
+	writeSpans(t, s, 1, analytics.TraceLimits{}, slowErr, db, fast, newer, foreign, other, inner)
 
 	list := func(q analytics.TracesQuery) []analytics.TraceSummary {
 		t.Helper()
@@ -133,8 +136,9 @@ func TestTracesListsEntriesWithTheirTraces(t *testing.T) {
 		}
 		return out
 	}
-	if got := ids(list(analytics.TracesQuery{})); string(got) != "\x03\x02\x01" {
-		t.Errorf("newest first = %v", got)
+	newest := list(analytics.TracesQuery{})
+	if got := ids(newest); string(got) != "\x03\x02\x01" || newest[1].Span != 3 {
+		t.Errorf("newest first = %v, trace 2 by span %d", got, newest[1].Span)
 	}
 	slowest := list(analytics.TracesQuery{Sort: analytics.SortSlowest})
 	if got := ids(slowest); string(got) != "\x01\x03\x02" {

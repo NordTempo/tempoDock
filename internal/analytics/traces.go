@@ -258,6 +258,28 @@ type TraceSummary struct {
 	ErrorFP    string     `json:"error_fp,omitzero"`
 }
 
+// OnePerTrace appends the entries to out, one per trace: a trace that
+// enters a service twice (it calls itself) is listed once, by its
+// earliest entry, the outer one, in the place its first entry had. Nil
+// entries are skipped.
+func OnePerTrace(out []TraceSummary, entries []*TraceSummary) []TraceSummary {
+	at := make(map[TraceID]int, len(entries))
+	for _, e := range entries {
+		if e == nil {
+			continue
+		}
+		i, seen := at[e.Trace]
+		switch {
+		case !seen:
+			at[e.Trace] = len(out)
+			out = append(out, *e)
+		case e.Start < out[i].Start:
+			out[i] = *e
+		}
+	}
+	return out
+}
+
 // TracesResult answers a TracesQuery.
 type TracesResult struct {
 	Traces []TraceSummary `json:"traces"`

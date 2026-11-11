@@ -34,8 +34,8 @@ with no setup, and link traces to what it shows.
 | Reaching it | Every release's container gets `dock-otlp:host-gateway` in its hosts file and the standard variables: endpoint `http://dock-otlp:<port>` (the server's own Caddy, which routes that hostname from private addresses to the ingest), protocol, headers with the token, service name, resource attributes, metrics and logs exporters off. The service's own variables win. Set when a container starts. Not on tunnel-mode servers yet: Caddy listens on loopback there |
 | Bounds | Bodies 2 MB (4 MB unpacked), two decodes at once (503 past), 5,000 spans a second per service, then OTLP partial success (SDKs don't resend). A span is cut on the way in: name, 64 attributes in 4 KB, values, 16 events in 12 KB, exceptions first. A spans spool per server (128 MB). Daily caps in the store: 2M spans a service, 5M an org, then error spans only (200k a service); 4 GB in all |
 | Secrets | At ingest, sensitive attribute names (by word: `db.password`, `x-api-key`, not `total_tokens`), headers outside a short allowlist and sensitive URL parameters are masked. At read, a reader who can't reveal secret values gets each span's release's values masked, as in logs |
-| Reading | Read in the environment, like logs. A service's list (`GET …/traces`, `dock traces`, MCP `traces_list`): entry spans, newest or slowest, by route, method, errors, release or since one, duration. One trace (`GET …/traces/{trace}?at=`, `dock traces show`, MCP `trace_get`): every span, across services, those of services outside the caller's token hidden |
-| Sampling | All spans are kept up to the caps for now. The plan's ingest-side sampling (a per-service budget, errors and slow traces rescued from a ring of recently dropped spans) comes next |
+| Reading | Read in the environment, like logs. A service's list (`GET …/traces`, `dock traces`, MCP `traces_list`): entry spans, newest or slowest, by route, method, errors, release or since one, duration. One row per trace: a trace that enters the service twice (it calls itself) is listed by its outer entry. One trace (`GET …/traces/{trace}?at=`, `dock traces show`, MCP `trace_get`): every span, across services, those of services outside the caller's token hidden |
+| Sampling | At the ingest, per trace (`internal/traces/sample.go`). A trace's first span decides it from the trace ID's random bits against the service's threshold, so its spans get the same answer, and later spans of any service on the server follow. The threshold adapts each minute on the server itself (no tick from the control plane) so a service keeps about 3,000 traces a minute, never more in a minute. A span with an error, an exception or a 5xx, or an entry span of 1 s or more, rescues its trace: its dropped spans come back from a ring of recently dropped spans (4 MB per server, 1 MB chunks, the oldest recycled whole), and later spans follow; at most 600 ring scans a minute per service. Each kept span says the strongest reason its trace has so far, error, then slow, then sampled, so a trace's entry span (it ends last) says whether anything in it failed, and error spans are what the store's "errors only" cap keeps. The ring and the decisions (two generations of 32k trace IDs) exist only while spans arrive, freed by one timer two quiet minutes after the last. Dock's health probe sends `traceparent` with a `dockprbe` trace ID, and an app's span with the uptime or health probe's user agent marks its trace too: a probe's trace is never sampled and a slow one isn't rescued, but an error still rescues it, so a failing health check can be read like any request |
 
 ## Consequences
 
@@ -43,11 +43,16 @@ with no setup, and link traces to what it shows.
   deploying; one without gets nothing new until Caddy's edge spans
   (phase 3).
 - Tracing costs an idle server nothing; at 1,000 spans a second the
-  ingest spends about 3 µs a span (`BenchmarkIngestProto512`).
+  ingest spends about 3 µs a span (`BenchmarkIngestProto512`), and a
+  rescue from a full ring about 4 µs (`BenchmarkSampleRescue`).
+- A trace whose early spans left the ring before it was rescued (about
+  10 s at 1,000 dropped spans a second) is stored partial.
 - The analytics server runs a second container while tracing is on:
   about 25 MB idle, at most 512 MB.
 - Spans don't survive a move of the analytics server or a restore of the
   control plane: they are diagnostics, kept for days.
-- Still to come: sampling, Caddy's edge spans and per-route numbers
+- The UI comes after the API, CLI and MCP (ADR 0026's follow-up): phase 4,
+  a traces view in the service page's Requests area.
+- Still to come: Caddy's edge spans and per-route numbers
   (phase 3), the UI (phase 4), links from Traffic, Errors, releases and
   deploy diagnosis (phase 5), OTLP metrics (phase 6).
