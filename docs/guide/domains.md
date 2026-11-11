@@ -163,7 +163,7 @@ dock access public                     # anyone again
 dock access                            # which one is set
 ```
 
-In the UI it is the line above the domain list under Domains in its Settings ("Open
+In the UI it is the line above the domain list on Settings, Domains ("Open
 to anyone", "Password for team", "Dock login") with Change. It covers
 every domain of the service, generated ones included, and takes effect at
 once. Each environment's service has its own setting, so staging

@@ -100,6 +100,9 @@ import { Route as AppOrgProjectEnvironmentServiceHistoryIndexRouteImport } from 
 import { Route as AppOrgProjectEnvironmentServiceHistoryNumberRouteImport } from './routes/_app.$org.$project.$environment.$service.history.$number'
 import { Route as AppOrgProjectEnvironmentServiceRequestsIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.requests.index'
 import { Route as AppOrgProjectEnvironmentServiceRequestsVisitorsRouteImport } from './routes/_app.$org.$project.$environment.$service.requests.visitors'
+import { Route as AppOrgProjectEnvironmentServiceSettingsIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.settings.index'
+import { Route as AppOrgProjectEnvironmentServiceSettingsBackupsRouteImport } from './routes/_app.$org.$project.$environment.$service.settings.backups'
+import { Route as AppOrgProjectEnvironmentServiceSettingsDomainsRouteImport } from './routes/_app.$org.$project.$environment.$service.settings.domains'
 import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } from './routes/_app.$org.$project.$environment.$service_.releases.$number'
 import { Route as AppOrgAnalyticsProjectSiteReplaysIndexRouteImport } from './routes/_app.$org.analytics.$project.$site.replays.index'
 import { Route as AppOrgAnalyticsProjectSiteReplaysReplayRouteImport } from './routes/_app.$org.analytics.$project.$site.replays.$replay'
@@ -598,6 +601,24 @@ const AppOrgProjectEnvironmentServiceRequestsVisitorsRoute =
     path: '/visitors',
     getParentRoute: () => AppOrgProjectEnvironmentServiceRequestsRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceSettingsIndexRoute =
+  AppOrgProjectEnvironmentServiceSettingsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceSettingsRoute,
+  } as any)
+const AppOrgProjectEnvironmentServiceSettingsBackupsRoute =
+  AppOrgProjectEnvironmentServiceSettingsBackupsRouteImport.update({
+    id: '/backups',
+    path: '/backups',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceSettingsRoute,
+  } as any)
+const AppOrgProjectEnvironmentServiceSettingsDomainsRoute =
+  AppOrgProjectEnvironmentServiceSettingsDomainsRouteImport.update({
+    id: '/domains',
+    path: '/domains',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceSettingsRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceReleasesNumberRoute =
   AppOrgProjectEnvironmentServiceReleasesNumberRouteImport.update({
     id: '/$project/$environment/$service_/releases/$number',
@@ -691,7 +712,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/requests': typeof AppOrgProjectEnvironmentServiceRequestsRouteWithChildren
   '/$org/$project/$environment/$service/resources': typeof AppOrgProjectEnvironmentServiceResourcesRoute
   '/$org/$project/$environment/$service/run': typeof AppOrgProjectEnvironmentServiceRunRoute
-  '/$org/$project/$environment/$service/settings': typeof AppOrgProjectEnvironmentServiceSettingsRoute
+  '/$org/$project/$environment/$service/settings': typeof AppOrgProjectEnvironmentServiceSettingsRouteWithChildren
   '/$org/$project/$environment/$service/traffic': typeof AppOrgProjectEnvironmentServiceTrafficRoute
   '/$org/$project/$environment/$service/uptime': typeof AppOrgProjectEnvironmentServiceUptimeRoute
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
@@ -706,10 +727,13 @@ export interface FileRoutesByFullPath {
   '/$org/$project/$environment/$service/analytics/$': typeof AppOrgProjectEnvironmentServiceAnalyticsSplatRoute
   '/$org/$project/$environment/$service/history/$number': typeof AppOrgProjectEnvironmentServiceHistoryNumberRoute
   '/$org/$project/$environment/$service/requests/visitors': typeof AppOrgProjectEnvironmentServiceRequestsVisitorsRoute
+  '/$org/$project/$environment/$service/settings/backups': typeof AppOrgProjectEnvironmentServiceSettingsBackupsRoute
+  '/$org/$project/$environment/$service/settings/domains': typeof AppOrgProjectEnvironmentServiceSettingsDomainsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/analytics/$project/$site/replays/$replay': typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
   '/$org/$project/$environment/$service/history/': typeof AppOrgProjectEnvironmentServiceHistoryIndexRoute
   '/$org/$project/$environment/$service/requests/': typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
+  '/$org/$project/$environment/$service/settings/': typeof AppOrgProjectEnvironmentServiceSettingsIndexRoute
   '/$org/analytics/$project/$site/replays/': typeof AppOrgAnalyticsProjectSiteReplaysIndexRoute
 }
 export interface FileRoutesByTo {
@@ -779,7 +803,6 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/releases': typeof AppOrgProjectEnvironmentServiceReleasesRoute
   '/$org/$project/$environment/$service/resources': typeof AppOrgProjectEnvironmentServiceResourcesRoute
   '/$org/$project/$environment/$service/run': typeof AppOrgProjectEnvironmentServiceRunRoute
-  '/$org/$project/$environment/$service/settings': typeof AppOrgProjectEnvironmentServiceSettingsRoute
   '/$org/$project/$environment/$service/traffic': typeof AppOrgProjectEnvironmentServiceTrafficRoute
   '/$org/$project/$environment/$service/uptime': typeof AppOrgProjectEnvironmentServiceUptimeRoute
   '/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
@@ -794,10 +817,13 @@ export interface FileRoutesByTo {
   '/$org/$project/$environment/$service/analytics/$': typeof AppOrgProjectEnvironmentServiceAnalyticsSplatRoute
   '/$org/$project/$environment/$service/history/$number': typeof AppOrgProjectEnvironmentServiceHistoryNumberRoute
   '/$org/$project/$environment/$service/requests/visitors': typeof AppOrgProjectEnvironmentServiceRequestsVisitorsRoute
+  '/$org/$project/$environment/$service/settings/backups': typeof AppOrgProjectEnvironmentServiceSettingsBackupsRoute
+  '/$org/$project/$environment/$service/settings/domains': typeof AppOrgProjectEnvironmentServiceSettingsDomainsRoute
   '/$org/$project/$environment/$service/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/$org/analytics/$project/$site/replays/$replay': typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
   '/$org/$project/$environment/$service/history': typeof AppOrgProjectEnvironmentServiceHistoryIndexRoute
   '/$org/$project/$environment/$service/requests': typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
+  '/$org/$project/$environment/$service/settings': typeof AppOrgProjectEnvironmentServiceSettingsIndexRoute
   '/$org/analytics/$project/$site/replays': typeof AppOrgAnalyticsProjectSiteReplaysIndexRoute
 }
 export interface FileRoutesById {
@@ -876,7 +902,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/requests': typeof AppOrgProjectEnvironmentServiceRequestsRouteWithChildren
   '/_app/$org/$project/$environment/$service/resources': typeof AppOrgProjectEnvironmentServiceResourcesRoute
   '/_app/$org/$project/$environment/$service/run': typeof AppOrgProjectEnvironmentServiceRunRoute
-  '/_app/$org/$project/$environment/$service/settings': typeof AppOrgProjectEnvironmentServiceSettingsRoute
+  '/_app/$org/$project/$environment/$service/settings': typeof AppOrgProjectEnvironmentServiceSettingsRouteWithChildren
   '/_app/$org/$project/$environment/$service/traffic': typeof AppOrgProjectEnvironmentServiceTrafficRoute
   '/_app/$org/$project/$environment/$service/uptime': typeof AppOrgProjectEnvironmentServiceUptimeRoute
   '/_app/$org/$project/$environment/$service/variables': typeof AppOrgProjectEnvironmentServiceVariablesRoute
@@ -891,10 +917,13 @@ export interface FileRoutesById {
   '/_app/$org/$project/$environment/$service/analytics_/$': typeof AppOrgProjectEnvironmentServiceAnalyticsSplatRoute
   '/_app/$org/$project/$environment/$service/history/$number': typeof AppOrgProjectEnvironmentServiceHistoryNumberRoute
   '/_app/$org/$project/$environment/$service/requests/visitors': typeof AppOrgProjectEnvironmentServiceRequestsVisitorsRoute
+  '/_app/$org/$project/$environment/$service/settings/backups': typeof AppOrgProjectEnvironmentServiceSettingsBackupsRoute
+  '/_app/$org/$project/$environment/$service/settings/domains': typeof AppOrgProjectEnvironmentServiceSettingsDomainsRoute
   '/_app/$org/$project/$environment/$service_/releases/$number': typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
   '/_app/$org/analytics/$project/$site/replays/$replay': typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
   '/_app/$org/$project/$environment/$service/history/': typeof AppOrgProjectEnvironmentServiceHistoryIndexRoute
   '/_app/$org/$project/$environment/$service/requests/': typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
+  '/_app/$org/$project/$environment/$service/settings/': typeof AppOrgProjectEnvironmentServiceSettingsIndexRoute
   '/_app/$org/analytics/$project/$site/replays/': typeof AppOrgAnalyticsProjectSiteReplaysIndexRoute
 }
 export interface FileRouteTypes {
@@ -988,10 +1017,13 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/analytics/$'
     | '/$org/$project/$environment/$service/history/$number'
     | '/$org/$project/$environment/$service/requests/visitors'
+    | '/$org/$project/$environment/$service/settings/backups'
+    | '/$org/$project/$environment/$service/settings/domains'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/analytics/$project/$site/replays/$replay'
     | '/$org/$project/$environment/$service/history/'
     | '/$org/$project/$environment/$service/requests/'
+    | '/$org/$project/$environment/$service/settings/'
     | '/$org/analytics/$project/$site/replays/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -1061,7 +1093,6 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/releases'
     | '/$org/$project/$environment/$service/resources'
     | '/$org/$project/$environment/$service/run'
-    | '/$org/$project/$environment/$service/settings'
     | '/$org/$project/$environment/$service/traffic'
     | '/$org/$project/$environment/$service/uptime'
     | '/$org/$project/$environment/$service/variables'
@@ -1076,10 +1107,13 @@ export interface FileRouteTypes {
     | '/$org/$project/$environment/$service/analytics/$'
     | '/$org/$project/$environment/$service/history/$number'
     | '/$org/$project/$environment/$service/requests/visitors'
+    | '/$org/$project/$environment/$service/settings/backups'
+    | '/$org/$project/$environment/$service/settings/domains'
     | '/$org/$project/$environment/$service/releases/$number'
     | '/$org/analytics/$project/$site/replays/$replay'
     | '/$org/$project/$environment/$service/history'
     | '/$org/$project/$environment/$service/requests'
+    | '/$org/$project/$environment/$service/settings'
     | '/$org/analytics/$project/$site/replays'
   id:
     | '__root__'
@@ -1172,10 +1206,13 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/$environment/$service/analytics_/$'
     | '/_app/$org/$project/$environment/$service/history/$number'
     | '/_app/$org/$project/$environment/$service/requests/visitors'
+    | '/_app/$org/$project/$environment/$service/settings/backups'
+    | '/_app/$org/$project/$environment/$service/settings/domains'
     | '/_app/$org/$project/$environment/$service_/releases/$number'
     | '/_app/$org/analytics/$project/$site/replays/$replay'
     | '/_app/$org/$project/$environment/$service/history/'
     | '/_app/$org/$project/$environment/$service/requests/'
+    | '/_app/$org/$project/$environment/$service/settings/'
     | '/_app/$org/analytics/$project/$site/replays/'
   fileRoutesById: FileRoutesById
 }
@@ -1828,6 +1865,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgProjectEnvironmentServiceRequestsVisitorsRouteImport
       parentRoute: typeof AppOrgProjectEnvironmentServiceRequestsRoute
     }
+    '/_app/$org/$project/$environment/$service/settings/': {
+      id: '/_app/$org/$project/$environment/$service/settings/'
+      path: '/'
+      fullPath: '/$org/$project/$environment/$service/settings/'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceSettingsIndexRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceSettingsRoute
+    }
+    '/_app/$org/$project/$environment/$service/settings/backups': {
+      id: '/_app/$org/$project/$environment/$service/settings/backups'
+      path: '/backups'
+      fullPath: '/$org/$project/$environment/$service/settings/backups'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceSettingsBackupsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceSettingsRoute
+    }
+    '/_app/$org/$project/$environment/$service/settings/domains': {
+      id: '/_app/$org/$project/$environment/$service/settings/domains'
+      path: '/domains'
+      fullPath: '/$org/$project/$environment/$service/settings/domains'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceSettingsDomainsRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceSettingsRoute
+    }
     '/_app/$org/$project/$environment/$service_/releases/$number': {
       id: '/_app/$org/$project/$environment/$service_/releases/$number'
       path: '/$project/$environment/$service/releases/$number'
@@ -1923,6 +1981,27 @@ const AppOrgProjectEnvironmentServiceRequestsRouteWithChildren =
     AppOrgProjectEnvironmentServiceRequestsRouteChildren,
   )
 
+interface AppOrgProjectEnvironmentServiceSettingsRouteChildren {
+  AppOrgProjectEnvironmentServiceSettingsBackupsRoute: typeof AppOrgProjectEnvironmentServiceSettingsBackupsRoute
+  AppOrgProjectEnvironmentServiceSettingsDomainsRoute: typeof AppOrgProjectEnvironmentServiceSettingsDomainsRoute
+  AppOrgProjectEnvironmentServiceSettingsIndexRoute: typeof AppOrgProjectEnvironmentServiceSettingsIndexRoute
+}
+
+const AppOrgProjectEnvironmentServiceSettingsRouteChildren: AppOrgProjectEnvironmentServiceSettingsRouteChildren =
+  {
+    AppOrgProjectEnvironmentServiceSettingsBackupsRoute:
+      AppOrgProjectEnvironmentServiceSettingsBackupsRoute,
+    AppOrgProjectEnvironmentServiceSettingsDomainsRoute:
+      AppOrgProjectEnvironmentServiceSettingsDomainsRoute,
+    AppOrgProjectEnvironmentServiceSettingsIndexRoute:
+      AppOrgProjectEnvironmentServiceSettingsIndexRoute,
+  }
+
+const AppOrgProjectEnvironmentServiceSettingsRouteWithChildren =
+  AppOrgProjectEnvironmentServiceSettingsRoute._addFileChildren(
+    AppOrgProjectEnvironmentServiceSettingsRouteChildren,
+  )
+
 interface AppOrgProjectEnvironmentServiceRouteChildren {
   AppOrgProjectEnvironmentServiceAnalyticsRoute: typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
   AppOrgProjectEnvironmentServiceAuditRoute: typeof AppOrgProjectEnvironmentServiceAuditRoute
@@ -1938,7 +2017,7 @@ interface AppOrgProjectEnvironmentServiceRouteChildren {
   AppOrgProjectEnvironmentServiceRequestsRoute: typeof AppOrgProjectEnvironmentServiceRequestsRouteWithChildren
   AppOrgProjectEnvironmentServiceResourcesRoute: typeof AppOrgProjectEnvironmentServiceResourcesRoute
   AppOrgProjectEnvironmentServiceRunRoute: typeof AppOrgProjectEnvironmentServiceRunRoute
-  AppOrgProjectEnvironmentServiceSettingsRoute: typeof AppOrgProjectEnvironmentServiceSettingsRoute
+  AppOrgProjectEnvironmentServiceSettingsRoute: typeof AppOrgProjectEnvironmentServiceSettingsRouteWithChildren
   AppOrgProjectEnvironmentServiceTrafficRoute: typeof AppOrgProjectEnvironmentServiceTrafficRoute
   AppOrgProjectEnvironmentServiceUptimeRoute: typeof AppOrgProjectEnvironmentServiceUptimeRoute
   AppOrgProjectEnvironmentServiceVariablesRoute: typeof AppOrgProjectEnvironmentServiceVariablesRoute
@@ -1979,7 +2058,7 @@ const AppOrgProjectEnvironmentServiceRouteChildren: AppOrgProjectEnvironmentServ
     AppOrgProjectEnvironmentServiceRunRoute:
       AppOrgProjectEnvironmentServiceRunRoute,
     AppOrgProjectEnvironmentServiceSettingsRoute:
-      AppOrgProjectEnvironmentServiceSettingsRoute,
+      AppOrgProjectEnvironmentServiceSettingsRouteWithChildren,
     AppOrgProjectEnvironmentServiceTrafficRoute:
       AppOrgProjectEnvironmentServiceTrafficRoute,
     AppOrgProjectEnvironmentServiceUptimeRoute:

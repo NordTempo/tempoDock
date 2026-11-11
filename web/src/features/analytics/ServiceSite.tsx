@@ -59,8 +59,7 @@ export function ServiceSite({
         Visitors come from Dock Analytics' script on the service's pages. Count
         visits to one of its domains on{" "}
         <Link
-          to="/$org/$project/$environment/$service/settings"
-          hash="domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={{ org, ...ref }}
         >
           Domains

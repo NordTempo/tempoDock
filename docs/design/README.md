@@ -130,10 +130,11 @@ for everything.
   Logs, Requests, Errors, Metrics), operating it (Jobs, Data), configuring
   it (Variables, Settings), its history (History). Pages that answer one
   question are one tab: Metrics is Resources and Uptime, Jobs is one-off
-  commands and scheduled jobs, Settings is Build & run, Domains and
-  restore points with an index, History is releases and activity, and a
+  commands and scheduled jobs, Settings has Build & run, Domains and
+  Backups views, History is releases and activity, and a
   release opens under it in the shell. A tab's views (Requests' Traffic
-  and Visitors) are underlined links under it, each with its own URL. The
+  and Visitors, Settings' Build & run, Domains and Backups) are underlined
+  links under it, each with its own URL. The
   list is `web/src/features/service/tabs.ts`.
 - **Overview.** One column: status, what needs attention, facts, uptime
   and visitors, how to connect, the deploy in flight, the newest releases.

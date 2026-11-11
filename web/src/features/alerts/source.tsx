@@ -144,9 +144,9 @@ export function AlertLink({
       if (svc)
         return (
           <Link
-            to="/$org/$project/$environment/$service/settings"
+            to="/$org/$project/$environment/$service/settings/backups"
             params={svc}
-            hash={run ?? "backups"}
+            hash={run}
             {...props}
           >
             {run ? "See why" : "Open backups"}
@@ -211,8 +211,7 @@ export function AlertLink({
       if (!svc) break;
       return (
         <Link
-          to="/$org/$project/$environment/$service/settings"
-          hash="domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={svc}
           {...props}
         >

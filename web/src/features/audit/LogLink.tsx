@@ -14,8 +14,7 @@ export function AuditLogLink({ event: e }: { event: AuditEvent }) {
     return null;
   return (
     <Link
-      to="/$org/$project/$environment/$service/settings"
-      hash="backups"
+      to="/$org/$project/$environment/$service/settings/backups"
       params={{ org, project: e.project, environment: e.environment, service }}
       className="text-fail underline underline-offset-3"
     >

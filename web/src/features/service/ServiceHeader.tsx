@@ -254,8 +254,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           </a>
         )}
         <Link
-          to="/$org/$project/$environment/$service/settings"
-          hash="domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={{ org, ...ref }}
           className="-my-[4px] inline-flex min-h-[24px] items-center text-mut hover:text-fg"
         >
@@ -586,13 +585,12 @@ function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
   return (
     <Link
-      to="/$org/$project/$environment/$service/settings"
-      hash="backups"
+      to="/$org/$project/$environment/$service/settings/backups"
       params={{ org, ...ref }}
       className="-my-[4px] inline-flex min-h-[24px] items-center hover:underline"
     >
       {last?.finished_at ? `last ${ago(last.finished_at)}` : "none yet"}
-      <span className="ml-2 text-mut">restore points →</span>
+      <span className="ml-2 text-mut">backups →</span>
     </Link>
   );
 }
