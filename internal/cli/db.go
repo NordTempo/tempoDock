@@ -461,11 +461,8 @@ With --json, the page as the API returns it, including next.`,
 		if reveal {
 			q.Set("reveal", "true")
 		}
-		table, err := qualify(ctx, s, data, args[0])
-		if err != nil {
-			return err
-		}
-		page, err := get[apitypes.DataPage](ctx, s, data+"/tables/"+url.PathEscape(table)+"/rows?"+q.Encode())
+		// The server resolves a bare name (public first, else its one schema).
+		page, err := get[apitypes.DataPage](ctx, s, data+"/tables/"+url.PathEscape(args[0])+"/rows?"+q.Encode())
 		if err != nil {
 			return err
 		}
@@ -510,7 +507,8 @@ With --json, the page as the API returns it, including next.`,
 
 // qualify names a table as schema.table: as given when qualified, else the
 // table of that name in the database's schema (findTable: Postgres's public
-// first), so a bare name works on MySQL, whose schemas are databases.
+// first), so a bare name works on MySQL, whose schemas are databases. For
+// requests that carry the schema separately (sensitive columns).
 func qualify(ctx context.Context, s *session, data, name string) (string, error) {
 	if strings.Contains(name, ".") {
 		return name, nil

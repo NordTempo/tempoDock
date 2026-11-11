@@ -78,9 +78,25 @@ func serviceVulnSummary(service string, d apitypes.ImageDetail) string {
 		if g.Kind == apitypes.FixUpgrade {
 			how = "upgrade the app's dependencies"
 		}
-		sum += fmt.Sprintf(" To fix %d critical and %d high, %s: %s.", g.Critical, g.High, how, strings.Join(top, ", "))
+		sum += fmt.Sprintf(" To fix %s, %s: %s.", fixCounts(g.VulnCounts), how, strings.Join(top, ", "))
 	}
 	return sum
+}
+
+// fixCounts is what a fix group fixes, worst first and only what it has:
+// "2 critical and 13 high", "13 high", "22 medium or low".
+func fixCounts(n apitypes.VulnCounts) string {
+	var parts []string
+	if n.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d critical", n.Critical))
+	}
+	if n.High > 0 {
+		parts = append(parts, fmt.Sprintf("%d high", n.High))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("%d medium or low", n.Medium+n.Low+n.Other)
+	}
+	return strings.Join(parts, " and ")
 }
 
 // orgVulnSummary answers across the org: the worst few findings and where.

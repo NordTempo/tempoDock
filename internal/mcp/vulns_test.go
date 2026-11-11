@@ -31,7 +31,7 @@ func TestListVulnerabilities(t *testing.T) {
 		t.Fatalf("summary = %q", res.summary)
 	}
 	svc := call(t, s, "list_vulnerabilities", map[string]any{"service": "web"})
-	if !strings.Contains(svc.summary, "rebuild on a newer base image") || !strings.Contains(svc.summary, "openssl 3.3.1-r0 to 3.3.2-r0") {
+	if !strings.Contains(svc.summary, "To fix 1 critical, rebuild on a newer base image") || !strings.Contains(svc.summary, "openssl 3.3.1-r0 to 3.3.2-r0") {
 		t.Fatalf("service summary = %q", svc.summary)
 	}
 }

@@ -107,12 +107,14 @@ scenario_vulns() {
 	done
 }
 
-# rel_exec SERVICE CMD... runs CMD in the service's container on the control plane.
+# rel_exec SERVICE CMD... runs CMD in the service's container, on the
+# server production was placed on (e2e/vm names containers after servers).
 rel_exec() {
-	local c
-	c=$(docker exec e2e2-cp docker ps --format '{{.Names}}' | grep -m1 "^dock_p$(api GET "/projects/$P" | jq -r .id)_.*_s$(api GET "$(svc_path "$P" "$1")" | jq -r .id)_")
+	local srv c
+	srv=$(api GET "/projects/$P/environments" | jq -r '.[] | select(.name == "production") | .server')
+	c=$(docker exec "$srv" docker ps --format '{{.Names}}' | grep -m1 "^dock_p$(api GET "/projects/$P" | jq -r .id)_.*_s$(api GET "$(svc_path "$P" "$1")" | jq -r .id)_")
 	shift
-	docker exec e2e2-cp docker exec "$c" "$@"
+	docker exec "$srv" docker exec "$c" "$@"
 }
 
 scenario_data() {
