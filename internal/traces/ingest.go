@@ -33,8 +33,8 @@ const (
 	// 150 to 400 KB.
 	DefaultMaxBody    = 2 << 20
 	DefaultMaxDecoded = 4 << 20
-	// DefaultDecoders is how many bodies are read and decoded at once;
-	// past it a request gets 503 and retries later.
+	// DefaultDecoders is how many bodies are decoded at once; past it a
+	// request gets 503 and retries later.
 	DefaultDecoders = 2
 	// DefaultServiceRate is the spans a second a service may send, with
 	// twice as many in a burst; past it spans are rejected.
@@ -65,6 +65,7 @@ type Ingest struct {
 
 	once     sync.Once
 	decoders chan struct{}
+	readers  readers
 	bufs     sync.Pool
 	rates    rates
 }
@@ -80,6 +81,7 @@ func (in *Ingest) init() {
 		in.decoders = make(chan struct{}, l.Decoders)
 		in.bufs.New = func() any { return new(bytes.Buffer) }
 		in.rates.by = map[int64]*bucket{}
+		in.readers.by = map[int64]int{}
 		if in.Now == nil {
 			in.Now = time.Now
 		}
@@ -120,18 +122,20 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	asJSON := isJSON(r)
-	select {
-	case in.decoders <- struct{}{}:
-		defer func() { <-in.decoders }()
-	default:
-		w.Header().Set("Retry-After", "5")
-		http.Error(w, "busy; send again in a few seconds", http.StatusServiceUnavailable)
+	// The body is read before taking a decoder, within bodyTimeout and the
+	// service's share of readers: an app that sends slowly holds only its
+	// own share, never the decoders every app needs.
+	if !in.readers.acquire(claims.Service) {
+		busy(w)
 		return
 	}
 	buf := in.bufs.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer in.bufs.Put(buf)
-	if err := in.readBody(buf, r); err != nil {
+	_ = http.NewResponseController(w).SetReadDeadline(in.Now().Add(bodyTimeout))
+	err = in.readBody(buf, r)
+	in.readers.release(claims.Service)
+	if err != nil {
 		var tooBig *tooBigError
 		if errors.As(err, &tooBig) {
 			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
@@ -140,12 +144,19 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	select {
+	case in.decoders <- struct{}{}:
+		defer func() { <-in.decoders }()
+	default:
+		busy(w)
+		return
+	}
 
 	var kept, rejected int
 	line := in.bufs.Get().(*bytes.Buffer)
 	defer in.bufs.Put(line)
 	now := in.Now()
-	add := func(_ []attr, sp *rawSpan) error {
+	add := func(sp *rawSpan) error {
 		s, ok := convert(sp, claims)
 		if !ok || !in.rates.take(claims.Service, in.Limits.ServiceRate, now) {
 			rejected++
@@ -181,6 +192,51 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 		msg = "Dock dropped " + strconv.Itoa(rejected) + " spans: past the service's rate, or without IDs or a start"
 	}
 	reply(w, asJSON, rejected, msg)
+}
+
+// busy answers a request the ingest has no room for: SDKs send it again.
+func busy(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "5")
+	http.Error(w, "busy; send again in a few seconds", http.StatusServiceUnavailable)
+}
+
+// How long a body may take to arrive, and how many are read at once: in
+// all and for one service. Bodies come over the server's own networks, a
+// 2 MB batch in milliseconds.
+const (
+	bodyTimeout       = 5 * time.Second
+	maxReaders        = 8
+	maxServiceReaders = 2
+)
+
+// readers counts the bodies being read, in all and by service.
+type readers struct {
+	mu    sync.Mutex
+	total int
+	by    map[int64]int
+}
+
+// acquire takes a reader for service, false when there is none: maxReaders
+// in all, maxServiceReaders for the service.
+func (r *readers) acquire(service int64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.total == maxReaders || r.by[service] == maxServiceReaders {
+		return false
+	}
+	r.total++
+	r.by[service]++
+	return true
+}
+
+// release gives back what acquire took.
+func (r *readers) release(service int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.total--
+	if r.by[service]--; r.by[service] == 0 {
+		delete(r.by, service)
+	}
 }
 
 // tooBigError is a body over a cap.

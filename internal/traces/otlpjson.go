@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json/jsontext"
@@ -14,19 +15,6 @@ import (
 // 64-bit integers may come as strings or numbers, and enums as numbers or
 // their names.
 
-type jsonRequest struct {
-	ResourceSpans []jsonResourceSpans `json:"resourceSpans"`
-}
-
-type jsonResourceSpans struct {
-	Resource struct {
-		Attributes []jsonKV `json:"attributes"`
-	} `json:"resource"`
-	ScopeSpans []struct {
-		Spans []jsonSpan `json:"spans"`
-	} `json:"scopeSpans"`
-}
-
 type jsonSpan struct {
 	TraceID           string         `json:"traceId"`
 	SpanID            string         `json:"spanId"`
@@ -35,8 +23,8 @@ type jsonSpan struct {
 	Kind              jsontext.Value `json:"kind"`
 	StartTimeUnixNano jsontext.Value `json:"startTimeUnixNano"`
 	EndTimeUnixNano   jsontext.Value `json:"endTimeUnixNano"`
-	Attributes        []jsonKV       `json:"attributes"`
-	Events            []jsonEvent    `json:"events"`
+	Attributes        jsonKVs        `json:"attributes"`
+	Events            jsonEvents     `json:"events"`
 	Status            struct {
 		Code    jsontext.Value `json:"code"`
 		Message string         `json:"message"`
@@ -46,7 +34,7 @@ type jsonSpan struct {
 type jsonEvent struct {
 	TimeUnixNano jsontext.Value `json:"timeUnixNano"`
 	Name         string         `json:"name"`
-	Attributes   []jsonKV       `json:"attributes"`
+	Attributes   jsonKVs        `json:"attributes"`
 }
 
 type jsonKV struct {
@@ -61,12 +49,24 @@ type jsonAny struct {
 	DoubleValue jsontext.Value `json:"doubleValue"`
 	BytesValue  *string        `json:"bytesValue"`
 	ArrayValue  *struct {
-		Values []jsonAny `json:"values"`
+		Values jsonAnys `json:"values"`
 	} `json:"arrayValue"`
 	KvlistValue *struct {
-		Values []jsonKV `json:"values"`
+		Values jsonKVList `json:"values"`
 	} `json:"kvlistValue"`
 }
+
+// jsonKVs, jsonEvents, jsonAnys and jsonKVList are capped lists, as
+// decodeSpan caps protobuf: decodeJSON's unmarshalers keep at most
+// maxAttrs attributes a span or event, maxEvents events (preferring
+// exceptions) and maxList entries a nested list or map, each nested one
+// spending a value of the span's budget, and skip the rest unread.
+type (
+	jsonKVs    []jsonKV
+	jsonEvents []jsonEvent
+	jsonAnys   []jsonAny
+	jsonKVList []jsonKV
+)
 
 // errBadJSON is a JSON body that isn't an OTLP trace export.
 var errBadJSON = errors.New("the body isn't an OTLP/JSON ExportTraceServiceRequest")
@@ -79,37 +79,148 @@ var (
 )
 
 // decodeJSON reads an OTLP/JSON ExportTraceServiceRequest, calling add for
-// every span with its resource's attributes. A span whose IDs aren't hex
-// is passed with zero IDs, which the caller rejects.
-func decodeJSON(b []byte, add func(res []attr, sp *rawSpan) error) error {
-	var req jsonRequest
-	if err := json.Unmarshal(b, &req); err != nil {
+// every span. It streams: one span is decoded at a time, within the same
+// caps as protobuf (decodeSpan), and resources' attributes are skipped. A
+// span whose IDs aren't hex is passed with zero IDs, which the caller
+// rejects.
+func decodeJSON(b []byte, add func(sp *rawSpan) error) error {
+	var bud budget
+	var addErr error
+	var opts json.Options
+	opts = json.WithUnmarshalers(json.JoinUnmarshalers(
+		json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *jsonKVs) error {
+			return capped(dec, opts, (*[]jsonKV)(v), maxAttrs, nil, func(l []jsonKV, x jsonKV) []jsonKV { return append(l, x) })
+		}),
+		json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *jsonAnys) error {
+			return capped(dec, opts, (*[]jsonAny)(v), maxList, &bud, func(l []jsonAny, x jsonAny) []jsonAny { return append(l, x) })
+		}),
+		json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *jsonKVList) error {
+			return capped(dec, opts, (*[]jsonKV)(v), maxList, &bud, func(l []jsonKV, x jsonKV) []jsonKV { return append(l, x) })
+		}),
+		json.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *jsonEvents) error {
+			return capped(dec, opts, (*[]jsonEvent)(v), -1, nil, func(l []jsonEvent, x jsonEvent) []jsonEvent {
+				if len(l) < maxEvents {
+					return append(l, x)
+				}
+				if x.Name == "exception" {
+					for i := len(l) - 1; i >= 0; i-- {
+						if l[i].Name != "exception" {
+							l[i] = x
+							break
+						}
+					}
+				}
+				return l
+			})
+		}),
+	))
+	dec := jsontext.NewDecoder(bytes.NewReader(b))
+	err := eachField(dec, "resourceSpans", func() error {
+		return eachItem(dec, func() error {
+			return eachField(dec, "scopeSpans", func() error {
+				return eachItem(dec, func() error {
+					return eachField(dec, "spans", func() error {
+						return eachItem(dec, func() error {
+							bud = spanBudget
+							var js jsonSpan
+							if err := json.UnmarshalDecode(dec, &js, opts); err != nil {
+								return err
+							}
+							sp := rawSpan{
+								name: js.Name, kind: jsonEnum(js.Kind, spanKinds),
+								start: jsonUint(js.StartTimeUnixNano), end: jsonUint(js.EndTimeUnixNano),
+								attrs: jsonAttrs(js.Attributes, 0), statusCode: jsonEnum(js.Status.Code, statusCodes), statusMessage: js.Status.Message,
+							}
+							if id, err := hex.DecodeString(js.TraceID); err == nil && len(id) == 16 {
+								copy(sp.traceID[:], id)
+							}
+							sp.spanID, sp.parentID = hexID(js.SpanID), hexID(js.ParentSpanID)
+							for _, je := range js.Events {
+								sp.events = append(sp.events, event{time: jsonUint(je.TimeUnixNano), name: je.Name, attrs: jsonAttrs(je.Attributes, 0)})
+							}
+							addErr = add(&sp)
+							return addErr
+						})
+					})
+				})
+			})
+		})
+	})
+	switch {
+	case addErr != nil:
+		return addErr
+	case err != nil:
 		return errBadJSON
 	}
-	for _, rs := range req.ResourceSpans {
-		res := jsonAttrs(rs.Resource.Attributes, 0)
-		for _, ss := range rs.ScopeSpans {
-			for i := range ss.Spans {
-				js := &ss.Spans[i]
-				sp := rawSpan{
-					name: js.Name, kind: jsonEnum(js.Kind, spanKinds),
-					start: jsonUint(js.StartTimeUnixNano), end: jsonUint(js.EndTimeUnixNano),
-					attrs: jsonAttrs(js.Attributes, 0), statusCode: jsonEnum(js.Status.Code, statusCodes), statusMessage: js.Status.Message,
-				}
-				if id, err := hex.DecodeString(js.TraceID); err == nil && len(id) == 16 {
-					copy(sp.traceID[:], id)
-				}
-				sp.spanID, sp.parentID = hexID(js.SpanID), hexID(js.ParentSpanID)
-				for _, je := range js.Events {
-					sp.events = append(sp.events, event{time: jsonUint(je.TimeUnixNano), name: je.Name, attrs: jsonAttrs(je.Attributes, 0)})
-				}
-				if err := add(res, &sp); err != nil {
-					return err
-				}
-			}
+	return nil
+}
+
+// capped decodes a JSON array (or null) into list, its items with opts
+// (decodeJSON's unmarshalers), and keep adds each: past n items (n < 0: no
+// cap) or bud (nil: none) the rest are skipped.
+func capped[T any](dec *jsontext.Decoder, opts json.Options, list *[]T, n int, bud *budget, keep func([]T, T) []T) error {
+	return eachItem(dec, func() error {
+		if len(*list) == n || (bud != nil && !bud.take()) {
+			return dec.SkipValue()
+		}
+		var x T
+		if err := json.UnmarshalDecode(dec, &x, opts); err != nil {
+			return err
+		}
+		*list = keep(*list, x)
+		return nil
+	})
+}
+
+// eachItem calls f for each item of the JSON array dec is at, f reading
+// it; null is an empty array.
+func eachItem(dec *jsontext.Decoder, f func() error) error {
+	if dec.PeekKind() == 'n' {
+		_, err := dec.ReadToken()
+		return err
+	}
+	if tok, err := dec.ReadToken(); err != nil {
+		return err
+	} else if tok.Kind() != '[' {
+		return errBadJSON
+	}
+	for dec.PeekKind() != ']' {
+		if err := f(); err != nil {
+			return err
 		}
 	}
-	return nil
+	_, err := dec.ReadToken()
+	return err
+}
+
+// eachField reads the JSON object (or null) dec is at, calling f to read
+// the value of its member name and skipping the others.
+func eachField(dec *jsontext.Decoder, name string, f func() error) error {
+	if dec.PeekKind() == 'n' {
+		_, err := dec.ReadToken()
+		return err
+	}
+	if tok, err := dec.ReadToken(); err != nil {
+		return err
+	} else if tok.Kind() != '{' {
+		return errBadJSON
+	}
+	for dec.PeekKind() != '}' {
+		tok, err := dec.ReadToken()
+		if err != nil {
+			return err
+		}
+		if tok.String() == name {
+			err = f()
+		} else {
+			err = dec.SkipValue()
+		}
+		if err != nil {
+			return err
+		}
+	}
+	_, err := dec.ReadToken()
+	return err
 }
 
 // jsonAttrs converts key-values.
