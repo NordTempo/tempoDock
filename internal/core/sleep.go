@@ -332,6 +332,9 @@ func (c *Core) putToSleep(ctx context.Context, es envScope, by string) error {
 	if err := c.canSleepOn(es.env.ServerID); err != nil {
 		return err
 	}
+	if err := c.notMoving(ctx, es, "put it to sleep"); err != nil {
+		return err
+	}
 	op := c.beginOp(es.env.ID, es.env.ServerID, false)
 	if op == nil {
 		return errAwakeAgain
@@ -672,11 +675,22 @@ func (w RequestWaker) Asleep(key string) bool {
 }
 
 // Wake wakes key's environment in the background, so a client that gives
-// up doesn't stop it, and waits for it until ctx ends.
+// up doesn't stop it, and waits for it until ctx ends. A request that
+// finds a wake in flight only waits for it: held requests, which give up
+// after seconds while a wake can take its health checks' minutes, start
+// no goroutine each.
 func (w RequestWaker) Wake(ctx context.Context, key, request string) error {
 	id, err := strconv.ParseInt(key, 10, 64)
 	if err != nil {
 		return err
+	}
+	if op := w.c.wakingOp(id); op != nil {
+		select {
+		case <-op.done:
+			return op.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	done := make(chan error, 1)
 	w.c.wg.Go(func() { done <- w.c.wakeByID(id, request) })
@@ -747,12 +761,17 @@ func (c *Core) wakeByID(envID int64, request string) error {
 }
 
 // isWaking reports whether an environment's wake is in flight.
-func (c *Core) isWaking(envID int64) bool {
+func (c *Core) isWaking(envID int64) bool { return c.wakingOp(envID) != nil }
+
+// wakingOp is the environment's wake in flight, nil when none.
+func (c *Core) wakingOp(envID int64) *sleepOp {
 	s := &c.sleep
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	e := s.envs[envID]
-	return e != nil && e.op != nil && e.op.waking
+	if e := s.envs[envID]; e != nil && e.op != nil && e.op.waking {
+		return e.op
+	}
+	return nil
 }
 
 // SleepEnvironment puts an environment to sleep now (deploy scope: it

@@ -92,7 +92,7 @@ func (r *Runtime) SBOM(ctx context.Context, req node.SBOMRequest, out io.Writer)
 	}
 	cfg := &container.Config{
 		Image:      target,
-		Labels:     scanLabels(req.Labels),
+		Labels:     r.scanLabels(req.Labels),
 		User:       "0:0",
 		Entrypoint: []string{scanBin},
 		Cmd: []string{"scan", "dir:/", "--override-default-catalogers", "image", "-o", "syft-json", "-q",
@@ -156,7 +156,7 @@ func (r *Runtime) Match(ctx context.Context, req node.MatchRequest, sbom io.Read
 	}
 	cfg := &container.Config{
 		Image:       req.Images.Grype,
-		Labels:      scanLabels(req.Labels),
+		Labels:      r.scanLabels(req.Labels),
 		Cmd:         []string{"-o", "json", "-q"},
 		Env:         grypeEnv(),
 		Healthcheck: noHealthcheck(),
@@ -195,7 +195,7 @@ func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest
 			return node.ScanDatabase{}, errors.New("this server doesn't build, so it has no network for the vulnerability database")
 		}
 		cfg := &container.Config{
-			Image: req.Images.Grype, Labels: scanLabels(req.Labels), Cmd: []string{"db", "update"},
+			Image: req.Images.Grype, Labels: r.scanLabels(req.Labels), Cmd: []string{"db", "update"},
 			Env: grypeEnv(), Healthcheck: noHealthcheck(), AttachStdout: true, AttachStderr: true,
 		}
 		host := scanHost(limits)
@@ -207,7 +207,7 @@ func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest
 		}
 	}
 	cfg := &container.Config{
-		Image: req.Images.Grype, Labels: scanLabels(req.Labels), Cmd: []string{"db", "status", "-o", "json"},
+		Image: req.Images.Grype, Labels: r.scanLabels(req.Labels), Cmd: []string{"db", "status", "-o", "json"},
 		Env: grypeEnv(), Healthcheck: noHealthcheck(), AttachStdout: true, AttachStderr: true,
 	}
 	host := scanHost(limits)
@@ -282,7 +282,7 @@ func (r *Runtime) ImportScanDatabase(ctx context.Context, req node.ScanDatabaseR
 	const in = "/dock-import/db.tar.zst"
 	limits := node.ScanLimits{MemoryBytes: scanDatabaseMemory, Timeout: 15 * time.Minute}
 	cfg := &container.Config{
-		Image: req.Images.Grype, Labels: scanLabels(req.Labels), Cmd: []string{"db", "import", in},
+		Image: req.Images.Grype, Labels: r.scanLabels(req.Labels), Cmd: []string{"db", "import", in},
 		Env: grypeEnv(), Healthcheck: noHealthcheck(), AttachStdout: true, AttachStderr: true,
 	}
 	host := scanHost(limits)
@@ -339,10 +339,15 @@ func grypeEnv() []string {
 	}
 }
 
-// scanLabels are a scan job's labels: the control plane's, as a job.
-func scanLabels(l node.Labels) map[string]string {
+// scanLabels are a scan job's labels: the control plane's, as a job of
+// this runtime (node.LabelOwner), so UnpauseStranded removes one a
+// restart cut short instead of leaving it for good.
+func (r *Runtime) scanLabels(l node.Labels) map[string]string {
 	m := l.Map()
 	m[node.LabelRole] = node.RoleJob
+	if owner := r.owner(); owner != "" {
+		m[node.LabelOwner] = owner
+	}
 	return m
 }
 
@@ -513,7 +518,7 @@ func (r *Runtime) syftBinary(ctx context.Context, image string) (string, error) 
 // through a temporary file so dst is never half written.
 func (r *Runtime) copyOut(ctx context.Context, image, src, dst string) error {
 	created, err := r.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &container.Config{Image: image, Labels: scanLabels(node.Labels{})},
+		Config:     &container.Config{Image: image, Labels: r.scanLabels(node.Labels{})},
 		HostConfig: &container.HostConfig{NetworkMode: "none"},
 	})
 	if err != nil {

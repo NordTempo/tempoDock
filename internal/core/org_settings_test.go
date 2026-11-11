@@ -148,6 +148,16 @@ func TestDeleteOrg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Its status pages go first, with the records Dock made for them.
+	if _, err := h.c.CreateStatusPage(h.ctx, ada, apitypes.CreateStatusPageRequest{Slug: "empty"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.DeleteOrg(h.ctx, ada); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("deleting an org with a status page: %v", err)
+	}
+	if err := h.c.DeleteStatusPage(h.ctx, ada, "empty"); err != nil {
+		t.Fatal(err)
+	}
 	if err := h.c.DeleteOrg(h.ctx, ada); err != nil {
 		t.Fatal(err)
 	}

@@ -206,6 +206,19 @@ type moveOpts struct {
 // goroutine. MoveEnvironment and drains call it, having checked the
 // caller.
 func (c *Core) beginMove(ctx context.Context, es envScope, to store.Server, o moveOpts) (apitypes.EnvironmentMove, error) {
+	// An asleep environment wakes first: a move starts its services on
+	// the target and copies what runs (ADR 0070). It doesn't sleep again
+	// until the move ends (putToSleep's notMoving).
+	if es.env.AsleepAt != nil || c.isAsleep(es.env.ID) {
+		if err := c.wake(ctx, es, o.by); err != nil {
+			return apitypes.EnvironmentMove{}, fmt.Errorf("wake %s before moving it: %w", es, err)
+		}
+		env, err := c.store.GetEnvironment(ctx, es.env.ID)
+		if err != nil {
+			return apitypes.EnvironmentMove{}, err
+		}
+		es.env = env
+	}
 	from, err := c.store.GetServer(ctx, es.env.ServerID)
 	if err != nil {
 		return apitypes.EnvironmentMove{}, err
@@ -1252,6 +1265,9 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 	if err != nil {
 		return err
 	}
+	// Sleep follows the environment to its server: its wake checks and
+	// node wake requests are the target's from here on.
+	c.reloadSleep(ctx)
 	moved := es
 	moved.env.ServerID = m.ToServerID
 	for _, s := range svcs {

@@ -139,6 +139,11 @@ func (c *Core) startScans(ctx context.Context) {
 	if err := c.store.RequeueInterruptedScans(ctx); err != nil {
 		c.log.Error("requeue scans", "err", err)
 	}
+	// SBOMs an interrupted scan was writing; the scan runs again.
+	tmps, _ := filepath.Glob(filepath.Join(c.cfg.DataDir, "sboms", ".sbom-*"))
+	for _, f := range tmps {
+		_ = os.Remove(f)
+	}
 	imported, err := c.store.GetScanDatabaseImport(ctx)
 	if err != nil && !store.IsNotFound(err) {
 		c.log.Error("read the imported database", "err", err)
