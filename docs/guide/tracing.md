@@ -58,6 +58,10 @@ dock traces --errors --route /orders         # what failed
 dock traces show 4f2a9c1e…                   # one trace as a tree of its spans
 ```
 
+In the UI, a service's Requests tab has a Traces view: a trace opens its
+spans in place, and "Open full trace" gives it a page of its own. A failed
+release's diagnosis links to the request that failed.
+
 Agents get the same through MCP: `traces_list` and `trace_get`.
 
 ## What Dock keeps
