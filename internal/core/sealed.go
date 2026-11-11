@@ -32,6 +32,7 @@ var (
 	// (channelAAD): platform channels kept the AAD they had before orgs.
 	sealedAlertChannel                 = secrets.Column{Table: "alert_channels", Name: "config", Key: []string{"ifnull(org_id || '/', '') || name"}}
 	sealedLogDrain                     = secrets.Column{Table: "log_drains", Name: "config", Key: []string{"environment_id", "name"}}
+	sealedStatusHook                   = secrets.Column{Table: "status_hooks", Name: "config", Key: []string{"page_id", "name"}}
 	sealedGitSecret                    = secrets.Column{Table: "git_connections", Name: "secret", Key: []string{"service_id"}}
 	sealedGitToken                     = secrets.Column{Table: "git_connections", Name: "token", Key: []string{"service_id"}}
 	sealedAccessKey                    = secrets.Column{Table: "service_access", Name: "key", Key: []string{"service_id"}}
@@ -58,7 +59,7 @@ var (
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
-		sealedSSOSecret,
+		sealedSSOSecret, sealedStatusHook,
 	}
 )
 

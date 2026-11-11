@@ -181,11 +181,14 @@ func (c *Core) moveWindow(ctx context.Context, id int64, to apitypes.IncidentSta
 	if to == apitypes.MaintenanceCompleted {
 		next.ResolvedAt = &now
 	}
+	var moved store.StatusIncident
+	var posted store.StatusUpdate
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if _, err := q.UpdateStatusIncident(ctx, next); err != nil {
+		var err error
+		if moved, err = q.UpdateStatusIncident(ctx, next); err != nil {
 			return err
 		}
-		_, err := q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: id, State: string(to), Body: msg, At: now, CreatedBy: statusDraftBy})
+		posted, err = q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: id, State: string(to), Body: msg, At: now, CreatedBy: statusDraftBy})
 		return err
 	})
 	if err != nil {
@@ -199,6 +202,7 @@ func (c *Core) moveWindow(ctx context.Context, id int64, to apitypes.IncidentSta
 	c.auditIncident(ctx, System, action, row.StatusPage, row.StatusIncident.PublicID,
 		fmt.Sprintf("maintenance %s %q %s", row.StatusIncident.PublicID, row.StatusIncident.Title, strings.ReplaceAll(string(to), "_", " ")))
 	c.incidentChanged()
+	c.statusUpdatePosted(ctx, row.StatusPage, moved, posted)
 }
 
 // maintenanceChanged reloads the windows after one changed and sends the
@@ -279,6 +283,7 @@ func (c *Core) ScheduleMaintenance(ctx context.Context, a Actor, slug string, re
 		msg = "Scheduled maintenance."
 	}
 	var row store.StatusIncident
+	var first store.StatusUpdate
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
 		row, err = q.CreateStatusIncident(ctx, store.CreateStatusIncidentParams{PageID: p.ID, PublicID: newPublicID(), Kind: string(apitypes.KindMaintenance),
@@ -289,7 +294,7 @@ func (c *Core) ScheduleMaintenance(ctx context.Context, a Actor, slug string, re
 		if err := writeImpacts(ctx, q, row.ID, ims); err != nil {
 			return err
 		}
-		_, err = q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: row.ID, State: row.State, Body: msg, At: t, CreatedBy: a.Name})
+		first, err = q.CreateStatusUpdate(ctx, store.CreateStatusUpdateParams{IncidentID: row.ID, State: row.State, Body: msg, At: t, CreatedBy: a.Name})
 		return err
 	})
 	if err != nil {
@@ -298,6 +303,7 @@ func (c *Core) ScheduleMaintenance(ctx context.Context, a Actor, slug string, re
 	c.auditIncident(ctx, a, "maintenance.schedule", p, row.PublicID, fmt.Sprintf("scheduled maintenance %s %q from %s to %s on %s",
 		row.PublicID, title, start.Format(time.RFC3339), end.Format(time.RFC3339), impactsText(ims)))
 	c.maintenanceChanged(ctx)
+	c.statusUpdatePosted(ctx, p, row, first)
 	c.maintenanceTick(ctx, t)
 	return c.GetIncident(ctx, a, row.PublicID)
 }

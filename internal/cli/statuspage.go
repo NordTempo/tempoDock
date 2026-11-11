@@ -20,7 +20,7 @@ func newStatusPageCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "status-page", Short: "Public status pages of the organization's services"})
 	cmd.AddCommand(newStatusPageListCmd(g), newStatusPageShowCmd(g), newStatusPageCreateCmd(g), newStatusPageUpdateCmd(g),
 		newStatusPagePublishCmd(g, true), newStatusPagePublishCmd(g, false), newStatusPageRemoveCmd(g), newStatusComponentCmd(g),
-		newStatusHostnameCmd(g))
+		newStatusHostnameCmd(g), newStatusHookCmd(g))
 	return cmd
 }
 
@@ -468,4 +468,152 @@ makes the record itself and the hostname needs no TXT record.`,
 	cmd.Flags().BoolVar(&remove, "remove", false, "remove the page's custom hostname")
 	cmd.Flags().BoolVar(&check, "check", false, "look for its TXT record now")
 	return cmd
+}
+
+// newStatusHookCmd is `dock status-page hook`: where a page's public
+// updates are posted.
+func newStatusHookCmd(g *globals) *cobra.Command {
+	cmd := group(&cobra.Command{Use: "hook", Short: "Post a status page's updates to Slack, Discord or a webhook (admin)"})
+	cmd.AddCommand(newStatusHookListCmd(g), newStatusHookAddCmd(g), newStatusHookRemoveCmd(g), newStatusHookTestCmd(g))
+	return cmd
+}
+
+// statusHookPath is a page's hook's API path.
+func statusHookPath(page, hook string) string {
+	return statusPagePath(page) + "/hooks/" + url.PathEscape(hook)
+}
+
+func newStatusHookListCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:     "list <page>",
+		Aliases: []string{"ls"},
+		Short:   "List a status page's hooks",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			hooks, err := get[[]apitypes.StatusHook](cmd.Context(), s, statusPagePath(args[0])+"/hooks")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(hooks, func() error {
+				if len(hooks) == 0 {
+					g.io.Successf("No hooks. Add one with `dock status-page hook add %s <name> --slack -`.", args[0])
+					return nil
+				}
+				t := g.io.Table("name", "kind", "target", "last sent", "last error")
+				for _, h := range hooks {
+					t.Row(h.Name, string(h.Kind), h.Target, agoPtr(h.LastSentAt), orDash(h.LastError))
+				}
+				return t.Flush()
+			})
+		},
+	}
+}
+
+func newStatusHookAddCmd(g *globals) *cobra.Command {
+	var slack, discord, webhook, secret string
+	cmd := &cobra.Command{
+		Use:   "add <page> <name> (--slack <url> | --discord <url> | --webhook <url>)",
+		Short: "Post a status page's public updates somewhere",
+		Long: `Add a hook: Dock posts every public update of the page's incidents and
+maintenance there, retrying like alert channels. --slack and --discord
+take incoming webhook URLs; --webhook POSTs JSON signed like alert
+webhooks (Dock-Signature: t=<unix time>,v1=<hex HMAC-SHA256 of
+"<t>.<body>">), with a secret generated and printed once unless --secret.
+
+URLs hold tokens: pass - to read the URL from stdin. They are stored
+encrypted and only their host is shown again.`,
+		Example: `  dock status-page hook add acme team --slack - < slack-webhook-url
+  dock status-page hook add acme partners --webhook https://partner.example.com/dock-status`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req := apitypes.AddStatusHookRequest{Name: args[1], Secret: secret}
+			set := 0
+			for kind, v := range map[apitypes.StatusHookKind]string{apitypes.HookSlack: slack, apitypes.HookDiscord: discord, apitypes.HookWebhook: webhook} {
+				if v != "" {
+					req.Kind, req.URL = kind, v
+					set++
+				}
+			}
+			if set != 1 {
+				return usageError("pass exactly one of --slack, --discord or --webhook", "Run `dock status-page hook add --help` for examples.")
+			}
+			var err error
+			if req.URL, err = g.stdinIfDash(req.URL); err != nil {
+				return err
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			created, err := send[apitypes.CreatedStatusHook](cmd.Context(), s, http.MethodPost, statusPagePath(args[0])+"/hooks", req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(created, func() error {
+				g.io.Successf("Added %s hook %s: %s's updates go to %s", created.Hook.Kind, created.Hook.Name, args[0], created.Hook.Target)
+				if created.Secret != "" {
+					_, _ = fmt.Fprintf(g.io.Out, "\nSigning secret (shown once; check the Dock-Signature header with it):\n\n  %s\n\n", created.Secret)
+				}
+				_, _ = fmt.Fprintf(g.io.Out, "Send a test update: dock status-page hook test %s %s\n", args[0], created.Hook.Name)
+				return nil
+			})
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&slack, "slack", "", "a Slack incoming webhook URL (- reads it from stdin)")
+	f.StringVar(&discord, "discord", "", "a Discord webhook URL (- reads it from stdin)")
+	f.StringVar(&webhook, "webhook", "", "POST signed JSON to this URL (- reads it from stdin)")
+	f.StringVar(&secret, "secret", "", "webhook signing secret (generated when not given)")
+	return cmd
+}
+
+func newStatusHookRemoveCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:     "remove <page> <name>",
+		Aliases: []string{"rm"},
+		Short:   "Remove a status page's hook",
+		Args:    cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, statusHookPath(args[0], args[1])); err != nil {
+				return err
+			}
+			return g.io.Print(map[string]string{"removed": args[1]}, func() error {
+				g.io.Successf("Removed hook %s from %s", args[1], args[0])
+				return nil
+			})
+		},
+	}
+}
+
+func newStatusHookTestCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "test <page> <name>",
+		Short: "Post a test update to a status page's hook",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			res, err := send[apitypes.StatusHookTest](cmd.Context(), s, http.MethodPost, statusHookPath(args[0], args[1])+"/test", nil)
+			if err != nil {
+				return err
+			}
+			if !res.OK {
+				return &output.Error{Exit: output.ExitError, Message: "the test post failed: " + res.Error, Hint: "Check the hook's URL; remove and add it again to change it."}
+			}
+			return g.io.Print(res, func() error {
+				g.io.Successf("Posted a test update to %s (%s)", res.Hook.Name, res.Hook.Target)
+				return nil
+			})
+		},
+	}
 }

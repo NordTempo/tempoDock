@@ -96,8 +96,10 @@ type alertEngine struct {
 	// started bounds how long a server counts as offline: nothing is
 	// known of the time before the daemon started.
 	started time.Time
-	// outbox holds notifications being sent (alerts_notify.go).
+	// outbox holds notifications being sent (alerts_notify.go), hooks the
+	// status pages' updates being posted (status_hooks.go).
 	outbox outbox
+	hooks  deliveryQueue[hookDelivery]
 	// client posts to webhook and Slack channels (newChannelClient),
 	// never to addresses guard refuses.
 	client *http.Client

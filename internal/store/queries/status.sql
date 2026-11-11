@@ -273,3 +273,27 @@ UPDATE status_pages SET verified_at = ? WHERE id = +? AND hostname = +? AND veri
 -- name: StatusHostnameVerified :one
 -- Whether a page holds hostname verified.
 SELECT EXISTS (SELECT 1 FROM status_pages WHERE hostname = +? AND verified_at IS NOT NULL);
+
+-- name: CreateStatusHook :one
+INSERT INTO status_hooks (page_id, name, kind, target, config, created_at, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: ListStatusHooks :many
+-- A page's hooks, by name: a handful, read when an update is posted.
+SELECT * FROM status_hooks WHERE page_id = +? ORDER BY name;
+
+-- name: GetStatusHook :one
+SELECT * FROM status_hooks WHERE page_id = +? AND name = +?;
+
+-- name: GetStatusHookByID :one
+SELECT * FROM status_hooks WHERE id = +?;
+
+-- name: DeleteStatusHook :exec
+DELETE FROM status_hooks WHERE id = +?;
+
+-- name: SetStatusHookSent :exec
+UPDATE status_hooks SET last_sent_at = ? WHERE id = +?;
+
+-- name: SetStatusHookFailed :exec
+UPDATE status_hooks SET last_error = ?, last_error_at = ? WHERE id = +?;

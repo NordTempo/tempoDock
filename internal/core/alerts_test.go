@@ -107,11 +107,13 @@ func (k *receiver) events(t *testing.T, n int) []string {
 // is still to be delivered.
 func (h *harness) outboxSent() {
 	h.t.Helper()
-	o := &h.c.alerts.outbox
-	eventually(h.t, "the alert outbox to empty", func() bool {
+	o, k := &h.c.alerts.outbox, &h.c.alerts.hooks
+	eventually(h.t, "the alert outbox and the status hooks' queue to empty", func() bool {
 		o.mu.Lock()
+		k.mu.Lock()
 		defer o.mu.Unlock()
-		return len(o.queues) == 0
+		defer k.mu.Unlock()
+		return len(o.queues) == 0 && len(k.queues) == 0
 	})
 }
 

@@ -58,6 +58,22 @@ page answers on both names with its own certificate. If the name is in a
 Cloudflare zone your organization has connected, Dock makes the record
 itself and nothing needs proving.
 
+## Following updates
+
+Visitors follow the page's Atom feed (`/feed.atom`); Slack, Discord and
+every feed reader take it. To post updates somewhere yourself:
+
+```sh
+dock status-page hook add acme team --slack - < slack-webhook-url
+dock status-page hook add acme partners --webhook https://partner.example.com/dock-status
+dock status-page hook test acme team
+```
+
+Every public update of an incident or maintenance window is posted, with
+retries. A webhook gets signed JSON (`Dock-Signature`, like alert
+webhooks; the secret is printed once). There is no public sign-up form
+and no mail: a partner who wants updates sends you a webhook URL.
+
 ## Incidents
 
 An incident is what you tell visitors about an outage, update by update.

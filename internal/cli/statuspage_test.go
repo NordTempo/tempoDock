@@ -178,3 +178,27 @@ func TestStatusHostnameCommands(t *testing.T) {
 		t.Fatalf("removed = %+v", h)
 	}
 }
+
+// A hook is added with its URL from stdin, listed without it, and
+// removed.
+func TestStatusHookCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	ok[apitypes.StatusPage](t, "status-page", "create", "acme")
+	if code, _, stderr := exec(t, "status-page", "hook", "add", "acme", "team"); code != int(output.ExitUsage) || !strings.Contains(stderr, "--slack") {
+		t.Fatalf("a hook without a URL: %d %q", code, stderr)
+	}
+	created := ok[apitypes.CreatedStatusHook](t, "status-page", "hook", "add", "acme", "partners", "--webhook", "https://partner.example.com/dock?token=abc")
+	if created.Secret == "" || created.Hook.Target != "https://partner.example.com" {
+		t.Fatalf("created = %+v", created)
+	}
+	if code, stdout, _ := exec(t, "status-page", "hook", "list", "acme"); code != 0 || !strings.Contains(stdout, "partners") || strings.Contains(stdout, "token=abc") {
+		t.Fatalf("list = %d\n%s", code, stdout)
+	}
+	ok[map[string]string](t, "status-page", "hook", "rm", "acme", "partners")
+	if hooks := ok[[]apitypes.StatusHook](t, "status-page", "hook", "list", "acme"); len(hooks) != 0 {
+		t.Fatalf("after remove = %+v", hooks)
+	}
+}
