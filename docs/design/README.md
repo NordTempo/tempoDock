@@ -147,11 +147,16 @@ for everything.
   D deploys, R restarts, B rolls back, digits pick the nth item or view, G
   then a letter switches tabs, ? lists the keys, Cmd+K searches.
 - **One primary per view.** The header's Deploy is primary until changes
-  wait to apply; then Apply in the bar is. Page actions next to it are
+  wait to apply; then the header's Apply is. Page actions next to it are
   secondary.
 - **Changes wait to apply.** Variables, settings, domains and volumes are
-  saved first ("waiting to apply") and go live together with Apply; the
-  strip under a service's tabs stays one line until opened.
+  saved first ("waiting to apply") and go live together with Apply. A
+  service's header holds the count and Apply (Ctrl Enter) in its action
+  row; the count (A) opens a review drawer from the right with the list,
+  the downtime warning and Discard. Nothing pushes the page (ADR 0076).
+  Where applying stops a service for a moment, Apply opens the review
+  first. Shared variables, with no service header, keep the review as a
+  panel on the page.
 - **Settings rows.** A label with a short line under it, the values as
   text, and one Edit per row that opens a small form; Save, Cancel, Esc.
 - **Tables and lists** sit on the page under a hairline, with no box; status in tables and headers is a tinted chip; the page header is two lines, the way up over the title (chosen in blind direction trials, 2026-11).

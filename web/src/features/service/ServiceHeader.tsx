@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { useRollback } from "../../data/mutations";
 import { domainNeedsAttention } from "../../data/problems";
 import {
+  envPath,
   listenPort,
   serviceRef as refOf,
   useCanDeploy,
@@ -41,6 +42,7 @@ import {
 import { openDeploy } from "../deploy/start";
 import { sleepCli, useWakeEnvironment } from "../overview/EnvironmentSleep";
 import { EnvServer } from "../servers/parts";
+import { ApplyControl } from "../variables/ApplyBox";
 import { ArchiveConfirm } from "./ArchiveConfirm";
 import { useRestartService, useStartService, useStopService } from "./data";
 import { RollbackConfirm } from "./ReleasesTable";
@@ -590,7 +592,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const production = useEnvironment(ref).environment.kind === "production";
   const releases = useReleases(ref);
   const mayDeploy = useCanDeploy(ref);
-  // One primary per view: while changes wait, Apply in the bar is it.
+  // One primary per view: while changes wait, the header's Apply is it.
   const waiting = useChanges(ref).count > 0;
   const restart = useRestartService();
   // The release a restart started, until it serves or fails.
@@ -775,8 +777,10 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     ) : null;
 
   return (
-    <div className="flex flex-wrap items-start gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {asking}
+      {/* Changes waiting to apply: their count and Apply, first in the row. */}
+      <ApplyControl env={envPath(ref)} service={ref.service} />
       {wakeButton}
       {stopped ? (
         <Act

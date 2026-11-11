@@ -17,10 +17,12 @@ import type {
   Variable,
   VariableChange,
 } from "../../data/types";
-import { modKey, useKeydown } from "../../shell/keys";
+import { modKey, useKeydown, useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
+import { Dialog } from "../../ui/Dialog";
 import { plural } from "../../ui/format";
 import { Act, ErrorText, Glyph } from "../../ui/kit";
+import { notify } from "../../ui/notice";
 import { failurePhrase, stepPhrase } from "../../ui/status";
 import { imageLabel, shortImage } from "../service/releases";
 import {
@@ -37,18 +39,15 @@ const marks: Record<VariableChange["action"], string> = {
 };
 
 /**
- * An environment's staged changes, what applying them does, and the
- * buttons. Applying is all or nothing, like the API. ⌘↵ applies. With
- * `bar` it is a strip under the service's tabs, in the sticky header: it
- * pushes the page down instead of covering it, and stays in view while anything is
- * staged, so the way to apply is never scrolled away.
+ * What applying an environment's staged changes does, and the mutations:
+ * one state for the service header's control, its review drawer and the
+ * shared variables' panel. Applying is all or nothing, like the API.
  */
-export function ApplyBox({
+function useStaged({
   env,
   reveal,
   variables = [],
   service,
-  bar,
 }: {
   env: EnvRef;
   /** Show old and new values (admin, on request). */
@@ -57,13 +56,7 @@ export function ApplyBox({
   variables?: Variable[];
   /** The service on screen: its own changes can be discarded alone. */
   service?: string | null;
-  /** A strip in the service header instead of a panel in the page. */
-  bar?: boolean;
 }) {
-  const org = useOrg();
-  // As the header's strip it is one line until opened, so it
-  // covers as little of the page as it can.
-  const [open, setOpen] = useState(!bar);
   const changes = useChanges(env);
   const revealed = useRevealedChanges(env, reveal).data;
   const { services } = useEnvironment(env);
@@ -96,50 +89,9 @@ export function ApplyBox({
         ]
       : [],
   );
-  // The result shows in place (Applied, and each release as it goes), so
-  // no toast repeats it over the page.
-  const applyNow = () => apply.mutate(env);
   // Releases can't start on an unreachable server.
   const blocked = useDeployBlock(env);
   const applyBlocked = releases.length > 0 ? blocked : undefined;
-
-  useKeydown((event) => {
-    if (changes.count === 0 || busy || applyBlocked) return;
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      event.preventDefault();
-      applyNow();
-    }
-  });
-
-  if (changes.count === 0) {
-    const applied = apply.data;
-    if (!applied) return null;
-    const skipped = applied.skipped ?? [];
-    const failed = applied.failed ?? [];
-    return (
-      <div
-        className={`flex flex-col gap-1 text-mut ${bar ? "border-b border-line px-5 py-2" : ""}`}
-      >
-        <p>
-          <span className="text-ok">✓</span> Applied.{" "}
-          {skipped.length > 0 &&
-            `${skipped.join(", ")} picks it up after the deploy in progress.`}
-        </p>
-        {(applied.releases ?? []).map((r) => (
-          <AppliedRelease
-            key={r.id}
-            release={r}
-            view={services.find((s) => s.service.name === r.service)}
-          />
-        ))}
-        {failed.map((f) => (
-          <p key={f} className="text-warn">
-            ▲ Still waiting to apply: {f}
-          </p>
-        ))}
-      </div>
-    );
-  }
 
   // The service's own changes, as `dock discard -s` selects them.
   const own: DiscardSelection = {
@@ -264,11 +216,230 @@ export function ApplyBox({
       body: stagedDomain(d),
     })),
   ];
+  return {
+    env,
+    service,
+    services,
+    changes,
+    apply,
+    discard,
+    busy,
+    releases,
+    keptImages,
+    downtimes,
+    applyBlocked,
+    own,
+    ownCount,
+    lines,
+    applyLabel:
+      releases.length > 0
+        ? `Apply: release ${releases.join(", ")}`
+        : "Apply, no release needed",
+  };
+}
+type Staged = ReturnType<typeof useStaged>;
 
+/**
+ * Shared variables' staged changes (no service header there): the review
+ * as a panel on the page. ⌘↵ applies.
+ */
+export function ApplyBox(props: Parameters<typeof useStaged>[0]) {
+  const staged = useStaged(props);
+  const { changes, busy, applyBlocked, apply, env } = staged;
+  useKeydown((event) => {
+    if (changes.count === 0 || busy || applyBlocked) return;
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      apply.mutate(env);
+    }
+  });
+  if (changes.count === 0 && !apply.data) return null;
   return (
     <section
       aria-labelledby="staged"
-      className={`flex flex-col border-warn-edge bg-stage-bg ${bar ? "border-b px-5" : "rounded-panel border px-4"} ${open ? "gap-3 py-3" : "gap-2 py-2"}`}
+      className={
+        changes.count > 0
+          ? "flex flex-col gap-3 rounded-panel border border-warn-edge bg-stage-bg px-4 py-3"
+          : ""
+      }
+    >
+      <StagedReview staged={staged} />
+    </section>
+  );
+}
+
+/**
+ * The service header's control while changes wait to apply: the count,
+ * which opens the review drawer (A), and Apply (⌘↵), the view's primary.
+ * It sits in the header's action row, so nothing below it moves. Where
+ * applying stops a service for a few seconds, Apply opens the review
+ * first, which says so; Apply there runs it.
+ */
+export function ApplyControl({
+  env,
+  service,
+}: {
+  env: EnvRef;
+  service: string;
+}) {
+  const staged = useStaged({ env, reveal: false, service });
+  const { changes, busy, applyBlocked, apply, downtimes, applyLabel } = staged;
+  const [open, setOpen] = useState(false);
+  const run = () => {
+    if (downtimes.length > 0 && !open) return setOpen(true);
+    apply.mutate(env, {
+      // The header's state follows the releases; this says it started.
+      onSuccess: (r) =>
+        notify(
+          r.releases?.length
+            ? `Applied: ${r.releases.map((x) => `${x.service} r${x.number}`).join(", ")} going live`
+            : "Applied",
+        ),
+    });
+  };
+  useKeydown((event) => {
+    if (changes.count === 0 || busy || applyBlocked) return;
+    if (open) return; // the drawer's own Apply has it
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      run();
+    }
+  });
+  useShortcuts(
+    changes.count > 0
+      ? [{ key: "a", label: "review changes", run: () => setOpen(true) }]
+      : [],
+  );
+  if (changes.count === 0 && !open) return null;
+  return (
+    <>
+      {changes.count > 0 && (
+        <span className="flex items-center gap-1.5 rounded-ctl border border-warn-edge bg-stage-bg py-0.5 pr-0.5 pl-1">
+          <button
+            type="button"
+            className="inline-flex min-h-[24px] items-center gap-1.5 rounded-ctl px-1.5 text-xs text-warn-text hover:text-fg"
+            title="Review changes waiting to apply (A)"
+            aria-haspopup="dialog"
+            onClick={() => setOpen(true)}
+          >
+            <span className="text-warn">
+              <span className="dot" />
+            </span>
+            {changes.count} waiting
+            {downtimes.length > 0 && (
+              <span className="text-warn" role="img" aria-label="with downtime">
+                ▲
+              </span>
+            )}
+          </button>
+          <Act
+            primary
+            small
+            cli={`dock apply -e ${env.environment}`}
+            disabled={busy || !!applyBlocked}
+            title={applyBlocked ?? applyLabel}
+            onClick={run}
+          >
+            Apply <kbd>{modKey.trim()}↵</kbd>
+          </Act>
+        </span>
+      )}
+      {open && (
+        <Dialog
+          title="Changes waiting to apply"
+          bare
+          onClose={() => setOpen(false)}
+          className="fixed inset-y-0 right-0 left-auto m-0 flex h-full max-h-none max-w-[440px] flex-col gap-3 overflow-y-auto rounded-none border-y-0 border-r-0 px-5 py-4"
+        >
+          <StagedReview staged={staged} drawer onClose={() => setOpen(false)} />
+        </Dialog>
+      )}
+    </>
+  );
+}
+
+/**
+ * The staged changes as a list: what applying does, then Apply, Discard
+ * and, on a service, Discard its own; after applying, each release as it
+ * goes. In the drawer, ⌘↵ applies and Esc closes.
+ */
+function StagedReview({
+  staged,
+  drawer,
+  onClose,
+}: {
+  staged: Staged;
+  drawer?: boolean;
+  onClose?: () => void;
+}) {
+  const org = useOrg();
+  const {
+    env,
+    service,
+    services,
+    changes,
+    apply,
+    discard,
+    busy,
+    keptImages,
+    downtimes,
+    applyBlocked,
+    own,
+    ownCount,
+    lines,
+    applyLabel,
+  } = staged;
+  const applyNow = () => apply.mutate(env);
+
+  if (changes.count === 0) {
+    const applied = apply.data;
+    if (!applied) return null;
+    const skipped = applied.skipped ?? [];
+    const failed = applied.failed ?? [];
+    return (
+      <div className="flex flex-col gap-1 text-mut">
+        <p>
+          <span className="text-ok">✓</span> Applied.{" "}
+          {skipped.length > 0 &&
+            `${skipped.join(", ")} picks it up after the deploy in progress.`}
+        </p>
+        {(applied.releases ?? []).map((r) => (
+          <AppliedRelease
+            key={r.id}
+            release={r}
+            view={services.find((s) => s.service.name === r.service)}
+          />
+        ))}
+        {failed.map((f) => (
+          <p key={f} className="text-warn">
+            ▲ Still waiting to apply: {f}
+          </p>
+        ))}
+        {drawer && (
+          <div className="mt-2">
+            <button type="button" className="btn" onClick={onClose}>
+              Close <kbd>esc</kbd>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-3"
+      onKeyDown={
+        drawer
+          ? (event) => {
+              if (busy || applyBlocked) return;
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                applyNow();
+              }
+            }
+          : undefined
+      }
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
@@ -277,57 +448,52 @@ export function ApplyBox({
           </span>{" "}
           {plural(changes.count, "change")} waiting to apply
         </h2>
-        <span className="text-xs text-mut">
-          · nothing changes until you apply. Each affected service gets a new
-          release, health checked as usual.{" "}
-          <Link
-            to="/$org/help"
-            params={{ org }}
-            hash="apply"
-            className="underline underline-offset-3"
-          >
-            What's this?
-          </Link>
-        </span>
-        {bar && (
+        {drawer && (
           <button
             type="button"
-            className="lnk ml-auto"
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
+            aria-label="esc, close"
+            className="ml-auto inline-flex min-h-[24px] items-center rounded-ctl px-1 text-xs text-mut hover:text-fg"
+            onClick={onClose}
           >
-            {open ? "Hide the list" : `Show ${plural(changes.count, "change")}`}
+            <kbd>esc</kbd>
           </button>
         )}
       </div>
-      {open && changes.last_failure && (
+      <p className="text-xs text-mut">
+        Nothing changes until you apply. Each affected service gets a new
+        release, health checked as usual.{" "}
+        <Link
+          to="/$org/help"
+          params={{ org }}
+          hash="apply"
+          className="underline underline-offset-3"
+        >
+          What's this?
+        </Link>
+      </p>
+      {changes.last_failure && (
         <p className="text-fail">
           The last apply failed, so its changes wait to apply again:{" "}
           {changes.last_failure}
         </p>
       )}
-      {open && (
-        <div
-          className={`overflow-x-auto font-mono text-xs leading-[1.9] ${bar ? "max-h-[30vh] overflow-y-auto" : ""}`}
-        >
-          {lines.map((line) => (
-            <div key={line.id} className="whitespace-nowrap">
-              <span className="text-warn">{line.mark}</span>{" "}
-              <span className="inline-block w-[9ch] text-faint">
-                {line.scope}
-              </span>
-              {line.body}
-              {line.note && <span className="text-mut"> {line.note}</span>}
-            </div>
-          ))}
-        </div>
-      )}
-      {open &&
-        keptImages.map((text) => (
-          <p key={text} className="text-xs text-mut">
-            {text}
-          </p>
+      <div className="overflow-x-auto font-mono text-xs leading-[1.9]">
+        {lines.map((line) => (
+          <div key={line.id} className="whitespace-nowrap">
+            <span className="text-warn">{line.mark}</span>{" "}
+            <span className="inline-block w-[9ch] text-faint">
+              {line.scope}
+            </span>
+            {line.body}
+            {line.note && <span className="text-mut"> {line.note}</span>}
+          </div>
         ))}
+      </div>
+      {keptImages.map((text) => (
+        <p key={text} className="text-xs text-mut">
+          {text}
+        </p>
+      ))}
       {downtimes.map((text) => (
         <p key={text} className="text-xs text-warn-text">
           ▲ {text}
@@ -340,11 +506,9 @@ export function ApplyBox({
           disabled={busy || !!applyBlocked}
           title={applyBlocked}
           onClick={applyNow}
+          data-autofocus={drawer || undefined}
         >
-          {releases.length > 0
-            ? `Apply: release ${releases.join(", ")}`
-            : "Apply, no release needed"}{" "}
-          <kbd>{modKey.trim()}↵</kbd>
+          {applyLabel} <kbd>{modKey.trim()}↵</kbd>
         </Act>
         <Act
           cli={`dock discard -e ${env.environment}`}
@@ -369,7 +533,7 @@ export function ApplyBox({
           <ErrorText error={apply.error ?? discard.error} />
         </span>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -408,7 +572,15 @@ function AppliedRelease({
   );
   const latest = view?.latest_release;
   if (view?.service.active_release === r.number) {
-    return (
+    // Traffic moved, but it serves once its health check passes.
+    return view.service.status.health === "starting" ? (
+      <p>
+        <span className="text-prog">
+          <Glyph char="◐" />
+        </span>{" "}
+        {name} is starting: its health check hasn't passed yet
+      </p>
+    ) : (
       <p className="text-fg">
         <span className="text-ok">●</span> {name} is serving
       </p>
