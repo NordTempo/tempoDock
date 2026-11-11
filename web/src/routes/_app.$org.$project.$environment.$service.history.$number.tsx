@@ -123,6 +123,14 @@ function ReleasePage() {
   // Rolling back to what already serves would change nothing.
   const alreadyServing = servesCopyOf(servingRelease, release);
   const [fixing, setFixing] = useState(false);
+  // Nothing answered its health check and no rule found why: the app
+  // most often listens on another port than the one set, so the port is
+  // the setting to look at first.
+  const refused =
+    failed &&
+    !edit &&
+    release.error_code === "health_check_failed" &&
+    /connection refused/i.test(release.error ?? "");
 
   const older = releases.find((x) => x.number < release.number);
   const newer = [...releases].reverse().find((x) => x.number > release.number);
@@ -279,10 +287,21 @@ function ReleasePage() {
               {edit.label}
             </Link>
           )}
+          {refused && (
+            <Link
+              to="/$org/$project/$environment/$service/settings"
+              params={{ org, ...ref }}
+              search={{ edit: "port" }}
+              className="btn pri"
+              title={`Nothing answered on :${service.port}. If the app listens on another port, set that one.`}
+            >
+              Change port
+            </Link>
+          )}
           <Act
             // The next step only while it is building or after it failed;
             // on a healthy release, reading its log is just one option.
-            primary={!edit && (failed || inFlight(release.status))}
+            primary={!edit && !refused && (failed || inFlight(release.status))}
             cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
             onClick={() =>
               navigate({
