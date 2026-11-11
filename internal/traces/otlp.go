@@ -78,58 +78,74 @@ var errBadProto = errors.New("the body isn't an OTLP ExportTraceServiceRequest")
 // maxDepth bounds nested lists and maps in attribute values.
 const maxDepth = 8
 
+// spanBudget is how many nested values (in lists and maps) one span may
+// decode: past it they are skipped. With the caps on counts (maxAttrs
+// attributes a span or event, maxEvents, maxList entries a list) it keeps
+// what a span holds decoded under ~3,200 values whatever is sent: an
+// empty attribute is 2 bytes on the wire but about 100 decoded, and
+// before the caps applied while decoding 4 MB unpacked held ~250 MB.
+const spanBudget = 2048
+
+// budget counts the nested values a span may still decode (spanBudget).
+type budget int
+
+// take spends one node, and reports false when none are left.
+func (b *budget) take() bool {
+	if *b <= 0 {
+		return false
+	}
+	*b--
+	return true
+}
+
+// addEvent keeps e among events, at most maxEvents: past the cap an
+// exception takes the place of the last other event, as convert prefers
+// exceptions.
+func addEvent(events []event, e event) []event {
+	if len(events) < maxEvents {
+		return append(events, e)
+	}
+	if e.name == "exception" {
+		for i := len(events) - 1; i >= 0; i-- {
+			if events[i].name != "exception" {
+				events[i] = e
+				break
+			}
+		}
+	}
+	return events
+}
+
 // decodeProto reads an ExportTraceServiceRequest, calling add for every
-// span with its resource's attributes.
-func decodeProto(b []byte, add func(res []attr, sp *rawSpan) error) error {
+// span. Resources' attributes are skipped: the token names the service.
+func decodeProto(b []byte, add func(sp *rawSpan) error) error {
 	return fields(b, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
 		if num != 1 || typ != protowire.BytesType { // resource_spans
 			return nil
 		}
-		return decodeResourceSpans(v, add)
-	})
-}
-
-// decodeResourceSpans reads one ResourceSpans: its resource's attributes
-// first, wherever they come, then its scopes' spans.
-func decodeResourceSpans(b []byte, add func(res []attr, sp *rawSpan) error) error {
-	var res []attr
-	err := fields(b, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
-		if num == 1 && typ == protowire.BytesType { // resource
-			return fields(v, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
-				if num == 1 && typ == protowire.BytesType {
-					a, err := decodeKeyValue(v, 0)
-					if err != nil {
-						return err
-					}
-					res = append(res, a)
-				}
-				return nil
-			})
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return fields(b, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
-		if num != 2 || typ != protowire.BytesType { // scope_spans
-			return nil
-		}
 		return fields(v, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
-			if num != 2 || typ != protowire.BytesType { // spans
+			if num != 2 || typ != protowire.BytesType { // scope_spans
 				return nil
 			}
-			var sp rawSpan
-			if err := decodeSpan(v, &sp); err != nil {
-				return err
-			}
-			return add(res, &sp)
+			return fields(v, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
+				if num != 2 || typ != protowire.BytesType { // spans
+					return nil
+				}
+				var sp rawSpan
+				if err := decodeSpan(v, &sp); err != nil {
+					return err
+				}
+				return add(&sp)
+			})
 		})
 	})
 }
 
-// decodeSpan reads one Span.
+// decodeSpan reads one Span, within maxAttrs, maxEvents and spanBudget.
+// Events past maxEvents are still read, for addEvent to prefer exceptions,
+// but each holds at most maxAttrs attributes and spends the same budget.
 func decodeSpan(b []byte, sp *rawSpan) error {
+	bud := budget(spanBudget)
 	return fields(b, func(num protowire.Number, typ protowire.Type, v []byte, n uint64) error {
 		switch {
 		case num == 1 && typ == protowire.BytesType && len(v) == 16:
@@ -147,17 +163,20 @@ func decodeSpan(b []byte, sp *rawSpan) error {
 		case num == 8 && typ == protowire.Fixed64Type:
 			sp.end = n
 		case num == 9 && typ == protowire.BytesType:
-			a, err := decodeKeyValue(v, 0)
+			if len(sp.attrs) == maxAttrs {
+				return nil
+			}
+			a, err := decodeKeyValue(v, 0, &bud)
 			if err != nil {
 				return err
 			}
 			sp.attrs = append(sp.attrs, a)
 		case num == 11 && typ == protowire.BytesType:
-			e, err := decodeEvent(v)
+			e, err := decodeEvent(v, &bud)
 			if err != nil {
 				return err
 			}
-			sp.events = append(sp.events, e)
+			sp.events = addEvent(sp.events, e)
 		case num == 15 && typ == protowire.BytesType: // status
 			return fields(v, func(num protowire.Number, typ protowire.Type, v []byte, n uint64) error {
 				switch {
@@ -173,8 +192,9 @@ func decodeSpan(b []byte, sp *rawSpan) error {
 	})
 }
 
-// decodeEvent reads one Span.Event.
-func decodeEvent(b []byte) (event, error) {
+// decodeEvent reads one Span.Event, spending bud on its attributes' nested
+// values.
+func decodeEvent(b []byte, bud *budget) (event, error) {
 	var e event
 	err := fields(b, func(num protowire.Number, typ protowire.Type, v []byte, n uint64) error {
 		switch {
@@ -183,7 +203,10 @@ func decodeEvent(b []byte) (event, error) {
 		case num == 2 && typ == protowire.BytesType:
 			e.name = string(v)
 		case num == 3 && typ == protowire.BytesType:
-			a, err := decodeKeyValue(v, 0)
+			if len(e.attrs) == maxAttrs {
+				return nil
+			}
+			a, err := decodeKeyValue(v, 0, bud)
 			if err != nil {
 				return err
 			}
@@ -194,8 +217,8 @@ func decodeEvent(b []byte) (event, error) {
 	return e, err
 }
 
-// decodeKeyValue reads one KeyValue.
-func decodeKeyValue(b []byte, depth int) (attr, error) {
+// decodeKeyValue reads one KeyValue, spending bud on nested values.
+func decodeKeyValue(b []byte, depth int, bud *budget) (attr, error) {
 	var a attr
 	err := fields(b, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
 		switch {
@@ -203,7 +226,7 @@ func decodeKeyValue(b []byte, depth int) (attr, error) {
 			a.key = string(v)
 		case num == 2 && typ == protowire.BytesType:
 			var err error
-			a.val, err = decodeAnyValue(v, depth)
+			a.val, err = decodeAnyValue(v, depth, bud)
 			return err
 		}
 		return nil
@@ -211,8 +234,9 @@ func decodeKeyValue(b []byte, depth int) (attr, error) {
 	return a, err
 }
 
-// decodeAnyValue reads one AnyValue.
-func decodeAnyValue(b []byte, depth int) (value, error) {
+// decodeAnyValue reads one AnyValue: lists and maps keep at most maxList
+// entries, each spending a node of bud.
+func decodeAnyValue(b []byte, depth int, bud *budget) (value, error) {
 	if depth >= maxDepth {
 		return value{}, nil
 	}
@@ -230,8 +254,8 @@ func decodeAnyValue(b []byte, depth int) (value, error) {
 		case num == 5 && typ == protowire.BytesType: // array_value
 			out = value{kind: valueList}
 			return fields(v, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
-				if num == 1 && typ == protowire.BytesType {
-					x, err := decodeAnyValue(v, depth+1)
+				if num == 1 && typ == protowire.BytesType && len(out.list) < maxList && bud.take() {
+					x, err := decodeAnyValue(v, depth+1, bud)
 					if err != nil {
 						return err
 					}
@@ -242,8 +266,8 @@ func decodeAnyValue(b []byte, depth int) (value, error) {
 		case num == 6 && typ == protowire.BytesType: // kvlist_value
 			out = value{kind: valueMap}
 			return fields(v, func(num protowire.Number, typ protowire.Type, v []byte, _ uint64) error {
-				if num == 1 && typ == protowire.BytesType {
-					a, err := decodeKeyValue(v, depth+1)
+				if num == 1 && typ == protowire.BytesType && len(out.kv) < maxList && bud.take() {
+					a, err := decodeKeyValue(v, depth+1, bud)
 					if err != nil {
 						return err
 					}
