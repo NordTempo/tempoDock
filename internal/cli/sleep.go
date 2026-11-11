@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -130,15 +131,19 @@ Previews take their project's setting
 	return cmd
 }
 
-// parseSleepAfter reads a sleep setting: a duration in whole minutes, or
-// "off" (-1).
+// parseSleepAfter reads a sleep setting: minutes, a duration in whole
+// minutes, or "off" (-1).
 func parseSleepAfter(s string) (int, error) {
 	if strings.EqualFold(s, "off") {
 		return -1, nil
 	}
+	// A bare number is minutes, as the setting is everywhere else.
+	if n, err := strconv.Atoi(s); err == nil {
+		s = strconv.Itoa(n) + "m"
+	}
 	d, err := time.ParseDuration(s)
 	if err != nil || d%time.Minute != 0 || d < apitypes.SleepAfterMin*time.Minute || d > apitypes.SleepAfterMax*time.Minute {
-		return 0, &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("%q is not a sleep setting; use whole minutes from 5m to 24h, e.g. 30m or 2h, or off", s)}
+		return 0, &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("%q is not a sleep setting; use minutes from 5 to 1440, or a duration like 30m or 2h, or off", s)}
 	}
 	return int(d / time.Minute), nil
 }
