@@ -557,6 +557,36 @@ func (q *Queries) ListProjects(ctx context.Context, orgID int64) ([]Project, err
 	return items, nil
 }
 
+const listServerEnvironmentIDs = `-- name: ListServerEnvironmentIDs :many
+SELECT id FROM environments WHERE server_id = +?
+`
+
+// ListServerEnvironmentIDs is every environment on a server, archived
+// ones too: the trace forwarder keeps only spans from environments on the
+// server that sent them.
+func (q *Queries) ListServerEnvironmentIDs(ctx context.Context, serverID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listServerEnvironmentIDs, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listServerEnvironments = `-- name: ListServerEnvironments :many
 SELECT environments.project_id, environments.name, environments.kind
 FROM environments JOIN projects ON projects.id = environments.project_id

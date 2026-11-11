@@ -476,7 +476,7 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 	h(opDial, serveDial(rt))
 	h(opRunJobStream, serveRunJobStream(rt))
 	h(opSetAnalytics, unary(func(ctx context.Context, a setAnalyticsRequest) (empty, error) {
-		cfg := node.AnalyticsConfig{Salts: a.Salts}
+		cfg := node.AnalyticsConfig{Salts: a.Salts, TraceKey: a.TraceKey}
 		if a.Sites != nil {
 			cfg.Sites = make(map[int64]node.SiteRules, len(a.Sites))
 			for id, r := range a.Sites {

@@ -740,6 +740,10 @@ const AnalyticsBinaryProtocol = 11
 // store beside the analytics store: the store kind on its calls.
 const TraceStoreProtocol = 24
 
+// TraceIngestProtocol is the first protocol whose nodes take spans: the
+// trace ingest, its key in set-analytics and the spans spool.
+const TraceIngestProtocol = 25
+
 // needStoreKind checks the node can act on the store of kind: any
 // analytics node for the analytics store, TraceStoreProtocol for the
 // trace store (an older node would take the call for the analytics
@@ -757,8 +761,11 @@ const ReplayProtocol = 12
 
 // spoolProtocol is the protocol a spool needs.
 func spoolProtocol(spool node.Spool) (int, string) {
-	if spool == node.SpoolReplay {
+	switch spool {
+	case node.SpoolReplay:
 		return ReplayProtocol, "record session replays"
+	case node.SpoolSpans:
+		return TraceIngestProtocol, "take spans for tracing"
 	}
 	return AnalyticsProtocol, "collect analytics"
 }
@@ -772,7 +779,7 @@ func (c *Client) SetAnalytics(ctx context.Context, cfg node.AnalyticsConfig) err
 	if err := c.needProtocol(ctx, AnalyticsProtocol, "collect analytics"); err != nil {
 		return err
 	}
-	req := setAnalyticsRequest{Salts: cfg.Salts}
+	req := setAnalyticsRequest{Salts: cfg.Salts, TraceKey: cfg.TraceKey}
 	if cfg.Sites != nil {
 		req.Sites = make(map[int64]wireSiteRules, len(cfg.Sites))
 		for id, r := range cfg.Sites {

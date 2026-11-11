@@ -79,6 +79,12 @@ FROM environments JOIN projects ON projects.id = environments.project_id
 WHERE environments.server_id = +? AND projects.archived_at IS NULL AND environments.archived_at IS NULL
 ORDER BY environments.project_id, environments.name;
 
+-- ListServerEnvironmentIDs is every environment on a server, archived
+-- ones too: the trace forwarder keeps only spans from environments on the
+-- server that sent them.
+-- name: ListServerEnvironmentIDs :many
+SELECT id FROM environments WHERE server_id = +?;
+
 -- name: CreateProject :one
 INSERT INTO projects (org_id, name) VALUES (?, ?) RETURNING *;
 

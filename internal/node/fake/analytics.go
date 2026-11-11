@@ -23,8 +23,10 @@ type fakeAnalytics struct {
 	// spools are the events' and the replay spool's lines (node.Spool).
 	spools map[node.Spool]*fakeSpool
 	salts  map[int64][]byte
-	sites  map[int64]node.SiteRules
-	store  *node.AnalyticsStoreSpec
+	// traceKey is the trace ingest's key SetAnalytics handed over.
+	traceKey []byte
+	sites    map[int64]node.SiteRules
+	store    *node.AnalyticsStoreSpec
 	// fakeStore runs while the store does, on storeLn: an in-memory store
 	// with the real one's API, which DialAnalyticsStore reaches.
 	fakeStore *fakestore.Store
@@ -68,6 +70,18 @@ func (r *Runtime) AppendSpool(lines ...[]byte) { r.appendTo(node.SpoolEvents, li
 
 // AppendReplay adds replay chunks (JSON lines) to the fake replay spool.
 func (r *Runtime) AppendReplay(lines ...[]byte) { r.appendTo(node.SpoolReplay, lines) }
+
+// AppendSpans adds spans (analytics.Span JSON lines) to the spans spool,
+// as the trace ingest does.
+func (r *Runtime) AppendSpans(lines ...[]byte) { r.appendTo(node.SpoolSpans, lines) }
+
+// TraceKey is the trace key SetAnalytics last handed over, nil while
+// tracing is off.
+func (r *Runtime) TraceKey() []byte {
+	r.analytics.mu.Lock()
+	defer r.analytics.mu.Unlock()
+	return r.analytics.traceKey
+}
 
 // appendTo adds lines to a spool and wakes its tails.
 func (r *Runtime) appendTo(which node.Spool, lines [][]byte) {
@@ -155,6 +169,7 @@ func (r *Runtime) SetAnalytics(_ context.Context, cfg node.AnalyticsConfig) erro
 		return a.failSet
 	}
 	a.salts = maps.Clone(cfg.Salts)
+	a.traceKey = bytes.Clone(cfg.TraceKey)
 	if cfg.Sites != nil {
 		a.sites = maps.Clone(cfg.Sites)
 	}

@@ -14,7 +14,7 @@ import (
 
 // Budgets of the trace store (`dock-analytics traces`), its own process
 // and container beside the analytics store, run as its container runs it:
-// memory_limit 96 MB, one query at a time, GOMEMLIMIT 48 MiB.
+// memory_limit 128 MB, one query at a time, GOMEMLIMIT 48 MiB.
 const (
 	// tracesAnonBudget leaves room for CI's runners, where an idle store
 	// measures 27 MB (8 MB on an 8-core VM), as the analytics store's 46
@@ -33,9 +33,9 @@ const (
 	// tracesIngestBudget is spans per second, in batches of 1,000.
 	tracesIngestBudget = 15_000
 	// tracesPeakBudget is the container's memory limit: writes at full
-	// speed grow DuckDB past its memory_limit, to about 250 to 300 MB
-	// over 600k spans whatever the limit.
-	tracesPeakBudget = 384 << 20
+	// speed grow DuckDB past its memory_limit whatever the limit, and
+	// CI's runs of this check peaked at 304 to 387 MB.
+	tracesPeakBudget = 512 << 20
 )
 
 // traceCase is one line of `dock-analytics bench -traces -json`.

@@ -36,6 +36,12 @@ type tracesState struct {
 	// is the server it runs on.
 	client   *analytics.Client
 	serverID int64
+	// runCtx ends when the client or its server changes, or tracing is
+	// turned off, ending the spans forwarders' tails.
+	runCtx    context.Context
+	runCancel context.CancelFunc
+	// forwarding holds the servers with a spans forwarder running.
+	forwarding map[int64]bool
 	// starting is set while a start runs; storeErr is why the last one
 	// failed, "" once one worked.
 	starting  bool
@@ -47,8 +53,9 @@ type tracesState struct {
 // the binary) and its removal.
 const traceStoreTimeout = storeStartTimeout
 
-// runTraces connects to the trace store on the analytics server of st and
-// starts it there, in the background.
+// runTraces connects to the trace store on the analytics server of st,
+// starts it there in the background, hands every server the trace key and
+// starts the spans forwarders.
 func (c *Core) runTraces(st store.AnalyticsSetting) error {
 	token, err := c.box.Open(st.Token, analyticsTokenAAD)
 	if err != nil {
@@ -61,9 +68,33 @@ func (c *Core) runTraces(st store.AnalyticsSetting) error {
 	c.traces.mu.Lock()
 	c.traces.serverID = serverID
 	c.traces.client = c.traceClient(serverID, string(token))
+	c.newTracesRun()
 	c.traces.mu.Unlock()
 	c.ensureTraceStore(serverID)
+	// The servers' ingests take spans once they have the key.
+	c.pushAnalyticsToAll(c.ctx)
+	c.forwardSpansFrom(c.localID)
+	if c.nodes != nil {
+		servers, err := c.store.ListServers(c.ctx)
+		if err != nil {
+			return err
+		}
+		for _, s := range servers {
+			if !s.Local && c.online(s.ID) {
+				c.forwardSpansFrom(s.ID)
+			}
+		}
+	}
 	return nil
+}
+
+// newTracesRun ends the forwarders' tails of the old trace store and
+// starts a new run; mu is held. A nil client (tracing off) ends them.
+func (c *Core) newTracesRun() {
+	if c.traces.runCancel != nil {
+		c.traces.runCancel()
+	}
+	c.traces.runCtx, c.traces.runCancel = context.WithCancel(c.ctx)
 }
 
 // traceClient reaches the trace store on serverID, over the node link for
@@ -146,8 +177,10 @@ func (c *Core) tracesServerChanged(serverID int64) {
 	case cl == nil:
 	case serverID == traceServer:
 		c.ensureTraceStore(serverID)
+		c.forwardSpansFrom(serverID)
 	default:
 		c.removeTraceStore(serverID)
+		c.forwardSpansFrom(serverID)
 	}
 }
 
@@ -178,8 +211,10 @@ func (c *Core) moveTraceStore(from, to int64) {
 	}
 	c.traces.serverID = to
 	c.traces.client = c.traceClient(to, cl.Token)
+	c.newTracesRun()
 	c.traces.mu.Unlock()
 	c.ensureTraceStore(to)
+	c.wakeForwarders()
 	if c.online(from) {
 		c.removeTraceStore(from)
 	}
@@ -304,7 +339,10 @@ func (c *Core) DisableTraces(ctx context.Context, a Actor) (apitypes.TracingStat
 		}
 		c.traces.mu.Lock()
 		c.traces.client, c.traces.storeErr = nil, ""
+		c.newTracesRun()
 		c.traces.mu.Unlock()
+		c.wakeForwarders()
+		c.pushAnalyticsToAll(ctx) // the servers' ingests stop taking spans
 		c.audit(ctx, a.platform(), "tracing.disable", nil, nil, "tracing", "turned tracing off and removed the trace store with its spans")
 		c.publishAnalytics()
 	}

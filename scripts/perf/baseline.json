@@ -444,6 +444,11 @@
       "ns_op": 667019,
       "bytes_op": 263508,
       "allocs_op": 2338
+    },
+    "traces.BenchmarkIngestProto512": {
+      "ns_op": 1884615,
+      "bytes_op": 1151500,
+      "allocs_op": 14249
     }
   }
 }

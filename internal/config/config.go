@@ -156,6 +156,21 @@ type Traces struct {
 	// RetentionDays is how long spans are kept, in whole UTC days.
 	// Control plane only.
 	RetentionDays int `toml:"retention_days"`
+	// IngestListen is the loopback address of this server's trace ingest
+	// (OTLP/HTTP), which its Caddy forwards containers' exports to. Its own
+	// listener. Empty turns it off.
+	IngestListen string `toml:"ingest_listen"`
+	// SpoolMaxMB caps the spans waiting for the trace store on this
+	// server; past it the oldest go.
+	SpoolMaxMB int `toml:"spool_max_mb"`
+	// ServiceDaySpans and OrgDaySpans cap the spans a service and an org
+	// keep a UTC day; past either only error spans are kept, up to
+	// ErrorDaySpans a service. MaxGB caps the trace store's data; past it
+	// the oldest day goes early. Control plane only.
+	ServiceDaySpans int64 `toml:"service_day_spans"`
+	OrgDaySpans     int64 `toml:"org_day_spans"`
+	ErrorDaySpans   int64 `toml:"error_day_spans"`
+	MaxGB           int   `toml:"max_gb"`
 }
 
 // DefaultUpdateSource is the GitHub repository releases are published to
@@ -409,7 +424,10 @@ func Default() Config {
 			StoreMemoryMB: 512,
 			StatsListen:   "127.0.0.1:7078",
 		},
-		Traces: Traces{StorePort: 7080, StoreMemoryMB: 384, RetentionDays: 7},
+		Traces: Traces{
+			StorePort: 7080, StoreMemoryMB: 512, RetentionDays: 7, IngestListen: "127.0.0.1:4318", SpoolMaxMB: 128,
+			ServiceDaySpans: 2_000_000, OrgDaySpans: 5_000_000, ErrorDaySpans: 200_000, MaxGB: 4,
+		},
 		Status: Status{Listen: "127.0.0.1:7079"},
 		BuildKit: BuildKit{
 			Enabled:        true,
@@ -555,6 +573,16 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[traces] store_memory_mb is %d; the trace store needs at least 256", c.Traces.StoreMemoryMB)
 	case c.Traces.RetentionDays < 1 || c.Traces.RetentionDays > 30:
 		return fmt.Errorf("[traces] retention_days is %d; keep spans for 1 to 30 days", c.Traces.RetentionDays)
+	case c.Traces.SpoolMaxMB < 16:
+		return fmt.Errorf("[traces] spool_max_mb is %d; it must be at least 16", c.Traces.SpoolMaxMB)
+	case c.Traces.ServiceDaySpans < 1 || c.Traces.OrgDaySpans < 1 || c.Traces.ErrorDaySpans < 1 || c.Traces.MaxGB < 1:
+		return errors.New("[traces] service_day_spans, org_day_spans, error_day_spans and max_gb must be at least 1")
+	}
+	if a := c.Traces.IngestListen; a != "" {
+		host, _, err := net.SplitHostPort(a)
+		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("[traces] ingest_listen %q must be a loopback IP and port, like 127.0.0.1:4318 (or empty to turn the trace ingest off)", a)
+		}
 	}
 	if err := c.Retention.validate(); err != nil {
 		return err

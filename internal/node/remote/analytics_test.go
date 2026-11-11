@@ -166,3 +166,35 @@ func TestTraceStoreOverTheLink(t *testing.T) {
 		t.Fatal("the older node removed its analytics store")
 	}
 }
+
+// The trace ingest's key crosses the link with the salts, and the spans
+// spool streams like the others; a node from before the trace ingest is
+// never tailed for spans.
+func TestTraceIngestOverTheLink(t *testing.T) {
+	h := newHarness(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	fk := h.rt.Runtime
+	key := bytes.Repeat([]byte{7}, 32)
+	if err := h.client.SetAnalytics(ctx, node.AnalyticsConfig{Salts: map[int64][]byte{1: key}, TraceKey: key}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(fk.TraceKey(), key) {
+		t.Fatalf("the node's trace key = %x", fk.TraceKey())
+	}
+	fk.AppendSpans([]byte(`{"org":1}`))
+	tail, err := h.client.TailSpool(ctx, node.SpoolSpans, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := <-tail; b.Count != 1 || string(b.Events) != `{"org":1}` {
+		t.Fatalf("spans batch = %+v", b)
+	}
+
+	h.stopNode()
+	h.startNode(func(n *Node) { n.protocol = TraceIngestProtocol - 1 })
+	waitFor(t, "the older node", func() bool { return h.hub.State(h.id).Hello.Protocol == TraceIngestProtocol-1 && h.client.Online() })
+	if _, err := h.client.TailSpool(ctx, node.SpoolSpans, 0); err == nil || !strings.Contains(err.Error(), "take spans") {
+		t.Fatalf("tailing spans on an older node = %v", err)
+	}
+}

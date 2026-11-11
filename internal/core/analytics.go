@@ -17,6 +17,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
 // Dock Analytics in the control plane (ADR 0037). Every server's ingest
@@ -416,6 +417,9 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 		return node.AnalyticsConfig{}, err
 	}
 	cfg := node.AnalyticsConfig{Salts: make(map[int64][]byte, len(rows))}
+	if cl, _ := c.tracesClient(); cl != nil {
+		cfg.TraceKey = traces.KeyFrom(cl.Token)
+	}
 	for _, r := range rows {
 		if salt, err := c.box.Open(r.Salt, saltAAD(r.Day)); err == nil {
 			cfg.Salts[r.Day] = salt
@@ -447,6 +451,12 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 // routes the public dashboards anew.
 func (c *Core) analyticsSitesChanged(ctx context.Context) {
 	c.publicSitesChanged(ctx)
+	c.pushAnalyticsToAll(ctx)
+}
+
+// pushAnalyticsToAll hands every online server what its ingests need
+// (pushSalts): the salts, the sites' rules and the trace key.
+func (c *Core) pushAnalyticsToAll(ctx context.Context) {
 	c.pushSalts(c.localID)
 	if c.nodes == nil {
 		return
