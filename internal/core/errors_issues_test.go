@@ -59,7 +59,23 @@ func TestLogErrorsBecomeIssues(t *testing.T) {
 		"listening on :8080",
 		`{"level":"error","msg":"charge 9 failed with sk_live_51abcdef"}`,
 	)
-	list := h.errorsFor(ErrorFilter{}, 2)
+	// Tick on the real clock first: a forced quiet tick (errorsFor) would
+	// end the panic before the follower has read its whole stack trace.
+	// The panic is stored once the line after it was read.
+	eventually(t, "the panic and the first charge stored", func() bool {
+		h.c.errorsTick(h.ctx, time.Now())
+		l, err := h.c.ListErrors(h.ctx, testSystem, ErrorFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(l.Facets) == 1 && l.Facets[0].Events >= 2
+	})
+	// Then wait for the last charge line too: 3 events in all.
+	var list apitypes.ErrorList
+	eventually(t, "all three error lines counted", func() bool {
+		list = h.errorsFor(ErrorFilter{}, 2)
+		return len(list.Facets) == 1 && list.Facets[0].Events == 3
+	})
 	byTitle := map[string]apitypes.ErrorIssue{}
 	for _, i := range list.Issues {
 		byTitle[i.Title] = i
