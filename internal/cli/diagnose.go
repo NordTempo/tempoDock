@@ -159,7 +159,7 @@ func exitText(e *apitypes.DiagnosisExit) string {
 	case e.Running && e.ExitCode != nil:
 		return fmt.Sprintf("running again after exit %d, %s", *e.ExitCode, plural(e.Restarts, "restart"))
 	case e.Running:
-		return fmt.Sprintf("running when stopped, %s", plural(e.Restarts, "restart"))
+		return fmt.Sprintf("still running when the deploy stopped it, %s", plural(e.Restarts, "restart"))
 	case e.OOMKilled:
 		return fmt.Sprintf("killed for memory (limit %d MB)", e.MemoryLimitMB)
 	case e.ExitCode != nil:

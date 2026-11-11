@@ -242,7 +242,7 @@ function exitText(e: NonNullable<Diagnosis["failure"]["exit"]>) {
     return `Killed for memory, limit ${e.memory_limit_mb} MB, ${restarts}`;
   if (e.running && e.exit_code != null)
     return `Running again after exit ${e.exit_code}, ${restarts}`;
-  if (e.running) return `Running when stopped, ${restarts}`;
+  if (e.running) return `Still running when the deploy stopped it, ${restarts}`;
   return `Exited with code ${e.exit_code}, ${restarts}`;
 }
 
