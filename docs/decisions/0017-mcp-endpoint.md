@@ -147,8 +147,7 @@ ones.
 | `apply_changes` | Apply staged changes, wait for the config releases | `ApplyChanges` | deploy |
 | `discard_changes` | Drop staged changes (destructive hint) | `DiscardChanges` | deploy |
 | `list_domains` | Domains with status and DNS records | `ListDomains` | read |
-| `add_domain` | Custom hostname; returns the DNS records to create | `AddDomain` | deploy |
-| `generate_domain` | Hostname under the server's base domain | `GenerateDomain` | deploy |
+| `add_domain` | Custom hostname, returning the DNS records to create; without one, a hostname under the server's base domain (`generate_domain` until 2026-11-11) | `AddDomain`, `GenerateDomain` | deploy |
 | `check_domain` | Check a domain's verification, DNS and certificate now | `CheckDomainNow` | deploy |
 | `remove_domain` | Remove a hostname and Dock's DNS record for it (destructive hint) | `RemoveDomain` | deploy |
 | `list_servers` | Servers, status, accepted kinds | `ListServers` | read |
@@ -158,14 +157,7 @@ ones.
 | `request_access` | File an access request for a change, with a reason ([0044](0044-environment-lock.md)) | `FileRequest` | read |
 | `wait_for_request` | Wait for a request's decision and run | `WaitRequest` | read |
 | `list_requests` | The caller's access requests | `ListRequests` | read |
-| `analytics_sites` | A project's analytics sites | `ListSites` | read |
-| `analytics_stats` | A site's dashboard: totals against the period before, series, top values | `SiteStats` | read |
-| `analytics_breakdown` | Top values of one dimension | `SiteBreakdown` | read |
-| `analytics_errors` | Uncaught errors grouped, or one group in full | `SiteErrors`, `SiteError` | read |
-| `analytics_vitals` | Web Vitals at p75, by dimension and over time | `SiteVitals` | read |
-| `analytics_replays` | Session replays, listed only (watched in the UI) | `SiteReplays` | read |
-| `analytics_goals` | Goals and who reached them | `SiteGoals` | read |
-| `analytics_funnel` | A funnel's steps, or the funnels | `SiteFunnels`, `SiteFunnel` | read |
+| `analytics` | A site's stats, a breakdown, browser errors, Web Vitals, replays (listed only), goals or funnels; or the project's sites (one tool with a `report` since 2026-11-11: every tool costs an agent's context) | `ListSites`, `SiteStats`, `SiteBreakdown`, `SiteErrors`, `SiteError`, `SiteVitals`, `SiteReplays`, `SiteGoals`, `SiteFunnels`, `SiteFunnel` | read |
 | `data_status` | Database state and the caller's data access, with why | `DataInfo` | sees the service |
 | `data_schema` | Tables, columns, keys; one table in full | `DataSchema` | data `schema` |
 | `data_rows` | One keyset page with filters, sensitive columns masked | `DataRows` | data `read` |
@@ -202,8 +194,8 @@ and point at `dock://docs/agents`.
 ## Long operations
 
 `deploy_image`, `redeploy`, `rollback`, `promote`, `clone_environment`
-with deploy, `apply_changes`, and `add_domain`/`generate_domain` when they
-redeploy to publish a port; `wait_for_release` from step 2, for a release
+with deploy, `apply_changes`, and `add_domain` when it
+redeploys to publish a port; `wait_for_release` from step 2, for a release
 already running:
 
 1. Start the release(s) through core, as the API does.

@@ -120,6 +120,14 @@ func TestAccessRequestTools(t *testing.T) {
 	if e.Error.Code != apitypes.CodeEnvironmentLocked || e.Error.Request == 0 || !strings.Contains(e.Error.Hint, "wait_for_request") {
 		t.Fatalf("refused: %s %s", res.summary, res.json)
 	}
+	// Any tool takes a reason, like the CLI's --reason: the same call with
+	// one joins the request it filed and gives it the reason.
+	again := call(t, s, "set_variables", map[string]any{"project": "shop", "environment": "staging", "service": "web", "set": map[string]string{"A": "1"}, "reason": "launch prices"})
+	var joined struct{ Error struct{ Request int64 } }
+	again.decode(t, &joined)
+	if r, err := f.core.GetRequest(ctx, sys, e.Error.Request); joined.Error.Request != e.Error.Request || err != nil || r.Reason != "launch prices" {
+		t.Fatalf("with reason: %s %s; request %+v %v", again.summary, again.json, r, err)
+	}
 
 	// Asking first in blog/production, which isn't locked.
 	res = call(t, s, "request_access", map[string]any{

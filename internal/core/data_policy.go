@@ -167,6 +167,18 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 	return perm, nil
 }
 
+// DataLevel is the actor's data access level in an environment, for a
+// caller that tailors what it offers to it (the MCP tool list); the data
+// operations decide permission themselves.
+func (c *Core) DataLevel(ctx context.Context, a Actor, ref EnvRef) (apitypes.DataLevel, error) {
+	es, err := c.envFor(ctx, a, ref, apitypes.ScopeRead, "reading data access")
+	if err != nil {
+		return "", err
+	}
+	perm, err := c.dataPermission(ctx, a, es)
+	return perm.Level, err
+}
+
 // lockedData caps a token's data permission in a locked environment (ADR
 // 0044) at proposing: its changesets wait for an admin's approval in the
 // Data panel, which is the access request for data.

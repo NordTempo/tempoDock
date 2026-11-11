@@ -37,11 +37,12 @@ type SettingsInput struct {
 // tools (tools.go), snapshots in snapshots.go.
 func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "create_service", "Create a service",
-		"Create a service; nothing deploys until deploy_image. With template, a database (postgres, redis) that deploys at once.",
+		"Create a service; deploy deploys its image at once and waits, otherwise nothing deploys until deploy_image. With template, a database (postgres, redis) that deploys at once.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
 			Name     string            `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
 			Template apitypes.Template `json:"template,omitempty" enum:"postgres,redis" doc:"A database; other settings are ignored."`
+			Deploy   bool              `json:"deploy,omitempty"`
 			SettingsInput
 		}) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
@@ -59,6 +60,16 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 				return mcpkit.Reply{}, err
 			}
 			summary := fmt.Sprintf("Created %s/%s/%s.", ref.Project, ref.Environment, svc.Name)
+			if in.Deploy && svc.Template == apitypes.TemplateNone && svc.Image != "" {
+				sref := core.ServiceRef{Project: ref.Project, Environment: ref.Environment, Service: svc.Name}
+				rel, err := h.core.DeployImage(ctx, c.Actor, sref, apitypes.DeployImageRequest{})
+				if err != nil {
+					return mcpkit.Reply{}, fmt.Errorf("created %s, but its deploy: %w", sref, err)
+				}
+				r, err := h.waitOne(ctx, c, "Deploy", rel, defaultWait)
+				r.Summary = summary + " " + r.Summary
+				return r, err
+			}
 			switch {
 			case svc.Template != apitypes.TemplateNone:
 				summary += " It is deploying from the " + string(svc.Template) + " template: call wait_for_release."

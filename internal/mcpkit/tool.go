@@ -1,6 +1,7 @@
 package mcpkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,9 @@ type tool[A any] struct {
 	Annotations Annotations     `json:"annotations"`
 
 	run func(context.Context, *Call[A], json.RawMessage) (Reply, error)
+	// ownReason: the tool takes a reason argument of its own, so a call's
+	// reason isn't Options.WithReason's.
+	ownReason bool
 }
 
 // Annotations are hints for clients, e.g. to auto-approve read-only tools.
@@ -144,8 +148,9 @@ func addTool[A any](s *Server[A], name, title, description string, ann Annotatio
 	if err != nil {
 		panic(fmt.Sprintf("tool %s: input schema: %v", name, err))
 	}
+	_, ownReason := schema.Properties["reason"]
 	s.tools = append(s.tools, &tool[A]{
-		Name: name, Title: title, Description: description, InputSchema: js, Annotations: ann,
+		Name: name, Title: title, Description: description, InputSchema: js, Annotations: ann, ownReason: ownReason,
 		run: func(ctx context.Context, c *Call[A], args json.RawMessage) (Reply, error) {
 			if len(args) == 0 || string(args) == "null" {
 				args = json.RawMessage("{}")
@@ -234,6 +239,30 @@ func compactSchema(js []byte) ([]byte, error) {
 	return json.Marshal(v)
 }
 
+// takeReason moves a reason argument of a tool that has none of its own
+// into ctx (Options.WithReason): any tool takes one, like the CLI's
+// --reason, without it costing every schema in tools/list. The call and
+// an access request it files then hold the arguments without it.
+func (s *Server[A]) takeReason(ctx context.Context, t *tool[A], args json.RawMessage) (context.Context, json.RawMessage) {
+	if s.o.WithReason == nil || t.ownReason || !bytes.Contains(args, []byte(`"reason"`)) {
+		return ctx, args
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(args, &m) != nil {
+		return ctx, args
+	}
+	var reason string
+	if json.Unmarshal(m["reason"], &reason) != nil {
+		return ctx, args
+	}
+	delete(m, "reason")
+	b, err := json.Marshal(m)
+	if err != nil {
+		return ctx, args
+	}
+	return s.o.WithReason(ctx, reason), b
+}
+
 // toolResult is a tools/call result.
 type toolResult struct {
 	Content []textContent `json:"content"`
@@ -277,6 +306,7 @@ func (s *Server[A]) Call(ctx context.Context, a A, name string, args json.RawMes
 // a blank line and the data as compact JSON. Errors are tool errors the
 // model can read, not protocol errors.
 func (s *Server[A]) run(ctx context.Context, t *tool[A], c *Call[A], args json.RawMessage) toolResult {
+	ctx, args = s.takeReason(ctx, t, args)
 	r, err := t.run(ctx, c, args)
 	if err != nil {
 		if s.o.Refused != nil {

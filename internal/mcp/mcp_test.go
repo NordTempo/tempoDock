@@ -216,14 +216,15 @@ func TestScopedToken(t *testing.T) {
 			t.Errorf("%s takes environment: %s", tl.Name, b)
 		}
 	}
-	for _, want := range []string{"whoami", "deploy_image", "rollback", "set_variables", "apply_changes", "data_query", "propose_data_changes"} {
+	for _, want := range []string{"whoami", "deploy_image", "rollback", "set_variables", "apply_changes", "data_status"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("tools/list lacks %s: %v", want, names)
 		}
 	}
 	// Nor tools it can never use: promoting needs a second environment,
-	// listing servers an operator.
-	for _, hidden := range []string{"promote", "clone_environment", "list_projects", "list_servers", "list_registry_credentials"} {
+	// listing servers an operator, the data tools data access (tokens have
+	// none by default; data_status says so).
+	for _, hidden := range []string{"promote", "clone_environment", "list_projects", "list_servers", "list_registry_credentials", "data_query", "propose_data_changes"} {
 		if slices.Contains(names, hidden) {
 			t.Errorf("tools/list shows %s to a token limited to shop/staging", hidden)
 		}
@@ -649,28 +650,29 @@ func TestAnalyticsTools(t *testing.T) {
 		}
 	}
 	s := f.connect("shop-agent", nil)
-	if c := call(t, s, "analytics_sites", nil); c.isError || !strings.Contains(c.summary, "shop.example.com (staging)") {
-		t.Errorf("analytics_sites = %q", c.summary)
+	if c := call(t, s, "analytics", map[string]any{"report": "sites"}); c.isError || !strings.Contains(c.summary, "shop.example.com (staging)") {
+		t.Errorf("analytics sites = %q", c.summary)
 	}
-	for tool, args := range map[string]map[string]any{
-		"analytics_stats":     {"site": "shop.example.com", "range": "7d"},
-		"analytics_breakdown": {"site": "shop.example.com", "dimension": "referrer"},
-		"analytics_errors":    {"site": "shop.example.com", "filters": []string{"device:is:mobile"}},
-		"analytics_vitals":    {"site": "shop.example.com", "by": []string{"page"}, "metric": "lcp"},
-		"analytics_replays":   {"site": "shop.example.com", "errors_only": true},
-		"analytics_funnel":    {"site": "shop.example.com"},
+	for report, args := range map[string]map[string]any{
+		"stats":     {"range": "7d"},
+		"breakdown": {"dimension": "referrer"},
+		"errors":    {"filters": []string{"device:is:mobile"}},
+		"vitals":    {"by": []string{"page"}, "metric": "lcp"},
+		"replays":   {"errors_only": true},
+		"funnel":    {},
 	} {
-		if c := call(t, s, tool, args); c.isError {
-			t.Errorf("%s = %q", tool, c.summary)
+		args["site"], args["report"] = "shop.example.com", report
+		if c := call(t, s, "analytics", args); c.isError {
+			t.Errorf("analytics %s = %q", report, c.summary)
 		}
 	}
-	if c := call(t, s, "analytics_goals", map[string]any{"site": "shop.example.com"}); !strings.Contains(c.summary, "1 goals") {
-		t.Errorf("analytics_goals = %q", c.summary)
+	if c := call(t, s, "analytics", map[string]any{"report": "goals", "site": "shop.example.com"}); !strings.Contains(c.summary, "1 goals") {
+		t.Errorf("analytics goals = %q", c.summary)
 	}
-	if code := call(t, s, "analytics_stats", map[string]any{"site": "shop.example.com", "filters": []string{"nope"}}).errorCode(t); code != apitypes.CodeValidation {
+	if code := call(t, s, "analytics", map[string]any{"site": "shop.example.com", "filters": []string{"nope"}}).errorCode(t); code != apitypes.CodeValidation {
 		t.Errorf("a malformed filter: %s", code)
 	}
-	if code := call(t, s, "analytics_stats", map[string]any{"project": "blog", "site": "x"}).errorCode(t); code != apitypes.CodeForbidden && code != apitypes.CodeNotFound {
+	if code := call(t, s, "analytics", map[string]any{"project": "blog", "site": "x"}).errorCode(t); code != apitypes.CodeForbidden && code != apitypes.CodeNotFound {
 		t.Errorf("another project's site: %s", code)
 	}
 }
@@ -851,6 +853,10 @@ func TestStageAndApply(t *testing.T) {
 	call(t, s, "show_changes", nil).decode(t, &p)
 	if p.Count != 0 {
 		t.Errorf("still staged after apply: %+v", p)
+	}
+	// create_service with deploy deploys its image in the same call.
+	if c := call(t, s, "create_service", map[string]any{"name": "worker", "image": "app:3", "deploy": true}); c.isError || !strings.Contains(c.summary, "worker #1 active") {
+		t.Errorf("create_service with deploy = %q", c.summary)
 	}
 }
 

@@ -59,8 +59,11 @@ func Handler(c *core.Core, opts Options) http.Handler {
 			org, _ := ctx.Value(orgKey{}).(string)
 			return c.AuthenticateToken(ctx, token, org)
 		},
-		Caller:  func(a core.Actor) string { return "You act as " + whoLine(a.Me()) },
-		View:    view,
+		Caller: func(a core.Actor) string { return "You act as " + whoLine(a.Me()) },
+		View:   h.view,
+		WithReason: func(ctx context.Context, r string) context.Context {
+			return core.WithReason(ctx, r[:min(len(r), maxReason)])
+		},
 		Realm:   "dock",
 		NoToken: "send `Authorization: Bearer <token>` with a Dock API token",
 		Tools: func(s *mcpkit.Server[core.Actor]) {
@@ -84,12 +87,22 @@ func Handler(c *core.Core, opts Options) http.Handler {
 	})
 }
 
+// maxReason caps a reason's length in bytes, as the API's Dock-Reason.
+const maxReason = 500
+
+// dataTools are the data tools a caller without data access can't use;
+// data_status stays, to say why.
+var dataTools = []string{"data_schema", "data_rows", "data_keys", "data_key", "data_query", "data_insights", "data_cancel", "propose_data_changes"}
+
 // view is the tools an actor's tools/list shows (mcpkit.View): the
 // arguments its limits fill and the tools it can never use are left out.
 // A token limited to one environment can't promote, clone or see other
-// projects; only operators list servers, only admins registry
-// credentials; read tokens change nothing.
-func view(a core.Actor) mcpkit.View {
+// projects, and without data access there (the default for tokens) has
+// data_status only; only operators list servers, only admins registry
+// credentials; read tokens change nothing. A client lists tools once per
+// session: access granted later shows in a new one (the tools answer
+// calls either way).
+func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
 	var v mcpkit.View
 	if a.ProjectName != "" {
 		v.Implied = append(v.Implied, "project")
@@ -98,6 +111,9 @@ func view(a core.Actor) mcpkit.View {
 	if a.EnvironmentName != "" {
 		v.Implied = append(v.Implied, "environment")
 		v.Hide = append(v.Hide, "promote", "clone_environment")
+		if l, err := h.core.DataLevel(ctx, a, core.EnvRef{Project: a.ProjectName, Environment: a.EnvironmentName}); err == nil && l == apitypes.LevelNone {
+			v.Hide = append(v.Hide, dataTools...)
+		}
 	}
 	if !a.Operator {
 		v.Hide = append(v.Hide, "list_servers")
@@ -111,17 +127,16 @@ func view(a core.Actor) mcpkit.View {
 
 // instructions are sent to the client on initialize; clients show them to
 // the model, so they state the safety model up front.
-const instructions = `Tempo Dock deploys Docker apps to your own servers. You act with a scoped API token.
+const instructions = `Tempo Dock deploys Docker apps to your own servers. You act with a scoped token; who it is and its limits are at the end, and tools default project and environment to them.
 
-- Who you act as is at the end: the token's scope and the project and environment it is limited to. Tools default project and environment to those limits, so there is no need to look them up.
-- The server enforces every permission. A forbidden error means the token can't do it: stop and report it; don't look for another credential or a workaround.
-- Deploys are safe: a release only gets traffic after its health check passes. A failed deploy changed nothing and needs no rollback; read release_details for the reason and the container's last log lines, fix, deploy again. Roll back only a release that went live and misbehaves.
-- Tools that start releases wait for them. If one is still deploying (yours or someone else's), call wait_for_release; don't poll release_details.
-- Variables and settings are staged: set_variables, update_service (port, health check path, image, ...), set_pre_deploy_command or add_volume, review with show_changes, then apply_changes (or pass apply to take them live in the same call). Secret values are write-only.
-- A locked environment (locked in project_overview) refuses every change with environment_locked and files an access request: a human approves or rejects it in the UI, and once approved it runs as you. Tell the user, then wait_for_request; don't retry or work around it. request_access asks before any change, with your reason, even where nothing is locked.
-- Data tools follow the data access policy; data_status says what you may do and why. Data changes are proposals a human approves; tokens never write production data.
-- Some things only a person does, in the UI or CLI: archiving services or projects, deleting snapshots, locking or unlocking environments, creating tokens; and nothing deletes volumes. Say so; don't work around it (e.g. deleting files with run_command).
-- Every change is audited with the token's name. Read dock://docs/agents for the full guide.`
+- A forbidden error means the token can't: report it; never look for another credential or a workaround.
+- A failed deploy never got traffic and needs no rollback: diagnose, fix, deploy again. Roll back only a release that went live and misbehaves.
+- Tools that start releases wait for them; for one still deploying, wait_for_release.
+- Variables, settings and volumes are staged until apply_changes, or apply on the staging tool. Secret values are write-only.
+- A locked environment turns a change into an access request a person approves or rejects: tell the user, then wait_for_request; don't retry. Any tool takes reason, the approver reads it; request_access asks first.
+- Data tools follow the data access policy: data_status says what you may do and why (without access it is the only data tool listed). Tokens never write production data.
+- Only a person archives services or projects, deletes snapshots, locks environments or creates tokens, and nothing deletes volumes: say so; don't work around it (e.g. with run_command).
+- Every change is audited. dock://docs/agents is the full guide.`
 
 // hints tell the model what to do next where the message doesn't.
 var hints = map[apitypes.ErrorCode]string{
@@ -130,8 +145,8 @@ var hints = map[apitypes.ErrorCode]string{
 	apitypes.CodeNotFound:         "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
 	apitypes.CodeServerOffline:    "The server the environment runs on is offline. Retry later, then report it.",
 	apitypes.CodeEnvironmentLocked: "A human locked this environment. This call filed an access request (its number is in request): tell the user what you asked for and why, then call wait_for_request; " +
-		"approved, the change runs as you. To tell the approver why, call request_access with the same tool, arguments and a reason: it adds the reason to this request. " +
-		"Don't retry, work around it or look for another token. Next time ask first with request_access and a reason; staging tools take apply, so one request covers staging and applying.",
+		"approved, the change runs as you. If you gave no reason, the same call with reason adds one to this request; otherwise don't retry, work around it or look for another token. " +
+		"Pass reason with changes, and apply on staging tools, so one request covers staging and applying.",
 	apitypes.CodeInternal:      "Something failed inside Dock (the daemon log has it). Retry once; if it fails again, stop and report it.",
 	apitypes.CodeValidation:    "Fix the arguments the message names and call again. Don't guess values the user didn't give you; ask.",
 	apitypes.CodeConflict:      "It clashes with what exists. Look first (project_overview, show_changes, list_domains); don't remove or rename things to make room unless asked.",

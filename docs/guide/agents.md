@@ -135,13 +135,13 @@ instead; that is your login, so don't hand it to an agent.
 |---|---|
 | Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `diagnose`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `status_pages`, `list_errors`, `traces_list` and `trace_get` (a service's traces, slowest since a release; one trace's spans), `list_vulnerabilities` (what is vulnerable in live images and the fix), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
-| Jobs | `list_jobs`, `set_job`, `run_job`, `remove_job`, `job_history` |
+| Jobs | `list_jobs` (with `job`, its latest runs), `set_job`, `run_job`, `remove_job` |
 | Previews | `get_previews`, `get_preview` |
 | Status pages | `status_incident_open` (a draft unless told to post), `status_incident_update` (post, publish a draft, resolve, or change a draft's words), `status_maintenance` (schedule, start, complete, extend, cancel) |
-| Configure | `create_service`, `update_service`, `set_pre_deploy_command`, `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain`, `check_domain`, `remove_domain` |
+| Configure | `create_service`, `update_service`, `set_pre_deploy_command`, `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain` (without hostname: a generated one), `check_domain`, `remove_domain` |
 | Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |
 | Project files | `plan_project_file`, `apply_project_file`, `import_compose` |
-| Analytics | `analytics_sites`, `analytics_stats`, `analytics_breakdown`, `analytics_errors`, `analytics_vitals`, `analytics_replays` (listed only; watched in the UI), `analytics_goals`, `analytics_funnel` |
+| Analytics | `analytics`: a site's stats, a breakdown, browser errors, Web Vitals, replays (listed only; watched in the UI), goals or funnels, or the project's sites |
 | Data | `data_status`, `data_schema`, `data_rows`, `data_keys` and `data_key` (Redis), `data_query`, `data_insights`, `data_cancel`, `propose_data_changes` |
 | Ask | `request_access`, `wait_for_request`, `list_requests` |
 
@@ -151,8 +151,10 @@ instead; that is your login, so don't hand it to an agent.
 - **The tool list fits the token**, since every tool costs the agent's
   context on every turn: a token limited to one environment sees no
   project or environment arguments and no `promote` or
-  `clone_environment`, a `read` token only tools that change nothing, and
-  only operators and admins their own tools.
+  `clone_environment`, and without data access there (the default) only
+  `data_status` of the data tools; a `read` token only tools that change
+  nothing; only operators and admins their own tools. A client lists the
+  tools when it connects, so access granted later shows on reconnect.
 - **Deploy tools wait** until the release is active or failed (default
   300 seconds, `wait_seconds` up to 900) and stream each step as a
   progress notification. A failed release comes back with its reason and

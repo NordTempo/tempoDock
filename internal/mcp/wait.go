@@ -31,7 +31,7 @@ const (
 // WaitInput is the wait_seconds argument of tools that wait: for
 // releases they start, or for an access request's decision.
 type WaitInput struct {
-	WaitSeconds *int `json:"wait_seconds,omitempty" doc:"Default 300, at most 900."`
+	WaitSeconds *int `json:"wait_seconds,omitempty"`
 }
 
 // ApplyInput is the apply argument of the tools that stage a change

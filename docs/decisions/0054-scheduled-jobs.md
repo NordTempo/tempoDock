@@ -30,7 +30,7 @@ keeps its history; a scheduled job is the same run, started by the clock.
 | dock.toml | `[[jobs]]` with `name`, `schedule`, `timezone`, `command`, `timeout`, `overlap`. A release whose source has a dock.toml makes its jobs the service's file jobs when it goes active: added, changed, or removed when no longer in the file. A release without a file leaves them. File jobs are shown as such and changed in the file; the UI and CLI can disable them and run them now. A file job takes over a UI job of the same name |
 | CLI | `dock job list`, `dock job set <name> --schedule ... [--timezone] [--timeout] [--overlap] -- <command>` (the command after `--`, as for `dock run`), `dock job remove`, `dock job enable/disable`, `dock job run <name>` (run now), `dock job history <name>` |
 | UI | The service's Jobs tab: the jobs with their schedule in words and next time, a schedule editor, each job's history with its output, and Run now |
-| Agents | MCP `list_jobs`, `set_job`, `remove_job`, `run_job` (waits like `run_command`), `job_history` |
+| Agents | MCP `list_jobs` (with `job`: its runs), `set_job`, `remove_job`, `run_job` (waits like `run_command`) |
 
 ## Consequences
 
