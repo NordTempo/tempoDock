@@ -35,6 +35,8 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
   only one screen uses lives in that screen's feature.
 - Every server action the CLI has is in the UI too (ADR 0026), and the
   button shows its CLI equivalent (`Act` with `cli`).
+- A new audit action gets its words in `features/audit/AuditTable.tsx`
+  (`words`) in the same change; without them Activity shows the raw key.
 - Heavy code loads with what opens it: dialogs and editors are `lazy()`
   (see `features/create/open.tsx`). `make perf` holds the initial JS, CSS
   and fonts to a budget.
