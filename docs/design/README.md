@@ -119,9 +119,11 @@ for everything.
 
 - **Navigation.** The sidebar holds the organization switcher, one search
   (the palette, Cmd+K: pages and `dock` commands in one list), the project
-  tree (and archived projects), then Analytics, Errors, Images, Alerts, Activity,
-  Requests (admins), Members, Organization settings, Help, the account and,
-  for operators, the console. There is no second command bar.
+  tree (and archived projects), then Inbox (open alerts and, for admins,
+  access requests to decide), Errors, Analytics, Images, Status pages,
+  Activity, Settings (members, tokens and where alerts go are inside),
+  Help, the account and, for operators, the console (ADR 0076). There is
+  no second command bar.
 - **Pages.** An organization lists its projects; a project page shows its
   problems, one table per environment and its activity; an environment's
   address (`/org/project/env`) is that environment's own page. A service

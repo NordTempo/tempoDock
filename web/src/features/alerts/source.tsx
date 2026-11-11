@@ -130,9 +130,9 @@ export function AlertLink({
     case "access_request":
       return (
         <Link
-          to="/$org/requests"
+          to="/$org/inbox"
           params={{ org }}
-          search={a.target?.request ? { id: a.target.request } : {}}
+          search={a.target?.request ? { request: a.target.request } : {}}
           {...props}
         >
           Review request

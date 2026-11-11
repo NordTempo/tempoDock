@@ -12,7 +12,6 @@ import {
   canDeploy,
   queries,
   serviceRef,
-  useIsAdmin,
   useIsOperator,
   useOrgs,
   useProjects,
@@ -36,7 +35,6 @@ import {
   canCreateProject,
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
-import { isPending, useRequestsIfAdmin } from "../features/requests/data";
 import { useUpdateNote } from "../features/update/data";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
@@ -125,11 +123,7 @@ const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
 
 function AppNav() {
   const openPalette = usePalette();
-  const onMembers = useRouterState({
-    select: (r) => r.location.pathname.endsWith("/settings/members"),
-  });
   const operator = useIsOperator();
-  const admin = useIsAdmin();
   return (
     <>
       <OrgSwitcher />
@@ -148,18 +142,19 @@ function AppNav() {
       <ProjectTree />
       <ArchivedProjects />
       <div className="min-h-6 flex-1" />
-      <NavLink to="/$org/analytics" icon="bars">
-        Analytics
+      {/* What waits on someone first: alerts and access requests (ADR 0076). */}
+      <NavLink to="/$org/inbox" icon="inbox">
+        <span className="flex-1">Inbox</span>
+        <InboxCount />
       </NavLink>
       <NavLink to="/$org/errors" icon="alert">
         Errors
       </NavLink>
+      <NavLink to="/$org/analytics" icon="bars">
+        Analytics
+      </NavLink>
       <NavLink to="/$org/images" icon="box">
         Images
-      </NavLink>
-      <NavLink to="/$org/alerts" icon="bell">
-        <span className="flex-1">Alerts</span>
-        <OpenAlertCount open={useOrgOpenAlerts()} />
       </NavLink>
       <NavLink to="/$org/status-pages" icon="globe">
         Status pages
@@ -167,18 +162,8 @@ function AppNav() {
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>
-      {admin && (
-        <NavLink to="/$org/requests" icon="inbox">
-          <span className="flex-1">Requests</span>
-          <PendingRequestCount />
-        </NavLink>
-      )}
-      <NavLink to="/$org/settings/members" icon="users">
-        Members
-      </NavLink>
-      {/* Members has its own row: on its page, only that row is current. */}
-      <NavLink to="/$org/settings" icon="sliders" exact={onMembers}>
-        Organization settings
+      <NavLink to="/$org/settings" icon="sliders">
+        Settings
       </NavLink>
       <NavLink to="/$org/help" icon="help">
         Help
@@ -340,17 +325,12 @@ function Me() {
   );
 }
 
-/** How many access requests wait for a decision; nothing when none. */
-function PendingRequestCount() {
-  const pending = useRequestsIfAdmin().filter((r) => isPending(r)).length;
-  if (pending === 0) return null;
-  return (
-    // A filled count: something waits on the reader.
-    <span className="min-w-5 rounded-[5px] bg-warn px-1.5 text-center text-2xs leading-[18px] font-semibold text-side">
-      {/* In words, so it reads as requests waiting, not a bare count. */}
-      {pending} waiting
-    </span>
-  );
+/**
+ * What waits in the Inbox: open alerts (an access request has one), in
+ * the worst one's colour; nothing when none.
+ */
+function InboxCount() {
+  return <OpenAlertCount open={useOrgOpenAlerts()} bare />;
 }
 
 /** The newer release, or that an update runs; nothing when up to date. */
@@ -372,13 +352,18 @@ function PlatformAlertCount() {
 }
 
 /** How many alerts are open, in the worst one's colour; nothing when none. */
-function OpenAlertCount({ open }: { open: Alert[] }) {
+function OpenAlertCount({ open, bare }: { open: Alert[]; bare?: boolean }) {
   if (open.length === 0) return null;
   const critical = open.some((a) => a.severity === "critical");
   return (
-    // Said in words, so it isn't read as another requests count.
     <span className={`text-2xs ${critical ? "text-fail" : "text-warn"}`}>
-      {open.length} {open.length === 1 ? "alert" : "alerts"}
+      {open.length}
+      {/* The console's row says "alerts"; the Inbox's count is its own. */}
+      {bare ? (
+        <span className="sr-only"> waiting</span>
+      ) : (
+        ` ${open.length === 1 ? "alert" : "alerts"}`
+      )}
     </span>
   );
 }

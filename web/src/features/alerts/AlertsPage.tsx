@@ -38,10 +38,10 @@ import {
 } from "./data";
 import { AlertLink, alertText } from "./source";
 
-// The Alerts page: open alerts (worst first), recent history, and the
-// channels alerts are sent to. One page for both scopes (ADR 0062): an
-// org's, for its members (channels for its admins), and the platform's,
-// on the console for operators.
+// Alerts (ADR 0062): open alerts (worst first), recent history, and the
+// channels alerts are sent to, for both scopes: an org's, for its members
+// (in its Inbox; channels for its admins under Settings), and the
+// platform's, on the console for operators.
 
 /** Resolved alerts shown under the open ones, and on request. */
 const HISTORY = 50;
@@ -66,57 +66,96 @@ const useOlderAlerts = (scope: AlertScope, enabled: boolean) =>
     enabled,
   });
 
+/**
+ * The console's Alerts page (operators, the platform's alerts): the lists
+ * and the settings on one page. An organization's are split: the lists
+ * in its Inbox, the settings under Settings, Alerts (ADR 0076).
+ */
 export function AlertsPage({ scope }: { scope: AlertScope }) {
-  const open = useOpenAlerts(scope);
+  return (
+    <>
+      <PageBar title="Alerts" />
+      <Page>
+        <AlertLists scope={scope} />
+        <AlertSettings scope={scope} />
+      </Page>
+    </>
+  );
+}
+
+/**
+ * Open alerts (worst first) and the last resolved ones. `skip` leaves
+ * some out: the Inbox's access request alerts, which its own section
+ * lists for admins.
+ */
+export function AlertLists({
+  scope,
+  skip,
+}: {
+  scope: AlertScope;
+  skip?: (a: Alert) => boolean;
+}) {
+  const kept = (alerts: Alert[]) =>
+    skip ? alerts.filter((a) => !skip(a)) : alerts;
+  const open = kept(useOpenAlerts(scope));
   const recent = useAllAlerts(scope);
   const [more, setMore] = useState(false);
   const older = useOlderAlerts(scope, more);
-  // An org's channels are for its admins; operators manage the platform's.
-  const admin = useIsAdmin();
-  const resolved = (older.data ?? recent)
+  const resolved = kept(older.data ?? recent)
     .filter((a) => a.resolved_at)
     .slice(0, more ? MAX : HISTORY);
   return (
     <Scope.Provider value={scope}>
-      <PageBar title="Alerts" />
-      <Page>
-        {open.length > 0 && (
-          <section aria-labelledby="open">
-            <SectionHead id="open">Open</SectionHead>
-            <AlertTable alerts={open} resolvable />
-          </section>
-        )}
-        <section aria-labelledby="history">
-          <SectionHead
-            id="history"
-            right={
-              !more &&
-              resolved.length === HISTORY && (
-                <Act
-                  small
-                  cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
-                  onClick={() => setMore(true)}
-                >
-                  Show up to {MAX}
-                </Act>
-              )
-            }
-          >
-            Last {more ? MAX : HISTORY} resolved
-          </SectionHead>
-          {resolved.length > 0 ? (
-            <AlertTable alerts={resolved} />
-          ) : (
-            <p className="py-2 text-mut">None yet.</p>
-          )}
-          {older.error && (
-            <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
-          )}
+      {open.length > 0 && (
+        <section aria-labelledby="open">
+          <SectionHead id="open">Open</SectionHead>
+          <AlertTable alerts={open} resolvable />
         </section>
-        {scope === "org" && <VulnerabilityAlerts admin={admin} />}
-        {(scope === "platform" || admin) && <Channels />}
-        <p className="font-mono text-2xs text-mut">dock alerts{flag(scope)}</p>
-      </Page>
+      )}
+      <section aria-labelledby="history">
+        <SectionHead
+          id="history"
+          right={
+            !more &&
+            resolved.length === HISTORY && (
+              <Act
+                small
+                cli={`dock alerts --all --limit ${MAX}${flag(scope)}`}
+                onClick={() => setMore(true)}
+              >
+                Show up to {MAX}
+              </Act>
+            )
+          }
+        >
+          Last {more ? MAX : HISTORY} resolved
+        </SectionHead>
+        {resolved.length > 0 ? (
+          <AlertTable alerts={resolved} />
+        ) : (
+          <p className="py-2 text-mut">None yet.</p>
+        )}
+        {older.error && (
+          <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
+        )}
+      </section>
+      <p className="font-mono text-2xs text-mut">dock alerts{flag(scope)}</p>
+    </Scope.Provider>
+  );
+}
+
+/**
+ * Where alerts go and what alerts: an org's vulnerability setting
+ * (ADR 0074) and, for its admins, its channels; the platform's channels
+ * on the console.
+ */
+export function AlertSettings({ scope }: { scope: AlertScope }) {
+  // An org's channels are for its admins; operators manage the platform's.
+  const admin = useIsAdmin();
+  return (
+    <Scope.Provider value={scope}>
+      {scope === "org" && <VulnerabilityAlerts admin={admin} />}
+      {(scope === "platform" || admin) && <Channels />}
     </Scope.Provider>
   );
 }
@@ -348,7 +387,7 @@ function ChannelRow({ channel: ch }: { channel: AlertChannel }) {
       <td className="py-2 text-mut">
         {ch.last_sent_at ? `${since(ch.last_sent_at)} ago` : "never"}
       </td>
-      <td className="max-w-[420px] min-w-[280px] py-2 whitespace-normal">
+      <td className="max-w-[420px] min-w-[160px] py-2 whitespace-normal">
         {ch.failures ? (
           <span className="text-fail">
             {ch.failures} failed

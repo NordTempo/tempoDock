@@ -137,11 +137,11 @@ export function LockStrip({
               <>
                 in{" "}
                 <Link
-                  to="/$org/requests"
+                  to="/$org/inbox"
                   params={{ org }}
                   className="text-sec underline underline-offset-3 hover:text-fg"
                 >
-                  Requests
+                  the Inbox
                 </Link>
               </>
             )}
@@ -156,9 +156,9 @@ export function LockStrip({
       <span className="ml-auto flex flex-wrap items-center gap-2">
         {waiting[0] && (
           <Link
-            to="/$org/requests"
+            to="/$org/inbox"
             params={{ org }}
-            search={{ id: waiting[0].id }}
+            search={{ request: waiting[0].id }}
             className={`btn sm ${warnBtn}`}
           >
             Review {plural(waiting.length, "waiting request")}

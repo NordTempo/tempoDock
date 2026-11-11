@@ -389,7 +389,6 @@ export function useCommands({
       ? ([
           ["Members", "/$org/settings/members", "dock org members"],
           ["Tokens", "/$org/settings/tokens", "dock token list"],
-          ["Requests", "/$org/requests", "dock request list"],
           [
             "Registry credentials",
             "/$org/settings/registries",
@@ -397,6 +396,8 @@ export function useCommands({
           ],
         ] as const)
       : []),
+    ["Inbox", "/$org/inbox", "dock alerts"],
+    ["Alert settings", "/$org/settings/alerts", "dock alerts channel list"],
     ["Analytics", "/$org/analytics", "dock analytics sites"],
     ["Images", "/$org/images", "dock images"],
     ["Vulnerability ignores", "/$org/images/ignores", "dock vulns ignores"],
