@@ -162,8 +162,9 @@ function AppNav() {
       <NavLink to="/$org/audit" icon="activity">
         Activity
       </NavLink>
+      {/* Named in full: projects and services have Settings of their own. */}
       <NavLink to="/$org/settings" icon="sliders">
-        Settings
+        Organization settings
       </NavLink>
       <NavLink to="/$org/help" icon="help">
         Help

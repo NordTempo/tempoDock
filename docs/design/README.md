@@ -121,7 +121,7 @@ for everything.
   (the palette, Cmd+K: pages and `dock` commands in one list), the project
   tree (and archived projects), then Inbox (open alerts and, for admins,
   access requests to decide), Errors, Analytics, Images, Status pages,
-  Activity, Settings (members, tokens and where alerts go are inside),
+  Activity, Organization settings (members, tokens and where alerts go),
   Help, the account and, for operators, the console (ADR 0076). There is
   no second command bar.
 - **Pages.** An organization lists its projects; a project page shows its

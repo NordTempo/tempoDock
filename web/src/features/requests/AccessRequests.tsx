@@ -1,6 +1,6 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useSession } from "../../data/queries";
 import type { AccessRequest } from "../../data/types";
 import { useOrg } from "../../shell/location";
@@ -68,7 +68,14 @@ export function AccessRequests({ selected }: { selected?: number }) {
   const [decided, setDecided] = useState(false);
   const waiting = requests.filter((r) => isPending(r));
   // Without a selection, the oldest waiting one is the next to decide.
-  const id = selected ?? waiting.at(-1)?.id;
+  // The one opened last stays open once decided, so its result shows
+  // (running, done, failed) instead of the list jumping away from it.
+  const next = waiting.at(-1)?.id;
+  const [last, setLast] = useState(selected ?? next);
+  const id = selected ?? next ?? last;
+  useEffect(() => {
+    if (id !== undefined && id !== last) setLast(id);
+  }, [id, last]);
   const opened = requests.find((r) => r.id === id);
   // A decided request stays listed while it is the one opened.
   const shown = decided
