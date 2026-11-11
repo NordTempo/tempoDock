@@ -667,6 +667,13 @@ operators' install links work. `dock github status` shows the callback URL
 to add in the App's settings on GitHub; generate a client secret there,
 then `printf %s "$SECRET" | dock github app secret`.
 
+Creating a new App (or installing it again) forgets the old
+installations. Services connected through them keep their connection: the
+first push or pull request the new installation delivers for their
+repository moves them to it, if that installation is assigned to their
+org. Until then they don't deploy on push; `dock git connect` again moves
+one right away.
+
 ### Through a webhook
 
 Without the App, or with `--mode webhook`, each service has its own

@@ -447,6 +447,8 @@ func (c *Core) CompleteGitHubApp(ctx context.Context, code, state string) (apity
 	}
 	if err := c.store.Tx(ctx, func(q *store.Queries) error {
 		// A new App has new installations; old assignments mean nothing.
+		// Connections through them move to the new ones on their next
+		// delivery (adoptAppConnections).
 		if err := q.DeleteGitHubInstallations(ctx); err != nil {
 			return err
 		}
@@ -469,7 +471,8 @@ var manifestCodeRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 
 // RemoveGitHubApp forgets the App and its installations' assignments.
 // Services connected through it stay connected but can't fetch until they
-// reconnect. The App itself stays on GitHub; delete it there. Operators
+// reconnect, or a new App's installation assigned to their org delivers
+// a push or pull request for their repository (adoptAppConnections). The App itself stays on GitHub; delete it there. Operators
 // only.
 func (c *Core) RemoveGitHubApp(ctx context.Context, a Actor) error {
 	if err := a.requireOperator("removing the GitHub App"); err != nil {
