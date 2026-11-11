@@ -27,6 +27,8 @@ func observeCases() []Case {
 			Name:   "errors-overview",
 			Prompt: "What errors is the api service in staging throwing? Give me the most frequent one.",
 			Env:    map[string]string{"DOCK_FAKE_LOGS": "{dir}/logs.txt"},
+			// A dev daemon's demo lines predate the log followers, so they
+			// never become issues: the errors are in the logs only.
 			Setup: withLogs(strings.Repeat("E TypeError: Cannot read properties of undefined (reading 'sku')\nE     at addToCart (/app/src/cart.js:41:17)\n", 6) +
 				"E Error: connect ECONNREFUSED 10.0.0.7:6379\nGET /api/cart 200 9ms\n"),
 			Check: func(_ *World, t Transcript) error { return answerMatches(t, `sku`) },

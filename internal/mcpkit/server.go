@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -51,6 +52,11 @@ type Options[A any] struct {
 	// Instructions are sent on initialize; clients show them to the model,
 	// so they state the host's safety model up front.
 	Instructions string
+	// Caller, when set, adds a line about the caller to the instructions,
+	// e.g. its scope and limits, so the model needs no call to learn them.
+	Caller func(A) string
+	// View, when set, tailors tools/list to the caller (see View).
+	View func(A) View
 	// Authenticate resolves a bearer token to the caller. An error with
 	// code unauthorized answers 401 with its message; others are logged
 	// and answer 500.
@@ -85,6 +91,22 @@ type Server[A any] struct {
 	toolsByID map[string]*tool[A]
 	toolsList []byte // the tools/list result, encoded once
 	docs      []doc
+
+	// views are the tools/list results of Options.View's views, encoded
+	// on first use: a handful (scope and limits), never per caller.
+	viewsMu sync.Mutex
+	views   map[string][]byte
+}
+
+// View is what one caller's tools/list shows. Every tool in the list costs
+// a model's context on every turn, so a caller sees neither the tools it
+// can never use (Hide) nor the arguments its defaults always fill
+// (Implied: a token limited to one environment never names a project or
+// environment), and with ReadOnly no tool that changes anything. Calls
+// still take hidden tools and implied arguments.
+type View struct {
+	Hide, Implied []string
+	ReadOnly      bool
 }
 
 // New returns the endpoint for the options.
@@ -108,6 +130,60 @@ func (s *Server[A]) build() {
 		}
 		s.docs = s.o.Docs.load()
 	})
+}
+
+// viewList is tools/list as v shows it, encoded once per view.
+func (s *Server[A]) viewList(v View) []byte {
+	if len(v.Hide)+len(v.Implied) == 0 && !v.ReadOnly {
+		return s.toolsList
+	}
+	slices.Sort(v.Hide)
+	slices.Sort(v.Implied)
+	key := fmt.Sprint(v.Hide, v.Implied, v.ReadOnly)
+	s.viewsMu.Lock()
+	defer s.viewsMu.Unlock()
+	if b, ok := s.views[key]; ok {
+		return b
+	}
+	tools := make([]tool[A], 0, len(s.tools))
+	for _, t := range s.tools {
+		if slices.Contains(v.Hide, t.Name) || v.ReadOnly && !t.Annotations.ReadOnly {
+			continue
+		}
+		c := *t
+		c.InputSchema = withoutProperties(t.InputSchema, v.Implied)
+		tools = append(tools, c)
+	}
+	b, err := json.Marshal(map[string]any{"tools": tools})
+	if err != nil {
+		panic(err) // as in build
+	}
+	if s.views == nil {
+		s.views = map[string][]byte{}
+	}
+	s.views[key] = b
+	return b
+}
+
+// withoutProperties is an input schema without the named top-level
+// properties.
+func withoutProperties(schema json.RawMessage, names []string) json.RawMessage {
+	var v map[string]any
+	if len(names) == 0 || json.Unmarshal(schema, &v) != nil {
+		return schema
+	}
+	props, _ := v["properties"].(map[string]any)
+	for _, n := range names {
+		delete(props, n)
+	}
+	if req, ok := v["required"].([]any); ok {
+		v["required"] = slices.DeleteFunc(req, func(r any) bool { n, _ := r.(string); return slices.Contains(names, n) })
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return schema
+	}
+	return b
 }
 
 // JSON-RPC 2.0 messages.
@@ -221,15 +297,22 @@ func (s *Server[A]) dispatch(ctx context.Context, out *responder, a A, msg rpcMe
 		if slices.Contains(protocolVersions, p.ProtocolVersion) {
 			v = p.ProtocolVersion
 		}
+		instructions := s.o.Instructions
+		if s.o.Caller != nil {
+			instructions += "\n\n" + s.o.Caller(a)
+		}
 		return map[string]any{
 			"protocolVersion": v,
 			"capabilities":    map[string]any{"tools": map[string]any{}, "resources": map[string]any{}},
 			"serverInfo":      map[string]string{"name": s.o.Name, "title": s.o.Title, "version": s.o.Version},
-			"instructions":    s.o.Instructions,
+			"instructions":    instructions,
 		}, nil
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
+		if s.o.View != nil {
+			return json.RawMessage(s.viewList(s.o.View(a))), nil
+		}
 		return json.RawMessage(s.toolsList), nil
 	case "tools/call":
 		var p struct {

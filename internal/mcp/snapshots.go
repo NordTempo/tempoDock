@@ -20,11 +20,10 @@ import (
 // restore_snapshot.
 func (h *handler) addSnapshotTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "list_snapshots", "List snapshots",
-		"A stateful service's volume snapshots, newest first (id, trigger, status, size, how long the service was paused, note or error), its latest restores, "+
-			"whether snapshots restore into a new service (template databases) and retention: the newest keep per service, none older than keep_days.",
+		"A stateful service's volume snapshots and restores.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Limit int `json:"limit,omitempty" doc:"How many snapshots. Default 20, at most 200."`
+			Limit int `json:"limit,omitempty"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -47,12 +46,10 @@ func (h *handler) addSnapshotTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "create_snapshot", "Snapshot volumes",
-		"Snapshot a stateful service's volumes on its server now, e.g. before a risky migration, and wait for it. "+
-			"Its running containers are paused (frozen, connections kept) while the volumes are copied, usually seconds; a database recovers from the copy as from a power cut. "+
-			"Snapshots stay on the server, count against its disk and are pruned by count and age: they are not an off-server backup.",
+		"Snapshot a stateful service's volumes now (it pauses briefly), and wait. Kept on its server, not a backup.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Note string `json:"note,omitempty" doc:"What the snapshot is for, e.g. before the 2.0 migration."`
+			Note string `json:"note,omitempty"`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
@@ -85,14 +82,11 @@ func (h *handler) addSnapshotTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "restore_snapshot", "Restore a snapshot into a new service",
-		"Restore a template database's snapshot (postgres, redis) into a NEW service with the snapshot's data and credentials, and wait until it has started. "+
-			"The service the snapshot is of is never touched; once the new one checks out, point references at it (e.g. ${{<new>.DATABASE_URL}}) with set_variables. "+
-			"In-place restores, which replace a service's own data, are not available here: a human does them with `dock volume snapshot restore --in-place` or in the UI. "+
-			"Services that aren't template databases restore in place only, so not with this tool.",
+		"Restore a template database's snapshot into a new service, and wait. In-place restores need a person.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Snapshot int64  `json:"snapshot" doc:"The snapshot's id (list_snapshots shows them)."`
-			As       string `json:"as,omitempty" doc:"Name of the new service. Default: <service>-restored."`
+			Snapshot int64  `json:"snapshot"`
+			As       string `json:"as,omitempty" doc:"Default: <service>-restored."`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)

@@ -106,7 +106,8 @@ func newDomainAddCmd(g *globals) *cobra.Command {
 		Long: `Add any hostname to the service. The exact DNS record to create is printed;
 DNS can be set up before or after. Unless --detach, waits (up to --timeout)
 while the server checks DNS and issues the certificate. Still waiting after
-that is not an error: the server keeps checking.
+that is not an error: the server keeps checking. With --json, a hostname
+waiting for its TXT record returns at once with the records to create.
 
 A custom hostname is routed only once a TXT record proves your organization
 controls it; the record to create is printed first, and ` + "`dock domain check`" + `
@@ -198,7 +199,10 @@ func (g *globals) addDomain(ctx context.Context, f domainFlags, path string, bod
 			g.io.Progressf("Redeploying %s to publish its port (release %d)", d.Service, dc.Release.Number)
 		}
 	}
-	if w != nil {
+	// With --json the caller is a script or an agent: a domain waiting for
+	// a TXT record someone has to create can't go live meanwhile, so it
+	// gets the records now instead of after the timeout.
+	if w != nil && (!g.io.JSON || d.Verification == nil) {
 		if dc.Domain, err = g.waitForDomain(ctx, w, t, d, f.timeout); err != nil {
 			return err
 		}

@@ -22,8 +22,10 @@ func TestProjectFileTools(t *testing.T) {
 	if res.isError || !strings.Contains(res.summary, "2 changes now staged") || strings.Contains(res.json, "sk_secret_42") {
 		t.Fatalf("apply: %s %s", res.summary, res.json)
 	}
+	// The environment defaults to the token's, like every tool's: the
+	// file's other environments are left alone.
 	both := file + "[[environments]]\nname = \"production\"\n"
-	if res := call(t, s, "apply_project_file", map[string]any{"file": both}); !res.isError || !strings.Contains(res.json, "--environment") {
+	if res := call(t, s, "apply_project_file", map[string]any{"file": both}); res.isError || !strings.Contains(res.summary, "across 1 environments") || strings.Contains(res.json, `"production"`) {
 		t.Fatalf("production with a staging-only token: %s %s", res.summary, res.json)
 	}
 }

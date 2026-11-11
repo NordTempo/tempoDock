@@ -38,8 +38,9 @@ removed, for [logs] keep_days (30) and up to keep_mb_per_service (64 MB)
 per service, and --release N reads it (--follow ends after it). --build
 prints a build log instead (default: the newest release's).
 
---grep TEXT keeps the lines containing TEXT (plain, case-sensitive) and
---stderr the lines written to stderr; the server filters, after --tail:
+--grep TEXT keeps the lines containing TEXT (plain text; all lower case
+matches any case) and --stderr the lines written to stderr; the server
+filters, after --tail:
 --tail 100 --grep x prints the matches among the last 100 lines.
 
 With --json, every line is one JSON object on its own line.`,
@@ -70,7 +71,7 @@ With --json, every line is one JSON object on its own line.`,
 	cmd.Flags().IntVarP(&f.tail, "tail", "n", 100, "lines of backlog to show, 0 for all")
 	cmd.Flags().StringVar(&f.since, "since", "", "only lines newer than this: a duration like 10m or an RFC 3339 time")
 	cmd.Flags().Int64VarP(&f.release, "release", "r", 0, "release number (default: the active release; with --build, the newest)")
-	cmd.Flags().StringVar(&f.grep, "grep", "", "only lines containing this text (plain, case-sensitive; after --tail)")
+	cmd.Flags().StringVar(&f.grep, "grep", "", "only lines containing this text (plain; lower case matches any case; after --tail)")
 	cmd.Flags().BoolVar(&f.stderr, "stderr", false, "only lines written to stderr (after --tail)")
 	cmd.Flags().BoolVar(&f.build, "build", false, "show the build log instead of service output")
 	cmd.AddCommand(newLogDrainCmd(g))

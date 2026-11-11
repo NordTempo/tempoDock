@@ -31,7 +31,7 @@ const (
 // WaitInput is the wait_seconds argument of tools that wait: for
 // releases they start, or for an access request's decision.
 type WaitInput struct {
-	WaitSeconds *int `json:"wait_seconds,omitempty" doc:"How long to wait, in seconds. Default 300, at most 900. 0 returns at once."`
+	WaitSeconds *int `json:"wait_seconds,omitempty" doc:"Default 300, at most 900."`
 }
 
 // ApplyInput is the apply argument of the tools that stage a change
@@ -39,7 +39,7 @@ type WaitInput struct {
 // live in the same call, and in a locked environment it is one access
 // request instead of one to stage and one to apply.
 type ApplyInput struct {
-	Apply bool `json:"apply,omitempty" doc:"Also apply the environment's staged changes now and wait for the releases, as apply_changes does."`
+	Apply bool `json:"apply,omitempty" doc:"Also apply staged changes now (one call, one access request if locked)."`
 }
 
 // stagedReply is a staging tool's reply: what is staged and in which

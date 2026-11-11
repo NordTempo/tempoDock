@@ -12,6 +12,7 @@ go run ./scripts/agenteval -mode cli                    # the CLI with --json in
 go run ./scripts/agenteval -model claude-opus-5-5 -runs 3
 go run ./scripts/agenteval -dry                         # setup and checks, no model
 go run ./scripts/agenteval -list
+go run ./scripts/agenteval -tools                       # each MCP tool's size, largest first
 ```
 
 Needs `claude` (Claude Code) logged in, and Docker for the data cases.
@@ -46,7 +47,10 @@ turns, cached ones included: what the context cost) and output tokens.
 Per run: the totals, and what the MCP tool list costs in context (the
 input tokens of "Reply OK" with Dock's server minus without it).
 Everything, transcripts and daemon logs included, lands in
-`.data/agenteval/<time>/`.
+`.data/agenteval/<time>/`. The tool list is measured as a deploy token
+limited to one environment sees it, the token the guide recommends; its
+title and annotations aren't sent to the model, so only names,
+descriptions, schemas and the instructions count.
 
 ## Adding a case
 

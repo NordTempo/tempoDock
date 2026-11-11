@@ -17,16 +17,15 @@ import (
 // request's number or head branch among the project's open previews.
 type PreviewInput struct {
 	ProjectInput
-	Environment string `json:"environment,omitempty" doc:"The preview's environment, e.g. pr-12. Default: found by pull_request or branch, else the environment your token is limited to."`
-	PullRequest int64  `json:"pull_request,omitempty" doc:"The pull request's number, e.g. 12."`
-	Branch      string `json:"branch,omitempty" doc:"The pull request's head branch, e.g. fix-checkout."`
+	Environment string `json:"environment,omitempty" doc:"e.g. pr-12."`
+	PullRequest int64  `json:"pull_request,omitempty"`
+	Branch      string `json:"branch,omitempty"`
 }
 
 // addPreviewTools registers get_previews and get_preview.
 func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "get_previews", "Preview settings and open previews",
-		"Whether the project's pull requests get preview environments, cloned from which environment, the limits, the variables whose values previews copy, "+
-			"and the open previews with their pull request, head branch and commit, status (waiting, deploying, live, failed) and addresses.",
+		"A project's pull request preview settings and open previews.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ProjectInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in)
 			if err != nil {
@@ -48,9 +47,7 @@ func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "get_preview", "Get a preview",
-		"One pull request's preview environment: its status (waiting, deploying, live, failed, closed), addresses, the commit it runs and what happened last. "+
-			"Name it by environment (pr-12), or by pull_request number or head branch to find it among the open previews. "+
-			"A new commit on the pull request redeploys it: call again until the status is live or failed, then read release_details of a failed service.",
+		"One pull request's preview: status, addresses, commit. Find it by environment, pull_request or branch.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in PreviewInput) (mcpkit.Reply, error) {
 			pv, err := h.findPreview(ctx, c, in)
 			if err != nil {
@@ -68,8 +65,7 @@ func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 // (ADR 0070).
 func (h *handler) addSleepTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "sleep_environment", "Put an environment to sleep",
-		"Stop every service of a non-production environment, keeping its containers, to free their memory. The next request to its domains, a deploy, "+
-			"run_command or the Data panel wakes it. Previews sleep on their own after a while without requests; this is for doing it now, only when asked.",
+		"Put a non-production environment to sleep, freeing memory; a request, deploy or run wakes it.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in EnvInput) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in)
 			if err != nil {
@@ -82,8 +78,7 @@ func (h *handler) addSleepTools(s *mcpkit.Server[core.Actor]) {
 			return mcpkit.Reply{Summary: fmt.Sprintf("%s/%s is asleep; the next request to its domains wakes it.", e.Project, e.Name), Data: e}, nil
 		})
 	mcpkit.AddTool(s, "wake_environment", "Wake an environment",
-		"Start an asleep environment's services again, databases first, and wait until each passed its health check. Opening one of its addresses does the same; "+
-			"call this before testing a preview whose sleep state (in project_overview or get_preview) is asleep.",
+		"Wake an asleep environment and wait until its services are healthy.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in EnvInput) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in)
 			if err != nil {

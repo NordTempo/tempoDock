@@ -14,13 +14,13 @@ import (
 // addErrorTools registers the errors tool.
 func (h *handler) addErrorTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "list_errors", "List error issues",
-		"The organization's error issues: errors grouped by fingerprint per service, from containers' logs (error levels, stack traces, panics), frontend errors Dock Analytics collected and 5xx spikes. New first, then regressed, then ongoing. Narrow with project, environment and service. With id (from a listing), that issue's latest sample: a stack trace, a log excerpt or the 5xx counts.",
+		"Error issues grouped by fingerprint: from container logs, browsers and 5xx spikes. With id, one issue's latest sample.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			Project     string `json:"project,omitempty" doc:"Only this project's issues. Default: the project your token is limited to, else every project."`
-			Environment string `json:"environment,omitempty" doc:"Only this environment's issues, e.g. production."`
-			Service     string `json:"service,omitempty" doc:"Only this service's issues; needs project and environment."`
-			State       string `json:"state,omitempty" doc:"open (default: not resolved), resolved or all."`
-			ID          int64  `json:"id,omitempty" doc:"An issue's ID, for its detail and sample."`
+			Project     string `json:"project,omitempty"`
+			Environment string `json:"environment,omitempty"`
+			Service     string `json:"service,omitempty"`
+			State       string `json:"state,omitempty" doc:"open (default), resolved or all."`
+			ID          int64  `json:"id,omitempty"`
 		}) (mcpkit.Reply, error) {
 			if in.ID != 0 {
 				d, err := h.core.GetError(ctx, c.Actor, in.ID)

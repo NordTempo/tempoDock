@@ -17,13 +17,13 @@ import (
 // JobInput names one of a service's jobs.
 type JobInput struct {
 	ServiceInput
-	Job string `json:"job" doc:"Job name, e.g. nightly-cleanup; list_jobs lists them."`
+	Job string `json:"job"`
 }
 
 // addJobTools registers the job tools.
 func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "list_jobs", "List a service's jobs",
-		"A service's scheduled jobs: name, cron schedule and timezone, command, next time, latest run, and whether it comes from dock.toml.",
+		"A service's scheduled jobs.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct{ ServiceInput }) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -41,16 +41,15 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "set_job", "Set a job",
-		"Create a scheduled job on a service, or replace one by name: a cron expression (minute hour day-of-month month day-of-week, or @hourly/@daily/@weekly/@monthly/@yearly) in a timezone, "+
-			"and a command run like run_command in the service's active image. A job still running when it comes due again is skipped unless overlap is allow. Jobs from dock.toml are changed in the file. Needs deploy.",
+		"Create or replace a scheduled job: a cron schedule and a command run in the service's image.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			JobInput
-			Schedule       string `json:"schedule" doc:"Cron expression, e.g. \"0 3 * * *\" or @hourly."`
-			Timezone       string `json:"timezone,omitempty" doc:"IANA timezone the schedule is read in, e.g. Europe/Oslo. Default UTC."`
-			Command        string `json:"command" doc:"The command, run with /bin/sh -c."`
-			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"A run is stopped after this long. Default 3600, at most 86400."`
-			Overlap        string `json:"overlap,omitempty" enum:"skip,allow" doc:"When it comes due while still running: skip (default) or allow."`
-			Enabled        *bool  `json:"enabled,omitempty" doc:"Default true."`
+			Schedule       string `json:"schedule" doc:"e.g. \"0 3 * * *\" or @daily."`
+			Timezone       string `json:"timezone,omitempty" doc:"IANA name. Default UTC."`
+			Command        string `json:"command"`
+			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"Default 3600."`
+			Overlap        string `json:"overlap,omitempty" enum:"skip,allow"`
+			Enabled        *bool  `json:"enabled,omitempty"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -71,7 +70,7 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "remove_job", "Remove a job",
-		"Remove a scheduled job and its history. Jobs from dock.toml go when the file drops them. Needs deploy.",
+		"Remove a scheduled job.",
 		mcpkit.Destructive, func(ctx context.Context, c *call, in JobInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -84,10 +83,10 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "run_job", "Run a job now",
-		"Run a scheduled job now, outside its schedule, and wait for it to end. Returns the status, exit code and the last 16 KB of output. Needs deploy.",
+		"Run a scheduled job now and wait.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			JobInput
-			WaitSeconds *int `json:"wait_seconds,omitempty" doc:"How long to wait for the end, in seconds. Default 300, at most 900; the run goes on after."`
+			WaitSeconds *int `json:"wait_seconds,omitempty" doc:"Default 300, at most 900."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -115,7 +114,7 @@ func (h *handler) addJobTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "job_history", "A job's history",
-		"A scheduled job's latest runs, newest first: status (skipped ones with why), exit code, trigger, when. Without output; run_job returns that for its run.",
+		"A scheduled job's latest runs.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in JobInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {

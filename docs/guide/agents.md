@@ -146,7 +146,13 @@ instead; that is your login, so don't hand it to an agent.
 | Ask | `request_access`, `wait_for_request`, `list_requests` |
 
 - **Project and environment default to the token's limits**, so a token
-  for `shop/staging` only names the service. `whoami` shows them.
+  for `shop/staging` only names the service. The server's instructions
+  say who the token is; `whoami` shows it too.
+- **The tool list fits the token**, since every tool costs the agent's
+  context on every turn: a token limited to one environment sees no
+  project or environment arguments and no `promote` or
+  `clone_environment`, a `read` token only tools that change nothing, and
+  only operators and admins their own tools.
 - **Deploy tools wait** until the release is active or failed (default
   300 seconds, `wait_seconds` up to 900) and stream each step as a
   progress notification. A failed release comes back with its reason and
@@ -160,9 +166,9 @@ instead; that is your login, so don't hand it to an agent.
   The staging tools (`set_variables`, `update_service`,
   `set_pre_deploy_command`, `add_volume`) also take `apply`, which does
   both in one call, like the CLI's `--deploy`.
-- **Logs** can be filtered: the `logs` tool takes `grep` (a plain,
-  case-sensitive substring) and `stderr` (stderr lines only), applied
-  after `tail`, like `dock logs --grep` and `--stderr`.
+- **Logs** can be filtered: the `logs` tool takes `grep` (a plain
+  substring; all lower case matches any case) and `stderr` (stderr lines
+  only), applied after `tail`, like `dock logs --grep` and `--stderr`.
 - **Errors are tool results** with the API's codes and a hint:
   `forbidden` means stop and report, `deploy_in_progress` means call
   `wait_for_release`, then retry. Its `release` field (in the API's error

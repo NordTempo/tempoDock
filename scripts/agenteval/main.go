@@ -102,7 +102,7 @@ func main() {
 		dry      = flag.Bool("dry", false, "set up and check each case without an agent; every check should fail")
 		list     = flag.Bool("list", false, "list the cases and exit")
 		noCost   = flag.Bool("no-cost", false, "skip measuring the tool list's token cost")
-		tools    = flag.Bool("tools", false, "print each MCP tool's description and schema size, largest first, and exit")
+		tools    = flag.Bool("tools", false, "print each MCP tool's description and schema size, largest first, and exit; with -out also save tools/list there")
 	)
 	flag.Parse()
 	re := regexp.MustCompile(*pattern)
@@ -128,7 +128,7 @@ func main() {
 		}
 	}
 	if *tools {
-		if err := printTools(bin); err != nil {
+		if err := printTools(bin, *outDir); err != nil {
 			fatal(err)
 		}
 		return
@@ -301,8 +301,9 @@ func toolDaemon(bin string) (*daemon, string, error) {
 }
 
 // printTools prints what each tool costs in tools/list: what the model
-// reads of it, its description and its input schema, largest first.
-func printTools(bin string) error {
+// reads of it, its description and its input schema, largest first. With
+// out, the list is saved there as tools.json.
+func printTools(bin, out string) error {
 	d, token, err := toolDaemon(bin)
 	if err != nil {
 		return err
@@ -322,6 +323,11 @@ func printTools(bin string) error {
 	}
 	if err := json.Unmarshal(list, &v); err != nil {
 		return err
+	}
+	if out != "" {
+		if err := os.WriteFile(filepath.Join(out, "tools.json"), list, 0o644); err != nil {
+			return err
+		}
 	}
 	slices.SortFunc(v.Tools, func(a, b tool) int {
 		return len(b.Description) + len(b.InputSchema) - len(a.Description) - len(a.InputSchema)

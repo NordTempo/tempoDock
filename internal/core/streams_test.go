@@ -47,7 +47,7 @@ func TestServiceLogsFilter(t *testing.T) {
 		want []string
 	}{
 		{"grep", LogQuery{Grep: "error"}, []string{"error: db timeout", "GET /api error 500"}},
-		{"case-sensitive", LogQuery{Grep: "Error"}, nil},
+		{"upper case is exact", LogQuery{Grep: "Error"}, nil},
 		{"stderr", LogQuery{Stderr: true}, []string{"error: db timeout", "warn: slow query"}},
 		{"both", LogQuery{Grep: "error", Stderr: true}, []string{"error: db timeout"}},
 		{"after tail", LogQuery{Tail: 2, Grep: "error"}, []string{"GET /api error 500"}},
@@ -85,5 +85,24 @@ func TestServiceLogsGrepAfterMasking(t *testing.T) {
 	}
 	if got, err := h.readLogs(testSystem, web, LogQuery{Grep: leakedKey}); err != nil || len(got) != 1 {
 		t.Errorf("admin's grep for the secret = %q, %v", got, err)
+	}
+}
+
+// Grep is smart case: all lower case matches any case.
+func TestGrepMatch(t *testing.T) {
+	for _, tc := range []struct {
+		text, pat string
+		want      bool
+	}{
+		{"TypeError: x is undefined", "error", true},
+		{"ERROR db down", "error", true},
+		{"TypeError: x is undefined", "Error", true},
+		{"ERROR db down", "Error", false},
+		{"all fine", "error", false},
+		{"anything", "", true},
+	} {
+		if got := grepMatch(tc.text, tc.pat); got != tc.want {
+			t.Errorf("grepMatch(%q, %q) = %v, want %v", tc.text, tc.pat, got, tc.want)
+		}
 	}
 }

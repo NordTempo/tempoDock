@@ -159,3 +159,26 @@ func TestMemoryAndCPUAlertsNeedSustainedLoad(t *testing.T) {
 	h.openAlert(mem, false)
 	h.openAlert(cpu, false)
 }
+
+// A token limited to an environment sees that environment's alerts, and
+// not the project's others.
+func TestAlertsOfATokensEnvironment(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	h.rt.FailPull(errors.New("manifest unknown"))
+	h.deploy(web, "app:2")
+	h.openAlert("deploy:service:1", true)
+
+	for env, want := range map[string]int{"production": 1, "staging": 0} {
+		if _, err := h.c.GetEnvironment(h.ctx, testSystem, EnvRef{"shop", env}); err != nil {
+			if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: env}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tok := h.token(testSystem, apitypes.CreateTokenRequest{Name: "agent-" + env, Scope: apitypes.ScopeRead, Project: "shop", Environment: env})
+		if open, err := h.c.ListAlerts(h.ctx, tok, false, false, 0, 0); err != nil || len(open) != want {
+			t.Errorf("a token for shop/%s sees %d alerts (%v), want %d", env, len(open), err, want)
+		}
+	}
+}

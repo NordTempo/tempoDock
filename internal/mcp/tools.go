@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -16,21 +17,22 @@ import (
 // limited to, so an agent with a token for shop/staging only names the
 // service.
 
-// ProjectInput names a project.
+// ProjectInput names a project. The instructions say once what the
+// defaults are, rather than every tool's schema.
 type ProjectInput struct {
-	Project string `json:"project,omitempty" doc:"Project name. Default: the project your token is limited to."`
+	Project string `json:"project,omitempty"`
 }
 
 // EnvInput names an environment.
 type EnvInput struct {
 	ProjectInput
-	Environment string `json:"environment,omitempty" doc:"Environment name, e.g. staging. Default: the environment your token is limited to."`
+	Environment string `json:"environment,omitempty"`
 }
 
 // ServiceInput names a service.
 type ServiceInput struct {
 	EnvInput
-	Service string `json:"service" doc:"Service name, e.g. web."`
+	Service string `json:"service"`
 }
 
 // projectOf, envOf and serviceOf resolve an input to a reference, filling in the
@@ -71,30 +73,36 @@ func serviceOf(c *call, in ServiceInput) (core.ServiceRef, error) {
 	return core.ServiceRef{Project: e.Project, Environment: e.Environment, Service: in.Service}, nil
 }
 
+// whoLine says who the caller is and what it may do: whoami's summary, and
+// the last line of the instructions.
+func whoLine(me apitypes.Me) string {
+	where := "every project"
+	switch {
+	case me.Environment != "":
+		where = me.Project + "/" + me.Environment
+	case me.Project != "":
+		where = "project " + me.Project
+	}
+	can := map[apitypes.Scope]string{
+		apitypes.ScopeRead:   "read status, releases, logs, resource use, variable names and the audit log, and wait for releases",
+		apitypes.ScopeDeploy: "read, and deploy, redeploy, roll back, promote, stop and start services, create services, stage and apply variables, settings and volumes, add and remove domains",
+		apitypes.ScopeAdmin:  "everything, including secret values",
+	}[me.Scope]
+	return fmt.Sprintf("%s %q, scope %s, limited to %s: may %s.", me.Kind, me.Name, me.Scope, where, can)
+}
+
 // addPlatformTools registers the tools for projects, services, releases,
 // logs, variables, domains, previews, servers, the audit log and alerts.
 func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "whoami", "Who am I",
-		"Who you are acting as: the token's name, scope (read, deploy or admin) and the project and environment it is limited to. Call it first; other tools default project and environment to these limits.",
+		"The token's name, scope and the project and environment it is limited to.",
 		mcpkit.ReadOnly, func(_ context.Context, c *call, _ struct{}) (mcpkit.Reply, error) {
 			me := c.Actor.Me()
-			where := "every project"
-			switch {
-			case me.Environment != "":
-				where = me.Project + "/" + me.Environment
-			case me.Project != "":
-				where = "project " + me.Project
-			}
-			can := map[apitypes.Scope]string{
-				apitypes.ScopeRead:   "read status, releases, logs, resource use, variable names and the audit log, and wait for releases",
-				apitypes.ScopeDeploy: "read, and deploy, redeploy, roll back, promote, stop and start services, create services, stage and apply variables, settings and volumes, add and remove domains",
-				apitypes.ScopeAdmin:  "everything, including secret values",
-			}[me.Scope]
-			return mcpkit.Reply{Summary: fmt.Sprintf("%s %q, scope %s, limited to %s: may %s.", me.Kind, me.Name, me.Scope, where, can), Data: me}, nil
+			return mcpkit.Reply{Summary: whoLine(me), Data: me}, nil
 		})
 
 	mcpkit.AddTool(s, "list_projects", "List projects",
-		"List the projects you can see.",
+		"Projects you can see.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, _ struct{}) (mcpkit.Reply, error) {
 			ps, err := h.core.ListProjects(ctx, c.Actor, false)
 			if err != nil {
@@ -108,8 +116,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "project_overview", "Project overview",
-		"A project's environments (with kind, and whether their server is online) and their services: state, active release, an in-flight deploy, the latest release when it isn't the active one (e.g. a failed deploy), domains and staged-change counts. "+
-			"The best first look at a project.",
+		"Best first look: a project's environments (kind, locked, server online) and services: state, active, in-flight and last failed release, domains, staged changes.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ProjectInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in)
 			if err != nil {
@@ -128,7 +135,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "export_project", "Export project config",
-		"A project's configuration as it is live: environments, services and their settings, volumes, domains, git connections and variable names (never values), sorted by name.",
+		"A project's live config as a project file: environments, services, settings, volumes, domains, variable names.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ProjectInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in)
 			if err != nil {
@@ -142,15 +149,13 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "plan_project_file", "Plan a project file",
-		"Compare a project file (the format export_project returns, as TOML or JSON) with the live state, like terraform plan: changes (what apply_project_file would stage), "+
-			"kept (live things the file doesn't mention; prune lists the removable ones as removals) and manual (what needs a person: secrets without a value, git connections). "+
-			"The project may not exist yet. Secrets are never in a file: list their names in variables and send values separately.",
+		"Diff a project file (export_project's format, TOML or JSON) against live state, like terraform plan. Changes nothing.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in projectFileInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in.ProjectInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			plan, err := h.core.PlanProject(ctx, c.Actor, p, in.request())
+			plan, err := h.core.PlanProject(ctx, c.Actor, p, in.request(c))
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
@@ -158,16 +163,14 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "apply_project_file", "Stage a project file",
-		"Stage a project file's plan as staged changes in each of its environments (review them with show_changes); nothing goes live unless deploy, which applies each environment's staged changes and waits for the releases. "+
-			"A missing project or environment is created empty. Removals only with prune, which never removes volumes or environments (archiving services needs an admin token). "+
-			"values sets secrets the file names in variables; they are never shown back.",
+		"Stage a project file's changes; deploy also applies them. Creates missing projects and environments. Secret values go in values.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ProjectInput
-			File        string                   `json:"file" doc:"The project file: TOML or JSON, as export_project returns it."`
-			Environment string                   `json:"environment,omitempty" doc:"Only this environment of the file (needed with a token limited to one environment)."`
-			Prune       bool                     `json:"prune,omitempty" doc:"Also remove variables, domains and services the file doesn't mention. Off by default: a partial file never deletes anything."`
-			Values      []apitypes.VariableValue `json:"values,omitempty" doc:"Values for variables the file names without one (secrets); staged, never shown back."`
-			Deploy      bool                     `json:"deploy,omitempty" doc:"Apply each environment's staged changes afterwards and wait for the releases."`
+			File        string                   `json:"file"`
+			Environment string                   `json:"environment,omitempty"`
+			Prune       bool                     `json:"prune,omitempty" doc:"Also remove what the file doesn't mention (never volumes or environments)."`
+			Values      []apitypes.VariableValue `json:"values,omitempty" doc:"Values of the secrets the file names."`
+			Deploy      bool                     `json:"deploy,omitempty"`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in.ProjectInput)
@@ -178,7 +181,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			req := apitypes.ApplyRequest{File: in.File, Environment: in.Environment, Prune: in.Prune, Values: in.Values, Deploy: in.Deploy}
+			req := apitypes.ApplyRequest{File: in.File, Environment: cmp.Or(in.Environment, c.Actor.EnvironmentName), Prune: in.Prune, Values: in.Values, Deploy: in.Deploy}
 			res, err := h.core.ApplyProject(ctx, c.Actor, p, req)
 			if err != nil {
 				return mcpkit.Reply{}, err
@@ -207,12 +210,11 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "import_compose", "Convert a Compose file",
-		"Convert a docker-compose.yml into a Dock project file and plan it: the file, warnings for everything that doesn't map exactly (nothing is dropped silently), the secrets it found (names only) and the plan. "+
-			"postgres and redis images become Dock's database templates. Nothing changes: stage the returned file with apply_project_file, sending the secrets' values in values.",
+		"Convert a docker-compose.yml into a project file and plan it. Changes nothing; stage the file with apply_project_file.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ProjectInput
-			Compose  string            `json:"compose" doc:"The docker-compose.yml."`
-			EnvFiles map[string]string `json:"env_files,omitempty" doc:"Files it reads: env_file paths as written in it, and .env for ${VAR} interpolation."`
+			Compose  string            `json:"compose"`
+			EnvFiles map[string]string `json:"env_files,omitempty" doc:"env_file paths it reads, and .env, by name."`
 		}) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in.ProjectInput)
 			if err != nil {
@@ -230,7 +232,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "service_status", "Service status",
-		"One service's live state: running, crashed (with exit code and restarts, OOM kills), stopped (by whom, when), its active release and its latest release if that one failed or is still deploying.",
+		"A service's live state: running, crashed (exit code, restarts, OOM) or stopped, its active release and a failed or in-flight one.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -278,10 +280,10 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "list_releases", "List releases",
-		"A service's releases, newest first: number, status, source (image, rollback, restart, config, promote, upload), image, who made it and why it failed.",
+		"A service's releases, newest first.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Limit int `json:"limit,omitempty" doc:"How many releases. Default 10, at most 100."`
+			Limit int `json:"limit,omitempty" doc:"Default 10."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -299,12 +301,11 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "release_details", "Release details",
-		"One release (default: the latest) with its deploy steps. For a failed release also the reason (error, error_code) and the last lines of its container's output and its build or image pull. "+
-			"Read this after a failed deploy instead of rolling back: a failed release never got traffic.",
+		"One release (default the latest) with its deploy steps, and for a failed one the error and last log lines.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Number   int64 `json:"number,omitempty" doc:"Release number. Default: the latest release."`
-			LogLines int   `json:"log_lines,omitempty" doc:"Log lines of a failed release, per log. Default 40, at most 500."`
+			Number   int64 `json:"number,omitempty"`
+			LogLines int   `json:"log_lines,omitempty" doc:"Default 40."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -337,14 +338,10 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "diagnose", "Diagnose a failure",
-		"Why a release failed, or why the live one crash looped or turned unhealthy (kind), in one bundle Dock kept when it happened: the likely cause from deterministic rules (cause.rule, cause.summary, a fix with its setting and CLI command), "+
-			"every rule checked with its verdict (checked: what was ruled out and why), the failure with its exit code and OOM kill, the health check's answer, "+
-			"what changed since the last good release (image, variable names, settings), the pre-deploy command, the last lines of the container (matched lines marked) and the build, "+
-			"error issues and memory around it. Default: the service's newest diagnosis; release picks one. Call this first after a failed deploy instead of reading logs. "+
-			"A failed release never got traffic: fix the cause and deploy again, don't roll back. No rule matching (empty cause.rule) means read the evidence.",
+		"Why a release failed or the live one crash loops or is unhealthy: the likely cause and fix (cause.rule empty: no rule matched, read the evidence), what was ruled out, logs and what changed. Call first after a failed deploy.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Release int64 `json:"release,omitempty" doc:"Release number: a failed one, or a live one that crash looped. Default: the service's newest diagnosis."`
+			Release int64 `json:"release,omitempty" doc:"Default: the newest diagnosis."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -380,15 +377,14 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addReleaseTools(s)
 
 	mcpkit.AddTool(s, "logs", "Service logs",
-		"The last lines a service's container wrote (stdout and stderr), from the active release or a given one. Earlier releases work too: a replaced or failed release's output was kept on its server when its container was removed (for 30 days by default), and is read from there. "+
-			"Lines start with their time; stderr lines are marked [stderr]. Use grep to get only the lines that matter. stderr is not the same as errors: many servers (Caddy, for one) write every line there, so judge a line by the level it states (\"level\":\"error\", level=warn) or its words.",
+		"A service's recent output, from the active release or an earlier one. Lines on stderr are marked [stderr], which doesn't make them errors.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Release int64  `json:"release,omitempty" doc:"Release number, also of an earlier (replaced or failed) release. Default: the active release."`
-			Tail    int    `json:"tail,omitempty" doc:"How many of the last lines. Default 100, at most 1000."`
-			Since   string `json:"since,omitempty" doc:"Only lines since then: a duration like 10m or an RFC 3339 time."`
-			Grep    string `json:"grep,omitempty" doc:"Only lines containing this text: a plain, case-sensitive substring, not a regex. Applied after tail, so it finds the matches among the last tail lines; raise tail to search further back."`
-			Stderr  bool   `json:"stderr,omitempty" doc:"Only lines written to stderr, which may be all of them. Applied after tail, like grep."`
+			Release int64  `json:"release,omitempty"`
+			Tail    int    `json:"tail,omitempty" doc:"Default 100, at most 1000."`
+			Since   string `json:"since,omitempty" doc:"e.g. 10m or an RFC 3339 time."`
+			Grep    string `json:"grep,omitempty" doc:"Plain text, after tail; lower case matches any case."`
+			Stderr  bool   `json:"stderr,omitempty"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -428,7 +424,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addStatusTools(s)
 
 	mcpkit.AddTool(s, "list_servers", "List servers",
-		"The servers apps run on: status (online, offline, ...), which environment kinds each accepts, its base domain for generated hostnames, and memory reserved by the services placed there. Platform operators only.",
+		"Servers and their status. Operators only.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, _ struct{}) (mcpkit.Reply, error) {
 			ss, err := h.core.ListServers(ctx, c.Actor)
 			if err != nil {
@@ -446,7 +442,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	// Read-only on purpose: a tool that takes or returns registry
 	// passwords would put them in an agent's context (ADR 0051).
 	mcpkit.AddTool(s, "list_registry_credentials", "List registry credentials",
-		"The private image registries the organization signs in to when a deploy pulls an image from them: host and username, never the password. An image from any other host is pulled anonymously; a person adds credentials with `dock registry login`. Admin tokens only.",
+		"Registries the organization signs in to (host and user). Admins only.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, _ struct{}) (mcpkit.Reply, error) {
 			list, err := h.core.ListRegistryCredentials(ctx, c.Actor)
 			if err != nil {
@@ -460,14 +456,14 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "audit_log", "Audit log",
-		"Audit events, newest first: who (user or token) did what, where and when. Every change is recorded, yours included. Tokens limited to a project or environment only see events there.",
+		"Audit events, newest first: who did what, where, when.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			Project     string `json:"project,omitempty" doc:"Only events in this project."`
-			Environment string `json:"environment,omitempty" doc:"Only events in this environment; needs project."`
-			Service     string `json:"service,omitempty" doc:"Only events targeting this service; needs project and environment."`
-			Action      string `json:"action,omitempty" doc:"Action prefix, e.g. release. or domain.add"`
-			Before      int64  `json:"before,omitempty" doc:"Only events with a smaller id, to page back."`
-			Limit       int    `json:"limit,omitempty" doc:"How many events. Default 50, at most 500."`
+			Project     string `json:"project,omitempty"`
+			Environment string `json:"environment,omitempty"`
+			Service     string `json:"service,omitempty"`
+			Action      string `json:"action,omitempty" doc:"Prefix, e.g. release. or domain.add"`
+			Before      int64  `json:"before,omitempty"`
+			Limit       int    `json:"limit,omitempty"`
 		}) (mcpkit.Reply, error) {
 			n, err := mcpkit.Limit("limit", in.Limit, 50, 500)
 			if err != nil {
@@ -489,11 +485,10 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 // wait_for_release. Each waits for its releases to finish (waitReleases).
 func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "wait_for_release", "Wait for a release",
-		"Wait for a release that is already deploying (yours after a tool's wait ran out, or anyone's) until it is active or failed, and return its final state like deploy_image does, with the logs of a failure. "+
-			"Default: the service's in-flight release; if nothing is in flight, the latest release's state is returned at once. Changes nothing.",
+		"Wait for a deploying release (default the in-flight one) to end, and return it like deploy_image.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Number int64 `json:"number,omitempty" doc:"Release number. Default: the release in flight, if any."`
+			Number int64 `json:"number,omitempty"`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
@@ -532,12 +527,10 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "deploy_image", "Deploy an image",
-		"Deploy a prebuilt image (e.g. ghcr.io/acme/web:3f2a1c) to a service, taking the service's staged changes with it, and wait for the result. "+
-			"The new release gets traffic only after its health check passes; if it fails, nothing changed and the previous release keeps serving (don't roll back; read the error and logs in the result). "+
-			"Deploying source code isn't possible here: run `dock deploy` in the repository instead.",
+		"Deploy an image to a service with its staged changes, and wait. Source code deploys need `dock deploy`.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Image string `json:"image,omitempty" doc:"Image reference. Default: the service's image setting (the image it was last deployed from)."`
+			Image string `json:"image,omitempty" doc:"Default: the service's image."`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
@@ -556,8 +549,7 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "redeploy", "Redeploy (restart)",
-		"Restart a service: a new release identical to the active one (same image and config), through the same health-checked path, and wait for the result. "+
-			"For a stuck or crashed service. Staged changes are not included; apply_changes takes those live.",
+		"Restart a service: a new release copying the active one, health checked. Staged changes are not included.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			WaitInput
@@ -578,8 +570,7 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "stop_service", "Stop a service",
-		"Stop a service: its domains answer 503 and its container is removed, freeing its memory. Its active release, port, volumes, domains and variables are kept. "+
-			"It stays stopped (no restarts, no alerts, no backups) until start_service or a deploy runs it again. Takes the service offline: only when asked.",
+		"Stop a service until started or deployed: no container, its domains answer 503. Only when asked.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -593,8 +584,7 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "start_service", "Start a stopped service",
-		"Start a stopped service: a new release identical to the active one, through the same health-checked path, and wait for the result. "+
-			"If it fails, the service stays stopped; read the error and logs in the result.",
+		"Start a stopped service and wait.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			WaitInput
@@ -624,11 +614,10 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "rollback", "Roll back",
-		"Roll a service back to an earlier release that served traffic: a new release with that release's image and config, health checked like any deploy, and wait for the result. "+
-			"Only for a release that went live and misbehaves; a failed deploy never got traffic and needs no rollback.",
+		"Roll back to an earlier release that served traffic, and wait. Not for a failed deploy: it never got traffic.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Number int64 `json:"number" doc:"The release to roll back to (one that was active, see list_releases)."`
+			Number int64 `json:"number"`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
@@ -650,13 +639,12 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "promote", "Promote",
-		"Promote what runs in one environment to another of the same project (e.g. staging to production): for each service, the same image by digest with the target's own variables and settings. "+
-			"Releases deploy one at a time and stop at the first failure; services missing in the target are skipped and listed. Waits for the result. Needs deploy on the target environment.",
+		"Deploy the images an environment runs to another of the project (e.g. staging to production), with the target's own config, and wait.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ProjectInput
-			From     string   `json:"from" doc:"Source environment, e.g. staging."`
-			To       string   `json:"to" doc:"Target environment, e.g. production."`
-			Services []string `json:"services,omitempty" doc:"Only these services. Default: every service with an active release in from."`
+			From     string   `json:"from"`
+			To       string   `json:"to"`
+			Services []string `json:"services,omitempty" doc:"Default: all."`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in.ProjectInput)
@@ -691,16 +679,14 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "clone_environment", "Clone an environment",
-		"Create a new environment as a copy of another in the same project: services, settings, variables and new, empty volumes, placed like any new environment of its kind. "+
-			"Reference-only values are always copied. Literal values are copied only for admins, and between production and non-production only with copy_values (admin); otherwise database templates get new credentials and the rest are listed as skipped for you to set. "+
-			"Domains, git connections, releases and backups are never copied. With deploy, the images serving in from are deployed like promote, and the tool waits for them. Needs deploy on the project.",
+		"Create an environment as a copy of another: services, settings, variables and empty volumes, not domains or data. Secret values that can't be copied are listed. deploy also deploys from's images.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ProjectInput
-			From       string `json:"from" doc:"Environment to copy, e.g. staging."`
-			To         string `json:"to" doc:"Name of the new environment."`
-			Kind       string `json:"kind,omitempty" doc:"production or non_production. Default: production for an environment named production, otherwise non_production."`
-			Deploy     bool   `json:"deploy,omitempty" doc:"Also deploy the images serving in from, by digest."`
-			CopyValues bool   `json:"copy_values,omitempty" doc:"Admin only: also copy literal values between production and non-production."`
+			From       string `json:"from"`
+			To         string `json:"to"`
+			Kind       string `json:"kind,omitempty" doc:"production or non_production."`
+			Deploy     bool   `json:"deploy,omitempty"`
+			CopyValues bool   `json:"copy_values,omitempty" doc:"Admin only."`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in.ProjectInput)
@@ -765,12 +751,11 @@ func (h *handler) waitOne(ctx context.Context, c *call, action string, rel apity
 // domains.
 func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "list_variables", "List variables",
-		"An environment's variables: shared ones (every service gets them) and each service's, with staged changes marked as pending. Names only: values are secret. "+
-			"reveal includes values, which only admin tokens may do.",
+		"An environment's variables, shared and per service, with staged changes. Names only unless reveal (admin).",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			EnvInput
-			Service string `json:"service,omitempty" doc:"Only shared variables and this service's."`
-			Reveal  bool   `json:"reveal,omitempty" doc:"Include values (admin tokens only; refused otherwise)."`
+			Service string `json:"service,omitempty"`
+			Reveal  bool   `json:"reveal,omitempty"`
 		}) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
 			if err != nil {
@@ -784,13 +769,12 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "set_variables", "Stage variables",
-		"Stage variable changes: set and unset keys on a service, or shared (environment-level) ones without service. Nothing goes live until apply_changes, apply or the service's next deploy. "+
-			"Values may reference other variables: ${{shared.KEY}} or ${{service.KEY}}. Values are secret: they are never shown back.",
+		"Stage variables on a service, or shared ones without service. Values may reference ${{shared.KEY}} or ${{service.KEY}} and are never shown back.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
-			Service string            `json:"service,omitempty" doc:"The service whose variables change. Default: shared variables."`
-			Set     map[string]string `json:"set,omitempty" doc:"Keys and values to set."`
-			Unset   []string          `json:"unset,omitempty" doc:"Keys to remove."`
+			Service string            `json:"service,omitempty"`
+			Set     map[string]string `json:"set,omitempty"`
+			Unset   []string          `json:"unset,omitempty"`
 			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
@@ -820,15 +804,12 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "set_pre_deploy_command", "Stage the pre-deploy command",
-		"Stage a service's pre-deploy command: it runs with each new release's image, variables and private network before the release gets traffic, typically database migrations "+
-			"(e.g. \"npx prisma migrate deploy\"). A non-zero exit fails the release and the previous one keeps serving. An empty command removes it. "+
-			"With snapshot, the environment's stateful services are snapshotted before it runs (a failed snapshot fails the release). "+
-			"Nothing goes live until apply_changes, apply or the service's next deploy; dock.toml's deploy.pre_deploy_command wins over it.",
+		"Stage a command run in each new release's image before it gets traffic, e.g. migrations. A failure fails the release. Empty removes it.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Command        string `json:"command" doc:"Run with sh -c. Empty removes the pre-deploy command."`
-			TimeoutSeconds *int   `json:"timeout_seconds,omitempty" doc:"How long it may run, up to 3600. 0 means the default, 600."`
-			Snapshot       *bool  `json:"snapshot,omitempty" doc:"Snapshot the environment's stateful services before it runs (pre_deploy_snapshot). Left out: unchanged."`
+			Command        string `json:"command"`
+			TimeoutSeconds *int   `json:"timeout_seconds,omitempty" doc:"Default 600."`
+			Snapshot       *bool  `json:"snapshot,omitempty" doc:"Snapshot stateful services first."`
 			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
@@ -849,7 +830,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "show_changes", "Show staged changes",
-		"An environment's staged changes (variables, settings, volumes) as a diff, and the services applying them would redeploy. Secret values are masked.",
+		"An environment's staged changes as a diff, and the services applying them redeploys.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in EnvInput) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in)
 			if err != nil {
@@ -863,8 +844,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "apply_changes", "Apply staged changes",
-		"Apply an environment's staged changes atomically: every affected running service gets a config release (health checked like any deploy). Waits for the releases to finish. "+
-			"Review them first with show_changes.",
+		"Apply an environment's staged changes: config releases for the affected services, health checked, and wait.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
 			WaitInput
@@ -885,7 +865,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "discard_changes", "Discard staged changes",
-		"Discard staged changes in an environment: the ones selected, or all of them when nothing is selected. Live config is not touched.",
+		"Drop staged changes: the ones named, or all.",
 		mcpkit.Destructive, func(ctx context.Context, c *call, in struct {
 			EnvInput
 			apitypes.DiscardChangesRequest
@@ -902,7 +882,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "list_domains", "List domains",
-		"A service's domains with their status (waiting_for_dns, issuing_certificate, active, error) and the exact DNS records to create for custom ones; one not yet verified also has the TXT record that proves control (verification), and isn't routed until it is found.",
+		"A service's domains, their status and the DNS records to create, with the TXT record proving control while unverified.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -920,13 +900,11 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "add_domain", "Add a domain",
-		"Add a custom hostname to a service. A hostname belongs to one service only. The result lists the DNS records the user must create; the certificate is issued once DNS points at the server. "+
-			"Unless verified is true, it routes only once the user also creates the TXT record in verification, which proves their organization controls the hostname (check_domain looks for it at once). A hostname another organization has proved is refused. "+
-			"If the service's port wasn't published yet, this redeploys it and waits.",
+		"Add a custom hostname to a service. The result has the DNS records the user must create, including a TXT record unless verified.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Hostname   string `json:"hostname" doc:"The hostname, e.g. shop.example.com."`
-			RedirectTo string `json:"redirect_to,omitempty" doc:"Permanently redirect this hostname to another one instead of serving the app."`
+			Hostname   string `json:"hostname"`
+			RedirectTo string `json:"redirect_to,omitempty" doc:"Redirect to this hostname instead of serving."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -940,7 +918,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "generate_domain", "Generate a domain",
-		"Give a service a generated hostname under its server's base domain (<service>-<project>[-<env>].<base>), which works without any DNS work. Redeploys the service if its port wasn't published yet, and waits.",
+		"Give a service a generated hostname under its server's base domain; needs no DNS.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -954,10 +932,10 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "check_domain", "Check a domain now",
-		"Check a domain at once instead of at the server's next retry: its verification TXT record while it isn't verified, then its DNS and certificate. Returns the domain with its status.",
+		"Check a domain's verification, DNS and certificate now.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Hostname string `json:"hostname" doc:"The domain's hostname, e.g. shop.example.com."`
+			Hostname string `json:"hostname"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -1009,13 +987,15 @@ func list(names []string) string {
 // projectFileInput is a project file to plan or apply (ADR 0049).
 type projectFileInput struct {
 	ProjectInput
-	File        string `json:"file" doc:"The project file: TOML or JSON, as export_project returns it."`
-	Environment string `json:"environment,omitempty" doc:"Only this environment of the file (needed with a token limited to one environment)."`
-	Prune       bool   `json:"prune,omitempty" doc:"Also remove variables, domains and services the file doesn't mention. Off by default: a partial file never deletes anything."`
+	File        string `json:"file"`
+	Environment string `json:"environment,omitempty"`
+	Prune       bool   `json:"prune,omitempty" doc:"Also remove what the file doesn't mention (never volumes or environments)."`
 }
 
-func (in projectFileInput) request() apitypes.ApplyRequest {
-	return apitypes.ApplyRequest{File: in.File, Environment: in.Environment, Prune: in.Prune}
+// request is the API request, its environment defaulting to the one
+// the caller is limited to (tools/list leaves the argument out for it).
+func (in projectFileInput) request(c *call) apitypes.ApplyRequest {
+	return apitypes.ApplyRequest{File: in.File, Environment: cmp.Or(in.Environment, c.Actor.EnvironmentName), Prune: in.Prune}
 }
 
 // planSummary counts a plan's lines for a tool's summary.

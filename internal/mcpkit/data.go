@@ -91,8 +91,7 @@ func capRows(rows []apitypes.DataRow) ([]apitypes.DataRow, bool) {
 // messages name that database.
 func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error), name func(R) string) {
 	addLocatedTool(s, "data_status", "Database status",
-		"A database service's state (ready, setup_needed, not_running, ...) and your data access: level (none, schema, read, propose, write), whether sensitive columns are masked for you, and the policy steps that decided it. "+
-			"Call it before other data tools. Access comes from the data access policy an admin sets; if it is too low, report that instead of working around it.",
+		"A database service's state and your data access level (none, schema, read, propose, write) and why. Call before other data tools.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, _ struct{}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -117,10 +116,9 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 		})
 
 	addLocatedTool(s, "data_schema", "Database schema",
-		"A database's tables with columns (name, type, not null, sensitive), primary keys and foreign keys. Pass table for one table with its indexes and constraints. "+
-			"Needs data access level schema.",
+		"A database's tables, columns and keys; with table, one table's indexes and constraints.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Table string `json:"table,omitempty" doc:"One table as schema.name (or name for public), with its indexes and constraints."`
+			Table string `json:"table,omitempty"`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -150,14 +148,13 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 		})
 
 	addLocatedTool(s, "data_rows", "Table rows",
-		"One page of a table, in primary key order (or order), filtered by column conditions. Sensitive columns are masked. Pass the result's next as after for the following page. "+
-			"Needs data access level read; audited.",
+		"One page of a table's rows, filtered and ordered. Sensitive columns masked.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Table   string                `json:"table" doc:"Table as schema.name, e.g. public.orders."`
-			Filters []apitypes.DataFilter `json:"filters,omitempty" doc:"Conditions, ANDed: {column, op, value} with op eq, ne, lt, lte, gt, gte, like, ilike, in (values), is_null, not_null."`
-			Order   string                `json:"order,omitempty" doc:"Column to sort by, -column for descending. Default: the primary key."`
-			After   string                `json:"after,omitempty" doc:"The previous page's next cursor."`
-			Limit   int                   `json:"limit,omitempty" doc:"Rows per page. Default 50, at most 200."`
+			Table   string                `json:"table" doc:"e.g. public.orders."`
+			Filters []apitypes.DataFilter `json:"filters,omitempty" doc:"ANDed."`
+			Order   string                `json:"order,omitempty" doc:"column or -column. Default: the primary key."`
+			After   string                `json:"after,omitempty" doc:"The previous page's next."`
+			Limit   int                   `json:"limit,omitempty" doc:"Default 50, at most 200."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -186,14 +183,12 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 		})
 
 	addLocatedTool(s, "data_query", "Run read-only SQL",
-		"Run one read-only SQL statement (SELECT, EXPLAIN, ...) in a read-only transaction as a least-privilege role; writes are impossible here, use propose_data_changes. "+
-			"On Redis, sql is one read command (HGETALL user:1, ZRANGE board 0 9 WITHSCORES), in db; whole-value reads of big keys are refused, use data_key. "+
-			"Rows come as JSON arrays in column order. Cells over 8 KB are cut. Needs data access level read; every statement is audited with its SQL.",
+		"Run one read-only SQL statement, or on Redis one read command. Writes go through propose_data_changes.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			SQL            string `json:"sql" doc:"One SQL statement (on Redis, one command)."`
-			Limit          int    `json:"limit,omitempty" doc:"Row cap. Default 100, at most 1000. Rows past it are dropped and the result is marked truncated."`
-			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"Statement timeout. Default 10, at most 60."`
-			DB             int    `json:"db,omitempty" doc:"Redis: the logical database, default 0."`
+			SQL            string `json:"sql"`
+			Limit          int    `json:"limit,omitempty" doc:"Default 100, at most 1000."`
+			TimeoutSeconds int    `json:"timeout_seconds,omitempty" doc:"Default 10, at most 60."`
+			DB             int    `json:"db,omitempty" doc:"Redis database. Default 0."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -248,15 +243,13 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 	addCancelTool(s, ops, locate, name)
 
 	addLocatedTool(s, "propose_data_changes", "Propose data changes",
-		"Change rows: inserts, updates and deletes by primary key, as one changeset applied in one transaction. dry_run returns the exact SQL without storing anything. "+
-			"Otherwise the changeset is stored as pending for an admin to review and approve (needs level propose); with commit it is also committed right away, only if your level is write and the environment is not production. "+
-			"Tokens never write production: there it always waits for approval. Updates must carry the old values you saw; a row changed since fails the whole changeset. At most 500 rows.",
+		"Change rows (or Redis keys) as one changeset: pending for an admin's approval; commit applies it at once with write access outside production. Updates carry the old values read.",
 		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Changes    []apitypes.DataChange    `json:"changes,omitempty" doc:"Row changes: {op: insert|update|delete, table: schema.name, key: primary key values (update, delete), old: the values you read (update), new: values to set or insert}. Values are strings in the database's text format (binary values as \\x hex), or null."`
-			KeyChanges []apitypes.DataKeyChange `json:"key_changes,omitempty" doc:"Redis instead of changes: {op: set|delete|expire|hset|hdel|sadd|srem|zadd|zrem|lset|rpush|lpush|lrem, db, key, field (hash field, member, list index), value, ttl_ms, old: {type, value} as you read them (every op but pushes)}."`
-			Message    string                   `json:"message" doc:"Why, for the reviewer."`
-			DryRun     bool                     `json:"dry_run,omitempty" doc:"Only render the SQL; store nothing."`
-			Commit     bool                     `json:"commit,omitempty" doc:"Commit at once if your access is write on a non-production environment; otherwise it stays pending."`
+			Changes    []apitypes.DataChange    `json:"changes,omitempty" doc:"key: primary key values (update, delete); old: the values you read (update); new: values to set. Values are text, or null."`
+			KeyChanges []apitypes.DataKeyChange `json:"key_changes,omitempty" doc:"Redis instead of changes; old is {type, value} as read (all but pushes)."`
+			Message    string                   `json:"message"`
+			DryRun     bool                     `json:"dry_run,omitempty" doc:"Only return the SQL."`
+			Commit     bool                     `json:"commit,omitempty"`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -315,14 +308,13 @@ func queryError(e *apitypes.DataQueryError) string {
 // as DataTools'.
 func DataKeyTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error)) {
 	addLocatedTool(s, "data_keys", "Redis keys",
-		"One page of a Redis or Valkey database's keys, found with bounded SCAN steps (never KEYS): name, type, TTL in ms (-1 none), length and sampled size. "+
-			"match is a glob (user:*). A page may hold fewer keys than limit and still have a next: pass it as after. Needs data access level read; audited.",
+		"One page of a Redis database's keys (SCAN, match glob).",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			DB    int    `json:"db,omitempty" doc:"Logical database, default 0."`
-			Match string `json:"match,omitempty" doc:"SCAN glob, e.g. user:*. Empty matches every key."`
-			Type  string `json:"type,omitempty" enum:",string,hash,list,set,zset,stream" doc:"Keep keys of one type."`
-			After string `json:"after,omitempty" doc:"The previous page's next cursor."`
-			Limit int    `json:"limit,omitempty" doc:"Keys per page. Default 50, at most 200."`
+			DB    int    `json:"db,omitempty" doc:"Default 0."`
+			Match string `json:"match,omitempty" doc:"Glob, e.g. user:*."`
+			Type  string `json:"type,omitempty" enum:",string,hash,list,set,zset,stream"`
+			After string `json:"after,omitempty" doc:"The previous page's next."`
+			Limit int    `json:"limit,omitempty" doc:"Default 50, at most 200."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -344,14 +336,13 @@ func DataKeyTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate fun
 		})
 
 	addLocatedTool(s, "data_key", "Redis key",
-		"One Redis or Valkey key: type, TTL, length, sampled size, and one page of its value as rows (string [value], hash [field, value], list [#, value], set [member], sorted set [#, member, score], stream [id, fields]). "+
-			"Values over 8 KB are cut. Pass next as after for the following page. Needs data access level read; audited.",
+		"One Redis key's type, TTL and a page of its value.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			DB    int    `json:"db,omitempty" doc:"Logical database, default 0."`
-			Key   string `json:"key" doc:"The key's name (hex when hex is set: data_keys returns names that aren't UTF-8 that way)."`
-			Hex   bool   `json:"hex,omitempty" doc:"key is hex."`
-			After string `json:"after,omitempty" doc:"The previous page's next cursor."`
-			Limit int    `json:"limit,omitempty" doc:"Items per page. Default 50, at most 200."`
+			DB    int    `json:"db,omitempty" doc:"Default 0."`
+			Key   string `json:"key" doc:"Hex when hex is set."`
+			Hex   bool   `json:"hex,omitempty"`
+			After string `json:"after,omitempty" doc:"The previous page's next."`
+			Limit int    `json:"limit,omitempty" doc:"Default 50, at most 200."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {

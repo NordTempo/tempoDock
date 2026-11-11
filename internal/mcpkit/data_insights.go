@@ -24,15 +24,11 @@ const (
 // addInsightsTool registers data_insights over a host's panel operations.
 func addInsightsTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error), name func(R) string) {
 	addLocatedTool(s, "data_insights", "How the database is doing",
-		"Read a database's health from its own statistics, live: connections against the limit, cache hit ratio and size (overview); the slowest or most frequent statements (queries); "+
-			"sessions that are running, idle in a transaction or blocked, with who blocks them (sessions); the largest tables and their dead rows and full scans (tables); index sizes and use (indexes). "+
-			"Redis has overview (memory against its limit, evictions), queries (commands), sessions (clients) and keys (key prefixes by size, from a sample). "+
-			"Hints come first: what needs a look, with a statement to copy where one helps (Dock never runs it). Use it when an app is slow, a deploy failed on database errors or connections run out. "+
-			"Overview, tables and indexes need data access level schema; queries, sessions and keys read. Statement values are redacted unless you see sensitive columns. Nothing here changes the database.",
+		"A database's health: overview, slowest queries, sessions and blocking, tables, indexes (Redis: keys). Hints first.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Views []apitypes.DataInsightView  `json:"views,omitempty" enum:"overview,queries,sessions,tables,indexes,keys" doc:"Any of overview, queries, sessions, tables, indexes (SQL databases) or keys (Redis key prefixes). Default: all you may see."`
-			Order apitypes.DataStatementOrder `json:"order,omitempty" enum:"total,mean,calls,rows" doc:"Queries by total (default), mean, calls or rows."`
-			Limit int                         `json:"limit,omitempty" doc:"Statements to return. Default 10, at most 20."`
+			Views []apitypes.DataInsightView  `json:"views,omitempty" enum:"overview,queries,sessions,tables,indexes,keys" doc:"overview, queries, sessions, tables, indexes or keys (Redis). Default: all."`
+			Order apitypes.DataStatementOrder `json:"order,omitempty" enum:"total,mean,calls,rows"`
+			Limit int                         `json:"limit,omitempty" doc:"Default 10."`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {
@@ -55,13 +51,11 @@ func addInsightsTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate 
 // addCancelTool registers data_cancel over a host's panel operations.
 func addCancelTool[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error), name func(R) string) {
 	addLocatedTool(s, "data_cancel", "Cancel a query or end a session",
-		"Cancel a session's running query (the client gets an error, its connection stays), or with terminate end the session (its connection drops and its open transaction rolls back). "+
-			"Take session and query_started_at (its query_at) from data_insights' sessions, so only the query you saw is cancelled. "+
-			"Redis can't cancel a command: terminate ends the client. Needs data access level write; tokens never have it on production or in a locked environment, so there ask a person to do it in the Data panel's Health tab. Audited.",
+		"Cancel a session's query, or terminate the session (from data_insights' sessions).",
 		Destructive, func(ctx context.Context, c *Call[A], loc L, in struct {
-			Session        string     `json:"session" doc:"Session ID from data_insights' sessions."`
-			QueryStartedAt *time.Time `json:"query_started_at,omitempty" doc:"The session's query_at, so a later query is never cancelled."`
-			Terminate      bool       `json:"terminate,omitempty" doc:"End the session instead of cancelling its query."`
+			Session        string     `json:"session"`
+			QueryStartedAt *time.Time `json:"query_started_at,omitempty" doc:"The session's query_at."`
+			Terminate      bool       `json:"terminate,omitempty"`
 		}) (Reply, error) {
 			ref, err := locate(c, loc)
 			if err != nil {

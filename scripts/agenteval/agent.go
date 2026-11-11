@@ -29,7 +29,7 @@ const system = `You operate Tempo Dock, a deploy platform, on behalf of a develo
 
 // cliSystem tells a CLI-mode agent where Dock is; the MCP mode needs
 // nothing, the endpoint describes itself.
-const cliSystem = ` Use the dock CLI through Bash (DOCK_URL and DOCK_TOKEN are set; pass --json). Only dock commands run.`
+const cliSystem = ` Use the dock CLI through Bash (DOCK_URL and DOCK_TOKEN are set; pass --json). Only dock commands run; write files with the Write tool.`
 
 // Transcript is what one agent run did, from Claude Code's stream-json.
 type Transcript struct {
@@ -90,7 +90,8 @@ func (a agentRun) run(ctx context.Context) Transcript {
 		}
 		args = append(args, "--tools", "", "--mcp-config", p, "--allowedTools", "mcp__dock", "--append-system-prompt", system)
 	case ModeCLI:
-		args = append(args, "--tools", "Bash", "--allowedTools", "Bash(dock:*)", "--append-system-prompt", system+cliSystem)
+		// Read and Write too, for files commands take (dock db apply -f).
+		args = append(args, "--tools", "Bash,Read,Write", "--allowedTools", "Bash(dock:*)", "Read", "Write", "--append-system-prompt", system+cliSystem)
 		env = append(env, "DOCK_URL="+a.D.url, "DOCK_TOKEN="+a.Token,
 			"PATH="+filepath.Dir(a.D.bin)+":"+os.Getenv("PATH"), "HOME="+os.Getenv("HOME"))
 	default: // no tools: the baseline toolListCost compares with
