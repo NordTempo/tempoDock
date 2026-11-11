@@ -102,6 +102,7 @@ func main() {
 		dry      = flag.Bool("dry", false, "set up and check each case without an agent; every check should fail")
 		list     = flag.Bool("list", false, "list the cases and exit")
 		noCost   = flag.Bool("no-cost", false, "skip measuring the tool list's token cost")
+		tools    = flag.Bool("tools", false, "print each MCP tool's description and schema size, largest first, and exit")
 	)
 	flag.Parse()
 	re := regexp.MustCompile(*pattern)
@@ -125,6 +126,12 @@ func main() {
 		if bin, err = buildDock(); err != nil {
 			fatal(err)
 		}
+	}
+	if *tools {
+		if err := printTools(bin); err != nil {
+			fatal(err)
+		}
+		return
 	}
 	out := *outDir
 	if out == "" {
@@ -261,45 +268,90 @@ func runCase(ctx context.Context, c Case, m Mode, model, bin, log string, dry bo
 // toolListSize starts a daemon and measures tools/list for a deploy
 // token: its JSON size, and its token cost through the model.
 func toolListSize(ctx context.Context, bin, model string) (int, int, error) {
-	d, err := startDaemon(bin, nil)
+	d, token, err := toolDaemon(bin)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer d.stop()
-	w := &World{daemon: d}
-	if err := w.run("project", "create", "shop"); err != nil {
-		return 0, 0, err
-	}
-	token, err := w.token(apitypes.ScopeDeploy, "shop", "production")
-	if err != nil {
-		return 0, 0, err
-	}
-	n, err := toolListBytes(d, token)
+	list, err := toolList(d, token)
 	if err != nil {
 		return 0, 0, err
 	}
 	tokens, err := toolListCost(ctx, d, model, token)
-	return n, tokens, err
+	return len(list), tokens, err
 }
 
-// toolListBytes is the size of the tools/list result as the endpoint sends it.
-func toolListBytes(d *daemon, token string) (int, error) {
+// toolDaemon starts a daemon with project shop and a deploy token for
+// shop/production, the token every tools/list measurement uses.
+func toolDaemon(bin string) (*daemon, string, error) {
+	d, err := startDaemon(bin, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	w := &World{daemon: d}
+	if err := w.run("project", "create", "shop"); err != nil {
+		d.stop()
+		return nil, "", err
+	}
+	token, err := w.token(apitypes.ScopeDeploy, "shop", "production")
+	if err != nil {
+		d.stop()
+	}
+	return d, token, err
+}
+
+// printTools prints what each tool costs in tools/list: what the model
+// reads of it, its description and its input schema, largest first.
+func printTools(bin string) error {
+	d, token, err := toolDaemon(bin)
+	if err != nil {
+		return err
+	}
+	defer d.stop()
+	list, err := toolList(d, token)
+	if err != nil {
+		return err
+	}
+	type tool struct {
+		Name        string          `json:"name"`
+		Description string          `json:"description"`
+		InputSchema json.RawMessage `json:"inputSchema"`
+	}
+	var v struct {
+		Tools []tool `json:"tools"`
+	}
+	if err := json.Unmarshal(list, &v); err != nil {
+		return err
+	}
+	slices.SortFunc(v.Tools, func(a, b tool) int {
+		return len(b.Description) + len(b.InputSchema) - len(a.Description) - len(a.InputSchema)
+	})
+	desc, schema := 0, 0
+	for _, t := range v.Tools {
+		fmt.Printf("%-28s %5d %5d\n", t.Name, len(t.Description), len(t.InputSchema))
+		desc += len(t.Description)
+		schema += len(t.InputSchema)
+	}
+	fmt.Printf("%d tools: descriptions %d bytes, schemas %d bytes, tools/list %d bytes\n", len(v.Tools), desc, schema, len(list))
+	return nil
+}
+
+// toolList is the tools/list result as the endpoint sends it.
+func toolList(d *daemon, token string) (json.RawMessage, error) {
 	req, _ := http.NewRequest(http.MethodPost, d.url+"/api/v1/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	resp, err := d.http.Do(req)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var v struct {
 		Result json.RawMessage `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
-		return 0, err
-	}
-	return len(v.Result), nil
+	err = json.NewDecoder(resp.Body).Decode(&v)
+	return v.Result, err
 }
 
 // buildDock builds the dock binary into a temp dir (no UI needed).
