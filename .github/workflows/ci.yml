@@ -166,6 +166,9 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v5
+      # main's scripts/perf/baseline.json, so the results show a budget
+      # this change raises (scripts/perf -base-rev).
+      - run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - uses: ./.github/actions/setup-go
       - uses: actions/setup-node@v7
         with:
@@ -198,6 +201,9 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
+      # main's scripts/perf/baseline.json, so the results show a budget
+      # this change raises (scripts/perf -base-rev).
+      - run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
       - uses: ./.github/actions/setup-go
       # Timing warns, allocations fail (see perf-artifacts).
       - run: make perf-bench PERF_FLAGS="-soft-timing -markdown $RUNNER_TEMP/perf.md"

@@ -191,7 +191,7 @@ func startDaemon(bin string) (*daemon, error) {
 	}
 	// Every listener gets a free port, so another dock on this machine
 	// (a dev daemon, another worktree's) doesn't collide with its defaults.
-	ports, err := freePorts(6)
+	ports, err := freePorts(7)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,10 @@ stats_listen = "127.0.0.1:%d"
 # (BenchmarkScanFindingsWrite, BenchmarkListImages).
 [scan]
 quiet_seconds = 3600
-`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), ports[3], filepath.Join(dir, "dock-analytics"), ports[4], ports[5])
+
+[status]
+listen = "127.0.0.1:%d"
+`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), ports[3], filepath.Join(dir, "dock-analytics"), ports[4], ports[5], ports[6])
 	if err := os.WriteFile(filepath.Join(dir, "dock-analytics"), []byte("fake"), 0o755); err != nil {
 		return nil, err
 	}

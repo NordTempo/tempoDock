@@ -10,6 +10,9 @@ with `-soft-timing`) and posts the results as a comment on it (the
 budgets only warn, while sizes, memory and allocations still fail, so a
 **warn** row in that comment is a regression to fix, or to explain in the
 PR, before merging. Timing is enforced by running `make perf` locally.
+A pull request that raises a budget (a limit here or in scripts/perf,
+or a baseline re-recorded higher, which the comment shows as a warning
+against main's) names it in its description with the reason.
 
 ## Budgets
 

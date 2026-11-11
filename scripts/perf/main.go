@@ -69,6 +69,10 @@ type options struct {
 	nsTol, allocsTol     float64
 	update               bool
 
+	// baseRev is the git revision whose baseline this one's budgets are
+	// compared with (budgetChanges); "" compares nothing.
+	baseRev string
+
 	// markdown is a file the results are also written to as Markdown, for
 	// CI's job summary and the perf comment on a pull request.
 	markdown string
@@ -119,6 +123,7 @@ func main() {
 	flag.BoolVar(&o.softTiming, "soft-timing", false, "report timing budgets as warnings (shared CI runners)")
 	flag.StringVar(&o.markdown, "markdown", "", "also write the results as Markdown to this file (CI's job summary and PR comment)")
 	flag.BoolVar(&o.update, "update-baseline", false, "record binary size and benchmarks into -baseline instead of checking")
+	flag.StringVar(&o.baseRev, "base-rev", "origin/main", "git revision whose -baseline the budgets are compared with, to show raises; empty for none")
 	flag.Parse()
 	o.checks = slices.DeleteFunc(strings.Split(checks, ","), func(c string) bool {
 		return slices.Contains(strings.Split(*skip, ","), c)
@@ -144,6 +149,7 @@ func main() {
 	}
 	t := &table{waivers: base.Waivers, softTiming: o.softTiming}
 	runChecks(o, t)
+	addBudgetChanges(o, base, t)
 	t.print(os.Stdout)
 	if o.markdown != "" {
 		if err := writeMarkdown(o.markdown, t); err != nil {
