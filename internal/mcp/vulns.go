@@ -16,13 +16,13 @@ import (
 // addVulnTools registers list_vulnerabilities.
 func (h *handler) addVulnTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "list_vulnerabilities", "List vulnerabilities in live images",
-		"What is vulnerable in the organization's live releases, and whether there is a fix: findings from Dock's image scans (Syft and Grype, on builders), worst first, each with the package, the version that fixes it, whether CISA lists it as exploited (kev), and where it runs. Without service, across the organization (production_only for production). With project, environment and service, that service's live image with its findings grouped by fix: rebuild (operating system packages from the base image) or upgrade (the app's dependencies).",
+		"Vulnerabilities in live images and the version that fixes each: across the organization, or one service's image grouped by fix.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			EnvInput
-			Service        string `json:"service,omitempty" doc:"A service: its live image, findings grouped by fix. Default: the whole organization."`
-			ProductionOnly bool   `json:"production_only,omitempty" doc:"Across the organization: only production environments."`
+			Service        string `json:"service,omitempty" doc:"Default: the whole organization."`
+			ProductionOnly bool   `json:"production_only,omitempty"`
 			MinSeverity    string `json:"min_severity,omitempty" doc:"critical, high (default), medium or low."`
-			FixableOnly    bool   `json:"fixable_only,omitempty" doc:"Only findings with a fixed version."`
+			FixableOnly    bool   `json:"fixable_only,omitempty"`
 		}) (mcpkit.Reply, error) {
 			min := apitypes.VulnSeverity(in.MinSeverity)
 			if min == "" {

@@ -836,6 +836,20 @@ func alertOrgID(a store.Alert) int64 {
 }
 
 // alertProjectID is the project an alert is about, 0 for none.
+// seesAlert reports whether a sees an org alert: a token limited to an
+// environment sees that environment's alerts only. Alerts keep their
+// environment by name, so it is matched by name.
+func (a Actor) seesAlert(r store.Alert) bool {
+	env := int64(0)
+	if a.EnvironmentID != 0 {
+		if r.Environment != a.EnvironmentName {
+			return false
+		}
+		env = a.EnvironmentID
+	}
+	return a.canSee(alertOrgID(r), alertProjectID(r), env)
+}
+
 func alertProjectID(a store.Alert) int64 {
 	if a.ProjectID == nil {
 		return 0
@@ -958,9 +972,7 @@ func (c *Core) ListAlerts(ctx context.Context, a Actor, platform, all bool, limi
 	if err != nil {
 		return nil, err
 	}
-	sees := func(r store.Alert) bool {
-		return alertOrgID(r) == org && (org == 0 || a.canSee(org, alertProjectID(r), 0))
-	}
+	sees := func(r store.Alert) bool { return alertOrgID(r) == org && (org == 0 || a.seesAlert(r)) }
 	if !all {
 		c.alerts.mu.Lock()
 		out := make([]apitypes.Alert, 0, len(c.alerts.open))
@@ -1018,7 +1030,7 @@ func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Al
 	org := alertOrgID(row)
 	if org == 0 {
 		err = a.requireOperator("resolving platform alerts")
-	} else if err = a.require(apitypes.ScopeDeploy, "resolving alerts"); err == nil && !a.canSee(org, alertProjectID(row), 0) {
+	} else if err = a.require(apitypes.ScopeDeploy, "resolving alerts"); err == nil && !a.seesAlert(row) {
 		err = missing
 	}
 	if err != nil {

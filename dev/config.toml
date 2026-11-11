@@ -4,7 +4,8 @@
 # For demo content, DOCK_FAKE_LOGS names a file of log lines every
 # container starts with ("E " lines go to stderr), and DOCK_FAKE_SPOOL a
 # file of analytics events (JSON lines, the ingest's format) added once
-# the analytics store runs. DOCK_FAKE_PENDING_DOMAINS (comma-separated
+# the analytics store runs, and DOCK_FAKE_SPANS one of spans (analytics.Span
+# JSON lines) once tracing is on. DOCK_FAKE_PENDING_DOMAINS (comma-separated
 # hostnames) keeps those domains waiting for DNS. DOCK_FAKE_FINDINGS names a
 # file of vulnerability findings (JSON lines, node.Finding) every scanned
 # image has. DOCK_FAKE_DIAL=host:port sends database connections to a local

@@ -17,11 +17,9 @@ import (
 // components stays with people (UI, CLI, API).
 func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "status_pages", "Read status pages",
-		"The organization's public status pages: whether each is published and where, and what it says now about each component "+
-			"(operational, idle, degraded, partial_outage, major_outage) with its 90-day uptime and the services and uptime checks it is built from. "+
-			"With page, only that page.",
+		"The organization's status pages and their components' status.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			Page string `json:"page,omitempty" doc:"A page's name (slug). Default: every page."`
+			Page string `json:"page,omitempty"`
 		}) (mcpkit.Reply, error) {
 			slugs := []string{in.Page}
 			if in.Page == "" {
@@ -62,13 +60,11 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "status_incident_open", "Open a status page incident",
-		"Opens an incident on a public status page. Title and message are public as soon as it is open, unless draft is true: a draft stays in Dock "+
-			"until a person publishes it, so prefer a draft unless you were asked to post. Name the components it affects (public names, from status_pages) "+
-			"with an impact each: degraded, partial_outage or major_outage. Write for the page's visitors: no service, server or error names.",
+		"Open an incident on a status page, as a draft unless asked to post. Public text: no service, server or error names.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
-			Page string `json:"page" doc:"The page's name (slug), from status_pages"`
+			Page string `json:"page"`
 			apitypes.OpenIncidentRequest
-			Draft bool `json:"draft,omitempty" doc:"Keep it unpublished for a person to publish; message becomes the draft's words"`
+			Draft bool `json:"draft,omitempty"`
 		}) (mcpkit.Reply, error) {
 			req := in.OpenIncidentRequest
 			if in.Draft {
@@ -82,14 +78,13 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "status_incident_update", "Post a status page incident update",
-		"Posts an update on an incident, public at once: on a draft it publishes it, state resolved resolves it. "+
-			"components, when given, replaces what it does to components. To change a draft's words without publishing, pass draft_message instead of state and message.",
+		"Post an update on an incident (public; publishes a draft); state resolved resolves it. draft_message edits a draft only.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
-			ID           string                   `json:"id" doc:"The incident's ID"`
+			ID           string                   `json:"id"`
 			State        apitypes.IncidentState   `json:"state,omitempty" enum:"investigating,identified,monitoring,resolved"`
-			Message      string                   `json:"message,omitempty" maxLength:"5000" doc:"The update, public"`
+			Message      string                   `json:"message,omitempty" maxLength:"5000"`
 			Components   *[]apitypes.StatusImpact `json:"components,omitempty" maxItems:"100"`
-			DraftMessage *string                  `json:"draft_message,omitempty" maxLength:"5000" doc:"A draft's new words; publishes nothing"`
+			DraftMessage *string                  `json:"draft_message,omitempty" maxLength:"5000"`
 		}) (mcpkit.Reply, error) {
 			var inc apitypes.StatusIncident
 			var err error
@@ -108,18 +103,16 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "status_maintenance", "Schedule or run a maintenance window",
-		"Maintenance windows on a status page, public at once. action schedule (page, title, components, starts_at, ends_at, message): "+
-			"while it is in progress its components read maintenance, alerts about their services are held until it ends and their uptime isn't counted. "+
-			"action start, complete or cancel (id, message) moves a window sooner than its times; extend (id, ends_at) moves its end.",
+		"Schedule, start, complete, extend or cancel a maintenance window on a status page.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			Action     string     `json:"action" enum:"schedule,start,complete,extend,cancel"`
-			Page       string     `json:"page,omitempty" doc:"The page's name (slug), for schedule"`
-			ID         string     `json:"id,omitempty" doc:"The window's ID, for start, complete, extend and cancel"`
+			Page       string     `json:"page,omitempty"`
+			ID         string     `json:"id,omitempty"`
 			Title      string     `json:"title,omitempty" maxLength:"120"`
-			Components []string   `json:"components,omitempty" maxItems:"100" doc:"Public component names, for schedule"`
-			StartsAt   *time.Time `json:"starts_at,omitempty" doc:"For schedule; default now"`
-			EndsAt     *time.Time `json:"ends_at,omitempty" doc:"For schedule and extend"`
-			Message    string     `json:"message,omitempty" maxLength:"5000" doc:"What visitors read"`
+			Components []string   `json:"components,omitempty" maxItems:"100" doc:"Public names, for schedule."`
+			StartsAt   *time.Time `json:"starts_at,omitempty" doc:"Default now."`
+			EndsAt     *time.Time `json:"ends_at,omitempty"`
+			Message    string     `json:"message,omitempty" maxLength:"5000"`
 		}) (mcpkit.Reply, error) {
 			var inc apitypes.StatusIncident
 			var err error

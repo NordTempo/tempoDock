@@ -39,8 +39,9 @@ type fakeAnalytics struct {
 	traces     *node.AnalyticsStoreSpec
 	traceStore *fakestore.Traces
 	traceLn    net.Listener
-	// demo appends DOCK_FAKE_SPOOL's lines once, on the first tail.
-	demo sync.Once
+	// demo and demoSpans append DOCK_FAKE_SPOOL's and DOCK_FAKE_SPANS's
+	// lines once, on the first tail of their spool.
+	demo, demoSpans sync.Once
 }
 
 // fakeSpool is one in-memory spool.
@@ -187,8 +188,11 @@ func (r *Runtime) AnalyticsSiteRules() map[int64]node.SiteRules {
 // batching: what is there goes at once.
 func (r *Runtime) TailSpool(ctx context.Context, which node.Spool, after uint64) (<-chan node.SpoolBatch, error) {
 	a := &r.analytics
-	if which == node.SpoolEvents {
-		a.demo.Do(r.appendDemoSpool)
+	switch which {
+	case node.SpoolEvents:
+		a.demo.Do(func() { r.appendDemoSpool("DOCK_FAKE_SPOOL", which) })
+	case node.SpoolSpans:
+		a.demoSpans.Do(func() { r.appendDemoSpool("DOCK_FAKE_SPANS", which) })
 	}
 	a.mu.Lock()
 	sp := a.spool(which)
@@ -338,13 +342,14 @@ func (r *Runtime) DialAnalyticsStore(ctx context.Context, kind node.StoreKind) (
 	return d.DialContext(ctx, "tcp", ln.Addr().String())
 }
 
-// appendDemoSpool appends the events in the file DOCK_FAKE_SPOOL names
-// (JSON lines, as the ingest writes them) to the events spool, so a
+// appendDemoSpool appends the lines of the file the environment variable
+// env names (JSON lines, as the ingest writes them) to a spool, so a
 // `make dev` daemon's analytics pages have visits, errors and vitals to
-// show. Read once, when the collector first tails the spool; a missing
-// file adds nothing.
-func (r *Runtime) appendDemoSpool() {
-	path := os.Getenv("DOCK_FAKE_SPOOL")
+// show (DOCK_FAKE_SPOOL, the events spool) and its traces spans
+// (DOCK_FAKE_SPANS, analytics.Span lines). Read once, when the collector
+// first tails the spool; a missing file adds nothing.
+func (r *Runtime) appendDemoSpool(env string, which node.Spool) {
+	path := os.Getenv(env)
 	if path == "" {
 		return
 	}
@@ -358,5 +363,5 @@ func (r *Runtime) appendDemoSpool() {
 			lines = append(lines, line)
 		}
 	}
-	r.AppendSpool(lines...)
+	r.appendTo(which, lines)
 }

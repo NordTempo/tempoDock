@@ -138,6 +138,9 @@ func addTool[A any](s *Server[A], name, title, description string, ann Annotatio
 			}
 		}
 	}
+	if err == nil {
+		js, err = compactSchema(js)
+	}
 	if err != nil {
 		panic(fmt.Sprintf("tool %s: input schema: %v", name, err))
 	}
@@ -168,6 +171,67 @@ func addTool[A any](s *Server[A], name, title, description string, ann Annotatio
 			return decode(ctx, c, args)
 		},
 	})
+}
+
+// validationOnly are the schema keywords tools/list leaves out: bounds,
+// lengths, patterns and examples. Arguments are still validated against
+// the full schema, and a refusal names the rule broken.
+var validationOnly = []string{"minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems", "pattern", "examples"}
+
+// compactSchema shortens an input schema for tools/list, which every
+// agent reads on every turn (scripts/agenteval measures it): no
+// "additionalProperties": false (unknown properties are still refused),
+// no "null" in types (an omitted property is the same), no number
+// formats and none of validationOnly.
+func compactSchema(js []byte) ([]byte, error) {
+	var v any
+	if err := json.Unmarshal(js, &v); err != nil {
+		return nil, err
+	}
+	var walk func(any)
+	walk = func(n any) {
+		sch, ok := n.(map[string]any)
+		if !ok {
+			return
+		}
+		if sch["additionalProperties"] == false {
+			delete(sch, "additionalProperties")
+		}
+		if f, ok := sch["format"].(string); ok && f != "date-time" {
+			delete(sch, "format")
+		}
+		for _, k := range validationOnly {
+			delete(sch, k)
+		}
+		if ts, ok := sch["type"].([]any); ok {
+			ts = slices.DeleteFunc(ts, func(t any) bool { return t == "null" })
+			if len(ts) == 1 {
+				sch["type"] = ts[0]
+			} else {
+				sch["type"] = ts
+			}
+		}
+		// Subschemas; property names and $defs names are keys, not
+		// keywords, so only their values are walked.
+		for _, k := range []string{"properties", "$defs"} {
+			if m, ok := sch[k].(map[string]any); ok {
+				for _, c := range m {
+					walk(c)
+				}
+			}
+		}
+		walk(sch["items"])
+		walk(sch["additionalProperties"])
+		for _, k := range []string{"anyOf", "oneOf", "allOf"} {
+			if l, ok := sch[k].([]any); ok {
+				for _, c := range l {
+					walk(c)
+				}
+			}
+		}
+	}
+	walk(v)
+	return json.Marshal(v)
 }
 
 // toolResult is a tools/call result.

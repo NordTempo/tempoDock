@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/NordTempo/tempoDock/internal/version.Version=$(VERSION)
 
-.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-race test-integration lint generate dev perf perf-bench perf-artifacts perf-baseline
+.PHONY: build probe build-cli build-tempobase tempobase-deps build-analytics test-analytics lint-analytics analytics-binary analytics-deps release-local web test test-race test-integration lint generate dev perf perf-bench perf-artifacts perf-baseline agent-eval
 
 ## build: the single static binary (UI embedded if web/dist is built, and
 ## dock-probe)
@@ -119,6 +119,12 @@ dev:
 # The tempoBase binary, once cmd/tempobase exists (ADR 0024). Until then
 # make perf reports its checks as not built yet.
 PERF_TEMPOBASE := $(if $(wildcard cmd/tempobase),build-tempobase)
+
+## agent-eval: how well AI agents use Dock (scripts/agenteval): real model
+## runs through MCP against a fake daemon per case. Not in CI; it uses
+## Claude Code's subscription. AGENT_EVAL_FLAGS='-mode cli -cases rollback'
+agent-eval:
+	go run ./scripts/agenteval $(AGENT_EVAL_FLAGS)
 
 ## perf: check performance budgets (docs/performance.md); builds the UIs and binaries first
 perf: web build build-analytics $(PERF_TEMPOBASE)

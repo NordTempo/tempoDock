@@ -19,9 +19,9 @@ import (
 // SiteInput names an analytics site and the range and filters to read.
 type SiteInput struct {
 	ProjectInput
-	Site    string   `json:"site" doc:"Site name; analytics_sites lists them. Usually the domain, e.g. shop.example.com."`
-	Range   string   `json:"range,omitempty" doc:"24h, 7d, 30d, 90d or 12m, ending now. Default 30d."`
-	Filters []string `json:"filters,omitempty" doc:"dimension:op:value, op is, is_not or contains, e.g. country:is:NO, page:contains:/blog, service:is:web."`
+	Site    string   `json:"site" doc:"Usually its domain."`
+	Range   string   `json:"range,omitempty" doc:"24h, 7d, 30d, 90d or 12m. Default 30d."`
+	Filters []string `json:"filters,omitempty" doc:"dimension:op:value, op is, is_not or contains, e.g. country:is:NO."`
 }
 
 // siteQuery resolves a site input.
@@ -48,7 +48,7 @@ func storeNote(online bool, msg string) string {
 // addAnalyticsTools registers the analytics tools.
 func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "analytics_sites", "List analytics sites",
-		"A project's analytics sites: sets of hostnames whose visits Dock counts together, with their environment, services and settings.",
+		"A project's analytics sites.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ProjectInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in)
 			if err != nil {
@@ -68,7 +68,7 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_stats", "Site analytics",
-		"A site's dashboard for a range: visitors, page views, sessions, bounce rate and session length against the period before, the series, the top pages, sources, countries, browsers, devices, events and services, and deploys as markers.",
+		"A site's dashboard over a range: visitors, views, bounce rate, top pages, sources, countries, devices, events.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in SiteInput) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in)
 			if err != nil {
@@ -89,11 +89,11 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_breakdown", "Analytics breakdown",
-		"The top values of one dimension over a range, with visitors and counts: page, entry_page, exit_page, hostname, referrer, channel, utm_source, utm_medium, utm_campaign, utm_term, utm_content, country, region, city, browser, browser_version, os, os_version, device, screen, language, event, outbound, service, release.",
+		"A site's top values of one dimension over a range.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			SiteInput
-			Dimension string `json:"dimension" doc:"The dimension to break down by, e.g. referrer."`
-			Limit     int    `json:"limit,omitempty" doc:"At most this many values (default 20, up to 1000)."`
+			Dimension string `json:"dimension" doc:"e.g. page, referrer, channel, utm_source, country, browser, device, event, service, release."`
+			Limit     int    `json:"limit,omitempty"`
 		}) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in.SiteInput)
 			if err != nil {
@@ -111,10 +111,10 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_errors", "Site errors",
-		"A site's uncaught errors and unhandled rejections over a range, grouped by type, message and top stack frame, the most frequent first. With group (from a listing), that group's latest stack trace, pages, browsers, releases and occurrences. Filters take page, hostname, country, browser, browser_version, os, device, service and release.",
+		"A site's browser errors grouped, most frequent first; with group, one group's detail.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			SiteInput
-			Group string `json:"group,omitempty" doc:"An error group's 16 hex digits, for its detail."`
+			Group string `json:"group,omitempty"`
 		}) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in.SiteInput)
 			if err != nil {
@@ -144,11 +144,11 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_vitals", "Site Web Vitals",
-		"A site's Web Vitals over a range at the 75th percentile, rated by Google's thresholds: LCP, INP, CLS, FCP and TTFB over all page loads, by each of the dimensions in by (page, hostname, country, browser, browser_version, os, device, service, release), and one metric over time.",
+		"A site's Web Vitals (p75 LCP, INP, CLS, FCP, TTFB), optionally by dimensions.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			SiteInput
-			By     []string `json:"by,omitempty" doc:"Break down by these dimensions, e.g. [\"page\", \"device\"]."`
-			Metric string   `json:"metric,omitempty" doc:"Chart this vital over time: lcp, inp, cls, fcp or ttfb."`
+			By     []string `json:"by,omitempty"`
+			Metric string   `json:"metric,omitempty" doc:"One vital over time: lcp, inp, cls, fcp or ttfb."`
 		}) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in.SiteInput)
 			if err != nil {
@@ -169,10 +169,10 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_replays", "Site session replays",
-		"A site's recorded visits (session replays) over a range, newest first, with their pages, device and errors. Watch them in Dock's UI, which audits every view; this lists them only.",
+		"A site's session replays, listed only (watched in the UI).",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			SiteInput
-			ErrorsOnly bool `json:"errors_only,omitempty" doc:"Only replays with an error."`
+			ErrorsOnly bool `json:"errors_only,omitempty"`
 		}) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in.SiteInput)
 			if err != nil {
@@ -190,7 +190,7 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_goals", "Site goals",
-		"A site's goals (pages or custom events) with the visitors and sessions that reached them over a range and their share of all visitors.",
+		"A site's goals and how many visitors reached them.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in SiteInput) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in)
 			if err != nil {
@@ -209,10 +209,10 @@ func (h *handler) addAnalyticsTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "analytics_funnel", "Site funnels",
-		"A site's funnels, or with funnel one of them over a range: how many sessions reached each of its steps after the ones before.",
+		"A site's funnels, or one funnel's step counts.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			SiteInput
-			Funnel string `json:"funnel,omitempty" doc:"A funnel's name; leave out to list them."`
+			Funnel string `json:"funnel,omitempty" doc:"Default: list them."`
 		}) (mcpkit.Reply, error) {
 			p, q, err := siteQuery(c, in.SiteInput)
 			if err != nil {

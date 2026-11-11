@@ -13,8 +13,9 @@ func newVolumeCmd(g *globals) *cobra.Command {
 		Use:   "volume",
 		Short: "Manage a service's persistent volumes",
 		Long: `Volumes keep data across releases. A service with a volume is stateful: its
-deploys stop the old container before starting the new one. Volumes are
-never deleted as a side effect of anything else.`,
+deploys stop the old container before starting the new one. Nothing
+deletes a volume: no command, and no side effect of anything else
+(archiving a service keeps its volumes).`,
 	})
 
 	var listFlags targetFlags

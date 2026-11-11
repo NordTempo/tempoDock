@@ -93,3 +93,19 @@ func TestDataToolsLocator(t *testing.T) {
 		t.Fatalf("unknown property accepted: %s", body)
 	}
 }
+
+// tools/list's schemas leave out what only validation needs, and keep
+// properties whatever they are called.
+func TestCompactSchema(t *testing.T) {
+	in := `{"type":"object","additionalProperties":false,"properties":{` +
+		`"pattern":{"type":["array","null"],"items":{"type":"string","maxLength":5}},` +
+		`"n":{"type":"integer","format":"int64","minimum":0},` +
+		`"at":{"type":"string","format":"date-time"},` +
+		`"set":{"type":"object","additionalProperties":{"type":"string"}}}}`
+	want := `{"properties":{"at":{"format":"date-time","type":"string"},"n":{"type":"integer"},` +
+		`"pattern":{"items":{"type":"string"},"type":"array"},"set":{"additionalProperties":{"type":"string"},"type":"object"}},"type":"object"}`
+	got, err := compactSchema([]byte(in))
+	if err != nil || string(got) != want {
+		t.Errorf("compactSchema = %s, %v\nwant %s", got, err, want)
+	}
+}

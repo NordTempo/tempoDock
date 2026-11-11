@@ -97,13 +97,11 @@ func commentSuffix(c string) string {
 // list_requests.
 func (h *handler) addRequestTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "request_access", "Ask before a change",
-		"Files an access request for a change instead of making it: a human approves or rejects it in the UI, and once approved the tool runs as you with these arguments. "+
-			"Changes in a locked environment file one by themselves; use this to ask first anywhere, with your reason. Not for data tools (propose_data_changes already asks). "+
-			"Follow it with wait_for_request.",
+		"Ask a person to approve a change first: once approved, the tool runs as you with these arguments. Also adds a reason to a request a locked environment filed for the same call.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
-			Tool      string          `json:"tool" doc:"The tool to run once approved, e.g. set_variables or rollback"`
-			Arguments json.RawMessage `json:"arguments" doc:"Its arguments, as you would pass them to it"`
-			Reason    string          `json:"reason" maxLength:"500" doc:"Why, in a sentence the approver reads"`
+			Tool      string          `json:"tool"`
+			Arguments json.RawMessage `json:"arguments"`
+			Reason    string          `json:"reason" maxLength:"500" doc:"Why, for the approver."`
 		}) (mcpkit.Reply, error) {
 			t, ok := h.srv.Tool(in.Tool)
 			switch {
@@ -131,10 +129,9 @@ func (h *handler) addRequestTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "wait_for_request", "Wait for an access request",
-		"Waits until an access request is decided and, if approved, has run, then returns it with the run's result or error. "+
-			"A rejected request is final: tell the user, don't retry.",
+		"Wait for an access request's decision and, if approved, its run. A rejection is final: report it.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			ID int64 `json:"id" minimum:"1" doc:"The request's number, from the environment_locked error or request_access"`
+			ID int64 `json:"id" minimum:"1"`
 			WaitInput
 		}) (mcpkit.Reply, error) {
 			wait, err := in.duration()
@@ -150,9 +147,9 @@ func (h *handler) addRequestTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "list_requests", "List access requests",
-		"The access requests you filed, newest first (an admin token sees its organization's).",
+		"Your access requests, newest first.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			Status apitypes.AccessRequestStatus `json:"status,omitempty" enum:"pending,approved,rejected,expired,done,failed" doc:"Only requests with this status"`
+			Status apitypes.AccessRequestStatus `json:"status,omitempty" enum:"pending,approved,rejected,expired,done,failed"`
 		}) (mcpkit.Reply, error) {
 			rs, err := h.core.ListRequests(ctx, c.Actor, core.RequestFilter{Status: in.Status, Limit: 50})
 			if err != nil {

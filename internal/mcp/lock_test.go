@@ -58,10 +58,8 @@ func toolArgs(schema any) map[string]any {
 	b, _ := json.Marshal(schema)
 	var s struct {
 		Properties map[string]struct {
-			Type    string `json:"type"`
-			Enum    []any  `json:"enum"`
-			Minimum *int   `json:"minimum"`
-			Pattern string `json:"pattern"`
+			Type string `json:"type"`
+			Enum []any  `json:"enum"`
 		} `json:"properties"`
 		Required []string `json:"required"`
 	}
@@ -88,7 +86,7 @@ func toolArgs(schema any) map[string]any {
 			args[k] = map[string]any{}
 		case p.Type == "array":
 			args[k] = []any{}
-		case p.Pattern == "^/": // a path
+		case strings.HasSuffix(k, "_path"): // tools/list leaves out patterns
 			args[k] = "/x"
 		default:
 			args[k] = "x"

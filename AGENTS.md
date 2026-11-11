@@ -53,6 +53,7 @@ make generate           # sqlc, OpenAPI specs, the UI's API clients, the analyti
 make web && make build  # UI into web/dist, then bin/dock with it embedded
 make perf               # performance budgets (docs/performance.md)
 make test-analytics lint-analytics   # the analytics store's module (CGO)
+make agent-eval         # real models doing tasks through MCP (scripts/agenteval); not in CI
 
 cd web
 pnpm dev                # UI with hot reload, proxying /api to the daemon
@@ -127,6 +128,9 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
   permissions itself.
 - Changing a query or migration: edit `internal/store/queries` or
   `migrations`, run `go generate ./internal/store`, commit the output.
+- Changing MCP tools (names, descriptions, schemas, errors): run
+  `make agent-eval` and keep every case passing; a misuse an agent
+  makes is a new case in `scripts/agenteval`.
 - Changing the API: types in `internal/apitypes`, handlers in
   `internal/api`, then `make generate` so `web/openapi.json` and
   `web/src/api/schema.d.ts` stay in sync (CI checks).

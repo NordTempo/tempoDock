@@ -21,15 +21,15 @@ import (
 // SettingsInput are the service settings a tool may change. Only the ones
 // passed change.
 type SettingsInput struct {
-	Image                     *string  `json:"image,omitempty" doc:"Image the service runs and image deploys default to, e.g. ghcr.io/acme/web:3f2a1c. Empty: built from source with dock deploy."`
-	Port                      *int     `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"Port the app listens on in the container; traffic and the health check go there. 0 means 8080. Dock also sets PORT to it."`
-	HealthCheckPath           *string  `json:"health_check_path,omitempty" doc:"HTTP path that must answer 2xx or 3xx before a release gets traffic, e.g. /healthz. Empty: a TCP check on the port."`
-	HealthCheckTimeoutSeconds *int     `json:"health_check_timeout_seconds,omitempty" minimum:"0" doc:"How long the health check may take to pass. 0: the server default (60)."`
-	StartCommand              *string  `json:"start_command,omitempty" doc:"Command run with sh -c instead of the image's own. Empty: the image's."`
-	DockerfilePath            *string  `json:"dockerfile_path,omitempty" doc:"Dockerfile for source deploys, relative to the repository root."`
-	BuildCommand              *string  `json:"build_command,omitempty" doc:"Build command for source deploys without a Dockerfile."`
-	MemoryMB                  *int     `json:"memory_mb,omitempty" minimum:"0" doc:"Hard memory limit in MB; an app over it is killed (OOM). 0: the server default (512)."`
-	CPUs                      *float64 `json:"cpus,omitempty" minimum:"0" doc:"CPU limit in cores, e.g. 0.5. 0: the server default (1)."`
+	Image                     *string  `json:"image,omitempty"`
+	Port                      *int     `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"Container port. Default 8080. Sets PORT."`
+	HealthCheckPath           *string  `json:"health_check_path,omitempty" doc:"e.g. /healthz. Empty: a TCP check."`
+	HealthCheckTimeoutSeconds *int     `json:"health_check_timeout_seconds,omitempty" minimum:"0" doc:"Default 60."`
+	StartCommand              *string  `json:"start_command,omitempty"`
+	DockerfilePath            *string  `json:"dockerfile_path,omitempty"`
+	BuildCommand              *string  `json:"build_command,omitempty"`
+	MemoryMB                  *int     `json:"memory_mb,omitempty" minimum:"0" doc:"Default 512."`
+	CPUs                      *float64 `json:"cpus,omitempty" minimum:"0" doc:"Cores. Default 1."`
 }
 
 // addServiceTools registers the service, volume, domain removal, stats
@@ -37,12 +37,11 @@ type SettingsInput struct {
 // tools (tools.go), snapshots in snapshots.go.
 func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "create_service", "Create a service",
-		"Create a service in an environment. Its settings are live at once and nothing is deployed: set its variables, then deploy_image (or `dock deploy` for source code). "+
-			"With template (postgres or redis) it is a database with generated credentials, a volume and its own settings, and it deploys right away. Needs deploy.",
+		"Create a service; nothing deploys until deploy_image. With template, a database (postgres, redis) that deploys at once.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
-			Name     string            `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"Service name, DNS-safe, e.g. web. Also its hostname on the environment's private network."`
-			Template apitypes.Template `json:"template,omitempty" enum:"postgres,redis" doc:"Create a database from a template; the settings below are then ignored."`
+			Name     string            `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
+			Template apitypes.Template `json:"template,omitempty" enum:"postgres,redis" doc:"A database; other settings are ignored."`
 			SettingsInput
 		}) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
@@ -72,12 +71,11 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "update_service", "Stage service settings",
-		"Stage changes to a service's settings: port, health check path and timeout, image, start command, memory and CPU limits, build settings. Only the ones passed change. "+
-			"This is how to fix a deploy whose health check failed on a wrong port or path. Nothing goes live until apply_changes or the service's next deploy; review with show_changes. "+
-			"A dock.toml in deployed source overrides these settings for source deploys.",
+		"Stage service settings, e.g. port or health check path to fix a failed health check. Only those passed change.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			SettingsInput
+			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -90,17 +88,16 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{
 				Image: set.Image, Port: set.Port, HealthCheckPath: set.HealthCheckPath, HealthCheckTimeoutSeconds: set.HealthCheckTimeoutSeconds,
 				StartCommand: set.StartCommand, DockerfilePath: set.DockerfilePath, BuildCommand: set.BuildCommand,
-				MemoryMB: set.MemoryMB, CPUs: set.CPUs,
+				MemoryMB: set.MemoryMB, CPUs: set.CPUs, Apply: in.Apply,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			return mcpkit.Reply{Summary: fmt.Sprintf("Staged settings of %s. %d changes staged in %s/%s; review with show_changes, then apply_changes takes them live.",
-				ref, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+			return h.stagedReply(ctx, c, "settings of "+ref.String(), ref.Env(), res)
 		})
 
 	mcpkit.AddTool(s, "list_volumes", "List volumes",
-		"A service's volumes: name, mount path and whether it is still staged (mounted once applied). Snapshots of them: list_snapshots.",
+		"A service's volumes.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ServiceInput) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in)
 			if err != nil {
@@ -121,30 +118,29 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "add_volume", "Stage a volume",
-		"Stage a persistent volume for a service, mounted at an absolute path. Once applied the service is stateful: it keeps its data across releases and deploys with a short downtime (stop, then start). "+
-			"Nothing goes live until apply_changes or the service's next deploy; review with show_changes.",
+		"Stage a persistent volume. The service then keeps data across deploys, with a short downtime per deploy. Nothing deletes a volume.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Name      string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"Volume name, e.g. data."`
-			MountPath string `json:"mount_path" pattern:"^/" doc:"Absolute path in the container, e.g. /var/lib/app."`
+			Name      string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
+			MountPath string `json:"mount_path" pattern:"^/"`
+			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			res, err := h.core.AddVolume(ctx, c.Actor, ref, apitypes.AddVolumeRequest{Name: in.Name, MountPath: in.MountPath})
+			res, err := h.core.AddVolume(ctx, c.Actor, ref, apitypes.AddVolumeRequest{Name: in.Name, MountPath: in.MountPath, Apply: in.Apply})
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			return mcpkit.Reply{Summary: fmt.Sprintf("Staged volume %s at %s for %s. %d changes staged in %s/%s; review with show_changes, then apply_changes takes them live.",
-				in.Name, in.MountPath, ref, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+			return h.stagedReply(ctx, c, fmt.Sprintf("volume %s at %s for %s", in.Name, in.MountPath, ref), ref.Env(), res)
 		})
 
 	mcpkit.AddTool(s, "remove_domain", "Remove a domain",
-		"Remove a hostname from a service: its route goes at once (the hostname stops serving) and so does the DNS record Dock made for it, if any. Only when asked.",
+		"Remove a hostname from a service; it stops serving at once. Only when asked.",
 		mcpkit.Destructive, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Hostname string `json:"hostname" doc:"The hostname to remove, e.g. shop.example.com (list_domains shows them)."`
+			Hostname string `json:"hostname"`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -157,11 +153,10 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "service_stats", "Service resource use",
-		"A service's CPU, memory and disk I/O: the latest sample of its active container, and averages and peaks over a range, across releases, with the range in at most 24 points. "+
-			"For a slow or crashing (OOM) service.",
+		"A service's CPU, memory and disk I/O, now and over a range.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Range apitypes.StatsRange `json:"range,omitempty" enum:"1h,24h,7d" doc:"How far back. Default 1h."`
+			Range apitypes.StatsRange `json:"range,omitempty" enum:"1h,24h,7d" doc:"Default 1h."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -186,13 +181,12 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "list_alerts", "List alerts",
-		"The organization's alerts: crash loops, failed deploys, backups and jobs, unhealthy services, uptime, domain errors, analytics anomalies, access requests. Open ones by default, critical first; all includes resolved ones, newest first. "+
-			"With platform, the platform's alerts instead (full disks, memory and CPU, offline servers, failed Dock updates, the control plane's backup), for platform operators only.",
+		"Open alerts: crash loops, failed deploys, unhealthy services, backups, uptime, access requests. platform: the platform's (operators).",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
-			Platform bool  `json:"platform,omitempty" doc:"The platform's alerts instead of the organization's. Operators only."`
-			All      bool  `json:"all,omitempty" doc:"Also resolved alerts, newest first."`
-			Limit    int   `json:"limit,omitempty" doc:"With all: how many. Default 50, at most 500."`
-			Before   int64 `json:"before,omitempty" doc:"With all: only alerts with a smaller id, to page back."`
+			Platform bool  `json:"platform,omitempty"`
+			All      bool  `json:"all,omitempty" doc:"Also resolved ones."`
+			Limit    int   `json:"limit,omitempty"`
+			Before   int64 `json:"before,omitempty"`
 		}) (mcpkit.Reply, error) {
 			n, err := mcpkit.Limit("limit", in.Limit, 50, 500)
 			if err != nil {

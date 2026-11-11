@@ -21,19 +21,18 @@ const maxAgentSpans = 300
 // addTraceTools registers traces_list and trace_get.
 func (h *handler) addTraceTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "traces_list", "List a service's traces",
-		"The traces that entered a service (requests and jobs its OpenTelemetry SDK sent, plus Caddy's span for requests to its domains): each one's entry span with name, route, HTTP status, duration in ms, release number, whether it failed, and why Dock kept it (sampled, error, slow). "+
-			"Newest first, or slowest with slowest=true. For \"the slowest requests since release 42\": since_release=42, slowest=true. Then trace_get with a trace's ID and start. Needs tracing on.",
+		"A service's traces (entry spans: route, status, duration, release), newest or slowest first. Then trace_get for one. Needs tracing on.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Range        string `json:"range,omitempty" enum:"1h,24h,7d" doc:"How far back, ending now. Default 24h."`
-			SinceRelease int64  `json:"since_release,omitempty" doc:"Only traces served by this release (number) and later ones."`
-			Release      int64  `json:"release,omitempty" doc:"Only traces served by this release (number)."`
-			Route        string `json:"route,omitempty" doc:"Only this route, as the app names it, e.g. /orders/{id}."`
-			Method       string `json:"method,omitempty" doc:"Only this HTTP method."`
-			Errors       bool   `json:"errors,omitempty" doc:"Only traces whose entry failed: an error status or a 5xx."`
-			SlowerThanMS int64  `json:"slower_than_ms,omitempty" doc:"Only traces at least this long."`
-			Slowest      bool   `json:"slowest,omitempty" doc:"Slowest first instead of newest first."`
-			Limit        int    `json:"limit,omitempty" minimum:"0" maximum:"200" doc:"At most this many. Default 20."`
+			Range        string `json:"range,omitempty" enum:"1h,24h,7d" doc:"Default 24h."`
+			SinceRelease int64  `json:"since_release,omitempty" doc:"This release and later."`
+			Release      int64  `json:"release,omitempty"`
+			Route        string `json:"route,omitempty" doc:"e.g. /orders/{id}."`
+			Method       string `json:"method,omitempty"`
+			Errors       bool   `json:"errors,omitempty"`
+			SlowerThanMS int64  `json:"slower_than_ms,omitempty"`
+			Slowest      bool   `json:"slowest,omitempty"`
+			Limit        int    `json:"limit,omitempty" minimum:"0" maximum:"200" doc:"Default 20."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -64,12 +63,11 @@ func (h *handler) addTraceTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "trace_get", "Show a trace",
-		"One trace's spans by start time, across services: each span's service, release, start after the trace's (offset_ms), duration, status, attributes (masked as logs are) and events, exceptions first. "+
-			"The summary names the slowest span and the first error. Pass at (a traces_list start) so the trace is found quickly. At most 300 spans.",
+		"One trace's spans across services, with where the time went and the first error.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
-			Trace string `json:"trace" doc:"Trace ID, 32 hex digits, from traces_list."`
-			At    string `json:"at,omitempty" doc:"A time in the trace, RFC 3339: the trace's start from traces_list."`
+			Trace string `json:"trace"`
+			At    string `json:"at,omitempty" doc:"Its start from traces_list, to find it fast."`
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {

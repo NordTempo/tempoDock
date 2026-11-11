@@ -204,10 +204,28 @@ func TestScopedToken(t *testing.T) {
 	var names []string
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
+		// The token's limits fill project and environment, so its
+		// tools/list leaves them out (calls still take them).
+		var schema struct{ Properties map[string]any }
+		b, _ := json.Marshal(tl.InputSchema)
+		_ = json.Unmarshal(b, &schema)
+		if _, ok := schema.Properties["project"]; ok {
+			t.Errorf("%s takes project: %s", tl.Name, b)
+		}
+		if _, ok := schema.Properties["environment"]; ok {
+			t.Errorf("%s takes environment: %s", tl.Name, b)
+		}
 	}
-	for _, want := range []string{"whoami", "deploy_image", "rollback", "promote", "set_variables", "apply_changes", "data_query", "propose_data_changes"} {
+	for _, want := range []string{"whoami", "deploy_image", "rollback", "set_variables", "apply_changes", "data_query", "propose_data_changes"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("tools/list lacks %s: %v", want, names)
+		}
+	}
+	// Nor tools it can never use: promoting needs a second environment,
+	// listing servers an operator.
+	for _, hidden := range []string{"promote", "clone_environment", "list_projects", "list_servers", "list_registry_credentials"} {
+		if slices.Contains(names, hidden) {
+			t.Errorf("tools/list shows %s to a token limited to shop/staging", hidden)
 		}
 	}
 	for _, name := range names {
@@ -540,7 +558,7 @@ func TestStatelessHTTP(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &init); err != nil || code != http.StatusOK {
 		t.Fatalf("initialize: %d %s", code, body)
 	}
-	if init.Result.ProtocolVersion != "2025-06-18" || init.Result.ServerInfo.Name != "tempo-dock" || !strings.Contains(init.Result.Instructions, "whoami") {
+	if init.Result.ProtocolVersion != "2025-06-18" || init.Result.ServerInfo.Name != "tempo-dock" || !strings.Contains(init.Result.Instructions, `You act as token "shop-agent", scope deploy, limited to shop/staging`) {
 		t.Errorf("initialize = %+v", init.Result)
 	}
 
@@ -814,6 +832,25 @@ func TestWaitForRelease(t *testing.T) {
 	idle.decode(t, &rel)
 	if idle.isError || rel.Number != 1 || rel.Status != "active" || !strings.HasPrefix(idle.summary, "Nothing in flight: web #1 active") {
 		t.Errorf("wait_for_release with nothing in flight = %q %+v", idle.summary, rel)
+	}
+}
+
+// apply on a staging tool takes the change live in the same call: one
+// call, and in a locked environment one access request.
+func TestStageAndApply(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("shop-agent", nil)
+	if dep := call(t, s, "deploy_image", map[string]any{"service": "web", "image": "app:2"}); dep.isError {
+		t.Fatalf("deploy_image = %q", dep.summary)
+	}
+	set := call(t, s, "set_variables", map[string]any{"service": "web", "set": map[string]any{"A": "1"}, "apply": true})
+	if set.isError || !strings.Contains(set.summary, "Applied: web #2 active") {
+		t.Fatalf("set_variables with apply = %q", set.summary)
+	}
+	var p apitypes.PendingChanges
+	call(t, s, "show_changes", nil).decode(t, &p)
+	if p.Count != 0 {
+		t.Errorf("still staged after apply: %+v", p)
 	}
 }
 

@@ -281,7 +281,9 @@ type LogQuery struct {
 	// buffered to find 100 matches.
 	Tail  int
 	Since time.Time
-	// Grep keeps only lines whose text contains it (plain, case-sensitive).
+	// Grep keeps only lines whose text contains it: plain text, smart
+	// case like ripgrep's -S (all lower case matches any case, so "error"
+	// finds "TypeError" and "ERROR"; an upper case letter makes it exact).
 	Grep string
 	// Stderr keeps only lines the container wrote to stderr.
 	Stderr bool
@@ -291,7 +293,24 @@ type LogQuery struct {
 // sendLogs calls it on the masked line, so a grep never matches, and so
 // reveals, a secret value the client doesn't see.
 func (q LogQuery) match(l apitypes.LogLine) bool {
-	return (!q.Stderr || l.Stream == "stderr") && strings.Contains(l.Text, q.Grep)
+	return (!q.Stderr || l.Stream == "stderr") && grepMatch(l.Text, q.Grep)
+}
+
+// grepMatch is Grep's smart case match of text against pat.
+func grepMatch(text, pat string) bool {
+	if pat == "" || strings.Contains(text, pat) {
+		return true
+	}
+	if strings.ToLower(pat) != pat {
+		return false
+	}
+	// pat is lower case: find it ignoring case, without allocating.
+	for i := 0; i+len(pat) <= len(text); i++ {
+		if strings.EqualFold(text[i:i+len(pat)], pat) {
+			return true
+		}
+	}
+	return false
 }
 
 // savedLogLines is how much of a failed release's container output is kept.
