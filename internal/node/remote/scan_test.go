@@ -52,3 +52,22 @@ func TestScanOverTheLink(t *testing.T) {
 		t.Fatalf("findings = %+v, %v", got, err)
 	}
 }
+
+// Protocol 27: a registry's digest for a tag, and a database archive
+// imported from the control plane.
+func TestBaseAndImportOverTheLink(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.rt.SetRemoteDigest("node:22-alpine", "sha256:new")
+	if d, err := h.client.RemoteDigest(ctx, "node:22-alpine", node.PullOptions{Username: "u", Password: "p"}); err != nil || d != "sha256:new" {
+		t.Fatalf("remote digest = %q, %v", d, err)
+	}
+	if _, err := h.client.RemoteDigest(ctx, "gone:1", node.PullOptions{}); !errors.Is(err, node.ErrNotFound) {
+		t.Fatalf("an unknown tag: %v", err)
+	}
+	archive := bytes.Repeat([]byte("db"), 1<<20)
+	db, err := h.client.ImportScanDatabase(ctx, node.ScanDatabaseRequest{}, bytes.NewReader(archive), int64(len(archive)))
+	if err != nil || db.Built.IsZero() {
+		t.Fatalf("import = %+v, %v", db, err)
+	}
+}

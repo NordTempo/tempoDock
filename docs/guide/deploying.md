@@ -274,7 +274,9 @@ image (operating system packages) or upgrading the app's dependencies.
 Images in the sidebar lists every image the organization runs. `dock
 vulns` prints a service's, `dock vulns --all --production` everything
 in production, `dock scan` matches again, `dock sbom` prints the package
-list (`--format cyclonedx-json` or `spdx-json` for other tools). Production images are scanned only on builders that accept
+list (`--format cyclonedx-json` or `spdx-json` for other tools). An image built from a Dockerfile names the image it was
+built on, and once a day Dock checks whether that tag has a newer image:
+then a redeploy rebuilds on it and picks up its fixes. Production images are scanned only on builders that accept
 production; CI images by the digest they were pulled by.
 
 Each builder gets a newer vulnerability database once a day, and every

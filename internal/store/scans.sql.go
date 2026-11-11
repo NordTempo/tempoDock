@@ -46,8 +46,8 @@ func (q *Queries) AddImageFinding(ctx context.Context, arg AddImageFindingParams
 }
 
 const addImageScan = `-- name: AddImageScan :one
-INSERT INTO image_scans (image_key, pull_ref, local_ref, built_on_server_id, org_id, production, priority, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at
+INSERT INTO image_scans (image_key, pull_ref, local_ref, built_on_server_id, org_id, production, priority, base_image, base_digest, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at
 `
 
 type AddImageScanParams struct {
@@ -58,6 +58,8 @@ type AddImageScanParams struct {
 	OrgID           int64
 	Production      int64
 	Priority        int64
+	BaseImage       string
+	BaseDigest      string
 	CreatedAt       int64
 }
 
@@ -70,6 +72,8 @@ func (q *Queries) AddImageScan(ctx context.Context, arg AddImageScanParams) (Ima
 		arg.OrgID,
 		arg.Production,
 		arg.Priority,
+		arg.BaseImage,
+		arg.BaseDigest,
 		arg.CreatedAt,
 	)
 	var i ImageScan
@@ -103,6 +107,10 @@ func (q *Queries) AddImageScan(ctx context.Context, arg AddImageScanParams) (Ima
 		&i.WorstFix,
 		&i.Error,
 		&i.CreatedAt,
+		&i.BaseImage,
+		&i.BaseDigest,
+		&i.BaseMoved,
+		&i.BaseCheckedAt,
 	)
 	return i, err
 }
@@ -178,7 +186,7 @@ func (q *Queries) DeleteVulnIgnore(ctx context.Context, id int64) error {
 }
 
 const getImageScan = `-- name: GetImageScan :one
-SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at FROM image_scans WHERE id = +?1
+SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at FROM image_scans WHERE id = +?1
 `
 
 func (q *Queries) GetImageScan(ctx context.Context, id int64) (ImageScan, error) {
@@ -214,12 +222,16 @@ func (q *Queries) GetImageScan(ctx context.Context, id int64) (ImageScan, error)
 		&i.WorstFix,
 		&i.Error,
 		&i.CreatedAt,
+		&i.BaseImage,
+		&i.BaseDigest,
+		&i.BaseMoved,
+		&i.BaseCheckedAt,
 	)
 	return i, err
 }
 
 const getImageScanByKey = `-- name: GetImageScanByKey :one
-SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at FROM image_scans WHERE image_key = +?1
+SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at FROM image_scans WHERE image_key = +?1
 `
 
 func (q *Queries) GetImageScanByKey(ctx context.Context, imageKey string) (ImageScan, error) {
@@ -255,6 +267,10 @@ func (q *Queries) GetImageScanByKey(ctx context.Context, imageKey string) (Image
 		&i.WorstFix,
 		&i.Error,
 		&i.CreatedAt,
+		&i.BaseImage,
+		&i.BaseDigest,
+		&i.BaseMoved,
+		&i.BaseCheckedAt,
 	)
 	return i, err
 }
@@ -268,6 +284,17 @@ func (q *Queries) GetOrgVulnAlerts(ctx context.Context, id int64) (string, error
 	var vuln_alerts string
 	err := row.Scan(&vuln_alerts)
 	return vuln_alerts, err
+}
+
+const getScanDatabaseImport = `-- name: GetScanDatabaseImport :one
+SELECT scan_db_import FROM platform_settings WHERE id = 1
+`
+
+func (q *Queries) GetScanDatabaseImport(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, getScanDatabaseImport)
+	var scan_db_import string
+	err := row.Scan(&scan_db_import)
+	return scan_db_import, err
 }
 
 const getScanning = `-- name: GetScanning :one
@@ -568,7 +595,7 @@ func (q *Queries) ListImageScanReleases(ctx context.Context, arg ListImageScanRe
 }
 
 const listImageScansByID = `-- name: ListImageScansByID :many
-SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at FROM image_scans WHERE id IN (/*SLICE:ids*/?)
+SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at FROM image_scans WHERE id IN (/*SLICE:ids*/?)
 `
 
 // Scans by ID, for a page of images (sqlc.slice: one query for all).
@@ -621,7 +648,49 @@ func (q *Queries) ListImageScansByID(ctx context.Context, ids []int64) ([]ImageS
 			&i.WorstFix,
 			&i.Error,
 			&i.CreatedAt,
+			&i.BaseImage,
+			&i.BaseDigest,
+			&i.BaseMoved,
+			&i.BaseCheckedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listLiveBaseImages = `-- name: ListLiveBaseImages :many
+SELECT i.base_image, CAST(min(i.org_id) AS INTEGER) AS org_id FROM image_scans i
+WHERE i.base_image != '' AND i.base_digest != ''
+  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active')
+GROUP BY i.base_image LIMIT +?1
+`
+
+type ListLiveBaseImagesRow struct {
+	BaseImage string
+	OrgID     int64
+}
+
+// The base images live images were built on, each once, with an org that
+// runs one (whose registry credential asks for it): the daily check of
+// whether their tags moved.
+func (q *Queries) ListLiveBaseImages(ctx context.Context, maxRows int64) ([]ListLiveBaseImagesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLiveBaseImages, maxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveBaseImagesRow
+	for rows.Next() {
+		var i ListLiveBaseImagesRow
+		if err := rows.Scan(&i.BaseImage, &i.OrgID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -809,7 +878,7 @@ func (q *Queries) ListOrphanImageScans(ctx context.Context, maxRows int64) ([]in
 }
 
 const listProjectImageScans = `-- name: ListProjectImageScans :many
-SELECT r.service_id, i.id, i.image_key, i.pull_ref, i.local_ref, i.built_on_server_id, i.org_id, i.production, i.state, i.priority, i.attempts, i.next_attempt_at, i.server_id, i.distro, i.packages, i.sbom_bytes, i.sbom_at, i.matched_at, i.db_built_at, i.critical, i.high, i.medium, i.low, i.other, i.fixable, i.kev, i.truncated, i.worst_fix, i.error, i.created_at
+SELECT r.service_id, i.id, i.image_key, i.pull_ref, i.local_ref, i.built_on_server_id, i.org_id, i.production, i.state, i.priority, i.attempts, i.next_attempt_at, i.server_id, i.distro, i.packages, i.sbom_bytes, i.sbom_at, i.matched_at, i.db_built_at, i.critical, i.high, i.medium, i.low, i.other, i.fixable, i.kev, i.truncated, i.worst_fix, i.error, i.created_at, i.base_image, i.base_digest, i.base_moved, i.base_checked_at
 FROM environments e
 JOIN services s ON s.environment_id = e.id
 JOIN releases r ON r.service_id = s.id AND r.status = 'active'
@@ -848,6 +917,10 @@ type ListProjectImageScansRow struct {
 	WorstFix        string
 	Error           string
 	CreatedAt       int64
+	BaseImage       string
+	BaseDigest      string
+	BaseMoved       int64
+	BaseCheckedAt   *int64
 }
 
 // The scans of a project's live releases, for the service overview.
@@ -891,6 +964,10 @@ func (q *Queries) ListProjectImageScans(ctx context.Context, projectID int64) ([
 			&i.WorstFix,
 			&i.Error,
 			&i.CreatedAt,
+			&i.BaseImage,
+			&i.BaseDigest,
+			&i.BaseMoved,
+			&i.BaseCheckedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1108,7 +1185,7 @@ func (q *Queries) ListScanFixesAtLeast(ctx context.Context, arg ListScanFixesAtL
 const listUnscannedReleases = `-- name: ListUnscannedReleases :many
 
 SELECT r.id, r.service_id, r.image_ref, r.image_id, r.image_digest, r.pinned_ref, r.built_on_server_id,
-       e.kind AS env_kind, e.server_id, p.org_id
+       r.base_image, r.base_digest, e.kind AS env_kind, e.server_id, p.org_id
 FROM releases r
 JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
 JOIN environments e ON e.id = s.environment_id
@@ -1125,6 +1202,8 @@ type ListUnscannedReleasesRow struct {
 	ImageDigest     string
 	PinnedRef       string
 	BuiltOnServerID *int64
+	BaseImage       string
+	BaseDigest      string
 	EnvKind         string
 	ServerID        int64
 	OrgID           int64
@@ -1150,6 +1229,8 @@ func (q *Queries) ListUnscannedReleases(ctx context.Context, maxRows int64) ([]L
 			&i.ImageDigest,
 			&i.PinnedRef,
 			&i.BuiltOnServerID,
+			&i.BaseImage,
+			&i.BaseDigest,
 			&i.EnvKind,
 			&i.ServerID,
 			&i.OrgID,
@@ -1241,7 +1322,7 @@ func (q *Queries) ListVulnIgnores(ctx context.Context, arg ListVulnIgnoresParams
 }
 
 const nextImageScan = `-- name: NextImageScan :one
-SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at FROM image_scans
+SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at, base_image, base_digest, base_moved, base_checked_at FROM image_scans
 WHERE state = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= +?1)
   AND (production = 0 OR +?2 = 1)
 ORDER BY priority, id LIMIT 1
@@ -1287,6 +1368,10 @@ func (q *Queries) NextImageScan(ctx context.Context, arg NextImageScanParams) (I
 		&i.WorstFix,
 		&i.Error,
 		&i.CreatedAt,
+		&i.BaseImage,
+		&i.BaseDigest,
+		&i.BaseMoved,
+		&i.BaseCheckedAt,
 	)
 	return i, err
 }
@@ -1398,6 +1483,24 @@ func (q *Queries) RequeueStaleLiveScans(ctx context.Context, built *int64) (int6
 	return result.RowsAffected()
 }
 
+const setBaseImageDigest = `-- name: SetBaseImageDigest :exec
+UPDATE image_scans SET base_moved = CAST(base_digest != ?1 AS INTEGER), base_checked_at = ?2
+WHERE base_image = +?3 AND base_digest != ''
+`
+
+type SetBaseImageDigestParams struct {
+	Digest    string
+	CheckedAt *int64
+	BaseImage string
+}
+
+// What a base image's tag points at now: the images built on an older
+// digest have a newer base a rebuild picks up.
+func (q *Queries) SetBaseImageDigest(ctx context.Context, arg SetBaseImageDigestParams) error {
+	_, err := q.db.ExecContext(ctx, setBaseImageDigest, arg.Digest, arg.CheckedAt, arg.BaseImage)
+	return err
+}
+
 const setImageScanResult = `-- name: SetImageScanResult :exec
 UPDATE image_scans SET state = 'scanned', error = '', attempts = 0, next_attempt_at = NULL,
     matched_at = ?, db_built_at = ?, critical = ?, high = ?, medium = ?, low = ?, other = ?,
@@ -1502,6 +1605,23 @@ func (q *Queries) SetOrgVulnAlerts(ctx context.Context, arg SetOrgVulnAlertsPara
 	return err
 }
 
+const setReleaseBase = `-- name: SetReleaseBase :exec
+
+UPDATE releases SET base_image = ?, base_digest = ? WHERE id = +?3
+`
+
+type SetReleaseBaseParams struct {
+	BaseImage  string
+	BaseDigest string
+	ID         int64
+}
+
+// Phase 3: base image hints and database imports.
+func (q *Queries) SetReleaseBase(ctx context.Context, arg SetReleaseBaseParams) error {
+	_, err := q.db.ExecContext(ctx, setReleaseBase, arg.BaseImage, arg.BaseDigest, arg.ID)
+	return err
+}
+
 const setReleaseImageScan = `-- name: SetReleaseImageScan :exec
 UPDATE releases SET image_scan_id = ? WHERE id = +?2
 `
@@ -1527,6 +1647,22 @@ type SetReleasePinnedRefParams struct {
 
 func (q *Queries) SetReleasePinnedRef(ctx context.Context, arg SetReleasePinnedRefParams) error {
 	_, err := q.db.ExecContext(ctx, setReleasePinnedRef, arg.PinnedRef, arg.ID)
+	return err
+}
+
+const setScanDatabaseImport = `-- name: SetScanDatabaseImport :exec
+INSERT INTO platform_settings (id, scan_db_import, updated_by, updated_at) VALUES (1, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET scan_db_import = excluded.scan_db_import, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+`
+
+type SetScanDatabaseImportParams struct {
+	ScanDbImport string
+	UpdatedBy    string
+	UpdatedAt    time.Time
+}
+
+func (q *Queries) SetScanDatabaseImport(ctx context.Context, arg SetScanDatabaseImportParams) error {
+	_, err := q.db.ExecContext(ctx, setScanDatabaseImport, arg.ScanDbImport, arg.UpdatedBy, arg.UpdatedAt)
 	return err
 }
 
@@ -1575,6 +1711,21 @@ type SetServerScanDatabaseParams struct {
 
 func (q *Queries) SetServerScanDatabase(ctx context.Context, arg SetServerScanDatabaseParams) error {
 	_, err := q.db.ExecContext(ctx, setServerScanDatabase, arg.ScanDbBuiltAt, arg.ScanError, arg.ID)
+	return err
+}
+
+const setServerScanImport = `-- name: SetServerScanImport :exec
+UPDATE servers SET scan_db_import = ? WHERE id = +?2
+`
+
+type SetServerScanImportParams struct {
+	ScanDbImport string
+	ID           int64
+}
+
+// The database archive a builder imported (its sha256).
+func (q *Queries) SetServerScanImport(ctx context.Context, arg SetServerScanImportParams) error {
+	_, err := q.db.ExecContext(ctx, setServerScanImport, arg.ScanDbImport, arg.ID)
 	return err
 }
 

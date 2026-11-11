@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,7 +79,7 @@ func TestSBOMPreempted(t *testing.T) {
 	e.noScanJobs(ctx)
 }
 
-// The database downloads once (about 65 MB, 3.4 GB on disk) and a match
+// The database downloads once (about 200 MB, 3.4 GB on disk) and a match
 // reads it without network. Opt in with DOCK_SCAN_DB=1: CI shouldn't
 // download it on every run.
 func TestScanDatabaseAndMatch(t *testing.T) {
@@ -134,4 +135,28 @@ func (e *testEnv) noScanJobs(ctx context.Context) {
 
 func (e *testEnv) scanFilter() client.Filters {
 	return client.Filters{}.Add("label", node.LabelControlPlane+"="+e.prefix).Add("label", node.LabelRole+"="+node.RoleJob)
+}
+
+// A registry tells which digest a tag points at, without a pull; and an
+// import job reads the archive it is given (here not an archive, which
+// Grype refuses) and leaves nothing behind.
+func TestRemoteDigestAndImport(t *testing.T) {
+	e := newEnv(t)
+	e.DataDir = t.TempDir()
+	ctx := ctxTimeout(t, 5*time.Minute)
+	d, err := e.RemoteDigest(ctx, shellImage, node.PullOptions{})
+	if err != nil || !strings.HasPrefix(d, "sha256:") {
+		t.Fatalf("remote digest of %s = %q, %v", shellImage, d, err)
+	}
+	junk := []byte("not a database archive")
+	_, err = e.ImportScanDatabase(ctx, node.ScanDatabaseRequest{Images: scanImages(), Labels: node.Labels{ControlPlane: e.prefix}},
+		bytes.NewReader(junk), int64(len(junk)))
+	if err == nil || !strings.Contains(err.Error(), "db-import") {
+		t.Fatalf("importing junk: %v; want Grype's refusal from the import job", err)
+	}
+	t.Log(err)
+	if left, _ := os.ReadDir(e.DataDir + "/scan"); len(left) != 0 {
+		t.Fatalf("left in the data dir: %v", left)
+	}
+	e.noScanJobs(ctx)
 }

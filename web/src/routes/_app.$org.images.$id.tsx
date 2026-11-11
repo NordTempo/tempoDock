@@ -113,15 +113,16 @@ function ImagePage() {
               </span>
             )}
           </Prop>
-          {scan.distro && (
+          {(scan.distro || scan.base) && (
             <Prop label="Base">
-              <span className="font-mono">{scan.distro}</span>
+              {scan.distro && <span className="font-mono">{scan.distro}</span>}
               {scan.packages > 0 && (
                 <span className="text-mut">
                   {" "}
                   · {plural(scan.packages, "package")}
                 </span>
               )}
+              {scan.base && <BaseLine base={scan.base} lead={!!scan.distro} />}
             </Prop>
           )}
           <Prop label="Scanned">
@@ -145,6 +146,34 @@ function ImagePage() {
         </dl>
         {hasFindings(scan) && <Vulnerabilities detail={detail} use={use} />}
       </Page>
+    </>
+  );
+}
+
+/**
+ * The image a Dockerfile build was built on: "· built on node:22-alpine",
+ * and, once the daily check saw its tag move, that a rebuild picks up
+ * the newer one.
+ */
+function BaseLine({
+  base,
+  lead,
+}: {
+  base: NonNullable<ImageDetail["scan"]["base"]>;
+  lead: boolean;
+}) {
+  return (
+    <>
+      <span className="text-mut">{lead ? " · built on " : "built on "}</span>
+      <span className="font-mono" title={base.digest}>
+        {base.image}
+      </span>
+      {base.moved && (
+        <span className="text-warn" title={base.checked_at}>
+          {" "}
+          · the tag has a newer image: a rebuild picks it up
+        </span>
+      )}
     </>
   );
 }

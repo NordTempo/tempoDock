@@ -8245,6 +8245,33 @@
         ],
         "type": "object"
       },
+      "ImageBase": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "digest": {
+            "description": "What the tag pointed at when the image was built",
+            "type": "string"
+          },
+          "image": {
+            "examples": [
+              "node:22-alpine"
+            ],
+            "type": "string"
+          },
+          "moved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "image",
+          "digest"
+        ],
+        "type": "object"
+      },
       "ImageDetail": {
         "additionalProperties": false,
         "properties": {
@@ -8347,6 +8374,9 @@
       "ImageScan": {
         "additionalProperties": false,
         "properties": {
+          "base": {
+            "$ref": "#/components/schemas/ImageBase"
+          },
           "built": {
             "type": "boolean"
           },
@@ -11553,6 +11583,9 @@
           "error": {
             "type": "string"
           },
+          "imported": {
+            "type": "boolean"
+          },
           "production": {
             "description": "It accepts production, so it may scan production images",
             "type": "boolean"
@@ -11600,6 +11633,12 @@
               "type": "integer"
             },
             "type": "object"
+          },
+          "imported": {
+            "type": "string"
+          },
+          "offline": {
+            "type": "boolean"
           },
           "waiting": {
             "type": "string"
@@ -60528,6 +60567,128 @@
           }
         ],
         "summary": "Turn image scanning on or off",
+        "tags": [
+          "console"
+        ]
+      }
+    },
+    "/api/v1/scanning/database": {
+      "put": {
+        "description": "For installs without internet access: upload a Grype database archive (as `grype db list` lists them, about 200 MB). Every builder imports it at the next quiet minute, and live images are matched again. With `[scan] offline` builders never download one. Operators only.",
+        "operationId": "import-scan-database",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanningStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Import a vulnerability database",
         "tags": [
           "console"
         ]

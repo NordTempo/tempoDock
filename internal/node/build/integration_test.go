@@ -109,13 +109,20 @@ func sourceTar(t *testing.T, files map[string]string) io.Reader {
 // build runs a build and removes the image when the test ends.
 func build(t *testing.T, b *Builder, req node.BuildRequest) (string, string, error) {
 	t.Helper()
+	built, logs, err := buildFull(t, b, req)
+	return built.ID, logs, err
+}
+
+// buildFull is build with the whole result.
+func buildFull(t *testing.T, b *Builder, req node.BuildRequest) (node.Built, string, error) {
+	t.Helper()
 	var logs bytes.Buffer
 	req.Logs = io.MultiWriter(&logs, testWriter{t})
-	id, err := b.Build(t.Context(), req)
+	built, err := b.Build(t.Context(), req)
 	t.Cleanup(func() {
 		_, _ = b.docker.ImageRemove(context.Background(), req.Tag, client.ImageRemoveOptions{Force: true, PruneChildren: true})
 	})
-	return id, logs.String(), err
+	return built, logs.String(), err
 }
 
 type testWriter struct{ t *testing.T }
@@ -187,7 +194,7 @@ func get(t *testing.T, url string) string {
 func TestBuildDockerfile(t *testing.T) {
 	docker := dockerClient(t)
 	b := newBuilder(t, docker, 1024)
-	id, _, err := build(t, b, node.BuildRequest{
+	built, _, err := buildFull(t, b, node.BuildRequest{
 		Source:    sourceTar(t, map[string]string{"server.js": serverJS, "package.json": packageJSON, "Dockerfile": dockerfile}),
 		BuildArgs: map[string]string{"GREETING": "dockerfile"},
 		Tag:       "dock-test/hello:dockerfile",
@@ -195,8 +202,14 @@ func TestBuildDockerfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	id := built.ID
 	if !strings.HasPrefix(id, "sha256:") {
 		t.Fatalf("image ID = %q", id)
+	}
+	// It names the image it was built on, with the digest BuildKit
+	// resolved (the base image hint, ADR 0074).
+	if built.Base != "node:22-alpine" || !strings.HasPrefix(built.BaseDigest, "sha256:") {
+		t.Fatalf("base = %q %q", built.Base, built.BaseDigest)
 	}
 	labelled(t, docker, id)
 	if body := get(t, run(t, docker, "dock-test-dockerfile", id)); body != "hello dockerfile" {

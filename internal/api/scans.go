@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -151,4 +152,28 @@ func registerScans(s *Server, a huma.API) {
 	}) (*out[apitypes.ScanningStatus], error) {
 		return reply(s.core.SetScanning(ctx, actor, in.Body.Enabled))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "import-scan-database", Method: http.MethodPut, Path: Prefix + "/scanning/database",
+		// The upload streams; it can't run again from JSON.
+		Metadata: map[string]any{"replay": false},
+		Summary:  "Import a vulnerability database", Tags: tags,
+		Description: "For installs without internet access: upload a Grype database archive (as `grype db list` lists them, about 200 MB). " +
+			"Every builder imports it at the next quiet minute, and live images are matched again. With `[scan] offline` builders never download one. Operators only.",
+		RequestBody: &huma.RequestBody{
+			Required: true,
+			Content:  map[string]*huma.MediaType{"application/octet-stream": {Schema: &huma.Schema{Type: huma.TypeString, Format: "binary"}}},
+		},
+	}, func(ctx context.Context, actor core.Actor, in *uploadInput) (*out[apitypes.ScanningStatus], error) {
+		return reply(s.core.ImportScanDatabase(ctx, actor, in.body))
+	})
+}
+
+// uploadInput keeps the raw request body for a handler that streams it
+// (Huma reads no body for inputs without a Body field).
+type uploadInput struct{ body io.Reader }
+
+// Resolve captures the raw request body.
+func (in *uploadInput) Resolve(ctx huma.Context) []error {
+	in.body = ctx.BodyReader()
+	return nil
 }

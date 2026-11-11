@@ -136,34 +136,34 @@ func New(docker *client.Client, cfg config.BuildKit, workDir string) *Builder {
 }
 
 // Build implements node.Builder.
-func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, error) {
+func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (node.Built, error) {
 	logs := req.Logs
 	if logs == nil {
 		logs = io.Discard
 	}
 	if req.Tag == "" {
-		return "", errors.New("build: no tag")
+		return node.Built{}, errors.New("build: no tag")
 	}
 	if req.Push != nil {
 		if err := checkPushTarget(req.Push); err != nil {
-			return "", err
+			return node.Built{}, err
 		}
 	}
 
 	if err := os.MkdirAll(b.workDir, 0o700); err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 	dir, err := os.MkdirTemp(b.workDir, "build-")
 	if err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	src := filepath.Join(dir, "src")
 	if err := os.Mkdir(src, 0o700); err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 	if err := extract(req.Source, src, defaultLimits); err != nil {
-		return "", fmt.Errorf("unpack source: %w", err)
+		return node.Built{}, fmt.Errorf("unpack source: %w", err)
 	}
 
 	select {
@@ -173,7 +173,7 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 		select {
 		case b.sem <- struct{}{}:
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return node.Built{}, ctx.Err()
 		}
 	}
 	defer func() {
@@ -183,32 +183,37 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (string, err
 		}
 	}()
 
-	opt, err := solveOpt(ctx, dir, src, req, logs)
+	opt, base, err := solveOpt(ctx, dir, src, req, logs)
 	if err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 
 	bk, err := b.ensureDaemon(ctx, logs)
 	if err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 	defer func() { _ = bk.Close() }()
 
 	started := time.Now()
-	if err := b.solve(ctx, bk, opt, req.Tag, logs); err != nil {
-		return "", b.explain(ctx, err, started)
+	froms := map[string]string{} // image -> digest, from FROM steps
+	if err := b.solve(ctx, bk, opt, req.Tag, logs, froms); err != nil {
+		return node.Built{}, b.explain(ctx, err, started)
 	}
 
 	img, err := b.docker.ImageInspect(ctx, req.Tag)
 	if err != nil {
-		return "", fmt.Errorf("inspect built image: %w", err)
+		return node.Built{}, fmt.Errorf("inspect built image: %w", err)
 	}
 	if req.Push != nil {
 		if err := b.push(ctx, req.Tag, req.Push, logs); err != nil {
-			return "", err
+			return node.Built{}, err
 		}
 	}
-	return img.ID, nil
+	out := node.Built{ID: img.ID}
+	if base != "" {
+		out.Base, out.BaseDigest = familiar(base), froms[base]
+	}
+	return out, nil
 }
 
 // releaseMemory hands the heap a build churned through back to the OS.
@@ -280,10 +285,10 @@ func (b *Builder) diedSince(ctx context.Context, t time.Time) bool {
 
 // solveOpt picks the frontend: a Dockerfile build when one is given or
 // present at the root, otherwise Railpack.
-func solveOpt(ctx context.Context, dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.SolveOpt, error) {
+func solveOpt(ctx context.Context, dir, src string, req node.BuildRequest, logs io.Writer) (bkclient.SolveOpt, string, error) {
 	ns, err := cacheNamespace(req.CacheScope)
 	if err != nil {
-		return bkclient.SolveOpt{}, err
+		return bkclient.SolveOpt{}, "", err
 	}
 	dockerfile := req.Dockerfile
 	if dockerfile == "" {
@@ -294,7 +299,8 @@ func solveOpt(ctx context.Context, dir, src string, req node.BuildRequest, logs 
 	if dockerfile != "" {
 		return dockerfileOpt(src, dockerfile, req.BuildArgs, ns, logs)
 	}
-	return railpackOpt(ctx, dir, src, req, ns, logs)
+	opt, err := railpackOpt(ctx, dir, src, req, ns, logs)
+	return opt, "", err
 }
 
 // validScope matches cache scopes. Scopes exclude the separators BuildKit
@@ -345,7 +351,7 @@ func localOpt(frontend string, attrs map[string]string, contextDir, dockerfileDi
 // frontend, so the image config it returns is labelled node.LabelImage
 // (labelImage) before the export: Railpack's frontend takes no label
 // options, and disk pruning only removes images carrying the label.
-func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, tag string, logs io.Writer) error {
+func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, tag string, logs io.Writer, froms map[string]string) error {
 	pr, pw := io.Pipe()
 	opt.Exports = []bkclient.ExportEntry{{
 		Type:   bkclient.ExporterDocker,
@@ -364,11 +370,24 @@ func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.S
 	if err != nil {
 		return err
 	}
-	status := make(chan *bkclient.SolveStatus)
-	shown := make(chan struct{})
+	status, shown := make(chan *bkclient.SolveStatus), make(chan struct{})
+	tapped := make(chan *bkclient.SolveStatus)
 	go func() {
-		// Drain until Solve closes status, even after ctx ends.
-		_, _ = display.UpdateFrom(context.WithoutCancel(ctx), status)
+		// Note the digest each FROM step resolved (the base image hint)
+		// on the way to the display. Drains until Solve closes status.
+		for st := range status {
+			for _, v := range st.Vertexes {
+				if m := fromVertex.FindStringSubmatch(v.Name); m != nil {
+					froms[m[1]] = m[2]
+				}
+			}
+			tapped <- st
+		}
+		close(tapped)
+	}()
+	go func() {
+		// Drain until the tap closes, even after ctx ends.
+		_, _ = display.UpdateFrom(context.WithoutCancel(ctx), tapped)
 		close(shown)
 	}()
 
@@ -381,7 +400,7 @@ func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.S
 		return res, labelImage(res.Metadata)
 	}, status)
 	_ = pw.CloseWithError(err) // unblocks load if the export never started
-	<-shown
+	<-shown                    // the tap has closed: froms is complete
 	loadErr := <-loaded
 	if err != nil {
 		return err

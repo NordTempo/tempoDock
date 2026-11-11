@@ -4969,6 +4969,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/scanning/database": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Import a vulnerability database
+         * @description For installs without internet access: upload a Grype database archive (as `grype db list` lists them, about 200 MB). Every builder imports it at the next quiet minute, and live images are matched again. With `[scan] offline` builders never download one. Operators only.
+         */
+        put: operations["import-scan-database"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers": {
         parameters: {
             query?: never;
@@ -8128,6 +8148,15 @@ export interface components {
             /** @example CVE-2026-22451 */
             vulnerability: string;
         };
+        ImageBase: {
+            /** Format: date-time */
+            checked_at?: string;
+            /** @description What the tag pointed at when the image was built */
+            digest: string;
+            /** @example node:22-alpine */
+            image: string;
+            moved?: boolean;
+        };
         ImageDetail: {
             findings: components["schemas"]["Finding"][] | null;
             fixes: components["schemas"]["FixGroup"][] | null;
@@ -8146,6 +8175,7 @@ export interface components {
             used_by: components["schemas"]["ImageUse"][] | null;
         };
         ImageScan: {
+            base?: components["schemas"]["ImageBase"];
             built: boolean;
             /** Format: int64 */
             critical: number;
@@ -9085,6 +9115,7 @@ export interface components {
             /** Format: date-time */
             database_built?: string;
             error?: string;
+            imported?: boolean;
             /** @description It accepts production, so it may scan production images */
             production: boolean;
             server: string;
@@ -9098,6 +9129,8 @@ export interface components {
             images: {
                 [key: string]: number;
             };
+            imported?: string;
+            offline?: boolean;
             waiting?: string;
         };
         ScheduleMaintenanceRequest: {
@@ -40021,6 +40054,96 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "import-scan-database": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanningStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

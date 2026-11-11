@@ -58,8 +58,8 @@ func (noStats) DrainTraffic(context.Context) ([]node.HostTraffic, error) { retur
 
 type noBuilder struct{}
 
-func (noBuilder) Build(context.Context, node.BuildRequest) (string, error) {
-	return "", errors.New("no builds in this test")
+func (noBuilder) Build(context.Context, node.BuildRequest) (node.Built, error) {
+	return node.Built{}, errors.New("no builds in this test")
 }
 
 func (noBuilder) PruneBuildCache(context.Context, int64) (node.PruneResult, error) {

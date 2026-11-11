@@ -494,3 +494,10 @@ down as item frames, at most 5,000), `scan-database` and
 kills, which is how a build or deploy preempts a scan. Nothing on the
 node keeps state but the extracted Syft binary in its data dir and the
 database volume.
+
+Protocol 27 (2026-11-11; 24 to 26 are tracing's) adds `remote-digest` (which digest a registry
+serves for a tag, asked through the node's Docker without pulling) and
+`scan-database-import` (a database archive streamed up as the body and
+imported by a job without network), and a build's result names the
+image its final stage was built on (`base`, `base_digest`; older nodes
+leave them out).

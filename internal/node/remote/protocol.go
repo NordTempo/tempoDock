@@ -85,8 +85,9 @@ const (
 	// adds the trace ingest: set-analytics' trace key and the spans spool
 	// (TraceIngestProtocol). 26 adds the container spec's extra hosts and
 	// Caddy's dock-otlp route: apps reach the trace ingest
-	// (TraceAppsProtocol).
-	Protocol = 26
+	// (TraceAppsProtocol). 27 adds remote-digest, scan-database-import
+	// and the build's base image (ADR 0074 phase 3, BaseProtocol).
+	Protocol = 27
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

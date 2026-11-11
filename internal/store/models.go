@@ -529,6 +529,10 @@ type ImageScan struct {
 	WorstFix        string
 	Error           string
 	CreatedAt       int64
+	BaseImage       string
+	BaseDigest      string
+	BaseMoved       int64
+	BaseCheckedAt   *int64
 }
 
 type Install struct {
@@ -637,6 +641,7 @@ type PlatformSetting struct {
 	PasswordSignIn     bool
 	InviteOnly         bool
 	Scanning           int64
+	ScanDbImport       string
 }
 
 type Preview struct {
@@ -733,6 +738,8 @@ type Release struct {
 	LogsServerID          *int64
 	ImageScanID           *int64
 	PinnedRef             string
+	BaseImage             string
+	BaseDigest            string
 }
 
 type ReleaseEvent struct {
@@ -791,6 +798,7 @@ type Server struct {
 	ScanDbBuiltAt        *int64
 	ScanError            string
 	ScanDbCheckedAt      *int64
+	ScanDbImport         string
 }
 
 type ServerDrain struct {

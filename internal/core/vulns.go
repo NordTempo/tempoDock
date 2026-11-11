@@ -443,7 +443,8 @@ func (c *Core) addReleaseScan(ctx context.Context, ss svcScope, r store.Release)
 		if store.IsNotFound(err) {
 			scan, err = q.AddImageScan(ctx, store.AddImageScanParams{
 				ImageKey: img.key, PullRef: img.pull, LocalRef: img.local, BuiltOnServerID: img.builtOn, OrgID: ss.project.OrgID,
-				Production: boolInt(ss.env.Kind == string(apitypes.KindProduction)), Priority: 2, CreatedAt: now().Unix(),
+				Production: boolInt(ss.env.Kind == string(apitypes.KindProduction)), Priority: 2,
+				BaseImage: r.BaseImage, BaseDigest: r.BaseDigest, CreatedAt: now().Unix(),
 			})
 		}
 		if err != nil {
@@ -467,7 +468,8 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		return apitypes.ScanningStatus{}, err
 	}
 	c.scans.mu.Lock()
-	out := apitypes.ScanningStatus{Enabled: c.scans.enabled, Images: map[apitypes.ScanState]int{}, Builders: []apitypes.ScanningServer{}}
+	out := apitypes.ScanningStatus{Enabled: c.scans.enabled, Offline: c.cfg.Scan.Offline, Imported: c.scans.imported,
+		Images: map[apitypes.ScanState]int{}, Builders: []apitypes.ScanningServer{}}
 	busy := c.scans.busy > 0 || time.Since(c.scans.lastBusy) < c.quietFor()
 	c.scans.mu.Unlock()
 	for _, n := range counts {
@@ -477,7 +479,8 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 		if !c.canBuild(s) {
 			continue
 		}
-		b := apitypes.ScanningServer{Server: s.Name, Production: s.AcceptsProduction, Error: s.ScanError}
+		b := apitypes.ScanningServer{Server: s.Name, Production: s.AcceptsProduction, Error: s.ScanError,
+			Imported: out.Imported != "" && s.ScanDbImport == out.Imported}
 		if s.ScanDbBuiltAt != nil {
 			b.DatabaseBuilt = ptr(time.Unix(*s.ScanDbBuiltAt, 0).UTC())
 		}
@@ -532,6 +535,12 @@ func toImageScan(s store.ImageScan, name string) apitypes.ImageScan {
 	}
 	if s.DbBuiltAt != nil {
 		out.DatabaseBuilt = ptr(time.Unix(*s.DbBuiltAt, 0).UTC())
+	}
+	if s.BaseImage != "" {
+		out.Base = &apitypes.ImageBase{Image: s.BaseImage, Digest: s.BaseDigest, Moved: s.BaseMoved != 0}
+		if s.BaseCheckedAt != nil {
+			out.Base.CheckedAt = ptr(time.Unix(*s.BaseCheckedAt, 0).UTC())
+		}
 	}
 	return out
 }
