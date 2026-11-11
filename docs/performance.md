@@ -111,13 +111,49 @@ exact distinct counts), so the store runs one query at a time with a
 back after a query that leaves it above 192 MB and a minute after its
 last request (`Store.Trim`).
 
+### The trace store
+
+`dock-analytics traces` keeps spans for tracing over OTLP in a DuckDB
+database of its own (`traces.duckdb`), in its own process and container
+beside the analytics store, so the two never share a container's
+headroom: bursts of writes grow DuckDB's memory past its
+`memory_limit`, and in one process a trace backlog on top of analytics
+went past the 512 MB limit on CI. It runs with `memory_limit` 96 MB, one
+query at a time and `GOMEMLIMIT=48MiB`, in a 384 MB container. The
+`traces` check seeds 2M spans (a week of a service at about 3 spans a
+second) and runs it with those settings.
+
+Measured locally (8-core VM, 2026-11-11) until CI has run it on `main`.
+
+| What | Budget | Measured |
+|---|---|---|
+| Idle memory, after start | ≤ 20 MB anonymous RSS | 8.0 MB |
+| Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0.03/s |
+| A service's list p95, newest, slowest and filtered, up to 7 days | ≤ 60 ms | 35 ms (7 days) |
+| The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 38 ms |
+| Opening a trace p95, with its time or without | ≤ 30 ms | 4 ms |
+| Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 29.6k spans/s |
+| Peak memory through all of it | ≤ 384 MB (the container's limit) | 252 MB |
+
+Spans go in one table per UTC day (dropping a day is the retention, with
+no delete scan). With 10M seeded spans over a week (32 bytes a span on
+disk, seeded at 247k spans/s): a service's list takes 2 to 18 ms up to a
+day and 7 to 70 ms over the week (slowest first is the slow one), the
+org's errors 3 to 93 ms, opening a trace 3 ms with its time and 8 ms
+without. A list is two queries: the page by start and duration alone,
+then its columns within the box those span. Selecting more columns in
+the first, or looking the page up by trace IDs over the whole range,
+cost two to ten times as much. Writes at full speed take the store to
+250 to 300 MB over 600k spans whatever its `memory_limit` (64 to 128 MB
+tried), hence the container's 384.
+
 ## Running it
 
 ```sh
 make perf                        # builds both UIs, dock, dock-analytics and tempobase, checks everything
 make perf-bench                  # only the Go benchmarks; builds nothing
 make perf-artifacts              # everything but the benchmarks (CI's perf-artifacts job)
-make perf PERF_FLAGS='-checks daemon,ui'      # only some checks: binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui
+make perf PERF_FLAGS='-checks daemon,ui'      # only some checks: binary,cli,daemon,ui,bench,analytics,traces,tempobase-binary,tempobase-daemon,tempobase-ui
 make perf PERF_FLAGS='-skip bench'            # all but some
 make perf PERF_FLAGS='-tempobase-pg postgres://postgres:pw@127.0.0.1:5432/postgres?sslmode=disable'  # also tempoBase's Postgres idle close
 make perf PERF_FLAGS='-idle 5s'               # shorter idle windows while iterating
@@ -126,7 +162,7 @@ make perf-baseline               # re-record binary sizes and benchmarks
 go test -run '^$' -bench . -benchmem ./internal/core   # one package's benchmarks
 ```
 
-Dock's daemon, the analytics store and tempoBase are checked side by
+Dock's daemon, the analytics and trace stores and tempoBase are checked side by
 side: start-up, seeding and anything timed run one at a time, while idle
 windows and waits overlap (an idle window counts only its own process's
 CPU, wake-ups and memory). The CLI's start-up and the benchmarks run
@@ -293,6 +329,7 @@ end) are not listed.
 | Scan quiet wait | `internal/core/scans.go` (`runScans`) | once, `[scan] quiet_seconds` (60) after the last build, deploy, wake or move ends; reset by the next | live images wait for a scan or scans are queued (ADR 0074); with none the scanner goroutine exits and no timer is armed | one goroutine and one timer; then one query for live releases without a scan, one for the next scan, and one job container on a builder |
 | Scan retry | `internal/core/scans.go` | 10 min doubling to 24 h, at most 5 attempts | a scan failed (a preempted one isn't failed) | one timer to the earliest retry |
 | Scan jobs | Docker on a builder (`internal/node/docker/scan.go`) | per queued image, one at a time platform-wide | nothing has been busy for the quiet period (ADR 0074) | one container at CPU shares 2, at most 1 CPU and `[scan] memory_mb`, no network: an SBOM (alpine 2 s, a node app 3.3 s) then a match (about 10 s, under 256 MB); killed by any build, deploy, wake or move. The daemon streams the SBOM to disk and writes the findings in one transaction (`BenchmarkScanFindingsWrite`, about 9 ms for 2,000). The first scan on a builder downloads Grype's database (65 MB, 3.4 GB on disk) |
+| Trace store trim | `cmd/dock-analytics/serve.go` (`api.serve`), in `dock-analytics traces` | once, a minute after the last request | the trace store was asked something | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory`, as for the analytics store |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 
 ## SQLite

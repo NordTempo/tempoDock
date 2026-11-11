@@ -3,8 +3,11 @@
 // on the analytics server.
 //
 //	dock-analytics serve                 the store (the container's command)
+//	dock-analytics traces                the trace store (its container's)
 //	dock-analytics seed -db F -events N  fill F with N synthetic events
+//	dock-analytics seed-traces -db F -spans N  fill a trace store with N spans
 //	dock-analytics bench -db F           time the dashboards' queries on F
+//	                     [-traces]       or a trace store's views
 //	dock-analytics rollup -db F          build F's daily rollups
 //
 // seed and bench are the engine spike's tools and the query budget of
@@ -15,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -42,6 +46,10 @@ func main() {
 	switch cmd {
 	case "serve":
 		err = serveCmd(ctx, args)
+	case "traces":
+		err = tracesCmd(ctx, args)
+	case "seed-traces":
+		err = seedTracesCmd(ctx, args)
 	case "seed":
 		err = seedCmd(ctx, args)
 	case "bench":
@@ -137,6 +145,46 @@ func seedCmd(ctx context.Context, args []string) error {
 	return nil
 }
 
+// seedTracesCmd fills a trace store with about -spans spans over -days
+// days ending now (bench.SeedSpans), and reports the rate and the file's
+// size.
+func seedTracesCmd(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("seed-traces", flag.ExitOnError)
+	db := fs.String("db", "", "the trace store's database file")
+	n := fs.Int("spans", 2_000_000, "about how many spans to write (the store keeps 30 days)")
+	days := fs.Int("days", 7, "days of traces, ending now")
+	_ = fs.Parse(args)
+	if *db == "" {
+		return errors.New("-db is required")
+	}
+	t, err := store.OpenTraces(ctx, *db, store.Options{MemoryLimit: 96 << 20})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = t.Close() }()
+	start := time.Now()
+	written, err := bench.SeedSpans(ctx, t, bench.SeedSpansOptions{
+		Spans: *n, Days: *days, End: time.Now().UTC(), Seed: 1,
+		Progress: func(day, days, written int) {
+			fmt.Fprintf(os.Stderr, "day %d/%d: %d spans, %.0f spans/s\n", day, days, written, float64(written)/time.Since(start).Seconds())
+		},
+	})
+	if err != nil {
+		return err
+	}
+	el := time.Since(start)
+	if err := t.Checkpoint(ctx); err != nil {
+		return err
+	}
+	size, err := t.FileBytes(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("seeded %d spans in %s (%.0f spans/s); database %.1f MB, %.1f bytes/span\n",
+		written, el.Round(time.Second), float64(written)/el.Seconds(), float64(size)/1e6, float64(size)/float64(max(1, written)))
+	return nil
+}
+
 // storeWriter writes seeded events through the store's real write path,
 // with the seed's stand-in locations.
 type storeWriter struct{ s *store.Store }
@@ -161,10 +209,34 @@ func benchCmd(ctx context.Context, args []string) error {
 	end := fs.String("end", "2026-10-30", "the end of every range (the seed's -end)")
 	url := fs.String("url", "", "time a running store's HTTP API (token in DOCK_ANALYTICS_TOKEN) instead of opening -db")
 	asJSON := fs.Bool("json", false, "print the results as JSON (for make perf) instead of a table")
+	traces := fs.Bool("traces", false, "time a trace store's views instead (-db or -url is the trace store), on spans seed-traces wrote; ranges end now")
+	spanDays := fs.Int("span-days", 7, "the days of traces seeded (seed-traces -days)")
 	_ = fs.Parse(args)
 	endT, err := time.Parse(time.DateOnly, *end)
 	if err != nil {
 		return err
+	}
+	if *traces {
+		var tq bench.TraceQuerier
+		if *url != "" {
+			tq = &analytics.Client{BaseURL: *url, Token: os.Getenv("DOCK_ANALYTICS_TOKEN")}
+		} else {
+			t, err := store.OpenTraces(ctx, sf.db, store.Options{MemoryLimit: sf.memoryMB << 20, Threads: sf.threads})
+			if err != nil {
+				return err
+			}
+			defer func() { _ = t.Close() }()
+			tq = t
+		}
+		opts := bench.TraceOptions{End: time.Now().UTC(), Days: *spanDays, Runs: *runs, Out: os.Stdout}
+		if *asJSON {
+			opts.Out = nil
+		}
+		res, err := bench.RunTraces(ctx, tq, opts)
+		if err != nil || !*asJSON {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(res)
 	}
 	var q bench.Querier
 	if *url != "" {
@@ -218,8 +290,12 @@ func loadCmd(ctx context.Context, args []string) error {
 	batch := fs.Int("batch", 1000, "events per write")
 	rate := fs.Int("rate", 0, "events per second to send at; 0 is as fast as the store takes them")
 	asJSON := fs.Bool("json", false, "print the result as JSON (for make perf)")
+	spans := fs.Bool("spans", false, "send -events spans to a trace store (-url) instead of events")
 	_ = fs.Parse(args)
 	c := &analytics.Client{BaseURL: *url, Token: os.Getenv("DOCK_ANALYTICS_TOKEN")}
+	if *spans {
+		return loadSpans(ctx, c, *events, *batch, *asJSON)
+	}
 	lw := &loadWriter{c: c, batch: *batch, rate: *rate, source: "load-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
 	start := time.Now()
 	// Today's traffic, so the events land after anything seeded.
@@ -280,6 +356,39 @@ func (w *loadWriter) Write(ctx context.Context, _ string, _ uint64, events []ana
 		w.sent += len(b)
 	}
 	return n, nil
+}
+
+// loadSpans sends about n spans of the last hour to a running store in
+// batches of batch, as fast as it takes them, and reports the rate.
+func loadSpans(ctx context.Context, c *analytics.Client, n, batch int, asJSON bool) error {
+	lw := &spanLoadWriter{c: c, source: "load-spans-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
+	start := time.Now()
+	written, err := bench.SeedSpans(ctx, lw, bench.SeedSpansOptions{Spans: n, Days: 1, End: time.Now().UTC(), Seed: uint64(time.Now().UnixNano()), Batch: batch, Source: lw.source})
+	if err != nil {
+		return err
+	}
+	el := time.Since(start)
+	if asJSON {
+		return json.NewEncoder(os.Stdout).Encode(LoadResult{Events: written, Seconds: el.Seconds(), WriteP95: pctOf(lw.times, 95)})
+	}
+	fmt.Printf("sent %d spans in %d writes in %s: %.0f spans/s; write p50 %.1f ms, p95 %.1f ms\n",
+		written, len(lw.times), el.Round(time.Millisecond), float64(written)/el.Seconds(), msOf(pctOf(lw.times, 50)), msOf(pctOf(lw.times, 95)))
+	return nil
+}
+
+// spanLoadWriter sends spans over HTTP, timing each write.
+type spanLoadWriter struct {
+	c      *analytics.Client
+	source string
+	times  []time.Duration
+}
+
+// WriteSpans implements bench.SpanWriter.
+func (w *spanLoadWriter) WriteSpans(ctx context.Context, source string, pos uint64, spans []analytics.Span, lim analytics.TraceLimits) (analytics.SpanWriteResult, error) {
+	t := time.Now()
+	res, err := w.c.WriteSpans(ctx, source, pos, spans, lim)
+	w.times = append(w.times, time.Since(t))
+	return res, err
 }
 
 // pctOf is the p-th percentile of ds.

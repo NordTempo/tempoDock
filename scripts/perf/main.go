@@ -2,8 +2,8 @@
 // a table: binary size, CLI start-up, daemon idle memory and CPU (also with
 // SSE clients connected), API read latency on a seeded daemon, UI bundle
 // sizes, and Go benchmarks compared with a checked-in baseline; and the same
-// for tempoBase, the standalone Data panel server (tempobase.go), and Dock
-// Analytics' store (analytics.go). It exits
+// for tempoBase, the standalone Data panel server (tempobase.go), Dock
+// Analytics' store (analytics.go) and the trace store (traces.go). It exits
 // non-zero when anything is over budget.
 //
 // Run it through make, which builds the UIs and binaries first:
@@ -96,7 +96,7 @@ type options struct {
 
 func main() {
 	var o options
-	checks := "binary,cli,daemon,ui,bench,analytics,tempobase-binary,tempobase-daemon,tempobase-ui"
+	checks := "binary,cli,daemon,ui,bench,analytics,traces,tempobase-binary,tempobase-daemon,tempobase-ui"
 	flag.StringVar(&o.dock, "dock", "bin/dock", "dock binary to measure (built with the UI embedded)")
 	flag.StringVar(&o.dist, "dist", "web/dist", "built UI")
 	flag.StringVar(&o.analytics, "analytics", "bin/dock-analytics", "dock-analytics binary to measure (make build-analytics)")
@@ -104,7 +104,7 @@ func main() {
 	flag.StringVar(&o.tempobaseDist, "tempobase-dist", "web/tempobase/dist", "tempoBase's built UI")
 	flag.StringVar(&o.tempobasePG, "tempobase-pg", "", "Postgres URL (owner with CREATEROLE) for tempoBase's idle connection check; skipped when empty")
 	flag.StringVar(&o.baseline, "baseline", "scripts/perf/baseline.json", "baseline for binary sizes and benchmarks")
-	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, analytics, tempobase-binary, tempobase-daemon, tempobase-ui")
+	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, analytics, traces, tempobase-binary, tempobase-daemon, tempobase-ui")
 	// CI runs bench on its own (make perf-bench) and everything else with
 	// -skip bench (make perf-artifacts), so a new check joins the second
 	// job without listing it anywhere.
@@ -137,7 +137,7 @@ func main() {
 		os.Exit(1)
 	}
 	o.speed = 1
-	timesAPI := slices.Contains(o.checks, "daemon") || slices.Contains(o.checks, "tempobase-daemon") || slices.Contains(o.checks, "analytics")
+	timesAPI := slices.Contains(o.checks, "daemon") || slices.Contains(o.checks, "tempobase-daemon") || slices.Contains(o.checks, "analytics") || slices.Contains(o.checks, "traces")
 	if timesAPI && base.CalibrationNs > 0 {
 		o.speed = max(1, min(calibrate(), calibrate(), calibrate())/base.CalibrationNs)
 	}
@@ -164,12 +164,12 @@ func main() {
 var (
 	checkFuncs = map[string]func(options, *table) error{
 		"binary": checkBinary, "cli": checkCLI, "daemon": checkDaemon, "ui": checkUI, "bench": checkBench,
-		"analytics": checkAnalytics, "tempobase-binary": checkTempobaseBinary,
+		"analytics": checkAnalytics, "traces": checkTraces, "tempobase-binary": checkTempobaseBinary,
 		"tempobase-daemon": checkTempobaseDaemon, "tempobase-ui": checkTempobaseUI,
 	}
 	stages = [][][]string{
 		{{"binary", "cli"}},
-		{{"daemon", "ui"}, {"analytics"}, {"tempobase-binary", "tempobase-daemon", "tempobase-ui"}},
+		{{"daemon", "ui"}, {"analytics", "traces"}, {"tempobase-binary", "tempobase-daemon", "tempobase-ui"}},
 		{{"bench"}},
 	}
 )
