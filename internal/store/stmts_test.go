@@ -57,9 +57,9 @@ func TestFirstUseInATransactionNeedsNoSecondConnection(t *testing.T) {
 		if err := f.s.Tx(ctx, func(q *Queries) error {
 			close(locked)
 			// Let the others take every other connection, waiting in BEGIN.
-			for deadline := time.Now().Add(5 * time.Second); f.s.DB.Stats().InUse < 8; time.Sleep(time.Millisecond) {
+			for deadline := time.Now().Add(5 * time.Second); f.s.DB.Stats().InUse < poolSize; time.Sleep(time.Millisecond) {
 				if time.Now().After(deadline) {
-					return fmt.Errorf("connections in use: %d, want 8", f.s.DB.Stats().InUse)
+					return fmt.Errorf("connections in use: %d, want %d", f.s.DB.Stats().InUse, poolSize)
 				}
 			}
 			_, err := q.CountOtherOrgAdmins(ctx, CountOtherOrgAdminsParams{OrgID: f.project.OrgID, UserID: 1})
@@ -69,7 +69,7 @@ func TestFirstUseInATransactionNeedsNoSecondConnection(t *testing.T) {
 		}
 	})
 	<-locked
-	for range 7 {
+	for range poolSize - 1 {
 		wg.Go(func() {
 			if err := f.s.Tx(ctx, func(*Queries) error { return nil }); err != nil {
 				t.Error(err)

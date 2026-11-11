@@ -26,6 +26,17 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// poolSize is how many SQLite connections the store opens, all kept open
+// (the default keeps 2 idle): reopening one reruns the pragmas and
+// re-prepares the statements used on it. Each holds its own schema copy,
+// page cache and prepared statements in SQLite's C heap, which modernc
+// never gives back, so the idle daemon pays for every connection start-up
+// happened to use: 23-29 MB with 8, a steady 24-25 with 4
+// (docs/performance.md). The cost: a transaction waiting for the write
+// lock holds a connection, so with poolSize writers queued, reads wait
+// too. Writes are short; busy_timeout bounds the wait.
+const poolSize = 4
+
 // Store is an open platform database.
 type Store struct {
 	*Queries
@@ -48,10 +59,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	// Keep every connection open (the default keeps 2 idle): reopening one
-	// reruns the pragmas and re-prepares the statements used on it.
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(8)
+	db.SetMaxOpenConns(poolSize)
+	db.SetMaxIdleConns(poolSize)
 	if err := migrate(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, err

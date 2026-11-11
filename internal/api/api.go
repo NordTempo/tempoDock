@@ -300,7 +300,36 @@ var orgParam = &huma.Param{
 
 // authed registers an operation that requires a caller. The handler gets
 // the authenticated actor; core errors are mapped to problem responses.
+// It is a typed shell around authedOp and serveAuthed: a generic body is
+// compiled once per input and output shape, so the logic lives in those
+// two once (docs/performance.md, "Binary size").
 func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.Context, core.Actor, *I) (*O, error)) {
+	call := func(ctx context.Context, actor core.Actor, in any) (any, error) {
+		o, err := h(ctx, actor, in.(*I))
+		if o == nil {
+			return nil, err
+		}
+		return o, err
+	}
+	op, replayable := s.authedOp(op, func() any { return new(I) }, call)
+	huma.Register(a, op, func(ctx context.Context, in *I) (*O, error) {
+		o, err := s.serveAuthed(ctx, &op, replayable, in, call)
+		if o == nil {
+			return nil, err
+		}
+		return o.(*O), err
+	})
+}
+
+// authedCall is an authed handler with its input (*I) and output (*O)
+// as any; the output is nil when the handler returned none.
+type authedCall func(ctx context.Context, actor core.Actor, in any) (any, error)
+
+// authedOp completes an authed operation's description (security, the org
+// parameter, its errors) and registers its replay when a locked
+// environment can refuse it, returning the operation and whether it is
+// replayable. newIn returns a new, empty input.
+func (s *Server) authedOp(op huma.Operation, newIn func() any, call authedCall) (huma.Operation, bool) {
 	op.Security = security
 	op.Parameters = append(op.Parameters, orgParam)
 	if op.Errors == nil {
@@ -318,31 +347,36 @@ func authed[I, O any](s *Server, a huma.API, op huma.Operation, h func(context.C
 	replayable := op.Method != http.MethodGet && op.Metadata["replay"] != false
 	if replayable && s.replays != nil {
 		s.replays[op.OperationID] = func(ctx context.Context, actor core.Actor, args json.RawMessage) (json.RawMessage, error) {
-			in := new(I)
+			in := newIn()
 			if err := json.Unmarshal(args, in); err != nil {
 				return nil, err
 			}
-			o, err := h(ctx, actor, in)
+			o, err := call(ctx, actor, in)
 			if err != nil {
 				return nil, err
 			}
 			return replyBody(o)
 		}
 	}
-	huma.Register(a, op, func(ctx context.Context, in *I) (*O, error) {
-		actor := actorFrom(ctx)
-		if p, ok := any(in).(interface{ expectedProjectID() int64 }); ok {
-			actor.ExpectedProjectID = p.expectedProjectID()
+	return op, replayable
+}
+
+// serveAuthed runs an authed operation's handler for a request: as the
+// request's actor, scoped to the project its input names, with its error
+// filed as an access request (when replayable) and mapped to a problem.
+func (s *Server) serveAuthed(ctx context.Context, op *huma.Operation, replayable bool, in any, call authedCall) (any, error) {
+	actor := actorFrom(ctx)
+	if p, ok := in.(interface{ expectedProjectID() int64 }); ok {
+		actor.ExpectedProjectID = p.expectedProjectID()
+	}
+	o, err := call(ctx, actor, in)
+	if err != nil {
+		if replayable {
+			err = s.fileRequest(ctx, actor, *op, in, err)
 		}
-		o, err := h(ctx, actor, in)
-		if err != nil {
-			if replayable {
-				err = s.fileRequest(ctx, actor, op, in, err)
-			}
-			return nil, s.problem(err)
-		}
-		return o, nil
-	})
+		return nil, s.problem(err)
+	}
+	return o, nil
 }
 
 // fileRequest files an access request for a call a locked environment
