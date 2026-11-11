@@ -90,10 +90,11 @@ export const serviceTabs = [
     key: "g s",
     group: "configure",
   },
+  // Releases and the audit trail; a release opens under it (ADR 0076).
   {
-    label: "Activity",
-    to: "/$org/$project/$environment/$service/audit",
-    key: "g a",
+    label: "History",
+    to: "/$org/$project/$environment/$service/history",
+    key: "g h",
     group: "history",
   },
 ] as const;

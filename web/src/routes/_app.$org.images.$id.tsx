@@ -185,7 +185,7 @@ function UseLine({ use }: { use: ImageUse }) {
     <span>
       {use.project} / {use.environment} / {use.service},{" "}
       <Link
-        to="/$org/$project/$environment/$service/releases/$number"
+        to="/$org/$project/$environment/$service/history/$number"
         params={{ org, ...refOf(use), number: String(use.release) }}
         className="text-info hover:underline"
       >

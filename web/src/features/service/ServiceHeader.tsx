@@ -116,18 +116,6 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       label: tab.label.toLowerCase(),
       run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
-    // The release history on the Overview, and the service's site in the
-    // Analytics area (the old tab's address redirects there), ADR 0059.
-    {
-      key: "g r",
-      label: "releases",
-      run: () =>
-        navigate({
-          to: "/$org/$project/$environment/$service",
-          params: { org, ...ref },
-          hash: "releases",
-        }),
-    },
     // S means settings everywhere: here, Build & run.
     {
       key: "s",
@@ -363,7 +351,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   // A release named in the sentence links to its page, which says why.
   const releaseLink = (number: number, text: string) => (
     <Link
-      to="/$org/$project/$environment/$service/releases/$number"
+      to="/$org/$project/$environment/$service/history/$number"
       params={{ org, ...refOf(service), number: String(number) }}
       className="text-inherit underline decoration-faint underline-offset-2 hover:decoration-current"
     >
@@ -415,7 +403,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           )}
         </span>
         <Link
-          to="/$org/$project/$environment/$service/releases/$number"
+          to="/$org/$project/$environment/$service/history/$number"
           params={{ org, ...refOf(service), number: String(lastFailed.number) }}
           className="btn sm"
         >
@@ -658,7 +646,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           label: "See why",
           run: () =>
             navigate({
-              to: "/$org/$project/$environment/$service/releases/$number",
+              to: "/$org/$project/$environment/$service/history/$number",
               params: { org, ...ref, number: String(failed) },
             }),
         },

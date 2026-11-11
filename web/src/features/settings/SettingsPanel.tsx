@@ -432,7 +432,7 @@ function ImageNote({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const image = imageSetting(service, useReleases(ref));
   const failed = image.failed && (
     <Link
-      to="/$org/$project/$environment/$service/releases/$number"
+      to="/$org/$project/$environment/$service/history/$number"
       params={{ org, ...ref, number: String(image.failed.number) }}
       className="text-fail underline decoration-fail-edge underline-offset-2 hover:decoration-current"
     >

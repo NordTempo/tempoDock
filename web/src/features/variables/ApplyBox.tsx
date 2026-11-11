@@ -388,7 +388,7 @@ function AppliedRelease({
   const org = useOrg();
   const link = (text: ReactNode, className = "") => (
     <Link
-      to="/$org/$project/$environment/$service/releases/$number"
+      to="/$org/$project/$environment/$service/history/$number"
       params={{
         org,
         project: r.project,

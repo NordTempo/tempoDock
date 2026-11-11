@@ -167,7 +167,7 @@ export function AlertLink({
       if (!svc) break;
       return number ? (
         <Link
-          to="/$org/$project/$environment/$service/releases/$number"
+          to="/$org/$project/$environment/$service/history/$number"
           params={{ ...svc, number }}
           {...props}
         >
@@ -190,7 +190,7 @@ export function AlertLink({
       if (a.target?.release)
         return (
           <Link
-            to="/$org/$project/$environment/$service/releases/$number"
+            to="/$org/$project/$environment/$service/history/$number"
             params={{ ...svc, number: String(a.target.release) }}
             hash="diagnosis"
             {...props}

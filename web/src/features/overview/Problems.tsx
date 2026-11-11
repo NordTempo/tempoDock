@@ -265,7 +265,7 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
           time={since(p.release.created_at)}
           action={
             <Link
-              to="/$org/$project/$environment/$service/releases/$number"
+              to="/$org/$project/$environment/$service/history/$number"
               params={{ org, ...ref, number: String(p.release.number) }}
               className={actionClass}
               data-problem={n}

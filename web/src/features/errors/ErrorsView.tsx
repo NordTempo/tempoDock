@@ -396,7 +396,7 @@ function IssueDetail({ issue: i }: { issue: ErrorIssue }) {
             <>
               {" in "}
               <Link
-                to="/$org/$project/$environment/$service/releases/$number"
+                to="/$org/$project/$environment/$service/history/$number"
                 params={{ ...svc, number: String(i.first_release) }}
               >
                 release {i.first_release}

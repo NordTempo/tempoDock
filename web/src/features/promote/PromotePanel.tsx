@@ -231,7 +231,7 @@ function Progress({
                   <td className="font-medium">{service}</td>
                   <td className="font-mono">
                     <Link
-                      to="/$org/$project/$environment/$service/releases/$number"
+                      to="/$org/$project/$environment/$service/history/$number"
                       params={{
                         org,
                         project,
