@@ -390,6 +390,15 @@ function StagedReview({
     applyLabel,
   } = staged;
   const applyNow = () => apply.mutate(env);
+  // In the drawer, ⌘↵ applies (the header's control stands aside while
+  // it is open; the panel has its own).
+  useKeydown((event) => {
+    if (!drawer || changes.count === 0 || busy || applyBlocked) return;
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      applyNow();
+    }
+  });
 
   if (changes.count === 0) {
     const applied = apply.data;
@@ -427,20 +436,7 @@ function StagedReview({
   }
 
   return (
-    <div
-      className="flex flex-col gap-3"
-      onKeyDown={
-        drawer
-          ? (event) => {
-              if (busy || applyBlocked) return;
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                event.preventDefault();
-                applyNow();
-              }
-            }
-          : undefined
-      }
-    >
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h2 id="staged" className="font-semibold">
           <span className="text-warn">
