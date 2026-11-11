@@ -60,7 +60,7 @@ function SettingsTab() {
           <Hostnames serviceRef={ref} />
         </div>
         {service.stateful && (
-          <div id="backups" className="scroll-mt-[112px]">
+          <div id="backups">
             <BackupsPanel serviceRef={ref} />
           </div>
         )}
@@ -74,7 +74,7 @@ function SettingsTab() {
           <a
             key={href}
             href={href}
-            className="rounded-ctl px-2 py-1 text-mut hover:bg-hover hover:text-fg"
+            className="flex min-h-[24px] items-center rounded-ctl px-2 text-mut hover:bg-hover hover:text-fg"
           >
             {label}
           </a>

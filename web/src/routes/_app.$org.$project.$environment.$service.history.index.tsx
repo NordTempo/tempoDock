@@ -22,11 +22,7 @@ function HistoryTab() {
   return (
     <>
       <ReleaseHistory serviceRef={ref} deploying={!!deploying} />
-      <section
-        id="activity"
-        aria-labelledby="activity-head"
-        className="scroll-mt-28"
-      >
+      <section id="activity" aria-labelledby="activity-head">
         <SectionHead id="activity-head">Activity</SectionHead>
         <AuditTable events={useAuditLog(ref)} />
       </section>

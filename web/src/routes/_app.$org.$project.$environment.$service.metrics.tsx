@@ -78,7 +78,7 @@ function MetricsTab() {
         <History serviceRef={ref} range={range} service={service} />
       </section>
       {checked && (
-        <div id="uptime" className="flex scroll-mt-28 flex-col gap-7">
+        <div id="uptime" className="flex flex-col gap-7">
           <UptimePanel serviceRef={ref} />
         </div>
       )}

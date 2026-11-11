@@ -349,9 +349,13 @@
     background: var(--color-hover);
   }
 
-  /* An anchored heading (#set-run, #domains) lands under the sticky service header. */
-  h2[id] {
-    scroll-margin-top: 112px;
+  /*
+   * Anchors (#set-run, #domains), focus moved by the keyboard and
+   * scrolled-to controls stop below the sticky service header instead of
+   * under it (WCAG 2.4.11, focus not obscured).
+   */
+  html {
+    scroll-padding-top: 112px;
   }
 }
 

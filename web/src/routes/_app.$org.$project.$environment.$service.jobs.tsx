@@ -30,7 +30,7 @@ function JobsTab() {
       <section
         id="run"
         aria-labelledby="run-head"
-        className="flex scroll-mt-28 flex-col gap-3"
+        className="flex flex-col gap-3"
       >
         <SectionHead id="run-head">Run a command</SectionHead>
         <RunPanel serviceRef={ref} />
