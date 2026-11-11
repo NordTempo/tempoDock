@@ -21,6 +21,11 @@ type Mode string
 const (
 	ModeMCP Mode = "mcp"
 	ModeCLI Mode = "cli"
+	// ModeManual is any other agent, e.g. another vendor's run by hand or
+	// by an orchestrator: each case's prompt, URL and token go to
+	// <out>/tasks/<case>.json, and its answer is read from
+	// <out>/tasks/<case>.answer.txt once that exists.
+	ModeManual Mode = "manual"
 )
 
 // system is appended to Claude Code's system prompt in every case: the
@@ -61,6 +66,7 @@ type agentRun struct {
 	Token  string // the case's scoped token
 	D      *daemon
 	Log    string // where the raw stream goes
+	Case   string
 }
 
 // run starts `claude -p` in an empty directory with no user settings,
@@ -68,6 +74,9 @@ type agentRun struct {
 // tools are in context.
 func (a agentRun) run(ctx context.Context) Transcript {
 	start := time.Now()
+	if a.Mode == ModeManual {
+		return a.manual(ctx, start)
+	}
 	work, err := os.MkdirTemp("", "dock-agenteval-work-")
 	if err != nil {
 		return Transcript{Error: err.Error()}
@@ -115,6 +124,30 @@ func (a agentRun) run(ctx context.Context) Transcript {
 		t.Error = fmt.Sprintf("claude: %v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return t
+}
+
+// manual hands the case to an agent outside the harness and waits for its
+// answer file. The agent runs the dock CLI with the task's environment.
+func (a agentRun) manual(ctx context.Context, start time.Time) Transcript {
+	dir := filepath.Join(filepath.Dir(a.Log), "tasks")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return Transcript{Error: err.Error()}
+	}
+	task, _ := json.MarshalIndent(map[string]any{
+		"prompt": a.Prompt, "system": system + cliSystem,
+		"env":    map[string]string{"DOCK_URL": a.D.url, "DOCK_TOKEN": a.Token, "PATH": filepath.Dir(a.D.bin) + ":$PATH"},
+		"answer": filepath.Join(dir, a.Case+".answer.txt"),
+	}, "", "  ")
+	if err := os.WriteFile(filepath.Join(dir, a.Case+".json"), task, 0o644); err != nil {
+		return Transcript{Error: err.Error()}
+	}
+	for ctx.Err() == nil {
+		if b, err := os.ReadFile(filepath.Join(dir, a.Case+".answer.txt")); err == nil {
+			return Transcript{Answer: string(b), Duration: time.Since(start).Seconds()}
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return Transcript{Error: "no answer before the timeout"}
 }
 
 // streamEvent is the part of a stream-json line the eval reads.

@@ -33,8 +33,22 @@ type daemon struct {
 }
 
 // startDaemon starts a daemon with extra environment (DOCK_FAKE_* hooks)
-// and bootstraps its admin. stop removes everything it made.
+// and bootstraps its admin. stop removes everything it made. Ports are
+// picked free and released before the daemon binds them, so another
+// case's daemon can take one meanwhile: that start is tried again.
 func startDaemon(bin string, env map[string]string) (*daemon, error) {
+	var err error
+	for range 3 {
+		var d *daemon
+		if d, err = startDaemonOnce(bin, env); err == nil || !strings.Contains(err.Error(), "address already in use") {
+			return d, err
+		}
+	}
+	return nil, err
+}
+
+// startDaemonOnce is one try of startDaemon.
+func startDaemonOnce(bin string, env map[string]string) (*daemon, error) {
 	dir, err := os.MkdirTemp("", "dock-agenteval-")
 	if err != nil {
 		return nil, err
