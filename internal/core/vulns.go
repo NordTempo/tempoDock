@@ -2,7 +2,9 @@ package core
 
 import (
 	"cmp"
+	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +15,9 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/sbom"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/version"
 )
 
 // Reading image scans (ADR 0074): the org's Images page, one image's
@@ -692,21 +696,69 @@ func versionPart(s string) (string, string) {
 
 func isDigits(s string) bool { return s != "" && unicode.IsDigit(rune(s[0])) }
 
-// OpenSBOM opens the stored SBOM of a service's live image (or release
-// N's): gzipped syft-json, and a file name for it. Scope: read.
-func (c *Core) OpenSBOM(ctx context.Context, a Actor, ref ServiceRef, release int64) (io.ReadCloser, string, error) {
+// SBOMExport is a service's SBOM ready to send: its file name, and
+// Write, which streams it gzipped in the format asked for.
+type SBOMExport struct {
+	Name  string
+	Write func(w io.Writer) error
+}
+
+// sbomNames are the file name endings of each format.
+var sbomNames = map[sbom.Format]string{sbom.SyftJSON: "sbom.json.gz", sbom.CycloneDXJSON: "cdx.json.gz", sbom.SPDXJSON: "spdx.json.gz"}
+
+// ExportSBOM opens the stored SBOM of a service's live image (or release
+// N's) in format: Syft's JSON as stored, or converted as it streams to
+// CycloneDX 1.6 or SPDX 2.3 JSON (one package in memory at a time, on the
+// control plane: no job, so nothing runs beside a deploy). Always
+// gzipped. Scope: read.
+func (c *Core) ExportSBOM(ctx context.Context, a Actor, ref ServiceRef, release int64, format sbom.Format) (SBOMExport, error) {
+	if format == "" {
+		format = sbom.SyftJSON
+	}
+	if !sbom.Valid(format) {
+		return SBOMExport{}, invalid("format %q isn't one of syft-json, cyclonedx-json, spdx-json", format)
+	}
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "reading SBOMs")
 	if err != nil {
-		return nil, "", err
+		return SBOMExport{}, err
 	}
 	r, err := c.scanRelease(ctx, ss, release)
 	if err != nil {
-		return nil, "", err
+		return SBOMExport{}, err
 	}
-	if r.ImageScanID != nil {
-		if f, err := os.Open(c.sbomPath(*r.ImageScanID)); err == nil {
-			return f, fmt.Sprintf("%s-r%d.sbom.json.gz", ss.svc.Name, r.Number), nil
+	missing := notFound("release %d of %s has no SBOM yet: it is made when its image is scanned", r.Number, ss)
+	if r.ImageScanID == nil {
+		return SBOMExport{}, missing
+	}
+	f, err := os.Open(c.sbomPath(*r.ImageScanID))
+	if err != nil {
+		return SBOMExport{}, missing
+	}
+	name := fmt.Sprintf("%s-r%d.%s", ss.svc.Name, r.Number, sbomNames[format])
+	if format == sbom.SyftJSON {
+		return SBOMExport{Name: name, Write: func(w io.Writer) error {
+			defer func() { _ = f.Close() }()
+			_, err := io.Copy(w, f)
+			return err
+		}}, nil
+	}
+	scan, err := c.store.GetImageScan(ctx, *r.ImageScanID)
+	if err != nil {
+		_ = f.Close()
+		return SBOMExport{}, err
+	}
+	use := apitypes.ImageUse{Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name, Release: r.Number}
+	img := sbom.Image{Name: c.imageName(r.ImageRef, use), Distro: scan.Distro, Tool: "dock " + version.Version, Created: now()}
+	if digest := toImageScan(scan, "").Digest; strings.HasPrefix(digest, "sha256:") {
+		img.Digest = digest
+	}
+	return SBOMExport{Name: name, Write: func(w io.Writer) error {
+		defer func() { _ = f.Close() }()
+		zr, err := gzip.NewReader(f)
+		if err != nil {
+			return fmt.Errorf("read the stored SBOM: %w", err)
 		}
-	}
-	return nil, "", notFound("release %d of %s has no SBOM yet: it is made when its image is scanned", r.Number, ss)
+		zw := gzip.NewWriter(w)
+		return errors.Join(sbom.Convert(zw, io.LimitReader(zr, node.MaxSBOMBytes), format, img), zw.Close())
+	}}, nil
 }

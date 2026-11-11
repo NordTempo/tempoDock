@@ -49896,7 +49896,7 @@
     },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/sbom": {
       "get": {
-        "description": "The software bill of materials of the live release's image (or release N's) as Syft made it: syft-json, gzipped. Scope: read.",
+        "description": "The software bill of materials of the live release's image (or release N's), gzipped: Syft's JSON as Syft made it, or converted to CycloneDX 1.6 or SPDX 2.3 JSON. Scope: read.",
         "operationId": "get-service-sbom",
         "parameters": [
           {
@@ -49958,6 +49958,20 @@
               "format": "int64",
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "default": "syft-json",
+              "enum": [
+                "syft-json",
+                "cyclonedx-json",
+                "spdx-json"
+              ],
+              "type": "string"
             }
           }
         ],

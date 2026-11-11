@@ -1,6 +1,9 @@
 package core
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/sbom"
 )
 
 // scanHarness is a harness whose scans start after 20 ms of quiet.
@@ -283,5 +287,42 @@ func TestFixGroupsAndVersions(t *testing.T) {
 	}
 	if n := countFindings([]node.Finding{{Severity: node.SeverityHigh, Type: "npm", FixedIn: "2"}}); n.worstFix != apitypes.FixUpgrade || n.high != 1 {
 		t.Fatalf("counts = %+v", n)
+	}
+}
+
+// The SBOM exports as stored or converted, gzipped, to readers only of
+// the service's org.
+func TestExportSBOM(t *testing.T) {
+	h := scanHarness(t)
+	ref := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(ref, "web:1")
+	h.waitScan(ref, apitypes.ScanScanned)
+	for _, f := range []sbom.Format{sbom.SyftJSON, sbom.CycloneDXJSON, sbom.SPDXJSON} {
+		exp, err := h.c.ExportSBOM(h.ctx, testSystem, ref, 0, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var gz bytes.Buffer
+		if err := exp.Write(&gz); err != nil {
+			t.Fatal(err)
+		}
+		zr, err := gzip.NewReader(&gz)
+		if err != nil {
+			t.Fatalf("%s isn't gzipped: %v", f, err)
+		}
+		var doc map[string]any
+		if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if f == sbom.CycloneDXJSON && len(doc["components"].([]any)) == 0 || !strings.HasPrefix(exp.Name, "web-r1.") {
+			t.Fatalf("%s: %s, %v", f, exp.Name, doc)
+		}
+	}
+	if _, err := h.c.ExportSBOM(h.ctx, testSystem, ref, 0, "xml"); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("an unknown format: %v", err)
+	}
+	other := Actor{Kind: "token", OrgID: 2, Name: "x", TokenID: 3, Scope: apitypes.ScopeAdmin}
+	if _, err := h.c.ExportSBOM(h.ctx, other, ref, 0, sbom.SyftJSON); err == nil {
+		t.Fatal("another org read the SBOM")
 	}
 }
