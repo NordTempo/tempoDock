@@ -3834,7 +3834,7 @@ export interface paths {
         };
         /**
          * Download a service's SBOM
-         * @description The software bill of materials of the live release's image (or release N's) as Syft made it: syft-json, gzipped. Scope: read.
+         * @description The software bill of materials of the live release's image (or release N's), gzipped: Syft's JSON as Syft made it, or converted to CycloneDX 1.6 or SPDX 2.3 JSON. Scope: read.
          */
         get: operations["get-service-sbom"];
         put?: never;
@@ -33386,6 +33386,7 @@ export interface operations {
                 org?: string;
                 /** @description Release number; default the live one */
                 release?: number;
+                format?: "syft-json" | "cyclonedx-json" | "spdx-json";
             };
             header?: {
                 /** @description Expected project identity for linked clients */

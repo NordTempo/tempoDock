@@ -3,13 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/sbom"
 )
 
 // registerScans adds image vulnerability scanning (ADR 0074): the org's
@@ -69,25 +69,27 @@ func registerScans(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-service-sbom", Method: http.MethodGet, Path: servicePathT + "/sbom",
 		Summary: "Download a service's SBOM", Tags: tags,
-		Description: "The software bill of materials of the live release's image (or release N's) as Syft made it: syft-json, gzipped. Scope: read.",
+		Description: "The software bill of materials of the live release's image (or release N's), gzipped: Syft's JSON as Syft made it, or converted to CycloneDX 1.6 or SPDX 2.3 JSON. Scope: read.",
 		Responses: map[string]*huma.Response{"200": {
 			Description: "SBOM",
 			Content:     map[string]*huma.MediaType{"application/gzip": {Schema: &huma.Schema{Type: huma.TypeString, Format: "binary"}}},
 		}},
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		ServicePath
-		Release int64 `query:"release" minimum:"0" doc:"Release number; default the live one"`
+		Release int64  `query:"release" minimum:"0" doc:"Release number; default the live one"`
+		Format  string `query:"format" default:"syft-json" enum:"syft-json,cyclonedx-json,spdx-json"`
 	}) (*huma.StreamResponse, error) {
-		f, name, err := s.core.OpenSBOM(ctx, actor, in.ref(), in.Release)
+		exp, err := s.core.ExportSBOM(ctx, actor, in.ref(), in.Release, sbom.Format(in.Format))
 		if err != nil {
 			return nil, err
 		}
 		return &huma.StreamResponse{Body: func(hctx huma.Context) {
-			defer func() { _ = f.Close() }()
 			hctx.SetHeader("Content-Type", "application/gzip")
-			hctx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+			hctx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", exp.Name))
 			hctx.SetStatus(http.StatusOK)
-			_, _ = io.Copy(hctx.BodyWriter(), f)
+			// Headers are sent: a failure midway can only cut the stream,
+			// which the gzip trailer missing makes plain to the reader.
+			_ = exp.Write(hctx.BodyWriter())
 		}}, nil
 	})
 	authed(s, a, huma.Operation{

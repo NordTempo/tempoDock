@@ -29,10 +29,13 @@ import {
 } from "../features/images/parts";
 import { useOrg } from "../shell/location";
 import { ago, day, plural, since } from "../ui/format";
+import { Icon } from "../ui/icons";
 import {
   Act,
   Button,
   ErrorText,
+  Menu,
+  menuItem,
   Page,
   PageBar,
   Panel,
@@ -175,21 +178,39 @@ function Actions({ detail, use }: { detail: ImageDetail; use: ImageUse }) {
   const mayScan = canDeploy(useSession(), ref);
   const scanAgain = useScanService();
   const flags = `${ref.service} -e ${ref.environment}${use.live ? "" : ` -r ${use.release}`}`;
-  const path = `/api/v1/projects/${encodeURIComponent(ref.project)}/environments/${encodeURIComponent(ref.environment)}/services/${encodeURIComponent(ref.service)}/sbom?release=${use.release}`;
+  const path = (format: string) =>
+    `/api/v1/projects/${encodeURIComponent(ref.project)}/environments/${encodeURIComponent(ref.environment)}/services/${encodeURIComponent(ref.service)}/sbom?release=${use.release}&format=${format}`;
   const busy =
     scanAgain.isPending || scan.state === "queued" || scan.state === "scanning";
   return (
     <>
       <ErrorText error={scanAgain.error} />
       {scan.scanned_at && (
-        <a
-          href={withOrg(path)}
-          download
-          className="btn"
-          title={`dock sbom ${flags} > sbom.json`}
+        <Menu
+          label="Download the SBOM"
+          right
+          button={
+            <span className="btn">
+              SBOM <Icon name="chevronDown" size={12} />
+            </span>
+          }
         >
-          SBOM
-        </a>
+          {(close) =>
+            sbomFormats.map((f) => (
+              <a
+                key={f.format}
+                href={withOrg(path(f.format))}
+                download
+                role="menuitem"
+                className={menuItem}
+                title={`dock sbom ${flags}${f.format === "syft-json" ? "" : ` --format ${f.format}`} > sbom.json`}
+                onClick={close}
+              >
+                {f.label}
+              </a>
+            ))
+          }
+        </Menu>
       )}
       {mayScan && (
         <Act
@@ -215,6 +236,13 @@ function Actions({ detail, use }: { detail: ImageDetail; use: ImageUse }) {
     </>
   );
 }
+
+/** The SBOM's download formats: as stored, and the two standards. */
+const sbomFormats = [
+  { format: "syft-json", label: "Syft JSON" },
+  { format: "cyclonedx-json", label: "CycloneDX 1.6" },
+  { format: "spdx-json", label: "SPDX 2.3" },
+] as const;
 
 /** Lines drawn at first in a group, and rows in the table. */
 const GROUP_CAP = 20;

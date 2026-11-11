@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -546,21 +547,24 @@ minute, so it never slows one down.`,
 func newSBOMCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var release int64
+	var format string
 	cmd := &cobra.Command{
 		Use:   "sbom",
-		Short: "Print the software bill of materials of a service's live image (syft-json)",
+		Short: "Print the software bill of materials of a service's live image",
 		Long: `Print the SBOM Dock made of the image the service's live release (or
-release N) runs: every package Syft found, as syft-json. Redirect it to a
-file: ` + "`dock sbom > sbom.json`" + `.`,
+release N) runs: every package Syft found, as Syft's JSON, or with
+--format as CycloneDX 1.6 (cyclonedx-json) or SPDX 2.3 (spdx-json) JSON for
+tools that take those. Redirect it to a file:
+` + "`dock sbom --format cyclonedx-json > sbom.cdx.json`" + `.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, t, err := g.open(f, needService)
 			if err != nil {
 				return err
 			}
-			path := t.servicePath() + "/sbom"
+			path := t.servicePath() + "/sbom?format=" + url.QueryEscape(format)
 			if release > 0 {
-				path += "?release=" + strconv.FormatInt(release, 10)
+				path += "&release=" + strconv.FormatInt(release, 10)
 			}
 			req, err := s.api.NewRequest(cmd.Context(), http.MethodGet, path, nil)
 			if err != nil {
@@ -581,6 +585,7 @@ file: ` + "`dock sbom > sbom.json`" + `.`,
 	}
 	f.add(cmd, needService)
 	cmd.Flags().Int64VarP(&release, "release", "r", 0, "release number (default: the live one)")
+	cmd.Flags().StringVar(&format, "format", "syft-json", "syft-json, cyclonedx-json or spdx-json")
 	return cmd
 }
 
