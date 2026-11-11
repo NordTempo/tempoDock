@@ -100,7 +100,7 @@ type options struct {
 
 func main() {
 	var o options
-	checks := "binary,cli,daemon,ui,bench,analytics,traces,tempobase-binary,tempobase-daemon,tempobase-ui"
+	checks := "binary,cli,daemon,served-ui,ui,bench,analytics,traces,tempobase-binary,tempobase-daemon,tempobase-ui"
 	flag.StringVar(&o.dock, "dock", "bin/dock", "dock binary to measure (built with the UI embedded)")
 	flag.StringVar(&o.dist, "dist", "web/dist", "built UI")
 	flag.StringVar(&o.analytics, "analytics", "bin/dock-analytics", "dock-analytics binary to measure (make build-analytics)")
@@ -108,7 +108,7 @@ func main() {
 	flag.StringVar(&o.tempobaseDist, "tempobase-dist", "web/tempobase/dist", "tempoBase's built UI")
 	flag.StringVar(&o.tempobasePG, "tempobase-pg", "", "Postgres URL (owner with CREATEROLE) for tempoBase's idle connection check; skipped when empty")
 	flag.StringVar(&o.baseline, "baseline", "scripts/perf/baseline.json", "baseline for binary sizes and benchmarks")
-	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), ui, bench, analytics, traces, tempobase-binary, tempobase-daemon, tempobase-ui")
+	flag.StringVar(&checks, "checks", checks, "comma-separated checks to run: binary, cli, daemon (idle and API latency), served-ui (the UI as the daemon serves it), ui, bench, analytics, traces, tempobase-binary, tempobase-daemon, tempobase-ui")
 	// CI runs bench on its own (make perf-bench) and everything else with
 	// -skip bench (make perf-artifacts), so a new check joins the second
 	// job without listing it anywhere.
@@ -167,13 +167,13 @@ func main() {
 // start-up and the benchmarks are timed alone, before and after them.
 var (
 	checkFuncs = map[string]func(options, *table) error{
-		"binary": checkBinary, "cli": checkCLI, "daemon": checkDaemon, "ui": checkUI, "bench": checkBench,
+		"binary": checkBinary, "cli": checkCLI, "daemon": checkDaemon, "served-ui": checkServedUI, "ui": checkUI, "bench": checkBench,
 		"analytics": checkAnalytics, "traces": checkTraces, "tempobase-binary": checkTempobaseBinary,
 		"tempobase-daemon": checkTempobaseDaemon, "tempobase-ui": checkTempobaseUI,
 	}
 	stages = [][][]string{
 		{{"binary", "cli"}},
-		{{"daemon", "ui"}, {"analytics", "traces"}, {"tempobase-binary", "tempobase-daemon", "tempobase-ui"}},
+		{{"daemon", "served-ui", "ui"}, {"analytics", "traces"}, {"tempobase-binary", "tempobase-daemon", "tempobase-ui"}},
 		{{"bench"}},
 	}
 )

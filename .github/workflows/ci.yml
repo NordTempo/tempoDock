@@ -22,14 +22,16 @@ concurrency:
 # scripts/ci/fetch-release.sh, which checks each against its digest and
 # keeps it in the runners' host cache, so a host downloads each version once.
 jobs:
-  # What a change touches: site/ (the landing page), the rest, or both.
+  # What a change touches: Go, the UI (web/), the landing page (site/), or
+  # some of them; an API change is both Go and UI (scripts/ci/changes.sh).
   # The other jobs skip what a change can't affect. A skipped job counts as
   # passed, so every commit on main still gets a green run to release from.
   changes:
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     outputs:
+      go: ${{ steps.diff.outputs.go }}
+      web: ${{ steps.diff.outputs.web }}
       site: ${{ steps.diff.outputs.site }}
-      rest: ${{ steps.diff.outputs.rest }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -42,7 +44,7 @@ jobs:
   # The Go checks run as parallel jobs, each with only the setup it needs.
   lint:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -58,6 +60,24 @@ jobs:
         with:
           install-mode: none
           skip-cache: ${{ steps.go.outputs.host-cache == 'true' }}
+      # Go's generated files (sqlc's code, the OpenAPI specs) match the
+      # source; the web job checks the UI's clients against the specs.
+      - name: Install sqlc
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$(scripts/ci/fetch-release.sh sqlc-dev/sqlc v1.31.1 sqlc_1.31.1_linux_amd64.tar.gz 497ae4fcdfa64c5b0c311ffe4c2bd991e43991e82e5367792ed78bc2dca27354)" -C "$RUNNER_TEMP/bin" sqlc
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Generated files are committed
+        run: |
+          go generate ./...
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            git diff
+            echo "::error::Generated files are out of date: run make generate and commit the result."
+            exit 1
+          fi
       # tempoBase must not link Dock's daemon (ADR 0024); skips until
       # cmd/tempobase exists.
       - run: make tempobase-deps
@@ -66,7 +86,7 @@ jobs:
 
   test:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -77,7 +97,7 @@ jobs:
   # them, so this job only runs the integration tests.
   integration:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -103,7 +123,7 @@ jobs:
   # (scripts/race-shard.sh); every test runs in exactly one shard.
   race:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true'
     name: race (${{ matrix.shard }}/2)
     strategy:
       fail-fast: false
@@ -120,7 +140,7 @@ jobs:
   # the release builds it, to check the Dockerfile.
   analytics:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -150,7 +170,7 @@ jobs:
   # own inputs, so they run alongside the Go and web checks.
   perf-artifacts:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.web == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     # For tempoBase's check that it closes Postgres connections after use.
     services:
@@ -177,10 +197,13 @@ jobs:
           cache_dependency_path: web/pnpm-lock.yaml
       # Shared runners are too noisy for timing budgets: they warn here and
       # are enforced locally (make perf). Sizes, memory and allocs still fail.
-      - run: make perf-artifacts PERF_FLAGS="-soft-timing -markdown $RUNNER_TEMP/perf.md -tempobase-pg $PERF_PG_URL"
+      # A change to the UI alone checks only what the UI moves: the
+      # binaries (which embed it) and the bundles, as built and as served.
+      - run: make perf-artifacts PERF_FLAGS="-soft-timing -markdown $RUNNER_TEMP/perf.md -tempobase-pg $PERF_PG_URL $UI_ONLY"
         env:
           # The throwaway service above, not a secret.
           PERF_PG_URL: postgres://postgres:perf@127.0.0.1:5432/postgres?sslmode=disable
+          UI_ONLY: ${{ needs.changes.outputs.go != 'true' && '-checks binary,served-ui,ui,tempobase-binary,tempobase-ui' || '' }}
       # The results as Markdown, for the job summary and perf-comment.
       - if: ${{ !cancelled() }}
         run: if [ -f "$RUNNER_TEMP/perf.md" ]; then cat "$RUNNER_TEMP/perf.md" >> "$GITHUB_STEP_SUMMARY"; fi
@@ -194,7 +217,7 @@ jobs:
 
   perf-bench:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.go == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     steps:
       - uses: actions/checkout@v5
@@ -217,7 +240,7 @@ jobs:
   # only in a job log. Pull requests from forks get no write token: skipped.
   perf-comment:
     needs: [changes, perf-artifacts, perf-bench]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.rest == 'true' && github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true' || needs.changes.outputs.web == 'true') && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     permissions:
       pull-requests: write
@@ -231,9 +254,12 @@ jobs:
           script: |
             const fs = require('node:fs');
             const marker = '<!-- dock-perf -->';
+            const skipped = { 'perf-bench': '${{ needs.perf-bench.result }}' === 'skipped' };
             const part = (job, title) => {
               const f = `perf/${job}/perf.md`;
-              const md = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : `No results: ${job} stopped before its checks ran. See its log.`;
+              const md = fs.existsSync(f) ? fs.readFileSync(f, 'utf8')
+                : skipped[job] ? 'Skipped: the change touches no Go.'
+                : `No results: ${job} stopped before its checks ran. See its log.`;
               return `### ${title}\n\n${md}`;
             };
             const sha = context.payload.pull_request.head.sha.slice(0, 7);
@@ -253,34 +279,22 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
-  # The UI, and every generated file: the API specs and sqlc's code are
-  # regenerated from Go first, so the stale-client check and the final diff
-  # compare against what the Go source produces, not what was committed.
+  # The UI. Its API clients are checked against the committed specs
+  # (pnpm check), which lint checks against the Go source, so a change to
+  # either side runs the check that can catch it.
   web:
     needs: changes
-    if: needs.changes.outputs.rest == 'true'
+    if: needs.changes.outputs.web == 'true'
     runs-on: ${{ vars.CI_RUNNER || 'nordtempo' }}
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v5
-      - uses: ./.github/actions/setup-go
-      # The version the committed sqlc output names in its header. The
-      # checksum is the release asset's digest on GitHub.
-      - name: Install sqlc
+      # The UI's lint suppressions against their budget (also in lint,
+      # which a change to the UI alone skips).
+      - run: scripts/ci/suppressions.sh
         working-directory: .
-        run: |
-          mkdir -p "$RUNNER_TEMP/bin"
-          tar -xzf "$(scripts/ci/fetch-release.sh sqlc-dev/sqlc v1.31.1 sqlc_1.31.1_linux_amd64.tar.gz 497ae4fcdfa64c5b0c311ffe4c2bd991e43991e82e5367792ed78bc2dca27354)" -C "$RUNNER_TEMP/bin" sqlc
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-        env:
-          GH_TOKEN: ${{ github.token }}
-      # web/openapi.json, web/tempobase/openapi.json and the sqlc output
-      # (the //go:generate directives make generate runs).
-      - name: Regenerate from Go
-        working-directory: .
-        run: go generate ./...
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -290,18 +304,10 @@ jobs:
           cache: true
           cache_dependency_path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      # Typecheck, Biome, and a stale-client check against web/openapi.json.
+      # Typecheck, Biome, the clients against web/openapi.json and
+      # web/tempobase/openapi.json, and the recorder against its build.
       - run: pnpm check
       - run: pnpm build
-      - name: Generated files are committed
-        working-directory: .
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            git status --short
-            git diff
-            echo "::error::Generated files are out of date: run make generate and commit the result."
-            exit 1
-          fi
 
   # The landing page (site/): types, Biome and a static build.
   site:

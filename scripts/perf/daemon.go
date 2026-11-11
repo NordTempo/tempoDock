@@ -47,7 +47,7 @@ func (d *daemon) authorize(req *http.Request) {
 
 // checkDaemon measures the idle daemon, then the idle daemon with SSE
 // clients connected, then seeds it through the API and measures read
-// latency.
+// latency. What it serves of the UI is checkServedUI's.
 func checkDaemon(o options, t *table) error {
 	if runtime.GOOS != "linux" {
 		t.add("daemon", "needs /proc (Linux)", "", warn)
@@ -104,6 +104,22 @@ func checkDaemon(o options, t *table) error {
 	if anon, err := d.anon(); err == nil {
 		t.add("daemon memory after seeding and load", mb(anon)+" anon", "", info)
 	}
+	return nil
+}
+
+// checkServedUI starts a daemon only to check the UI it serves. Its own
+// check, so a change to the UI alone runs it without the daemon's
+// measurements (CI's web-only runs, scripts/ci/changes.sh).
+func checkServedUI(o options, t *table) error {
+	if runtime.GOOS != "linux" {
+		t.add("served UI", "needs /proc (Linux)", "", warn)
+		return nil
+	}
+	d, err := startDaemon(o.dock)
+	if err != nil {
+		return err
+	}
+	defer d.stop()
 	return d.servedUI(t)
 }
 
@@ -191,7 +207,7 @@ func startDaemon(bin string) (*daemon, error) {
 	}
 	// Every listener gets a free port, so another dock on this machine
 	// (a dev daemon, another worktree's) doesn't collide with its defaults.
-	ports, err := freePorts(6)
+	ports, err := freePorts(7)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +240,10 @@ stats_listen = "127.0.0.1:%d"
 # (BenchmarkScanFindingsWrite, BenchmarkListImages).
 [scan]
 quiet_seconds = 3600
-`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), ports[3], filepath.Join(dir, "dock-analytics"), ports[4], ports[5])
+
+[status]
+listen = "127.0.0.1:%d"
+`, data, api, internal, public, filepath.Join(data, "caddy-admin.sock"), ports[3], filepath.Join(dir, "dock-analytics"), ports[4], ports[5], ports[6])
 	if err := os.WriteFile(filepath.Join(dir, "dock-analytics"), []byte("fake"), 0o755); err != nil {
 		return nil, err
 	}
