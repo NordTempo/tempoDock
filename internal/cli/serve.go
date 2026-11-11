@@ -144,9 +144,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}
-	if srv := ingestServer(cfg, in); srv != nil {
-		servers = append(servers, srv)
-	}
+	servers = append(servers, ingestServers(cfg, in)...)
 	if cfg.Analytics.StatsListen != "" {
 		// Sites' public dashboards, through Caddy (ADR 0037): nothing but
 		// them on this listener.

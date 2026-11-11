@@ -215,12 +215,12 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	internal := &http.Server{Addr: cfg.InternalListen, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { errc <- internal.ListenAndServe() }()
-	// Analytics events (ADR 0037). Apps are served either way.
-	ingest := ingestServer(cfg, in)
-	if ingest != nil {
+	// Analytics events (ADR 0037) and spans. Apps are served either way.
+	ingest := ingestServers(cfg, in)
+	for _, srv := range ingest {
 		go func() {
-			if err := ingest.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Error("analytics ingest: can't listen; this server's sites go uncounted", "addr", cfg.Analytics.IngestListen, "err", err)
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("an ingest can't listen; this server's analytics or spans go uncollected", "addr", srv.Addr, "err", err)
 			}
 		}()
 	}
@@ -238,8 +238,8 @@ func runNode(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if serr := internal.Shutdown(shutdownCtx); serr != nil && err == nil {
 		err = serr
 	}
-	if ingest != nil {
-		_ = ingest.Shutdown(shutdownCtx)
+	for _, srv := range ingest {
+		_ = srv.Shutdown(shutdownCtx)
 	}
 	if errors.Is(err, http.ErrServerClosed) {
 		err = nil

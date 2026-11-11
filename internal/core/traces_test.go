@@ -1,9 +1,11 @@
 package core
 
 import (
+	"encoding/json/v2"
 	"testing"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 )
@@ -101,4 +103,55 @@ func TestTraceStoreFollowsTheAnalyticsServer(t *testing.T) {
 	waitStoreStarted(t, p.c, p.c.localName())
 	waitTraceStore(t, p.c, p.c.localName())
 	eventually(t, "the trace store off homelab", func() bool { return lab.TraceStoreSpec() == nil })
+}
+
+// spanLine is a spooled span of environment env, as the trace ingest writes
+// it.
+func spanLine(t *testing.T, env int64, id byte) []byte {
+	t.Helper()
+	b, err := json.Marshal(analytics.Span{Org: 1, Project: 1, Env: env, Service: 1, Release: 1, Trace: analytics.TraceID{15: id}, ID: analytics.SpanID(id), Start: now().UnixMicro(), Name: "GET /"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// While tracing is on every server's ingest has the trace key, and its
+// spans spool goes to the trace store, only for the environments on that
+// server; off, the key goes.
+func TestSpansReachTheTraceStore(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{})
+	envs, err := h.store.ListServerEnvironmentIDs(h.ctx, h.c.localID)
+	if err != nil || len(envs) != 1 {
+		t.Fatalf("environments on the server = %v, %v", envs, err)
+	}
+	// Spans wait in the spool before tracing is even on.
+	h.rt.AppendSpans(spanLine(t, envs[0], 1), spanLine(t, envs[0]+100, 2))
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) == 32 })
+	eventually(t, "the placed span in the trace store", func() bool {
+		ts := h.rt.TraceStore()
+		return ts != nil && len(ts.Spans()) == 1 && h.rt.Acked(node.SpoolSpans) == 2
+	})
+	if sp := h.rt.TraceStore().Spans()[0]; sp.Env != envs[0] || sp.ID != 1 {
+		t.Errorf("the trace store has %+v", sp)
+	}
+	// Live: an append reaches it without anything polling; a restart
+	// resumes from the trace store's cursor.
+	h.rt.AppendSpans(spanLine(t, envs[0], 3))
+	eventually(t, "a live span", func() bool { return len(h.rt.TraceStore().Spans()) == 2 })
+	h.restart()
+	h.rt.AppendSpans(spanLine(t, envs[0], 4))
+	eventually(t, "a span after a restart, nothing twice", func() bool {
+		ts := h.rt.TraceStore()
+		return ts != nil && len(ts.Spans()) == 3
+	})
+
+	if _, err := h.c.DisableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the key gone from the server", func() bool { return h.rt.TraceKey() == nil })
 }

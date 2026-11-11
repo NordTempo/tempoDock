@@ -1073,6 +1073,9 @@ const (
 	// SpoolReplay holds session replay chunks (phase A3), apart from the
 	// events and capped on its own, so a full spool costs replays first.
 	SpoolReplay Spool = "replay"
+	// SpoolSpans holds spans from the trace ingest (analytics.Span JSON
+	// lines), for the trace store, capped on its own.
+	SpoolSpans Spool = "spans"
 )
 
 // SpoolBatchEvents caps a SpoolBatch.
@@ -1086,6 +1089,9 @@ type AnalyticsConfig struct {
 	// ingest. A site missing here has none; nil keeps the rules the
 	// server has (the control plane couldn't read them).
 	Sites map[int64]SiteRules
+	// TraceKey checks the service tokens of the trace ingest while
+	// tracing is on; nil while it is off, and the ingest refuses spans.
+	TraceKey []byte
 }
 
 // SiteRules are what a site's ingest leaves out: paths (* matches any

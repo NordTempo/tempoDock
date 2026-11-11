@@ -14,6 +14,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
 	"github.com/NordTempo/tempoDock/internal/analytics/spool"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
 // Store runs the analytics store's container (docker.AnalyticsStore).
@@ -28,9 +29,15 @@ type Store interface {
 // (the fake runtime).
 type Collector struct {
 	Spool *spool.Spool
-	// Replay is the replay spool (node.SpoolReplay).
+	// Replay is the replay spool (node.SpoolReplay), and Spans the spans
+	// spool (node.SpoolSpans) the trace ingest fills; nil where there is
+	// none.
 	Replay *spool.Spool
-	Salts  *ingest.Salts
+	Spans  *spool.Spool
+	// TraceKey is the key the trace ingest checks tokens with;
+	// SetAnalytics replaces it.
+	TraceKey *traces.Key
+	Salts    *ingest.Salts
 	// Rules are the sites' rules the ingest applies; SetAnalytics
 	// replaces them.
 	Rules *ingest.Rules
@@ -56,6 +63,9 @@ func (c *Collector) SetAnalytics(_ context.Context, cfg node.AnalyticsConfig) er
 	// only keeps the old rules.
 	if err := c.Salts.Set(cfg.Salts, now()); err != nil {
 		return err
+	}
+	if c.TraceKey != nil {
+		c.TraceKey.Set(cfg.TraceKey)
 	}
 	if c.Rules == nil || cfg.Sites == nil {
 		return nil
@@ -131,6 +141,10 @@ func (c *Collector) spool(which node.Spool) (*spool.Spool, error) {
 	case node.SpoolReplay:
 		if c.Replay != nil {
 			return c.Replay, nil
+		}
+	case node.SpoolSpans:
+		if c.Spans != nil {
+			return c.Spans, nil
 		}
 	}
 	return nil, fmt.Errorf("this server has no %q spool", which)

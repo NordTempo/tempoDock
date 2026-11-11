@@ -840,6 +840,9 @@ type setAnalyticsRequest struct {
 	Salts map[int64][]byte `json:"salts"`
 	// Sites null keeps the server's rules; {} clears them.
 	Sites map[int64]wireSiteRules `json:"sites"`
+	// TraceKey is the trace ingest's key while tracing is on (protocol
+	// 25); an older node has no trace ingest and ignores it.
+	TraceKey []byte `json:"trace_key,omitempty"`
 }
 
 // wireSiteRules is node.SiteRules.

@@ -189,7 +189,7 @@ the analytics ingest and spool (`BenchmarkIngestEvent`,
 chunk, `BenchmarkIngestReplayMax` 3-10 KB for a full 384 KB one: bodies
 and lines come from a pool of their own) and the
 forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`), and
-masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`), a deploy diagnosis's rules (`BenchmarkDiagnoseRules`, ~20 µs), and image scanning's hook on every build, deploy, wake and move (`BenchmarkScanBusy`, 47 ns, no allocation), a match's write (`BenchmarkScanFindingsWrite`) and the Images page (`BenchmarkListImages`, 0.18 ms for 180 live releases; `BenchmarkListImagesIgnored`, 0.45 ms with 20 ignores in force). Use
+masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`), a deploy diagnosis's rules (`BenchmarkDiagnoseRules`, ~20 µs), and image scanning's hook on every build, deploy, wake and move (`BenchmarkScanBusy`, 47 ns, no allocation), a match's write (`BenchmarkScanFindingsWrite`) and the Images page (`BenchmarkListImages`, 0.18 ms for 180 live releases; `BenchmarkListImagesIgnored`, 0.45 ms with 20 ignores in force), and the trace ingest (`BenchmarkIngestProto512`, an SDK's batch of 512 spans with their attributes: about 3 µs and 28 allocations a span, token, decoding, caps and masking included). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.
@@ -324,8 +324,9 @@ end) are not listed.
 | Session recorder flush (visitor's browser) | `web/src/recorder/recorder.ts` (`/_dock/a/r.js`) | 5 s | a sampled page load of a site that records is open (ADR 0037) | one POST of the recorded chunk, when there is one |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
-| Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events or replay chunks wait to go to the control plane (ADR 0037); each spool has its own tail | one timer; then one spool read of up to 1,000 events |
+| Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events, replay chunks or spans wait to go to the control plane (ADR 0037); each spool has its own tail | one timer; then one spool read of up to 1,000 events |
 | Analytics forwarder retry | `internal/core/analytics.go` | 1 s, doubling to 30 s | the store doesn't answer or a write fails | one cursor request to the store |
+| Spans forwarder retry | `internal/core/traces_forward.go` | 1 s, doubling to 30 s | tracing is on and the trace store doesn't answer or a write fails | one cursor request to the trace store; per batch one indexed query (the server's environments) and one write |
 | Analytics alerts | `internal/core/analytics_alerts.go` | with the statistics tick; the traffic check once an hour | analytics is on | in memory: spikes that calmed down, new-error alerts a day old; once an hour one store query for every site's page views in an hour and the 7 days before. Errors are counted per forwarded batch (`BenchmarkAnalyticsWritten`, 52 µs for 1,000 events with 10 errors; a batch without errors is one `bytes.Contains`) |
 | Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server; then the store's daily retention (one delete per site) and location database check (a download on a month's first day) |
 | Analytics store start | `internal/core/analytics_store.go` | 250 ms, doubling to 5 s, for at most 2 minutes | a start or move of the store waits for it to answer | one health request to the store |
@@ -417,6 +418,18 @@ end) are not listed.
   most 50 fingerprints per service and 2,000 in all, dropping and
   counting past them; a tick opens at most 10 issues per service, and a
   service has at most 1,000.
+- The trace ingest takes OTLP/HTTP from apps on every server, so it is
+  capped (`internal/traces`): a body is at most 2 MB as sent and 4 MB
+  unpacked (413 past it), at most two are read and decoded at once (503
+  with `Retry-After` past that, so at most about 12 MB in all), and each
+  service may send 5,000 spans a second with a burst of twice that.
+  Past the rate, spans are rejected with OTLP's partial success, which
+  SDKs don't send again, so an app never waits and nothing queues. Each
+  span is cut on the way in: a name of 256 bytes, 64 attributes in 4 KB,
+  values of 1 KB (2 KB for URLs and statements, 8 KB for an exception's
+  stack), 16 events in 12 KB. Kept spans go to the spans spool, capped
+  on its own (`[traces] spool_max_mb`, 128), so spans never push out
+  page views.
 - Deploy diagnoses ([ADR 0071](decisions/0071-deploy-diagnosis.md))
   are captured only when a release fails, or once per crash loop or
   unhealthy alert (in a goroutine of its own, never the alert engine's):

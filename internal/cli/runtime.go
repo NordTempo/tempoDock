@@ -28,6 +28,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node/stats"
 	"github.com/NordTempo/tempoDock/internal/node/traffic"
 	"github.com/NordTempo/tempoDock/internal/node/uptime"
+	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
 // newRuntime builds this server's node runtime from Docker, BuildKit and
@@ -40,18 +41,18 @@ import (
 // of the API, CLI and UI; DOCK_FAKE_DIAL=host:port sends its database
 // connections there (a local Postgres, MySQL or Redis), so the Data panel
 // works too.
-func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog.Logger) (node.Runtime, *caddy.Proxy, *ingest.Ingest, error) {
+func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog.Logger) (node.Runtime, *caddy.Proxy, ingests, error) {
 	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
 		rt := fake.New()
 		rt.PassHealthAfter(time.Second) // health checks pass, as on Docker
 		if addr := os.Getenv("DOCK_FAKE_DIAL"); addr != "" {
 			rt.DialTo(addr)
 		}
-		return rt, nil, nil, nil
+		return rt, nil, ingests{}, nil
 	}
 	containers, err := docker.New(cfg.Network.Pool)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, ingests{}, err
 	}
 	containers.DataDir = cfg.DataDir
 	// Without the probe apps run as before, only without ongoing health
@@ -90,22 +91,22 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	}
 	proxy, err := caddy.New(opts)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, ingests{}, err
 	}
 	owner, err := filepath.Abs(cfg.DataDir)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, ingests{}, err
 	}
 	var builder node.Builder = notBuilder{}
 	if cfg.BuildKit.Enabled {
 		cli, err := client.New(client.FromEnv)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("docker client: %w", err)
+			return nil, nil, ingests{}, fmt.Errorf("docker client: %w", err)
 		}
 		// BuildKit gets its own network from the pool, so the app firewall
 		// covers build steps like any app.
 		if err := containers.EnsureNetwork(ctx, buildkitNetwork, node.Labels{}); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, ingests{}, err
 		}
 		b := build.New(cli, cfg.BuildKit, filepath.Join(cfg.DataDir, "builds", "work"))
 		b.Network = buildkitNetwork
@@ -119,7 +120,7 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	}
 	coll, in, err := newCollector(cfg, docker.NewAnalyticsStore(containers, cfg.Analytics.StorePort, owner), log)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, ingests{}, err
 	}
 	coll.Traces = docker.NewTraceStore(containers, cfg.Traces.StorePort, owner)
 	st := stats.New(stats.Options{Disks: []string{dockerRoot(), cfg.DataDir}, Container: containers.MemoryOwner})
@@ -127,45 +128,72 @@ func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog
 	return node.Local{Containers: containers, Builder: builder, Proxy: proxy, Stats: st, Traffic: counter, Tunnel: tunnel, Analytics: coll, Prober: uptime.New(false), Scanner: containers}, proxy, in, nil
 }
 
-// ingestServer serves the analytics ingest on [analytics] ingest_listen,
-// or is nil when there is none (the fake runtime, or the setting empty).
-// Its own listener: Caddy forwards public requests here, so nothing else
-// may answer on it.
-func ingestServer(cfg config.Config, in *ingest.Ingest) *http.Server {
-	if in == nil || cfg.Analytics.IngestListen == "" {
-		return nil
-	}
-	return &http.Server{
-		Addr: cfg.Analytics.IngestListen, Handler: in,
-		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second,
-		MaxHeaderBytes: 16 << 10,
-	}
+// ingests are a server's ingests: Dock Analytics' events and the trace
+// ingest's spans. Both nil on the fake runtime.
+type ingests struct {
+	analytics *ingest.Ingest
+	traces    *traces.Ingest
 }
 
-// newCollector opens this server's analytics spool and salts under the
-// data dir (ADR 0037), for the runtime and the ingest that fills them.
-func newCollector(cfg config.Config, store collect.Store, log *slog.Logger) (*collect.Collector, *ingest.Ingest, error) {
+// ingestServers are the ingests' listeners: the analytics ingest on
+// [analytics] ingest_listen and the trace ingest on [traces]
+// ingest_listen, each left out when it or its setting is empty. Their own
+// listeners: Caddy forwards public requests to the first and containers'
+// to the second, so nothing else may answer on them.
+func ingestServers(cfg config.Config, in ingests) []*http.Server {
+	var out []*http.Server
+	if in.analytics != nil && cfg.Analytics.IngestListen != "" {
+		out = append(out, &http.Server{
+			Addr: cfg.Analytics.IngestListen, Handler: in.analytics,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second,
+			MaxHeaderBytes: 16 << 10,
+		})
+	}
+	if in.traces != nil && cfg.Traces.IngestListen != "" {
+		out = append(out, &http.Server{
+			Addr: cfg.Traces.IngestListen, Handler: in.traces,
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 10 * time.Second,
+			MaxHeaderBytes: 16 << 10,
+		})
+	}
+	return out
+}
+
+// newCollector opens this server's analytics spools and salts (ADR 0037)
+// and its spans spool under the data dir, for the runtime and the ingests
+// that fill them.
+func newCollector(cfg config.Config, store collect.Store, log *slog.Logger) (*collect.Collector, ingests, error) {
 	dir := filepath.Join(cfg.DataDir, "analytics")
 	sp, err := spool.Open(filepath.Join(dir, "spool"), spool.Options{MaxBytes: int64(cfg.Analytics.SpoolMaxMB) << 20})
 	if err != nil {
-		return nil, nil, fmt.Errorf("analytics spool: %w", err)
+		return nil, ingests{}, fmt.Errorf("analytics spool: %w", err)
 	}
 	// Replays have their own spool, a quarter of the size: a long outage
 	// fills it first and costs replays, never page views.
 	replay, err := spool.Open(filepath.Join(dir, "replay"), spool.Options{MaxBytes: int64(cfg.Analytics.SpoolMaxMB) << 20 / 4, MaxLine: analytics.MaxReplayLine})
 	if err != nil {
-		return nil, nil, fmt.Errorf("analytics replay spool: %w", err)
+		return nil, ingests{}, fmt.Errorf("analytics replay spool: %w", err)
 	}
 	salts, err := ingest.OpenSalts(filepath.Join(dir, "salts.json"))
 	if err != nil {
-		return nil, nil, fmt.Errorf("analytics salts: %w", err)
+		return nil, ingests{}, fmt.Errorf("analytics salts: %w", err)
 	}
 	rules, err := ingest.OpenRules(filepath.Join(dir, "rules.json"))
 	if err != nil {
-		return nil, nil, fmt.Errorf("analytics site rules: %w", err)
+		return nil, ingests{}, fmt.Errorf("analytics site rules: %w", err)
 	}
-	return &collect.Collector{Spool: sp, Replay: replay, Salts: salts, Rules: rules, Store: store},
-		&ingest.Ingest{Spool: sp, Replay: replay, Salts: salts, Rules: rules, Log: log.With("component", "analytics")}, nil
+	// Spans have their own spool and cap (tracing over OTLP): a flood of
+	// spans can never push out page views.
+	spans, err := spool.Open(filepath.Join(cfg.DataDir, "traces", "spool"), spool.Options{MaxBytes: int64(cfg.Traces.SpoolMaxMB) << 20, MaxLine: analytics.MaxSpanBytes})
+	if err != nil {
+		return nil, ingests{}, fmt.Errorf("spans spool: %w", err)
+	}
+	key := &traces.Key{}
+	return &collect.Collector{Spool: sp, Replay: replay, Spans: spans, TraceKey: key, Salts: salts, Rules: rules, Store: store},
+		ingests{
+			analytics: &ingest.Ingest{Spool: sp, Replay: replay, Salts: salts, Rules: rules, Log: log.With("component", "analytics")},
+			traces:    &traces.Ingest{Spool: spans, Key: key, Log: log.With("component", "traces")},
+		}, nil
 }
 
 // dockerRoot asks Docker once where it keeps images, volumes and logs, for
