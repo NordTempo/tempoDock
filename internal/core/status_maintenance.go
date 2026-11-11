@@ -279,6 +279,9 @@ func (c *Core) ScheduleMaintenance(ctx context.Context, a Actor, slug string, re
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
+	if err := c.checkMaintenanceLocks(ctx, a, p, ims, "scheduling maintenance"); err != nil {
+		return apitypes.StatusIncident{}, err
+	}
 	if msg == "" {
 		msg = "Scheduled maintenance."
 	}
@@ -306,6 +309,48 @@ func (c *Core) ScheduleMaintenance(ctx context.Context, a Actor, slug string, re
 	c.statusUpdatePosted(ctx, p, row, first)
 	c.maintenanceTick(ctx, t)
 	return c.GetIncident(ctx, a, row.PublicID)
+}
+
+// checkMaintenanceLocks refuses a change that makes a window mute alerts
+// (scheduling, starting, moving or extending it, or the components it
+// covers) when a component of ims is built from a locked environment
+// (ADR 0044): a running window mutes that environment's alerts and uptime
+// checks, its safety net. A token gets environment_locked and an access
+// request that makes the change once approved; users are unaffected.
+func (c *Core) checkMaintenanceLocks(ctx context.Context, a Actor, p store.StatusPage, ims []statusImpact, action string) error {
+	if a.Kind != "token" && !a.askFirst && !a.checkOnly {
+		return nil
+	}
+	covered := make(map[int64]bool, len(ims))
+	for _, im := range ims {
+		covered[im.component] = true
+	}
+	srcs, err := c.store.ListStatusPageSources(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+	seen := map[int64]bool{}
+	for _, s := range srcs {
+		if !covered[s.ComponentID] || seen[s.EnvironmentID] {
+			continue
+		}
+		seen[s.EnvironmentID] = true
+		e, err := c.store.GetEnvironment(ctx, s.EnvironmentID)
+		if err != nil {
+			return err
+		}
+		if !a.lockedOut(e) {
+			continue
+		}
+		proj, err := c.store.GetProject(ctx, s.ProjectID)
+		if err != nil {
+			return err
+		}
+		if err := a.checkLock(envScope{proj, e}, action); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // maintImpacts are the components a window names, each under maintenance.

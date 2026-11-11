@@ -149,3 +149,43 @@ func TestStatusMaintenanceStartsNow(t *testing.T) {
 		t.Error("the window's service isn't muted")
 	}
 }
+
+// A running window mutes its environments' alerts, so in a locked one a
+// token needs the lock lifted to schedule, start or extend it (ADR 0044):
+// it gets environment_locked, which files an access request. Users and
+// windows over other components are unaffected.
+func TestStatusMaintenanceLocked(t *testing.T) {
+	h, _, _ := incidentPage(t)
+	if _, err := h.c.LockEnvironment(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.LockEnvironmentRequest{Reason: "live"}); err != nil {
+		t.Fatal(err)
+	}
+	agent := Actor{Kind: "token", OrgID: 1, Name: "agent", Scope: apitypes.ScopeDeploy}
+	t0 := time.Now().UTC()
+	window := func(component string) apitypes.ScheduleMaintenanceRequest {
+		return apitypes.ScheduleMaintenanceRequest{Title: "Upgrade", Components: []string{component}, StartsAt: t0.Add(time.Hour), EndsAt: t0.Add(2 * time.Hour)}
+	}
+	if _, err := h.c.ScheduleMaintenance(h.ctx, agent, "acme", window("API")); CodeOf(err) != apitypes.CodeEnvironmentLocked {
+		t.Errorf("a token scheduled maintenance over a locked environment: %v", err)
+	}
+	jobs, err := h.c.ScheduleMaintenance(h.ctx, agent, "acme", window("Jobs"))
+	if err != nil {
+		t.Fatalf("a window over a manual component: %v", err)
+	}
+	if _, err := h.c.UpdateIncident(h.ctx, agent, jobs.ID, apitypes.UpdateIncidentRequest{Components: &[]apitypes.StatusImpact{{Component: "API", Impact: apitypes.StatusMaintenance}}}); CodeOf(err) != apitypes.CodeEnvironmentLocked {
+		t.Errorf("a token moved a window onto a locked environment: %v", err)
+	}
+	api, err := h.c.ScheduleMaintenance(h.ctx, h.user("dev@example.com", apitypes.ScopeDeploy), "acme", window("API"))
+	if err != nil {
+		t.Fatalf("a user's window: %v", err)
+	}
+	later := t0.Add(5 * time.Hour)
+	if _, err := h.c.UpdateIncident(h.ctx, agent, api.ID, apitypes.UpdateIncidentRequest{EndsAt: &later}); CodeOf(err) != apitypes.CodeEnvironmentLocked {
+		t.Errorf("a token extended a window: %v", err)
+	}
+	if _, err := h.c.PostIncidentUpdate(h.ctx, agent, api.ID, apitypes.PostIncidentUpdateRequest{State: apitypes.MaintenanceInProgress, Message: "Starting."}); CodeOf(err) != apitypes.CodeEnvironmentLocked {
+		t.Errorf("a token started a window: %v", err)
+	}
+	if _, err := h.c.PostIncidentUpdate(h.ctx, agent, api.ID, apitypes.PostIncidentUpdateRequest{State: apitypes.MaintenanceCancelled, Message: "Called off."}); err != nil {
+		t.Errorf("a token cancelled a window: %v", err)
+	}
+}
