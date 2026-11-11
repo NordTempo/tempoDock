@@ -19,7 +19,7 @@ import {
 } from "./api";
 import { ChangesView } from "./ChangesView";
 import { tableName } from "./cells";
-import { engines } from "./engines";
+import { type DataEngine, engines } from "./engines";
 import { Act, ErrorText } from "./kit";
 import { SchemaView } from "./SchemaView";
 import { StatusView, Why } from "./StatusView";
@@ -80,13 +80,20 @@ export const atLeast = (level: DataLevel, wanted: DataLevel) =>
 /** What the caller may do, after "you can" in the panel's bar. */
 // What the caller may do, in plain words for the panel's header (the
 // database roles behind it are in Why).
-const canText: Record<DataLevel, string> = {
-  none: "You can't open this database",
-  schema: "You can see tables and columns, not rows",
-  read: "You can read rows",
-  propose: "You can read rows and propose changes",
-  write: "You can read and change rows",
-};
+/** What a level allows, in the engine's words (Redis has keys, not rows). */
+function canText(level: DataLevel, engine: DataEngine) {
+  const rows = engine === "redis" ? "keys" : "rows";
+  return {
+    none: "You can't open this database",
+    schema:
+      engine === "redis"
+        ? "You can see the databases and their key counts, not keys"
+        : "You can see tables and columns, not rows",
+    read: `You can read ${rows}`,
+    propose: `You can read ${rows} and propose changes`,
+    write: `You can read and change ${rows}`,
+  }[level];
+}
 
 /**
  * The database panel (style G) inside a DataSourceContext: a Dock
@@ -219,10 +226,11 @@ export function DataPanel({
             </span>
           )}
           <span className="text-(--g-text)">
-            {canText[access.level]}
+            {canText(access.level, info.data.engine)}
             {access.approve && ", and approve changes others propose"}
           </span>
-          {access.sensitive === "masked" && "; sensitive columns are masked"}{" "}
+          {access.sensitive === "masked" &&
+            `; sensitive ${info.data.engine === "redis" ? "keys" : "columns"} are masked`}{" "}
           <WhyLink info={info.data} />
           {info.data.used_by?.length
             ? ` · used by ${info.data.used_by.join(", ")}`
@@ -260,6 +268,7 @@ export function DataPanel({
           fallback={<p className="p-5 text-(--g-mut)">Loading Health</p>}
         >
           <HealthView
+            engine={info.data.engine}
             access={access}
             view={view.insight ?? "overview"}
             onView={(insight) =>

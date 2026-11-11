@@ -16,7 +16,7 @@ import (
 // Database insights (ADR 0069): the engine reads statistics as
 // the monitor role; the Panel decides which views the caller may see
 // (overview, tables and indexes at level schema; queries and sessions,
-// which carry statement texts, at read), redacts texts for callers who
+// which carry statement texts, and Redis' key prefixes at read), redacts texts for callers who
 // see sensitive columns masked, audits looks at texts like browsing, and
 // creates the monitor role on first use for databases set up before it
 // existed. Nothing is stored or cached: concurrent identical reads of one
@@ -27,7 +27,7 @@ import (
 // Unavailable with the level they need, and asking only for those is
 // forbidden.
 func (p *Panel[D]) Insights(ctx context.Context, a Actor, db *Database[D], req apitypes.DataInsightsRequest) (apitypes.DataInsights, error) {
-	req, denied, err := insightsRequest(db.Perm, req)
+	req, denied, err := insightsRequest(db.Engine, db.Perm, req)
 	if err != nil {
 		return apitypes.DataInsights{}, err
 	}
@@ -58,7 +58,8 @@ func (p *Panel[D]) Insights(ctx context.Context, a Actor, db *Database[D], req a
 	for i := range ins.Queries {
 		ins.Queries[i].Text = p.insightText(db.Engine, ins.Queries[i].Text, masked)
 	}
-	if slices.Contains(req.Views, apitypes.InsightQueries) || slices.Contains(req.Views, apitypes.InsightSessions) {
+	// Statement texts and key names are data: looking is audited.
+	if slices.ContainsFunc(req.Views, func(v apitypes.DataInsightView) bool { return v.Level() == apitypes.LevelRead }) {
 		if p.browse.due(browseKey{apitypes.AuditDataInsights, ActorKey(a), db.ID, ""}, time.Now()) {
 			p.audit(ctx, a, db, apitypes.AuditDataInsights, "looked at the database's sessions and queries", nil)
 		}
@@ -66,9 +67,10 @@ func (p *Panel[D]) Insights(ctx context.Context, a Actor, db *Database[D], req a
 	return ins, nil
 }
 
-// insightsRequest checks a request and splits its views into those the
-// caller may see (req.Views, in the panel's order) and those they may not.
-func insightsRequest(perm apitypes.DataPermission, req apitypes.DataInsightsRequest) (apitypes.DataInsightsRequest, []apitypes.DataInsightView, error) {
+// insightsRequest checks a request against the engine's views and splits
+// them into those the caller may see (req.Views, in the panel's order)
+// and those they may not.
+func insightsRequest(engine apitypes.DataEngine, perm apitypes.DataPermission, req apitypes.DataInsightsRequest) (apitypes.DataInsightsRequest, []apitypes.DataInsightView, error) {
 	switch {
 	case req.Limit < 0 || req.Limit > apitypes.DataInsightQueriesMaxLimit:
 		return req, nil, invalid("limit must be between 1 and %d", apitypes.DataInsightQueriesMaxLimit)
@@ -82,14 +84,19 @@ func insightsRequest(perm apitypes.DataPermission, req apitypes.DataInsightsRequ
 	default:
 		return req, nil, invalid("order must be total, mean, calls or rows")
 	}
+	all := apitypes.InsightViewsOf(engine)
 	for _, v := range req.Views {
-		if !slices.Contains(apitypes.DataInsightViews, v) {
-			return req, nil, invalid("unknown view %q; the views are overview, queries, sessions, tables and indexes", v)
+		if !slices.Contains(all, v) {
+			names := make([]string, len(all))
+			for i, x := range all {
+				names[i] = string(x)
+			}
+			return req, nil, invalid("%s has no view %q; its views are %s", engine, v, strings.Join(names, ", "))
 		}
 	}
 	asked := len(req.Views) > 0
 	var views, denied []apitypes.DataInsightView
-	for _, v := range apitypes.DataInsightViews {
+	for _, v := range all {
 		switch {
 		case asked && !slices.Contains(req.Views, v):
 		case perm.Level.Includes(v.Level()):

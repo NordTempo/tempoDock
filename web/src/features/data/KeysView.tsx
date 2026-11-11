@@ -302,7 +302,8 @@ export default function KeysView({
             </Scroll>
             <div className="flex items-center gap-4 border-t border-(--g-line) px-3 py-2 text-xs text-(--g-mut)">
               <span>
-                {keys.length.toLocaleString()} keys
+                {keys.length.toLocaleString()}{" "}
+                {keys.length === 1 ? "key" : "keys"}
                 {pages.hasNextPage ? " so far" : ""} · sizes sampled
               </span>
               <ErrorText error={pages.error} />
@@ -510,108 +511,115 @@ function KeyPane({
             </p>
           )}
           {cols.length > 0 && (
-            <Scroll>
-              <table className="g-table">
-                <thead>
-                  <tr>
-                    {cols.map((c) => (
-                      <th
-                        key={c.name}
-                        className={c.name === "#" ? "w-12 text-right" : ""}
-                      >
-                        {c.name}
-                      </th>
-                    ))}
-                    {editable && <th className="w-16" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => {
-                    const cells = r as DataCell[];
-                    const row = editable
-                      ? rowChanges(first.type, name, db, cells)
-                      : {};
-                    const at = staged ? stagedFor(staged, row) : -1;
-                    const change = staged?.[at];
-                    const removed = change && change.value === undefined;
-                    return (
-                      // Value rows have no identity but their place.
-                      <tr
-                        key={`${i}`}
-                        className={removed ? "text-(--g-dim) line-through" : ""}
-                      >
-                        {cells.map((cell, j) => (
-                          <td
-                            key={cols[j]?.name ?? j}
-                            className={`max-w-[520px] truncate font-mono text-xs ${cols[j]?.name === "#" ? "text-right text-(--g-dim)" : ""}`}
-                            title={typeof cell === "string" ? cell : undefined}
-                          >
-                            {editingRow === i &&
-                            j === row.column &&
-                            row.edit &&
-                            row.current !== undefined ? (
-                              <EditCell
-                                value={row.current}
-                                onStage={(v) => {
-                                  if (v !== row.current && row.edit)
-                                    onStage(row.edit(v));
-                                  setEditingRow(undefined);
-                                }}
-                                onCancel={() => setEditingRow(undefined)}
-                              />
-                            ) : change && !removed && j === row.column ? (
-                              <span className="text-(--g-warn)">
-                                {change.value}
-                              </span>
-                            ) : (
-                              cellText(cell, cols[j]?.type_name ?? "")
-                            )}
-                          </td>
-                        ))}
-                        {editable && (
-                          <td className="text-right text-xs whitespace-nowrap">
-                            {change ? (
-                              <button
-                                type="button"
-                                className="text-(--g-mut) hover:text-(--g-text)"
-                                onClick={() => onUnstage(at)}
-                              >
-                                Undo
-                              </button>
-                            ) : (
-                              <>
-                                {row.edit && row.current !== undefined && (
-                                  <button
-                                    type="button"
-                                    className="text-(--g-mut) hover:text-(--g-text)"
-                                    onClick={() => setEditingRow(i)}
-                                  >
-                                    Edit
-                                  </button>
-                                )}
-                                {row.remove && (
-                                  <button
-                                    type="button"
-                                    aria-label="Remove"
-                                    title="Remove"
-                                    className="ml-2 text-(--g-mut) hover:text-(--g-fail)"
-                                    onClick={() =>
-                                      row.remove && onStage(row.remove())
-                                    }
-                                  >
-                                    ×
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </Scroll>
+            // The drawer scrolls as a whole: the table never shrinks.
+            <div className="shrink-0">
+              <Scroll>
+                <table className="g-table">
+                  <thead>
+                    <tr>
+                      {cols.map((c) => (
+                        <th
+                          key={c.name}
+                          className={c.name === "#" ? "w-12 text-right" : ""}
+                        >
+                          {c.name}
+                        </th>
+                      ))}
+                      {editable && <th className="w-16" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => {
+                      const cells = r as DataCell[];
+                      const row = editable
+                        ? rowChanges(first.type, name, db, cells)
+                        : {};
+                      const at = staged ? stagedFor(staged, row) : -1;
+                      const change = staged?.[at];
+                      const removed = change && change.value === undefined;
+                      return (
+                        // Value rows have no identity but their place.
+                        <tr
+                          key={`${i}`}
+                          className={
+                            removed ? "text-(--g-dim) line-through" : ""
+                          }
+                        >
+                          {cells.map((cell, j) => (
+                            <td
+                              key={cols[j]?.name ?? j}
+                              className={`max-w-[520px] truncate font-mono text-xs ${cols[j]?.name === "#" ? "text-right text-(--g-dim)" : ""}`}
+                              title={
+                                typeof cell === "string" ? cell : undefined
+                              }
+                            >
+                              {editingRow === i &&
+                              j === row.column &&
+                              row.edit &&
+                              row.current !== undefined ? (
+                                <EditCell
+                                  value={row.current}
+                                  onStage={(v) => {
+                                    if (v !== row.current && row.edit)
+                                      onStage(row.edit(v));
+                                    setEditingRow(undefined);
+                                  }}
+                                  onCancel={() => setEditingRow(undefined)}
+                                />
+                              ) : change && !removed && j === row.column ? (
+                                <span className="text-(--g-warn)">
+                                  {change.value}
+                                </span>
+                              ) : (
+                                cellText(cell, cols[j]?.type_name ?? "")
+                              )}
+                            </td>
+                          ))}
+                          {editable && (
+                            <td className="text-right text-xs whitespace-nowrap">
+                              {change ? (
+                                <button
+                                  type="button"
+                                  className="text-(--g-mut) hover:text-(--g-text)"
+                                  onClick={() => onUnstage(at)}
+                                >
+                                  Undo
+                                </button>
+                              ) : (
+                                <>
+                                  {row.edit && row.current !== undefined && (
+                                    <button
+                                      type="button"
+                                      className="text-(--g-mut) hover:text-(--g-text)"
+                                      onClick={() => setEditingRow(i)}
+                                    >
+                                      Edit
+                                    </button>
+                                  )}
+                                  {row.remove && (
+                                    <button
+                                      type="button"
+                                      aria-label="Remove"
+                                      title="Remove"
+                                      className="ml-2 text-(--g-mut) hover:text-(--g-fail)"
+                                      onClick={() =>
+                                        row.remove && onStage(row.remove())
+                                      }
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </Scroll>
+            </div>
           )}
           {editable && first && (
             <AddRow type={first.type} db={db} name={name} onStage={onStage} />

@@ -71,8 +71,11 @@ func TestInsightsViewsAndTexts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(eng.views) != len(apitypes.DataInsightViews) {
+	if !slices.Equal(eng.views, apitypes.InsightViewsOf(apitypes.EnginePostgres)) {
 		t.Errorf("default views for a reader: %v", eng.views)
+	}
+	if _, err := p.Insights(ctx, agent, testDB(readMasked), apitypes.DataInsightsRequest{Views: []apitypes.DataInsightView{apitypes.InsightKeys}}); CodeOf(err) != apitypes.CodeValidation {
+		t.Errorf("Redis' keys view of Postgres: %v", err)
 	}
 	if s := ins.Sessions[0].Text; strings.Contains(s, "a@b.io") {
 		t.Errorf("masked caller sees a value: %s", s)

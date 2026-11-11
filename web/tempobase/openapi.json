@@ -757,7 +757,11 @@
               "transaction_id_age",
               "query_stats_dropping",
               "query_stats_off",
-              "history_long"
+              "history_long",
+              "memory_high",
+              "evictions",
+              "persistence_failing",
+              "big_key"
             ],
             "type": "string"
           },
@@ -780,7 +784,8 @@
               "queries",
               "sessions",
               "tables",
-              "indexes"
+              "indexes",
+              "keys"
             ],
             "type": "string"
           }
@@ -1015,6 +1020,15 @@
               "null"
             ]
           },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/DataKeyPrefix"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "overview": {
             "$ref": "#/components/schemas/DataOverview"
           },
@@ -1208,6 +1222,52 @@
         ],
         "type": "object"
       },
+      "DataKeyPrefix": {
+        "additionalProperties": false,
+        "properties": {
+          "biggest": {
+            "type": "string"
+          },
+          "biggest_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "db": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimated_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimated_keys": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "sampled_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sampled_keys": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "db",
+          "prefix",
+          "sampled_keys",
+          "sampled_bytes",
+          "estimated_keys",
+          "estimated_bytes",
+          "biggest",
+          "biggest_bytes"
+        ],
+        "type": "object"
+      },
       "DataKeyValue": {
         "additionalProperties": false,
         "properties": {
@@ -1307,6 +1367,25 @@
             "$ref": "#/components/schemas/DataPressure"
           },
           "deadlocks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evicted_keys": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "eviction_policy": {
+            "type": "string"
+          },
+          "keys": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ops_per_sec": {
             "format": "int64",
             "type": "integer"
           },
@@ -2272,7 +2351,8 @@
               "queries",
               "sessions",
               "tables",
-              "indexes"
+              "indexes",
+              "keys"
             ],
             "type": "string"
           }
@@ -5201,19 +5281,20 @@
             }
           },
           {
-            "description": "Views to read, comma separated; default every view you may see",
+            "description": "Views to read, comma separated (keys: Redis only; tables and indexes: SQL only); default every view the database has that you may see",
             "explode": false,
             "in": "query",
             "name": "view",
             "schema": {
-              "description": "Views to read, comma separated; default every view you may see",
+              "description": "Views to read, comma separated (keys: Redis only; tables and indexes: SQL only); default every view the database has that you may see",
               "items": {
                 "enum": [
                   "overview",
                   "queries",
                   "sessions",
                   "tables",
-                  "indexes"
+                  "indexes",
+                  "keys"
                 ],
                 "type": "string"
               },

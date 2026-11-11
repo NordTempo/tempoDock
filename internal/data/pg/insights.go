@@ -171,7 +171,8 @@ func (s dbStats) queryStats() apitypes.DataQueryStatsState {
 // Insights reads the requested views as the monitor in one READ ONLY
 // transaction, then derives the hints. A view that fails on its own (a
 // statement timeout, a lock it met) is reported in Unavailable and the
-// others still return. Views are read in DataInsightViews order.
+// others still return. Views are read in the panel's order; views
+// Postgres doesn't have (Redis' keys) are left out.
 func (e *Engine) Insights(ctx context.Context, t data.Target, c data.Call, req apitypes.DataInsightsRequest) (apitypes.DataInsights, error) {
 	out := apitypes.DataInsights{Engine: apitypes.EnginePostgres, Hints: []apitypes.DataHint{}, Unavailable: []apitypes.DataUnavailable{}}
 	want := func(v apitypes.DataInsightView) bool { return slices.Contains(req.Views, v) }
@@ -219,7 +220,7 @@ func (e *Engine) Insights(ctx context.Context, t data.Target, c data.Call, req a
 			apitypes.InsightTables:   func() error { return readTables(ctx, cn.Conn, &out) },
 			apitypes.InsightIndexes:  func() error { return readIndexes(ctx, cn.Conn, &out, &ev) },
 		}
-		for _, v := range apitypes.DataInsightViews {
+		for _, v := range apitypes.InsightViewsOf(apitypes.EnginePostgres) {
 			if err := view(v, readers[v]); err != nil {
 				return err
 			}

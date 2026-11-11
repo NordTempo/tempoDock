@@ -144,6 +144,7 @@ export type DataSession = Schemas["DataSession"];
 export type DataStatement = Schemas["DataStatement"];
 export type DataTableStats = Schemas["DataTableStats"];
 export type DataIndexStats = Schemas["DataIndexStats"];
+export type DataKeyPrefix = Schemas["DataKeyPrefix"];
 export type DataHint = Schemas["DataHint"];
 export type DataCancelRequest = Schemas["DataCancelRequest"];
 export type DataCancelResult = Schemas["DataCancelResult"];

@@ -7,7 +7,8 @@
 # the analytics store runs. DOCK_FAKE_PENDING_DOMAINS (comma-separated
 # hostnames) keeps those domains waiting for DNS. DOCK_FAKE_FINDINGS names a
 # file of vulnerability findings (JSON lines, node.Finding) every scanned
-# image has.
+# image has. DOCK_FAKE_DIAL=host:port sends database connections to a local
+# Postgres, MySQL or Redis, for the Data panel.
 data_dir = ".data"
 listen = "127.0.0.1:7070"
 internal_listen = "127.0.0.1:7071"

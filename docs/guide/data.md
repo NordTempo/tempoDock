@@ -303,6 +303,22 @@ command and deploy to get the queries view and index use (sessions, sizes
 and the overview work without it). Cancel query is `KILL QUERY`, End
 session `KILL CONNECTION`.
 
+Redis and Valkey have Overview, Commands, Clients and Keys. The overview
+is `INFO`: memory against `maxmemory` and what happens at the limit,
+evicted keys, hit rate, commands per second and keys. Commands are `INFO
+commandstats` (calls and time per command, never arguments), with each
+command's slowest call from the slow log; Redis always counts them. Clients
+are `CLIENT LIST`: a client in a `MULTI` shows as idle in a transaction, one
+blocked in `BLPOP` and the like as waiting. Keys groups a sample of each
+database's keys (about 1,000 in all, sized with `MEMORY USAGE`) by prefix
+(`user:`), scaled to the key count, with the biggest key of each; it needs
+level `read`, like browsing (`dock db storage --keys`). Hints flag memory
+near the limit, evicted keys, failing snapshots or append-only writes, and
+sampled keys over 16 MB. Redis can't stop a running command, so there is no
+Cancel; End client is `CLIENT KILL`. Reset is `CONFIG RESETSTAT` and
+`SLOWLOG RESET`; Redis keeps no time for it, so there is no "counting
+since".
+
 From a session's side pane, "Cancel query" stops its running statement
 (the app gets an error, its connection stays) and "End session" drops its
 connection and rolls back its open transaction, the usual fix for a

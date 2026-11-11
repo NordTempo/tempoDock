@@ -10,6 +10,7 @@ import { useShortcuts } from "../../shell/keys";
 import { clockSec, elapsed } from "../../ui/format";
 import { useCli, useDataSource, useInsights } from "./api";
 import { byteSize } from "./cells";
+import { type DataEngine, engines } from "./engines";
 import { Act, Btn, CopyBtn, ErrorText, Kbd, Scroll } from "./kit";
 import { ConfirmName } from "./ReviewPanel";
 import type {
@@ -17,6 +18,7 @@ import type {
   DataIndexStats,
   DataInsights,
   DataInsightView,
+  DataKeyPrefix,
   DataOverview,
   DataPermission,
   DataSession,
@@ -29,7 +31,8 @@ import type {
 // from its own statistics when the tab opens and on Refresh (R). Views
 // are the API's: an overview with what needs a look, then one dense list
 // each for queries, sessions, tables and indexes, with details on the
-// side. Nothing refreshes by itself except Follow on Sessions, a timer
+// side; Redis has commands, clients and key prefixes instead (engines.ts).
+// Nothing refreshes by itself except Follow on Sessions, a timer
 // that runs only while the tab is visible and stops after followFor.
 
 /** How often Follow refreshes the sessions, and for how long at most. */
@@ -42,8 +45,8 @@ const viewLabels: Record<DataInsightView, string> = {
   sessions: "Sessions",
   tables: "Tables",
   indexes: "Indexes",
+  keys: "Keys",
 };
-const views = Object.keys(viewLabels) as DataInsightView[];
 
 const orders: { order: DataStatementOrder; label: string }[] = [
   { order: "total", label: "total" },
@@ -53,17 +56,23 @@ const orders: { order: DataStatementOrder; label: string }[] = [
 ];
 
 export default function HealthView({
+  engine,
   access,
-  view,
+  view: asked,
   onView,
   onExplain,
 }: {
+  engine: DataEngine;
   access: DataPermission;
   view: DataInsightView;
   onView: (view: DataInsightView) => void;
   /** Open SQL in the SQL tab. */
   onExplain: (sql: string) => void;
 }) {
+  const { health: views, healthLabels } = engines[engine];
+  // A view the engine doesn't have (a link from another database) is
+  // the overview.
+  const view = views.includes(asked) ? asked : "overview";
   const [order, setOrder] = useState<DataStatementOrder>("total");
   const insights = useInsights(order);
   const [selected, setSelected] = useState<string | null>(null);
@@ -116,7 +125,7 @@ export default function HealthView({
             aria-pressed={view === v}
             onClick={() => open(v)}
           >
-            {viewLabels[v]}
+            {healthLabels?.[v] ?? viewLabels[v]}
             {!!counts?.[v] && (
               <span className="text-(--g-warn)">{counts[v]}</span>
             )}
@@ -177,6 +186,8 @@ export default function HealthView({
             />
           ) : view === "tables" ? (
             <Tables ins={ins} onOpen={open} />
+          ) : view === "keys" ? (
+            <KeyPrefixes ins={ins} />
           ) : (
             <Indexes ins={ins} />
           )}
@@ -219,6 +230,7 @@ function Facts({ ins }: { ins: DataInsights }) {
   const p = ov.connections;
   const usable = p.max - p.reserved;
   const near = p.full || p.used >= 0.8 * usable;
+  const redis = ins.engine === "redis";
   return (
     <>
       <span>
@@ -233,10 +245,11 @@ function Facts({ ins }: { ins: DataInsights }) {
         <span className="font-mono text-(--g-text)">
           {percent(ov.cache_hit)}
         </span>{" "}
-        cache
+        {redis ? "hits" : "cache"}
       </span>
       <span>
         <span className="font-mono text-(--g-text)">{byteSize(ov.bytes)}</span>
+        {redis && (ov.max_bytes ? ` of ${byteSize(ov.max_bytes)}` : " memory")}
       </span>
       {ins.since && (
         <span className="text-(--g-mut)">counting since {sinceWords(ins)}</span>
@@ -288,37 +301,41 @@ function Overview({
   const hints = ins.hints ?? [];
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      {ov && (
-        <dl className="flex flex-wrap gap-x-7 gap-y-2 border-b border-(--g-line) px-3 py-3">
-          <Fact k="connections">
-            {ov.connections.full
-              ? "every one taken"
-              : `${ov.connections.used} of ${ov.connections.max - ov.connections.reserved} usable`}
-          </Fact>
-          <Fact
-            k="idle in transaction"
-            warn={ov.connections.idle_in_transaction > 0}
-          >
-            {ov.connections.idle_in_transaction}
-          </Fact>
-          <Fact k="waiting on locks" warn={ov.connections.waiting > 0}>
-            {ov.connections.waiting}
-          </Fact>
-          <Fact k="oldest transaction">
-            {forAt(ins, ov.connections.oldest_transaction_at)}
-          </Fact>
-          <Fact k="cache hit">{percent(ov.cache_hit)}</Fact>
-          <Fact k="size">{byteSize(ov.bytes)}</Fact>
-          {ins.engine === "postgres" && (
-            <Fact k="spilled to disk">{byteSize(ov.temp_bytes)}</Fact>
-          )}
-          <Fact k="deadlocks">{ov.deadlocks}</Fact>
-          {ov.transaction_id_age !== undefined && (
-            <Fact k="transaction ID age">
-              {`${Math.round(ov.transaction_id_age / 1e6)}M`}
+      {ov && ins.engine === "redis" ? (
+        <RedisFacts ins={ins} ov={ov} />
+      ) : (
+        ov && (
+          <dl className="flex flex-wrap gap-x-7 gap-y-2 border-b border-(--g-line) px-3 py-3">
+            <Fact k="connections">
+              {ov.connections.full
+                ? "every one taken"
+                : `${ov.connections.used} of ${ov.connections.max - ov.connections.reserved} usable`}
             </Fact>
-          )}
-        </dl>
+            <Fact
+              k="idle in transaction"
+              warn={ov.connections.idle_in_transaction > 0}
+            >
+              {ov.connections.idle_in_transaction}
+            </Fact>
+            <Fact k="waiting on locks" warn={ov.connections.waiting > 0}>
+              {ov.connections.waiting}
+            </Fact>
+            <Fact k="oldest transaction">
+              {forAt(ins, ov.connections.oldest_transaction_at)}
+            </Fact>
+            <Fact k="cache hit">{percent(ov.cache_hit)}</Fact>
+            <Fact k="size">{byteSize(ov.bytes)}</Fact>
+            {ins.engine === "postgres" && (
+              <Fact k="spilled to disk">{byteSize(ov.temp_bytes)}</Fact>
+            )}
+            <Fact k="deadlocks">{ov.deadlocks}</Fact>
+            {ov.transaction_id_age !== undefined && (
+              <Fact k="transaction ID age">
+                {`${Math.round(ov.transaction_id_age / 1e6)}M`}
+              </Fact>
+            )}
+          </dl>
+        )
       )}
       <h2 className="px-3 pt-3 pb-1 text-xs font-semibold text-(--g-text)">
         Needs a look{" "}
@@ -342,6 +359,36 @@ function Overview({
         </Scroll>
       )}
     </div>
+  );
+}
+
+/** Redis' vital numbers: clients, memory against its limit, hits. */
+function RedisFacts({ ins, ov }: { ins: DataInsights; ov: DataOverview }) {
+  const near = !!ov.max_bytes && ov.bytes >= 0.8 * ov.max_bytes;
+  return (
+    <dl className="flex flex-wrap gap-x-7 gap-y-2 border-b border-(--g-line) px-3 py-3">
+      <Fact k="clients">
+        {ov.connections.full
+          ? "every one taken"
+          : `${ov.connections.used} of ${ov.connections.max}`}
+      </Fact>
+      <Fact k="memory" warn={near}>
+        {byteSize(ov.bytes)}
+        {ov.max_bytes ? ` of ${byteSize(ov.max_bytes)}` : ", no limit"}
+      </Fact>
+      <Fact k="at the limit">
+        {ov.eviction_policy === "noeviction"
+          ? "writes fail"
+          : (ov.eviction_policy ?? "-")}
+      </Fact>
+      <Fact k="evicted keys" warn={!!ov.evicted_keys}>
+        {count(ov.evicted_keys ?? 0)}
+      </Fact>
+      <Fact k="hit rate">{percent(ov.cache_hit)}</Fact>
+      <Fact k="commands/s">{count(ov.ops_per_sec ?? 0)}</Fact>
+      <Fact k="keys">{count(ov.keys ?? 0)}</Fact>
+      <Fact k="up for">{forAt(ins, ov.started_at)}</Fact>
+    </dl>
   );
 }
 
@@ -458,6 +505,9 @@ function Queries({
   const current = list.find((q) => q.id === selected);
   const all = ins.queries ?? [];
   const totalAll = all.reduce((n, q) => n + q.total_ms, 0);
+  // Redis counts commands: no users, rows, cache or temp files.
+  const sql = ins.engine !== "redis";
+  const noun = sql ? "statements" : "commands";
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -465,16 +515,18 @@ function Queries({
           <span className="flex items-center gap-2">
             order
             <fieldset className="g-seg" aria-label="Order">
-              {orders.map((o) => (
-                <button
-                  key={o.order}
-                  type="button"
-                  aria-pressed={order === o.order}
-                  onClick={() => onOrder(o.order)}
-                >
-                  {o.label}
-                </button>
-              ))}
+              {orders
+                .filter((o) => sql || o.order !== "rows")
+                .map((o) => (
+                  <button
+                    key={o.order}
+                    type="button"
+                    aria-pressed={order === o.order}
+                    onClick={() => onOrder(o.order)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
             </fieldset>
           </span>
           <span className="flex items-center gap-2">
@@ -485,7 +537,9 @@ function Queries({
                 aria-pressed={!showChanges}
                 onClick={() => setChanges(false)}
               >
-                since {ins.since_reason === "reset" ? "reset" : "start"}
+                {!ins.since
+                  ? "totals"
+                  : `since ${ins.since_reason === "reset" ? "reset" : "start"}`}
               </button>
               <button
                 type="button"
@@ -504,7 +558,7 @@ function Queries({
           </span>
           {ins.queries_tracked !== undefined && (
             <span className="ml-auto">
-              {all.length} of {count(ins.queries_tracked)} statements
+              {all.length} of {count(ins.queries_tracked)} {noun}
               {/* MySQL's digests aren't per user: Dock's own show too. */}
               {ins.engine === "postgres" && " · Dock's own hidden"}
             </span>
@@ -526,15 +580,24 @@ function Queries({
             <table className="g-table">
               <thead>
                 <tr>
-                  <th>statement</th>
-                  <th>user</th>
+                  <th>{sql ? "statement" : "command"}</th>
+                  {sql && <th>user</th>}
                   <th className="text-right">calls</th>
                   <th className="text-right">total</th>
                   <th className="text-right">mean</th>
-                  <th className="text-right">max</th>
-                  <th className="text-right">rows</th>
-                  <th className="text-right">cache</th>
-                  <th className="text-right">temp</th>
+                  <th
+                    className="text-right"
+                    title={sql ? undefined : "The slowest call in the slow log"}
+                  >
+                    {sql ? "max" : "slowest"}
+                  </th>
+                  {sql && (
+                    <>
+                      <th className="text-right">rows</th>
+                      <th className="text-right">cache</th>
+                      <th className="text-right">temp</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -557,16 +620,24 @@ function Queries({
                         {q.text || "(text hidden)"}
                       </button>
                     </td>
-                    <td className="text-xs text-(--g-dim)">{q.user}</td>
+                    {sql && (
+                      <td className="text-xs text-(--g-dim)">{q.user}</td>
+                    )}
                     <Num>{count(q.calls)}</Num>
                     <Num>{ms(q.total_ms)}</Num>
                     <Num>{ms(q.mean_ms)}</Num>
-                    <Num>{showChanges ? "" : ms(q.max_ms)}</Num>
-                    <Num>{count(q.rows)}</Num>
-                    <Num>{percent(q.cache_hit)}</Num>
-                    <Num warn={q.temp_bytes > 0}>
-                      {q.temp_bytes ? byteSize(q.temp_bytes) : "0"}
+                    <Num>
+                      {showChanges || (!sql && !q.max_ms) ? "" : ms(q.max_ms)}
                     </Num>
+                    {sql && (
+                      <>
+                        <Num>{count(q.rows)}</Num>
+                        <Num>{percent(q.cache_hit)}</Num>
+                        <Num warn={q.temp_bytes > 0}>
+                          {q.temp_bytes ? byteSize(q.temp_bytes) : "0"}
+                        </Num>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -576,8 +647,8 @@ function Queries({
             !(ins.unavailable ?? []).some((u) => u.view === "queries") && (
               <p className="px-3 py-3 text-(--g-mut)">
                 {showChanges
-                  ? "No statement ran between the two reads."
-                  : "No statements yet."}
+                  ? `No ${noun.slice(0, -1)} ran between the two reads.`
+                  : `No ${noun} yet.`}
               </p>
             )}
         </div>
@@ -723,6 +794,9 @@ function Sessions({
     blocks,
   );
   const current = all.find((s) => s.id === selected);
+  // Redis' clients have IDs and run commands, without transactions.
+  const redis = ins.engine === "redis";
+  const id = redis ? "id" : "pid";
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
@@ -749,13 +823,13 @@ function Sessions({
             <table className="g-table">
               <thead>
                 <tr>
-                  <th>pid</th>
+                  <th>{id}</th>
                   <th>application</th>
                   <th>user</th>
                   <th>state</th>
                   <th className="text-right">for</th>
                   <th>waiting on</th>
-                  <th>statement</th>
+                  <th>{redis ? "command" : "statement"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -802,7 +876,14 @@ function Sessions({
           {shown.length === 0 && (
             <p className="px-3 py-3 text-(--g-mut)">
               Nothing is running. {idle} idle{" "}
-              {idle === 1 ? "session" : "sessions"}.
+              {redis
+                ? idle === 1
+                  ? "client"
+                  : "clients"
+                : idle === 1
+                  ? "session"
+                  : "sessions"}
+              .
             </p>
           )}
         </div>
@@ -814,7 +895,7 @@ function Sessions({
         >
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold">
-              {sessionApp(current)} · pid {current.pid}
+              {sessionApp(current)} · {id} {current.pid}
             </h2>
             <Btn small ghost className="ml-auto" onClick={() => onSelect(null)}>
               Close <Kbd>Esc</Kbd>
@@ -827,9 +908,17 @@ function Sessions({
             <dd className="font-mono">{current.client || "-"}</dd>
             <dt className="text-(--g-mut)">state</dt>
             <dd>{stateWords(current, blocks)}</dd>
-            <dt className="text-(--g-mut)">transaction</dt>
-            <dd className="font-mono">{forAt(ins, current.transaction_at)}</dd>
-            <dt className="text-(--g-mut)">statement</dt>
+            {!redis && (
+              <>
+                <dt className="text-(--g-mut)">transaction</dt>
+                <dd className="font-mono">
+                  {forAt(ins, current.transaction_at)}
+                </dd>
+              </>
+            )}
+            <dt className="text-(--g-mut)">
+              {redis ? "command" : "statement"}
+            </dt>
             <dd className="font-mono">{forAt(ins, current.query_at)}</dd>
             {current.wait && (
               <>
@@ -847,6 +936,7 @@ function Sessions({
             <SessionActions
               key={current.id}
               session={current}
+              redis={redis}
               access={access}
               onDone={() => {
                 onSelect(null);
@@ -1060,6 +1150,70 @@ function Tables({
   );
 }
 
+/**
+ * Redis' key prefixes by estimated size, from a sample of each
+ * database's keys, with the sample's biggest key of each.
+ */
+function KeyPrefixes({ ins }: { ins: DataInsights }) {
+  const notes = hintsOf(ins, "keys");
+  const list: DataKeyPrefix[] = ins.keys ?? [];
+  const total = list.reduce((n, p) => n + p.estimated_bytes, 0);
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <Scroll>
+        <table className="g-table">
+          <thead>
+            <tr>
+              <th>prefix</th>
+              <th className="text-right">db</th>
+              <th className="text-right">keys</th>
+              <th className="text-right">size</th>
+              <th className="text-right">share</th>
+              <th>biggest key</th>
+              <th className="text-right">its size</th>
+              <th>notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((p) => (
+              <tr key={`${p.db}:${p.prefix}`}>
+                <td className="font-mono text-xs">
+                  {p.prefix || (
+                    <span className="text-(--g-dim)">no prefix</span>
+                  )}
+                </td>
+                <Num>{p.db}</Num>
+                <Num>~{count(p.estimated_keys)}</Num>
+                <Num>~{byteSize(p.estimated_bytes)}</Num>
+                <Num>
+                  {percent(total ? p.estimated_bytes / total : undefined)}
+                </Num>
+                <td className="max-w-[320px] truncate font-mono text-xs">
+                  {p.biggest}
+                </td>
+                <Num warn={notes.has(p.biggest)}>
+                  {byteSize(p.biggest_bytes)}
+                </Num>
+                <td className="text-xs text-(--g-warn)">
+                  {notes
+                    .get(p.biggest)
+                    ?.map((h) => h.title)
+                    .join(", ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Scroll>
+      <p className="px-3 py-2.5 text-xs text-(--g-mut)">
+        {list.length
+          ? `Estimated from a sample of ${count(list.reduce((n, p) => n + p.sampled_keys, 0))} keys.`
+          : "No keys."}
+      </p>
+    </div>
+  );
+}
+
 function Indexes({ ins }: { ins: DataInsights }) {
   const notes = hintsOf(ins, "indexes");
   const list = [...(ins.indexes ?? [])].sort(
@@ -1248,14 +1402,16 @@ function ResetStats({ onDone }: { onDone: () => void }) {
  * Cancel a session's query, or end the session, from its side pane.
  * Needs level write. Cancelling asks nothing (the client just gets an
  * error); ending the session asks first, and on production for the
- * name.
+ * name. Redis can't cancel a command: its clients can only be ended.
  */
 function SessionActions({
   session,
+  redis,
   access,
   onDone,
 }: {
   session: DataSession;
+  redis: boolean;
   access: DataPermission;
   onDone: () => void;
 }) {
@@ -1279,11 +1435,12 @@ function SessionActions({
       </p>
     );
   const confirmed = !access.confirm_commit || confirm === source.confirmName;
+  const end = redis ? "End client" : "End session";
   return (
     <section className="flex flex-col gap-2 border-t border-(--g-line) pt-3">
       {!ending ? (
         <div className="flex flex-wrap gap-1.5">
-          {session.state === "active" && (
+          {session.state === "active" && !redis && (
             <Act
               small
               cli={cli(`dock db cancel ${session.id}`)}
@@ -1294,14 +1451,16 @@ function SessionActions({
             </Act>
           )}
           <Btn small danger onClick={() => setEnding(true)}>
-            End session
+            {end}
           </Btn>
         </div>
       ) : (
         <>
           <p className="text-xs text-(--g-dim)">
-            Its connection drops and its open transaction rolls back. The app
-            sees an error and has to reconnect.
+            {redis
+              ? "Its connection drops and commands queued in a MULTI are discarded."
+              : "Its connection drops and its open transaction rolls back."}{" "}
+            The app sees an error and has to reconnect.
           </p>
           {access.confirm_commit && (
             <ConfirmName verb="end it" value={confirm} onChange={setConfirm} />
@@ -1319,7 +1478,7 @@ function SessionActions({
               disabled={act.isPending || !confirmed}
               onClick={() => act.mutate(true)}
             >
-              End session
+              {end}
             </Act>
           </div>
         </>

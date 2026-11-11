@@ -37,11 +37,16 @@ import (
 // serves on [analytics] ingest_listen. It installs dock-probe under the
 // data dir for the containers' health checks. DOCK_FAKE_RUNTIME=1 uses an
 // in-memory fake (no Docker, nil proxy and ingest), for local development
-// of the API, CLI and UI.
+// of the API, CLI and UI; DOCK_FAKE_DIAL=host:port sends its database
+// connections there (a local Postgres, MySQL or Redis), so the Data panel
+// works too.
 func newRuntime(ctx context.Context, cfg config.Config, marker string, log *slog.Logger) (node.Runtime, *caddy.Proxy, *ingest.Ingest, error) {
 	if os.Getenv("DOCK_FAKE_RUNTIME") == "1" {
 		rt := fake.New()
 		rt.PassHealthAfter(time.Second) // health checks pass, as on Docker
+		if addr := os.Getenv("DOCK_FAKE_DIAL"); addr != "" {
+			rt.DialTo(addr)
+		}
 		return rt, nil, nil, nil
 	}
 	containers, err := docker.New(cfg.Network.Pool)

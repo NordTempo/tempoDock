@@ -25,7 +25,7 @@ export type KeyType = "string" | "hash" | "list" | "set" | "zset" | "stream";
 
 const tabs = ["keys", "sql", "schema", "changes", "health"] as const;
 const keyTypes = ["string", "hash", "list", "set", "zset", "stream"] as const;
-const insights = ["queries", "sessions", "tables", "indexes"] as const;
+const insights = ["queries", "sessions", "tables", "indexes", "keys"] as const;
 const ops = new Set<string>([
   "eq",
   "ne",

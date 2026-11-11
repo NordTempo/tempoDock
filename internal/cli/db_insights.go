@@ -30,7 +30,8 @@ func newDBHealthCmd(g *globals) *cobra.Command {
 		Short: "How the database is doing: connections, cache, size, and what needs a look",
 		Long: `Read the database's vital numbers and the hints from every view you may see:
 idle transactions and blocked sessions, duplicate, invalid and unused indexes,
-tables with dead rows or many full scans, statements that spill to disk.
+tables with dead rows or many full scans, statements that spill to disk;
+for Redis memory near its limit, evictions, failing saves and big keys.
 Statements to copy (DROP INDEX CONCURRENTLY, VACUUM) are shown; Dock never
 runs them. Counters count since their last reset or the server's start.`,
 		Args: cobra.NoArgs,
@@ -41,7 +42,18 @@ runs them. Counters count since their last reset or the server's start.`,
 		}
 		return g.io.Print(ins, func() error {
 			fields := []string{"service", t.String(), "counting since", sinceText(ins)}
-			if ov := ins.Overview; ov != nil {
+			if ov := ins.Overview; ov != nil && ins.Engine == apitypes.EngineRedis {
+				limit := ", no limit"
+				if ov.MaxBytes > 0 {
+					limit = " of " + bytesize(ov.MaxBytes) + ", " + ov.EvictionPolicy + " at the limit"
+				}
+				fields = append(fields,
+					"clients", fmt.Sprintf("%d of %d", ov.Connections.Used, ov.Connections.Max),
+					"memory", bytesize(ov.Bytes)+" "+limit,
+					"evicted keys", itoa(ov.EvictedKeys),
+					"hit rate", ratioText(ov.CacheHit),
+					"keys", itoa(ov.Keys))
+			} else if ov != nil {
 				fields = append(fields,
 					"connections", pressureText(ov.Connections),
 					"cache hit", ratioText(ov.CacheHit),
@@ -82,7 +94,7 @@ func newDBQueriesCmd(g *globals) *cobra.Command {
 	var limit int
 	cmd := dbCmd(g, &cobra.Command{
 		Use:   "queries [--order total|mean|calls|rows] [--limit N]",
-		Short: "The statements that cost the most, from pg_stat_statements",
+		Short: "The statements (Redis: commands) that cost the most, from the database's own stats",
 		Args:  cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
 		q := url.Values{"view": {string(apitypes.InsightQueries)}, "order": {order}}
@@ -172,7 +184,8 @@ func newDBCancelCmd(g *globals) *cobra.Command {
 		Long: `Cancel the running query of a session from ` + "`dock db sessions`" + ` (the client gets
 an error, its connection stays), or with --terminate end the session (its
 connection drops and its open transaction rolls back). Needs data access
-level write; ending a session on production needs --confirm <environment>.`,
+level write; ending a session on production needs --confirm <environment>.
+Redis can't cancel a command: --terminate ends the client.`,
 		Args: cobra.ExactArgs(1),
 	}, func(ctx context.Context, s *session, t target, data string, args []string) error {
 		req := apitypes.DataCancelRequest{Terminate: terminate, Confirm: confirm}
@@ -235,15 +248,18 @@ func newDBSessionsCmd(g *globals) *cobra.Command {
 }
 
 func newDBStorageCmd(g *globals) *cobra.Command {
-	var indexes bool
+	var indexes, keys bool
 	cmd := dbCmd(g, &cobra.Command{
-		Use:   "storage [--indexes]",
-		Short: "Tables (or indexes) by size, with dead rows, scans and vacuums",
+		Use:   "storage [--indexes|--keys]",
+		Short: "Tables (or indexes, or Redis key prefixes) by size, with dead rows, scans and vacuums",
 		Args:  cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
 		view := apitypes.InsightTables
-		if indexes {
+		switch {
+		case indexes:
 			view = apitypes.InsightIndexes
+		case keys:
+			view = apitypes.InsightKeys
 		}
 		ins, err := insightsOf(ctx, s, data, url.Values{"view": {string(view)}})
 		if err != nil {
@@ -251,6 +267,17 @@ func newDBStorageCmd(g *globals) *cobra.Command {
 		}
 		return g.io.Print(ins, func() error {
 			printUnavailable(g, ins)
+			if keys {
+				tb := g.io.Table("db", "prefix", "keys", "size", "biggest", "biggest size")
+				for _, x := range ins.Keys {
+					tb.Row(itoa(int64(x.DB)), dash(x.Prefix), "~"+itoa(x.EstimatedKeys), "~"+bytesize(x.EstimatedBytes), x.Biggest, bytesize(x.BiggestBytes))
+				}
+				if err := tb.Flush(); err != nil {
+					return err
+				}
+				_, _ = fmt.Fprintln(g.io.Err, "estimated from a sample of each database's keys")
+				return nil
+			}
 			if indexes {
 				tb := g.io.Table("index", "table", "size", "scans", "notes")
 				for _, x := range ins.Indexes {
@@ -267,6 +294,8 @@ func newDBStorageCmd(g *globals) *cobra.Command {
 		})
 	})
 	cmd.Flags().BoolVar(&indexes, "indexes", false, "List indexes instead of tables")
+	cmd.Flags().BoolVar(&keys, "keys", false, "Redis: list key prefixes, estimated from a sample")
+	cmd.MarkFlagsMutuallyExclusive("indexes", "keys")
 	return cmd
 }
 
