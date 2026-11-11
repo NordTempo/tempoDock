@@ -92,9 +92,6 @@ type Store struct {
 // database Receive wrote in its place. An empty path is an in-memory
 // database, for tests.
 func Open(ctx context.Context, path string, opts Options) (*Store, error) {
-	if opts.Threads <= 0 {
-		opts.Threads = 2
-	}
 	if path != "" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return nil, err
@@ -102,30 +99,8 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 		if err := applyReceived(path); err != nil {
 			return nil, err
 		}
-		if opts.TempDir == "" {
-			opts.TempDir = path + ".tmp"
-		}
 	}
-	// Database-wide settings go in the DSN: they are set once, when
-	// DuckDB opens the file, not per connection.
-	cfg := url.Values{
-		"threads": {strconv.Itoa(opts.Threads)},
-		// Dock never loads extensions; nothing may fetch one.
-		"autoinstall_known_extensions": {"false"},
-		"autoload_known_extensions":    {"false"},
-		// Every query orders its result itself; without the guarantee
-		// DuckDB needs less memory for big scans.
-		"preserve_insertion_order": {"false"},
-	}
-	memoryLimit := ""
-	if opts.MemoryLimit > 0 {
-		memoryLimit = strconv.FormatInt(opts.MemoryLimit>>20, 10) + "MB"
-		cfg.Set("memory_limit", memoryLimit)
-	}
-	if opts.TempDir != "" {
-		cfg.Set("temp_directory", opts.TempDir)
-	}
-	connector, err := duckdb.NewConnector(path+"?"+cfg.Encode(), nil)
+	connector, memoryLimit, err := connect(path, opts)
 	if err != nil {
 		return nil, fmt.Errorf("open analytics database: %w", err)
 	}
@@ -151,6 +126,40 @@ func Open(ctx context.Context, path string, opts Options) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// connect makes the DuckDB connector for the database at path ("" in
+// memory) with opts' settings, and answers its memory_limit setting ("" for
+// DuckDB's default), which trims restore. The analytics store and the trace
+// store share it.
+func connect(path string, opts Options) (*duckdb.Connector, string, error) {
+	if opts.Threads <= 0 {
+		opts.Threads = 2
+	}
+	if path != "" && opts.TempDir == "" {
+		opts.TempDir = path + ".tmp"
+	}
+	// Database-wide settings go in the DSN: they are set once, when
+	// DuckDB opens the file, not per connection.
+	cfg := url.Values{
+		"threads": {strconv.Itoa(opts.Threads)},
+		// Dock never loads extensions; nothing may fetch one.
+		"autoinstall_known_extensions": {"false"},
+		"autoload_known_extensions":    {"false"},
+		// Every query orders its result itself; without the guarantee
+		// DuckDB needs less memory for big scans.
+		"preserve_insertion_order": {"false"},
+	}
+	memoryLimit := ""
+	if opts.MemoryLimit > 0 {
+		memoryLimit = strconv.FormatInt(opts.MemoryLimit>>20, 10) + "MB"
+		cfg.Set("memory_limit", memoryLimit)
+	}
+	if opts.TempDir != "" {
+		cfg.Set("temp_directory", opts.TempDir)
+	}
+	c, err := duckdb.NewConnector(path+"?"+cfg.Encode(), nil)
+	return c, memoryLimit, err
 }
 
 // Close checkpoints and closes the database.
@@ -441,20 +450,27 @@ func (s *Store) TryTrim(ctx context.Context) (bool, error) {
 
 // trim is Trim with the gate held.
 func (s *Store) trim(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, "CHECKPOINT"); err != nil {
+	return trimDB(ctx, s.db, s.memoryLimit)
+}
+
+// trimDB checkpoints db and lowers its memory_limit for a moment, then
+// sets it back to memoryLimit ("" leaves it alone), so DuckDB lets go of
+// its cached blocks and freed operator memory (Store.Trim).
+func trimDB(ctx context.Context, db *sql.DB, memoryLimit string) error {
+	if _, err := db.ExecContext(ctx, "CHECKPOINT"); err != nil {
 		return err
 	}
-	if s.memoryLimit == "" {
+	if memoryLimit == "" {
 		return nil
 	}
 	var err error
 	// Blocks a transaction still pins can't go; settle for what can.
 	for _, floor := range []string{"16MB", "64MB"} {
-		if _, err = s.db.ExecContext(ctx, "SET memory_limit = '"+floor+"'"); err == nil {
+		if _, err = db.ExecContext(ctx, "SET memory_limit = '"+floor+"'"); err == nil {
 			break
 		}
 	}
-	if _, rerr := s.db.ExecContext(ctx, "SET memory_limit = '"+s.memoryLimit+"'"); rerr != nil {
+	if _, rerr := db.ExecContext(ctx, "SET memory_limit = '"+memoryLimit+"'"); rerr != nil {
 		return rerr
 	}
 	return err

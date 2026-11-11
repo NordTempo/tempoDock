@@ -70,15 +70,22 @@ func serveCmd(ctx context.Context, args []string) error {
 		log.Error("location database: events get no location until it is downloaded again", "err", err)
 	}
 	a.locate = a.geo.Locate
+	log.Info("dock-analytics listening", "version", version, "addr", *listen, "db", sf.db)
+	return a.serve(ctx, *listen, a.handler())
+}
+
+// serve runs handler on addr until ctx ends, giving memory back a minute
+// after the last request (idleTrim).
+func (a *api) serve(ctx context.Context, addr string, handler http.Handler) error {
 	idle := &idleTrim{after: trimAfter, trim: a.trim}
 	srv := &http.Server{
-		Addr:              *listen,
-		Handler:           idle.wrap(a.handler()),
+		Addr:              addr,
+		Handler:           idle.wrap(handler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("dock-analytics listening", "version", version, "addr", *listen, "db", sf.db)
+	var err error
 	select {
 	case err = <-errc:
 	case <-ctx.Done():
@@ -136,9 +143,15 @@ func (it *idleTrim) fire() {
 	it.trim()
 }
 
-// api serves the store over HTTP.
+// api serves the store over HTTP: the analytics store (serveCmd) or the
+// trace store (tracesCmd), with s nil.
 type api struct {
-	s     *store.Store
+	s *store.Store
+	// trims is the store whose memory trim and trimIfBig give back.
+	trims interface {
+		Trim(context.Context) error
+		TryTrim(context.Context) (bool, error)
+	}
 	token []byte
 	log   *slog.Logger
 	// locate looks up locations, from geo (which may have no database).
@@ -158,7 +171,7 @@ type api struct {
 
 // newAPI returns the API for s; every call but health needs token.
 func newAPI(s *store.Store, token string, log *slog.Logger, queries int, trimAbove int64) *api {
-	return &api{s: s, token: []byte(token), log: log, slots: make(chan struct{}, queries), trimAbove: trimAbove}
+	return &api{s: s, trims: s, token: []byte(token), log: log, slots: make(chan struct{}, queries), trimAbove: trimAbove}
 }
 
 // handler routes the API's calls.
@@ -193,7 +206,7 @@ func (a *api) handler() http.Handler {
 // trim gives memory back: the store's (store.Trim, which waits for
 // whatever runs) and Go's heap. The idle timer calls it.
 func (a *api) trim() {
-	if err := a.s.Trim(context.Background()); err != nil {
+	if err := a.trims.Trim(context.Background()); err != nil {
 		a.log.Error("trim memory", "err", err)
 	}
 	debug.FreeOSMemory()
@@ -206,7 +219,7 @@ func (a *api) trimIfBig() {
 	if a.trimAbove <= 0 || rssAnon() < a.trimAbove {
 		return
 	}
-	trimmed, err := a.s.TryTrim(context.Background())
+	trimmed, err := a.trims.TryTrim(context.Background())
 	if err != nil {
 		a.log.Error("trim memory", "err", err)
 	}
