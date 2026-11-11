@@ -531,6 +531,7 @@ func createOptions(spec node.ContainerSpec, probe string, anon []string) client.
 	}
 
 	host := &container.HostConfig{
+		ExtraHosts:    spec.ExtraHosts,
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 		LogConfig: container.LogConfig{
 			Type:   "local",

@@ -2,12 +2,15 @@ package core
 
 import (
 	"encoding/json/v2"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
 // waitTraceStore waits until the trace store started on server and
@@ -154,4 +157,45 @@ func TestSpansReachTheTraceStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the key gone from the server", func() bool { return h.rt.TraceKey() == nil })
+}
+
+// While tracing is on a release's container starts with the standard
+// OpenTelemetry variables and dock-otlp in its hosts file; the service's
+// own variables win, and with tracing off it gets none.
+func TestTracedAppsGetTheVariables(t *testing.T) {
+	h := newHarness(t)
+	ref := h.service("web", apitypes.CreateServiceRequest{})
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"OTEL_SERVICE_NAME": "storefront"}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(ref, h.deploy(ref, "nginx:1").Number)
+	spec, _ := h.rt.Spec(h.ctr(ref, 1))
+	if _, set := spec.Env["OTEL_EXPORTER_OTLP_ENDPOINT"]; set || len(spec.ExtraHosts) > 0 {
+		t.Fatalf("tracing off, the container got %v, %v", spec.Env, spec.ExtraHosts)
+	}
+
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	rel := h.wait(ref, h.deploy(ref, "nginx:1").Number)
+	spec, _ = h.rt.Spec(h.ctr(ref, rel.Number))
+	if spec.Env["OTEL_EXPORTER_OTLP_ENDPOINT"] != "http://dock-otlp:80" || spec.Env["OTEL_EXPORTER_OTLP_PROTOCOL"] != "http/protobuf" ||
+		spec.Env["OTEL_SERVICE_NAME"] != "storefront" || spec.Env["OTEL_LOGS_EXPORTER"] != "none" ||
+		spec.Env["OTEL_RESOURCE_ATTRIBUTES"] != "service.namespace=shop,deployment.environment.name=production,service.version=r2" ||
+		len(spec.ExtraHosts) != 1 || spec.ExtraHosts[0] != "dock-otlp:host-gateway" {
+		t.Fatalf("traced container: env %v, hosts %v", spec.Env, spec.ExtraHosts)
+	}
+	// The token names this release, under the key the servers have.
+	tok, ok := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_HEADERS"], "authorization=Bearer%20")
+	if !ok {
+		t.Fatalf("headers = %q", spec.Env["OTEL_EXPORTER_OTLP_HEADERS"])
+	}
+	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) > 0 })
+	claims, err := traces.Parse(h.rt.TraceKey(), tok)
+	if err != nil || claims.Service == 0 || claims.Env == 0 || claims.Org != 1 {
+		t.Fatalf("token claims = %+v, %v", claims, err)
+	}
+	if r, err := h.store.GetReleaseByNumber(h.ctx, store.GetReleaseByNumberParams{ServiceID: claims.Service, Number: rel.Number}); err != nil || r.ID != claims.Release {
+		t.Errorf("the token's release is %d, the release's ID %d (%v)", claims.Release, r.ID, err)
+	}
 }

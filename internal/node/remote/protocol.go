@@ -83,8 +83,10 @@ const (
 	// adds the trace store: the kind of run-analytics-store,
 	// remove-analytics-store and dial-analytics (TraceStoreProtocol). 25
 	// adds the trace ingest: set-analytics' trace key and the spans spool
-	// (TraceIngestProtocol).
-	Protocol = 25
+	// (TraceIngestProtocol). 26 adds the container spec's extra hosts and
+	// Caddy's dock-otlp route: apps reach the trace ingest
+	// (TraceAppsProtocol).
+	Protocol = 26
 	// MinProtocol is the oldest minor version this control plane drives.
 	// Older nodes stay connected for hello only (StatusIncompatible).
 	MinProtocol = 1

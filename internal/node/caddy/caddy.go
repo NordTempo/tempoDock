@@ -107,6 +107,12 @@ type Options struct {
 	// ingest (ADR 0037). Routes' Analytics hostnames send /_dock/a/* there;
 	// empty leaves them out.
 	AnalyticsAddr string
+	// TraceIngestAddr is the loopback host:port of the node's trace ingest
+	// (OTLP/HTTP), which a route for the dock-otlp hostname forwards apps'
+	// exports to, from private addresses only; empty is none. Direct
+	// servers only: in tunnel mode Caddy listens on loopback, which
+	// containers can't reach.
+	TraceIngestAddr string
 	// PublicIPs are the addresses DNS records should point at, used by
 	// CheckDomain in direct mode.
 	PublicIPs []string
@@ -171,6 +177,8 @@ func (o *Options) validate() error {
 		return errors.New("caddy: an HTTP port is required")
 	case o.TrafficAddr != "" && !validTrafficAddr(o.TrafficAddr):
 		return fmt.Errorf("caddy: traffic address %q must be a loopback host:port like 127.0.0.1:7074", o.TrafficAddr)
+	case o.TraceIngestAddr != "" && !validTrafficAddr(o.TraceIngestAddr):
+		return fmt.Errorf("caddy: trace ingest address %q must be a loopback host:port like 127.0.0.1:4318", o.TraceIngestAddr)
 	case o.AnalyticsAddr != "" && !validTrafficAddr(o.AnalyticsAddr):
 		return fmt.Errorf("caddy: analytics address %q must be a loopback host:port like 127.0.0.1:7077", o.AnalyticsAddr)
 	case o.ServerMarker != "" && !validMarker(o.ServerMarker):

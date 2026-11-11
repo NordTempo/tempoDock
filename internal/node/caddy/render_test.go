@@ -520,3 +520,44 @@ func TestRenderRefusesARouteWithoutHostnames(t *testing.T) {
 		t.Error("rendered a route without hostnames")
 	}
 }
+
+// Traced apps reach the trace ingest as dock-otlp on the server's HTTP
+// port, from private addresses only; not in tunnel mode, where Caddy
+// listens only on loopback.
+func TestRenderTraceIngest(t *testing.T) {
+	routes := []node.Route{{Hostnames: []string{"shop.example.com"}, Upstream: "127.0.0.1:20001"}}
+	otlp := func(rs []route) *route {
+		for i := range rs {
+			if len(rs[i].Match) > 0 && len(rs[i].Match[0].Host) == 1 && rs[i].Match[0].Host[0] == node.TraceIngestHost {
+				return &rs[i]
+			}
+		}
+		return nil
+	}
+	opts := testOptions()
+	opts.TraceIngestAddr = "127.0.0.1:4318"
+	cfg := render(t, opts, routes)
+	r := otlp(cfg.Apps.HTTP.Servers["http"].Routes)
+	if r == nil || r.Match[0].RemoteIP == nil || len(r.Match[0].RemoteIP.Ranges) == 0 || r.Handle[len(r.Handle)-1].Upstreams[0].Dial != "127.0.0.1:4318" {
+		t.Fatalf("http routes = %+v", cfg.Apps.HTTP.Servers["http"].Routes)
+	}
+	if otlp(cfg.Apps.HTTP.Servers["https"].Routes) != nil {
+		t.Error("dock-otlp on the HTTPS listener")
+	}
+	opts.DisableTLS = true
+	if otlp(render(t, opts, routes).Apps.HTTP.Servers["http"].Routes) == nil {
+		t.Error("no dock-otlp on a plain-HTTP server")
+	}
+	opts.DisableTLS, opts.Ingress = false, IngressCloudflareTunnel
+	opts.ServerMarker = "srv-1"
+	for name, srv := range render(t, opts, routes).Apps.HTTP.Servers {
+		if otlp(srv.Routes) != nil {
+			t.Errorf("dock-otlp on %s in tunnel mode", name)
+		}
+	}
+	opts = testOptions()
+	opts.TraceIngestAddr = "0.0.0.0:4318"
+	if _, err := Render(opts, routes); err == nil {
+		t.Error("a trace ingest that isn't on loopback was rendered")
+	}
+}

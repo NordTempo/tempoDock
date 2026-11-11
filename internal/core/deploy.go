@@ -756,6 +756,7 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 		spec.Mounts = append(spec.Mounts, node.Mount{Volume: m.DockerName, Path: m.Path})
 	}
 	spec.Health = liveness(cfg)
+	c.addTracing(&spec, ss, rel)
 	return spec
 }
 
