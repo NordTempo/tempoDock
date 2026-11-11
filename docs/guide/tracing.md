@@ -59,8 +59,8 @@ Agents get the same through MCP: `traces_list` and `trace_get`.
   service, a fair share of a busier one, all spans of a trace together.
   Traces that fail (an error, an exception, a 5xx) or take a second or
   more are kept whatever the share, and `dock traces` says why each was
-  kept. Dock's health checks aren't traced: their trace context tells
-  an SDK with its default sampler not to record them.
+  kept. Dock's health checks and uptime checks are kept only when they
+  fail.
 - At most 2 million spans a service and 5 million an organization a
   day; past that only spans with an error. Past 5,000
   spans a second a service's spans are dropped, and its SDK is told so.

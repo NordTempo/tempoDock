@@ -2,6 +2,7 @@ package traces
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +23,10 @@ import (
 //     pulled out of a ring of recently dropped ones, and later spans
 //     follow. Children end before their parents, so a slow or failing
 //     root still finds its children there.
-//   - Dock's health probe sends its own trace context, unsampled, so a
-//     stock SDK doesn't record probe requests at all; spans of a probe
-//     trace that still arrive are never sampled (an error still rescues
-//     them).
+//   - Dock's health probe sends its own trace context, with a trace ID
+//     that says so, and its uptime probe a user agent that does: a probe's
+//     trace is never sampled and a slow one isn't rescued, but an error
+//     still rescues it, so a failing health check stays visible.
 //
 // The ring, the decisions and the per-service state exist only while
 // spans arrive: one timer frees them two quiet minutes after the last.
@@ -103,29 +104,65 @@ type sampleLimits struct {
 // emit is where kept spans go, as JSON lines.
 type emit func(line []byte) error
 
+// signals are what the ingest saw in a span beyond analytics.Span.
+type signals struct {
+	// exception: the span has an exception event.
+	exception bool
+	// probe: Dock's health or uptime probe sent the request (its user
+	// agent), for SDKs that don't take the probe's trace context.
+	probe bool
+}
+
+// signalsOf reads a decoded span's signals.
+func signalsOf(sp *rawSpan) signals {
+	var sig signals
+	for _, e := range sp.events {
+		sig.exception = sig.exception || e.name == "exception"
+	}
+	for _, a := range sp.attrs {
+		if (a.key == "user_agent.original" || a.key == "http.user_agent") && a.val.kind == valueString &&
+			(strings.HasPrefix(a.val.s, "dock-probe") || strings.HasPrefix(a.val.s, "dock-uptime/")) {
+			sig.probe = true
+		}
+	}
+	return sig
+}
+
 // span decides one span: emits it (and any of its trace's dropped spans
 // it rescues), or keeps it in the ring. line is the span as JSON, with
-// Kept unset.
-func (sm *sampler) span(s *analytics.Span, line []byte, exception bool, l sampleLimits, now time.Time, out emit) error {
+// Kept unset. A kept span says the strongest reason its trace has so far
+// (error, then slow, then sampled), so a trace's entry span, which ends
+// last, says whether anything in it failed.
+func (sm *sampler) span(s *analytics.Span, line []byte, sig signals, l sampleLimits, now time.Time, out emit) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.touch(now)
 	svc := sm.service(s.Service, l, now)
+	hi, _ := s.Trace.Halves()
+	probe := sig.probe || hi == ProbeTraceHi
 	d, ok := sm.lookup(s.Trace)
 	if !ok {
-		d = sm.decide(s.Trace, svc, l)
+		d = sm.decide(s.Trace, svc, probe, l)
 	}
-	if !d.kept {
-		if reason, rescue := trigger(s, exception, l); rescue {
-			d = decision{kept: true, reason: reason}
-			sm.remember(s.Trace, d)
-			if svc.rescued < l.rescues {
-				svc.rescued++
-				if err := sm.rescue(s.Trace, reason, out); err != nil {
-					return err
-				}
+	reason, rescue := trigger(s, sig.exception, probe, l)
+	switch {
+	case rescue && !d.kept:
+		d = decision{kept: true, reason: reason}
+		sm.remember(s.Trace, d)
+		if svc.rescued < l.rescues {
+			svc.rescued++
+			if err := sm.rescue(s.Trace, reason, out); err != nil {
+				return err
 			}
 		}
+	case rescue && strength(reason) > strength(d.reason):
+		d.reason = reason
+		sm.remember(s.Trace, d)
+	case probe && d.kept && d.reason == analytics.KeptSampled:
+		// Sampled before its probe span said what it was: the rest of
+		// the trace, its entry span with it, isn't kept.
+		d = decision{}
+		sm.remember(s.Trace, d)
 	}
 	if !d.kept {
 		sm.ring.add(s.Trace, line, l.ringBytes)
@@ -134,23 +171,31 @@ func (sm *sampler) span(s *analytics.Span, line []byte, exception bool, l sample
 	return out(withKept(&sm.line, line, d.reason))
 }
 
-// trigger reports whether s rescues its trace, and why.
-func trigger(s *analytics.Span, exception bool, l sampleLimits) (analytics.Kept, bool) {
+// trigger reports whether s rescues its trace, and why: an error, or a
+// slow entry span, but for a probe's trace an error only.
+func trigger(s *analytics.Span, exception, probe bool, l sampleLimits) (analytics.Kept, bool) {
 	switch {
 	case s.Error() || exception:
 		return analytics.KeptError, true
-	case s.Entry && s.Duration >= l.slow.Microseconds():
+	case s.Entry && !probe && s.Duration >= l.slow.Microseconds():
 		return analytics.KeptSlow, true
 	}
 	return 0, false
 }
 
-// decide decides a trace from its first span, of service svc.
-func (sm *sampler) decide(id analytics.TraceID, svc *serviceSample, l sampleLimits) decision {
-	hi, lo := id.Halves()
+// strength orders the reasons to keep a trace: forced, error, slow, then
+// sampled.
+func strength(k analytics.Kept) int {
+	return [...]int{analytics.KeptSampled: 0, analytics.KeptSlow: 1, analytics.KeptError: 2, analytics.KeptForced: 3}[min(int(k), 3)]
+}
+
+// decide decides a trace from its first span, of service svc; a probe's
+// trace is never sampled.
+func (sm *sampler) decide(id analytics.TraceID, svc *serviceSample, probe bool, l sampleLimits) decision {
+	_, lo := id.Halves()
 	svc.seen++
 	d := decision{}
-	if hi != ProbeTraceHi && lo&(1<<randomBits-1) < svc.threshold && svc.kept < l.budget {
+	if !probe && lo&(1<<randomBits-1) < svc.threshold && svc.kept < l.budget {
 		svc.kept++
 		d = decision{kept: true, reason: analytics.KeptSampled}
 	}

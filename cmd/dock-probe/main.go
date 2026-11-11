@@ -134,12 +134,12 @@ func probeHTTP(port int, path string, deadline time.Time) error {
 }
 
 // traceparent is the W3C trace context the probe sends: a trace ID that
-// starts with "dockprbe" (internal/traces.ProbeTraceHi) and isn't
-// sampled, so an app's OpenTelemetry SDK, which follows its caller's
-// decision by default, doesn't record probe requests, and Dock's ingest
-// never samples a probe trace that still arrives.
+// starts with "dockprbe" (internal/traces.ProbeTraceHi). An app's
+// OpenTelemetry SDK continues the trace, and Dock's ingest knows every
+// span of it for a probe's: it never samples one, but keeps one that
+// fails, so a failing health check can be read like any other request.
 func traceparent(random uint64) string {
-	return "00-646f636b70726265" + hex16(random) + "-" + hex16(random|1) + "-00"
+	return "00-646f636b70726265" + hex16(random) + "-" + hex16(random|1) + "-01"
 }
 
 // hex16 is v as 16 hex digits.

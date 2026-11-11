@@ -699,11 +699,7 @@ func (s *Traces) Traces(ctx context.Context, q analytics.TracesQuery) (analytics
 	if err := rows.Err(); err != nil {
 		return res, err
 	}
-	for _, e := range entries {
-		if e != nil { // nil: dropped by a prune meanwhile
-			res.Traces = append(res.Traces, *e)
-		}
-	}
+	res.Traces = analytics.OnePerTrace(res.Traces, entries)
 	return res, nil
 }
 

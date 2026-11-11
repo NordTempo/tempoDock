@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,9 +165,8 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
 		line.Reset()
 		err := json.MarshalWrite(line, &s)
 		if err == nil {
-			exception := slices.ContainsFunc(sp.events, func(e event) bool { return e.name == "exception" })
 			// MarshalWrite ends the line with a newline; the spool adds its own.
-			err = in.sample.span(&s, bytes.TrimSuffix(line.Bytes(), []byte{'\n'}), exception, in.sampling, now, in.Spool.Append)
+			err = in.sample.span(&s, bytes.TrimSuffix(line.Bytes(), []byte{'\n'}), signalsOf(sp), in.sampling, now, in.Spool.Append)
 		}
 		if err != nil {
 			rejected++

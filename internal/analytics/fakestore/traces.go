@@ -164,6 +164,14 @@ func (t *Traces) list(q analytics.TracesQuery) analytics.TracesResult {
 	if limit == 0 {
 		limit = analytics.DefaultTraces
 	}
+	if len(out) > limit+1 {
+		out = out[:limit+1]
+	}
+	ptrs := make([]*analytics.TraceSummary, len(out))
+	for i := range out {
+		ptrs[i] = &out[i]
+	}
+	out = analytics.OnePerTrace(nil, ptrs)
 	res := analytics.TracesResult{Traces: out}
 	if len(out) > limit {
 		res.Traces, res.More = out[:limit], true

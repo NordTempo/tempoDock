@@ -28,7 +28,7 @@ func (s *sampled) send(t *testing.T, sp analytics.Span, exception bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = s.sm.span(&sp, line, exception, s.l, s.now, func(b []byte) error {
+	err = s.sm.span(&sp, line, signals{exception: exception}, s.l, s.now, func(b []byte) error {
 		var got analytics.Span
 		if err := json.Unmarshal(b, &got); err != nil {
 			t.Fatalf("%v: %s", err, b)
@@ -107,20 +107,49 @@ func TestSampleRescue(t *testing.T) {
 	}
 }
 
-// Probe traces are never sampled, but an error still rescues one.
+// Probe traces are never sampled and a slow one isn't kept, but an error
+// still rescues one. An SDK that didn't take the probe's trace context
+// still records its user agent: the trace's entry span isn't kept.
 func TestSampleProbe(t *testing.T) {
 	s := newSampled(100)
 	probe := analytics.TraceIDOf(ProbeTraceHi, 7)
 	s.send(t, analytics.Span{Trace: probe, ID: 2, Parent: 1}, false)
-	s.send(t, analytics.Span{Trace: probe, ID: 1, Entry: true, HTTPStatus: 200}, false)
+	s.send(t, analytics.Span{Trace: probe, ID: 1, Entry: true, HTTPStatus: 200, Duration: 2_000_000}, false)
 	if len(s.kept) != 0 {
-		t.Fatalf("kept %d spans of a healthy probe", len(s.kept))
+		t.Fatalf("kept %d spans of a healthy, slow probe", len(s.kept))
 	}
 	failing := analytics.TraceIDOf(ProbeTraceHi, 8)
 	s.send(t, analytics.Span{Trace: failing, ID: 2, Parent: 1}, false)
 	s.send(t, analytics.Span{Trace: failing, ID: 1, Entry: true, HTTPStatus: 503}, false)
 	if len(s.kept) != 2 {
 		t.Errorf("kept %d spans of a failing probe, want 2", len(s.kept))
+	}
+	s.kept = nil
+	uptime := trace(9)
+	s.send(t, analytics.Span{Trace: uptime, ID: 2, Parent: 1}, false) // sampled, before the entry says what it is
+	sp := analytics.Span{Service: 1, Trace: uptime, ID: 1, Entry: true, HTTPStatus: 200}
+	line, _ := json.Marshal(&sp)
+	if err := s.sm.span(&sp, line, signals{probe: true}, s.l, s.now, func([]byte) error { s.kept = append(s.kept, sp); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.kept) != 1 || s.kept[0].ID != 2 {
+		t.Errorf("an uptime probe's trace kept %+v, want only the span sent before its entry", s.kept)
+	}
+}
+
+// A kept span says the strongest reason its trace has so far: error,
+// then slow, then sampled.
+func TestSampleKeptReason(t *testing.T) {
+	s := newSampled(100)
+	id := trace(1)
+	s.send(t, analytics.Span{Trace: id, ID: 3, Parent: 2}, false)
+	s.send(t, analytics.Span{Trace: id, ID: 2, Parent: 1, HTTPStatus: 500}, false)
+	s.send(t, analytics.Span{Trace: id, ID: 1, Entry: true, Duration: 3_000_000}, false)
+	want := []analytics.Kept{analytics.KeptSampled, analytics.KeptError, analytics.KeptError}
+	for i, w := range want {
+		if i >= len(s.kept) || s.kept[i].Kept != w {
+			t.Fatalf("kept %+v, want reasons %v", s.kept, want)
+		}
 	}
 }
 

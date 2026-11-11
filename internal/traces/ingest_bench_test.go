@@ -87,16 +87,16 @@ func BenchmarkSampleRescue(b *testing.B) {
 	line[0], line[len(line)-1] = '{', '}'
 	drop := func([]byte) error { return nil }
 	sp := analytics.Span{Service: 1, Trace: trace(1), ID: 1, Entry: true}
-	_ = sm.span(&sp, line, false, l, now, drop) // the budget's one trace
+	_ = sm.span(&sp, line, signals{}, l, now, drop) // the budget's one trace
 	for i := range 8000 {
 		sp := analytics.Span{Service: 1, Trace: trace(uint64(i%400) + 2), ID: 2}
-		_ = sm.span(&sp, line, false, l, now, drop)
+		_ = sm.span(&sp, line, signals{}, l, now, drop)
 	}
 	b.ReportAllocs()
 	i := uint64(0)
 	for b.Loop() {
 		i++
 		sp := analytics.Span{Service: 1, Trace: trace(1<<40 + i), ID: 1, Entry: true, HTTPStatus: 500}
-		_ = sm.span(&sp, line, false, l, now, drop)
+		_ = sm.span(&sp, line, signals{}, l, now, drop)
 	}
 }
