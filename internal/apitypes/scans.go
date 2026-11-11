@@ -138,6 +138,9 @@ type Finding struct {
 	// EPSS is the chance of exploitation in the next 30 days, 0 to 1.
 	EPSS      *float64  `json:"epss,omitempty"`
 	FirstSeen time.Time `json:"first_seen"`
+	// Ignored: an ignore hides it wherever the image runs live in the
+	// org, so it isn't counted. Only an image's page lists those.
+	Ignored bool `json:"ignored,omitempty"`
 }
 
 // PackageFix is one package's way out: its version now, the version that
@@ -165,6 +168,9 @@ type ImageDetail struct {
 	UsedBy   []ImageUse `json:"used_by"`
 	Fixes    []FixGroup `json:"fixes"`
 	Findings []Finding  `json:"findings"`
+	// Ignores are the ignores in force that hide any of its findings
+	// where it runs: its Ignored view.
+	Ignores []VulnIgnore `json:"ignores"`
 }
 
 // OrgFinding is a finding in a live release, for `dock vulns --all` and
@@ -212,4 +218,75 @@ type ScanningServer struct {
 // ScanningSettings turns scanning on or off.
 type ScanningSettings struct {
 	Enabled bool `json:"enabled"`
+}
+
+// IgnoreScope is where an ignore applies.
+type IgnoreScope string
+
+// Ignore scopes.
+const (
+	IgnoreService IgnoreScope = "service"
+	IgnoreProject IgnoreScope = "project"
+	IgnoreOrg     IgnoreScope = "org"
+)
+
+// VulnIgnore is an org's decision that a vulnerability doesn't matter
+// in a service, a project or the whole org, with why. It leaves the
+// finding out of counts, the overview, the Images page and alerts, and
+// expires unless an admin made it for good.
+type VulnIgnore struct {
+	ID            int64  `json:"id"`
+	Vulnerability string `json:"vulnerability" example:"CVE-2026-22451"`
+	// Package limits it to one package; empty is any.
+	Package string      `json:"package,omitempty"`
+	Scope   IgnoreScope `json:"scope" enum:"service,project,org"`
+	// Project, Environment and Service say where, as far as Scope goes.
+	Project     string `json:"project,omitempty"`
+	Environment string `json:"environment,omitempty"`
+	Service     string `json:"service,omitempty"`
+	Reason      string `json:"reason"`
+	// Expires is when it stops applying; none for always.
+	Expires *time.Time `json:"expires,omitempty"`
+	Expired bool       `json:"expired,omitempty"`
+	By      string     `json:"by" doc:"Who made it"`
+	Created time.Time  `json:"created"`
+}
+
+// VulnIgnores is every ignore of the org, newest first; expired ones
+// stay 30 days.
+type VulnIgnores struct {
+	Ignores []VulnIgnore `json:"ignores"`
+}
+
+// IgnoreVulnRequest ignores a vulnerability. Ignoring the same one in
+// the same place again replaces its reason and expiry.
+type IgnoreVulnRequest struct {
+	Vulnerability string      `json:"vulnerability" minLength:"1" maxLength:"100" example:"CVE-2026-22451"`
+	Package       string      `json:"package,omitempty" maxLength:"200" doc:"Only in this package; default any"`
+	Scope         IgnoreScope `json:"scope" enum:"service,project,org" doc:"service needs deploy on its environment, project deploy on the project, org admin"`
+	Project       string      `json:"project,omitempty"`
+	Environment   string      `json:"environment,omitempty"`
+	Service       string      `json:"service,omitempty"`
+	Reason        string      `json:"reason" minLength:"1" maxLength:"500" doc:"Why it doesn't matter here"`
+	// Days is how long it holds, 1 to 365 (default 90); Always, for
+	// admins, never expires.
+	Days   int  `json:"days,omitempty" minimum:"0" maximum:"365"`
+	Always bool `json:"always,omitempty"`
+}
+
+// VulnAlerts is which new vulnerabilities in live images alert.
+type VulnAlerts string
+
+// Vulnerability alert settings.
+const (
+	VulnAlertsCritical VulnAlerts = "critical"
+	VulnAlertsHigh     VulnAlerts = "high"
+	VulnAlertsOff      VulnAlerts = "off"
+)
+
+// VulnAlertSettings is the org's vulnerability alert setting: an alert
+// when a live release gets a vulnerability at least this bad that it
+// didn't have (critical, or high and critical), or none.
+type VulnAlertSettings struct {
+	Alert VulnAlerts `json:"alert" enum:"critical,high,off"`
 }

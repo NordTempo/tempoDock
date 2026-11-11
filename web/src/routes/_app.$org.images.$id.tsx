@@ -1,5 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { withOrg } from "../api/client";
 import { canDeploy, useSession } from "../data/queries";
 import type { ServiceRef } from "../data/types";
@@ -13,6 +13,8 @@ import {
   useImage,
   useScanService,
 } from "../features/images/data";
+import { IgnoresTable } from "../features/images/IgnoresTable";
+import { mayIgnore } from "../features/images/ignores";
 import {
   below,
   edgeOf,
@@ -39,12 +41,16 @@ import {
 } from "../ui/kit";
 
 // One image (ADR 0074): where it runs, its scan, its findings grouped by
-// what fixes them, and all of them behind a switch. /acme/images/12?view=all
-type Search = { view?: "all" };
+// what fixes them, all of them behind a switch (each can be ignored,
+// mock I1), and the ignores that hide some (L2). /acme/images/12?view=all
+type View = "all" | "ignored";
+type Search = { view?: View };
+
+const IgnoreDialog = lazy(() => import("../features/images/IgnoreDialog"));
 
 export const Route = createFileRoute("/_app/$org/images/$id")({
   validateSearch: (s: Record<string, unknown>): Search => ({
-    view: s.view === "all" ? "all" : undefined,
+    view: s.view === "all" || s.view === "ignored" ? s.view : undefined,
   }),
   loader: ({ context: { queryClient }, params }) => {
     const id = Number(params.id);
@@ -225,18 +231,22 @@ function Vulnerabilities({
   const view = Route.useSearch().view;
   const navigate = Route.useNavigate();
   const fixes = detail.fixes ?? [];
-  const findings = detail.findings ?? [];
+  const findings = (detail.findings ?? []).filter((f) => !f.ignored);
+  const ignores = detail.ignores ?? [];
   const { scan } = detail;
+  const versions = new Map(
+    (detail.findings ?? []).map((f) => [f.package, f.version]),
+  );
   return (
     <section aria-labelledby="vulns">
       <SectionHead
         id="vulns"
         right={
-          total(scan) > 0 && (
+          (total(scan) > 0 || ignores.length > 0) && (
             <span className="seg">
               <button
                 type="button"
-                aria-pressed={view !== "all"}
+                aria-pressed={!view}
                 onClick={() => navigate({ search: {}, replace: true })}
               >
                 By fix
@@ -250,16 +260,31 @@ function Vulnerabilities({
               >
                 All {total(scan)}
               </button>
+              {ignores.length > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={view === "ignored"}
+                  onClick={() =>
+                    navigate({ search: { view: "ignored" }, replace: true })
+                  }
+                >
+                  Ignored {ignores.length}
+                </button>
+              )}
             </span>
           )
         }
       >
         Vulnerabilities
       </SectionHead>
-      {total(scan) === 0 ? (
-        <p className="border-t border-line pt-3 text-mut">None found.</p>
+      {view === "ignored" && ignores.length > 0 ? (
+        <IgnoresTable ignores={ignores} versions={versions} />
+      ) : total(scan) === 0 ? (
+        <p className="border-t border-line pt-3 text-mut">
+          {ignores.length > 0 ? "None that isn't ignored." : "None found."}
+        </p>
       ) : view === "all" ? (
-        <FindingsTable findings={findings} />
+        <FindingsTable findings={findings} uses={detail.used_by ?? []} />
       ) : (
         <div className="flex flex-col gap-3 border-t border-line pt-3">
           {fixes.map((g) => (
@@ -356,9 +381,23 @@ function Group({
   );
 }
 
-/** Every finding, worst first as the API sorts them; a page at first. */
-function FindingsTable({ findings }: { findings: Finding[] }) {
+/**
+ * Every finding not ignored, worst first as the API sorts them; a page at
+ * first. Each can be ignored by those who may somewhere the image runs.
+ */
+function FindingsTable({
+  findings,
+  uses,
+}: {
+  findings: Finding[];
+  uses: ImageUse[];
+}) {
   const [shown, setShown] = useState(TABLE_CAP);
+  const [ignoring, setIgnoring] = useState<Finding>();
+  const session = useSession();
+  const canIgnore =
+    mayIgnore(session, { scope: "org" }) ||
+    uses.some((u) => mayIgnore(session, { scope: "service", ...u }));
   return (
     <>
       <Panel>
@@ -372,6 +411,11 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
               <th>Fixed in</th>
               <th>From</th>
               <th>Since</th>
+              {canIgnore && (
+                <th>
+                  <span className="sr-only">Ignore</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -395,6 +439,13 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
                 <td className="text-mut" title={f.first_seen}>
                   {since(f.first_seen)}
                 </td>
+                {canIgnore && (
+                  <td className="py-1 text-right">
+                    <Button small onClick={() => setIgnoring(f)}>
+                      Ignore
+                    </Button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -408,6 +459,15 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
         >
           Show all {findings.length}
         </Button>
+      )}
+      {ignoring && (
+        <Suspense>
+          <IgnoreDialog
+            finding={ignoring}
+            uses={uses}
+            onClose={() => setIgnoring(undefined)}
+          />
+        </Suspense>
       )}
     </>
   );

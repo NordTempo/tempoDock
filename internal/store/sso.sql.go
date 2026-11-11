@@ -192,7 +192,7 @@ func (q *Queries) GetSignInSettings(ctx context.Context) (GetSignInSettingsRow, 
 }
 
 const listOpenInvitesByEmail = `-- name: ListOpenInvitesByEmail :many
-SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at
+SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at, orgs.vuln_alerts
 FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id
 WHERE org_invites.email = +?1 AND org_invites.accepted_at IS NULL AND org_invites.revoked_at IS NULL
     AND org_invites.expires_at > +?2 AND orgs.deleted_at IS NULL
@@ -241,6 +241,7 @@ func (q *Queries) ListOpenInvitesByEmail(ctx context.Context, arg ListOpenInvite
 			&i.Org.SuspendedAt,
 			&i.Org.SuspendedBy,
 			&i.Org.DeletedAt,
+			&i.Org.VulnAlerts,
 		); err != nil {
 			return nil, err
 		}

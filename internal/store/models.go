@@ -573,6 +573,7 @@ type Org struct {
 	SuspendedAt      *time.Time
 	SuspendedBy      string
 	DeletedAt        *time.Time
+	VulnAlerts       string
 }
 
 type OrgInvite struct {
@@ -788,6 +789,7 @@ type Server struct {
 	PlainHttp            bool
 	ScanDbBuiltAt        *int64
 	ScanError            string
+	ScanDbCheckedAt      *int64
 }
 
 type ServerDrain struct {
@@ -1246,4 +1248,17 @@ type VolumeSnapshotRestore struct {
 	CreatedBy   string
 	StartedAt   time.Time
 	FinishedAt  *time.Time
+}
+
+type VulnIgnore struct {
+	ID        int64
+	OrgID     int64
+	ProjectID int64
+	ServiceID int64
+	VulnID    string
+	Package   string
+	Reason    string
+	ExpiresAt *int64
+	CreatedBy string
+	CreatedAt int64
 }

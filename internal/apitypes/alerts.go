@@ -83,6 +83,9 @@ const (
 	// registry's prune or a push failing. The next call that works
 	// resolves it.
 	AlertConnection AlertKind = "connection_failed"
+	// AlertNewVulnerability: a live release's image has critical (or,
+	// as the org chose, high) vulnerabilities it didn't have (ADR 0074).
+	AlertNewVulnerability AlertKind = "new_vulnerability"
 )
 
 // Alert is one occurrence of a problem, open until its condition clears or
@@ -90,7 +93,7 @@ const (
 // fuller, the same deploy failing again), never raised twice.
 type Alert struct {
 	ID       int64         `json:"id"`
-	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added"`
+	Kind     AlertKind     `json:"kind" doc:"disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability; more may be added"`
 	Severity AlertSeverity `json:"severity" enum:"warning,critical"`
 	Title    string        `json:"title" example:"Disk 91% full on vps-1"`
 	Message  string        `json:"message,omitempty"`
@@ -134,6 +137,10 @@ type AlertTarget struct {
 	// cloudflare:<name>, github:app, storage:<repository> or
 	// registry:prune and registry:push.
 	Connection string `json:"connection,omitempty"`
+	// Image is the image scan of new_vulnerability (GET /org/images/{id}),
+	// Vulnerabilities the IDs it is about.
+	Image           int64    `json:"image,omitempty"`
+	Vulnerabilities []string `json:"vulnerabilities,omitempty"`
 }
 
 // AlertChannelKind is how a channel sends alerts.

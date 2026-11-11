@@ -168,6 +168,15 @@ func (q *Queries) DeleteImageScan(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteVulnIgnore = `-- name: DeleteVulnIgnore :exec
+DELETE FROM vuln_ignores WHERE id = +?1
+`
+
+func (q *Queries) DeleteVulnIgnore(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteVulnIgnore, id)
+	return err
+}
+
 const getImageScan = `-- name: GetImageScan :one
 SELECT id, image_key, pull_ref, local_ref, built_on_server_id, org_id, production, state, priority, attempts, next_attempt_at, server_id, distro, packages, sbom_bytes, sbom_at, matched_at, db_built_at, critical, high, medium, low, other, fixable, kev, truncated, worst_fix, error, created_at FROM image_scans WHERE id = +?1
 `
@@ -250,6 +259,17 @@ func (q *Queries) GetImageScanByKey(ctx context.Context, imageKey string) (Image
 	return i, err
 }
 
+const getOrgVulnAlerts = `-- name: GetOrgVulnAlerts :one
+SELECT vuln_alerts FROM orgs WHERE id = +?1
+`
+
+func (q *Queries) GetOrgVulnAlerts(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getOrgVulnAlerts, id)
+	var vuln_alerts string
+	err := row.Scan(&vuln_alerts)
+	return vuln_alerts, err
+}
+
 const getScanning = `-- name: GetScanning :one
 SELECT scanning FROM platform_settings WHERE id = 1
 `
@@ -259,6 +279,73 @@ func (q *Queries) GetScanning(ctx context.Context) (int64, error) {
 	var scanning int64
 	err := row.Scan(&scanning)
 	return scanning, err
+}
+
+const getVulnIgnore = `-- name: GetVulnIgnore :one
+SELECT id, org_id, project_id, service_id, vuln_id, package, reason, expires_at, created_by, created_at FROM vuln_ignores WHERE id = +?1
+`
+
+func (q *Queries) GetVulnIgnore(ctx context.Context, id int64) (VulnIgnore, error) {
+	row := q.db.QueryRowContext(ctx, getVulnIgnore, id)
+	var i VulnIgnore
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ProjectID,
+		&i.ServiceID,
+		&i.VulnID,
+		&i.Package,
+		&i.Reason,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listActiveVulnIgnores = `-- name: ListActiveVulnIgnores :many
+SELECT id, org_id, project_id, service_id, vuln_id, package, reason, expires_at, created_by, created_at FROM vuln_ignores
+WHERE org_id = +?1 AND (expires_at IS NULL OR expires_at > +?2)
+`
+
+type ListActiveVulnIgnoresParams struct {
+	OrgID int64
+	Now   *int64
+}
+
+// The org's ignores in force, read with its findings (usually none).
+func (q *Queries) ListActiveVulnIgnores(ctx context.Context, arg ListActiveVulnIgnoresParams) ([]VulnIgnore, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveVulnIgnores, arg.OrgID, arg.Now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VulnIgnore
+	for rows.Next() {
+		var i VulnIgnore
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.ServiceID,
+			&i.VulnID,
+			&i.Package,
+			&i.Reason,
+			&i.ExpiresAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listImageFindings = `-- name: ListImageFindings :many
@@ -550,7 +637,7 @@ func (q *Queries) ListImageScansByID(ctx context.Context, ids []int64) ([]ImageS
 
 const listOrgFindings = `-- name: ListOrgFindings :many
 SELECT f.severity, f.vuln_id, f.package, f.version, f.pkg_type, f.fixed_in, f.kev, f.epss,
-       s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project, r.number
+       s.id AS service_id, s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project, r.number
 FROM projects p
 JOIN environments e ON e.project_id = p.id AND e.archived_at IS NULL
 JOIN services s ON s.environment_id = e.id AND s.archived_at IS NULL
@@ -575,6 +662,7 @@ type ListOrgFindingsRow struct {
 	FixedIn       string
 	Kev           int64
 	Epss          float64
+	ServiceID     int64
 	Service       string
 	EnvironmentID int64
 	Environment   string
@@ -604,6 +692,7 @@ func (q *Queries) ListOrgFindings(ctx context.Context, arg ListOrgFindingsParams
 			&i.FixedIn,
 			&i.Kev,
 			&i.Epss,
+			&i.ServiceID,
 			&i.Service,
 			&i.EnvironmentID,
 			&i.Environment,
@@ -816,6 +905,206 @@ func (q *Queries) ListProjectImageScans(ctx context.Context, projectID int64) ([
 	return items, nil
 }
 
+const listScanFindingsAtLeast = `-- name: ListScanFindingsAtLeast :many
+SELECT scan_id, severity, vuln_id, package, version, pkg_type, fixed_in, kev
+FROM image_findings WHERE scan_id IN (/*SLICE:scan_ids*/?) AND severity >= +?2
+ORDER BY scan_id, severity DESC, vuln_id
+`
+
+type ListScanFindingsAtLeastParams struct {
+	ScanIds     []int64
+	MinSeverity int64
+}
+
+type ListScanFindingsAtLeastRow struct {
+	ScanID   int64
+	Severity int64
+	VulnID   string
+	Package  string
+	Version  string
+	PkgType  string
+	FixedIn  string
+	Kev      int64
+}
+
+// The findings of some images at or above a severity, worst first: what
+// alerts.
+func (q *Queries) ListScanFindingsAtLeast(ctx context.Context, arg ListScanFindingsAtLeastParams) ([]ListScanFindingsAtLeastRow, error) {
+	query := listScanFindingsAtLeast
+	var queryParams []interface{}
+	if len(arg.ScanIds) > 0 {
+		for _, v := range arg.ScanIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", strings.Repeat(",?", len(arg.ScanIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", "NULL", 1)
+	}
+	queryParams = append(queryParams, arg.MinSeverity)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScanFindingsAtLeastRow
+	for rows.Next() {
+		var i ListScanFindingsAtLeastRow
+		if err := rows.Scan(
+			&i.ScanID,
+			&i.Severity,
+			&i.VulnID,
+			&i.Package,
+			&i.Version,
+			&i.PkgType,
+			&i.FixedIn,
+			&i.Kev,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScanFindingsOf = `-- name: ListScanFindingsOf :many
+SELECT scan_id, severity, vuln_id, package, version, pkg_type, fixed_in, kev
+FROM image_findings WHERE scan_id IN (/*SLICE:scan_ids*/?) AND vuln_id IN (/*SLICE:vuln_ids*/?)
+`
+
+type ListScanFindingsOfParams struct {
+	ScanIds []int64
+	VulnIds []string
+}
+
+type ListScanFindingsOfRow struct {
+	ScanID   int64
+	Severity int64
+	VulnID   string
+	Package  string
+	Version  string
+	PkgType  string
+	FixedIn  string
+	Kev      int64
+}
+
+// The findings of some images with some vulnerability IDs: those an
+// org's ignores may hide (sqlc.slice: one query for a page).
+func (q *Queries) ListScanFindingsOf(ctx context.Context, arg ListScanFindingsOfParams) ([]ListScanFindingsOfRow, error) {
+	query := listScanFindingsOf
+	var queryParams []interface{}
+	if len(arg.ScanIds) > 0 {
+		for _, v := range arg.ScanIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", strings.Repeat(",?", len(arg.ScanIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", "NULL", 1)
+	}
+	if len(arg.VulnIds) > 0 {
+		for _, v := range arg.VulnIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:vuln_ids*/?", strings.Repeat(",?", len(arg.VulnIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:vuln_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScanFindingsOfRow
+	for rows.Next() {
+		var i ListScanFindingsOfRow
+		if err := rows.Scan(
+			&i.ScanID,
+			&i.Severity,
+			&i.VulnID,
+			&i.Package,
+			&i.Version,
+			&i.PkgType,
+			&i.FixedIn,
+			&i.Kev,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScanFixesAtLeast = `-- name: ListScanFixesAtLeast :many
+SELECT scan_id, severity, vuln_id, package, pkg_type
+FROM image_findings WHERE scan_id IN (/*SLICE:scan_ids*/?) AND severity >= +?2 AND fixed_in != ''
+`
+
+type ListScanFixesAtLeastParams struct {
+	ScanIds     []int64
+	MinSeverity int64
+}
+
+type ListScanFixesAtLeastRow struct {
+	ScanID   int64
+	Severity int64
+	VulnID   string
+	Package  string
+	PkgType  string
+}
+
+// The fixable findings of some images at or above a severity: what fixes
+// the worst once ignores hide some.
+func (q *Queries) ListScanFixesAtLeast(ctx context.Context, arg ListScanFixesAtLeastParams) ([]ListScanFixesAtLeastRow, error) {
+	query := listScanFixesAtLeast
+	var queryParams []interface{}
+	if len(arg.ScanIds) > 0 {
+		for _, v := range arg.ScanIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", strings.Repeat(",?", len(arg.ScanIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:scan_ids*/?", "NULL", 1)
+	}
+	queryParams = append(queryParams, arg.MinSeverity)
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListScanFixesAtLeastRow
+	for rows.Next() {
+		var i ListScanFixesAtLeastRow
+		if err := rows.Scan(
+			&i.ScanID,
+			&i.Severity,
+			&i.VulnID,
+			&i.Package,
+			&i.PkgType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnscannedReleases = `-- name: ListUnscannedReleases :many
 
 SELECT r.id, r.service_id, r.image_ref, r.image_id, r.image_digest, r.pinned_ref, r.built_on_server_id,
@@ -864,6 +1153,79 @@ func (q *Queries) ListUnscannedReleases(ctx context.Context, maxRows int64) ([]L
 			&i.EnvKind,
 			&i.ServerID,
 			&i.OrgID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVulnIgnores = `-- name: ListVulnIgnores :many
+SELECT g.id, g.org_id, g.project_id, g.service_id, g.vuln_id, g.package, g.reason, g.expires_at, g.created_by, g.created_at, coalesce(p.name, '') AS project, coalesce(e.id, 0) AS environment_id, coalesce(e.name, '') AS environment,
+       coalesce(s.name, '') AS service
+FROM vuln_ignores g
+LEFT JOIN projects p ON p.id = g.project_id
+LEFT JOIN services s ON s.id = g.service_id
+LEFT JOIN environments e ON e.id = s.environment_id
+WHERE g.org_id = +?1 AND (g.expires_at IS NULL OR g.expires_at > +?2)
+ORDER BY g.id DESC LIMIT 1000
+`
+
+type ListVulnIgnoresParams struct {
+	OrgID  int64
+	Cutoff *int64
+}
+
+type ListVulnIgnoresRow struct {
+	ID            int64
+	OrgID         int64
+	ProjectID     int64
+	ServiceID     int64
+	VulnID        string
+	Package       string
+	Reason        string
+	ExpiresAt     *int64
+	CreatedBy     string
+	CreatedAt     int64
+	Project       string
+	EnvironmentID int64
+	Environment   string
+	Service       string
+}
+
+// Every ignore of the org, those expired after cutoff too, with where
+// they apply by name, newest first: the Ignores page.
+func (q *Queries) ListVulnIgnores(ctx context.Context, arg ListVulnIgnoresParams) ([]ListVulnIgnoresRow, error) {
+	rows, err := q.db.QueryContext(ctx, listVulnIgnores, arg.OrgID, arg.Cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListVulnIgnoresRow
+	for rows.Next() {
+		var i ListVulnIgnoresRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.ProjectID,
+			&i.ServiceID,
+			&i.VulnID,
+			&i.Package,
+			&i.Reason,
+			&i.ExpiresAt,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.Project,
+			&i.EnvironmentID,
+			&i.Environment,
+			&i.Service,
 		); err != nil {
 			return nil, err
 		}
@@ -942,6 +1304,40 @@ func (q *Queries) NextImageScanRetry(ctx context.Context, now *int64) (int64, er
 	return due, err
 }
 
+const previousServiceScan = `-- name: PreviousServiceScan :one
+SELECT r.image_scan_id FROM releases r
+JOIN image_scans i ON i.id = r.image_scan_id AND i.matched_at IS NOT NULL
+WHERE r.service_id = +?1 AND r.number < +?2
+ORDER BY r.number DESC LIMIT 1
+`
+
+type PreviousServiceScanParams struct {
+	ServiceID int64
+	Number    int64
+}
+
+// The scanned image of a service's release before release number: what
+// a new live image's vulnerabilities are new against.
+func (q *Queries) PreviousServiceScan(ctx context.Context, arg PreviousServiceScanParams) (*int64, error) {
+	row := q.db.QueryRowContext(ctx, previousServiceScan, arg.ServiceID, arg.Number)
+	var image_scan_id *int64
+	err := row.Scan(&image_scan_id)
+	return image_scan_id, err
+}
+
+const pruneVulnIgnores = `-- name: PruneVulnIgnores :execrows
+DELETE FROM vuln_ignores WHERE expires_at < +?1
+`
+
+// Ignores expired before cutoff, deleted when an ignore is made.
+func (q *Queries) PruneVulnIgnores(ctx context.Context, cutoff *int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, pruneVulnIgnores, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const raiseImageScanPriority = `-- name: RaiseImageScanPriority :exec
 UPDATE image_scans SET production = max(production, ?1), priority = min(priority, ?2)
 WHERE id = +?3
@@ -984,6 +1380,22 @@ UPDATE image_scans SET state = 'queued' WHERE state = 'scanning'
 func (q *Queries) RequeueInterruptedScans(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, requeueInterruptedScans)
 	return err
+}
+
+const requeueStaleLiveScans = `-- name: RequeueStaleLiveScans :execrows
+UPDATE image_scans SET state = 'queued', attempts = 0, next_attempt_at = NULL, error = ''
+WHERE state = 'scanned' AND (db_built_at IS NULL OR db_built_at < +?1)
+  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = image_scans.id AND r.status = 'active')
+`
+
+// After a newer database: every live image matched against an older one
+// is matched again from its stored SBOM (it has one: it was scanned).
+func (q *Queries) RequeueStaleLiveScans(ctx context.Context, built *int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, requeueStaleLiveScans, built)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const setImageScanResult = `-- name: SetImageScanResult :exec
@@ -1076,6 +1488,20 @@ func (q *Queries) SetImageScanState(ctx context.Context, arg SetImageScanStatePa
 	return err
 }
 
+const setOrgVulnAlerts = `-- name: SetOrgVulnAlerts :exec
+UPDATE orgs SET vuln_alerts = ? WHERE id = +?2
+`
+
+type SetOrgVulnAlertsParams struct {
+	VulnAlerts string
+	ID         int64
+}
+
+func (q *Queries) SetOrgVulnAlerts(ctx context.Context, arg SetOrgVulnAlertsParams) error {
+	_, err := q.db.ExecContext(ctx, setOrgVulnAlerts, arg.VulnAlerts, arg.ID)
+	return err
+}
+
 const setReleaseImageScan = `-- name: SetReleaseImageScan :exec
 UPDATE releases SET image_scan_id = ? WHERE id = +?2
 `
@@ -1120,6 +1546,23 @@ func (q *Queries) SetScanning(ctx context.Context, arg SetScanningParams) error 
 	return err
 }
 
+const setServerScanChecked = `-- name: SetServerScanChecked :exec
+
+UPDATE servers SET scan_db_checked_at = ? WHERE id = +?2
+`
+
+type SetServerScanCheckedParams struct {
+	ScanDbCheckedAt *int64
+	ID              int64
+}
+
+// Phase 2: ignores, alerts on new vulnerabilities, the daily refresh.
+// When a builder last asked for a newer vulnerability database.
+func (q *Queries) SetServerScanChecked(ctx context.Context, arg SetServerScanCheckedParams) error {
+	_, err := q.db.ExecContext(ctx, setServerScanChecked, arg.ScanDbCheckedAt, arg.ID)
+	return err
+}
+
 const setServerScanDatabase = `-- name: SetServerScanDatabase :exec
 UPDATE servers SET scan_db_built_at = ?, scan_error = ? WHERE id = +?3
 `
@@ -1133,4 +1576,54 @@ type SetServerScanDatabaseParams struct {
 func (q *Queries) SetServerScanDatabase(ctx context.Context, arg SetServerScanDatabaseParams) error {
 	_, err := q.db.ExecContext(ctx, setServerScanDatabase, arg.ScanDbBuiltAt, arg.ScanError, arg.ID)
 	return err
+}
+
+const upsertVulnIgnore = `-- name: UpsertVulnIgnore :one
+INSERT INTO vuln_ignores (org_id, project_id, service_id, vuln_id, package, reason, expires_at, created_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (org_id, project_id, service_id, vuln_id, package) DO UPDATE SET
+    reason = excluded.reason, expires_at = excluded.expires_at, created_by = excluded.created_by, created_at = excluded.created_at
+RETURNING id, org_id, project_id, service_id, vuln_id, package, reason, expires_at, created_by, created_at
+`
+
+type UpsertVulnIgnoreParams struct {
+	OrgID     int64
+	ProjectID int64
+	ServiceID int64
+	VulnID    string
+	Package   string
+	Reason    string
+	ExpiresAt *int64
+	CreatedBy string
+	CreatedAt int64
+}
+
+// Ignoring the same vulnerability in the same place again replaces the
+// reason and expiry.
+func (q *Queries) UpsertVulnIgnore(ctx context.Context, arg UpsertVulnIgnoreParams) (VulnIgnore, error) {
+	row := q.db.QueryRowContext(ctx, upsertVulnIgnore,
+		arg.OrgID,
+		arg.ProjectID,
+		arg.ServiceID,
+		arg.VulnID,
+		arg.Package,
+		arg.Reason,
+		arg.ExpiresAt,
+		arg.CreatedBy,
+		arg.CreatedAt,
+	)
+	var i VulnIgnore
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ProjectID,
+		&i.ServiceID,
+		&i.VulnID,
+		&i.Package,
+		&i.Reason,
+		&i.ExpiresAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
 }

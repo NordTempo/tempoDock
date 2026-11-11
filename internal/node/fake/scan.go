@@ -163,7 +163,8 @@ func (r *Runtime) Match(ctx context.Context, _ node.MatchRequest, sbom io.Reader
 }
 
 // ScanDatabase implements node.Scanner, recorded as "scan-database" with
-// " update" when it downloads one (built at the current time).
+// " update" when it downloads one: built at the current time, and always
+// newer than the one before (a day's database each update).
 func (r *Runtime) ScanDatabase(_ context.Context, req node.ScanDatabaseRequest) (node.ScanDatabase, error) {
 	r.mu.Lock()
 	if req.Update {
@@ -176,7 +177,11 @@ func (r *Runtime) ScanDatabase(_ context.Context, req node.ScanDatabaseRequest) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if req.Update {
-		s.built = time.Now().UTC().Truncate(time.Second)
+		next := time.Now().UTC().Truncate(time.Second)
+		if !next.After(s.built) {
+			next = s.built.Add(time.Second)
+		}
+		s.built = next
 	}
 	return node.ScanDatabase{Built: s.built, Schema: "v6"}, nil
 }

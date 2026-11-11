@@ -124,7 +124,9 @@ func (c *Core) remind(ctx context.Context, now time.Time) {
 	}
 	for _, d := range due {
 		a, ok := byID[d.AlertID]
-		if !ok {
+		if !ok || a.Kind == string(apitypes.AlertNewVulnerability) {
+			// Vulnerabilities aren't reminded of: what stands is on the
+			// Images page (ADR 0074).
 			continue
 		}
 		ch := d.AlertChannel

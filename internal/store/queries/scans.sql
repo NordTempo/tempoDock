@@ -127,7 +127,7 @@ WHERE e.project_id = +sqlc.arg(project_id);
 -- Findings at or above a severity in the org's live releases, worst
 -- first, with where they run: `dock vulns --all` and agents.
 SELECT f.severity, f.vuln_id, f.package, f.version, f.pkg_type, f.fixed_in, f.kev, f.epss,
-       s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project, r.number
+       s.id AS service_id, s.name AS service, e.id AS environment_id, e.name AS environment, e.kind AS env_kind, p.id AS project_id, p.name AS project, r.number
 FROM projects p
 JOIN environments e ON e.project_id = p.id AND e.archived_at IS NULL
 JOIN services s ON s.environment_id = e.id AND s.archived_at IS NULL
@@ -172,3 +172,85 @@ JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
 JOIN environments e ON e.id = s.environment_id
 JOIN projects p ON p.id = e.project_id
 WHERE r.image_scan_id = +sqlc.arg(scan_id) AND r.status = 'active';
+
+-- Phase 2: ignores, alerts on new vulnerabilities, the daily refresh.
+
+-- name: SetServerScanChecked :exec
+-- When a builder last asked for a newer vulnerability database.
+UPDATE servers SET scan_db_checked_at = ? WHERE id = +sqlc.arg(id);
+
+-- name: RequeueStaleLiveScans :execrows
+-- After a newer database: every live image matched against an older one
+-- is matched again from its stored SBOM (it has one: it was scanned).
+UPDATE image_scans SET state = 'queued', attempts = 0, next_attempt_at = NULL, error = ''
+WHERE state = 'scanned' AND (db_built_at IS NULL OR db_built_at < +sqlc.arg(built))
+  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = image_scans.id AND r.status = 'active');
+
+-- name: ListScanFindingsOf :many
+-- The findings of some images with some vulnerability IDs: those an
+-- org's ignores may hide (sqlc.slice: one query for a page).
+SELECT scan_id, severity, vuln_id, package, version, pkg_type, fixed_in, kev
+FROM image_findings WHERE scan_id IN (sqlc.slice(scan_ids)) AND vuln_id IN (sqlc.slice(vuln_ids));
+
+-- name: ListScanFindingsAtLeast :many
+-- The findings of some images at or above a severity, worst first: what
+-- alerts.
+SELECT scan_id, severity, vuln_id, package, version, pkg_type, fixed_in, kev
+FROM image_findings WHERE scan_id IN (sqlc.slice(scan_ids)) AND severity >= +sqlc.arg(min_severity)
+ORDER BY scan_id, severity DESC, vuln_id;
+
+-- name: ListScanFixesAtLeast :many
+-- The fixable findings of some images at or above a severity: what fixes
+-- the worst once ignores hide some.
+SELECT scan_id, severity, vuln_id, package, pkg_type
+FROM image_findings WHERE scan_id IN (sqlc.slice(scan_ids)) AND severity >= +sqlc.arg(min_severity) AND fixed_in != '';
+
+-- name: PreviousServiceScan :one
+-- The scanned image of a service's release before release number: what
+-- a new live image's vulnerabilities are new against.
+SELECT r.image_scan_id FROM releases r
+JOIN image_scans i ON i.id = r.image_scan_id AND i.matched_at IS NOT NULL
+WHERE r.service_id = +sqlc.arg(service_id) AND r.number < +sqlc.arg(number)
+ORDER BY r.number DESC LIMIT 1;
+
+-- name: UpsertVulnIgnore :one
+-- Ignoring the same vulnerability in the same place again replaces the
+-- reason and expiry.
+INSERT INTO vuln_ignores (org_id, project_id, service_id, vuln_id, package, reason, expires_at, created_by, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (org_id, project_id, service_id, vuln_id, package) DO UPDATE SET
+    reason = excluded.reason, expires_at = excluded.expires_at, created_by = excluded.created_by, created_at = excluded.created_at
+RETURNING *;
+
+-- name: ListActiveVulnIgnores :many
+-- The org's ignores in force, read with its findings (usually none).
+SELECT * FROM vuln_ignores
+WHERE org_id = +sqlc.arg(org_id) AND (expires_at IS NULL OR expires_at > +sqlc.arg(now));
+
+-- name: ListVulnIgnores :many
+-- Every ignore of the org, those expired after cutoff too, with where
+-- they apply by name, newest first: the Ignores page.
+SELECT g.*, coalesce(p.name, '') AS project, coalesce(e.id, 0) AS environment_id, coalesce(e.name, '') AS environment,
+       coalesce(s.name, '') AS service
+FROM vuln_ignores g
+LEFT JOIN projects p ON p.id = g.project_id
+LEFT JOIN services s ON s.id = g.service_id
+LEFT JOIN environments e ON e.id = s.environment_id
+WHERE g.org_id = +sqlc.arg(org_id) AND (g.expires_at IS NULL OR g.expires_at > +sqlc.arg(cutoff))
+ORDER BY g.id DESC LIMIT 1000;
+
+-- name: GetVulnIgnore :one
+SELECT * FROM vuln_ignores WHERE id = +sqlc.arg(id);
+
+-- name: DeleteVulnIgnore :exec
+DELETE FROM vuln_ignores WHERE id = +sqlc.arg(id);
+
+-- name: PruneVulnIgnores :execrows
+-- Ignores expired before cutoff, deleted when an ignore is made.
+DELETE FROM vuln_ignores WHERE expires_at < +sqlc.arg(cutoff);
+
+-- name: GetOrgVulnAlerts :one
+SELECT vuln_alerts FROM orgs WHERE id = +sqlc.arg(id);
+
+-- name: SetOrgVulnAlerts :exec
+UPDATE orgs SET vuln_alerts = ? WHERE id = +sqlc.arg(id);

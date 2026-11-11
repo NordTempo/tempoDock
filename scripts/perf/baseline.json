@@ -245,6 +245,11 @@
       "bytes_op": 70882,
       "allocs_op": 1399
     },
+    "core.BenchmarkListImagesIgnored": {
+      "ns_op": 447894,
+      "bytes_op": 130776,
+      "allocs_op": 2082
+    },
     "core.BenchmarkRedactBuildLog": {
       "ns_op": 1310557,
       "bytes_op": 82175,

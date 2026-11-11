@@ -6,6 +6,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // BenchmarkScanBusy is what image scanning adds to every build, deploy,
@@ -50,7 +51,7 @@ func BenchmarkScanFindingsWrite(b *testing.B) {
 	id, found := list.Images[0].Scan.ID, benchFindings(2000)
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := bc.c.writeFindings(bc.ctx, id, found, node.MatchResult{}); err != nil {
+		if _, err := bc.c.writeFindings(bc.ctx, id, found, node.MatchResult{}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -69,7 +70,42 @@ func BenchmarkListImages(b *testing.B) {
 		b.Fatal(err)
 	}
 	for _, img := range list.Images {
-		if err := bc.c.writeFindings(bc.ctx, img.Scan.ID, benchFindings(300), node.MatchResult{}); err != nil {
+		if _, err := bc.c.writeFindings(bc.ctx, img.Scan.ID, benchFindings(300), node.MatchResult{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		l, err := bc.c.ListImages(bc.ctx, testSystem, false)
+		if err != nil || len(l.Images) == 0 || l.Images[0].Scan.State != apitypes.ScanScanned {
+			b.Fatalf("images = %+v, %v", l, err)
+		}
+	}
+}
+
+// BenchmarkListImagesIgnored is the Images page of BenchmarkListImages
+// with 20 ignores in force, half of them on critical and high findings:
+// the two extra reads that leave ignored findings out of the counts.
+func BenchmarkListImagesIgnored(b *testing.B) {
+	bc := newBenchCore(b)
+	if err := bc.c.syncScans(bc.ctx); err != nil {
+		b.Fatal(err)
+	}
+	list, err := bc.c.ListImages(bc.ctx, testSystem, false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	for _, img := range list.Images {
+		if _, err := bc.c.writeFindings(bc.ctx, img.Scan.ID, benchFindings(300), node.MatchResult{}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	for i := range 20 {
+		// Severity is the ID's number mod 6: every other one is critical or high.
+		vuln := fmt.Sprintf("CVE-2026-%05d", i*3+i%2*2)
+		if _, err := bc.c.store.UpsertVulnIgnore(bc.ctx, store.UpsertVulnIgnoreParams{
+			OrgID: 1, VulnID: vuln, Reason: "bench", CreatedBy: "bench", CreatedAt: 1,
+		}); err != nil {
 			b.Fatal(err)
 		}
 	}
