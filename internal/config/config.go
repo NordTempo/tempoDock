@@ -101,6 +101,10 @@ type Scan struct {
 	// QuietSeconds is how long no build, deploy, wake or move may have
 	// run anywhere before a scan starts (60).
 	QuietSeconds int `toml:"quiet_seconds"`
+	// Offline: builders never download a vulnerability database; an
+	// operator imports one (`dock scanning import`), for installs without
+	// internet access. Base image checks are off too.
+	Offline bool `toml:"offline"`
 }
 
 // Logs bounds log history (ADR 0046): when dock removes a container, its

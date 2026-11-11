@@ -23,6 +23,19 @@ type fakeScans struct {
 	gate     chan struct{}
 	err      error
 	started  chan string
+	// remote are the digests registries serve for tags (RemoteDigest).
+	remote map[string]string
+}
+
+// SetRemoteDigest makes RemoteDigest answer digest for ref.
+func (r *Runtime) SetRemoteDigest(ref, digest string) {
+	s := &r.scans
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.remote == nil {
+		s.remote = map[string]string{}
+	}
+	s.remote[ref] = digest
 }
 
 // SetScanFindings makes a scan of any image of repository repo (a
@@ -200,6 +213,46 @@ func (r *Runtime) ImageDigest(_ context.Context, ref string) (string, error) {
 		return ref, nil
 	}
 	return repoOf(ref) + "@" + id, nil
+}
+
+// RemoteDigest implements node.Scanner, recorded as "remote-digest
+// <ref>": the digest SetRemoteDigest set, else not found.
+func (r *Runtime) RemoteDigest(_ context.Context, ref string, _ node.PullOptions) (string, error) {
+	r.mu.Lock()
+	r.op("remote-digest %s", ref)
+	r.mu.Unlock()
+	s := &r.scans
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if d, ok := s.remote[ref]; ok {
+		return d, nil
+	}
+	return "", fmt.Errorf("ask the registry for %s: %w", ref, node.ErrNotFound)
+}
+
+// ImportScanDatabase implements node.Scanner, recorded as "scan-database
+// import <size>": the archive is read whole and the database is then a
+// newer one, as an update makes it.
+func (r *Runtime) ImportScanDatabase(ctx context.Context, req node.ScanDatabaseRequest, archive io.Reader, size int64) (node.ScanDatabase, error) {
+	n, err := io.Copy(io.Discard, archive)
+	if err != nil {
+		return node.ScanDatabase{}, err
+	}
+	if n != size {
+		return node.ScanDatabase{}, fmt.Errorf("the database archive ended after %d of %d bytes", n, size)
+	}
+	r.mu.Lock()
+	r.op("scan-database import %d", size)
+	r.mu.Unlock()
+	s := &r.scans
+	s.mu.Lock()
+	next := time.Now().UTC().Truncate(time.Second)
+	if !next.After(s.built) {
+		next = s.built.Add(time.Second)
+	}
+	s.built = next
+	s.mu.Unlock()
+	return node.ScanDatabase{Built: next, Schema: "v6"}, ctx.Err()
 }
 
 // demoFindings are the findings in the file DOCK_FAKE_FINDINGS names

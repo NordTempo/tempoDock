@@ -174,6 +174,13 @@ func (r *Runtime) Match(ctx context.Context, req node.MatchRequest, sbom io.Read
 	return res, err
 }
 
+// scanDatabaseMemory caps the jobs that write the vulnerability database
+// (download, refresh, import). Unpacking Grype's archive (200 MB packed,
+// 3.4 GB unpacked, 2026-11-11) goes through the page cache the job is
+// charged for: it was killed at 1 GB and passed at 1.25 GB, so 2 GB
+// leaves room for the database to grow. Matches only read it (1 GB).
+const scanDatabaseMemory = 2 << 30
+
 // ScanDatabase implements node.Scanner.
 func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest) (node.ScanDatabase, error) {
 	if err := r.ensureScanImage(ctx, req.Images.Grype); err != nil {
@@ -182,7 +189,7 @@ func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest
 	if err := r.EnsureVolume(ctx, r.scanDBVolume(), req.Labels); err != nil {
 		return node.ScanDatabase{}, err
 	}
-	limits := node.ScanLimits{MemoryBytes: 1 << 30, Timeout: 15 * time.Minute}
+	limits := node.ScanLimits{MemoryBytes: scanDatabaseMemory, Timeout: 15 * time.Minute}
 	if req.Update {
 		if r.ScanNetwork == "" {
 			return node.ScanDatabase{}, errors.New("this server doesn't build, so it has no network for the vulnerability database")
@@ -224,6 +231,70 @@ func (r *Runtime) ScanDatabase(ctx context.Context, req node.ScanDatabaseRequest
 		return node.ScanDatabase{Schema: st.Schema}, nil
 	}
 	return node.ScanDatabase{Built: st.Built, Schema: st.Schema}, nil
+}
+
+// RemoteDigest implements node.Scanner: one manifest request to ref's
+// registry with the given credentials, nothing pulled.
+func (r *Runtime) RemoteDigest(ctx context.Context, ref string, opts node.PullOptions) (string, error) {
+	var auth string
+	switch {
+	case opts.Token != "":
+		auth = RegistryAuth(opts.Token)
+	case opts.Username != "":
+		auth = PasswordAuth(ref, opts.Username, opts.Password)
+	}
+	res, err := r.cli.DistributionInspect(ctx, ref, client.DistributionInspectOptions{EncodedRegistryAuth: auth})
+	if err != nil {
+		return "", fmt.Errorf("ask the registry for %s: %w", ref, err)
+	}
+	return res.Descriptor.Digest.String(), nil
+}
+
+// ImportScanDatabase implements node.Scanner: the archive is written to
+// a file in the server's data dir, mounted read-only into a Grype job
+// (no network) that imports it into the database volume, and removed.
+func (r *Runtime) ImportScanDatabase(ctx context.Context, req node.ScanDatabaseRequest, archive io.Reader, size int64) (node.ScanDatabase, error) {
+	if size <= 0 || size > node.MaxScanDatabaseArchive {
+		return node.ScanDatabase{}, fmt.Errorf("a database archive is 1 byte to %d MB, not %d bytes", node.MaxScanDatabaseArchive>>20, size)
+	}
+	if err := r.ensureScanImage(ctx, req.Images.Grype); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	if err := r.EnsureVolume(ctx, r.scanDBVolume(), req.Labels); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	dir := filepath.Join(r.DataDir, "scan")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	f, err := os.CreateTemp(dir, "import-*.tar.zst")
+	if err != nil {
+		return node.ScanDatabase{}, err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	n, err := io.Copy(f, io.LimitReader(archive, size))
+	if err = errors.Join(err, f.Chmod(0o644), f.Close()); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	if n != size {
+		return node.ScanDatabase{}, fmt.Errorf("the database archive ended after %d of %d bytes", n, size)
+	}
+	const in = "/dock-import/db.tar.zst"
+	limits := node.ScanLimits{MemoryBytes: scanDatabaseMemory, Timeout: 15 * time.Minute}
+	cfg := &container.Config{
+		Image: req.Images.Grype, Labels: scanLabels(req.Labels), Cmd: []string{"db", "import", in},
+		Env: grypeEnv(), Healthcheck: noHealthcheck(), AttachStdout: true, AttachStderr: true,
+	}
+	host := scanHost(limits)
+	host.ReadonlyRootfs = false
+	host.Mounts = []mount.Mount{
+		{Type: mount.TypeVolume, Source: r.scanDBVolume(), Target: scanDB},
+		{Type: mount.TypeBind, Source: f.Name(), Target: in, ReadOnly: true},
+	}
+	if err := r.runScanJob(ctx, "db-import", cfg, host, limits, nil, discard); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	return r.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: req.Images, Labels: req.Labels})
 }
 
 // ImageDigest implements node.Scanner: the repo digest of ref's

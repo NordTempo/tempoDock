@@ -71,6 +71,9 @@ type scanState struct {
 	// refresh, as the scanner's last pass saw its builders; zero for none
 	// known (the start-up pass looks).
 	refreshAt time.Time
+	// imported is the sha256 of the database archive an operator imported
+	// last, "" for none (ADR 0074 phase 3).
+	imported string
 }
 
 func newScanState() scanState {
@@ -136,8 +139,13 @@ func (c *Core) startScans(ctx context.Context) {
 	if err := c.store.RequeueInterruptedScans(ctx); err != nil {
 		c.log.Error("requeue scans", "err", err)
 	}
+	imported, err := c.store.GetScanDatabaseImport(ctx)
+	if err != nil && !store.IsNotFound(err) {
+		c.log.Error("read the imported database", "err", err)
+	}
 	c.scans.mu.Lock()
 	c.scans.enabled = on != 0
+	c.scans.imported = imported
 	c.scans.lastBusy = time.Now()
 	c.scans.mu.Unlock()
 	c.kickScans()
@@ -262,6 +270,10 @@ func (c *Core) scanPass() (more bool, retry time.Time) {
 	if len(builders) == 0 {
 		return false, time.Time{} // a builder coming online kicks
 	}
+	if srv, ok := c.scanImportDue(builders); ok {
+		c.importScanDatabase(ctx, srv)
+		return true, time.Time{}
+	}
 	if srv, ok := c.scanRefreshDue(builders, now()); ok {
 		c.refreshScanDatabase(ctx, srv)
 		return true, time.Time{}
@@ -343,7 +355,8 @@ func (c *Core) syncScans(ctx context.Context) error {
 			case store.IsNotFound(err):
 				scan, err = q.AddImageScan(ctx, store.AddImageScanParams{
 					ImageKey: img.key, PullRef: img.pull, LocalRef: img.local, BuiltOnServerID: img.builtOn,
-					OrgID: r.OrgID, Production: boolInt(prod), Priority: prio, CreatedAt: now().Unix(),
+					OrgID: r.OrgID, Production: boolInt(prod), Priority: prio, BaseImage: r.BaseImage, BaseDigest: r.BaseDigest,
+					CreatedAt: now().Unix(),
 				})
 				if err == nil && img.unsupported != "" {
 					err = q.SetImageScanState(ctx, store.SetImageScanStateParams{State: string(apitypes.ScanUnsupported), Error: img.unsupported, ID: scan.ID})
@@ -516,7 +529,7 @@ func (c *Core) scanOn(ctx context.Context, row store.ImageScan, srv store.Server
 }
 
 // ensureScanDatabase makes sure srv has a vulnerability database,
-// downloading one the first time (Grype's, about 65 MB, 3.4 GB on disk).
+// downloading one the first time (Grype's, about 200 MB, 3.4 GB on disk).
 func (c *Core) ensureScanDatabase(ctx context.Context, srv store.Server, rt node.Runtime, labels node.Labels) error {
 	c.scans.mu.Lock()
 	built := c.scans.db[srv.ID]
@@ -525,6 +538,9 @@ func (c *Core) ensureScanDatabase(ctx context.Context, srv store.Server, rt node
 		return nil
 	}
 	db, err := rt.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: c.scanImages(), Labels: labels})
+	if err == nil && db.Built.IsZero() && c.cfg.Scan.Offline {
+		err = errors.New("this server has no vulnerability database, and [scan] offline keeps it from downloading one: import one with `dock scanning import FILE`")
+	}
 	if err == nil && db.Built.IsZero() {
 		db, err = rt.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: c.scanImages(), Update: true, Labels: labels})
 		if err == nil {
@@ -552,6 +568,9 @@ const scanRefreshEvery = 24 * time.Hour
 // it has one, and hasn't asked for a newer one for a day. It notes when
 // the next one is due, for kickScanRefresh.
 func (c *Core) scanRefreshDue(builders []store.Server, at time.Time) (store.Server, bool) {
+	if c.cfg.Scan.Offline {
+		return store.Server{}, false // databases only come by import
+	}
 	var next time.Time
 	for _, s := range builders {
 		if s.ScanDbBuiltAt == nil {
@@ -575,7 +594,7 @@ func (c *Core) scanRefreshDue(builders []store.Server, at time.Time) (store.Serv
 }
 
 // refreshScanDatabase has a builder get a newer vulnerability database
-// (a download of about 65 MB when there is one) and queues every live
+// (a download of about 200 MB when there is one) and queues every live
 // image matched against an older one to be matched again from its
 // stored SBOM: no image is pulled or unpacked again. Like any step, a
 // build or deploy kills it, and the next quiet minute tries again; a
@@ -605,6 +624,8 @@ func (c *Core) refreshScanDatabase(ctx context.Context, srv store.Server) {
 		return
 	}
 	c.log.Info("vulnerability database refreshed", "server", srv.Name, "built", db.Built, "rematch", n)
+	// Once a day, with the registry in reach: have base images moved?
+	c.checkBaseImages(ctx, srv, rt)
 }
 
 // setScanChecked records that a builder just asked for a newer database.

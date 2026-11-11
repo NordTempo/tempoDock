@@ -34,7 +34,19 @@ type Scanner interface {
 	// pulled again exactly elsewhere. An image without one (built or
 	// loaded here) answers "".
 	ImageDigest(ctx context.Context, ref string) (string, error)
+	// RemoteDigest asks ref's registry, through the server's Docker and
+	// without pulling, which digest its tag points at now (sha256:...):
+	// one manifest request, for the base image hint.
+	RemoteDigest(ctx context.Context, ref string, opts PullOptions) (string, error)
+	// ImportScanDatabase imports a vulnerability database archive (as
+	// Grype publishes it, size bytes read from archive) into the server's
+	// database, for installs that can't download one: no network.
+	ImportScanDatabase(ctx context.Context, req ScanDatabaseRequest, archive io.Reader, size int64) (ScanDatabase, error)
 }
+
+// MaxScanDatabaseArchive caps an imported database archive (Grype's v6
+// archive is about 200 MB).
+const MaxScanDatabaseArchive = 1 << 30
 
 // ErrNoScanDatabase is Match on a server without a vulnerability
 // database: ScanDatabase with Update gets one.

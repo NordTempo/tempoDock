@@ -314,8 +314,9 @@ func TestBuildStreamsBothWays(t *testing.T) {
 	src, upload := io.Pipe()
 	logs := &syncBuffer{}
 	type result struct {
-		id  string
-		err error
+		id   string
+		base string
+		err  error
 	}
 	done := make(chan result, 1)
 	go func() {
@@ -323,7 +324,7 @@ func TestBuildStreamsBothWays(t *testing.T) {
 			Source: src, Tag: "app:1", CacheScope: "p1_e2", Logs: logs,
 			Push: &node.PushTarget{Ref: "127.0.0.1:5000/1/2:e-3", Token: "push-token"},
 		})
-		done <- result{id, err}
+		done <- result{id.ID, id.Base + "@" + id.BaseDigest, err}
 	}()
 
 	// Build output reaches the control plane while the context is still
@@ -338,8 +339,8 @@ func TestBuildStreamsBothWays(t *testing.T) {
 	_ = upload.Close()
 	res := <-done
 	sum := sha256.Sum256(payload)
-	if res.err != nil || res.id != "sha256:"+hex.EncodeToString(sum[:]) {
-		t.Fatalf("build = %q, %v", res.id, res.err)
+	if res.err != nil || res.id != "sha256:"+hex.EncodeToString(sum[:]) || res.base != "node:22-alpine@sha256:base" {
+		t.Fatalf("build = %q (base %q), %v", res.id, res.base, res.err)
 	}
 	if !strings.Contains(logs.String(), fmt.Sprintf("received %d bytes for p1_e2, push 127.0.0.1:5000/1/2:e-3 with push-token", len(payload))) {
 		t.Fatalf("logs = %q", logs.String())
@@ -1128,17 +1129,17 @@ func (r *testRuntime) HealthCheck(ctx context.Context, c node.Container, hc node
 	return r.Runtime.HealthCheck(ctx, c, hc)
 }
 
-func (r *testRuntime) Build(_ context.Context, req node.BuildRequest) (id string, err error) {
+func (r *testRuntime) Build(_ context.Context, req node.BuildRequest) (b node.Built, err error) {
 	defer func() { signal(r.buildEnded, err) }()
 	_, _ = fmt.Fprintln(req.Logs, "receiving context")
 	sum := sha256.New()
 	n, err := io.Copy(sum, req.Source)
 	if err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 	if req.Tag == "fail" {
 		_, _ = fmt.Fprintln(req.Logs, "step 2 failed")
-		return "", errors.New("RUN npm ci: exit code 1")
+		return node.Built{}, errors.New("RUN npm ci: exit code 1")
 	}
 	_, _ = io.WriteString(req.Logs, r.buildLog)
 	_, _ = fmt.Fprintf(req.Logs, "received %d bytes for %s", n, req.CacheScope)
@@ -1146,7 +1147,7 @@ func (r *testRuntime) Build(_ context.Context, req node.BuildRequest) (id string
 		_, _ = fmt.Fprintf(req.Logs, ", push %s with %s", req.Push.Ref, req.Push.Token)
 	}
 	_, _ = fmt.Fprintln(req.Logs)
-	return "sha256:" + hex.EncodeToString(sum.Sum(nil)), nil
+	return node.Built{ID: "sha256:" + hex.EncodeToString(sum.Sum(nil)), Base: "node:22-alpine", BaseDigest: "sha256:base"}, nil
 }
 
 // signal sends v if ch has room, so benchmarks that never read don't block.

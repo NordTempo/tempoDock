@@ -409,7 +409,7 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	}
 	timeout := c.buildTimeout()
 	bctx, cancel := context.WithTimeout(ctx, timeout)
-	id, err := brt.Build(bctx, req)
+	built, err := brt.Build(bctx, req)
 	cancel()
 	if err != nil {
 		if ctx.Err() == nil && errors.Is(bctx.Err(), context.DeadlineExceeded) {
@@ -418,6 +418,13 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 		return "", step(apitypes.CodeBuildFailed, "build failed: %w", c.nodeErr(builder.ID, err))
 	}
 	d.event(ctx, "Built "+ref)
+	id := built.ID
+	if built.Base != "" {
+		// What the image is built on, for the base image hint (ADR 0074).
+		if err := c.store.SetReleaseBase(ctx, store.SetReleaseBaseParams{BaseImage: built.Base, BaseDigest: built.BaseDigest, ID: d.rel.ID}); err != nil {
+			return "", err
+		}
+	}
 	if req.Push == nil {
 		return id, nil
 	}

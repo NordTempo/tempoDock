@@ -409,14 +409,14 @@ func send[T any](ctx context.Context, ch chan<- T, v T) bool {
 
 // Build implements node.Builder. The build context streams up while build
 // output streams back, on the same call.
-func (c *Client) Build(ctx context.Context, req node.BuildRequest) (string, error) {
+func (c *Client) Build(ctx context.Context, req node.BuildRequest) (node.Built, error) {
 	args := buildRequest{
 		Dockerfile: req.Dockerfile, BuildCommand: req.BuildCommand, StartCommand: req.StartCommand,
 		BuildArgs: req.BuildArgs, CacheScope: req.CacheScope, Tag: req.Tag, Push: toWirePushTarget(req.Push),
 	}
 	// No deadline of its own: core bounds builds ([buildkit] timeout_minutes).
-	r, err := callWithLogs[imageIDResult](ctx, c, opBuild, 0, args, req.Source, req.Logs)
-	return r.ImageID, err
+	r, err := callWithLogs[buildResult](ctx, c, opBuild, 0, args, req.Source, req.Logs)
+	return node.Built{ID: r.ImageID, Base: r.Base, BaseDigest: r.BaseDigest}, err
 }
 
 // AccessProtocol is the first protocol whose routes carry access

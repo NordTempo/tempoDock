@@ -95,6 +95,19 @@ type ImageScan struct {
 	DatabaseBuilt *time.Time `json:"database_built,omitempty"`
 	// Error says why it failed or can't be scanned, or what it waits for.
 	Error string `json:"error,omitempty"`
+	// Base is the image a Dockerfile build was built on, when Dock built
+	// it from one.
+	Base *ImageBase `json:"base,omitempty"`
+}
+
+// ImageBase is the image an image was built on, and whether its tag has
+// moved since: then a rebuild picks up a newer base image.
+type ImageBase struct {
+	Image  string `json:"image" example:"node:22-alpine"`
+	Digest string `json:"digest" doc:"What the tag pointed at when the image was built"`
+	// Moved: the tag pointed at another image at the last daily check.
+	Moved     bool       `json:"moved,omitempty"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
 }
 
 // ImageUse is a release that runs an image.
@@ -200,6 +213,10 @@ type ScanRequest struct {
 // ScanningStatus is scanning on the platform, for operators.
 type ScanningStatus struct {
 	Enabled bool `json:"enabled"`
+	// Offline: builders never download a database ([scan] offline);
+	// Imported is the sha256 of the archive an operator imported last.
+	Offline  bool   `json:"offline,omitempty"`
+	Imported string `json:"imported,omitempty"`
 	// Images counts scans by state.
 	Images map[ScanState]int `json:"images"`
 	// Waiting says why nothing is scanned right now, if that is so.
@@ -212,7 +229,9 @@ type ScanningServer struct {
 	Server        string     `json:"server"`
 	Production    bool       `json:"production" doc:"It accepts production, so it may scan production images"`
 	DatabaseBuilt *time.Time `json:"database_built,omitempty"`
-	Error         string     `json:"error,omitempty"`
+	// Imported: it has imported the archive the status names.
+	Imported bool   `json:"imported,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 // ScanningSettings turns scanning on or off.

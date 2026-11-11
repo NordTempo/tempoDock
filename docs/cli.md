@@ -212,6 +212,7 @@ name. Update older CLI clients before renaming projects they use.
 | `images [--production]` | Every image the organization's live releases run, one row per image, worst first: its base, its vulnerabilities and when it was scanned |
 | `scan [-r N]` | Queue the service's live image (or release N's) for a scan against the current database (deploy). It waits like every scan until no build or deploy has run for a minute |
 | `sbom [-r N] [--format syft-json\|cyclonedx-json\|spdx-json]` | Print the image's SBOM: as Syft made it, or as CycloneDX 1.6 or SPDX 2.3 JSON for tools that take those |
+| `scanning [on\|off]`, `scanning import FILE` | Operators: whether image scanning is on, scans by state and each builder's vulnerability database; `import` uploads a Grype database archive for installs without internet access, which every builder imports at the next quiet minute (with `[scan] offline`, the only way builders get one) |
 | `release wait [N] [--timeout D]` | Follow a release until it is live or failed, like `deploy` does (default: the newest release), with the same output and exit codes: 0 when live, 6 when failed. A release that is already done is printed right away. `--timeout` (or Ctrl-C) stops following with exit 1; the deploy continues |
 | `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |
 | `restart` | New release identical to the active one |

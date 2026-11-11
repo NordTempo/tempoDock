@@ -4,7 +4,7 @@
 -- Live releases whose image has no scan yet, with what picking or
 -- making one needs. Through the releases_unscanned partial index.
 SELECT r.id, r.service_id, r.image_ref, r.image_id, r.image_digest, r.pinned_ref, r.built_on_server_id,
-       e.kind AS env_kind, e.server_id, p.org_id
+       r.base_image, r.base_digest, e.kind AS env_kind, e.server_id, p.org_id
 FROM releases r
 JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
 JOIN environments e ON e.id = s.environment_id
@@ -25,8 +25,8 @@ SELECT * FROM image_scans WHERE image_key = +sqlc.arg(image_key);
 SELECT * FROM image_scans WHERE id = +sqlc.arg(id);
 
 -- name: AddImageScan :one
-INSERT INTO image_scans (image_key, pull_ref, local_ref, built_on_server_id, org_id, production, priority, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+INSERT INTO image_scans (image_key, pull_ref, local_ref, built_on_server_id, org_id, production, priority, base_image, base_digest, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 
 -- name: RaiseImageScanPriority :exec
 -- A scan another, more important release uses now: production first.
@@ -254,3 +254,34 @@ SELECT vuln_alerts FROM orgs WHERE id = +sqlc.arg(id);
 
 -- name: SetOrgVulnAlerts :exec
 UPDATE orgs SET vuln_alerts = ? WHERE id = +sqlc.arg(id);
+
+-- Phase 3: base image hints and database imports.
+
+-- name: SetReleaseBase :exec
+UPDATE releases SET base_image = ?, base_digest = ? WHERE id = +sqlc.arg(id);
+
+-- name: ListLiveBaseImages :many
+-- The base images live images were built on, each once, with an org that
+-- runs one (whose registry credential asks for it): the daily check of
+-- whether their tags moved.
+SELECT i.base_image, CAST(min(i.org_id) AS INTEGER) AS org_id FROM image_scans i
+WHERE i.base_image != '' AND i.base_digest != ''
+  AND EXISTS (SELECT 1 FROM releases r WHERE r.image_scan_id = i.id AND r.status = 'active')
+GROUP BY i.base_image LIMIT +sqlc.arg(max_rows);
+
+-- name: SetBaseImageDigest :exec
+-- What a base image's tag points at now: the images built on an older
+-- digest have a newer base a rebuild picks up.
+UPDATE image_scans SET base_moved = CAST(base_digest != sqlc.arg(digest) AS INTEGER), base_checked_at = sqlc.arg(checked_at)
+WHERE base_image = +sqlc.arg(base_image) AND base_digest != '';
+
+-- name: GetScanDatabaseImport :one
+SELECT scan_db_import FROM platform_settings WHERE id = 1;
+
+-- name: SetScanDatabaseImport :exec
+INSERT INTO platform_settings (id, scan_db_import, updated_by, updated_at) VALUES (1, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET scan_db_import = excluded.scan_db_import, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+
+-- name: SetServerScanImport :exec
+-- The database archive a builder imported (its sha256).
+UPDATE servers SET scan_db_import = ? WHERE id = +sqlc.arg(id);

@@ -124,6 +124,13 @@ type (
 	imageIDResult struct {
 		ImageID string `json:"image_id"`
 	}
+	// buildResult is a build's image ID and (protocol 27; older nodes
+	// leave them out) the image its final stage was built on.
+	buildResult struct {
+		ImageID    string `json:"image_id"`
+		Base       string `json:"base,omitempty"`
+		BaseDigest string `json:"base_digest,omitempty"`
+	}
 	hasImageResult struct {
 		Present bool `json:"present"`
 	}

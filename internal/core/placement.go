@@ -359,8 +359,10 @@ func (o offlineRuntime) Dial(context.Context, node.DialRequest) (net.Conn, error
 func (o offlineRuntime) RunJob(context.Context, node.JobSpec) (node.JobResult, error) {
 	return node.JobResult{}, o.err
 }
-func (o offlineRuntime) Build(context.Context, node.BuildRequest) (string, error) { return "", o.err }
-func (o offlineRuntime) ApplyRoutes(context.Context, []node.Route) error          { return o.err }
+func (o offlineRuntime) Build(context.Context, node.BuildRequest) (node.Built, error) {
+	return node.Built{}, o.err
+}
+func (o offlineRuntime) ApplyRoutes(context.Context, []node.Route) error { return o.err }
 func (o offlineRuntime) CheckDomain(context.Context, string) (node.DomainCheck, error) {
 	return node.DomainCheck{}, o.err
 }
@@ -407,3 +409,9 @@ func (o offlineRuntime) ScanDatabase(context.Context, node.ScanDatabaseRequest) 
 	return node.ScanDatabase{}, o.err
 }
 func (o offlineRuntime) ImageDigest(context.Context, string) (string, error) { return "", o.err }
+func (o offlineRuntime) RemoteDigest(context.Context, string, node.PullOptions) (string, error) {
+	return "", o.err
+}
+func (o offlineRuntime) ImportScanDatabase(context.Context, node.ScanDatabaseRequest, io.Reader, int64) (node.ScanDatabase, error) {
+	return node.ScanDatabase{}, o.err
+}

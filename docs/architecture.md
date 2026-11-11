@@ -371,7 +371,9 @@ org's Images page, `dock vulns` and MCP `list_vulnerabilities` read it.
 Once a day a builder gets a newer database and live images are matched
 again from their SBOMs; a new critical in a live release alerts. An org's
 ignores (a reason and an expiry) apply when findings are read, since a
-scan is shared across orgs.
+scan is shared across orgs. SBOMs export as CycloneDX or SPDX, converted as they
+stream; a Dockerfile build records its base image, whose tag the daily
+refresh checks; air-gapped installs import the database instead.
 
 ## Backups and updates
 

@@ -432,12 +432,12 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		open, err := rt.OpenRequests(ctx, a.Upstreams)
 		return openRequestsResult{Open: open}, err
 	}))
-	h(opBuild, withLogs(func(ctx context.Context, a buildRequest, source io.Reader, logs io.Writer) (imageIDResult, error) {
-		id, err := rt.Build(ctx, node.BuildRequest{
+	h(opBuild, withLogs(func(ctx context.Context, a buildRequest, source io.Reader, logs io.Writer) (buildResult, error) {
+		b, err := rt.Build(ctx, node.BuildRequest{
 			Source: source, Dockerfile: a.Dockerfile, BuildCommand: a.BuildCommand, StartCommand: a.StartCommand,
 			BuildArgs: a.BuildArgs, CacheScope: a.CacheScope, Tag: a.Tag, Push: a.Push.node(), Logs: logs,
 		})
-		return imageIDResult{ImageID: id}, err
+		return buildResult{ImageID: b.ID, Base: b.Base, BaseDigest: b.BaseDigest}, err
 	}))
 	h(opApplyRoutes, unary(func(ctx context.Context, a routesRequest) (empty, error) {
 		return empty{}, rt.ApplyRoutes(ctx, fromWireRoutes(a.Routes))

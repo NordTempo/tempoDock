@@ -396,8 +396,9 @@ type DialRequest struct {
 // Builder turns source code into an image available to this server.
 type Builder interface {
 	// Build builds req.Source and tags the result as req.Tag. Build output
-	// is written to req.Logs. Returns the image ID (sha256:...).
-	Build(ctx context.Context, req BuildRequest) (string, error)
+	// is written to req.Logs. Returns the image ID (sha256:...) and, for a
+	// Dockerfile build, the image it was built on.
+	Build(ctx context.Context, req BuildRequest) (Built, error)
 	// PruneBuildCache removes build cache, least recently used first, until
 	// at most keepBytes are left. A server that doesn't build, or whose
 	// BuildKit isn't running, has nothing to prune.
@@ -894,6 +895,18 @@ type ContainerEvent struct {
 const ActionWake = "dock.wake"
 
 // BuildRequest describes one image build.
+// Built is a build's result.
+type Built struct {
+	// ID is the image's ID (sha256:...).
+	ID string
+	// Base is the image a Dockerfile build's final stage is built on, as
+	// a reference (node:22-alpine), and BaseDigest the digest it resolved
+	// to then (sha256:...): a newer image under the same tag is what a
+	// rebuild picks up (ADR 0074). Empty for Railpack builds, scratch,
+	// and a FROM whose variables don't resolve.
+	Base, BaseDigest string
+}
+
 type BuildRequest struct {
 	// Source is a tar stream of the build context (uncompressed or gzip).
 	Source io.Reader

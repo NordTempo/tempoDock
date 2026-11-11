@@ -14,17 +14,25 @@ import (
 // Image scanning over the link (ADR 0074), protocol 23: scan-sbom streams
 // the SBOM down as log frames (it is text), scan-match uploads one and
 // gets its findings back as item frames, scan-database and image-digest
-// are plain calls. Canceling any of them resets the stream, which kills
+// are plain calls. Protocol 27: remote-digest (a plain call) and
+// scan-database-import (the archive uploaded as the body). Canceling any of them resets the stream, which kills
 // the node's scan job: that is how a deploy preempts a scan.
 
-// ScanProtocol is the first protocol with the scan ops.
-const ScanProtocol = 23
+// ScanProtocol is the first protocol with the scan ops; BaseProtocol
+// the first with remote-digest and scan-database-import (phase 3), and
+// whose builds report their base image.
+const (
+	ScanProtocol = 23
+	BaseProtocol = 27
+)
 
 const (
-	opScanSBOM     = "scan-sbom"
-	opScanMatch    = "scan-match"
-	opScanDatabase = "scan-database"
-	opImageDigest  = "image-digest"
+	opScanSBOM           = "scan-sbom"
+	opScanMatch          = "scan-match"
+	opScanDatabase       = "scan-database"
+	opImageDigest        = "image-digest"
+	opRemoteDigest       = "remote-digest"
+	opScanDatabaseImport = "scan-database-import"
 )
 
 type (
@@ -82,6 +90,17 @@ type (
 	}
 	imageDigestResult struct {
 		Digest string `json:"digest"`
+	}
+	remoteDigestRequest struct {
+		Ref      string `json:"ref"`
+		Token    string `json:"token,omitempty"`
+		Username string `json:"username,omitempty"`
+		Password string `json:"password,omitempty"`
+	}
+	scanImportRequest struct {
+		Images wireScanImages `json:"images"`
+		Size   int64          `json:"size"`
+		Labels wireLabels     `json:"labels"`
 	}
 )
 
@@ -159,6 +178,26 @@ func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
 	return r.Digest, err
 }
 
+// RemoteDigest implements node.Scanner.
+func (c *Client) RemoteDigest(ctx context.Context, ref string, opts node.PullOptions) (string, error) {
+	if err := c.needProtocol(ctx, BaseProtocol, "check base images"); err != nil {
+		return "", err
+	}
+	r, err := unaryCall[imageDigestResult](ctx, c, opRemoteDigest, remoteDigestRequest{Ref: ref, Token: opts.Token, Username: opts.Username, Password: opts.Password})
+	return r.Digest, err
+}
+
+// ImportScanDatabase implements node.Scanner: the archive streams up as
+// the request's body.
+func (c *Client) ImportScanDatabase(ctx context.Context, req node.ScanDatabaseRequest, archive io.Reader, size int64) (node.ScanDatabase, error) {
+	if err := c.needProtocol(ctx, BaseProtocol, "import vulnerability databases"); err != nil {
+		return node.ScanDatabase{}, err
+	}
+	r, err := callWithLogs[scanDatabaseResult](ctx, c, opScanDatabaseImport, 0,
+		scanImportRequest{Images: toWireScanImages(req.Images), Size: size, Labels: toWireLabels(req.Labels)}, archive, nil)
+	return node.ScanDatabase(r), err
+}
+
 func (f wireFinding) node() node.Finding {
 	return node.Finding{ID: f.ID, Severity: node.Severity(f.Severity), Package: f.Package, Version: f.Version, Type: f.Type, FixedIn: f.FixedIn, KEV: f.KEV, EPSS: f.EPSS}
 }
@@ -191,6 +230,14 @@ func scanRoutes(h func(string, http.HandlerFunc), rt node.Scanner) {
 	h(opImageDigest, unary(func(ctx context.Context, a imageRequest) (imageDigestResult, error) {
 		d, err := rt.ImageDigest(ctx, a.Ref)
 		return imageDigestResult{Digest: d}, err
+	}))
+	h(opRemoteDigest, unary(func(ctx context.Context, a remoteDigestRequest) (imageDigestResult, error) {
+		d, err := rt.RemoteDigest(ctx, a.Ref, node.PullOptions{Token: a.Token, Username: a.Username, Password: a.Password})
+		return imageDigestResult{Digest: d}, err
+	}))
+	h(opScanDatabaseImport, withLogs(func(ctx context.Context, a scanImportRequest, body io.Reader, _ io.Writer) (scanDatabaseResult, error) {
+		r, err := rt.ImportScanDatabase(ctx, node.ScanDatabaseRequest{Images: a.Images.node(), Labels: a.Labels.node()}, body, a.Size)
+		return scanDatabaseResult(r), err
 	}))
 }
 

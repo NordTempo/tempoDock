@@ -2,10 +2,12 @@ package cli
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -388,6 +390,12 @@ func printImageDetail(g *globals, d apitypes.ImageDetail, t target) error {
 		base = strings.TrimSpace(fmt.Sprintf("%s, %s", sc.Distro, plural(sc.Packages, "package")))
 		base = strings.TrimPrefix(base, ", ")
 	}
+	if sc.Base != nil {
+		base = strings.TrimPrefix(base+", built on "+sc.Base.Image, ", ")
+		if sc.Base.Moved {
+			base += " (the tag has a newer image: a rebuild picks it up)"
+		}
+	}
 	if err := g.io.Fields("image", sc.Image, "digest", sc.Digest, "base", base, "scanned", scanned, "vulnerabilities", scanText(sc)); err != nil {
 		return err
 	}
@@ -619,6 +627,7 @@ moment one starts.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error { return show(cmd, nil) },
 	}
+	cmd.AddCommand(newScanningImportCmd(g))
 	for _, on := range []bool{true, false} {
 		word := map[bool]string{true: "on", false: "off"}[on]
 		cmd.AddCommand(&cobra.Command{
@@ -628,6 +637,50 @@ moment one starts.`,
 		})
 	}
 	return cmd
+}
+
+// newScanningImportCmd is `dock scanning import FILE`: a database archive
+// for builders that can't download one.
+func newScanningImportCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "import FILE",
+		Short: "Import a vulnerability database archive, for installs without internet access",
+		Long: `Upload a Grype vulnerability database archive (download one where there
+is internet: ` + "`grype db list`" + ` lists them, about 200 MB) for every builder to
+import at the next quiet minute; live images are then matched against it.
+Importing again replaces it. Set [scan] offline = true on the control plane
+so builders never try to download one.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f, err := os.Open(args[0])
+			if err != nil {
+				return &output.Error{Exit: output.ExitUsage, Message: err.Error(), Hint: "Name a database archive file, like vulnerability-db_v6.tar.zst."}
+			}
+			defer func() { _ = f.Close() }()
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			req, err := s.api.NewRequest(cmd.Context(), http.MethodPut, apiPrefix+"/scanning/database", f)
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Content-Type", "application/octet-stream")
+			resp, err := s.api.Do(req)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			var st apitypes.ScanningStatus
+			if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error {
+				g.io.Successf("Imported; builders import it at the next quiet minute")
+				return printScanning(g, st)
+			})
+		},
+	}
 }
 
 func printScanning(g *globals, st apitypes.ScanningStatus) error {
@@ -641,7 +694,15 @@ func printScanning(g *globals, st apitypes.ScanningStatus) error {
 			counts = append(counts, fmt.Sprintf("%d %s", n, s))
 		}
 	}
-	if err := g.io.Fields("scanning", state, "images", strings.Join(counts, ", "), "waiting", st.Waiting); err != nil {
+	database := "downloaded by each builder, refreshed daily"
+	if st.Offline {
+		database = "offline: imported only (`dock scanning import FILE`)"
+	}
+	imported := ""
+	if st.Imported != "" {
+		imported = st.Imported[:min(len(st.Imported), 19)]
+	}
+	if err := g.io.Fields("scanning", state, "images", strings.Join(counts, ", "), "waiting", st.Waiting, "database", database, "imported", imported); err != nil {
 		return err
 	}
 	if len(st.Builders) == 0 {
@@ -653,6 +714,9 @@ func printScanning(g *globals, st apitypes.ScanningStatus) error {
 		db := "none yet"
 		if b.DatabaseBuilt != nil {
 			db = b.DatabaseBuilt.Format("2006-01-02")
+		}
+		if b.Imported {
+			db += " (imported)"
 		}
 		prod := "no"
 		if b.Production {

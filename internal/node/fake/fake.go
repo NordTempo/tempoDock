@@ -51,6 +51,7 @@ type Runtime struct {
 	nextPort int
 
 	buildErr   error
+	buildBase  node.Built
 	pullErr    error
 	startErr   error
 	stopErr    error
@@ -1342,10 +1343,10 @@ func (r *Runtime) Tunnel() *node.TunnelSpec {
 
 // Build implements node.Builder. It reads the whole source stream. A push
 // is recorded as "push <ref> token=<token>" after the build.
-func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (string, error) {
+func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (node.Built, error) {
 	n, err := io.Copy(io.Discard, req.Source)
 	if err != nil {
-		return "", err
+		return node.Built{}, err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1353,7 +1354,7 @@ func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (string, error
 	_, _ = fmt.Fprintf(req.Logs, "Received %d bytes of build context\n", n)
 	if r.buildErr != nil {
 		_, _ = fmt.Fprintf(req.Logs, "ERROR: %v\n", r.buildErr)
-		return "", r.buildErr
+		return node.Built{}, r.buildErr
 	}
 	_, _ = fmt.Fprintf(req.Logs, "Built %s\n", req.Tag)
 	r.images[req.Tag] = imageID(req.Tag)
@@ -1361,7 +1362,15 @@ func (r *Runtime) Build(_ context.Context, req node.BuildRequest) (string, error
 		r.op("push %s token=%s", p.Ref, p.Token)
 		_, _ = fmt.Fprintf(req.Logs, "Pushed %s\n", p.Ref)
 	}
-	return r.images[req.Tag], nil
+	return node.Built{ID: r.images[req.Tag], Base: r.buildBase.Base, BaseDigest: r.buildBase.BaseDigest}, nil
+}
+
+// SetBuildBase makes builds report base (and its digest) as the image
+// they were built on.
+func (r *Runtime) SetBuildBase(base, digest string) {
+	r.mu.Lock()
+	r.buildBase = node.Built{Base: base, BaseDigest: digest}
+	r.mu.Unlock()
 }
 
 // PruneBuildCache implements node.Builder, recorded as "prune cache

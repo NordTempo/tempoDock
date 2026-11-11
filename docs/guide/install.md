@@ -228,6 +228,7 @@ running).
 | `[traces] service_day_spans`, `org_day_spans`, `error_day_spans`, `max_gb` | `2000000`, `5000000`, `200000`, `4` | Control plane: spans a service and an org keep a day; past either only spans with an error are kept, up to `error_day_spans` a service. `max_gb` caps the trace store's data; past it the oldest day goes early |
 | `[scan] syft_image`, `grype_image` | `anchore/syft:v1.57.1@sha256:0321…`, `anchore/grype:v0.121.3@sha256:1311…` | The image scanners, pinned by digest ([ADR 0074](../decisions/0074-image-vulnerability-scanning.md)). Builders pull them the first time they scan |
 | `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. `dock scanning off` turns scanning off |
+| `[scan] offline` | `false` | For installs without internet access: builders never download a vulnerability database or check base images; import one with `dock scanning import FILE` (a Grype database archive) |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
 | `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. A private repository needs one |
 

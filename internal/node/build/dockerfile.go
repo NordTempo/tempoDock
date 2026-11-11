@@ -6,11 +6,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+
+	"github.com/distribution/reference"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend/dockerfile/command"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/session"
 )
 
@@ -20,32 +24,32 @@ const maxDockerfileSize = 1 << 20
 
 // dockerfileOpt returns options to build src with BuildKit's built-in
 // Dockerfile frontend. See the package doc for how vars reach the build.
-func dockerfileOpt(src, dockerfile string, vars map[string]string, ns string, logs io.Writer) (bkclient.SolveOpt, error) {
+func dockerfileOpt(src, dockerfile string, vars map[string]string, ns string, logs io.Writer) (bkclient.SolveOpt, string, error) {
 	if !filepath.IsLocal(dockerfile) {
-		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile path %q must be inside the source", dockerfile)
+		return bkclient.SolveOpt{}, "", fmt.Errorf("dockerfile path %q must be inside the source", dockerfile)
 	}
 	// extract keeps every symlink inside src, but resolve through os.Root
 	// anyway: BuildKit mounts the Dockerfile's directory, so a link out of
 	// the tree there would expose host files.
 	root, err := os.OpenRoot(src)
 	if err != nil {
-		return bkclient.SolveOpt{}, err
+		return bkclient.SolveOpt{}, "", err
 	}
 	defer func() { _ = root.Close() }()
 	info, err := root.Stat(dockerfile)
 	if err != nil || !info.Mode().IsRegular() {
-		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile %q not found in source", dockerfile)
+		return bkclient.SolveOpt{}, "", fmt.Errorf("dockerfile %q not found in source", dockerfile)
 	}
 	if info.Size() > maxDockerfileSize {
-		return bkclient.SolveOpt{}, fmt.Errorf("dockerfile %q is larger than %d KB", dockerfile, maxDockerfileSize>>10)
+		return bkclient.SolveOpt{}, "", fmt.Errorf("dockerfile %q is larger than %d KB", dockerfile, maxDockerfileSize>>10)
 	}
 	df, err := root.ReadFile(dockerfile)
 	if err != nil {
-		return bkclient.SolveOpt{}, err
+		return bkclient.SolveOpt{}, "", err
 	}
 	args, err := dockerfileArgs(df, vars)
 	if err != nil {
-		return bkclient.SolveOpt{}, fmt.Errorf("parse %s: %w", dockerfile, err)
+		return bkclient.SolveOpt{}, "", fmt.Errorf("parse %s: %w", dockerfile, err)
 	}
 	if ref, _, _, ok := parser.DetectSyntax(df); ok {
 		_, _ = fmt.Fprintf(logs, "ignoring the syntax directive (%s): builds use BuildKit's built-in Dockerfile frontend\n", ref)
@@ -66,7 +70,7 @@ func dockerfileOpt(src, dockerfile string, vars map[string]string, ns string, lo
 	}
 	opt, err := localOpt("dockerfile.v0", attrs, src, filepath.Join(src, filepath.Dir(dockerfile)))
 	opt.Session = []session.Attachable{secretStore(vars)}
-	return opt, err
+	return opt, baseImage(df, vars), err
 }
 
 // dockerfileArgs picks the vars passed to a Dockerfile build as build args:
@@ -92,4 +96,87 @@ func dockerfileArgs(dockerfile []byte, vars map[string]string) (map[string]strin
 		}
 	}
 	return args, nil
+}
+
+// baseImage is the image a Dockerfile's final stage is built on, the way
+// BuildKit names it (docker.io/library/node:22-alpine): the final FROM,
+// followed through stages it names, with build args and ARG defaults
+// before the first FROM applied. "" for scratch or one it can't tell
+// (a FROM whose variables don't resolve). For the base image hint (ADR
+// 0074): a newer image under the same tag is what a rebuild picks up.
+func baseImage(dockerfile []byte, vars map[string]string) string {
+	res, err := parser.Parse(bytes.NewReader(dockerfile))
+	if err != nil {
+		return ""
+	}
+	meta := map[string]string{}
+	stages := map[string]string{} // stage name -> its FROM, expanded
+	last := ""
+	lex := shell.NewLex(res.EscapeToken)
+	for _, n := range res.AST.Children {
+		switch {
+		case strings.EqualFold(n.Value, command.Arg) && len(stages) == 0 && last == "":
+			for a := n.Next; a != nil; a = a.Next {
+				name, def, _ := strings.Cut(a.Value, "=")
+				name = strings.Trim(name, `"'`)
+				if v, ok := vars[name]; ok {
+					meta[name] = v
+				} else {
+					meta[name] = strings.Trim(def, `"'`)
+				}
+			}
+		case strings.EqualFold(n.Value, command.From) && n.Next != nil:
+			from, _, err := lex.ProcessWord(n.Next.Value, envMap(meta))
+			if err != nil {
+				from = ""
+			}
+			last = from
+			if as := n.Next.Next; as != nil && strings.EqualFold(as.Value, "as") && as.Next != nil {
+				stages[strings.ToLower(as.Next.Value)] = from
+			}
+		}
+	}
+	for range len(stages) + 1 {
+		from, ok := stages[strings.ToLower(last)]
+		if !ok {
+			break
+		}
+		last = from
+	}
+	if last == "" || strings.EqualFold(last, "scratch") || strings.Contains(last, "$") {
+		return ""
+	}
+	named, err := reference.ParseNormalizedNamed(last)
+	if err != nil {
+		return ""
+	}
+	return reference.TagNameOnly(named).String()
+}
+
+// envMap looks variables up in a map, for the shell lexer.
+type envMap map[string]string
+
+func (m envMap) Get(key string) (string, bool) { v, ok := m[key]; return v, ok }
+
+func (m envMap) Keys() []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// fromVertex matches the BuildKit progress line of a FROM step, which
+// names the image with the digest it resolved:
+// "[base 1/2] FROM docker.io/library/alpine:3.20@sha256:d9e8…".
+var fromVertex = regexp.MustCompile(`\bFROM (\S+)@(sha256:[0-9a-f]{64})`)
+
+// familiar is a normalized reference as people write it:
+// docker.io/library/node:22-alpine is node:22-alpine.
+func familiar(ref string) string {
+	named, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return ref
+	}
+	return reference.FamiliarString(named)
 }
