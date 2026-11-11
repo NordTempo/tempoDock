@@ -702,6 +702,10 @@ type wirePathCount struct {
 	Method   string `json:"method"`
 	Path     string `json:"path"`
 	Requests uint64 `json:"requests"`
+	// Errors and Latency are new with per-route numbers (ADR 0075);
+	// older nodes send neither, and the path counts without them.
+	Errors  uint64   `json:"errors,omitempty"`
+	Latency []uint64 `json:"latency,omitempty"`
 }
 
 func toWireTraffic(hs []node.HostTraffic) []wireHostTraffic {
@@ -712,7 +716,7 @@ func toWireTraffic(hs []node.HostTraffic) []wireHostTraffic {
 			DurationMS: h.Duration.Milliseconds(), Paths: make([]wirePathCount, len(h.Paths)),
 		}
 		for j, p := range h.Paths {
-			out[i].Paths[j] = wirePathCount(p)
+			out[i].Paths[j] = wirePathCount{Method: p.Method, Path: p.Path, Requests: p.Requests, Errors: p.Errors, Latency: p.Latency[:]}
 		}
 	}
 	return out
@@ -726,7 +730,8 @@ func fromWireTraffic(ws []wireHostTraffic) []node.HostTraffic {
 			Duration: time.Duration(w.DurationMS) * time.Millisecond, Paths: make([]node.PathCount, len(w.Paths)),
 		}
 		for j, p := range w.Paths {
-			out[i].Paths[j] = node.PathCount(p)
+			out[i].Paths[j] = node.PathCount{Method: p.Method, Path: p.Path, Requests: p.Requests, Errors: p.Errors}
+			copy(out[i].Paths[j].Latency[:], p.Latency)
 		}
 	}
 	return out

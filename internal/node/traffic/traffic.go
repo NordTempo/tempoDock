@@ -60,7 +60,13 @@ type Counter struct {
 // hostCount is one hostname's counts since the last drain.
 type hostCount struct {
 	node.HostTraffic
-	paths map[pathKey]uint64
+	paths map[pathKey]*pathCount
+}
+
+// pathCount is one path's counts since the last drain.
+type pathCount struct {
+	n, errors uint64
+	latency   [len(node.LatencyBounds) + 1]uint64
 }
 
 type pathKey struct{ method, path string }
@@ -139,36 +145,49 @@ func (c *Counter) Add(line []byte) {
 		if len(c.hosts) >= maxHosts {
 			return
 		}
-		h = &hostCount{HostTraffic: node.HostTraffic{Host: strings.Clone(host)}, paths: map[pathKey]uint64{}}
+		h = &hostCount{HostTraffic: node.HostTraffic{Host: strings.Clone(host)}, paths: map[pathKey]*pathCount{}}
 		c.hosts[h.Host] = h
 	}
 	h.Requests++
 	h.Status[class]++
 	h.Bytes += l.Size
-	h.Duration += time.Duration(l.Duration * float64(time.Second))
-	h.countPath(key)
+	d := time.Duration(l.Duration * float64(time.Second))
+	h.Duration += d
+	p := h.countPath(key)
+	p.latency[node.LatencyBucket(d)]++
+	if class == 3 {
+		p.errors++
+	}
 }
 
-// countPath adds a request to key, making room with Space-Saving when the
-// table is full: the least requested path is replaced, and the new one
-// inherits its count plus one, an upper bound on its real count.
-func (h *hostCount) countPath(key pathKey) {
-	if n, ok := h.paths[key]; ok {
-		h.paths[key] = n + 1
-		return
+// countPath adds a request to key and returns its counts, making room
+// with Space-Saving when the table is full: the least requested path is
+// replaced, and the new one inherits its count plus one, an upper bound
+// on its real count (its errors and latency start over).
+func (h *hostCount) countPath(key pathKey) *pathCount {
+	if p, ok := h.paths[key]; ok {
+		p.n++
+		return p
 	}
 	var start uint64
+	var p *pathCount
 	if len(h.paths) >= maxPaths {
 		var least pathKey
 		start = ^uint64(0)
-		for k, n := range h.paths {
-			if n < start {
-				least, start = k, n
+		for k, c := range h.paths {
+			if c.n < start {
+				least, start = k, c.n
 			}
 		}
+		p = h.paths[least]
 		delete(h.paths, least)
+		*p = pathCount{}
+	} else {
+		p = new(pathCount)
 	}
-	h.paths[pathKey{key.method, strings.Clone(key.path)}] = start + 1
+	p.n = start + 1
+	h.paths[pathKey{key.method, strings.Clone(key.path)}] = p
+	return p
 }
 
 // DrainTraffic implements node.Traffic.
@@ -182,8 +201,8 @@ func (c *Counter) DrainTraffic(context.Context) ([]node.HostTraffic, error) {
 	for _, h := range hosts {
 		t := h.HostTraffic
 		t.Paths = make([]node.PathCount, 0, len(h.paths))
-		for k, n := range h.paths {
-			t.Paths = append(t.Paths, node.PathCount{Method: k.method, Path: k.path, Requests: n})
+		for k, p := range h.paths {
+			t.Paths = append(t.Paths, node.PathCount{Method: k.method, Path: k.path, Requests: p.n, Errors: p.errors, Latency: p.latency})
 		}
 		slices.SortFunc(t.Paths, func(a, b node.PathCount) int {
 			return cmp.Or(cmp.Compare(b.Requests, a.Requests), strings.Compare(a.Path, b.Path), strings.Compare(a.Method, b.Method))

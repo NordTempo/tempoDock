@@ -15865,8 +15865,24 @@
       "TrafficPath": {
         "additionalProperties": false,
         "properties": {
+          "errors": {
+            "format": "int64",
+            "type": "integer"
+          },
           "method": {
             "type": "string"
+          },
+          "p50_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "p95_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "p99_ms": {
+            "format": "double",
+            "type": "number"
           },
           "path": {
             "type": "string"
@@ -15879,7 +15895,8 @@
         "required": [
           "method",
           "path",
-          "requests"
+          "requests",
+          "errors"
         ],
         "type": "object"
       },

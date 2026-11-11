@@ -51,7 +51,7 @@ func TestWireRoundTrip(t *testing.T) {
 		toWireDomainCheck, wireDomainCheck.node)
 	check(t, node.HostTraffic{
 		Host: "a.example.com", Requests: 1, Status: [4]uint64{2, 3, 4, 5}, Bytes: 6, Duration: 7 * time.Millisecond,
-		Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 8}},
+		Paths: []node.PathCount{{Method: "GET", Path: "/", Requests: 8, Errors: 1, Latency: [10]uint64{2: 7, 9: 1}}},
 	}, func(h node.HostTraffic) []wireHostTraffic { return toWireTraffic([]node.HostTraffic{h}) },
 		func(w []wireHostTraffic) node.HostTraffic { return fromWireTraffic(w)[0] })
 	check(t, node.HostStats{

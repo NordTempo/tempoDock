@@ -53,8 +53,12 @@ func (q *Queries) AddTraffic(ctx context.Context, arg AddTrafficParams) error {
 }
 
 const addTrafficPath = `-- name: AddTrafficPath :exec
-INSERT INTO traffic_paths (service_id, at, method, path, requests) VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (service_id, at, method, path) DO UPDATE SET requests = requests + excluded.requests
+INSERT INTO traffic_paths (service_id, at, method, path, requests, errors, lat0, lat1, lat2, lat3, lat4, lat5, lat6, lat7, lat8, lat9)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (service_id, at, method, path) DO UPDATE SET requests = requests + excluded.requests, errors = errors + excluded.errors,
+    lat0 = lat0 + excluded.lat0, lat1 = lat1 + excluded.lat1, lat2 = lat2 + excluded.lat2, lat3 = lat3 + excluded.lat3,
+    lat4 = lat4 + excluded.lat4, lat5 = lat5 + excluded.lat5, lat6 = lat6 + excluded.lat6, lat7 = lat7 + excluded.lat7,
+    lat8 = lat8 + excluded.lat8, lat9 = lat9 + excluded.lat9
 `
 
 type AddTrafficPathParams struct {
@@ -63,6 +67,17 @@ type AddTrafficPathParams struct {
 	Method    string
 	Path      string
 	Requests  int64
+	Errors    int64
+	Lat0      int64
+	Lat1      int64
+	Lat2      int64
+	Lat3      int64
+	Lat4      int64
+	Lat5      int64
+	Lat6      int64
+	Lat7      int64
+	Lat8      int64
+	Lat9      int64
 }
 
 func (q *Queries) AddTrafficPath(ctx context.Context, arg AddTrafficPathParams) error {
@@ -72,6 +87,17 @@ func (q *Queries) AddTrafficPath(ctx context.Context, arg AddTrafficPathParams) 
 		arg.Method,
 		arg.Path,
 		arg.Requests,
+		arg.Errors,
+		arg.Lat0,
+		arg.Lat1,
+		arg.Lat2,
+		arg.Lat3,
+		arg.Lat4,
+		arg.Lat5,
+		arg.Lat6,
+		arg.Lat7,
+		arg.Lat8,
+		arg.Lat9,
 	)
 	return err
 }
@@ -213,7 +239,11 @@ func (q *Queries) PruneTrafficStats(ctx context.Context, arg PruneTrafficStatsPa
 }
 
 const topTrafficPaths = `-- name: TopTrafficPaths :many
-SELECT method, path, CAST(sum(requests) AS INTEGER) AS requests
+SELECT method, path, CAST(sum(requests) AS INTEGER) AS requests, CAST(sum(errors) AS INTEGER) AS errors,
+       CAST(sum(lat0) AS INTEGER) AS lat0, CAST(sum(lat1) AS INTEGER) AS lat1, CAST(sum(lat2) AS INTEGER) AS lat2,
+       CAST(sum(lat3) AS INTEGER) AS lat3, CAST(sum(lat4) AS INTEGER) AS lat4, CAST(sum(lat5) AS INTEGER) AS lat5,
+       CAST(sum(lat6) AS INTEGER) AS lat6, CAST(sum(lat7) AS INTEGER) AS lat7, CAST(sum(lat8) AS INTEGER) AS lat8,
+       CAST(sum(lat9) AS INTEGER) AS lat9
 FROM traffic_paths WHERE service_id = +? AND at >= +?
 GROUP BY method, path ORDER BY 3 DESC, path, method LIMIT +?
 `
@@ -228,6 +258,17 @@ type TopTrafficPathsRow struct {
 	Method   string
 	Path     string
 	Requests int64
+	Errors   int64
+	Lat0     int64
+	Lat1     int64
+	Lat2     int64
+	Lat3     int64
+	Lat4     int64
+	Lat5     int64
+	Lat6     int64
+	Lat7     int64
+	Lat8     int64
+	Lat9     int64
 }
 
 // TopTrafficPaths is a service's most requested paths since a time.
@@ -240,7 +281,22 @@ func (q *Queries) TopTrafficPaths(ctx context.Context, arg TopTrafficPathsParams
 	var items []TopTrafficPathsRow
 	for rows.Next() {
 		var i TopTrafficPathsRow
-		if err := rows.Scan(&i.Method, &i.Path, &i.Requests); err != nil {
+		if err := rows.Scan(
+			&i.Method,
+			&i.Path,
+			&i.Requests,
+			&i.Errors,
+			&i.Lat0,
+			&i.Lat1,
+			&i.Lat2,
+			&i.Lat3,
+			&i.Lat4,
+			&i.Lat5,
+			&i.Lat6,
+			&i.Lat7,
+			&i.Lat8,
+			&i.Lat9,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

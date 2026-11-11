@@ -7,6 +7,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/NordTempo/tempoDock/internal/node"
 )
 
 // line is a Caddy access log line as caddy.Render's filter leaves it.
@@ -130,7 +132,14 @@ func TestCounterSendsTracedRequests(t *testing.T) {
 		e.End.UnixMilli() != 1_800_000_000_250 || e.TraceID != "0102030405060708090a0b0c0d0e0f10" || e.SpanID != "0102030405060708" {
 		t.Errorf("edge = %+v", e)
 	}
-	if h, _ := c.DrainTraffic(t.Context()); len(h) != 1 || h[0].Requests != 2 {
-		t.Errorf("counts = %+v", h)
+	h, _ := c.DrainTraffic(t.Context())
+	if len(h) != 1 || h[0].Requests != 2 {
+		t.Fatalf("counts = %+v", h)
+	}
+	// Each path counts its 5xx answers and how long its requests took.
+	for _, p := range h[0].Paths {
+		if p.Path == "/orders/:id" && (p.Errors != 1 || p.Latency[node.LatencyBucket(50*time.Millisecond)] != 1) {
+			t.Errorf("/orders/:id = %+v", p)
+		}
 	}
 }

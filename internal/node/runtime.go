@@ -514,11 +514,31 @@ type HostTraffic struct {
 	Paths []PathCount
 }
 
-// PathCount is how often one method and path was requested.
+// PathCount is how often one method and path was requested, how many of
+// those answered 5xx, and how long they took (ADR 0075): Latency counts
+// the requests under each of LatencyBounds, the last one those past them.
 type PathCount struct {
 	Method   string
 	Path     string
 	Requests uint64
+	Errors   uint64
+	Latency  [len(LatencyBounds) + 1]uint64
+}
+
+// LatencyBounds are the upper bounds of PathCount.Latency's buckets.
+var LatencyBounds = [...]time.Duration{
+	5 * time.Millisecond, 10 * time.Millisecond, 25 * time.Millisecond, 50 * time.Millisecond, 100 * time.Millisecond,
+	250 * time.Millisecond, 500 * time.Millisecond, time.Second, 2500 * time.Millisecond,
+}
+
+// LatencyBucket is the PathCount.Latency bucket d falls in.
+func LatencyBucket(d time.Duration) int {
+	for i, b := range LatencyBounds {
+		if d < b {
+			return i
+		}
+	}
+	return len(LatencyBounds)
 }
 
 // HostStats is one sample of a server's resources.

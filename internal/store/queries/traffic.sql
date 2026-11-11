@@ -25,8 +25,12 @@ ON CONFLICT (service_id, res, at) DO UPDATE SET
     duration_ms = duration_ms + excluded.duration_ms;
 
 -- name: AddTrafficPath :exec
-INSERT INTO traffic_paths (service_id, at, method, path, requests) VALUES (?, ?, ?, ?, ?)
-ON CONFLICT (service_id, at, method, path) DO UPDATE SET requests = requests + excluded.requests;
+INSERT INTO traffic_paths (service_id, at, method, path, requests, errors, lat0, lat1, lat2, lat3, lat4, lat5, lat6, lat7, lat8, lat9)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (service_id, at, method, path) DO UPDATE SET requests = requests + excluded.requests, errors = errors + excluded.errors,
+    lat0 = lat0 + excluded.lat0, lat1 = lat1 + excluded.lat1, lat2 = lat2 + excluded.lat2, lat3 = lat3 + excluded.lat3,
+    lat4 = lat4 + excluded.lat4, lat5 = lat5 + excluded.lat5, lat6 = lat6 + excluded.lat6, lat7 = lat7 + excluded.lat7,
+    lat8 = lat8 + excluded.lat8, lat9 = lat9 + excluded.lat9;
 
 -- TrimTrafficPaths keeps the 100 most requested paths of each service in
 -- an hour that is over.
@@ -63,6 +67,10 @@ FROM traffic_stats WHERE service_id = +? AND res = 3600 AND at >= +?;
 
 -- TopTrafficPaths is a service's most requested paths since a time.
 -- name: TopTrafficPaths :many
-SELECT method, path, CAST(sum(requests) AS INTEGER) AS requests
+SELECT method, path, CAST(sum(requests) AS INTEGER) AS requests, CAST(sum(errors) AS INTEGER) AS errors,
+       CAST(sum(lat0) AS INTEGER) AS lat0, CAST(sum(lat1) AS INTEGER) AS lat1, CAST(sum(lat2) AS INTEGER) AS lat2,
+       CAST(sum(lat3) AS INTEGER) AS lat3, CAST(sum(lat4) AS INTEGER) AS lat4, CAST(sum(lat5) AS INTEGER) AS lat5,
+       CAST(sum(lat6) AS INTEGER) AS lat6, CAST(sum(lat7) AS INTEGER) AS lat7, CAST(sum(lat8) AS INTEGER) AS lat8,
+       CAST(sum(lat9) AS INTEGER) AS lat9
 FROM traffic_paths WHERE service_id = +? AND at >= +?
 GROUP BY method, path ORDER BY 3 DESC, path, method LIMIT +?;

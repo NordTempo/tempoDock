@@ -10450,7 +10450,15 @@ export interface components {
             status_5xx: number;
         };
         TrafficPath: {
+            /** Format: int64 */
+            errors: number;
             method: string;
+            /** Format: double */
+            p50_ms?: number;
+            /** Format: double */
+            p95_ms?: number;
+            /** Format: double */
+            p99_ms?: number;
             path: string;
             /** Format: int64 */
             requests: number;
