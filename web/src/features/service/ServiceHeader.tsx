@@ -256,13 +256,14 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <Link
           to="/$org/$project/$environment/$service/settings/domains"
           params={{ org, ...ref }}
-          className="-my-[4px] inline-flex min-h-[24px] items-center text-mut hover:text-fg"
+          // A button, not faint text: it is where domains are added.
+          className="btn sm -my-[4px]"
         >
           {domain
             ? view.domains.length > 1
-              ? `+${view.domains.length - 1} · manage`
-              : "manage"
-            : "+ Add domain"}
+              ? `+${view.domains.length - 1} · Manage`
+              : "Manage"
+            : "Add domain"}
         </Link>
       </span>,
     ],

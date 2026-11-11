@@ -115,7 +115,15 @@ export function SettingsPanel({
           {row(
             "Port",
             "Where the app listens.",
-            [{ key: "port" }],
+            // Unset, it is the template's port (5432, 6379) or 8080.
+            [
+              {
+                key: "port",
+                shown: service.port
+                  ? String(service.port)
+                  : `${listenPort(service)} (default)`,
+              },
+            ],
             <span className="font-mono text-xs text-mut">
               private address {service.name}:{listenPort(service)}
             </span>,
