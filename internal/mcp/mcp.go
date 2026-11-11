@@ -90,9 +90,10 @@ const instructions = `Tempo Dock deploys Docker apps to your own servers. You ac
 - The server enforces every permission. A forbidden error means the token can't do it: stop and report it; don't look for another credential or a workaround.
 - Deploys are safe: a release only gets traffic after its health check passes. A failed deploy changed nothing and needs no rollback; read release_details for the reason and the container's last log lines, fix, deploy again. Roll back only a release that went live and misbehaves.
 - Tools that start releases wait for them. If one is still deploying (yours or someone else's), call wait_for_release; don't poll release_details.
-- Variables and settings are staged: set_variables, update_service (port, health check path, image, ...) or set_pre_deploy_command, review with show_changes, then apply_changes (or the next deploy takes them live). Secret values are write-only.
+- Variables and settings are staged: set_variables, update_service (port, health check path, image, ...), set_pre_deploy_command or add_volume, review with show_changes, then apply_changes (or pass apply to take them live in the same call). Secret values are write-only.
 - A locked environment (locked in project_overview) refuses every change with environment_locked and files an access request: a human approves or rejects it in the UI, and once approved it runs as you. Tell the user, then wait_for_request; don't retry or work around it. request_access asks before any change, with your reason, even where nothing is locked.
 - Data tools follow the data access policy; data_status says what you may do and why. Data changes are proposals a human approves; tokens never write production data.
+- Some things only a person does, in the UI or CLI: archiving services or projects, removing volumes, deleting snapshots, locking or unlocking environments, creating tokens. Say so; don't work around it (e.g. deleting files with run_command).
 - Every change is audited with the token's name. Read dock://docs/agents for the full guide.`
 
 // hints tell the model what to do next where the message doesn't.
@@ -102,7 +103,8 @@ var hints = map[apitypes.ErrorCode]string{
 	apitypes.CodeNotFound:         "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
 	apitypes.CodeServerOffline:    "The server the environment runs on is offline. Retry later, then report it.",
 	apitypes.CodeEnvironmentLocked: "A human locked this environment. This call filed an access request (its number is in request): tell the user what you asked for and why, then call wait_for_request; " +
-		"approved, the change runs as you. Or ask a human to unlock the environment. Don't retry, work around it or look for another token. Next time ask first with request_access and a reason.",
+		"approved, the change runs as you. To tell the approver why, call request_access with the same tool, arguments and a reason: it adds the reason to this request. " +
+		"Don't retry, work around it or look for another token. Next time ask first with request_access and a reason; staging tools take apply, so one request covers staging and applying.",
 	apitypes.CodeInternal:      "Something failed inside Dock (the daemon log has it). Retry once; if it fails again, stop and report it.",
 	apitypes.CodeValidation:    "Fix the arguments the message names and call again. Don't guess values the user didn't give you; ask.",
 	apitypes.CodeConflict:      "It clashes with what exists. Look first (project_overview, show_changes, list_domains); don't remove or rename things to make room unless asked.",

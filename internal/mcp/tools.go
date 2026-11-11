@@ -784,13 +784,14 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 		})
 
 	mcpkit.AddTool(s, "set_variables", "Stage variables",
-		"Stage variable changes: set and unset keys on a service, or shared (environment-level) ones without service. Nothing goes live until apply_changes or the service's next deploy. "+
+		"Stage variable changes: set and unset keys on a service, or shared (environment-level) ones without service. Nothing goes live until apply_changes, apply or the service's next deploy. "+
 			"Values may reference other variables: ${{shared.KEY}} or ${{service.KEY}}. Values are secret: they are never shown back.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
 			Service string            `json:"service,omitempty" doc:"The service whose variables change. Default: shared variables."`
 			Set     map[string]string `json:"set,omitempty" doc:"Keys and values to set."`
 			Unset   []string          `json:"unset,omitempty" doc:"Keys to remove."`
+			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
 			if err != nil {
@@ -799,7 +800,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 			if len(in.Set)+len(in.Unset) == 0 {
 				return mcpkit.Reply{}, mcpkit.Invalid("pass set or unset")
 			}
-			res, err := h.core.SetVariables(ctx, c.Actor, ref, apitypes.SetVariablesRequest{Service: in.Service, Set: in.Set, Unset: in.Unset})
+			res, err := h.core.SetVariables(ctx, c.Actor, ref, apitypes.SetVariablesRequest{Service: in.Service, Set: in.Set, Unset: in.Unset, Apply: in.Apply})
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
@@ -815,28 +816,27 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 			if len(in.Unset) > 0 {
 				did = append(did, "unset "+strings.Join(in.Unset, ", "))
 			}
-			return mcpkit.Reply{Summary: fmt.Sprintf("Staged: %s. %d changes staged in %s/%s; apply_changes takes them live.",
-					strings.Join(did, "; "), res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending},
-				nil
+			return h.stagedReply(ctx, c, strings.Join(did, "; "), ref, res)
 		})
 
 	mcpkit.AddTool(s, "set_pre_deploy_command", "Stage the pre-deploy command",
 		"Stage a service's pre-deploy command: it runs with each new release's image, variables and private network before the release gets traffic, typically database migrations "+
 			"(e.g. \"npx prisma migrate deploy\"). A non-zero exit fails the release and the previous one keeps serving. An empty command removes it. "+
 			"With snapshot, the environment's stateful services are snapshotted before it runs (a failed snapshot fails the release). "+
-			"Nothing goes live until apply_changes or the service's next deploy; dock.toml's deploy.pre_deploy_command wins over it.",
+			"Nothing goes live until apply_changes, apply or the service's next deploy; dock.toml's deploy.pre_deploy_command wins over it.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Command        string `json:"command" doc:"Run with sh -c. Empty removes the pre-deploy command."`
 			TimeoutSeconds *int   `json:"timeout_seconds,omitempty" doc:"How long it may run, up to 3600. 0 means the default, 600."`
 			Snapshot       *bool  `json:"snapshot,omitempty" doc:"Snapshot the environment's stateful services before it runs (pre_deploy_snapshot). Left out: unchanged."`
+			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
 			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{
-				PreDeployCommand: &in.Command, PreDeployTimeoutSeconds: in.TimeoutSeconds, PreDeploySnapshot: in.Snapshot,
+				PreDeployCommand: &in.Command, PreDeployTimeoutSeconds: in.TimeoutSeconds, PreDeploySnapshot: in.Snapshot, Apply: in.Apply,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err
@@ -845,8 +845,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 			if in.Command == "" {
 				did = "pre-deploy command of " + ref.Service + " removed"
 			}
-			return mcpkit.Reply{Summary: fmt.Sprintf("Staged: %s. %d changes staged in %s/%s; apply_changes takes them live.",
-				did, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+			return h.stagedReply(ctx, c, did, ref.Env(), res)
 		})
 
 	mcpkit.AddTool(s, "show_changes", "Show staged changes",
@@ -882,15 +881,7 @@ func (h *handler) addConfigTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			vs, err := h.waitReleases(ctx, c, res.Releases, wait)
-			if err != nil {
-				return mcpkit.Reply{}, err
-			}
-			summary := waitSummary("Applied", vs)
-			if len(res.Skipped) > 0 {
-				summary += " Not redeployed (a deploy was in progress; their next release takes the changes): " + strings.Join(res.Skipped, ", ") + "."
-			}
-			return mcpkit.Reply{Summary: summary, Data: map[string]any{"releases": vs, "skipped": res.Skipped}}, nil
+			return h.appliedReply(ctx, c, "Applied", res, wait)
 		})
 
 	mcpkit.AddTool(s, "discard_changes", "Discard staged changes",

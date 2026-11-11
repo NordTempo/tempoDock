@@ -817,6 +817,25 @@ func TestWaitForRelease(t *testing.T) {
 	}
 }
 
+// apply on a staging tool takes the change live in the same call: one
+// call, and in a locked environment one access request.
+func TestStageAndApply(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("shop-agent", nil)
+	if dep := call(t, s, "deploy_image", map[string]any{"service": "web", "image": "app:2"}); dep.isError {
+		t.Fatalf("deploy_image = %q", dep.summary)
+	}
+	set := call(t, s, "set_variables", map[string]any{"service": "web", "set": map[string]any{"A": "1"}, "apply": true})
+	if set.isError || !strings.Contains(set.summary, "Applied: web #2 active") {
+		t.Fatalf("set_variables with apply = %q", set.summary)
+	}
+	var p apitypes.PendingChanges
+	call(t, s, "show_changes", nil).decode(t, &p)
+	if p.Count != 0 {
+		t.Errorf("still staged after apply: %+v", p)
+	}
+}
+
 // update_service stages settings like set_variables stages variables.
 func TestUpdateService(t *testing.T) {
 	f := newFixture(t)

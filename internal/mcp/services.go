@@ -73,11 +73,12 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 
 	mcpkit.AddTool(s, "update_service", "Stage service settings",
 		"Stage changes to a service's settings: port, health check path and timeout, image, start command, memory and CPU limits, build settings. Only the ones passed change. "+
-			"This is how to fix a deploy whose health check failed on a wrong port or path. Nothing goes live until apply_changes or the service's next deploy; review with show_changes. "+
+			"This is how to fix a deploy whose health check failed on a wrong port or path. Nothing goes live until apply_changes, apply or the service's next deploy; review with show_changes. "+
 			"A dock.toml in deployed source overrides these settings for source deploys.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			SettingsInput
+			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
@@ -90,13 +91,12 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 			res, err := h.core.UpdateService(ctx, c.Actor, ref, apitypes.UpdateServiceRequest{
 				Image: set.Image, Port: set.Port, HealthCheckPath: set.HealthCheckPath, HealthCheckTimeoutSeconds: set.HealthCheckTimeoutSeconds,
 				StartCommand: set.StartCommand, DockerfilePath: set.DockerfilePath, BuildCommand: set.BuildCommand,
-				MemoryMB: set.MemoryMB, CPUs: set.CPUs,
+				MemoryMB: set.MemoryMB, CPUs: set.CPUs, Apply: in.Apply,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			return mcpkit.Reply{Summary: fmt.Sprintf("Staged settings of %s. %d changes staged in %s/%s; review with show_changes, then apply_changes takes them live.",
-				ref, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+			return h.stagedReply(ctx, c, "settings of "+ref.String(), ref.Env(), res)
 		})
 
 	mcpkit.AddTool(s, "list_volumes", "List volumes",
@@ -122,22 +122,22 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 
 	mcpkit.AddTool(s, "add_volume", "Stage a volume",
 		"Stage a persistent volume for a service, mounted at an absolute path. Once applied the service is stateful: it keeps its data across releases and deploys with a short downtime (stop, then start). "+
-			"Nothing goes live until apply_changes or the service's next deploy; review with show_changes.",
+			"Nothing goes live until apply_changes, apply or the service's next deploy; review with show_changes. Removing a volume needs a person (dock volume remove).",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Name      string `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"Volume name, e.g. data."`
 			MountPath string `json:"mount_path" pattern:"^/" doc:"Absolute path in the container, e.g. /var/lib/app."`
+			ApplyInput
 		}) (mcpkit.Reply, error) {
 			ref, err := serviceOf(c, in.ServiceInput)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			res, err := h.core.AddVolume(ctx, c.Actor, ref, apitypes.AddVolumeRequest{Name: in.Name, MountPath: in.MountPath})
+			res, err := h.core.AddVolume(ctx, c.Actor, ref, apitypes.AddVolumeRequest{Name: in.Name, MountPath: in.MountPath, Apply: in.Apply})
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			return mcpkit.Reply{Summary: fmt.Sprintf("Staged volume %s at %s for %s. %d changes staged in %s/%s; review with show_changes, then apply_changes takes them live.",
-				in.Name, in.MountPath, ref, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+			return h.stagedReply(ctx, c, fmt.Sprintf("volume %s at %s for %s", in.Name, in.MountPath, ref), ref.Env(), res)
 		})
 
 	mcpkit.AddTool(s, "remove_domain", "Remove a domain",

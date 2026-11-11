@@ -28,9 +28,42 @@ const (
 	failureLogLines = 40
 )
 
-// WaitInput is the wait_seconds argument of tools that start releases.
+// WaitInput is the wait_seconds argument of tools that wait: for
+// releases they start, or for an access request's decision.
 type WaitInput struct {
-	WaitSeconds *int `json:"wait_seconds,omitempty" doc:"How long to wait for the releases to finish (active or failed), in seconds. Default 300, at most 900. 0 returns as soon as they are queued."`
+	WaitSeconds *int `json:"wait_seconds,omitempty" doc:"How long to wait, in seconds. Default 300, at most 900. 0 returns at once."`
+}
+
+// ApplyInput is the apply argument of the tools that stage a change
+// (variables, settings, volumes), like the CLI's --deploy: the change goes
+// live in the same call, and in a locked environment it is one access
+// request instead of one to stage and one to apply.
+type ApplyInput struct {
+	Apply bool `json:"apply,omitempty" doc:"Also apply the environment's staged changes now and wait for the releases, as apply_changes does."`
+}
+
+// stagedReply is a staging tool's reply: what is staged and in which
+// environment, or with apply the releases that took it live.
+func (h *handler) stagedReply(ctx context.Context, c *call, did string, ref core.EnvRef, res apitypes.ChangeResult) (mcpkit.Reply, error) {
+	if res.Applied == nil {
+		return mcpkit.Reply{Summary: fmt.Sprintf("Staged: %s. %d changes staged in %s/%s; review with show_changes, then apply_changes takes them live.",
+			did, res.Pending.Count, ref.Project, ref.Environment), Data: res.Pending}, nil
+	}
+	return h.appliedReply(ctx, c, did+". Applied", *res.Applied, defaultWait)
+}
+
+// appliedReply waits for the releases applying staged changes started and
+// says how they ended.
+func (h *handler) appliedReply(ctx context.Context, c *call, action string, a apitypes.AppliedChanges, wait time.Duration) (mcpkit.Reply, error) {
+	vs, err := h.waitReleases(ctx, c, a.Releases, wait)
+	if err != nil {
+		return mcpkit.Reply{}, err
+	}
+	summary := waitSummary(action, vs)
+	if len(a.Skipped) > 0 {
+		summary += " Not redeployed (a deploy was in progress; their next release takes the changes): " + strings.Join(a.Skipped, ", ") + "."
+	}
+	return mcpkit.Reply{Summary: summary, Data: map[string]any{"releases": vs, "skipped": a.Skipped}}, nil
 }
 
 func (w WaitInput) duration() (time.Duration, error) {
