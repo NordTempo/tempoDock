@@ -203,10 +203,13 @@ event driven: Docker's event stream, the in-process event bus and SSE.
   node link, one HTTP/2 stream per container, at most 150 per server
   outside environments with drains.
 - Status pages ([ADR 0073](decisions/0073-public-status-pages.md)) have
-  no timer: an uptime, alert or sleep event adds one to a generation
-  counter, and a page is rendered only when someone views it after a
-  change (at most once every 5 s) or a minute after its last render. A
-  view is served from gzipped bytes in memory, without a query.
+  no timer: an uptime, alert or sleep event, or an incident's change,
+  adds one to a generation counter, and a page (its incident pages,
+  history and feed alike) is rendered only when someone views it after
+  a change (at most once every 5 s) or a minute after its last render.
+  A view is served from gzipped bytes in memory, without a query. An
+  uptime_down or crash loop alert opening costs one indexed query for
+  the components it would draft an incident on.
 - Traffic counting ([ADR 0033](decisions/0033-traffic-statistics.md))
   has no timer: the counter blocks on its UDP socket until Caddy sends a
   line, and the stats tick drains it. Caddy never waits for it.

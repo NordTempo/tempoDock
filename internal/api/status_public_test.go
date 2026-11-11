@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 )
 
 // testStatusPage is a page with one component down and one idle.
@@ -31,6 +33,42 @@ func testStatusPage() apitypes.PublicStatusPage {
 			{Name: "API", Status: apitypes.StatusPartialOutage, Uptime: &part, Days: days},
 			{Name: "Demo", Status: apitypes.StatusIdle, Days: days},
 		}}}}
+}
+
+// fakeStatus stands in for core: page is every page's view, inc its one
+// incident. renders counts reads; fail makes them fail.
+type fakeStatus struct {
+	page    apitypes.PublicStatusPage
+	inc     apitypes.PublicIncident
+	renders atomic.Int32
+	fail    atomic.Bool
+}
+
+func (f *fakeStatus) PublicStatusPage(context.Context, int64) (apitypes.PublicStatusPage, error) {
+	f.renders.Add(1)
+	if f.fail.Load() {
+		return apitypes.PublicStatusPage{}, context.DeadlineExceeded
+	}
+	return f.page, nil
+}
+
+func (f *fakeStatus) PublicStatusIncident(_ context.Context, _ int64, id string) (apitypes.PublicIncident, string, error) {
+	if id != f.inc.ID {
+		return apitypes.PublicIncident{}, "", datapanel.Errorf(apitypes.CodeNotFound, "no status page here")
+	}
+	return f.inc, f.page.Title, nil
+}
+
+func (f *fakeStatus) PublicStatusHistory(context.Context, int64) (apitypes.PublicStatusHistory, error) {
+	return apitypes.PublicStatusHistory{Title: f.page.Title, Incidents: []apitypes.PublicIncident{f.inc}}, nil
+}
+
+func (f *fakeStatus) PublicStatusFeed(context.Context, int64) (apitypes.PublicStatusFeed, error) {
+	out := apitypes.PublicStatusFeed{Title: f.page.Title, Updated: f.page.GeneratedAt}
+	for _, u := range f.inc.Updates {
+		out.Entries = append(out.Entries, apitypes.PublicFeedEntry{Incident: f.inc.ID, Title: f.inc.Title, PublicUpdate: u})
+	}
+	return out, nil
 }
 
 // get asks the handler for path on host, with gzip unless plain.
@@ -51,7 +89,7 @@ func statusGet(h http.Handler, host, path string, plain bool) *httptest.Response
 func TestStatusPagesServe(t *testing.T) {
 	page := testStatusPage()
 	srv := newStatusServer(func(host string) (int64, int64, bool) { return 7, 1, host == "status-acme.dock.example.net" },
-		func(context.Context, int64) (apitypes.PublicStatusPage, error) { return page, nil }, slog.Default())
+		&fakeStatus{page: page}, slog.Default())
 	h := srv.handler()
 	const host = "status-acme.dock.example.net"
 
@@ -130,16 +168,10 @@ func TestStatusPageHidesUptime(t *testing.T) {
 // render that fails keeps the last bytes. One that isn't published any
 // more goes from the cache.
 func TestStatusPagesCache(t *testing.T) {
-	var renders atomic.Int32
-	var fail atomic.Bool
-	srv := newStatusServer(nil, func(context.Context, int64) (apitypes.PublicStatusPage, error) {
-		renders.Add(1)
-		if fail.Load() {
-			return apitypes.PublicStatusPage{}, context.DeadlineExceeded
-		}
-		return testStatusPage(), nil
-	}, slog.Default())
-	ctx, k := context.Background(), statusKey{7, statusHTML}
+	src := &fakeStatus{page: testStatusPage()}
+	renders, fail := &src.renders, &src.fail
+	srv := newStatusServer(nil, src, slog.Default())
+	ctx, k := context.Background(), statusKey{id: 7, format: statusHTML}
 	first, err := srv.answer(ctx, k, 1)
 	if err != nil || len(first.gz) == 0 {
 		t.Fatal(err)
@@ -167,8 +199,7 @@ func TestStatusPagesCache(t *testing.T) {
 // BenchmarkStatusServe is a status page answered from its cache: what
 // every view but one in a while costs.
 func BenchmarkStatusServe(b *testing.B) {
-	srv := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true },
-		func(context.Context, int64) (apitypes.PublicStatusPage, error) { return testStatusPage(), nil }, slog.Default())
+	srv := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, &fakeStatus{page: testStatusPage()}, slog.Default())
 	h := srv.handler()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "status-acme.dock.example.net"
@@ -197,15 +228,81 @@ func BenchmarkRenderStatusPage(b *testing.B) {
 		}
 		page.Groups = append(page.Groups, grp)
 	}
-	srv := newStatusServer(nil, func(context.Context, int64) (apitypes.PublicStatusPage, error) { return page, nil }, slog.Default())
+	srv := newStatusServer(nil, &fakeStatus{page: page}, slog.Default())
 	b.ReportAllocs()
 	var size int
 	for b.Loop() {
-		body, err := srv.render(context.Background(), statusKey{7, statusHTML})
+		body, err := srv.render(context.Background(), statusKey{id: 7, format: statusHTML})
 		if err != nil {
 			b.Fatal(err)
 		}
 		size = len(body.gz)
 	}
 	b.ReportMetric(float64(size), "gzip-bytes")
+}
+
+// testIncident is an open incident with two updates, one edited, whose
+// words hold a link and markup.
+func testIncident() apitypes.PublicIncident {
+	at := time.Date(2026, 11, 10, 13, 48, 0, 0, time.UTC)
+	return apitypes.PublicIncident{ID: "4f2kqz7mna", Title: "API <errors>", State: apitypes.IncidentIdentified, StartedAt: at,
+		Components: []apitypes.StatusImpact{{Component: "API", Impact: apitypes.StatusPartialOutage}},
+		Updates: []apitypes.PublicUpdate{
+			{State: apitypes.IncidentIdentified, Message: "Found it, see https://acme.example/post.\n\nMoving <b>traffic</b>.", At: at.Add(14 * time.Minute), Edited: true},
+			{State: apitypes.IncidentInvestigating, Message: "Looking.", At: at},
+		}}
+}
+
+// Open incidents lead the page and status.json; each has its own page,
+// the history lists them and the feed has one entry per update. What
+// people wrote is escaped, with https links made links, and a day an
+// incident ran is at least its colour.
+func TestStatusIncidentPages(t *testing.T) {
+	page := testStatusPage()
+	inc := testIncident()
+	page.Open = []apitypes.PublicIncident{inc}
+	page.Groups[0].Components[1].Days[89].Impact = apitypes.StatusMajorOutage
+	page.Groups[0].Components[1].Days[89].Incident = `Jobs "stuck"`
+	src := &fakeStatus{page: page, inc: inc}
+	h := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, src, slog.Default()).handler()
+	const host = "status-acme.dock.example.net"
+
+	html := statusGet(h, host, "/", true).Body.String()
+	for _, want := range []string{`<a href="/incidents/4f2kqz7mna">API &lt;errors&gt;</a>`, "Affects API", "b-partial_outage",
+		`<a href="https://acme.example/post" rel="nofollow noopener">https://acme.example/post</a>.`, "Moving &lt;b&gt;traffic&lt;/b&gt;.",
+		"<time>14:02</time>", "· edited", `class="r" title="10 Nov: 99.50%, Jobs &#34;stuck&#34;"`, `href="/history"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("page has no %q", want)
+		}
+	}
+	if strings.Index(html, "Found it") > strings.Index(html, "Looking.") {
+		t.Error("updates aren't newest first")
+	}
+
+	one := statusGet(h, host, "/incidents/4f2kqz7mna", true)
+	if one.Code != http.StatusOK || !strings.Contains(one.Body.String(), "since 10 Nov 13:48 UTC") || strings.Contains(one.Body.String(), `href="/incidents/`) {
+		t.Errorf("incident page: %d %s", one.Code, one.Body.String())
+	}
+	for _, path := range []string{"/incidents/zzzzzzzzzz", "/incidents/NOT-AN-ID", "/incidents/"} {
+		if w := statusGet(h, host, path, true); w.Code != http.StatusNotFound {
+			t.Errorf("%s: %d", path, w.Code)
+		}
+	}
+	if w := statusGet(h, host, "/history", true); !strings.Contains(w.Body.String(), "<h2>November 2026</h2>") {
+		t.Errorf("history: %s", w.Body.String())
+	}
+
+	w := statusGet(h, host, "/feed.atom", true)
+	var feed atomFeed
+	if err := xml.Unmarshal(w.Body.Bytes(), &feed); err != nil || len(feed.Entries) != 2 || feed.ID != "https://"+host+"/" ||
+		feed.Entries[0].Link.Href != "https://"+host+"/incidents/4f2kqz7mna" || feed.Entries[0].Title != "API <errors>: Identified" ||
+		!strings.HasPrefix(w.Header().Get("Content-Type"), "application/atom+xml") {
+		t.Errorf("feed: %v %+v", err, feed)
+	}
+
+	var js statusJSONPage
+	if err := json.Unmarshal(statusGet(h, host, "/status.json", true).Body.Bytes(), &js); err != nil || len(js.Incidents) != 1 ||
+		js.Incidents[0].URL != "/incidents/4f2kqz7mna" || len(js.Incidents[0].Updates) != 2 {
+		t.Errorf("status.json incidents: %+v, %v", js.Incidents, err)
+	}
 }

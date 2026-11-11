@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -266,7 +267,7 @@ func (c *Core) UpdateStatusPage(ctx context.Context, a Actor, slug string, req a
 	if err != nil {
 		return apitypes.StatusPage{}, err
 	}
-	next := store.UpdateStatusPageParams{ID: p.ID, Title: p.Title, Published: p.Published, ShowUptime: p.ShowUptime}
+	next := store.UpdateStatusPageParams{ID: p.ID, Title: p.Title, Published: p.Published, ShowUptime: p.ShowUptime, Drafts: p.Drafts}
 	var changes []string
 	if req.Title != nil {
 		t := strings.TrimSpace(*req.Title)
@@ -281,6 +282,10 @@ func (c *Core) UpdateStatusPage(ctx context.Context, a Actor, slug string, req a
 	if req.ShowUptime != nil && *req.ShowUptime != p.ShowUptime {
 		next.ShowUptime = *req.ShowUptime
 		changes = append(changes, map[bool]string{true: "shows uptime", false: "hides uptime"}[next.ShowUptime])
+	}
+	if req.Drafts != nil && *req.Drafts != p.Drafts {
+		next.Drafts = *req.Drafts
+		changes = append(changes, map[bool]string{true: "alerts draft incidents", false: "alerts draft no incidents"}[next.Drafts])
 	}
 	action := "status_page.update"
 	if req.Published != nil && *req.Published != p.Published {
@@ -402,19 +407,40 @@ func (c *Core) SetStatusComponents(ctx context.Context, a Actor, slug string, re
 	if err != nil {
 		return apitypes.StatusPage{}, err
 	}
+	keep, err := keptComponents(old, req.Components, p.Slug)
+	if err != nil {
+		return apitypes.StatusPage{}, err
+	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.DeleteStatusComponents(ctx, p.ID); err != nil {
-			return err
+		for _, o := range old {
+			if !slices.Contains(keep, o.ID) {
+				if err := q.DeleteStatusComponent(ctx, o.ID); err != nil {
+					return err
+				}
+			}
 		}
 		for i, in := range req.Components {
 			auto := in.Auto == nil || *in.Auto
-			comp, err := q.CreateStatusComponent(ctx, store.CreateStatusComponentParams{PageID: p.ID, Position: int64(i),
-				Grp: strings.TrimSpace(in.Group), Name: strings.TrimSpace(in.Name), Description: strings.TrimSpace(in.Description), Auto: auto})
-			if err != nil {
-				return err
+			grp, name, desc := strings.TrimSpace(in.Group), strings.TrimSpace(in.Name), strings.TrimSpace(in.Description)
+			id := keep[i]
+			if id != 0 {
+				if err := q.UpdateStatusComponent(ctx, store.UpdateStatusComponentParams{ID: id, Position: int64(i),
+					Grp: grp, Name: name, Description: desc, Auto: auto}); err != nil {
+					return err
+				}
+				if err := q.DeleteStatusSources(ctx, id); err != nil {
+					return err
+				}
+			} else {
+				comp, err := q.CreateStatusComponent(ctx, store.CreateStatusComponentParams{PageID: p.ID, Position: int64(i),
+					Grp: grp, Name: name, Description: desc, Auto: auto})
+				if err != nil {
+					return err
+				}
+				id = comp.ID
 			}
 			for _, s := range comps[i] {
-				if err := q.CreateStatusSource(ctx, store.CreateStatusSourceParams{ComponentID: comp.ID, ServiceID: s.service, CheckID: s.check}); err != nil {
+				if err := q.CreateStatusSource(ctx, store.CreateStatusSourceParams{ComponentID: id, ServiceID: s.service, CheckID: s.check}); err != nil {
 					return err
 				}
 			}
@@ -427,6 +453,38 @@ func (c *Core) SetStatusComponents(ctx context.Context, a Actor, slug string, re
 	c.audit(ctx, a, "status_page.components", nil, nil, "status page "+p.Slug, "status page "+p.Slug+": "+componentsDiff(old, req.Components))
 	c.statusPagesChanged(ctx)
 	return c.statusPage(ctx, a, p)
+}
+
+// keptComponents is, for each component of a page's new list, the
+// existing component it keeps (0 for a new one): the one its ID names,
+// else the one of its name. Kept components keep the incidents that
+// name them.
+func keptComponents(old []store.StatusComponent, next []apitypes.StatusComponentInput, slug string) ([]int64, error) {
+	byID := make(map[int64]bool, len(old))
+	byName := make(map[string]int64, len(old))
+	for _, o := range old {
+		byID[o.ID] = true
+		byName[strings.ToLower(o.Name)] = o.ID
+	}
+	keep := make([]int64, len(next))
+	used := map[int64]bool{}
+	for i, in := range next {
+		id := in.ID
+		switch {
+		case id != 0 && !byID[id]:
+			return nil, notFound("status page %s has no component %d; leave the id out to add one", slug, id)
+		case id == 0:
+			if n, ok := byName[strings.ToLower(strings.TrimSpace(in.Name))]; ok && !used[n] {
+				id = n
+			}
+		}
+		if id != 0 && used[id] {
+			return nil, invalid("component %d is listed twice", id)
+		}
+		used[id] = id != 0
+		keep[i] = id
+	}
+	return keep, nil
 }
 
 // componentsDiff says how a page's components changed, for the audit log.
@@ -502,10 +560,18 @@ type statusComputed struct {
 	days    []apitypes.StatusDay
 }
 
+// statusSince is the first second of the days a page shows at at.
+func statusSince(at time.Time) int64 {
+	today := at.Unix() - at.Unix()%uptimeDay
+	return today - (apitypes.StatusDays-1)*uptimeDay
+}
+
 // computeStatus works out a page's components: three queries
-// (components, sources, history), the rest from memory. a, when set, is
-// whom the sources are shown to; nil for the public page.
-func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, at time.Time) ([]statusComputed, error) {
+// (components, sources, history), the rest from memory, and the
+// incidents' impact (incs, from loadStatusIncidents since statusSince).
+// a, when set, is whom the sources are shown to; nil for the public
+// page.
+func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, at time.Time, incs []statusIncident) ([]statusComputed, error) {
 	comps, err := c.store.ListStatusComponents(ctx, p.ID)
 	if err != nil {
 		return nil, err
@@ -514,8 +580,7 @@ func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, 
 	if err != nil {
 		return nil, err
 	}
-	today := at.Unix() - at.Unix()%uptimeDay
-	since := today - (apitypes.StatusDays-1)*uptimeDay
+	since := statusSince(at)
 	dayRows, err := c.store.StatusPageDays(ctx, store.StatusPageDaysParams{PageID: p.ID, Since: since,
 		DayFrom: c.uptimeDayFrom(at), MinuteFrom: c.uptimeMinuteFrom(at)})
 	if err != nil {
@@ -644,6 +709,7 @@ func (c *Core) computeStatus(ctx context.Context, p store.StatusPage, a *Actor, 
 		}
 		out[i].uptime = percent(up, total)
 	}
+	applyIncidents(out, incs, since, at)
 	return out, nil
 }
 
@@ -694,14 +760,26 @@ func (c *Core) statusPage(ctx context.Context, a Actor, p store.StatusPage) (api
 	if err != nil {
 		return apitypes.StatusPage{}, err
 	}
-	comps, err := c.computeStatus(ctx, p, &a, now())
+	t := now()
+	incs, err := c.loadStatusIncidents(ctx, p.ID, time.Unix(statusSince(t), 0))
 	if err != nil {
 		return apitypes.StatusPage{}, err
 	}
-	out := apitypes.StatusPage{StatusPageSummary: c.toStatusSummary(p, base, len(comps)), ShowUptime: p.ShowUptime,
-		Status: pageStatus(comps), Components: make([]apitypes.StatusComponent, len(comps))}
+	comps, err := c.computeStatus(ctx, p, &a, t, incs)
+	if err != nil {
+		return apitypes.StatusPage{}, err
+	}
+	out := apitypes.StatusPage{StatusPageSummary: c.toStatusSummary(p, base, len(comps)), ShowUptime: p.ShowUptime, Drafts: p.Drafts,
+		Status: pageStatus(comps), Components: make([]apitypes.StatusComponent, len(comps)), Incidents: make([]apitypes.StatusIncident, len(incs))}
+	url := ""
+	if p.Published {
+		url = out.URL
+	}
+	for i, inc := range incs {
+		out.Incidents[i] = toStatusIncident(inc, p.Slug, url)
+	}
 	for i, cc := range comps {
-		out.Components[i] = apitypes.StatusComponent{Name: cc.comp.Name, Group: cc.comp.Grp, Description: cc.comp.Description,
+		out.Components[i] = apitypes.StatusComponent{ID: cc.comp.ID, Name: cc.comp.Name, Group: cc.comp.Grp, Description: cc.comp.Description,
 			Auto: cc.comp.Auto, Status: cc.status, Sources: cc.sources, Uptime: cc.uptime, Days: cc.days}
 	}
 	return out, nil
@@ -720,11 +798,25 @@ func (c *Core) PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicS
 		return apitypes.PublicStatusPage{}, err
 	}
 	t := now()
-	comps, err := c.computeStatus(ctx, p, nil, t)
+	incs, err := c.loadStatusIncidents(ctx, p.ID, time.Unix(statusSince(t), 0))
+	if err != nil {
+		return apitypes.PublicStatusPage{}, err
+	}
+	comps, err := c.computeStatus(ctx, p, nil, t, incs)
 	if err != nil {
 		return apitypes.PublicStatusPage{}, err
 	}
 	out := apitypes.PublicStatusPage{Title: p.Title, Status: pageStatus(comps), ShowUptime: p.ShowUptime, GeneratedAt: t}
+	recent := t.AddDate(0, 0, -apitypes.StatusRecentDays)
+	for _, inc := range incs {
+		switch {
+		case !inc.published():
+		case inc.row.ResolvedAt == nil:
+			out.Open = append(out.Open, toPublicIncident(inc))
+		case inc.row.ResolvedAt.After(recent):
+			out.Recent = append(out.Recent, toPublicIncident(inc))
+		}
+	}
 	for _, cc := range comps {
 		if n := len(out.Groups); n == 0 || out.Groups[n-1].Name != cc.comp.Grp {
 			out.Groups = append(out.Groups, apitypes.PublicStatusGroup{Name: cc.comp.Grp})
@@ -736,7 +828,7 @@ func (c *Core) PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicS
 			pc.Days = make([]apitypes.StatusDay, len(cc.days))
 			for i, d := range cc.days {
 				// The colour of a day stays; its number goes.
-				pc.Days[i] = apitypes.StatusDay{Date: d.Date, Uptime: roundedDay(d.Uptime)}
+				pc.Days[i] = apitypes.StatusDay{Date: d.Date, Uptime: roundedDay(d.Uptime), Impact: d.Impact, Incident: d.Incident}
 			}
 		}
 		g := &out.Groups[len(out.Groups)-1]

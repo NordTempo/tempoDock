@@ -1024,6 +1024,29 @@ type StatusComponent struct {
 	Auto        bool
 }
 
+type StatusIncident struct {
+	ID          int64
+	PageID      int64
+	PublicID    string
+	Kind        string
+	Title       string
+	State       string
+	Draft       string
+	StartsAt    time.Time
+	EndsAt      *time.Time
+	PublishedAt *time.Time
+	ResolvedAt  *time.Time
+	AlertID     *int64
+	CreatedAt   time.Time
+	CreatedBy   string
+}
+
+type StatusIncidentComponent struct {
+	IncidentID  int64
+	ComponentID int64
+	Impact      string
+}
+
 type StatusPage struct {
 	ID         int64
 	OrgID      int64
@@ -1033,6 +1056,7 @@ type StatusPage struct {
 	ShowUptime bool
 	CreatedAt  time.Time
 	CreatedBy  string
+	Drafts     bool
 }
 
 type StatusSource struct {
@@ -1040,6 +1064,16 @@ type StatusSource struct {
 	ComponentID int64
 	ServiceID   *int64
 	CheckID     *int64
+}
+
+type StatusUpdate struct {
+	ID         int64
+	IncidentID int64
+	State      string
+	Body       string
+	At         time.Time
+	CreatedBy  string
+	EditedAt   *time.Time
 }
 
 type StorageConnection struct {

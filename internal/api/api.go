@@ -138,6 +138,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerRuns(s, a, mux)
 	registerJobs(s, a)
 	registerStatusPages(s, a)
+	registerIncidents(s, a)
 	shareErrorResponses(a.OpenAPI())
 	return a
 }

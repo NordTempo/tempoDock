@@ -149,10 +149,10 @@ and one page's in the whole install. Add components, then publish it.`,
 
 func newStatusPageUpdateCmd(g *globals) *cobra.Command {
 	var title string
-	var showUptime bool
+	var showUptime, drafts bool
 	cmd := &cobra.Command{
 		Use:   "update <page>",
-		Short: "Change a status page's title or whether it shows percentages (admin)",
+		Short: "Change a status page's title, whether it shows percentages or gets drafts (admin)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var req apitypes.UpdateStatusPageRequest
@@ -162,14 +162,18 @@ func newStatusPageUpdateCmd(g *globals) *cobra.Command {
 			if cmd.Flags().Changed("show-uptime") {
 				req.ShowUptime = &showUptime
 			}
-			if req.Title == nil && req.ShowUptime == nil {
-				return &output.Error{Exit: output.ExitUsage, Message: "nothing to change", Hint: "Pass --title or --show-uptime."}
+			if cmd.Flags().Changed("drafts") {
+				req.Drafts = &drafts
+			}
+			if req.Title == nil && req.ShowUptime == nil && req.Drafts == nil {
+				return &output.Error{Exit: output.ExitUsage, Message: "nothing to change", Hint: "Pass --title, --show-uptime or --drafts."}
 			}
 			return patchStatusPage(cmd.Context(), g, args[0], req, "Updated status page %s")
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "the page's heading")
 	cmd.Flags().BoolVar(&showUptime, "show-uptime", true, "show uptime percentages (the bars and statuses stay either way)")
+	cmd.Flags().BoolVar(&drafts, "drafts", true, "open a draft incident when a component's uptime check goes down or its service crash loops")
 	return cmd
 }
 
@@ -261,7 +265,7 @@ func editComponents(ctx context.Context, g *globals, slug string, edit func([]ap
 	list := make([]apitypes.StatusComponentInput, len(p.Components))
 	for i, c := range p.Components {
 		auto := c.Auto
-		in := apitypes.StatusComponentInput{Name: c.Name, Group: c.Group, Description: c.Description, Auto: &auto}
+		in := apitypes.StatusComponentInput{ID: c.ID, Name: c.Name, Group: c.Group, Description: c.Description, Auto: &auto}
 		for _, src := range c.Sources {
 			if src.Hidden {
 				return &output.Error{Exit: output.ExitAuth, Message: fmt.Sprintf("component %s is built from a project you can't see", c.Name),
@@ -328,6 +332,7 @@ incidents set it.`,
 			}
 			return editComponents(cmd.Context(), g, args[0], func(list []apitypes.StatusComponentInput) ([]apitypes.StatusComponentInput, error) {
 				if i, err := componentIndex(list, args[0], args[1]); err == nil {
+					in.ID = list[i].ID
 					list[i] = in
 					return list, nil
 				}

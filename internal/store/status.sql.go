@@ -56,6 +56,21 @@ func (q *Queries) CountStatusComponents(ctx context.Context, orgID int64) ([]Cou
 	return items, nil
 }
 
+const createIncidentImpact = `-- name: CreateIncidentImpact :exec
+INSERT INTO status_incident_components (incident_id, component_id, impact) VALUES (?, ?, ?)
+`
+
+type CreateIncidentImpactParams struct {
+	IncidentID  int64
+	ComponentID int64
+	Impact      string
+}
+
+func (q *Queries) CreateIncidentImpact(ctx context.Context, arg CreateIncidentImpactParams) error {
+	_, err := q.db.ExecContext(ctx, createIncidentImpact, arg.IncidentID, arg.ComponentID, arg.Impact)
+	return err
+}
+
 const createStatusComponent = `-- name: CreateStatusComponent :one
 INSERT INTO status_components (page_id, position, grp, name, description, auto)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -93,11 +108,63 @@ func (q *Queries) CreateStatusComponent(ctx context.Context, arg CreateStatusCom
 	return i, err
 }
 
+const createStatusIncident = `-- name: CreateStatusIncident :one
+INSERT INTO status_incidents (page_id, public_id, title, state, draft, starts_at, published_at, alert_id, created_at, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, resolved_at, alert_id, created_at, created_by
+`
+
+type CreateStatusIncidentParams struct {
+	PageID      int64
+	PublicID    string
+	Title       string
+	State       string
+	Draft       string
+	StartsAt    time.Time
+	PublishedAt *time.Time
+	AlertID     *int64
+	CreatedAt   time.Time
+	CreatedBy   string
+}
+
+func (q *Queries) CreateStatusIncident(ctx context.Context, arg CreateStatusIncidentParams) (StatusIncident, error) {
+	row := q.db.QueryRowContext(ctx, createStatusIncident,
+		arg.PageID,
+		arg.PublicID,
+		arg.Title,
+		arg.State,
+		arg.Draft,
+		arg.StartsAt,
+		arg.PublishedAt,
+		arg.AlertID,
+		arg.CreatedAt,
+		arg.CreatedBy,
+	)
+	var i StatusIncident
+	err := row.Scan(
+		&i.ID,
+		&i.PageID,
+		&i.PublicID,
+		&i.Kind,
+		&i.Title,
+		&i.State,
+		&i.Draft,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.PublishedAt,
+		&i.ResolvedAt,
+		&i.AlertID,
+		&i.CreatedAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
 const createStatusPage = `-- name: CreateStatusPage :one
 
 INSERT INTO status_pages (org_id, slug, title, published, show_uptime, created_at, created_by)
 VALUES (?, ?, ?, 0, 1, ?, ?)
-RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts
 `
 
 type CreateStatusPageParams struct {
@@ -127,6 +194,7 @@ func (q *Queries) CreateStatusPage(ctx context.Context, arg CreateStatusPagePara
 		&i.ShowUptime,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Drafts,
 	)
 	return i, err
 }
@@ -146,13 +214,100 @@ func (q *Queries) CreateStatusSource(ctx context.Context, arg CreateStatusSource
 	return err
 }
 
-const deleteStatusComponents = `-- name: DeleteStatusComponents :exec
-DELETE FROM status_components WHERE page_id = +?
+const createStatusUpdate = `-- name: CreateStatusUpdate :one
+INSERT INTO status_updates (incident_id, state, body, at, created_by) VALUES (?, ?, ?, ?, ?)
+RETURNING id, incident_id, state, body, at, created_by, edited_at
 `
 
-// A page's components, before its new list is written.
-func (q *Queries) DeleteStatusComponents(ctx context.Context, pageID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteStatusComponents, pageID)
+type CreateStatusUpdateParams struct {
+	IncidentID int64
+	State      string
+	Body       string
+	At         time.Time
+	CreatedBy  string
+}
+
+func (q *Queries) CreateStatusUpdate(ctx context.Context, arg CreateStatusUpdateParams) (StatusUpdate, error) {
+	row := q.db.QueryRowContext(ctx, createStatusUpdate,
+		arg.IncidentID,
+		arg.State,
+		arg.Body,
+		arg.At,
+		arg.CreatedBy,
+	)
+	var i StatusUpdate
+	err := row.Scan(
+		&i.ID,
+		&i.IncidentID,
+		&i.State,
+		&i.Body,
+		&i.At,
+		&i.CreatedBy,
+		&i.EditedAt,
+	)
+	return i, err
+}
+
+const deleteAlertDrafts = `-- name: DeleteAlertDrafts :many
+DELETE FROM status_incidents WHERE alert_id = +? AND state = 'draft'
+RETURNING page_id, public_id, title
+`
+
+type DeleteAlertDraftsRow struct {
+	PageID   int64
+	PublicID string
+	Title    string
+}
+
+// The drafts Dock opened from an alert, once it resolved first.
+func (q *Queries) DeleteAlertDrafts(ctx context.Context, alertID *int64) ([]DeleteAlertDraftsRow, error) {
+	rows, err := q.db.QueryContext(ctx, deleteAlertDrafts, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeleteAlertDraftsRow
+	for rows.Next() {
+		var i DeleteAlertDraftsRow
+		if err := rows.Scan(&i.PageID, &i.PublicID, &i.Title); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteIncidentImpacts = `-- name: DeleteIncidentImpacts :exec
+DELETE FROM status_incident_components WHERE incident_id = +?
+`
+
+func (q *Queries) DeleteIncidentImpacts(ctx context.Context, incidentID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteIncidentImpacts, incidentID)
+	return err
+}
+
+const deleteStatusComponent = `-- name: DeleteStatusComponent :exec
+DELETE FROM status_components WHERE id = +?
+`
+
+func (q *Queries) DeleteStatusComponent(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteStatusComponent, id)
+	return err
+}
+
+const deleteStatusIncident = `-- name: DeleteStatusIncident :exec
+DELETE FROM status_incidents WHERE id = +?
+`
+
+// Its impacts and updates go with it (ON DELETE CASCADE).
+func (q *Queries) DeleteStatusIncident(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteStatusIncident, id)
 	return err
 }
 
@@ -166,8 +321,87 @@ func (q *Queries) DeleteStatusPage(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteStatusSources = `-- name: DeleteStatusSources :exec
+DELETE FROM status_sources WHERE component_id = +?
+`
+
+// A kept component's sources, before its new ones are written.
+func (q *Queries) DeleteStatusSources(ctx context.Context, componentID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteStatusSources, componentID)
+	return err
+}
+
+const editStatusUpdate = `-- name: EditStatusUpdate :one
+UPDATE status_updates SET body = ?, edited_at = ? WHERE id = +?
+RETURNING id, incident_id, state, body, at, created_by, edited_at
+`
+
+type EditStatusUpdateParams struct {
+	Body     string
+	EditedAt *time.Time
+	ID       int64
+}
+
+func (q *Queries) EditStatusUpdate(ctx context.Context, arg EditStatusUpdateParams) (StatusUpdate, error) {
+	row := q.db.QueryRowContext(ctx, editStatusUpdate, arg.Body, arg.EditedAt, arg.ID)
+	var i StatusUpdate
+	err := row.Scan(
+		&i.ID,
+		&i.IncidentID,
+		&i.State,
+		&i.Body,
+		&i.At,
+		&i.CreatedBy,
+		&i.EditedAt,
+	)
+	return i, err
+}
+
+const getStatusIncident = `-- name: GetStatusIncident :one
+SELECT status_incidents.id, status_incidents.page_id, status_incidents.public_id, status_incidents.kind, status_incidents.title, status_incidents.state, status_incidents.draft, status_incidents.starts_at, status_incidents.ends_at, status_incidents.published_at, status_incidents.resolved_at, status_incidents.alert_id, status_incidents.created_at, status_incidents.created_by, status_pages.id, status_pages.org_id, status_pages.slug, status_pages.title, status_pages.published, status_pages.show_uptime, status_pages.created_at, status_pages.created_by, status_pages.drafts
+FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
+WHERE status_incidents.public_id = +?
+`
+
+type GetStatusIncidentRow struct {
+	StatusIncident StatusIncident
+	StatusPage     StatusPage
+}
+
+// An incident by its public ID, with its page.
+func (q *Queries) GetStatusIncident(ctx context.Context, publicID string) (GetStatusIncidentRow, error) {
+	row := q.db.QueryRowContext(ctx, getStatusIncident, publicID)
+	var i GetStatusIncidentRow
+	err := row.Scan(
+		&i.StatusIncident.ID,
+		&i.StatusIncident.PageID,
+		&i.StatusIncident.PublicID,
+		&i.StatusIncident.Kind,
+		&i.StatusIncident.Title,
+		&i.StatusIncident.State,
+		&i.StatusIncident.Draft,
+		&i.StatusIncident.StartsAt,
+		&i.StatusIncident.EndsAt,
+		&i.StatusIncident.PublishedAt,
+		&i.StatusIncident.ResolvedAt,
+		&i.StatusIncident.AlertID,
+		&i.StatusIncident.CreatedAt,
+		&i.StatusIncident.CreatedBy,
+		&i.StatusPage.ID,
+		&i.StatusPage.OrgID,
+		&i.StatusPage.Slug,
+		&i.StatusPage.Title,
+		&i.StatusPage.Published,
+		&i.StatusPage.ShowUptime,
+		&i.StatusPage.CreatedAt,
+		&i.StatusPage.CreatedBy,
+		&i.StatusPage.Drafts,
+	)
+	return i, err
+}
+
 const getStatusPage = `-- name: GetStatusPage :one
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by FROM status_pages WHERE org_id = +? AND slug = +?
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts FROM status_pages WHERE org_id = +? AND slug = +?
 `
 
 type GetStatusPageParams struct {
@@ -188,12 +422,13 @@ func (q *Queries) GetStatusPage(ctx context.Context, arg GetStatusPageParams) (S
 		&i.ShowUptime,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Drafts,
 	)
 	return i, err
 }
 
 const getStatusPageByID = `-- name: GetStatusPageByID :one
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by FROM status_pages WHERE id = +?
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts FROM status_pages WHERE id = +?
 `
 
 func (q *Queries) GetStatusPageByID(ctx context.Context, id int64) (StatusPage, error) {
@@ -208,8 +443,105 @@ func (q *Queries) GetStatusPageByID(ctx context.Context, id int64) (StatusPage, 
 		&i.ShowUptime,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Drafts,
 	)
 	return i, err
+}
+
+const getStatusUpdate = `-- name: GetStatusUpdate :one
+SELECT id, incident_id, state, body, at, created_by, edited_at FROM status_updates WHERE id = +? AND incident_id = +?
+`
+
+type GetStatusUpdateParams struct {
+	ID         int64
+	IncidentID int64
+}
+
+func (q *Queries) GetStatusUpdate(ctx context.Context, arg GetStatusUpdateParams) (StatusUpdate, error) {
+	row := q.db.QueryRowContext(ctx, getStatusUpdate, arg.ID, arg.IncidentID)
+	var i StatusUpdate
+	err := row.Scan(
+		&i.ID,
+		&i.IncidentID,
+		&i.State,
+		&i.Body,
+		&i.At,
+		&i.CreatedBy,
+		&i.EditedAt,
+	)
+	return i, err
+}
+
+const listIncidentImpacts = `-- name: ListIncidentImpacts :many
+SELECT ic.component_id, ic.impact, sc.name
+FROM status_incident_components AS ic JOIN status_components AS sc ON sc.id = ic.component_id
+WHERE ic.incident_id = +?
+ORDER BY sc.position
+`
+
+type ListIncidentImpactsRow struct {
+	ComponentID int64
+	Impact      string
+	Name        string
+}
+
+func (q *Queries) ListIncidentImpacts(ctx context.Context, incidentID int64) ([]ListIncidentImpactsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listIncidentImpacts, incidentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListIncidentImpactsRow
+	for rows.Next() {
+		var i ListIncidentImpactsRow
+		if err := rows.Scan(&i.ComponentID, &i.Impact, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIncidentUpdates = `-- name: ListIncidentUpdates :many
+SELECT id, incident_id, state, body, at, created_by, edited_at FROM status_updates WHERE incident_id = +? ORDER BY at, id
+`
+
+// An incident's updates, oldest first.
+func (q *Queries) ListIncidentUpdates(ctx context.Context, incidentID int64) ([]StatusUpdate, error) {
+	rows, err := q.db.QueryContext(ctx, listIncidentUpdates, incidentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusUpdate
+	for rows.Next() {
+		var i StatusUpdate
+		if err := rows.Scan(
+			&i.ID,
+			&i.IncidentID,
+			&i.State,
+			&i.Body,
+			&i.At,
+			&i.CreatedBy,
+			&i.EditedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listStatusComponents = `-- name: ListStatusComponents :many
@@ -233,6 +565,229 @@ func (q *Queries) ListStatusComponents(ctx context.Context, pageID int64) ([]Sta
 			&i.Name,
 			&i.Description,
 			&i.Auto,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusFeed = `-- name: ListStatusFeed :many
+SELECT i.public_id, i.title, u.state, u.body, u.at, u.edited_at
+FROM status_incidents AS i JOIN status_updates AS u ON u.incident_id = i.id
+WHERE i.page_id = +?1
+ORDER BY u.at DESC, u.id DESC
+LIMIT +?2
+`
+
+type ListStatusFeedParams struct {
+	PageID int64
+	Max    int64
+}
+
+type ListStatusFeedRow struct {
+	PublicID string
+	Title    string
+	State    string
+	Body     string
+	At       time.Time
+	EditedAt *time.Time
+}
+
+// A page's newest posted updates, for its Atom feed.
+func (q *Queries) ListStatusFeed(ctx context.Context, arg ListStatusFeedParams) ([]ListStatusFeedRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusFeed, arg.PageID, arg.Max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusFeedRow
+	for rows.Next() {
+		var i ListStatusFeedRow
+		if err := rows.Scan(
+			&i.PublicID,
+			&i.Title,
+			&i.State,
+			&i.Body,
+			&i.At,
+			&i.EditedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusHistory = `-- name: ListStatusHistory :many
+SELECT public_id, title, state, starts_at, resolved_at
+FROM status_incidents
+WHERE page_id = +?1 AND state != 'draft'
+ORDER BY starts_at DESC, id DESC
+LIMIT +?2
+`
+
+type ListStatusHistoryParams struct {
+	PageID int64
+	Max    int64
+}
+
+type ListStatusHistoryRow struct {
+	PublicID   string
+	Title      string
+	State      string
+	StartsAt   time.Time
+	ResolvedAt *time.Time
+}
+
+// A page's published incidents, newest first, for its history.
+func (q *Queries) ListStatusHistory(ctx context.Context, arg ListStatusHistoryParams) ([]ListStatusHistoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusHistory, arg.PageID, arg.Max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusHistoryRow
+	for rows.Next() {
+		var i ListStatusHistoryRow
+		if err := rows.Scan(
+			&i.PublicID,
+			&i.Title,
+			&i.State,
+			&i.StartsAt,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusImpacts = `-- name: ListStatusImpacts :many
+SELECT ic.incident_id, ic.component_id, ic.impact, sc.name
+FROM status_incidents AS i
+JOIN status_incident_components AS ic ON ic.incident_id = i.id
+JOIN status_components AS sc ON sc.id = ic.component_id
+WHERE i.page_id = +?1 AND (i.resolved_at IS NULL OR i.resolved_at >= +?2)
+ORDER BY sc.position
+`
+
+type ListStatusImpactsParams struct {
+	PageID int64
+	Since  *time.Time
+}
+
+type ListStatusImpactsRow struct {
+	IncidentID  int64
+	ComponentID int64
+	Impact      string
+	Name        string
+}
+
+// What the incidents ListStatusIncidents returns do to components.
+func (q *Queries) ListStatusImpacts(ctx context.Context, arg ListStatusImpactsParams) ([]ListStatusImpactsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusImpacts, arg.PageID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusImpactsRow
+	for rows.Next() {
+		var i ListStatusImpactsRow
+		if err := rows.Scan(
+			&i.IncidentID,
+			&i.ComponentID,
+			&i.Impact,
+			&i.Name,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusIncidents = `-- name: ListStatusIncidents :many
+SELECT i.id, i.page_id, i.public_id, i.kind, i.title, i.state, i.draft, i.starts_at, i.ends_at, i.published_at, i.resolved_at, i.alert_id, i.created_at, i.created_by,
+  CAST(coalesce(a.kind, '') AS TEXT) AS alert_kind, CAST(coalesce(a.title, '') AS TEXT) AS alert_title,
+  CAST(coalesce(a.project, '') AS TEXT) AS alert_project, CAST(coalesce(a.environment, '') AS TEXT) AS alert_environment,
+  CAST(coalesce(a.service, '') AS TEXT) AS alert_service
+FROM status_incidents AS i LEFT JOIN alerts AS a ON a.id = i.alert_id
+WHERE i.page_id = +?1 AND (i.resolved_at IS NULL OR i.resolved_at >= +?2)
+ORDER BY i.starts_at DESC, i.id DESC
+`
+
+type ListStatusIncidentsParams struct {
+	PageID int64
+	Since  *time.Time
+}
+
+type ListStatusIncidentsRow struct {
+	StatusIncident   StatusIncident
+	AlertKind        string
+	AlertTitle       string
+	AlertProject     string
+	AlertEnvironment string
+	AlertService     string
+}
+
+// A page's incidents open or resolved since since, newest first, with
+// the alert a draft came from (private: for the editor).
+func (q *Queries) ListStatusIncidents(ctx context.Context, arg ListStatusIncidentsParams) ([]ListStatusIncidentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusIncidents, arg.PageID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusIncidentsRow
+	for rows.Next() {
+		var i ListStatusIncidentsRow
+		if err := rows.Scan(
+			&i.StatusIncident.ID,
+			&i.StatusIncident.PageID,
+			&i.StatusIncident.PublicID,
+			&i.StatusIncident.Kind,
+			&i.StatusIncident.Title,
+			&i.StatusIncident.State,
+			&i.StatusIncident.Draft,
+			&i.StatusIncident.StartsAt,
+			&i.StatusIncident.EndsAt,
+			&i.StatusIncident.PublishedAt,
+			&i.StatusIncident.ResolvedAt,
+			&i.StatusIncident.AlertID,
+			&i.StatusIncident.CreatedAt,
+			&i.StatusIncident.CreatedBy,
+			&i.AlertKind,
+			&i.AlertTitle,
+			&i.AlertProject,
+			&i.AlertEnvironment,
+			&i.AlertService,
 		); err != nil {
 			return nil, err
 		}
@@ -359,7 +914,7 @@ func (q *Queries) ListStatusPageSources(ctx context.Context, pageID int64) ([]Li
 }
 
 const listStatusPages = `-- name: ListStatusPages :many
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by FROM status_pages WHERE org_id = +? ORDER BY slug
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts FROM status_pages WHERE org_id = +? ORDER BY slug
 `
 
 func (q *Queries) ListStatusPages(ctx context.Context, orgID int64) ([]StatusPage, error) {
@@ -380,6 +935,7 @@ func (q *Queries) ListStatusPages(ctx context.Context, orgID int64) ([]StatusPag
 			&i.ShowUptime,
 			&i.CreatedAt,
 			&i.CreatedBy,
+			&i.Drafts,
 		); err != nil {
 			return nil, err
 		}
@@ -439,6 +995,108 @@ func (q *Queries) ListStatusSourceCandidates(ctx context.Context, orgID int64) (
 			&i.Service,
 			&i.CheckID,
 			&i.CheckUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStatusUpdates = `-- name: ListStatusUpdates :many
+SELECT u.id, u.incident_id, u.state, u.body, u.at, u.created_by, u.edited_at
+FROM status_incidents AS i JOIN status_updates AS u ON u.incident_id = i.id
+WHERE i.page_id = +?1 AND (i.resolved_at IS NULL OR i.resolved_at >= +?2)
+ORDER BY u.at, u.id
+`
+
+type ListStatusUpdatesParams struct {
+	PageID int64
+	Since  *time.Time
+}
+
+// The updates of the incidents ListStatusIncidents returns, oldest first.
+func (q *Queries) ListStatusUpdates(ctx context.Context, arg ListStatusUpdatesParams) ([]StatusUpdate, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusUpdates, arg.PageID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusUpdate
+	for rows.Next() {
+		var i StatusUpdate
+		if err := rows.Scan(
+			&i.ID,
+			&i.IncidentID,
+			&i.State,
+			&i.Body,
+			&i.At,
+			&i.CreatedBy,
+			&i.EditedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const statusDraftTargets = `-- name: StatusDraftTargets :many
+SELECT sp.id AS page_id, sp.org_id, sp.slug, sc.id AS component_id, sc.name,
+  CAST(EXISTS (SELECT 1 FROM status_incident_components AS ic JOIN status_incidents AS i ON i.id = ic.incident_id
+    WHERE ic.component_id = sc.id AND i.resolved_at IS NULL) AS BOOLEAN) AS covered
+FROM status_sources AS src
+JOIN status_components AS sc ON sc.id = src.component_id
+JOIN status_pages AS sp ON sp.id = sc.page_id
+WHERE (src.service_id = +?1 OR src.check_id = +?2) AND sp.published AND sp.drafts AND sc.auto
+ORDER BY sp.id, sc.position
+`
+
+type StatusDraftTargetsParams struct {
+	ServiceID *int64
+	CheckID   *int64
+}
+
+type StatusDraftTargetsRow struct {
+	PageID      int64
+	OrgID       int64
+	Slug        string
+	ComponentID int64
+	Name        string
+	Covered     bool
+}
+
+// The components a service or uptime check feeds on published pages
+// that take drafts, each with whether an open incident names it: where
+// an alert about them drafts an incident. A component may come twice.
+func (q *Queries) StatusDraftTargets(ctx context.Context, arg StatusDraftTargetsParams) ([]StatusDraftTargetsRow, error) {
+	rows, err := q.db.QueryContext(ctx, statusDraftTargets, arg.ServiceID, arg.CheckID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []StatusDraftTargetsRow
+	for rows.Next() {
+		var i StatusDraftTargetsRow
+		if err := rows.Scan(
+			&i.PageID,
+			&i.OrgID,
+			&i.Slug,
+			&i.ComponentID,
+			&i.Name,
+			&i.Covered,
 		); err != nil {
 			return nil, err
 		}
@@ -545,15 +1203,86 @@ func (q *Queries) StatusSlugTaken(ctx context.Context, slug string) (bool, error
 	return exists, err
 }
 
+const updateStatusComponent = `-- name: UpdateStatusComponent :exec
+UPDATE status_components SET position = ?, grp = ?, name = ?, description = ?, auto = ? WHERE id = +?
+`
+
+type UpdateStatusComponentParams struct {
+	Position    int64
+	Grp         string
+	Name        string
+	Description string
+	Auto        bool
+	ID          int64
+}
+
+// A component kept when a page's list is written, so the incidents
+// that name it keep doing so.
+func (q *Queries) UpdateStatusComponent(ctx context.Context, arg UpdateStatusComponentParams) error {
+	_, err := q.db.ExecContext(ctx, updateStatusComponent,
+		arg.Position,
+		arg.Grp,
+		arg.Name,
+		arg.Description,
+		arg.Auto,
+		arg.ID,
+	)
+	return err
+}
+
+const updateStatusIncident = `-- name: UpdateStatusIncident :one
+UPDATE status_incidents SET title = ?, state = ?, draft = ?, published_at = ?, resolved_at = ? WHERE id = +?
+RETURNING id, page_id, public_id, kind, title, state, draft, starts_at, ends_at, published_at, resolved_at, alert_id, created_at, created_by
+`
+
+type UpdateStatusIncidentParams struct {
+	Title       string
+	State       string
+	Draft       string
+	PublishedAt *time.Time
+	ResolvedAt  *time.Time
+	ID          int64
+}
+
+func (q *Queries) UpdateStatusIncident(ctx context.Context, arg UpdateStatusIncidentParams) (StatusIncident, error) {
+	row := q.db.QueryRowContext(ctx, updateStatusIncident,
+		arg.Title,
+		arg.State,
+		arg.Draft,
+		arg.PublishedAt,
+		arg.ResolvedAt,
+		arg.ID,
+	)
+	var i StatusIncident
+	err := row.Scan(
+		&i.ID,
+		&i.PageID,
+		&i.PublicID,
+		&i.Kind,
+		&i.Title,
+		&i.State,
+		&i.Draft,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.PublishedAt,
+		&i.ResolvedAt,
+		&i.AlertID,
+		&i.CreatedAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
 const updateStatusPage = `-- name: UpdateStatusPage :one
-UPDATE status_pages SET title = ?, published = ?, show_uptime = ? WHERE id = +?
-RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by
+UPDATE status_pages SET title = ?, published = ?, show_uptime = ?, drafts = ? WHERE id = +?
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts
 `
 
 type UpdateStatusPageParams struct {
 	Title      string
 	Published  bool
 	ShowUptime bool
+	Drafts     bool
 	ID         int64
 }
 
@@ -562,6 +1291,7 @@ func (q *Queries) UpdateStatusPage(ctx context.Context, arg UpdateStatusPagePara
 		arg.Title,
 		arg.Published,
 		arg.ShowUptime,
+		arg.Drafts,
 		arg.ID,
 	)
 	var i StatusPage
@@ -574,6 +1304,7 @@ func (q *Queries) UpdateStatusPage(ctx context.Context, arg UpdateStatusPagePara
 		&i.ShowUptime,
 		&i.CreatedAt,
 		&i.CreatedBy,
+		&i.Drafts,
 	)
 	return i, err
 }

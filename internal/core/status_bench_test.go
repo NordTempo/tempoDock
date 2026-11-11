@@ -10,9 +10,9 @@ import (
 )
 
 // BenchmarkStatusPage100 is a published page's public view with 100
-// components of one uptime check each and 90 days of history (day rows,
-// and this hour's minute rows; hour rows of today are left out): what a
-// status page's render reads, at most once every few seconds a page and
+// components of one uptime check each, 90 days of history (day rows,
+// and this hour's minute rows; hour rows of today are left out) and 50
+// incidents: what a status page's render reads, at most once every few seconds a page and
 // only while someone views it.
 func BenchmarkStatusPage100(b *testing.B) {
 	bc := newBenchCore(b)
@@ -51,6 +51,29 @@ func BenchmarkStatusPage100(b *testing.B) {
 	if _, err := bc.c.UpdateStatusPage(bc.ctx, testSystem, "bench", apitypes.UpdateStatusPageRequest{Published: &on}); err != nil {
 		b.Fatal(err)
 	}
+	// 50 incidents over the 90 days, two components and three updates
+	// each, all but one resolved.
+	for i := range 50 {
+		inc, err := bc.c.OpenIncident(bc.ctx, testSystem, "bench", apitypes.OpenIncidentRequest{Title: fmt.Sprintf("Incident %d", i), Message: "Looking into it.",
+			Components: []apitypes.StatusImpact{{Component: fmt.Sprintf("Component %d", i), Impact: apitypes.StatusPartialOutage},
+				{Component: fmt.Sprintf("Component %d", i+50), Impact: apitypes.StatusDegraded}}})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := bc.c.PostIncidentUpdate(bc.ctx, testSystem, inc.ID, apitypes.PostIncidentUpdateRequest{State: apitypes.IncidentIdentified, Message: "Found it."}); err != nil {
+			b.Fatal(err)
+		}
+		if i > 0 {
+			if _, err := bc.c.PostIncidentUpdate(bc.ctx, testSystem, inc.ID, apitypes.PostIncidentUpdateRequest{State: apitypes.IncidentResolved, Message: "Fixed."}); err != nil {
+				b.Fatal(err)
+			}
+		}
+		at := t.Add(-time.Duration(i) * 40 * time.Hour)
+		if _, err := bc.c.store.DB.ExecContext(bc.ctx, `UPDATE status_incidents SET starts_at = ?, resolved_at = CASE WHEN resolved_at IS NULL THEN NULL ELSE ? END WHERE public_id = ?`,
+			at, at.Add(time.Hour), inc.ID); err != nil {
+			b.Fatal(err)
+		}
+	}
 	p, err := bc.c.store.GetStatusPage(bc.ctx, store.GetStatusPageParams{OrgID: 1, Slug: "bench"})
 	if err != nil {
 		b.Fatal(err)
@@ -58,7 +81,7 @@ func BenchmarkStatusPage100(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		page, err := bc.c.PublicStatusPage(bc.ctx, p.ID)
-		if err != nil || len(page.Groups) != 10 {
+		if err != nil || len(page.Groups) != 10 || len(page.Open) != 1 {
 			b.Fatalf("page: %d groups, %v", len(page.Groups), err)
 		}
 	}

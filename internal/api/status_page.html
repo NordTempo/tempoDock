@@ -1,22 +1,44 @@
-<!doctype html>
+{{define "head"}}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>{{.Title}} status</title>
-<style>{{.CSS}}</style>
+<title>{{.}}</title>
+<style>{{css}}</style>
+<link rel="alternate" type="application/atom+xml" href="/feed.atom">
 </head>
 <body>
-<main>
-<header><h1>{{.Title}}</h1><a href="/status.json">JSON</a></header>
+<main>{{end}}
+{{define "foot"}}<footer>Days in UTC · status by Tempo Dock</footer>
+</main>
+</body>
+</html>{{end}}
+{{define "incident"}}<div class="inc {{.Tone}}">{{if .Link}}<div class="inc-t"><a href="/incidents/{{.ID}}">{{.Title}}</a> <span>{{.State}}</span></div>{{end}}
+{{if .Affects}}<div class="desc">{{.Affects}}</div>{{end}}
+{{range .Updates}}<div class="u"><time>{{.When}}</time><span class="desc">{{.State}}</span>{{if .Edited}} <span class="desc">· edited</span>{{end}}{{.Body}}</div>
+{{end}}</div>{{end}}
+{{define "page"}}{{template "head" (print .Title " status")}}
+<header><h1>{{.Title}}</h1><a href="/feed.atom">Atom</a><a href="/status.json">JSON</a></header>
 <p class="state"><span class="dot {{.Tone}}"></span><span>{{.Headline}}</span><span class="upd">updated {{.Updated}}</span></p>
+{{range .Open}}{{template "incident" .}}{{end}}
 {{range .Groups}}{{if .Name}}<h2>{{.Name}}</h2>{{end}}{{range .Components}}<section>
 <div class="row"><span class="name">{{.Name}}{{if .Description}} <span class="desc">{{.Description}}</span>{{end}}</span><span class="{{.Tone}}">{{.Label}}</span></div>
 <div class="bar">{{.Bar}}</div>
 <div class="axis"><span>90 days ago</span>{{if .Uptime}}<span class="up">{{.Uptime}}</span>{{end}}<span>today</span></div>
 </section>{{end}}{{end}}{{if not .Groups}}<p class="none">No components yet.</p>{{end}}
-<footer>Days in UTC · status by Tempo Dock</footer>
-</main>
-</body>
-</html>
+<h2>Past incidents</h2>
+{{range .Past}}<div class="past"><span class="desc">{{.Date}}</span>{{if .ID}}<a href="/incidents/{{.ID}}">{{.Title}}</a><span class="desc">{{.State}}</span>{{else}}<span class="desc">No incidents</span><span></span>{{end}}</div>
+{{end}}<p class="more"><a href="/history">All incidents</a></p>
+{{template "foot"}}{{end}}
+{{define "one"}}{{template "head" (print .Incident.Title " · " .Title)}}
+<header><h1><a href="/">{{.Title}}</a></h1><a href="/history">All incidents</a></header>
+<p class="state"><span>{{.Incident.Title}}</span><span class="upd">{{.Incident.State}} · {{.Span}}</span></p>
+{{template "incident" .Incident}}
+{{template "foot"}}{{end}}
+{{define "history"}}{{template "head" (print .Title " incidents")}}
+<header><h1><a href="/">{{.Title}}</a></h1><a href="/feed.atom">Atom</a></header>
+{{range .Months}}<h2>{{.Name}}</h2>
+{{range .Incidents}}<div class="past"><span class="desc">{{.Date}}</span><a href="/incidents/{{.ID}}">{{.Title}}</a><span class="desc">{{.State}}</span></div>
+{{end}}{{end}}{{if not .Months}}<p class="none">No incidents yet.</p>{{end}}{{if .More}}<p class="none">Older incidents aren't listed.</p>{{end}}
+{{template "foot"}}{{end}}

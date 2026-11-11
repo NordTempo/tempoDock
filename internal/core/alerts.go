@@ -780,6 +780,7 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	e.mu.Unlock()
 	c.log.Info("alert opened", "alert", s.Key, "severity", s.Severity, "title", s.Title)
 	c.publishAlert(row)
+	c.statusAlertOpened(ctx, row)
 	c.notify(ctx, row, "opened", now)
 }
 
@@ -862,6 +863,7 @@ func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {
 	a.ResolvedAt, a.UpdatedAt = &t, t
 	c.log.Info("alert resolved", "alert", key)
 	c.publishAlert(a)
+	c.statusAlertResolved(ctx, a)
 	c.notify(ctx, a, "resolved", now)
 }
 
