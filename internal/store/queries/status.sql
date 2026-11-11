@@ -28,7 +28,7 @@ SELECT count(*) FROM status_pages WHERE org_id = +?;
 SELECT id, slug, published FROM status_pages;
 
 -- name: UpdateStatusPage :one
-UPDATE status_pages SET title = ?, published = ?, show_uptime = ? WHERE id = +?
+UPDATE status_pages SET title = ?, published = ?, show_uptime = ?, drafts = ? WHERE id = +?
 RETURNING *;
 
 -- name: DeleteStatusPage :exec
@@ -38,9 +38,17 @@ DELETE FROM status_pages WHERE id = +?;
 -- name: ListStatusComponents :many
 SELECT * FROM status_components WHERE page_id = +? ORDER BY position;
 
--- name: DeleteStatusComponents :exec
--- A page's components, before its new list is written.
-DELETE FROM status_components WHERE page_id = +?;
+-- name: UpdateStatusComponent :exec
+-- A component kept when a page's list is written, so the incidents
+-- that name it keep doing so.
+UPDATE status_components SET position = ?, grp = ?, name = ?, description = ?, auto = ? WHERE id = +?;
+
+-- name: DeleteStatusComponent :exec
+DELETE FROM status_components WHERE id = +?;
+
+-- name: DeleteStatusSources :exec
+-- A kept component's sources, before its new ones are written.
+DELETE FROM status_sources WHERE component_id = +?;
 
 -- name: CreateStatusComponent :one
 INSERT INTO status_components (page_id, position, grp, name, description, auto)
@@ -122,3 +130,110 @@ ORDER BY p.name, e.name, sv.name, uc.id;
 SELECT sc.page_id, count(*) AS components
 FROM status_pages AS sp JOIN status_components AS sc ON sc.page_id = sp.id
 WHERE sp.org_id = +? GROUP BY sc.page_id;
+
+-- name: CreateStatusIncident :one
+INSERT INTO status_incidents (page_id, public_id, title, state, draft, starts_at, published_at, alert_id, created_at, created_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetStatusIncident :one
+-- An incident by its public ID, with its page.
+SELECT sqlc.embed(status_incidents), sqlc.embed(status_pages)
+FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
+WHERE status_incidents.public_id = +?;
+
+-- name: UpdateStatusIncident :one
+UPDATE status_incidents SET title = ?, state = ?, draft = ?, published_at = ?, resolved_at = ? WHERE id = +?
+RETURNING *;
+
+-- name: DeleteStatusIncident :exec
+-- Its impacts and updates go with it (ON DELETE CASCADE).
+DELETE FROM status_incidents WHERE id = +?;
+
+-- name: ListStatusIncidents :many
+-- A page's incidents open or resolved since since, newest first, with
+-- the alert a draft came from (private: for the editor).
+SELECT sqlc.embed(i),
+  CAST(coalesce(a.kind, '') AS TEXT) AS alert_kind, CAST(coalesce(a.title, '') AS TEXT) AS alert_title,
+  CAST(coalesce(a.project, '') AS TEXT) AS alert_project, CAST(coalesce(a.environment, '') AS TEXT) AS alert_environment,
+  CAST(coalesce(a.service, '') AS TEXT) AS alert_service
+FROM status_incidents AS i LEFT JOIN alerts AS a ON a.id = i.alert_id
+WHERE i.page_id = +sqlc.arg(page_id) AND (i.resolved_at IS NULL OR i.resolved_at >= +sqlc.arg(since))
+ORDER BY i.starts_at DESC, i.id DESC;
+
+-- name: ListStatusImpacts :many
+-- What the incidents ListStatusIncidents returns do to components.
+SELECT ic.incident_id, ic.component_id, ic.impact, sc.name
+FROM status_incidents AS i
+JOIN status_incident_components AS ic ON ic.incident_id = i.id
+JOIN status_components AS sc ON sc.id = ic.component_id
+WHERE i.page_id = +sqlc.arg(page_id) AND (i.resolved_at IS NULL OR i.resolved_at >= +sqlc.arg(since))
+ORDER BY sc.position;
+
+-- name: ListStatusUpdates :many
+-- The updates of the incidents ListStatusIncidents returns, oldest first.
+SELECT u.*
+FROM status_incidents AS i JOIN status_updates AS u ON u.incident_id = i.id
+WHERE i.page_id = +sqlc.arg(page_id) AND (i.resolved_at IS NULL OR i.resolved_at >= +sqlc.arg(since))
+ORDER BY u.at, u.id;
+
+-- name: ListIncidentImpacts :many
+SELECT ic.component_id, ic.impact, sc.name
+FROM status_incident_components AS ic JOIN status_components AS sc ON sc.id = ic.component_id
+WHERE ic.incident_id = +?
+ORDER BY sc.position;
+
+-- name: ListIncidentUpdates :many
+-- An incident's updates, oldest first.
+SELECT * FROM status_updates WHERE incident_id = +? ORDER BY at, id;
+
+-- name: DeleteIncidentImpacts :exec
+DELETE FROM status_incident_components WHERE incident_id = +?;
+
+-- name: CreateIncidentImpact :exec
+INSERT INTO status_incident_components (incident_id, component_id, impact) VALUES (?, ?, ?);
+
+-- name: CreateStatusUpdate :one
+INSERT INTO status_updates (incident_id, state, body, at, created_by) VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetStatusUpdate :one
+SELECT * FROM status_updates WHERE id = +? AND incident_id = +?;
+
+-- name: EditStatusUpdate :one
+UPDATE status_updates SET body = ?, edited_at = ? WHERE id = +?
+RETURNING *;
+
+-- name: ListStatusHistory :many
+-- A page's published incidents, newest first, for its history.
+SELECT public_id, title, state, starts_at, resolved_at
+FROM status_incidents
+WHERE page_id = +sqlc.arg(page_id) AND state != 'draft'
+ORDER BY starts_at DESC, id DESC
+LIMIT +sqlc.arg(max);
+
+-- name: ListStatusFeed :many
+-- A page's newest posted updates, for its Atom feed.
+SELECT i.public_id, i.title, u.state, u.body, u.at, u.edited_at
+FROM status_incidents AS i JOIN status_updates AS u ON u.incident_id = i.id
+WHERE i.page_id = +sqlc.arg(page_id)
+ORDER BY u.at DESC, u.id DESC
+LIMIT +sqlc.arg(max);
+
+-- name: StatusDraftTargets :many
+-- The components a service or uptime check feeds on published pages
+-- that take drafts, each with whether an open incident names it: where
+-- an alert about them drafts an incident. A component may come twice.
+SELECT sp.id AS page_id, sp.org_id, sp.slug, sc.id AS component_id, sc.name,
+  CAST(EXISTS (SELECT 1 FROM status_incident_components AS ic JOIN status_incidents AS i ON i.id = ic.incident_id
+    WHERE ic.component_id = sc.id AND i.resolved_at IS NULL) AS BOOLEAN) AS covered
+FROM status_sources AS src
+JOIN status_components AS sc ON sc.id = src.component_id
+JOIN status_pages AS sp ON sp.id = sc.page_id
+WHERE (src.service_id = +sqlc.arg(service_id) OR src.check_id = +sqlc.arg(check_id)) AND sp.published AND sp.drafts AND sc.auto
+ORDER BY sp.id, sc.position;
+
+-- name: DeleteAlertDrafts :many
+-- The drafts Dock opened from an alert, once it resolved first.
+DELETE FROM status_incidents WHERE alert_id = +? AND state = 'draft'
+RETURNING page_id, public_id, title;

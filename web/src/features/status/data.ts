@@ -7,7 +7,8 @@ import type { State } from "../../ui/status";
 // The organization's public status pages (ADR 0073). What a page says is
 // worked out on the server from uptime checks, alerts and sleep, so
 // data/live.ts refetches these on uptime, alert and sleep events and on
-// status_page.* audit events.
+// status_page.* and incident.* audit events. A page carries its incidents
+// of the last 90 days, so an incident's screen reads its page.
 
 type Schema = components["schemas"];
 type PageSchema = Schema["StatusPage"];
@@ -18,9 +19,18 @@ export type StatusComponent = Omit<ComponentSchema, "days" | "sources"> & {
   days: NonNullable<ComponentSchema["days"]>;
   sources: NonNullable<ComponentSchema["sources"]>;
 };
-/** A page with its components. */
-export type StatusPage = Omit<PageSchema, "components"> & {
+type IncidentSchema = Schema["StatusIncident"];
+/** An incident, with the lists the API may send as null as arrays. */
+export type StatusIncident = Omit<IncidentSchema, "components" | "updates"> & {
+  components: StatusImpact[];
+  updates: NonNullable<IncidentSchema["updates"]>;
+};
+export type StatusImpact = Schema["StatusImpact"];
+export type IncidentState = IncidentSchema["state"];
+/** A page with its components and incidents. */
+export type StatusPage = Omit<PageSchema, "components" | "incidents"> & {
   components: StatusComponent[];
+  incidents: StatusIncident[];
 };
 export type StatusComponentInput = Schema["StatusComponentInput"];
 export type StatusSourceRef = Schema["StatusSourceRef"];
@@ -34,6 +44,13 @@ const statusKeys = {
   sources: ["status-pages", "sources"],
 };
 
+/** The API's incident, its lists as arrays. */
+const toIncident = (i: IncidentSchema): StatusIncident => ({
+  ...i,
+  components: i.components ?? [],
+  updates: i.updates ?? [],
+});
+
 /** The API's page, its lists as arrays. */
 const toPage = (p: PageSchema): StatusPage => ({
   ...p,
@@ -42,6 +59,7 @@ const toPage = (p: PageSchema): StatusPage => ({
     days: c.days ?? [],
     sources: c.sources ?? [],
   })),
+  incidents: (p.incidents ?? []).map(toIncident),
 });
 
 export const statusQueries = {
@@ -124,6 +142,7 @@ export const useSetStatusComponents = (slug: string) =>
 /** A page's components as the list the API takes back. */
 export const toInputs = (p: StatusPage): StatusComponentInput[] =>
   p.components.map((c) => ({
+    id: c.id,
     name: c.name,
     group: c.group,
     description: c.description,
@@ -141,3 +160,83 @@ export const statusState: Record<ComponentStatus, State> = {
   partial_outage: { tone: "warn", glyph: "▲", label: "partial outage" },
   major_outage: { tone: "fail", glyph: "✕", label: "major outage" },
 };
+
+export const useOpenIncident = (slug: string) =>
+  useAction(
+    (req: Schema["OpenIncidentRequest"]) =>
+      body(
+        api.POST("/api/v1/status-pages/{page}/incidents", {
+          params: { path: { page: slug } },
+          body: req,
+        }),
+      ).then(toIncident),
+    () => [statusKeys.all],
+    (_, i) =>
+      i.state === "draft" ? `Saved draft ${i.title}` : `Opened ${i.title}`,
+  );
+
+export const usePostIncidentUpdate = (id: string) =>
+  useAction(
+    (req: Schema["PostIncidentUpdateRequest"]) =>
+      body(
+        api.POST("/api/v1/incidents/{incident}/updates", {
+          params: { path: { incident: id } },
+          body: req,
+        }),
+      ).then(toIncident),
+    () => [statusKeys.all],
+    (req) => (req.state === "resolved" ? "Resolved" : "Posted update"),
+  );
+
+export const useUpdateIncident = (id: string) =>
+  useAction(
+    (req: Schema["UpdateIncidentRequest"]) =>
+      body(
+        api.PATCH("/api/v1/incidents/{incident}", {
+          params: { path: { incident: id } },
+          body: req,
+        }),
+      ).then(toIncident),
+    () => [statusKeys.all],
+  );
+
+export const useEditIncidentUpdate = (id: string) =>
+  useAction(
+    ({ update, message }: { update: number; message: string }) =>
+      body(
+        api.PATCH("/api/v1/incidents/{incident}/updates/{update}", {
+          params: { path: { incident: id, update } },
+          body: { message },
+        }),
+      ).then(toIncident),
+    () => [statusKeys.all],
+    () => "Edited update",
+  );
+
+export const useDeleteIncident = (id: string) =>
+  useAction(
+    () =>
+      done(
+        api.DELETE("/api/v1/incidents/{incident}", {
+          params: { path: { incident: id } },
+        }),
+      ),
+    () => [statusKeys.all],
+    () => `Removed incident ${id}`,
+  );
+
+/** How an incident's state reads in the editor. */
+export const incidentState: Record<IncidentState, State> = {
+  draft: { tone: "mut", glyph: "○", label: "draft" },
+  investigating: { tone: "warn", glyph: "▲", label: "investigating" },
+  identified: { tone: "warn", glyph: "▲", label: "identified" },
+  monitoring: { tone: "info", glyph: "◐", label: "monitoring" },
+  resolved: { tone: "ok", glyph: "●", label: "resolved" },
+};
+
+/** The impacts an incident may have on a component, mildest first. */
+export const impacts = [
+  "degraded",
+  "partial_outage",
+  "major_outage",
+] as const satisfies StatusImpact["impact"][];

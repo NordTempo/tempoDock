@@ -91,6 +91,7 @@ import { Route as AppOrgAnalyticsProjectSiteIndexRouteImport } from './routes/_a
 import { Route as AppOrgAnalyticsProjectSiteErrorsRouteImport } from './routes/_app.$org.analytics.$project.$site.errors'
 import { Route as AppOrgAnalyticsProjectSiteFunnelsRouteImport } from './routes/_app.$org.analytics.$project.$site.funnels'
 import { Route as AppOrgAnalyticsProjectSiteVitalsRouteImport } from './routes/_app.$org.analytics.$project.$site.vitals'
+import { Route as AppOrgStatusPagesPageIncidentsIncidentRouteImport } from './routes/_app.$org.status-pages.$page_.incidents.$incident'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsSplatRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.$'
 import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } from './routes/_app.$org.$project.$environment.$service_.releases.$number'
 import { Route as AppOrgAnalyticsProjectSiteReplaysIndexRouteImport } from './routes/_app.$org.analytics.$project.$site.replays.index'
@@ -537,6 +538,12 @@ const AppOrgAnalyticsProjectSiteVitalsRoute =
     path: '/vitals',
     getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
   } as any)
+const AppOrgStatusPagesPageIncidentsIncidentRoute =
+  AppOrgStatusPagesPageIncidentsIncidentRouteImport.update({
+    id: '/status-pages/$page_/incidents/$incident',
+    path: '/status-pages/$page/incidents/$incident',
+    getParentRoute: () => AppOrgRoute,
+  } as any)
 const AppOrgProjectEnvironmentServiceAnalyticsSplatRoute =
   AppOrgProjectEnvironmentServiceAnalyticsSplatRouteImport.update({
     id: '/analytics_/$',
@@ -641,6 +648,7 @@ export interface FileRoutesByFullPath {
   '/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
+  '/$org/status-pages/$page/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   '/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/$org/$project/settings/variables/': typeof AppOrgProjectSettingsVariablesIndexRoute
   '/$org/analytics/$project/$site/': typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -722,6 +730,7 @@ export interface FileRoutesByTo {
   '/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
+  '/$org/status-pages/$page/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/$org/$project/settings/variables': typeof AppOrgProjectSettingsVariablesIndexRoute
   '/$org/analytics/$project/$site': typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -811,6 +820,7 @@ export interface FileRoutesById {
   '/_app/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/_app/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
   '/_app/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
+  '/_app/$org/status-pages/$page_/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   '/_app/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
   '/_app/$org/$project/settings/variables/': typeof AppOrgProjectSettingsVariablesIndexRoute
   '/_app/$org/analytics/$project/$site/': typeof AppOrgAnalyticsProjectSiteIndexRoute
@@ -900,6 +910,7 @@ export interface FileRouteTypes {
     | '/$org/analytics/$project/$site/errors'
     | '/$org/analytics/$project/$site/funnels'
     | '/$org/analytics/$project/$site/vitals'
+    | '/$org/status-pages/$page/incidents/$incident'
     | '/$org/$project/$environment/$service/'
     | '/$org/$project/settings/variables/'
     | '/$org/analytics/$project/$site/'
@@ -981,6 +992,7 @@ export interface FileRouteTypes {
     | '/$org/analytics/$project/$site/errors'
     | '/$org/analytics/$project/$site/funnels'
     | '/$org/analytics/$project/$site/vitals'
+    | '/$org/status-pages/$page/incidents/$incident'
     | '/$org/$project/$environment/$service'
     | '/$org/$project/settings/variables'
     | '/$org/analytics/$project/$site'
@@ -1069,6 +1081,7 @@ export interface FileRouteTypes {
     | '/_app/$org/analytics/$project/$site/errors'
     | '/_app/$org/analytics/$project/$site/funnels'
     | '/_app/$org/analytics/$project/$site/vitals'
+    | '/_app/$org/status-pages/$page_/incidents/$incident'
     | '/_app/$org/$project/$environment/$service/'
     | '/_app/$org/$project/settings/variables/'
     | '/_app/$org/analytics/$project/$site/'
@@ -1664,6 +1677,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAnalyticsProjectSiteVitalsRouteImport
       parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
     }
+    '/_app/$org/status-pages/$page_/incidents/$incident': {
+      id: '/_app/$org/status-pages/$page_/incidents/$incident'
+      path: '/status-pages/$page/incidents/$incident'
+      fullPath: '/$org/status-pages/$page/incidents/$incident'
+      preLoaderRoute: typeof AppOrgStatusPagesPageIncidentsIncidentRouteImport
+      parentRoute: typeof AppOrgRoute
+    }
     '/_app/$org/$project/$environment/$service/analytics_/$': {
       id: '/_app/$org/$project/$environment/$service/analytics_/$'
       path: '/analytics/$'
@@ -1862,6 +1882,7 @@ interface AppOrgRouteChildren {
   AppOrgProjectEnvironmentServiceRoute: typeof AppOrgProjectEnvironmentServiceRouteWithChildren
   AppOrgAnalyticsProjectSiteRoute: typeof AppOrgAnalyticsProjectSiteRouteWithChildren
   AppOrgProjectEnvironmentIndexRoute: typeof AppOrgProjectEnvironmentIndexRoute
+  AppOrgStatusPagesPageIncidentsIncidentRoute: typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   AppOrgProjectEnvironmentServiceReleasesNumberRoute: typeof AppOrgProjectEnvironmentServiceReleasesNumberRoute
 }
 
@@ -1885,6 +1906,8 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
     AppOrgProjectEnvironmentServiceRouteWithChildren,
   AppOrgAnalyticsProjectSiteRoute: AppOrgAnalyticsProjectSiteRouteWithChildren,
   AppOrgProjectEnvironmentIndexRoute: AppOrgProjectEnvironmentIndexRoute,
+  AppOrgStatusPagesPageIncidentsIncidentRoute:
+    AppOrgStatusPagesPageIncidentsIncidentRoute,
   AppOrgProjectEnvironmentServiceReleasesNumberRoute:
     AppOrgProjectEnvironmentServiceReleasesNumberRoute,
 }

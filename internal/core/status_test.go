@@ -360,7 +360,7 @@ func TestStatusHistoryDays(t *testing.T) {
 			t.Fatalf("the day's day rows: %d rows, %d of %d up, %v; want one per check, 4 of 5", n, up, total, err)
 		}
 	}
-	comps, err := h.c.computeStatus(h.ctx, p, nil, at)
+	comps, err := h.c.computeStatus(h.ctx, p, nil, at, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

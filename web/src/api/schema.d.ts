@@ -1356,6 +1356,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/incidents/{incident}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an incident
+         * @description With its updates, who posted them, and the alert a draft came from.
+         */
+        get: operations["get-incident"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove an incident
+         * @description From the page and its history, with its updates. Organization admins.
+         */
+        delete: operations["delete-incident"];
+        options?: never;
+        head?: never;
+        /**
+         * Change an incident
+         * @description Its title, the components it names, or a draft's words, without posting an update. Deploy scope.
+         */
+        patch: operations["update-incident"];
+        trace?: never;
+    };
+    "/api/v1/incidents/{incident}/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an incident update
+         * @description Public at once. On a draft it publishes the incident; resolved resolves it. Deploy scope.
+         */
+        post: operations["post-incident-update"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/incidents/{incident}/updates/{update}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit an incident update
+         * @description Fixes its words; the page says it was edited and the audit log keeps what it said. Deploy scope.
+         */
+        patch: operations["edit-incident-update"];
+        trace?: never;
+    };
     "/api/v1/invites/{code}": {
         parameters: {
             query?: never;
@@ -5183,6 +5251,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/status-pages/{page}/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open an incident
+         * @description Published at once with its first update, or a draft (state draft) for someone to publish. Its impact sets the components' status while it is open. Deploy scope; a token limited to a project may name only components built entirely from it.
+         */
+        post: operations["open-incident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/status-sources": {
         parameters: {
             query?: never;
@@ -7276,6 +7364,9 @@ export interface components {
             project: string;
             to: string;
         };
+        EditIncidentUpdateRequest: {
+            message: string;
+        };
         EnableAnalyticsRequest: {
             site?: string;
         };
@@ -7870,6 +7961,24 @@ export interface components {
             release: number;
             service: string;
         };
+        IncidentAlert: {
+            kind: string;
+            /** @description project/environment/service */
+            service?: string;
+            title: string;
+        };
+        IncidentUpdate: {
+            /** Format: date-time */
+            at: string;
+            by: string;
+            /** Format: date-time */
+            edited_at?: string;
+            /** Format: int64 */
+            id: number;
+            message: string;
+            /** @enum {string} */
+            state: "investigating" | "identified" | "monitoring" | "resolved";
+        };
         Invite: {
             /** Format: date-time */
             created_at: string;
@@ -8057,6 +8166,18 @@ export interface components {
             stateful: boolean;
             /** @enum {string} */
             status: "waiting" | "syncing" | "synced" | "stopped" | "copied" | "started" | "healthy" | "failed";
+        };
+        OpenIncidentRequest: {
+            components?: components["schemas"]["StatusImpact"][] | null;
+            /** @description Plain text; blank lines separate paragraphs and https links become links */
+            message?: string;
+            /**
+             * @description The first update's state; draft keeps it unpublished. Default investigating
+             * @enum {string}
+             */
+            state?: "draft" | "investigating" | "identified" | "monitoring";
+            /** @example API errors for some requests */
+            title: string;
         };
         OperatorMemberRequest: {
             /** @description The user to add (with add); their account must exist */
@@ -8249,6 +8370,13 @@ export interface components {
         };
         PlatformSecurity: {
             operators_two_factor: boolean;
+        };
+        PostIncidentUpdateRequest: {
+            components?: components["schemas"]["StatusImpact"][];
+            /** @description Plain text; blank lines separate paragraphs and https links become links */
+            message: string;
+            /** @enum {string} */
+            state: "investigating" | "identified" | "monitoring" | "resolved";
         };
         Preview: {
             author: string;
@@ -9644,6 +9772,8 @@ export interface components {
             days: components["schemas"]["StatusDay"][] | null;
             description: string;
             group: string;
+            /** Format: int64 */
+            id: number;
             name: string;
             sources: components["schemas"]["StatusSource"][] | null;
             /** @enum {string} */
@@ -9657,6 +9787,8 @@ export interface components {
             description?: string;
             /** @example Core */
             group?: string;
+            /** Format: int64 */
+            id?: number;
             /** @example API */
             name: string;
             sources?: components["schemas"]["StatusSourceRef"][] | null;
@@ -9664,14 +9796,45 @@ export interface components {
         StatusDay: {
             /** @example 2026-11-10 */
             date: string;
+            /** @enum {string} */
+            impact?: "degraded" | "partial_outage" | "major_outage";
+            incident?: string;
             /** Format: double */
             uptime?: number;
+        };
+        StatusImpact: {
+            /** @example API */
+            component: string;
+            /** @enum {string} */
+            impact: "degraded" | "partial_outage" | "major_outage";
+        };
+        StatusIncident: {
+            alert?: components["schemas"]["IncidentAlert"];
+            components: components["schemas"]["StatusImpact"][] | null;
+            created_by: string;
+            draft?: string;
+            /** @example 4f2kqz7mna */
+            id: string;
+            page: string;
+            /** Format: date-time */
+            published_at?: string;
+            /** Format: date-time */
+            resolved_at?: string;
+            /** Format: date-time */
+            started_at: string;
+            /** @enum {string} */
+            state: "draft" | "investigating" | "identified" | "monitoring" | "resolved";
+            title: string;
+            updates: components["schemas"]["IncidentUpdate"][] | null;
+            url?: string;
         };
         StatusPage: {
             components: components["schemas"]["StatusComponent"][] | null;
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            drafts: boolean;
+            incidents: components["schemas"]["StatusIncident"][] | null;
             published: boolean;
             show_uptime: boolean;
             slug: string;
@@ -9909,6 +10072,12 @@ export interface components {
             database?: "" | "postgres" | "mysql" | "redis" | "none";
             database_url_variable?: string;
         };
+        UpdateIncidentRequest: {
+            components?: components["schemas"]["StatusImpact"][];
+            /** @description A draft's words, posted as its first update when it is published */
+            draft?: string;
+            title?: string;
+        };
         UpdateMeRequest: {
             name: string;
         };
@@ -10034,6 +10203,7 @@ export interface components {
             version: string;
         };
         UpdateStatusPageRequest: {
+            drafts?: boolean;
             published?: boolean;
             show_uptime?: boolean;
             title?: string;
@@ -17589,6 +17759,499 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-incident": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The incident's ID */
+                incident: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusIncident"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "delete-incident": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The incident's ID */
+                incident: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "update-incident": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The incident's ID */
+                incident: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateIncidentRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusIncident"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "post-incident-update": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The incident's ID */
+                incident: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostIncidentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusIncident"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "edit-incident-update": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The incident's ID */
+                incident: string;
+                /** @description The update's ID */
+                update: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditIncidentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusIncident"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -40719,6 +41382,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatusPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "open-incident": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The page's slug */
+                page: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenIncidentRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusIncident"];
                 };
             };
             /** @description Bad Request */

@@ -21,7 +21,8 @@ import (
 
 // StatusPages serves published status pages (ADR 0073) on [status]
 // listen, which only the control plane's Caddy reaches, for the
-// hostnames it routes there: the page at /, its status.json, and 404 for
+// hostnames it routes there: the page at /, its incidents at
+// /incidents/<id>, /history, /feed.atom and /status.json, and 404 for
 // everything else. Nothing else of Dock is reachable through it, and no
 // access protection applies: a status page is public by definition.
 //
@@ -35,7 +36,16 @@ import (
 // at most statusRenders run at once, and the cache holds at most
 // statusCacheBytes. A render that fails keeps the last bytes.
 func StatusPages(c *core.Core, log *slog.Logger) http.Handler {
-	return newStatusServer(c.StatusPageAt, c.PublicStatusPage, log).handler()
+	return newStatusServer(c.StatusPageAt, c, log).handler()
+}
+
+// statusSource is what the listener reads from core: *core.Core, or a
+// stand-in in tests.
+type statusSource interface {
+	PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicStatusPage, error)
+	PublicStatusIncident(ctx context.Context, page int64, id string) (apitypes.PublicIncident, string, error)
+	PublicStatusHistory(ctx context.Context, page int64) (apitypes.PublicStatusHistory, error)
+	PublicStatusFeed(ctx context.Context, page int64) (apitypes.PublicStatusFeed, error)
 }
 
 // Bounds of the public status pages.
@@ -54,14 +64,16 @@ type statusFormat uint8
 const (
 	statusHTML statusFormat = iota
 	statusJSON
+	statusIncident
+	statusHistory
+	statusFeed
 )
 
 // statusServer is the handler's state.
 type statusServer struct {
-	// at is core.StatusPageAt, load core.PublicStatusPage, or stand-ins in
-	// tests.
+	// at is core.StatusPageAt, or a stand-in in tests.
 	at      func(host string) (id, gen int64, ok bool)
-	load    func(ctx context.Context, id int64) (apitypes.PublicStatusPage, error)
+	src     statusSource
 	log     *slog.Logger
 	limiter *ipLimiter
 	slots   chan struct{}
@@ -71,10 +83,12 @@ type statusServer struct {
 	bytes int
 }
 
-// statusKey is a page in a format.
+// statusKey is a page in a format; arg is the incident's ID for
+// statusIncident, the page's address for statusFeed.
 type statusKey struct {
 	id     int64
 	format statusFormat
+	arg    string
 }
 
 // statusEntry is a rendered page: gzipped, under the generation it was
@@ -93,9 +107,9 @@ type statusBody struct {
 	etag, ctype string
 }
 
-// newStatusServer is the handler's state over its two calls into core.
-func newStatusServer(at func(string) (int64, int64, bool), load func(context.Context, int64) (apitypes.PublicStatusPage, error), log *slog.Logger) *statusServer {
-	return &statusServer{at: at, load: load, log: log, slots: make(chan struct{}, statusRenders),
+// newStatusServer is the handler's state over what it reads from core.
+func newStatusServer(at func(string) (int64, int64, bool), src statusSource, log *slog.Logger) *statusServer {
+	return &statusServer{at: at, src: src, log: log, slots: make(chan struct{}, statusRenders),
 		limiter: &ipLimiter{burst: statusBurst, rate: statusRate, buckets: map[string]*bucket{}}, cache: map[statusKey]*statusEntry{}}
 }
 
@@ -104,6 +118,9 @@ func (p *statusServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", p.serve(statusHTML))
 	mux.HandleFunc("GET /status.json", p.serve(statusJSON))
+	mux.HandleFunc("GET /history", p.serve(statusHistory))
+	mux.HandleFunc("GET /feed.atom", p.serve(statusFeed))
+	mux.HandleFunc("GET /incidents/{id}", p.serve(statusIncident))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { statusNotFound(w) })
 	return mux
 }
@@ -131,11 +148,23 @@ func (p *statusServer) serve(f statusFormat) http.HandlerFunc {
 			host = h
 		}
 		id, gen, ok := p.at(host)
+		k := statusKey{id: id, format: f}
+		switch f {
+		case statusIncident:
+			k.arg = r.PathValue("id")
+			ok = ok && core.ValidPublicID(k.arg)
+		case statusFeed:
+			scheme := "https"
+			if r.Header.Get("X-Forwarded-Proto") == "http" {
+				scheme = "http"
+			}
+			k.arg = scheme + "://" + host
+		}
 		if !ok {
 			statusNotFound(w)
 			return
 		}
-		b, err := p.answer(r.Context(), statusKey{id, f}, gen)
+		b, err := p.answer(r.Context(), k, gen)
 		switch {
 		case core.CodeOf(err) == apitypes.CodeNotFound:
 			statusNotFound(w)
@@ -264,18 +293,7 @@ func (p *statusServer) render(ctx context.Context, k statusKey) (statusBody, err
 		return statusBody{}, ctx.Err()
 	}
 	defer func() { <-p.slots }()
-	page, err := p.load(ctx, k.id)
-	if err != nil {
-		return statusBody{}, err
-	}
-	var raw []byte
-	ctype := "text/html; charset=utf-8"
-	if k.format == statusJSON {
-		raw, err = renderStatusJSON(page)
-		ctype = "application/json"
-	} else {
-		raw, err = renderStatusPage(page)
-	}
+	raw, ctype, err := p.read(ctx, k)
 	if err != nil {
 		return statusBody{}, err
 	}
@@ -287,4 +305,42 @@ func (p *statusServer) render(ctx context.Context, k statusKey) (statusBody, err
 	}
 	sum := sha256.Sum256(raw)
 	return statusBody{gz: buf.Bytes(), etag: `"` + hex.EncodeToString(sum[:8]) + `"`, ctype: ctype}, nil
+}
+
+// read reads what k shows from core and renders it.
+func (p *statusServer) read(ctx context.Context, k statusKey) ([]byte, string, error) {
+	const html = "text/html; charset=utf-8"
+	switch k.format {
+	case statusIncident:
+		inc, title, err := p.src.PublicStatusIncident(ctx, k.id, k.arg)
+		if err != nil {
+			return nil, "", err
+		}
+		b, err := renderIncidentPage(title, inc, time.Now())
+		return b, html, err
+	case statusHistory:
+		h, err := p.src.PublicStatusHistory(ctx, k.id)
+		if err != nil {
+			return nil, "", err
+		}
+		b, err := renderHistoryPage(h)
+		return b, html, err
+	case statusFeed:
+		f, err := p.src.PublicStatusFeed(ctx, k.id)
+		if err != nil {
+			return nil, "", err
+		}
+		b, err := renderStatusFeed(f, k.arg)
+		return b, "application/atom+xml; charset=utf-8", err
+	}
+	page, err := p.src.PublicStatusPage(ctx, k.id)
+	if err != nil {
+		return nil, "", err
+	}
+	if k.format == statusJSON {
+		b, err := renderStatusJSON(page)
+		return b, "application/json", err
+	}
+	b, err := renderStatusPage(page)
+	return b, html, err
 }

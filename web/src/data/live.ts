@@ -708,8 +708,9 @@ function invalidateForAudit(
     invalidate(["org", "registry-credentials"]);
   // Channels added, removed or alerts resolved (from the CLI too).
   if (kind === "alert") invalidate(["alerts"]);
-  // A status page made, changed or removed (ADR 0073).
-  if (kind === "status_page") invalidate(statusPagesKey);
+  // A status page or one of its incidents made, changed or removed (ADR
+  // 0073).
+  if (kind === "status_page" || kind === "incident") invalidate(statusPagesKey);
   if (kind === "data") return invalidateForData(queryClient, audit);
   // The install's settings and the control plane's own backups.
   if (kind === "backup" && !audit.project) invalidate(backupSettingsKey);

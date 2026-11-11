@@ -6321,6 +6321,20 @@
         ],
         "type": "object"
       },
+      "EditIncidentUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
       "EnableAnalyticsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8333,6 +8347,66 @@
         ],
         "type": "object"
       },
+      "IncidentAlert": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "service": {
+            "description": "project/environment/service",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "type": "object"
+      },
+      "IncidentUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "by": {
+            "type": "string"
+          },
+          "edited_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "message",
+          "at",
+          "by"
+        ],
+        "type": "object"
+      },
       "Invite": {
         "additionalProperties": false,
         "properties": {
@@ -8947,6 +9021,48 @@
           "copied_bytes",
           "passes",
           "last_pass_ms"
+        ],
+        "type": "object"
+      },
+      "OpenIncidentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/StatusImpact"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "Plain text; blank lines separate paragraphs and https links become links",
+            "maxLength": 5000,
+            "type": "string"
+          },
+          "state": {
+            "description": "The first update's state; draft keeps it unpublished. Default investigating",
+            "enum": [
+              "draft",
+              "investigating",
+              "identified",
+              "monitoring"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "examples": [
+              "API errors for some requests"
+            ],
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
         ],
         "type": "object"
       },
@@ -9695,6 +9811,38 @@
         },
         "required": [
           "operators_two_factor"
+        ],
+        "type": "object"
+      },
+      "PostIncidentUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/StatusImpact"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "message": {
+            "description": "Plain text; blank lines separate paragraphs and https links become links",
+            "maxLength": 5000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "message"
         ],
         "type": "object"
       },
@@ -14277,6 +14425,10 @@
           "group": {
             "type": "string"
           },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
           "name": {
             "type": "string"
           },
@@ -14305,6 +14457,7 @@
           }
         },
         "required": [
+          "id",
           "name",
           "group",
           "description",
@@ -14332,6 +14485,10 @@
             ],
             "maxLength": 40,
             "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
           },
           "name": {
             "examples": [
@@ -14366,6 +14523,17 @@
             ],
             "type": "string"
           },
+          "impact": {
+            "enum": [
+              "degraded",
+              "partial_outage",
+              "major_outage"
+            ],
+            "type": "string"
+          },
+          "incident": {
+            "type": "string"
+          },
           "uptime": {
             "format": "double",
             "type": "number"
@@ -14373,6 +14541,112 @@
         },
         "required": [
           "date"
+        ],
+        "type": "object"
+      },
+      "StatusImpact": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "examples": [
+              "API"
+            ],
+            "maxLength": 60,
+            "minLength": 1,
+            "type": "string"
+          },
+          "impact": {
+            "enum": [
+              "degraded",
+              "partial_outage",
+              "major_outage"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "impact"
+        ],
+        "type": "object"
+      },
+      "StatusIncident": {
+        "additionalProperties": false,
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/IncidentAlert"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/StatusImpact"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "draft": {
+            "type": "string"
+          },
+          "id": {
+            "examples": [
+              "4f2kqz7mna"
+            ],
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolved_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "draft",
+              "investigating",
+              "identified",
+              "monitoring",
+              "resolved"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updates": {
+            "items": {
+              "$ref": "#/components/schemas/IncidentUpdate"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "page",
+          "title",
+          "state",
+          "components",
+          "started_at",
+          "created_by",
+          "updates"
         ],
         "type": "object"
       },
@@ -14394,6 +14668,18 @@
           },
           "created_by": {
             "type": "string"
+          },
+          "drafts": {
+            "type": "boolean"
+          },
+          "incidents": {
+            "items": {
+              "$ref": "#/components/schemas/StatusIncident"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "published": {
             "type": "boolean"
@@ -14423,8 +14709,10 @@
         },
         "required": [
           "show_uptime",
+          "drafts",
           "status",
           "components",
+          "incidents",
           "slug",
           "title",
           "published",
@@ -15145,6 +15433,29 @@
         },
         "type": "object"
       },
+      "UpdateIncidentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/StatusImpact"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "draft": {
+            "description": "A draft's words, posted as its first update when it is published",
+            "maxLength": 5000,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateMeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -15563,6 +15874,9 @@
       "UpdateStatusPageRequest": {
         "additionalProperties": false,
         "properties": {
+          "drafts": {
+            "type": "boolean"
+          },
           "published": {
             "type": "boolean"
           },
@@ -26324,6 +26638,676 @@
         "summary": "Daemon health and version",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/api/v1/incidents/{incident}": {
+      "delete": {
+        "description": "From the page and its history, with its updates. Organization admins.",
+        "operationId": "delete-incident",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The incident's ID",
+            "in": "path",
+            "name": "incident",
+            "required": true,
+            "schema": {
+              "description": "The incident's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an incident",
+        "tags": [
+          "status pages"
+        ]
+      },
+      "get": {
+        "description": "With its updates, who posted them, and the alert a draft came from.",
+        "operationId": "get-incident",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The incident's ID",
+            "in": "path",
+            "name": "incident",
+            "required": true,
+            "schema": {
+              "description": "The incident's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusIncident"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get an incident",
+        "tags": [
+          "status pages"
+        ]
+      },
+      "patch": {
+        "description": "Its title, the components it names, or a draft's words, without posting an update. Deploy scope.",
+        "operationId": "update-incident",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The incident's ID",
+            "in": "path",
+            "name": "incident",
+            "required": true,
+            "schema": {
+              "description": "The incident's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIncidentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusIncident"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change an incident",
+        "tags": [
+          "status pages"
+        ]
+      }
+    },
+    "/api/v1/incidents/{incident}/updates": {
+      "post": {
+        "description": "Public at once. On a draft it publishes the incident; resolved resolves it. Deploy scope.",
+        "operationId": "post-incident-update",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The incident's ID",
+            "in": "path",
+            "name": "incident",
+            "required": true,
+            "schema": {
+              "description": "The incident's ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostIncidentUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusIncident"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Post an incident update",
+        "tags": [
+          "status pages"
+        ]
+      }
+    },
+    "/api/v1/incidents/{incident}/updates/{update}": {
+      "patch": {
+        "description": "Fixes its words; the page says it was edited and the audit log keeps what it said. Deploy scope.",
+        "operationId": "edit-incident-update",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The incident's ID",
+            "in": "path",
+            "name": "incident",
+            "required": true,
+            "schema": {
+              "description": "The incident's ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The update's ID",
+            "in": "path",
+            "name": "update",
+            "required": true,
+            "schema": {
+              "description": "The update's ID",
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditIncidentUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusIncident"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Edit an incident update",
+        "tags": [
+          "status pages"
         ]
       }
     },
@@ -61442,6 +62426,146 @@
           }
         ],
         "summary": "Set a status page's components",
+        "tags": [
+          "status pages"
+        ]
+      }
+    },
+    "/api/v1/status-pages/{page}/incidents": {
+      "post": {
+        "description": "Published at once with its first update, or a draft (state draft) for someone to publish. Its impact sets the components' status while it is open. Deploy scope; a token limited to a project may name only components built entirely from it.",
+        "operationId": "open-incident",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The page's slug",
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "description": "The page's slug",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenIncidentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusIncident"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Open an incident",
         "tags": [
           "status pages"
         ]

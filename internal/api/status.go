@@ -79,3 +79,73 @@ func registerStatusPages(s *Server, a huma.API) {
 		return reply(s.core.ListStatusSourceCandidates(ctx, actor))
 	})
 }
+
+// IncidentPath addresses an incident by its public ID.
+type IncidentPath struct {
+	Incident string `path:"incident" doc:"The incident's ID"`
+}
+
+const incidentPathT = Prefix + "/incidents/{incident}"
+
+// registerIncidents registers incidents on status pages (ADR 0073,
+// phase 2): opened, updated and resolved by people who deploy; removed
+// by organization admins.
+func registerIncidents(s *Server, a huma.API) {
+	tags := []string{"status pages"}
+	authed(s, a, huma.Operation{
+		OperationID: "open-incident", Method: http.MethodPost, Path: statusPagePathT + "/incidents",
+		Summary: "Open an incident", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "Published at once with its first update, or a draft (state draft) for someone to publish. Its impact sets the components' status while it is open. " +
+			"Deploy scope; a token limited to a project may name only components built entirely from it.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		StatusPagePath
+		Body apitypes.OpenIncidentRequest
+	}) (*out[apitypes.StatusIncident], error) {
+		return reply(s.core.OpenIncident(ctx, actor, in.Page, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-incident", Method: http.MethodGet, Path: incidentPathT,
+		Summary: "Get an incident", Tags: tags,
+		Description: "With its updates, who posted them, and the alert a draft came from.",
+	}, func(ctx context.Context, actor core.Actor, in *IncidentPath) (*out[apitypes.StatusIncident], error) {
+		return reply(s.core.GetIncident(ctx, actor, in.Incident))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "update-incident", Method: http.MethodPatch, Path: incidentPathT,
+		Summary: "Change an incident", Tags: tags,
+		Description: "Its title, the components it names, or a draft's words, without posting an update. Deploy scope.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		IncidentPath
+		Body apitypes.UpdateIncidentRequest
+	}) (*out[apitypes.StatusIncident], error) {
+		return reply(s.core.UpdateIncident(ctx, actor, in.Incident, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "delete-incident", Method: http.MethodDelete, Path: incidentPathT,
+		Summary: "Remove an incident", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "From the page and its history, with its updates. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *IncidentPath) (*struct{}, error) {
+		return nil, s.core.DeleteIncident(ctx, actor, in.Incident)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "post-incident-update", Method: http.MethodPost, Path: incidentPathT + "/updates",
+		Summary: "Post an incident update", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "Public at once. On a draft it publishes the incident; resolved resolves it. Deploy scope.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		IncidentPath
+		Body apitypes.PostIncidentUpdateRequest
+	}) (*out[apitypes.StatusIncident], error) {
+		return reply(s.core.PostIncidentUpdate(ctx, actor, in.Incident, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "edit-incident-update", Method: http.MethodPatch, Path: incidentPathT + "/updates/{update}",
+		Summary: "Edit an incident update", Tags: tags,
+		Description: "Fixes its words; the page says it was edited and the audit log keeps what it said. Deploy scope.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		IncidentPath
+		Update int64 `path:"update" doc:"The update's ID"`
+		Body   apitypes.EditIncidentUpdateRequest
+	}) (*out[apitypes.StatusIncident], error) {
+		return reply(s.core.EditIncidentUpdate(ctx, actor, in.Incident, in.Update, in.Body))
+	})
+}

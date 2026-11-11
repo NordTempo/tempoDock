@@ -4,7 +4,7 @@ Status: accepted (asked by Saile, 2026-11-10; plan and public page mock
 A picked by Saile, Postplan `mqr6y0crg60j`). Builds on
 [0055](0055-uptime-checks.md) (uptime checks) and
 [0037](0037-analytics.md) (public dashboards, whose serving it copies).
-Phase 1 of 5; the later phases are under [Later phases](#later-phases).
+Phases 1 and 2 of 5; the later phases are under [Later phases](#later-phases).
 
 ## Context
 
@@ -44,13 +44,32 @@ with Dock's.
 | UI | Status pages in the organization's sidebar: the list, and a page's editor (mock E1): components with what each shows (private), status now, 90-day bar and uptime, reordering, a dialog to add or change one, and the page's settings |
 | Migration | 0085: `status_pages`, `status_components`, `status_sources` |
 
+## Phase 2: incidents
+
+| Topic | Decision |
+|---|---|
+| Incident | A title, a state and updates, on one page. States: **draft** (never public), investigating, identified, monitoring, resolved; the incident's state is its last update's. Publishing is posting the first update. A resolved incident stays resolved: something new is a new incident. IDs are 10 random base32 characters, in public URLs and the CLI, so they count nothing |
+| Impact | Per component: degraded, partial outage or major outage, replaced whole by an update that names components. While the incident is open its components read at least that (manual ones too); resolved, its impact stays recorded and colours the days it ran (amber for degraded, orange for partial, red for major) with its title in the day's hover text |
+| Updates | Plain text up to 5,000 characters: blank lines make paragraphs, `https://` links become links, nothing else is markup. A posted update's words can be fixed: the page says "edited", the audit log keeps what it said |
+| Drafts from alerts | When an `uptime_down` or crash loop alert opens about the sources of a published page's component (with `drafts` on, the default) and no open incident names it, Dock opens a draft: "<components> unavailable" (major) or "Errors on <components>" (partial), with a fixed sentence, never the alert's words. One draft per page per alert. The draft goes if its alert resolves before anyone publishes it; a published one stays. Dock never publishes |
+| Public side | Open incidents with their updates lead the page; the last 14 days of resolved ones follow the components, a line per day; `/incidents/<id>`, `/history` (every published incident by month, 500 at most) and `/feed.atom` (the last 50 updates, one entry each; Atom only: every feed reader and Slack take it) are rendered and cached like the page. `status.json` gains the open incidents. Authors, drafts and alerts never reach them |
+| Components keep their IDs | Writing a page's component list keeps a component given by ID, or else by name, so incidents keep naming it; others are removed with their impacts |
+| Permissions | Reading incidents: read scope. Opening, updating, editing and publishing: deploy scope, since the people who deploy are on call; a token limited to a project or environment may name only components built entirely from what it sees, never none and never a manual one. Removing an incident: the page's admins. An actor that asks first (MCP `request_access`) can't post: an agent that shouldn't speak in public opens a draft instead, which needs no approval because nothing public changes. Locked environments don't apply: incidents change no environment. Audited as `incident.open`, `.draft` (by Dock), `.update`, `.publish`, `.resolve`, `.edit`, `.edit_update` and `.delete` |
+| API | `POST /status-pages/{page}/incidents`; `GET`/`PATCH`/`DELETE /incidents/{id}`; `POST /incidents/{id}/updates`, `PATCH /incidents/{id}/updates/{update}`. A page's `GET` carries its incidents open or resolved in the last 90 days, drafts included |
+| CLI | `dock incident list\|show\|open\|update\|publish\|resolve\|edit\|remove`, top level because on-call types it under stress; `dock status-page update --drafts` |
+| MCP | `status_incident_open` (a draft unless the agent was asked to post) and `status_incident_update` (post, publish, resolve, or change a draft's words) |
+| UI | The page's editor lists its incidents, each draft as a strip with "Review draft", and **New incident**. An incident's screen (mock E2): post an update with its state and impact, the timeline with who posted (and who drafted), and "Affected now": the named components' status and what they are built from, private |
+| Migration | 0091: `status_incidents` (kinds and states for phase 3's maintenance too), `status_incident_components`, `status_updates`; `status_pages.drafts` |
+
 ## Performance
 
 | What | Cost |
 |---|---|
 | No pages, or nobody viewing | nothing; an event costs one atomic add |
 | A view of a rendered page | a map lookup, the client's bucket and one write (`BenchmarkStatusServe`, ~2 µs) |
-| A render | four queries and the template (`BenchmarkStatusPage100`, ~10 ms for 100 components and 90 days, most of it the history query; `BenchmarkRenderStatusPage`, ~3 ms). At most one per page every 5 s while it is viewed and changing, one a minute otherwise |
+| A render | seven queries and the template (`BenchmarkStatusPage100`, ~12 ms for 100 components, 90 days and 50 incidents, most of it the history query; `BenchmarkRenderStatusPage`, ~3 ms). At most one per page every 5 s while it is viewed and changing, one a minute otherwise |
+| An incident page, history or feed | two or three indexed queries per render, cached like the page |
+| An alert that may draft | one indexed query when an `uptime_down` or crash loop alert opens, one delete when it resolves |
 | Day rollup | one statement per finished day and one prune, on the hourly rollup |
 
 The history query reads one row per check and day, so a 10-component
@@ -72,12 +91,7 @@ after real use.
 Each its own pull request, numbered when it merges.
 
 1. Pages, components, status, history, the public page (this).
-2. Incidents: states (draft, investigating, identified, monitoring,
-   resolved), updates with impact per component, a draft opened from an
-   `uptime_down` or crash loop alert and dropped if the alert resolves
-   first (never published by Dock), incident and history pages, an Atom
-   feed; `dock incident`, MCP tools to open and update them (an
-   ask-first agent writes drafts, a person publishes).
+2. Incidents (above).
 3. Maintenance windows on the minute tick: alerts of their services
    raised but held, sent at the end if still open; no uptime rows during
    the window.

@@ -1,10 +1,11 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
-import { useIsAdmin } from "../../data/queries";
+import { useIsAdmin, useSession } from "../../data/queries";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
+import { clock, day } from "../../ui/format";
 import {
   Act,
   Button,
@@ -19,6 +20,7 @@ import {
   StateText,
 } from "../../ui/kit";
 import {
+  incidentState,
   type StatusComponent,
   type StatusComponentInput,
   type StatusPage,
@@ -29,24 +31,32 @@ import {
   useSetStatusComponents,
   useUpdateStatusPage,
 } from "./data";
+import { NewIncidentDialog } from "./IncidentEditor";
+import { impactText, Sources } from "./parts";
 
 /**
- * One status page in Dock (ADR 0073, editor mock E1): its components with
- * what each is built from (private), its status now and its last 90 days,
- * then the page's settings. Admins change it; members read it.
+ * One status page in Dock (ADR 0073, editor mock E1): its incidents, its
+ * components with what each is built from (private), their status now
+ * and last 90 days, then the page's settings. People who deploy open and
+ * update incidents; admins change the rest; members read it.
  */
 export function StatusPageEditor({ slug }: { slug: string }) {
   const page = useSuspenseQuery(statusQueries.page(slug)).data;
   const admin = useIsAdmin();
+  const canPost = useSession()?.scope !== "read";
   const org = useOrg();
   const publish = useUpdateStatusPage(slug);
   // The component being edited: its index, or "new".
   const [editing, setEditing] = useState<number | "new" | null>(null);
-  useShortcuts(
-    admin
+  const [opening, setOpening] = useState(false);
+  useShortcuts([
+    ...(admin
       ? [{ key: "n", label: "add component", run: () => setEditing("new") }]
-      : [],
-  );
+      : []),
+    ...(canPost
+      ? [{ key: "i", label: "new incident", run: () => setOpening(true) }]
+      : []),
+  ]);
   const pageState = page.published
     ? statusState[page.status]
     : ({ tone: "mut", glyph: "○", label: "unpublished" } as const);
@@ -81,6 +91,11 @@ export function StatusPageEditor({ slug }: { slug: string }) {
                 {page.published ? "Unpublish" : "Publish"}
               </Act>
             )}
+            {canPost && (
+              <Button onClick={() => setOpening(true)}>
+                New incident <kbd>I</kbd>
+              </Button>
+            )}
             {admin && (
               <Button primary onClick={() => setEditing("new")}>
                 Add component <kbd>N</kbd>
@@ -105,9 +120,13 @@ export function StatusPageEditor({ slug }: { slug: string }) {
           )}
         </p>
         <ErrorText error={publish.error} />
+        <Incidents page={page} />
         <Components page={page} admin={admin} onEdit={setEditing} />
         <Settings page={page} admin={admin} />
       </Page>
+      {opening && (
+        <NewIncidentDialog page={page} onClose={() => setOpening(false)} />
+      )}
       {editing !== null && (
         <ComponentDialog
           page={page}
@@ -116,6 +135,88 @@ export function StatusPageEditor({ slug }: { slug: string }) {
         />
       )}
     </>
+  );
+}
+
+/**
+ * The page's incidents: drafts waiting for someone first, as a strip
+ * each, then the open ones and those resolved in the last 90 days.
+ */
+function Incidents({ page }: { page: StatusPage }) {
+  const org = useOrg();
+  const drafts = page.incidents.filter((i) => i.state === "draft");
+  const rest = page.incidents.filter((i) => i.state !== "draft");
+  const open = rest.filter((i) => !i.resolved_at).length;
+  const link = (id: string) => ({
+    to: "/$org/status-pages/$page/incidents/$incident" as const,
+    params: { org, page: page.slug, incident: id },
+  });
+  return (
+    <section>
+      <SectionHead aside={open > 0 ? `${open} open` : undefined}>
+        Incidents
+      </SectionHead>
+      {drafts.map((d) => (
+        <div
+          key={d.id}
+          className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-l-2 border-fail bg-fail-bg px-3 py-2"
+        >
+          <span className="min-w-0 flex-1">
+            {d.alert ? (
+              <>
+                <span className="font-mono">
+                  {d.alert.service ?? d.alert.title}
+                </span>{" "}
+                raised {d.alert.kind}.{" "}
+              </>
+            ) : (
+              `${d.created_by} wrote a draft. `
+            )}
+            Draft incident <span className="font-medium">{d.title}</span> is
+            ready, not public yet.
+          </span>
+          <Link className="btn sm" {...link(d.id)}>
+            Review draft
+          </Link>
+        </div>
+      ))}
+      {rest.length === 0 ? (
+        drafts.length === 0 && (
+          <p className="text-mut">No incidents in the last 90 days.</p>
+        )
+      ) : (
+        <Panel>
+          <table>
+            <thead>
+              <tr>
+                <th>Incident</th>
+                <th>State</th>
+                <th>Components</th>
+                <th className="text-right">Started</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rest.slice(0, 50).map((i) => (
+                <tr key={i.id}>
+                  <td className="py-2 font-medium">
+                    <Link {...link(i.id)}>{i.title}</Link>
+                  </td>
+                  <td>
+                    <StateText state={incidentState[i.state]} />
+                  </td>
+                  <td className="whitespace-normal text-sec">
+                    {impactText(i.components) || "-"}
+                  </td>
+                  <td className="text-right font-mono text-sec tabular-nums">
+                    {day(i.started_at)} {clock(i.started_at)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      )}
+    </section>
   );
 }
 
@@ -234,37 +335,10 @@ function Components({
   );
 }
 
-/** What a component is built from, as the editor may show it. */
-function Sources({ component }: { component: StatusComponent }) {
-  if (component.sources.length === 0)
-    return <span className="text-faint">set by hand</span>;
-  return (
-    <span className="flex flex-col">
-      {!component.auto && (
-        <span className="text-faint">status set by hand</span>
-      )}
-      {component.sources.map((s, i) => (
-        <span key={`${s.service ?? ""}${s.check ?? ""}${i}`}>
-          {s.hidden
-            ? "another project"
-            : s.check
-              ? `check ${s.check}`
-              : s.service}
-          <span className="text-faint">
-            {s.check
-              ? ""
-              : s.checks
-                ? ` · ${s.checks === 1 ? "1 check" : `${s.checks} checks`}`
-                : " · health only"}
-            {s.problem && ` · ${s.problem}`}
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-/** The last 90 days in thin cells: green, amber below 100%, red below 99%. */
+/**
+ * The last 90 days in thin cells: green, amber below 100%, red below 99%;
+ * a day an incident ran is at least amber, red for an outage.
+ */
 function DayBar({ days }: { days: StatusComponent["days"] }) {
   return (
     <span className="flex gap-px" role="img" aria-label="Last 90 days">
@@ -272,15 +346,21 @@ function DayBar({ days }: { days: StatusComponent["days"] }) {
         <span
           key={d.date}
           className={`inline-block h-3.5 w-[2px] ${
-            d.uptime === undefined
-              ? "bg-line"
-              : d.uptime >= 100
-                ? "bg-ok"
-                : d.uptime >= 99
+            d.impact === "major_outage" || d.impact === "partial_outage"
+              ? "bg-fail"
+              : d.uptime === undefined
+                ? d.impact
                   ? "bg-warn"
-                  : "bg-fail"
+                  : "bg-line"
+                : d.uptime >= 100
+                  ? d.impact
+                    ? "bg-warn"
+                    : "bg-ok"
+                  : d.uptime >= 99
+                    ? "bg-warn"
+                    : "bg-fail"
           }`}
-          title={`${d.date}: ${d.uptime === undefined ? "no probes" : percent(d.uptime)}`}
+          title={`${d.date}: ${d.uptime === undefined ? "no probes" : percent(d.uptime)}${d.incident ? `, ${d.incident}` : ""}`}
         />
       ))}
     </span>
@@ -355,6 +435,15 @@ function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
             checked={page.show_uptime}
             disabled={!admin || update.isPending}
             onChange={(on) => update.mutate({ show_uptime: on })}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="w-40 text-sec">Drafts</span>
+          <Check
+            label="Draft an incident when a component's uptime check goes down or its service crash loops"
+            checked={page.drafts}
+            disabled={!admin || update.isPending}
+            onChange={(on) => update.mutate({ drafts: on })}
           />
         </div>
         <ErrorText error={update.error} />

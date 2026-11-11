@@ -42,14 +42,56 @@ without probes. `dock status-page update acme --show-uptime=false` hides
 the percentages; the colours stay.
 
 A component added with `--manual` reads operational whatever its
-services do.
+services do; only incidents change it.
+
+## Incidents
+
+An incident is what you tell visitors about an outage, update by update.
+
+```sh
+dock incident open acme "API errors for some requests" --component API:partial -m "We are investigating."
+dock incident update 4f2kqz7mna --state identified -m "A slow index rebuild; we are moving traffic off it."
+dock incident resolve 4f2kqz7mna -m "Fixed. Errors stopped at 14:20 UTC."
+```
+
+Or on the page in Dock: **New incident**, then the incident's screen to
+post updates. Everyone who can deploy opens and updates incidents;
+admins remove them.
+
+- **Posting is public at once.** The title and every update show at the
+  top of the page while the incident is open, on its own page
+  (`/incidents/<id>`), in `/history` and in the Atom feed (`/feed.atom`,
+  which Slack, Discord and feed readers follow).
+- **Impact** is per component: degraded, partial or major. While the
+  incident is open, each component it names reads at least that,
+  whatever its checks say, and the days it ran are coloured on the bars.
+  Resolving it lets the checks speak again.
+- **Updates are plain text.** Blank lines make paragraphs and `https://`
+  links become links. Fix a typo with `dock incident edit ID --update
+  UPDATE -m ...`; the page says the update was edited.
+- **Drafts** stay in Dock: `--draft`, or **Save draft**. Publish one with
+  `dock incident publish ID` or **Publish** on its screen.
+
+When an uptime check goes down or a service crash loops, and a published
+page has a component built from it with no open incident, Dock writes a
+draft for you ("API unavailable", major outage) and shows it on the page
+in Dock. It never publishes it: the component already reads down, and
+the words are yours. If the alert resolves before anyone publishes the
+draft, the draft goes. `dock status-page update acme --drafts=false`
+turns this off.
+
+Agents can open and update incidents too (`status_incident_open`,
+`status_incident_update`); asked to, they write drafts for a person to
+publish.
 
 ## What anyone can see
 
 Only what you typed (the page's title, components' names, groups and
-descriptions), statuses and percentages. Never service, project or server
-names, check URLs or errors. Besides the page, `/status.json` has the
-same in JSON for other dashboards and scripts.
+descriptions, incidents and their updates), statuses and percentages.
+Never service, project or server names, check URLs, errors, who posted
+an update or which alert drafted it. Besides the page, `/status.json`
+has the same in JSON (open incidents included) for other dashboards and
+scripts.
 
 ## Limits
 

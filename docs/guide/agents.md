@@ -137,6 +137,7 @@ instead; that is your login, so don't hand it to an agent.
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
 | Jobs | `list_jobs`, `set_job`, `run_job`, `remove_job`, `job_history` |
 | Previews | `get_previews`, `get_preview` |
+| Status pages | `status_incident_open` (a draft unless told to post), `status_incident_update` (post, publish a draft, resolve, or change a draft's words) |
 | Configure | `create_service`, `update_service`, `set_pre_deploy_command`, `list_variables`, `set_variables`, `show_changes`, `apply_changes`, `discard_changes`, `list_domains`, `add_domain`, `generate_domain`, `check_domain`, `remove_domain` |
 | Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |
 | Project files | `plan_project_file`, `apply_project_file`, `import_compose` |
