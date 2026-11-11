@@ -191,11 +191,13 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             title={`${tab.label} (${tab.key.toUpperCase()})`}
           >
             {tab.label}
+            {/* A mark's name follows the label as its own phrase
+                ("Settings, changes waiting to apply"), not run into it. */}
             {staged[tab.label] && (
               <span
                 className="ml-1.5 text-warn"
                 role="img"
-                aria-label="changes waiting to apply"
+                aria-label=", changes waiting to apply"
                 title="Changes waiting to apply"
               >
                 <span className="dot" />
@@ -205,7 +207,7 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <span
                 className="ml-1 text-warn"
                 role="img"
-                aria-label={warnings[tab.label]}
+                aria-label={`, ${warnings[tab.label]}`}
                 title={warnings[tab.label]}
               >
                 ▲
