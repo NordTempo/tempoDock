@@ -161,8 +161,9 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
   doesn't read as a regression. The fastest of 5 runs counts (noise only
   adds time), and a benchmark over budget is run once more (alone, not
   its whole package) before it fails.
-  Benchmarks named `parallel=` depend on core count and are gated on
-  allocations only. API latency budgets scale with the same factor on
+  Benchmarks named `parallel=` depend on core count, and those named
+  `io=` (a `b.Run("io=files", ...)` around the loop) on the disk and
+  other jobs' I/O; both are gated on allocations only. API latency budgets scale with the same factor on
   machines slower than the baseline's.
 - **Updating the baseline.** When a change makes something slower on
   purpose, or a new benchmark is added, run `make perf-baseline` on a quiet

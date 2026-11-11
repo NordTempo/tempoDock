@@ -128,9 +128,11 @@ func checkBench(o options, t *table) error {
 		nsDelta := r.NsOp/speed/b.NsOp - 1
 		allocsOK = r.AllocsOp <= b.AllocsOp*(1+o.allocsTol)+2
 		measured = fmt.Sprintf("%s (%+.0f%%), %.0f allocs (%+.0f)", nsString(r.NsOp), nsDelta*100, r.AllocsOp, r.AllocsOp-b.AllocsOp)
-		// Parallel benchmarks' time depends on the core count, which
-		// calibration doesn't capture, so only their allocations are gated.
-		if strings.Contains(name, "parallel=") {
+		// Parallel benchmarks' time depends on the core count, and file
+		// benchmarks' (io=) on the disk, kernel and other jobs' I/O, none
+		// of which calibration's CPU workload captures: only their
+		// allocations are gated. Their time still prints.
+		if strings.Contains(name, "parallel=") || strings.Contains(name, "io=") {
 			return measured, fmt.Sprintf("allocs +%.0f%%", o.allocsTol*100), allocsOK, true
 		}
 		return measured, fmt.Sprintf("ns +%.0f%%, allocs +%.0f%%", o.nsTol*100, o.allocsTol*100), allocsOK, nsDelta <= o.nsTol
