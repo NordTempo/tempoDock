@@ -123,17 +123,18 @@ query at a time and `GOMEMLIMIT=48MiB`, in a 384 MB container. The
 `traces` check seeds 2M spans (a week of a service at about 3 spans a
 second) and runs it with those settings.
 
-Measured locally (8-core VM, 2026-11-11) until CI has run it on `main`.
+Measured on CI's run of the pull request that added it (#212,
+2026-11-11), until `main` has run it.
 
 | What | Budget | Measured |
 |---|---|---|
-| Idle memory, after start | ≤ 20 MB anonymous RSS | 8.0 MB |
-| Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0.03/s |
-| A service's list p95, newest, slowest and filtered, up to 7 days | ≤ 60 ms | 35 ms (7 days) |
-| The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 38 ms |
-| Opening a trace p95, with its time or without | ≤ 30 ms | 4 ms |
-| Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 29.6k spans/s |
-| Peak memory through all of it | ≤ 384 MB (the container's limit) | 252 MB |
+| Idle memory, after start | ≤ 40 MB anonymous RSS | 27.1 MB (8.0 MB on an 8-core VM) |
+| Idle CPU, wake-ups | ≤ 1 tick in 30 s, ≤ 0.1/s | 0, 0.00/s |
+| A service's list p95, newest, slowest and filtered, up to 7 days | ≤ 60 ms | 29 ms (7 days) |
+| The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 48 ms |
+| Opening a trace p95, with its time or without | ≤ 30 ms | 9 ms |
+| Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 24.4k spans/s |
+| Peak memory through all of it | ≤ 384 MB (the container's limit) | 304 MB |
 
 Spans go in one table per UTC day (dropping a day is the retention, with
 no delete scan). With 10M seeded spans over a week (32 bytes a span on

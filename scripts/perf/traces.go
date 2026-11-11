@@ -16,7 +16,10 @@ import (
 // and container beside the analytics store, run as its container runs it:
 // memory_limit 96 MB, one query at a time, GOMEMLIMIT 48 MiB.
 const (
-	tracesAnonBudget    = 20 << 20
+	// tracesAnonBudget leaves room for CI's runners, where an idle store
+	// measures 27 MB (8 MB on an 8-core VM), as the analytics store's 46
+	// MB there against 13 to 32 locally.
+	tracesAnonBudget    = 40 << 20
 	tracesTicksBudget   = 1
 	tracesWakeupsBudget = 0.1
 	// Views on 2M spans over a week (a service at about 3 spans a second,
