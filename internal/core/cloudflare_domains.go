@@ -236,6 +236,11 @@ func (c *Core) recordFailed(ctx context.Context, cc *cfConn, r store.CloudflareR
 	return err
 }
 
+// waitingForTunnel is a routed domain's reason while its server's tunnel
+// isn't ready yet: a passing state, not a failure. syncServerRecords
+// routes the domain again once the tunnel is ready.
+const waitingForTunnel = "waiting for the server's tunnel"
+
 // routeResult is what routeDomain found or did.
 type routeResult struct {
 	RecordID, Content, RouteTunnel string
@@ -268,8 +273,7 @@ func (c *Core) routeDomain(ctx context.Context, cc *cfConn, r store.CloudflareRe
 	case err != nil:
 		return routeResult{}, err
 	case t.Status != "ok" || t.TunnelID == "":
-		// syncServerRecords tries again once the tunnel is ready.
-		return fail("waiting for the server's tunnel")
+		return fail(waitingForTunnel)
 	}
 	target := cloudflare.Tunnel{ID: t.TunnelID}.Hostname()
 	res := routeResult{Content: target, RouteTunnel: r.RouteTunnel}

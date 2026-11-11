@@ -430,3 +430,50 @@ func TestSnapshotBeforeWaitsForTheService(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A snapshot or in-place restore reads as finished only once it holds the
+// service no more, so whoever waits for it (the CLI, MCP) may restore or
+// delete the moment it does. Each step acts as soon as it reads the
+// outcome, without a pause in between.
+func TestSnapshotFinishedFreesTheService(t *testing.T) {
+	h := newHarness(t)
+	h.snapshotJobs(nil)
+	app := h.volumeService("app")
+	finished := func(done func(apitypes.ServiceSnapshots) bool) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); ; {
+			list, err := h.c.ServiceSnapshots(h.ctx, testSystem, app)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done(list) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("still running: %+v", list)
+			}
+		}
+	}
+	for range 5 {
+		var s apitypes.Snapshot
+		h.untilFree(func() (err error) { // the overdue first backup may hold it
+			s, err = h.c.CreateSnapshot(h.ctx, testSystem, app, apitypes.CreateSnapshotRequest{})
+			return err
+		})
+		finished(func(l apitypes.ServiceSnapshots) bool {
+			return slices.ContainsFunc(l.Snapshots, func(x apitypes.Snapshot) bool { return x.ID == s.ID && x.Status == apitypes.SnapshotReady })
+		})
+		res, err := h.c.RestoreSnapshot(h.ctx, testSystem, app, s.ID, apitypes.RestoreSnapshotRequest{InPlace: true})
+		if err != nil {
+			t.Fatalf("restore once the snapshot reads ready: %v", err)
+		}
+		finished(func(l apitypes.ServiceSnapshots) bool {
+			return slices.ContainsFunc(l.Restores, func(r apitypes.SnapshotRestore) bool {
+				return r.ID == res.Restore.ID && r.Status == apitypes.BackupSucceeded
+			})
+		})
+		if err := h.c.DeleteSnapshot(h.ctx, testSystem, app, s.ID); err != nil {
+			t.Fatalf("delete once the restore reads done: %v", err)
+		}
+	}
+}

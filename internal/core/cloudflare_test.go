@@ -58,7 +58,7 @@ func (p *pool) record(host string) apitypes.CloudflareRecord {
 		}
 		for _, r := range list {
 			waiting := r.Status == apitypes.DNSPending || r.Status == apitypes.DNSDeleting ||
-				r.Status == apitypes.DNSError && strings.HasPrefix(r.Reason, "waiting for server ")
+				r.Status == apitypes.DNSError && r.Reason == waitingForTunnel
 			if r.Hostname == host && !waiting {
 				got = r
 				return true
@@ -327,14 +327,15 @@ func TestCloudflareTokenRevoked(t *testing.T) {
 	if err := p.c.RemoveDomain(p.ctx, testSystem, web, "shop.tempo.run"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool {
-		list, _ := p.c.ListCloudflare(p.ctx, testSystem, true)
-		return len(list) == 1 && list[0].Status == apitypes.CloudflareInvalid
-	})
 	connAlert := func() []apitypes.Alert {
 		open, _ := p.c.ListAlerts(p.ctx, testSystem, true, false, 0, 0)
 		return slices.DeleteFunc(open, func(a apitypes.Alert) bool { return a.Kind != apitypes.AlertConnection })
 	}
+	// The worker marks the connection invalid, then opens the alert.
+	waitFor(t, func() bool {
+		list, _ := p.c.ListCloudflare(p.ctx, testSystem, true)
+		return len(list) == 1 && list[0].Status == apitypes.CloudflareInvalid && len(connAlert()) > 0
+	})
 	if open := connAlert(); len(open) != 1 || open[0].Title != "Cloudflare connection home is failing" {
 		t.Fatalf("platform alerts = %+v; want the connection's", open)
 	}
