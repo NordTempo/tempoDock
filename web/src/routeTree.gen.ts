@@ -100,6 +100,8 @@ import { Route as AppOrgProjectEnvironmentServiceRequestsVisitorsRouteImport } f
 import { Route as AppOrgProjectEnvironmentServiceReleasesNumberRouteImport } from './routes/_app.$org.$project.$environment.$service_.releases.$number'
 import { Route as AppOrgAnalyticsProjectSiteReplaysIndexRouteImport } from './routes/_app.$org.analytics.$project.$site.replays.index'
 import { Route as AppOrgAnalyticsProjectSiteReplaysReplayRouteImport } from './routes/_app.$org.analytics.$project.$site.replays.$replay'
+import { Route as AppOrgProjectEnvironmentServiceRequestsTracesIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.requests.traces.index'
+import { Route as AppOrgProjectEnvironmentServiceRequestsTracesTraceRouteImport } from './routes/_app.$org.$project.$environment.$service.requests.traces.$trace'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -595,6 +597,18 @@ const AppOrgAnalyticsProjectSiteReplaysReplayRoute =
     path: '/replays/$replay',
     getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
   } as any)
+const AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute =
+  AppOrgProjectEnvironmentServiceRequestsTracesIndexRouteImport.update({
+    id: '/traces/',
+    path: '/traces/',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRequestsRoute,
+  } as any)
+const AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute =
+  AppOrgProjectEnvironmentServiceRequestsTracesTraceRouteImport.update({
+    id: '/traces/$trace',
+    path: '/traces/$trace',
+    getParentRoute: () => AppOrgProjectEnvironmentServiceRequestsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -687,6 +701,8 @@ export interface FileRoutesByFullPath {
   '/$org/analytics/$project/$site/replays/$replay': typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
   '/$org/$project/$environment/$service/requests/': typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
   '/$org/analytics/$project/$site/replays/': typeof AppOrgAnalyticsProjectSiteReplaysIndexRoute
+  '/$org/$project/$environment/$service/requests/traces/$trace': typeof AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute
+  '/$org/$project/$environment/$service/requests/traces/': typeof AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute
 }
 export interface FileRoutesByTo {
   '/access': typeof AccessRoute
@@ -772,6 +788,8 @@ export interface FileRoutesByTo {
   '/$org/analytics/$project/$site/replays/$replay': typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
   '/$org/$project/$environment/$service/requests': typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
   '/$org/analytics/$project/$site/replays': typeof AppOrgAnalyticsProjectSiteReplaysIndexRoute
+  '/$org/$project/$environment/$service/requests/traces/$trace': typeof AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute
+  '/$org/$project/$environment/$service/requests/traces': typeof AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -866,6 +884,8 @@ export interface FileRoutesById {
   '/_app/$org/analytics/$project/$site/replays/$replay': typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
   '/_app/$org/$project/$environment/$service/requests/': typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
   '/_app/$org/analytics/$project/$site/replays/': typeof AppOrgAnalyticsProjectSiteReplaysIndexRoute
+  '/_app/$org/$project/$environment/$service/requests/traces/$trace': typeof AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute
+  '/_app/$org/$project/$environment/$service/requests/traces/': typeof AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -960,6 +980,8 @@ export interface FileRouteTypes {
     | '/$org/analytics/$project/$site/replays/$replay'
     | '/$org/$project/$environment/$service/requests/'
     | '/$org/analytics/$project/$site/replays/'
+    | '/$org/$project/$environment/$service/requests/traces/$trace'
+    | '/$org/$project/$environment/$service/requests/traces/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/access'
@@ -1045,6 +1067,8 @@ export interface FileRouteTypes {
     | '/$org/analytics/$project/$site/replays/$replay'
     | '/$org/$project/$environment/$service/requests'
     | '/$org/analytics/$project/$site/replays'
+    | '/$org/$project/$environment/$service/requests/traces/$trace'
+    | '/$org/$project/$environment/$service/requests/traces'
   id:
     | '__root__'
     | '/_app'
@@ -1138,6 +1162,8 @@ export interface FileRouteTypes {
     | '/_app/$org/analytics/$project/$site/replays/$replay'
     | '/_app/$org/$project/$environment/$service/requests/'
     | '/_app/$org/analytics/$project/$site/replays/'
+    | '/_app/$org/$project/$environment/$service/requests/traces/$trace'
+    | '/_app/$org/$project/$environment/$service/requests/traces/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1789,6 +1815,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAnalyticsProjectSiteReplaysReplayRouteImport
       parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
     }
+    '/_app/$org/$project/$environment/$service/requests/traces/': {
+      id: '/_app/$org/$project/$environment/$service/requests/traces/'
+      path: '/traces'
+      fullPath: '/$org/$project/$environment/$service/requests/traces/'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceRequestsTracesIndexRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRequestsRoute
+    }
+    '/_app/$org/$project/$environment/$service/requests/traces/$trace': {
+      id: '/_app/$org/$project/$environment/$service/requests/traces/$trace'
+      path: '/traces/$trace'
+      fullPath: '/$org/$project/$environment/$service/requests/traces/$trace'
+      preLoaderRoute: typeof AppOrgProjectEnvironmentServiceRequestsTracesTraceRouteImport
+      parentRoute: typeof AppOrgProjectEnvironmentServiceRequestsRoute
+    }
   }
 }
 
@@ -1848,6 +1888,8 @@ const AppOrgProjectSettingsRouteWithChildren =
 interface AppOrgProjectEnvironmentServiceRequestsRouteChildren {
   AppOrgProjectEnvironmentServiceRequestsVisitorsRoute: typeof AppOrgProjectEnvironmentServiceRequestsVisitorsRoute
   AppOrgProjectEnvironmentServiceRequestsIndexRoute: typeof AppOrgProjectEnvironmentServiceRequestsIndexRoute
+  AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute: typeof AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute
+  AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute: typeof AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute
 }
 
 const AppOrgProjectEnvironmentServiceRequestsRouteChildren: AppOrgProjectEnvironmentServiceRequestsRouteChildren =
@@ -1856,6 +1898,10 @@ const AppOrgProjectEnvironmentServiceRequestsRouteChildren: AppOrgProjectEnviron
       AppOrgProjectEnvironmentServiceRequestsVisitorsRoute,
     AppOrgProjectEnvironmentServiceRequestsIndexRoute:
       AppOrgProjectEnvironmentServiceRequestsIndexRoute,
+    AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute:
+      AppOrgProjectEnvironmentServiceRequestsTracesTraceRoute,
+    AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute:
+      AppOrgProjectEnvironmentServiceRequestsTracesIndexRoute,
   }
 
 const AppOrgProjectEnvironmentServiceRequestsRouteWithChildren =
