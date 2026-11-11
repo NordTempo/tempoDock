@@ -348,6 +348,11 @@
   tr:hover > td {
     background: var(--color-hover);
   }
+
+  /* An anchored heading (#set-run, #domains) lands under the sticky service header. */
+  h2[id] {
+    scroll-margin-top: 112px;
+  }
 }
 
 @layer components {

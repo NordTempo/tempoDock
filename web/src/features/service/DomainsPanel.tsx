@@ -17,7 +17,6 @@ import {
   CopyButton,
   ErrorText,
   Panel,
-  SectionHead,
   StateText,
 } from "../../ui/kit";
 import { notify } from "../../ui/notice";
@@ -88,7 +87,9 @@ export function DomainsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <DnsCard key={d.hostname} serviceRef={ref} domain={d} />
       ))}
       <section aria-labelledby="all-domains">
-        <SectionHead id="all-domains">All domains</SectionHead>
+        <h3 id="all-domains" className="sr-only">
+          All domains
+        </h3>
         {domains.length === 0 ? (
           <p className="py-2 text-mut">
             No domains. The service is reachable on the private network at{" "}
@@ -143,7 +144,11 @@ function AddDomain({
   useShortcuts([{ key: "n", label: "add domain", run: () => setOpen(true) }]);
   const flags = `-s ${ref.service} -e ${ref.environment}`;
   return (
-    <div className="flex flex-wrap items-center justify-end gap-2.5">
+    <div className="flex flex-wrap items-center gap-2.5">
+      {/* The section's heading, with its actions on the right (Settings, ADR 0076). */}
+      <h2 id="domains" className="mr-auto text-[16px] font-semibold">
+        Domains
+      </h2>
       <Button onClick={() => setOpen(true)}>
         Add domain <kbd>N</kbd>
       </Button>

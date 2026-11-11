@@ -298,7 +298,8 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
           time={since(at)}
           action={
             <Link
-              to="/$org/$project/$environment/$service/backups"
+              to="/$org/$project/$environment/$service/settings"
+              hash="backups"
               params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}
@@ -331,7 +332,8 @@ function ProblemRow({ n, problem: p, more, project }: RowProps) {
           time={since(p.domain.created_at)}
           action={
             <Link
-              to="/$org/$project/$environment/$service/domains"
+              to="/$org/$project/$environment/$service/settings"
+              hash="domains"
               params={{ org, ...ref }}
               className={actionClass}
               data-problem={n}

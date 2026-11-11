@@ -468,7 +468,7 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <SectionHead id="uptime-inside">Health check on its server</SectionHead>
       {interval === -1 ? (
         <p className="text-mut">
-          The ongoing health check is off; set an interval on Build &amp; run.
+          The ongoing health check is off; set an interval in Settings.
         </p>
       ) : (
         <p className="flex flex-wrap gap-x-3">

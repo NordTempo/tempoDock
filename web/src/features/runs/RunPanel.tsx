@@ -46,12 +46,12 @@ export function RunPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <p className="text-mut">
         Runs once. To change how {ref.service} starts, edit{" "}
         <Link
-          to="/$org/$project/$environment/$service/build"
+          to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
           className="text-info underline underline-offset-2"
         >
-          Start command in Build &amp; run
+          Start command in Settings
         </Link>
         .
       </p>

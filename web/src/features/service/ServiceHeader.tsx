@@ -116,13 +116,13 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       label: tab.label.toLowerCase(),
       run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
-    // S means settings everywhere: here, Build & run.
+    // S means settings everywhere: here, the Settings tab.
     {
       key: "s",
-      label: "build & run",
+      label: "settings",
       run: () =>
         navigate({
-          to: "/$org/$project/$environment/$service/build",
+          to: "/$org/$project/$environment/$service/settings",
           params: { org, ...ref },
         }),
     },
@@ -145,15 +145,15 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // Two marks: the staged-change dot ("1 change staged") for changes not
   // yet applied, and ▲ for something that needs a look. Each says which.
   const staged: Partial<Record<ServiceTab["label"], boolean>> = {
-    Domains: changes.domains.some((d) => d.service === ref.service),
     Variables: changes.variables.some(mine),
-    "Build & run":
+    Settings:
       changes.settings.some(mine) ||
-      changes.volumes.some((v) => v.service === ref.service),
+      changes.volumes.some((v) => v.service === ref.service) ||
+      changes.domains.some((d) => d.service === ref.service),
   };
   const warnings: Partial<Record<ServiceTab["label"], string>> = {
     ...(view.domains.some(domainNeedsAttention) && {
-      Domains: "a domain needs attention",
+      Settings: "a domain needs attention",
     }),
     ...(view.uptime?.state === "down" && { Metrics: "a check is down" }),
   };
@@ -252,7 +252,8 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       ) : (
         <Link
           key="a"
-          to="/$org/$project/$environment/$service/domains"
+          to="/$org/$project/$environment/$service/settings"
+          hash="domains"
           params={{ org, ...ref }}
           className="text-info hover:underline"
         >
@@ -294,7 +295,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-mut">the image's default</span>
         )}
         <Link
-          to="/$org/$project/$environment/$service/build"
+          to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
           className="btn sm"
@@ -565,7 +566,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
  * equivalents, and a menu with the rarer actions (Archive, for admins).
  * Stop, roll back and archive ask first, and restart does in production.
- * Stop and Start have no key (S opens Build & run, see ServiceTabs).
+ * Stop and Start have no key (S opens Settings, see ServiceTabs).
  * Buttons that can't apply (Roll back with nothing to go back to) are
  * left out; one line says why the others wait.
  */
@@ -692,7 +693,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           },
         ]
       : []),
-    // Stop and Start have no key: S opens Build & run (settings
+    // Stop and Start have no key: S opens Settings (settings
     // everywhere), and stopping is rare and destructive.
   ];
   useShortcuts(mayDeploy ? shortcuts : []);

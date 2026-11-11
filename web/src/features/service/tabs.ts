@@ -56,25 +56,12 @@ export const serviceTabs = [
     key: "g j",
     group: "operate",
   },
-  // Database services only (isDatabase). G B, "base": G D is Domains.
+  // Database services only (isDatabase). G B, "base".
   {
     label: "Data",
     to: "/$org/$project/$environment/$service/data",
     key: "g b",
     group: "operate",
-  },
-  // Stateful services only. G K, "keep": G B is Data.
-  {
-    label: "Backups",
-    to: "/$org/$project/$environment/$service/backups",
-    key: "g k",
-    group: "operate",
-  },
-  {
-    label: "Domains",
-    to: "/$org/$project/$environment/$service/domains",
-    key: "g d",
-    group: "configure",
   },
   {
     label: "Variables",
@@ -82,11 +69,12 @@ export const serviceTabs = [
     key: "g v",
     group: "configure",
   },
-  // Source, builder, commands, health check, resources, replicas and
-  // server: what was Settings (ADR 0059), so G S still.
+  // Everything that configures it, on one page with an index: how it
+  // builds and runs, its domains and, when stateful, its backups
+  // (ADR 0076). G S, settings everywhere.
   {
-    label: "Build & run",
-    to: "/$org/$project/$environment/$service/build",
+    label: "Settings",
+    to: "/$org/$project/$environment/$service/settings",
     key: "g s",
     group: "configure",
   },
@@ -101,14 +89,12 @@ export const serviceTabs = [
 
 export type ServiceTab = (typeof serviceTabs)[number];
 
-/** The tabs this service has: Data, Backups, Errors and Requests only where they apply. */
+/** The tabs this service has: Data, Errors and Requests only where they apply. */
 export const tabsFor = (view: Pick<ServiceView, "service" | "domains">) =>
   serviceTabs.filter((tab) => {
     switch (tab.label) {
       case "Data":
         return isDatabase(view.service);
-      case "Backups":
-        return view.service.stateful;
       case "Errors":
       case "Requests":
         return view.domains.length > 0;

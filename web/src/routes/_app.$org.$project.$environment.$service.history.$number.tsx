@@ -257,7 +257,7 @@ function ReleasePage() {
               </Button>
             ) : (
               <Link
-                to="/$org/$project/$environment/$service/build"
+                to="/$org/$project/$environment/$service/settings"
                 params={{ org, ...ref }}
                 search={{ edit: fix.edit }}
                 className="btn pri"
@@ -269,7 +269,7 @@ function ReleasePage() {
             <Link
               {...("setting" in edit
                 ? {
-                    to: "/$org/$project/$environment/$service/build",
+                    to: "/$org/$project/$environment/$service/settings",
                     search: { edit: edit.setting },
                   }
                 : { to: "/$org/$project/$environment/$service/variables" })}
@@ -332,12 +332,12 @@ function ReleasePage() {
             cli={`dock service show ${ref.service} -e ${ref.environment}`}
             onClick={() =>
               navigate({
-                to: "/$org/$project/$environment/$service/build",
+                to: "/$org/$project/$environment/$service/settings",
                 params: { org, ...ref },
               })
             }
           >
-            Build &amp; run settings
+            Settings of {ref.service}
           </Act>
           {release.status === "superseded" && mayDeploy && !rollingBack && (
             <Act
