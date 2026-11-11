@@ -598,6 +598,17 @@ func (c *Core) UpdateIncident(ctx context.Context, a Actor, id string, req apity
 		}
 		changes = append(changes, "components "+impactsText(ims))
 	}
+	// Moving or extending a window, or changing what it covers, changes
+	// what it mutes.
+	if maint && (req.StartsAt != nil || req.EndsAt != nil || req.Components != nil) {
+		covers := inc.impacts
+		if req.Components != nil {
+			covers = ims
+		}
+		if err := c.checkMaintenanceLocks(ctx, a, p, covers, "changing maintenance"); err != nil {
+			return apitypes.StatusIncident{}, err
+		}
+	}
 	if len(changes) == 0 {
 		return toStatusIncident(inc, p.Slug, c.statusPageURL(ctx, p)), nil
 	}
@@ -678,6 +689,18 @@ func (c *Core) PostIncidentUpdate(ctx context.Context, a Actor, id string, req a
 	var ims []statusImpact
 	if req.Components != nil {
 		if ims, err = c.resolveImpacts(ctx, a, p, *req.Components, apitypes.IncidentKind(row.Kind)); err != nil {
+			return apitypes.StatusIncident{}, err
+		}
+	}
+	// Starting a window, or changing what it covers, mutes alerts;
+	// completing or cancelling it doesn't.
+	if maint && (req.State == apitypes.MaintenanceInProgress || req.State == apitypes.MaintenanceScheduled) &&
+		(action == "maintenance.start" || req.Components != nil) {
+		covers := inc.impacts
+		if req.Components != nil {
+			covers = ims
+		}
+		if err := c.checkMaintenanceLocks(ctx, a, p, covers, "starting or changing maintenance"); err != nil {
 			return apitypes.StatusIncident{}, err
 		}
 	}
