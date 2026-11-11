@@ -380,7 +380,9 @@ function Segments({
           {i > 0 && <span className="text-(--g-dim)">:</span>}
           <button
             type="button"
-            className="hover:text-(--g-link)"
+            // min-w-0: inline in the name, so "1" in user:1:name isn't
+            // centered in the 24px every other button gets.
+            className="min-w-0 hover:text-(--g-link)"
             title={`Show keys matching ${prefixMatch(segments, i)}`}
             onClick={(e) => {
               e.stopPropagation();

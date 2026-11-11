@@ -219,7 +219,7 @@ export function DataPanel({
           ))}
         </nav>
         <span className="ml-auto text-xs text-(--g-mut)">
-          {info.data.engine} {info.data.server_version} ·{" "}
+          {engineLabel(info.data.engine, info.data.server_version)} ·{" "}
           {writing && (
             <span className="text-(--g-warn)">
               Editing{production && ` ${confirmName}`} ·{" "}
@@ -447,4 +447,11 @@ function Limited({
       <Why access={access} />
     </div>
   );
+}
+
+/** "mysql 8.4.13", or the version alone when it names the server ("Redis 8.10.2", "MariaDB 11.4.5"). */
+function engineLabel(engine: string, version = "") {
+  return /^\d/.test(version) || !version
+    ? `${engine} ${version}`.trim()
+    : version;
 }
