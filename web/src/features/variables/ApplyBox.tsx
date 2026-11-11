@@ -473,9 +473,11 @@ function StagedReview({
           {changes.last_failure}
         </p>
       )}
-      <div className="overflow-x-auto font-mono text-xs leading-[1.9]">
+      {/* Long values wrap: nothing to scroll sideways, so the whole change
+          is readable (and reachable without a mouse). */}
+      <div className="font-mono text-xs leading-[1.9]">
         {lines.map((line) => (
-          <div key={line.id} className="whitespace-nowrap">
+          <div key={line.id} className="break-all whitespace-pre-wrap">
             <span className="text-warn">{line.mark}</span>{" "}
             <span className="inline-block w-[9ch] text-faint">
               {line.scope}
