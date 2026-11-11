@@ -220,10 +220,9 @@ function ProjectRail() {
  */
 export function TopBar() {
   const openPalette = usePalette();
-  // WIP: the spec puts the console in the org switcher (operators).
-  const operator = useIsOperator();
   return (
-    <header className="flex h-[52px] items-center gap-1 border-b border-line bg-side px-3">
+    // Narrow windows scroll the bar sideways rather than wrapping it.
+    <header className="flex h-[52px] items-center gap-1 overflow-x-auto border-b border-line bg-side px-3 whitespace-nowrap">
       <OrgSwitcher />
       <nav
         aria-label="Organization views"
@@ -249,17 +248,7 @@ export function TopBar() {
         Inbox <InboxCount />
       </TopLink>
       <TopLink to="/$org/settings">Settings</TopLink>
-      {operator && (
-        <Link
-          to="/console"
-          className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg"
-        >
-          <Icon name="console" size={14} className="text-warn" />
-          Console
-          <PlatformAlertCount />
-        </Link>
-      )}
-      <Me />
+      <AccountMenu />
     </header>
   );
 }
@@ -314,13 +303,13 @@ function OrgBadge({ org }: { org: Org }) {
  * others with your role in each, a new one, and signing out.
  */
 function OrgSwitcher() {
-  const logout = useLogout();
+  const operator = useIsOperator();
   const orgs = useOrgs();
   const slug = useOrg();
   const navigate = useNavigate();
   const current = orgs.find((o) => o.slug === slug) ?? orgs[0];
   return (
-    <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-2">
+    <div className="flex items-center gap-1.5">
       <Menu
         label={`Organization: ${current?.name ?? "none"}`}
         className="min-w-0 flex-1"
@@ -374,16 +363,26 @@ function OrgSwitcher() {
             >
               <Icon name="plus" className="text-mut" /> New organization
             </button>
-            <hr className="my-1 border-0 border-t border-line" />
-            <button
-              type="button"
-              className={menuItem}
-              role="menuitem"
-              disabled={logout.isPending}
-              onClick={() => logout.mutate()}
-            >
-              <Icon name="logout" className="text-mut" /> Log out
-            </button>
+            {operator && (
+              <>
+                <hr className="my-1 border-0 border-t border-line" />
+                <button
+                  type="button"
+                  className={menuItem}
+                  role="menuitem"
+                  onClick={() => {
+                    close();
+                    navigate({ to: "/console" });
+                  }}
+                >
+                  <Icon name="console" className="text-warn" /> Platform
+                  console
+                  <span className="ml-auto">
+                    <PlatformAlertCount />
+                  </span>
+                </button>
+              </>
+            )}
           </>
         )}
       </Menu>
@@ -432,6 +431,78 @@ function Me() {
         Log out
       </button>
     </div>
+  );
+}
+
+/**
+ * The top bar's account menu: who is signed in, the account page, Help
+ * and Log out (option 3).
+ */
+function AccountMenu() {
+  const session = useSession();
+  const logout = useLogout();
+  const navigate = useNavigate();
+  const org = useOrg();
+  if (!session) return null;
+  return (
+    <Menu
+      label="Account"
+      right
+      button={
+        <span
+          className="grid size-7 place-items-center rounded-full bg-edge text-2xs font-semibold"
+          title={session.email ?? session.name}
+        >
+          {session.name.slice(0, 1).toUpperCase()}
+        </span>
+      }
+    >
+      {(close) => (
+        <>
+          <div role="presentation" className="px-2.5 pt-1 pb-1.5">
+            <span className="block truncate">
+              {session.email ?? session.name}
+            </span>
+            <span className="block text-2xs text-faint">
+              {session.kind === "token" ? "token, " : ""}
+              {session.scope}
+            </span>
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItem}
+            onClick={() => {
+              close();
+              navigate({ to: "/account" });
+            }}
+          >
+            <Icon name="users" className="text-mut" /> Your account
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItem}
+            onClick={() => {
+              close();
+              navigate({ to: "/$org/help", params: { org } });
+            }}
+          >
+            <Icon name="help" className="text-mut" /> Help
+          </button>
+          <hr className="my-1 border-0 border-t border-line" />
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItem}
+            disabled={logout.isPending}
+            onClick={() => logout.mutate()}
+          >
+            <Icon name="logout" className="text-mut" /> Log out
+          </button>
+        </>
+      )}
+    </Menu>
   );
 }
 

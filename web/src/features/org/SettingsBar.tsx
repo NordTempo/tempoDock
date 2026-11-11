@@ -23,7 +23,8 @@ type Section = {
     | "/$org/settings/cloudflare"
     | "/$org/settings/data-access"
     | "/$org/settings/analytics"
-    | "/$org/settings/alerts";
+    | "/$org/settings/alerts"
+    | "/$org/audit";
   label: string;
   /** Only admins can use it; hidden from everyone else. */
   admin: boolean;
@@ -36,6 +37,8 @@ export const settingsGroups: { label: string; sections: Section[] }[] = [
     sections: [
       { to: "/$org/settings/general", label: "General", admin: false },
       { to: "/$org/settings/variables", label: "Variables", admin: false },
+      // The org's audit trail, here since the top bar keeps only its views.
+      { to: "/$org/audit", label: "Activity", admin: false },
     ],
   },
   {
