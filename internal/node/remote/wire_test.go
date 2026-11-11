@@ -20,7 +20,8 @@ func TestWireRoundTrip(t *testing.T) {
 		Name: "web-1", Image: "app:1", Labels: labels, Env: map[string]string{"A": "1"}, Cmd: "serve",
 		Network: "env-2", Aliases: []string{"web"}, Port: 8080, HostPort: 41000,
 		Mounts: []node.Mount{{Volume: "data", Path: "/data", ReadOnly: true}}, Resources: node.Resources{MemoryBytes: 1 << 28, NanoCPUs: 5e8},
-		Health: &node.LivenessCheck{Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3, StartPeriod: time.Minute, StartInterval: 2 * time.Second},
+		Health:     &node.LivenessCheck{Port: 8080, Path: "/up", Interval: 30 * time.Second, Timeout: 5 * time.Second, Retries: 3, StartPeriod: time.Minute, StartInterval: 2 * time.Second},
+		ExtraHosts: []string{"dock-otlp:host-gateway"},
 	}, toWireSpec, wireSpec.node)
 	check(t, node.JobSpec{
 		Name: "backup-1", Image: "postgres:17", Labels: labels, Env: map[string]string{"A": "1"}, Script: "pg_dump",

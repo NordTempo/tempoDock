@@ -394,6 +394,8 @@ type wireSpec struct {
 	// Health is new in protocol 13 (healthProtocol); older nodes ignore
 	// it and start the container without an ongoing check.
 	Health *wireLivenessCheck `json:"health,omitempty"`
+	// ExtraHosts is new in protocol 26 (TraceAppsProtocol).
+	ExtraHosts []string `json:"extra_hosts,omitempty"`
 }
 
 func toWireSpec(s node.ContainerSpec) wireSpec {
@@ -401,6 +403,7 @@ func toWireSpec(s node.ContainerSpec) wireSpec {
 		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Cmd: s.Cmd,
 		Network: s.Network, Aliases: s.Aliases, Port: s.Port, HostPort: s.HostPort,
 		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Mounts: toWireMounts(s.Mounts),
+		ExtraHosts: s.ExtraHosts,
 	}
 	if hc := s.Health; hc != nil {
 		w.Health = &wireLivenessCheck{
@@ -416,6 +419,7 @@ func (w wireSpec) node() node.ContainerSpec {
 		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Cmd: w.Cmd,
 		Network: w.Network, Aliases: w.Aliases, Port: w.Port, HostPort: w.HostPort,
 		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Mounts: fromWireMounts(w.Mounts),
+		ExtraHosts: w.ExtraHosts,
 	}
 	if hc := w.Health; hc != nil {
 		s.Health = &node.LivenessCheck{

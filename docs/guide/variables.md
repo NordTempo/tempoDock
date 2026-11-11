@@ -82,6 +82,28 @@ Set by the platform on every release. They win over your variables, and the
 `DOCK_PUBLIC_DOMAIN` is resolved when the release is created; a domain added
 later shows up on the next release.
 
+### OpenTelemetry
+
+While tracing is on (`dock tracing on`, operators), every service's
+containers also start with the standard OpenTelemetry variables, so an app
+instrumented with a stock OpenTelemetry SDK sends its traces to Dock with no
+setup. Unlike the ones above, **your own value wins**: an app that already
+sends to another backend keeps doing that, and `OTEL_SDK_DISABLED=true` turns
+an app's SDK off.
+
+| Variable | Value |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://dock-otlp:80`: the server's own Caddy, which passes exports to its trace ingest |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` (Dock takes OTLP over HTTP, protobuf or JSON, not gRPC) |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `authorization=Bearer%20dtr1...`: the release's own token, which can only send spans |
+| `OTEL_SERVICE_NAME` | Service name |
+| `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=<project>,deployment.environment.name=<environment>,service.version=r<release>` |
+| `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `none`: Dock keeps logs from stdout, and no metrics yet |
+
+They are set when a container starts, so turning tracing on or off reaches a
+service with its next deploy or restart. Services on a server behind a
+Cloudflare Tunnel don't get them yet.
+
 ## Staged changes
 
 Setting and unsetting variables, changing service settings and adding volumes

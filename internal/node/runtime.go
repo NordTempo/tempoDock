@@ -707,7 +707,15 @@ type ContainerSpec struct {
 	// Health, when set, has Docker probe the running container (ADR
 	// 0043). Nil means no ongoing check.
 	Health *LivenessCheck
+	// ExtraHosts are "name:address" lines for the container's hosts file;
+	// "host-gateway" is the server itself (TraceIngestHost). Older nodes
+	// ignore them (protocol 26).
+	ExtraHosts []string
 }
+
+// TraceIngestHost names the server in a traced app's hosts file: its
+// Caddy, which forwards OTLP exports to the server's trace ingest.
+const TraceIngestHost = "dock-otlp"
 
 // LivenessCheck is the ongoing health check of a running container: Docker
 // runs the server's dock-probe inside the container every Interval, so

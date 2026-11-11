@@ -259,6 +259,8 @@ func caddyOptions(cfg config.Config, marker string) caddy.Options {
 		TunnelHostname: cfg.Ingress.TunnelHostname,
 		TrafficAddr:    cfg.Caddy.TrafficListen,
 		AnalyticsAddr:  cfg.Analytics.IngestListen,
+		// Traced apps' exports reach the trace ingest through Caddy.
+		TraceIngestAddr: cfg.Traces.IngestListen,
 	}
 }
 

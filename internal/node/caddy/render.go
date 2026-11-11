@@ -130,9 +130,15 @@ type route struct {
 }
 
 type match struct {
-	Host   []string            `json:"host"`
-	Path   []string            `json:"path,omitempty"`
-	Header map[string][]string `json:"header,omitempty"`
+	Host     []string            `json:"host"`
+	Path     []string            `json:"path,omitempty"`
+	Header   map[string][]string `json:"header,omitempty"`
+	RemoteIP *remoteIP           `json:"remote_ip,omitempty"`
+}
+
+// remoteIP matches the immediate peer's address.
+type remoteIP struct {
+	Ranges []string `json:"ranges"`
 }
 
 // handler covers the handlers we use: reverse_proxy, static_response,
@@ -454,6 +460,14 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 			viaTunnel = append(viaTunnel, route{Match: []match{m}, Handle: append(slices.Clone(handle), ht), Terminal: true})
 		}
 	}
+	// Apps' OTLP exports, plain HTTP from the server's own containers:
+	// on the public listener of a plain-HTTP server, or the HTTP one next
+	// to HTTPS (below). Not in tunnel mode, where nothing listens where
+	// containers can reach.
+	otlp := opts.TraceIngestAddr != "" && !opts.tunnel()
+	if otlp && opts.plainHTTP() {
+		main = append(main, otlpRoute(opts.TraceIngestAddr))
+	}
 	main = append(main, notFoundRoute())
 	viaTunnel = append(viaTunnel, notFoundRoute())
 
@@ -498,6 +512,9 @@ func Render(opts Options, routes []node.Route) ([]byte, error) {
 	var plain []route
 	if opts.ServerMarker != "" {
 		plain = append(plain, markerRoute(opts.ServerMarker))
+	}
+	if otlp {
+		plain = append(plain, otlpRoute(opts.TraceIngestAddr))
 	}
 	if len(hostnames) > 0 {
 		plain = append(plain, route{
@@ -604,6 +621,25 @@ func analyticsRoute(a node.AnalyticsHosts, addr string) route {
 				analyticsTagHeader: {a.Tag},
 				analyticsIPHeader:  {"{http.vars.client_ip}"},
 			}}},
+			{Handler: "reverse_proxy", Upstreams: []upstream{{Dial: addr}}},
+		},
+		Terminal: true,
+	}
+}
+
+// privateRanges are where apps' containers reach the server from: their
+// Docker networks are private. Anyone else asking for dock-otlp gets the
+// catch-all 404; the ingest checks every export's token besides.
+var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7"}
+
+// otlpRoute forwards OTLP exports for node.TraceIngestHost, from private
+// addresses, to the trace ingest at addr, out of the access log so
+// traffic statistics don't count them.
+func otlpRoute(addr string) route {
+	return route{
+		Match: []match{{Host: []string{node.TraceIngestHost}, RemoteIP: &remoteIP{Ranges: privateRanges}}},
+		Handle: []handler{
+			{Handler: "vars", LogSkip: true},
 			{Handler: "reverse_proxy", Upstreams: []upstream{{Dial: addr}}},
 		},
 		Terminal: true,

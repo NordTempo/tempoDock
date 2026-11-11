@@ -744,6 +744,11 @@ const TraceStoreProtocol = 24
 // trace ingest, its key in set-analytics and the spans spool.
 const TraceIngestProtocol = 25
 
+// TraceAppsProtocol is the first protocol whose nodes let apps reach the
+// trace ingest: the container spec's extra hosts and Caddy's dock-otlp
+// route. The control plane gives apps on older nodes no OTEL_* variables.
+const TraceAppsProtocol = 26
+
 // needStoreKind checks the node can act on the store of kind: any
 // analytics node for the analytics store, TraceStoreProtocol for the
 // trace store (an older node would take the call for the analytics
