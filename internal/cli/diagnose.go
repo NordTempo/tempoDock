@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -98,6 +99,7 @@ func printDiagnosis(g *globals, d apitypes.Diagnosis, flags string) error {
 		"pre-deploy", preDeployText(d.PreDeploy),
 		"errors", errorsText(d.Errors),
 		"resources", resourcesText(d.Resources),
+		"failed trace", traceText(d.Trace, flags),
 	); err != nil {
 		return err
 	}
@@ -119,6 +121,18 @@ func printDiagnosis(g *globals, d apitypes.Diagnosis, flags string) error {
 	}
 	_, _ = fmt.Fprintf(out, "\nFull output: `dock logs -r %d %s`, build: `dock logs --build -r %d %s`\n", d.Release, flags, d.Release, flags)
 	return nil
+}
+
+// traceText names the release's failed trace and how to read it.
+func traceText(t *apitypes.DiagnosisTrace, flags string) string {
+	if t == nil {
+		return ""
+	}
+	status := ""
+	if t.HTTPStatus > 0 {
+		status = " " + strconv.Itoa(t.HTTPStatus)
+	}
+	return fmt.Sprintf("%s%s, %s: `dock traces show %s --at %s %s`", t.Name, status, msString(t.DurationMS), t.ID, t.At.Format(time.RFC3339Nano), flags)
 }
 
 // humanDuration says milliseconds as people read them.

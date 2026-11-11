@@ -252,7 +252,7 @@ function OpenTrace({
         limit={INLINE_SPANS}
         selected={span}
         onSelect={setSpan}
-        details={(s) => <SpanDetails span={s} />}
+        details={(s) => <SpanDetails span={s} trace={summary.trace} />}
       />
       <div className="flex gap-2">{full}</div>
     </div>

@@ -7357,6 +7357,8 @@ export interface components {
             /** @description The service's memory and CPU before the failure, from its 1-minute samples */
             resources?: components["schemas"]["DiagnosisResources"];
             service: string;
+            /** @description The release's newest failed trace around the failure, while tracing is on */
+            trace?: components["schemas"]["DiagnosisTrace"];
             /** @description Older log lines were left out to keep the bundle under its size limit */
             truncated: boolean;
         };
@@ -7514,6 +7516,17 @@ export interface components {
             rule?: string;
             /** @description The likely cause in one line, or that no rule matched */
             summary: string;
+        };
+        DiagnosisTrace: {
+            /** Format: date-time */
+            at: string;
+            /** Format: double */
+            duration_ms: number;
+            /** Format: int64 */
+            http_status?: number;
+            id: string;
+            /** @description The trace's entry: method and route, or its span's name */
+            name: string;
         };
         DiagnosisVariables: {
             added: string[] | null;

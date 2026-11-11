@@ -76,7 +76,7 @@ function TracePage() {
               >
                 {selected.name}
               </div>
-              <SpanDetails span={selected} />
+              <SpanDetails span={selected} trace={trace.trace} />
             </div>
           ) : (
             <p className="text-xs text-mut">

@@ -179,9 +179,12 @@ export function Waterfall({
 /** A span's details: where it ran, its attributes and its exceptions. */
 export function SpanDetails({
   span: s,
+  trace,
   children,
 }: {
   span: TraceSpan;
+  /** The trace's ID, for its log lines. */
+  trace: string;
   children?: ReactNode;
 }) {
   const org = useOrg();
@@ -258,6 +261,16 @@ export function SpanDetails({
         </button>
       )}
       <div className="flex flex-wrap gap-2">
+        {where && (
+          <Link
+            className="btn sm no-underline"
+            to="/$org/$project/$environment/$service/logs"
+            params={{ org, ...where }}
+            search={{ q: trace }}
+          >
+            Log lines with this trace ID
+          </Link>
+        )}
         {where && s.release ? (
           <Link
             className="btn sm no-underline"

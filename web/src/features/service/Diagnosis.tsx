@@ -210,6 +210,22 @@ export function Evidence({ d, ref }: { d: Diagnosis; ref: ServiceRef }) {
         {res && (res.memory_mb ?? []).length > 0 && (
           <Prop label="Resources">{resourcesText(res)}</Prop>
         )}
+        {d.trace && (
+          <Prop label="Failed trace">
+            <Link
+              to="/$org/$project/$environment/$service/requests/traces/$trace"
+              params={{ org, ...ref, trace: d.trace.id }}
+              search={{ at: d.trace.at }}
+              className="text-info"
+            >
+              {d.trace.name}
+              {d.trace.http_status ? ` ${d.trace.http_status}` : ""}
+            </Link>{" "}
+            <span className="text-mut">
+              {Math.round(d.trace.duration_ms)} ms
+            </span>
+          </Prop>
+        )}
       </dl>
       {d.truncated && (
         <p className="text-xs text-faint">
