@@ -58,7 +58,7 @@ export function MemoryBreakdown({ usage }: { usage?: ServerUsage }) {
       >
         Memory
       </SectionHead>
-      <div className="flex h-2.5 overflow-hidden rounded-[3px] bg-line">
+      <div className="flex h-2.5 overflow-hidden rounded-tag bg-line">
         {byGroup.map((g) => (
           <i
             key={g.group}

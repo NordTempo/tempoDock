@@ -304,7 +304,7 @@ function OrgBadge({ org }: { org: Org }) {
     <span
       aria-hidden
       data-letter={(org.name || org.slug).charAt(0).toUpperCase()}
-      className={`grid size-5 flex-none place-items-center rounded-[5px] text-2xs font-semibold text-side before:content-[attr(data-letter)] ${badgeColours[h % badgeColours.length]}`}
+      className={`grid size-5 flex-none place-items-center rounded-ctl text-2xs font-semibold text-side before:content-[attr(data-letter)] ${badgeColours[h % badgeColours.length]}`}
     />
   );
 }

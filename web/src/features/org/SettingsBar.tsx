@@ -84,7 +84,7 @@ export function OrgSettingsBar({ actions }: { actions?: ReactNode }) {
   const current = useCurrentSection();
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-6 sm:px-7">
-      <h2 className="text-[18px] font-semibold">
+      <h2 className="text-lg font-semibold">
         {current?.label ?? "Organization settings"}
       </h2>
       {actions && (

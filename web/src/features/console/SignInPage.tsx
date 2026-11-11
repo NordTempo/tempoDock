@@ -303,7 +303,7 @@ function ProviderView({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="flex-1 text-[16px] font-semibold">{p.label}</h2>
+        <h2 className="flex-1 text-lg font-semibold">{p.label}</h2>
         <Act small cli={`dock sso set ${p.name}`} onClick={onEdit}>
           Edit
         </Act>
@@ -480,7 +480,7 @@ function ProviderForm({
         );
       }}
     >
-      <h2 className="text-[16px] font-semibold">
+      <h2 className="text-lg font-semibold">
         {provider ? `Change ${provider.label}` : "Add a provider"}
       </h2>
       {!provider && (

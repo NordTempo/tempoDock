@@ -109,7 +109,7 @@ export function PlatformPolicyPage() {
     <>
       <PageBar title="Data access" />
       <Page>
-        <p className="max-w-2xl text-[13px] text-sec">
+        <p className="max-w-2xl text-xs text-sec">
           The platform's default applies where an organization set nothing; the
           ceiling is the most any organization's rule or token gives. Each
           organization sets its own rules in its settings. Organization admins

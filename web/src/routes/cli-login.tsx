@@ -151,7 +151,7 @@ function CliLogin() {
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          className="field px-3 py-2.5 font-mono text-[22px] uppercase tracking-[0.12em]"
+          className="field px-3 py-2.5 font-mono text-xl uppercase tracking-[0.12em]"
         />
       </label>
       {/* Always rendered, so screen readers announce what the lookup finds;

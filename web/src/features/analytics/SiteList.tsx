@@ -87,7 +87,7 @@ export function SiteRows({
               <span className="col-span-2 flex min-w-0 items-center gap-2.5 sm:col-span-1">
                 <SiteGlyph name={s.site.name} />
                 <span className="min-w-0">
-                  <span className="block truncate font-mono text-[15px] text-fg">
+                  <span className="block truncate font-mono text-md text-fg">
                     {s.site.name}
                   </span>
                   <span className="block truncate text-xs text-faint">

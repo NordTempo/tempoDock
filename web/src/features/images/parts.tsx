@@ -37,7 +37,7 @@ export const edgeOf = (c: Counts) =>
 export function Kev() {
   return (
     <span
-      className="ml-1.5 rounded-[4px] border border-fail-edge px-1 align-[1px] font-mono text-[11px] leading-4 font-normal text-fail"
+      className="ml-1.5 rounded-tag border border-fail-edge px-1 align-[1px] font-mono text-tag leading-4 font-normal text-fail"
       title="Exploited in the wild (CISA's known exploited vulnerabilities)"
     >
       KEV

@@ -143,7 +143,7 @@ function Facets({
       type="button"
       aria-pressed={on}
       onClick={() => onFilter(next)}
-      className={`flex w-full items-baseline gap-2 rounded-[6px] px-2 py-1 text-left text-[13px] hover:bg-hover aria-pressed:bg-sel aria-pressed:text-fg ${sub ? "pl-5 text-sec" : ""}`}
+      className={`flex w-full items-baseline gap-2 rounded-ctl px-2 py-1 text-left text-xs hover:bg-hover aria-pressed:bg-sel aria-pressed:text-fg ${sub ? "pl-5 text-sec" : ""}`}
     >
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span
@@ -285,7 +285,7 @@ function IssueRow({ issue: i }: { issue: ErrorIssue }) {
       >
         <span>
           <span
-            className={`rounded-full px-2 text-[11.5px] leading-[18px] ${stateChip[i.state]}`}
+            className={`rounded-full px-2 text-tag leading-[18px] ${stateChip[i.state]}`}
           >
             {i.state}
           </span>
@@ -369,7 +369,7 @@ function IssueDetail({ issue: i }: { issue: ErrorIssue }) {
   };
   return (
     <div className="flex flex-col gap-2 bg-panel px-3 py-3">
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[13px] [&_dt]:text-mut">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs [&_dt]:text-mut">
         <dt>First seen</dt>
         <dd>
           {since(i.first_seen)} ago

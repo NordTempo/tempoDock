@@ -254,7 +254,7 @@ export function RollbackConfirm({
       )}
       {/* What it takes away comes first, in red: the reason to stop. */}
       {losses.length > 0 && (
-        <div className="mb-3 rounded-[6px] border border-fail-edge bg-fail-bg px-3 py-2">
+        <div className="mb-3 rounded-ctl border border-fail-edge bg-fail-bg px-3 py-2">
           <p className="font-semibold text-fail">
             {ref.service} loses {losses.length === 1 ? "this" : "these"}
           </p>

@@ -526,7 +526,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   return (
     // The overview's focal point (chosen in a blind trial, 2026-11): what
     // serves and since when, larger than everything under it.
-    <p className="text-[20px] leading-7 font-semibold [&_.text-mut]:font-normal">
+    <p className="text-xl leading-7 font-semibold [&_.text-mut]:font-normal">
       {sentence}
     </p>
   );

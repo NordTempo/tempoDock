@@ -234,7 +234,7 @@ function Detail({ org: o, initial }: { org: ConsoleOrg; initial?: Opened }) {
       className="flex flex-col gap-4"
     >
       <div>
-        <h2 className="flex items-center gap-2 text-[16px] font-semibold">
+        <h2 className="flex items-center gap-2 text-lg font-semibold">
           {o.slug} <StateText state={statusState[o.status]} />
         </h2>
         <p className="text-xs text-mut">
@@ -251,7 +251,7 @@ function Detail({ org: o, initial }: { org: ConsoleOrg; initial?: Opened }) {
       {/* Side by side while the column sits under the table (below
           1400px), one column beside it. */}
       <div className="grid items-start gap-x-10 gap-y-4 sm:max-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[13px] [&_dt]:text-mut">
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs [&_dt]:text-mut">
           <dt>Admins</dt>
           <dd>
             {(o.admins ?? []).join(", ") || (
@@ -287,7 +287,7 @@ function Detail({ org: o, initial }: { org: ConsoleOrg; initial?: Opened }) {
           <dd>{size(u.bandwidth_bytes)} in 30 days</dd>
         </dl>
         <div className="flex flex-col gap-1.5">
-          <h3 className="text-[13px] font-semibold">Operate</h3>
+          <h3 className="text-xs font-semibold">Operate</h3>
           <Button onClick={() => setOpen("rename")}>Edit settings</Button>
           <Button onClick={() => setOpen("members")}>
             Members and invites
@@ -535,7 +535,7 @@ function Members({ org, onClose }: DialogProps) {
           />
         )}
         {empty ? (
-          <p className="text-[13px] text-mut">
+          <p className="text-xs text-mut">
             Nobody yet. Invite its first admin below.
           </p>
         ) : (
@@ -711,7 +711,7 @@ function Join({ org, onClose }: DialogProps) {
         }}
       >
         {join.data ? (
-          <p className="text-[13px] text-sec">
+          <p className="text-xs text-sec">
             You are an admin of {org.slug} until{" "}
             {new Date(join.data.expires_at).toLocaleString()}.{" "}
             {/* No preload: from the console it would read without the org. */}
@@ -720,7 +720,7 @@ function Join({ org, onClose }: DialogProps) {
             </Link>
           </p>
         ) : (
-          <div className="flex flex-col gap-2 text-[13px] text-sec">
+          <div className="flex flex-col gap-2 text-xs text-sec">
             <p>
               You become an admin of <b>{org.slug}</b>, so you can see its
               projects, variables, logs and data. Its admins see that you joined

@@ -306,7 +306,7 @@ export function Confirm({
         }}
       >
         <div className="flex flex-col gap-2">
-          <div className="text-[13px] leading-relaxed text-sec [&_b]:font-semibold [&_b]:text-fg">
+          <div className="text-xs leading-relaxed text-sec [&_b]:font-semibold [&_b]:text-fg">
             {children}
           </div>
           {typed && (
@@ -444,7 +444,7 @@ export function PageBar({
           <span aria-hidden className="h-[18px]" />
         )}
         <div className="flex flex-wrap items-center gap-x-2.5">
-          <h1 className="text-[24px] leading-7 font-semibold tracking-[-0.01em]">
+          <h1 className="text-2xl leading-7 font-semibold tracking-[-0.01em]">
             {title}
           </h1>
           {after}
@@ -498,7 +498,7 @@ export function SectionHead({
 }) {
   return (
     <div className="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-      <h2 id={id} className="text-[16px] font-semibold">
+      <h2 id={id} className="text-lg font-semibold">
         {children}
       </h2>
       {aside && <span className="text-xs text-faint">{aside}</span>}
@@ -677,4 +677,4 @@ export function Menu({
 
 /** A row in a Menu. */
 export const menuItem =
-  "flex items-center gap-2 rounded-[4px] px-2.5 py-1.5 text-left text-sec no-underline hover:bg-sel hover:text-fg aria-[current=page]:font-medium aria-[current=page]:text-fg";
+  "flex items-center gap-2 rounded-tag px-2.5 py-1.5 text-left text-sec no-underline hover:bg-sel hover:text-fg aria-[current=page]:font-medium aria-[current=page]:text-fg";
