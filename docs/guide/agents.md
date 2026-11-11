@@ -133,7 +133,7 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `diagnose`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `status_pages`, `list_errors`, `list_vulnerabilities` (what is vulnerable in live images and the fix), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `diagnose`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `status_pages`, `list_errors`, `traces_list` and `trace_get` (a service's traces, slowest since a release; one trace's spans), `list_vulnerabilities` (what is vulnerable in live images and the fix), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
 | Jobs | `list_jobs`, `set_job`, `run_job`, `remove_job`, `job_history` |
 | Previews | `get_previews`, `get_preview` |

@@ -15488,6 +15488,273 @@
         ],
         "type": "object"
       },
+      "Trace": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "spans": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSpan"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "trace": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "trace",
+          "start",
+          "duration_ms",
+          "spans"
+        ],
+        "type": "object"
+      },
+      "TraceEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "at_ms": {
+            "description": "After the span's start",
+            "format": "double",
+            "type": "number"
+          },
+          "attrs": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "at_ms"
+        ],
+        "type": "object"
+      },
+      "TraceList": {
+        "additionalProperties": false,
+        "properties": {
+          "more": {
+            "type": "boolean"
+          },
+          "range": {
+            "enum": [
+              "1h",
+              "24h",
+              "7d"
+            ],
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "traces": {
+            "items": {
+              "$ref": "#/components/schemas/TraceSummary"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "range",
+          "since",
+          "traces"
+        ],
+        "type": "object"
+      },
+      "TraceSpan": {
+        "additionalProperties": false,
+        "properties": {
+          "attrs": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "duration_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TraceEvent"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "hidden": {
+            "description": "A span of a service the caller can't see",
+            "type": "boolean"
+          },
+          "http_status": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kept": {
+            "enum": [
+              "sampled",
+              "error",
+              "slow",
+              "forced"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "unspecified",
+              "internal",
+              "server",
+              "client",
+              "producer",
+              "consumer",
+              "edge"
+            ],
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "offset_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "parent": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "release": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "route": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "span": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unset",
+              "ok",
+              "error"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "span",
+          "offset_ms",
+          "duration_ms",
+          "kind",
+          "status",
+          "kept"
+        ],
+        "type": "object"
+      },
+      "TraceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "error": {
+            "type": "boolean"
+          },
+          "http_status": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kept": {
+            "enum": [
+              "sampled",
+              "error",
+              "slow",
+              "forced"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "unspecified",
+              "internal",
+              "server",
+              "client",
+              "producer",
+              "consumer",
+              "edge"
+            ],
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "release": {
+            "description": "Release number of the service that served it; 0 when unknown",
+            "format": "int64",
+            "type": "integer"
+          },
+          "route": {
+            "type": "string"
+          },
+          "span": {
+            "description": "The entry span's ID",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "trace": {
+            "description": "Trace ID, 32 hex digits",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace",
+          "span",
+          "release",
+          "start",
+          "duration_ms",
+          "name",
+          "kind",
+          "error",
+          "kept"
+        ],
+        "type": "object"
+      },
       "TracingSettings": {
         "additionalProperties": false,
         "properties": {
@@ -52017,6 +52284,381 @@
         "summary": "Switch references to another service",
         "tags": [
           "variables"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/traces": {
+      "get": {
+        "description": "The traces that entered the service over the range: each one's entry span (name, route, status, duration, release) and why Dock kept it. Needs tracing on (`dock tracing on`).",
+        "operationId": "list-traces",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "How far back, ending now",
+            "explode": false,
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "default": "24h",
+              "description": "How far back, ending now",
+              "enum": [
+                "1h",
+                "24h",
+                "7d"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this release (number)",
+            "explode": false,
+            "in": "query",
+            "name": "release",
+            "schema": {
+              "description": "Only this release (number)",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this release (number) and later ones",
+            "explode": false,
+            "in": "query",
+            "name": "since_release",
+            "schema": {
+              "description": "Only this release (number) and later ones",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Only this HTTP method",
+            "explode": false,
+            "in": "query",
+            "name": "method",
+            "schema": {
+              "description": "Only this HTTP method",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only this route, as the app names it (http.route), e.g. /orders/{id}",
+            "explode": false,
+            "in": "query",
+            "name": "route",
+            "schema": {
+              "description": "Only this route, as the app names it (http.route), e.g. /orders/{id}",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only traces whose entry span failed: an error status or a 5xx",
+            "explode": false,
+            "in": "query",
+            "name": "errors",
+            "schema": {
+              "description": "Only traces whose entry span failed: an error status or a 5xx",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only traces at least this long",
+            "explode": false,
+            "in": "query",
+            "name": "slower_than_ms",
+            "schema": {
+              "description": "Only traces at least this long",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Slowest first instead of newest first",
+            "explode": false,
+            "in": "query",
+            "name": "slowest",
+            "schema": {
+              "description": "Slowest first instead of newest first",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "At most this many (0: 50)",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "At most this many (0: 50)",
+              "format": "int64",
+              "maximum": 200,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a service's traces",
+        "tags": [
+          "traces"
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/traces/{trace}": {
+      "get": {
+        "description": "Every span of a trace that went through the service, by start time, with attributes and events: across services too, hiding those the caller can't see. Secret values are masked as in logs.",
+        "operationId": "get-trace",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trace ID, 32 hex digits",
+            "in": "path",
+            "name": "trace",
+            "required": true,
+            "schema": {
+              "description": "Trace ID, 32 hex digits",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A time in the trace (RFC 3339), which makes finding it quick; a trace list's start",
+            "explode": false,
+            "in": "query",
+            "name": "at",
+            "schema": {
+              "description": "A time in the trace (RFC 3339), which makes finding it quick; a trace list's start",
+              "format": "date-time",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trace"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Show a trace",
+        "tags": [
+          "traces"
         ]
       }
     },

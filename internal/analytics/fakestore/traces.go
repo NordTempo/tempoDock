@@ -84,6 +84,31 @@ func (t *Traces) Handler() http.Handler {
 		t.mu.Unlock()
 		reply(w, analytics.CursorResult{Position: pos})
 	}))
+	mux.HandleFunc("POST "+analytics.TracesPath, t.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.TracesQuery
+		if json.UnmarshalRead(r.Body, &q) != nil || len(q.Services) == 0 || q.To <= q.From {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, t.list(q))
+	}))
+	mux.HandleFunc("POST "+analytics.TracePath, t.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.TraceQuery
+		if json.UnmarshalRead(r.Body, &q) != nil {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		t.mu.Lock()
+		res := analytics.TraceDetail{Spans: []analytics.Span{}}
+		for _, sp := range t.spans {
+			if sp.Org == q.Org && sp.Trace == q.Trace {
+				res.Spans = append(res.Spans, sp)
+			}
+		}
+		t.mu.Unlock()
+		slices.SortStableFunc(res.Spans, func(a, b analytics.Span) int { return int(a.Start - b.Start) })
+		reply(w, res)
+	}))
 	mux.HandleFunc("POST "+analytics.TracesPrunePath, t.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.TracePrune
 		if json.UnmarshalRead(r.Body, &q) != nil {
@@ -109,4 +134,42 @@ func (t *Traces) auth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// list answers a TracesQuery by scanning every span, as the real store's
+// filters say.
+func (t *Traces) list(q analytics.TracesQuery) analytics.TracesResult {
+	t.mu.Lock()
+	var out []analytics.TraceSummary
+	for _, sp := range t.spans {
+		switch {
+		case !sp.Entry, sp.Org != q.Org, !slices.Contains(q.Services, sp.Service), sp.Start < q.From, sp.Start >= q.To,
+			q.Release != 0 && sp.Release != q.Release, sp.Release < q.SinceRelease,
+			q.Method != "" && sp.Method != q.Method, q.Route != "" && sp.Route != q.Route, sp.Duration < q.MinDuration,
+			q.Status == analytics.TraceError && !sp.Error(), q.Status == analytics.Trace5xx && sp.HTTPStatus < 500:
+			continue
+		}
+		out = append(out, analytics.TraceSummary{
+			Trace: sp.Trace, Span: sp.ID, Service: sp.Service, Release: sp.Release, Start: sp.Start, Duration: sp.Duration,
+			Name: sp.Name, Kind: sp.Kind, Method: sp.Method, Route: sp.Route, HTTPStatus: sp.HTTPStatus, Status: sp.Status, Kept: sp.Kept, ErrorFP: sp.ErrorFP,
+		})
+	}
+	t.mu.Unlock()
+	if q.Sort == analytics.SortSlowest {
+		slices.SortStableFunc(out, func(a, b analytics.TraceSummary) int { return int(b.Duration - a.Duration) })
+	} else {
+		slices.SortStableFunc(out, func(a, b analytics.TraceSummary) int { return int(b.Start - a.Start) })
+	}
+	limit := q.Limit
+	if limit == 0 {
+		limit = analytics.DefaultTraces
+	}
+	res := analytics.TracesResult{Traces: out}
+	if len(out) > limit {
+		res.Traces, res.More = out[:limit], true
+	}
+	if res.Traces == nil {
+		res.Traces = []analytics.TraceSummary{}
+	}
+	return res
 }
