@@ -59,8 +59,8 @@ func (c *Core) GetAuditDetail(ctx context.Context, a Actor, id int64) (apitypes.
 // (level read in its environment) and returns what decides whether its
 // values are redacted (datapanel.Panel.RedactDetail): a's permission,
 // whether it is their own event, and whether the database has sensitive
-// columns with its engine ("" when it is gone). The last two are only
-// looked up when they matter.
+// columns or key patterns with its engine ("" when it is gone). The last
+// two are only looked up when they matter.
 func (c *Core) dataDetailAccess(ctx context.Context, a Actor, ev store.AuditEvent) (engine apitypes.DataEngine, perm apitypes.DataPermission, own, sensitive bool, err error) {
 	if ev.ProjectID == nil || ev.EnvironmentID == nil {
 		return "", perm, false, false, errf(apitypes.CodeForbidden, "the detail of this %s event isn't tied to an environment", ev.Action)
@@ -95,8 +95,13 @@ func (c *Core) dataDetailAccess(ctx context.Context, a Actor, ev store.AuditEven
 		return "", perm, false, false, err
 	}
 	engine, _ = detectDatabase(svc)
+	// Postgres and MySQL mark columns, Redis key patterns.
 	cols, err := c.store.ListSensitiveColumns(ctx, svc.ID)
-	return engine, perm, false, err != nil || len(cols) > 0, err
+	if err != nil || len(cols) > 0 {
+		return engine, perm, false, true, err
+	}
+	keys, err := c.store.ListSensitiveKeys(ctx, svc.ID)
+	return engine, perm, false, err != nil || len(keys) > 0, err
 }
 
 // ownEvent reports whether a recorded ev.

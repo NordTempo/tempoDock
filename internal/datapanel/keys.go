@@ -57,6 +57,15 @@ func (p *Panel[D]) Keys(ctx context.Context, a Actor, db *Database[D], req apity
 	if err != nil {
 		return page, p.dataError(db, err)
 	}
+	// A masked key says only that a key matching its pattern exists: not
+	// its size, and nothing under a match, whose answers would spell its
+	// name out a character at a time (session:a*, session:ab*, ...).
+	page.Keys = slices.DeleteFunc(page.Keys, func(k apitypes.DataKeyInfo) bool { return k.Masked && req.Match != "" })
+	for i := range page.Keys {
+		if page.Keys[i].Masked {
+			page.Keys[i].Length, page.Keys[i].Bytes = 0, 0
+		}
+	}
 	if page.Next, err = p.sealCursor(a, db.ID, page.Next); err != nil {
 		return apitypes.DataKeyPage{}, err
 	}
