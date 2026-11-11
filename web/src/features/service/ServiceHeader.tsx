@@ -142,10 +142,10 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       ? [
           {
             key: "g y",
-            label: "analytics",
+            label: "visitors",
             run: () =>
               navigate({
-                to: "/$org/$project/$environment/$service/analytics",
+                to: "/$org/$project/$environment/$service/requests/visitors",
                 params: { org, ...ref },
               }),
           },
@@ -182,7 +182,12 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <Link
             to={tab.to}
             params={{ org, ...ref }}
-            activeOptions={{ exact: true, includeSearch: false }}
+            // A tab stays marked on its own views (Requests' Visitors);
+            // Overview, every tab's prefix, only on itself.
+            activeOptions={{
+              exact: tab.label === "Overview",
+              includeSearch: false,
+            }}
             title={`${tab.label} (${tab.key.toUpperCase()})`}
           >
             {tab.label}

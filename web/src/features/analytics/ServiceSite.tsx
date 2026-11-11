@@ -17,8 +17,9 @@ import {
 import { SiteBar } from "./SiteBar";
 
 // The site a service's hostnames count for (ADR 0037), with the bar every
-// analytics view shares, for a view on the service: its Errors tab. The
-// site's own pages are in the Analytics area (routes/_app.$org.analytics.*).
+// analytics view shares, for a view on the service: Requests' Visitors.
+// The site's other pages are in the Analytics area
+// (routes/_app.$org.analytics.*).
 
 /** The script a counted hostname's pages load. */
 export const scriptTag = '<script src="/_dock/a/s.js" defer></script>';
@@ -55,7 +56,7 @@ export function ServiceSite({
   if (!site) {
     return (
       <p className="text-mut">
-        Errors come from Dock Analytics' script on the service's pages. Count
+        Visitors come from Dock Analytics' script on the service's pages. Count
         visits to one of its domains on{" "}
         <Link
           to="/$org/$project/$environment/$service/domains"

@@ -31,17 +31,18 @@ export const serviceTabs = [
     group: "watch",
   },
   // Services with a domain only: their site's browser errors for now
-  // (ADR 0059), next to Logs and Traffic, the other places problems show.
+  // (ADR 0059), next to Logs and Requests, the other places problems show.
   {
     label: "Errors",
     to: "/$org/$project/$environment/$service/errors",
     key: "g e",
     group: "watch",
   },
-  // Services with a domain only: what their domains served (ADR 0033).
+  // Services with a domain only: what reached them. Traffic (ADR 0033),
+  // Visitors (ADR 0037) and, with tracing, Traces (ADR 0075).
   {
-    label: "Traffic",
-    to: "/$org/$project/$environment/$service/traffic",
+    label: "Requests",
+    to: "/$org/$project/$environment/$service/requests",
     key: "g t",
     group: "watch",
   },
@@ -111,7 +112,7 @@ export const serviceTabs = [
 
 export type ServiceTab = (typeof serviceTabs)[number];
 
-/** The tabs this service has: Data, Backups, Errors, Traffic and Uptime only where they apply. */
+/** The tabs this service has: Data, Backups, Errors, Requests and Uptime only where they apply. */
 export const tabsFor = (
   view: Pick<ServiceView, "service" | "domains"> &
     Partial<Pick<ServiceView, "uptime">>,
@@ -123,7 +124,7 @@ export const tabsFor = (
       case "Backups":
         return view.service.stateful;
       case "Errors":
-      case "Traffic":
+      case "Requests":
         return view.domains.length > 0;
       case "Uptime":
         return view.domains.length > 0 || !!view.uptime;

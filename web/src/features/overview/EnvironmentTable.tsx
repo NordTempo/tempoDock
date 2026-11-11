@@ -508,15 +508,16 @@ const ServiceRow = memo(function ServiceRow({
         ) : (
           <span className="text-faint">·</span>
         )}
-        {/* A labelled way to the site's analytics, under its domain. */}
+        {/* A labelled way to the site's visitors, under its domain. */}
         {site && (
           <div className="text-2xs">
             <Link
-              to="/$org/analytics/$project/$site"
-              params={{ org, project: ref.project, site }}
+              to="/$org/$project/$environment/$service/requests/visitors"
+              params={{ org, ...ref }}
+              search={{ site }}
               className="text-mut underline decoration-dash underline-offset-3 hover:text-fg"
             >
-              Analytics
+              Visitors
             </Link>
           </div>
         )}

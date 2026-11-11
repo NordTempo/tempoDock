@@ -18,8 +18,8 @@ const db = {
   domains: [{ hostname: "db.example.com" }],
 } as unknown as Shape;
 check(
-  !labels(app).includes("Data") && !labels(app).includes("Traffic"),
-  "an app without a domain has no Data or Traffic tab",
+  !labels(app).includes("Data") && !labels(app).includes("Requests"),
+  "an app without a domain has no Data or Requests tab",
 );
 check(
   labels(app).includes("Variables") && labels(app).includes("One-off command"),

@@ -127,10 +127,12 @@ for everything.
   address (`/org/project/env`) is that environment's own page. A service
   has one header (name, environment, state, actions) and its tabs in four
   groups with a line between them: watching it (Overview, Logs,
-  Resources, Errors, Traffic, Uptime), operating it (Jobs, One-off
+  Resources, Errors, Requests, Uptime), operating it (Jobs, One-off
   command, Data, Backups), configuring it (Domains, Variables, Build &
   run), its history (Activity). Tabs every service has come first; the
-  list is `web/src/features/service/tabs.ts`.
+  list is `web/src/features/service/tabs.ts`. ADR 0076 merges these into
+  nine tabs screen by screen; a tab's views (Requests' Traffic and
+  Visitors) are underlined links under it, each with its own URL.
 - **Overview.** One column: status, facts, uptime and visitors, how to
   connect, the deploy in flight, releases. Logs have their own tab.
 - **Width.** Every page uses the one content width. Below 1400px, side
