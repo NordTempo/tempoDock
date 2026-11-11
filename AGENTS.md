@@ -172,6 +172,12 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
   local checks above, open the PR (a real one, not a draft), wait for CI
   to pass, then squash-merge. A CI failure is fixed or shown to be a known
   flake before merging, never merged over.
+- CI runs on a small shared runner pool and is the usual bottleneck, so
+  spend it carefully. Batch related work into one PR (one per area or
+  feature phase, several commits are fine) rather than a PR per small fix.
+  Push a PR when it's ready, not after every commit: each push restarts
+  its run. Re-run only jobs that failed. Tag releases on the newest commit
+  of `main`; superseded commits on `main` don't get their own run.
 - PR titles follow the commit convention. The description opens with the
   problem, then how it was solved, and ends with the model and harness
   that made the change.
