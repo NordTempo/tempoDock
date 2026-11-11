@@ -67,8 +67,9 @@ function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         </span>
       )}
       <Link
-        to="/$org/$project/$environment/$service/uptime"
+        to="/$org/$project/$environment/$service/metrics"
         params={{ org, ...ref }}
+        hash="uptime"
         className={target}
       >
         Uptime →

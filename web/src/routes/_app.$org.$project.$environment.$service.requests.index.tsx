@@ -53,7 +53,7 @@ function TrafficTab() {
       <p className="text-mut">
         No domain yet. Requests are counted for a service's domains; add one on{" "}
         <Link
-          to="/$org/$project/$environment/$service/domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={{ org, ...ref }}
         >
           Domains

@@ -8,7 +8,7 @@ import { Confirm } from "../../ui/kit";
  * Asks before archiving a service, like Stop: what happens, what is
  * kept and where it is listed, the CLI line and a red button. Then it
  * archives, goes to the project and says so (the mutation's notice).
- * The header's More menu and Build & run open it.
+ * The header's More menu and Settings open it.
  */
 export function ArchiveConfirm({
   serviceRef: ref,

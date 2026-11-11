@@ -36,7 +36,8 @@ import type { ServiceSource } from "./open";
 
 const sources = [
   ["image", "Image"],
-  ["source", "Source"],
+  // "Folder", as the Deploy window says: code from this machine.
+  ["source", "Folder"],
   ["github", "GitHub"],
   ["database", "Database"],
 ] as const;
@@ -643,18 +644,18 @@ function Created({
         <p>
           Created <span className="font-mono">{service.name}</span>, but
           connecting the repository failed. Fix it and connect again on its
-          Build & run tab.
+          Settings tab.
         </p>
         <ErrorText error={done.error} />
         <div className="flex gap-2">
           <Link
-            to="/$org/$project/$environment/$service/build"
+            to="/$org/$project/$environment/$service/settings"
             params={{ org, ...ref }}
             className="btn pri"
             ref={autofocus}
             onClick={onClose}
           >
-            Open Build & run
+            Open Settings
           </Link>
           <Button onClick={onClose}>Close</Button>
         </div>

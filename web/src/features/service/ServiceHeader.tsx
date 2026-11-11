@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
 import { useRollback } from "../../data/mutations";
@@ -5,6 +6,7 @@ import { domainNeedsAttention } from "../../data/problems";
 import {
   envPath,
   listenPort,
+  queries,
   serviceRef as refOf,
   useCanDeploy,
   useChanges,
@@ -118,25 +120,13 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       label: tab.label.toLowerCase(),
       run: () => navigate({ to: tab.to, params: { org, ...ref } }),
     })),
-    // The release history on the Overview, and the service's site in the
-    // Analytics area (the old tab's address redirects there), ADR 0059.
-    {
-      key: "g r",
-      label: "releases",
-      run: () =>
-        navigate({
-          to: "/$org/$project/$environment/$service",
-          params: { org, ...ref },
-          hash: "releases",
-        }),
-    },
-    // S means settings everywhere: here, Build & run.
+    // S means settings everywhere: here, the Settings tab.
     {
       key: "s",
-      label: "build & run",
+      label: "settings",
       run: () =>
         navigate({
-          to: "/$org/$project/$environment/$service/build",
+          to: "/$org/$project/$environment/$service/settings",
           params: { org, ...ref },
         }),
     },
@@ -159,17 +149,17 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // Two marks: the staged-change dot ("1 change staged") for changes not
   // yet applied, and ▲ for something that needs a look. Each says which.
   const staged: Partial<Record<ServiceTab["label"], boolean>> = {
-    Domains: changes.domains.some((d) => d.service === ref.service),
     Variables: changes.variables.some(mine),
-    "Build & run":
+    Settings:
       changes.settings.some(mine) ||
-      changes.volumes.some((v) => v.service === ref.service),
+      changes.volumes.some((v) => v.service === ref.service) ||
+      changes.domains.some((d) => d.service === ref.service),
   };
   const warnings: Partial<Record<ServiceTab["label"], string>> = {
     ...(view.domains.some(domainNeedsAttention) && {
-      Domains: "a domain needs attention",
+      Settings: "a domain needs attention",
     }),
-    ...(view.uptime?.state === "down" && { Uptime: "a check is down" }),
+    ...(view.uptime?.state === "down" && { Metrics: "a check is down" }),
   };
   return (
     <nav
@@ -256,31 +246,42 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </span>,
     ],
     [
-      "Address",
-      domain ? (
-        <a
-          key="a"
-          href={`https://${domain.hostname}`}
-          className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
-        >
-          {domain.hostname}
-        </a>
-      ) : (
+      "Domains",
+      // The address, how many more, and the way to all of them (Settings).
+      <span key="a" className="flex flex-wrap items-center gap-x-2">
+        {domain && (
+          <a
+            href={`https://${domain.hostname}`}
+            className="-my-[4px] inline-flex min-h-[24px] items-center font-mono text-info hover:underline"
+          >
+            {domain.hostname}
+          </a>
+        )}
         <Link
-          key="a"
-          to="/$org/$project/$environment/$service/domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={{ org, ...ref }}
-          className="text-info hover:underline"
+          // A button, not faint text: it is where domains are added.
+          className="btn sm -my-[4px]"
         >
-          + Add domain
+          {domain
+            ? view.domains.length > 1
+              ? `+${view.domains.length - 1} · Manage`
+              : "Manage"
+            : "Add domain"}
         </Link>
-      ),
+      </span>,
     ],
+    ...(service.stateful
+      ? ([["Backups", <BackupsFact key="b" serviceRef={ref} />]] as [
+          string,
+          ReactNode,
+        ][])
+      : []),
     [
       "Resources",
       <Link
         key="r"
-        to="/$org/$project/$environment/$service/resources"
+        to="/$org/$project/$environment/$service/metrics"
         params={{ org, ...ref }}
         title="Memory and CPU, latest sample against the limit"
         className="hover:text-fg"
@@ -299,7 +300,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <EnvServer environment={environment} />
       </span>,
     ],
-    // How it starts, a full row: the One-off command tab runs a command
+    // How it starts, a full row: Jobs' Run a command runs a command
     // once; this is where the start command changes.
     [
       "Start command",
@@ -310,7 +311,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-mut">the image's default</span>
         )}
         <Link
-          to="/$org/$project/$environment/$service/build"
+          to="/$org/$project/$environment/$service/settings"
           params={{ org, ...ref }}
           search={{ edit: "start_command" }}
           className="btn sm"
@@ -367,7 +368,7 @@ export function StatusSentence({ view }: { view: ServiceView }) {
   // A release named in the sentence links to its page, which says why.
   const releaseLink = (number: number, text: string) => (
     <Link
-      to="/$org/$project/$environment/$service/releases/$number"
+      to="/$org/$project/$environment/$service/history/$number"
       params={{ org, ...refOf(service), number: String(number) }}
       className="text-inherit underline decoration-faint underline-offset-2 hover:decoration-current"
     >
@@ -532,10 +533,32 @@ export function StatusSentence({ view }: { view: ServiceView }) {
 }
 
 /**
+ * A stateful service's last good backup, and the way to its restore
+ * points (Settings): so backups are found from the Overview.
+ */
+function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const org = useOrg();
+  const runs = useQuery(queries.backups(ref)).data?.runs ?? [];
+  const last = runs.find(
+    (r) => r.operation === "backup" && r.status === "succeeded",
+  );
+  return (
+    <Link
+      to="/$org/$project/$environment/$service/settings/backups"
+      params={{ org, ...ref }}
+      className="-my-[4px] inline-flex min-h-[24px] items-center hover:underline"
+    >
+      {last?.finished_at ? `last ${ago(last.finished_at)}` : "none yet"}
+      <span className="ml-2 text-mut">backups →</span>
+    </Link>
+  );
+}
+
+/**
  * Stop or start, restart, roll back, deploy: buttons with keys and CLI
  * equivalents, and a menu with the rarer actions (Archive, for admins).
  * Stop, roll back and archive ask first, and restart does in production.
- * Stop and Start have no key (S opens Build & run, see ServiceTabs).
+ * Stop and Start have no key (S opens Settings, see ServiceTabs).
  * Buttons that can't apply (Roll back with nothing to go back to) are
  * left out; one line says why the others wait.
  */
@@ -616,7 +639,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           label: "See why",
           run: () =>
             navigate({
-              to: "/$org/$project/$environment/$service/releases/$number",
+              to: "/$org/$project/$environment/$service/history/$number",
               params: { org, ...ref, number: String(failed) },
             }),
         },
@@ -662,7 +685,7 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           },
         ]
       : []),
-    // Stop and Start have no key: S opens Build & run (settings
+    // Stop and Start have no key: S opens Settings (settings
     // everywhere), and stopping is rare and destructive.
   ];
   useShortcuts(mayDeploy ? shortcuts : []);

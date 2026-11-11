@@ -56,7 +56,7 @@ export function NeedsAttention({
           tone="fail"
           action={
             <Link
-              to="/$org/$project/$environment/$service/releases/$number"
+              to="/$org/$project/$environment/$service/history/$number"
               params={{ org, ...ref, number: String(failed.number) }}
               className="btn sm"
             >
@@ -79,11 +79,12 @@ export function NeedsAttention({
           tone="fail"
           action={
             <Link
-              to="/$org/$project/$environment/$service/uptime"
+              to="/$org/$project/$environment/$service/metrics"
               params={{ org, ...ref }}
+              hash="uptime"
               className="btn sm"
             >
-              Uptime
+              Uptime checks
             </Link>
           }
         >
@@ -95,7 +96,7 @@ export function NeedsAttention({
           tone="warn"
           action={
             <Link
-              to="/$org/$project/$environment/$service/domains"
+              to="/$org/$project/$environment/$service/settings/domains"
               params={{ org, ...ref }}
               className="btn sm"
             >

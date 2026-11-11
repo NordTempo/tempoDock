@@ -247,7 +247,18 @@ function ServiceIssues({ group: g }: { group: Group }) {
           {g.environment}
         </span>
       </SectionHead>
-      <ul className="border-t border-line">
+      {/* Column heads, on the rows' grid: what each number is. */}
+      <div
+        aria-hidden
+        className="grid grid-cols-[84px_minmax(0,1fr)_auto_76px_96px] gap-x-3 border-t border-line px-1 pt-2 pb-1 text-xs text-mut"
+      >
+        <span>State</span>
+        <span>Error</span>
+        <span>Source</span>
+        <span className="text-right">Events</span>
+        <span className="text-right">24 h, since</span>
+      </div>
+      <ul className="border-t border-soft">
         {shown.map((i) => (
           <IssueRow key={i.id} issue={i} />
         ))}
@@ -290,7 +301,10 @@ function IssueRow({ issue: i }: { issue: ErrorIssue }) {
           )}
         </span>
         <span className="text-xs text-mut">{i.source}</span>
-        <span className="text-right font-mono text-xs tabular-nums">
+        <span
+          className="text-right font-mono text-xs tabular-nums"
+          title={`${i.count} events`}
+        >
           {i.count}
         </span>
         <span className="flex flex-col items-end gap-0.5">
@@ -363,7 +377,7 @@ function IssueDetail({ issue: i }: { issue: ErrorIssue }) {
             <>
               {" in "}
               <Link
-                to="/$org/$project/$environment/$service/releases/$number"
+                to="/$org/$project/$environment/$service/history/$number"
                 params={{ ...svc, number: String(i.first_release) }}
               >
                 release {i.first_release}

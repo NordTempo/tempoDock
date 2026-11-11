@@ -313,7 +313,7 @@ dock apply
 ```
 
 or in `dock.toml` (`deploy.pre_deploy_command`, `deploy.pre_deploy_timeout`,
-`deploy.pre_deploy_snapshot`), or in the UI on the service's **Build & run** tab.
+`deploy.pre_deploy_snapshot`), or in the UI in the service's **Settings**.
 
 Once the image is built or pulled, Dock runs the command with `sh -c` in a
 one-off container of the **new** image, on the release's server: same

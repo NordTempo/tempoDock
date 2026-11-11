@@ -144,7 +144,7 @@ export function AlertLink({
       if (svc)
         return (
           <Link
-            to="/$org/$project/$environment/$service/backups"
+            to="/$org/$project/$environment/$service/settings/backups"
             params={svc}
             hash={run}
             {...props}
@@ -167,7 +167,7 @@ export function AlertLink({
       if (!svc) break;
       return number ? (
         <Link
-          to="/$org/$project/$environment/$service/releases/$number"
+          to="/$org/$project/$environment/$service/history/$number"
           params={{ ...svc, number }}
           {...props}
         >
@@ -190,7 +190,7 @@ export function AlertLink({
       if (a.target?.release)
         return (
           <Link
-            to="/$org/$project/$environment/$service/releases/$number"
+            to="/$org/$project/$environment/$service/history/$number"
             params={{ ...svc, number: String(a.target.release) }}
             hash="diagnosis"
             {...props}
@@ -211,7 +211,7 @@ export function AlertLink({
       if (!svc) break;
       return (
         <Link
-          to="/$org/$project/$environment/$service/domains"
+          to="/$org/$project/$environment/$service/settings/domains"
           params={svc}
           {...props}
         >
@@ -222,8 +222,9 @@ export function AlertLink({
       if (!svc) break;
       return (
         <Link
-          to="/$org/$project/$environment/$service/uptime"
+          to="/$org/$project/$environment/$service/metrics"
           params={svc}
+          hash="uptime"
           {...props}
         >
           Open uptime
