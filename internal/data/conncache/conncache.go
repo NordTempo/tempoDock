@@ -129,14 +129,21 @@ func (c *Cache[C]) Acquire(ctx context.Context, k Key, open func(context.Context
 			c.conns[k] = append(list, cn)
 			c.total++
 			c.mu.Unlock()
+			// The slot is given back when open fails or panics (a hostile
+			// server's reply), or it would stay busy for good.
+			opened := false
+			defer func() {
+				if !opened {
+					c.mu.Lock()
+					c.removeLocked(cn)
+					c.mu.Unlock()
+				}
+			}()
 			conn, err := open(ctx)
 			if err != nil {
-				c.mu.Lock()
-				c.removeLocked(cn)
-				c.mu.Unlock()
 				return nil, err
 			}
-			cn.Conn, cn.opened = conn, true
+			cn.Conn, cn.opened, opened = conn, true, true
 			return cn, nil
 		}
 		c.waiters++

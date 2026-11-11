@@ -1,7 +1,9 @@
 // Package resp is the slice of the Redis protocol (RESP2) the data
 // panel's Redis engine uses (ADR 0072): commands as arrays of bulk
 // strings, pipelined, and replies parsed with caps, so a huge value or a
-// hostile server can't make Dock hold more than the caller allows. It
+// hostile server can't make Dock hold more than the caller allows: each
+// bulk string is cut at MaxBulk, and a whole reply holds at most
+// maxReplyValues values and maxReplyBytes of text. It
 // works with Redis 7.0+ and Valkey 7.2+.
 //
 // A Conn is one connection used by one caller at a time; there is no pool,
@@ -82,6 +84,11 @@ const (
 	// maxArray is the most elements one array may have (Dock's own
 	// commands ask for at most 10 000).
 	maxArray = 200_000
+	// maxReplyValues and maxReplyBytes bound one whole reply, nested
+	// arrays and all: a value is ~64 bytes decoded however short it is
+	// sent ("*0\r\n" is 4), and every bulk may keep MaxBulk.
+	maxReplyValues = 200_000
+	maxReplyBytes  = 64 << 20
 	// maxDepth is how deeply arrays may nest (streams nest three deep).
 	maxDepth = 8
 	// maxLine is the longest status, error or header line.
@@ -98,6 +105,8 @@ type Conn struct {
 	MaxBulk int
 	broken  bool
 	pending int
+	// values and bytes are what the reply being read may still hold.
+	values, bytes int
 }
 
 // New wraps nc.
@@ -152,6 +161,7 @@ func (c *Conn) Receive() (Value, error) {
 	if c.broken {
 		return Value{}, ErrBadConn
 	}
+	c.values, c.bytes = maxReplyValues, maxReplyBytes
 	v, err := c.read(0)
 	if err != nil {
 		return Value{}, c.fail(err)
@@ -196,8 +206,15 @@ func (c *Conn) fail(err error) error {
 	return fmt.Errorf("%w: %w", ErrBadConn, err)
 }
 
-// read parses one reply at nesting depth.
+// errTooBig is a reply past maxReplyValues or maxReplyBytes.
+var errTooBig = errors.New("reply too big")
+
+// read parses one reply at nesting depth, within what the reply may still
+// hold (c.values, c.bytes).
 func (c *Conn) read(depth int) (Value, error) {
+	if c.values--; c.values < 0 {
+		return Value{}, errTooBig
+	}
 	line, err := c.line()
 	if err != nil {
 		return Value{}, err
@@ -206,6 +223,12 @@ func (c *Conn) read(depth int) (Value, error) {
 		return Value{}, errors.New("empty reply line")
 	}
 	body := line[1:]
+	switch line[0] {
+	case '+', '-':
+		if c.bytes -= len(body); c.bytes < 0 {
+			return Value{}, errTooBig
+		}
+	}
 	switch line[0] {
 	case '+':
 		return Value{Kind: Status, Str: string(body)}, nil
@@ -258,6 +281,9 @@ func (c *Conn) bulk(n int64) (Value, error) {
 		keep = DefaultMaxBulk
 	}
 	keep = min(keep, n)
+	if c.bytes -= int(keep); c.bytes < 0 {
+		return Value{}, errTooBig
+	}
 	buf := make([]byte, keep)
 	if _, err := io.ReadFull(c.r, buf); err != nil {
 		return Value{}, err

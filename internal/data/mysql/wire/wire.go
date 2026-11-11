@@ -49,6 +49,15 @@ const charsetUTF8MB4 = 45
 // maxPacket is the payload size at which a packet continues in the next.
 const maxPacket = 1<<24 - 1
 
+// Caps on what a server may send, so a broken or hostile one can't make
+// Dock allocate past them: a logical packet (continuations joined; a row
+// of the console's DataQueryMaxBytes fits) and a result's columns
+// (MySQL's own limit is 4096 a table).
+const (
+	maxLogicalPacket = 80 << 20
+	maxColumns       = 4096
+)
+
 // Commands.
 const (
 	comQuit  = 0x01
@@ -257,7 +266,7 @@ func (c *Conn) Query(sql string, columns func([]Column) error, row func([][]byte
 		return c.fail(errors.New("the server asked for a local file"))
 	}
 	n, _, ok := lenencInt(pkt)
-	if !ok || n == 0 {
+	if !ok || n == 0 || n > maxColumns {
 		return c.fail(errors.New("bad column count"))
 	}
 	cols := make([]Column, n)
@@ -497,8 +506,8 @@ func appendLenencString(b []byte, s string) []byte {
 	return append(appendLenencInt(b, uint64(len(s))), s...)
 }
 
-// readPacket reads one logical packet (joining continuations) into c.buf.
-// The result is valid until the next read.
+// readPacket reads one logical packet (joining continuations, at most
+// maxLogicalPacket) into c.buf. The result is valid until the next read.
 func (c *Conn) readPacket() ([]byte, error) {
 	c.buf = c.buf[:0]
 	for {
@@ -512,6 +521,9 @@ func (c *Conn) readPacket() ([]byte, error) {
 		}
 		c.seq++
 		start := len(c.buf)
+		if start+n > maxLogicalPacket {
+			return nil, c.fail(fmt.Errorf("the server sent a row or reply over %d MB; select fewer or smaller columns", maxLogicalPacket>>20))
+		}
 		c.buf = slices.Grow(c.buf, n)[:start+n]
 		if _, err := io.ReadFull(c.r, c.buf[start:]); err != nil {
 			return nil, c.fail(err)

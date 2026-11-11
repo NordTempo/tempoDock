@@ -77,7 +77,7 @@ func userDatabases(ctx context.Context, c *conn, database string) ([]string, err
 		return []string{database}, nil
 	}
 	var dbs []string
-	err := c.query(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE "+databasesFilter("SCHEMA_NAME", "")+" ORDER BY 1",
+	err := c.query(ctx, "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE "+databasesFilter("SCHEMA_NAME", "")+" ORDER BY 1", 1,
 		func(r [][]byte) error { dbs = append(dbs, string(r[0])); return nil })
 	if err != nil {
 		return nil, fmt.Errorf("list databases: %w", err)

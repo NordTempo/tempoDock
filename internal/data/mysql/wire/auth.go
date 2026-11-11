@@ -261,6 +261,9 @@ func (c *Conn) sendRSA(password string, seed, keyPEM []byte) error {
 	if !ok {
 		return c.fail(errors.New("the server's public key isn't RSA"))
 	}
+	if len(seed) == 0 {
+		return c.fail(errors.New("the server sent no seed to encrypt the password with"))
+	}
 	for i := range plain {
 		plain[i] ^= seed[i%len(seed)]
 	}

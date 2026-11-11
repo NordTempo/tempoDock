@@ -134,7 +134,7 @@ func (e *Engine) Commit(ctx context.Context, t data.Target, c data.Call, changes
 // diagnose explains why change i matched no row.
 func diagnose(ctx context.Context, c *conn, i int, p changePlan) (apitypes.DataConflict, error) {
 	var current map[string]*string
-	err := c.query(ctx, p.checkSQL, func(r [][]byte) error {
+	err := c.query(ctx, p.checkSQL, len(p.checkCols), func(r [][]byte) error {
 		current = make(map[string]*string, len(p.checkCols))
 		for j, col := range p.checkCols {
 			if r[j] == nil {

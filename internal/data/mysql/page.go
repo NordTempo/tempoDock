@@ -200,7 +200,7 @@ func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apity
 	page.EstimatedRows = tm.EstimatedRows
 	if req.Count {
 		var n int64
-		err := cn.Conn.query(ctx, comment+plan.countSQL, func(r [][]byte) error {
+		err := cn.Conn.query(ctx, comment+plan.countSQL, 1, func(r [][]byte) error {
 			n, _ = strconv.ParseInt(string(r[0]), 10, 64)
 			return nil
 		})
@@ -515,7 +515,12 @@ func runPage(ctx context.Context, c *conn, comment string, plan *pagePlan) (apit
 	more := false
 	stop := c.watch(ctx)
 	// The query reads limit+1 rows: the last one only says there's more.
-	err := c.Query(comment+plan.sql, func([]wire.Column) error { return nil }, func(vals [][]byte) error {
+	err := c.Query(comment+plan.sql, func(got []wire.Column) error {
+		if len(got) < len(plan.selTypes) {
+			return fmt.Errorf("%w: the server sent %d columns, want %d", data.ErrUnreachable, len(got), len(plan.selTypes))
+		}
+		return nil
+	}, func(vals [][]byte) error {
 		if len(ends) == plan.limit {
 			more = true
 			return nil
@@ -712,7 +717,7 @@ func referencedValues(ctx context.Context, c *conn, comment string, tm *tableMet
 		exprs[i] = quoteIdent(n)
 	}
 	found := false
-	err = c.query(ctx, comment+"SELECT "+strings.Join(exprs, ", ")+" FROM "+quoteTable(tm.Schema, tm.Name)+" WHERE "+cond, func(r [][]byte) error {
+	err = c.query(ctx, comment+"SELECT "+strings.Join(exprs, ", ")+" FROM "+quoteTable(tm.Schema, tm.Name)+" WHERE "+cond, len(need), func(r [][]byte) error {
 		found = true
 		for i, n := range need {
 			if r[i] != nil {

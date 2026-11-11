@@ -120,7 +120,7 @@ func readCatalog(ctx context.Context, c *conn, database string) (*catalog, error
 
 	err := c.query(ctx, `SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, TABLE_ROWS, COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0), TABLE_COMMENT
 FROM information_schema.TABLES WHERE `+databasesFilter("TABLE_SCHEMA", database)+` ORDER BY TABLE_SCHEMA, TABLE_NAME`,
-		func(r [][]byte) error {
+		6, func(r [][]byte) error {
 			tb := apitypes.DataTable{Schema: str(r[0]), Name: str(r[1]), Kind: apitypes.TableKindTable, EstimatedRows: -1,
 				SizeBytes: num(r[4]), Comment: str(r[5]), Columns: []apitypes.DataColumn{}, PrimaryKey: []string{},
 				ForeignKeys: []apitypes.DataForeignKey{}, Indexes: []apitypes.DataIndex{}, Constraints: []apitypes.DataConstraint{}}
@@ -146,7 +146,7 @@ FROM information_schema.TABLES WHERE `+databasesFilter("TABLE_SCHEMA", database)
 
 	err = c.query(ctx, `SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT
 FROM information_schema.COLUMNS WHERE `+databasesFilter("TABLE_SCHEMA", database)+` ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION`,
-		func(r [][]byte) error {
+		9, func(r [][]byte) error {
 			tm := find(r[0], r[1])
 			if tm == nil {
 				return nil
@@ -180,7 +180,7 @@ FROM information_schema.COLUMNS WHERE `+databasesFilter("TABLE_SCHEMA", database
 	var indexes []*idx
 	err = c.query(ctx, `SELECT TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SUB_PART
 FROM information_schema.STATISTICS WHERE `+databasesFilter("TABLE_SCHEMA", database)+` ORDER BY TABLE_SCHEMA, TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`,
-		func(r [][]byte) error {
+		6, func(r [][]byte) error {
 			schema, table, name := str(r[0]), str(r[1]), str(r[2])
 			if n := len(indexes); n == 0 || indexes[n-1].schema != schema || indexes[n-1].table != table || indexes[n-1].name != name {
 				indexes = append(indexes, &idx{schema: schema, table: table, name: name, unique: str(r[3]) == "0"})
@@ -223,7 +223,7 @@ FROM information_schema.STATISTICS WHERE `+databasesFilter("TABLE_SCHEMA", datab
 	err = c.query(ctx, `SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
 FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_NAME IS NOT NULL AND `+databasesFilter("TABLE_SCHEMA", database)+`
 ORDER BY TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`,
-		func(r [][]byte) error {
+		7, func(r [][]byte) error {
 			tm := find(r[0], r[1])
 			if tm == nil {
 				return nil
@@ -247,7 +247,7 @@ FROM information_schema.TABLE_CONSTRAINTS tc
 JOIN information_schema.CHECK_CONSTRAINTS cc ON cc.CONSTRAINT_SCHEMA = tc.CONSTRAINT_SCHEMA AND cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
 WHERE tc.CONSTRAINT_TYPE = 'CHECK' AND `+databasesFilter("tc.TABLE_SCHEMA", database)+`
 ORDER BY tc.TABLE_SCHEMA, tc.TABLE_NAME, cc.CONSTRAINT_NAME`,
-		func(r [][]byte) error {
+		4, func(r [][]byte) error {
 			if tm := find(r[0], r[1]); tm != nil {
 				tm.Constraints = append(tm.Constraints, apitypes.DataConstraint{Name: str(r[2]), Kind: apitypes.ConstraintCheck, Definition: "CHECK (" + str(r[3]) + ")"})
 			}

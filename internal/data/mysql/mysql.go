@@ -340,7 +340,7 @@ func (e *Engine) Check(ctx context.Context, t data.Target, owner data.Credential
 	var can bool
 	err = c.query(ctx, `SELECT COUNT(*) FROM information_schema.USER_PRIVILEGES
 WHERE PRIVILEGE_TYPE = 'CREATE USER' AND IS_GRANTABLE = 'YES'
-  AND GRANTEE = CONCAT('''', SUBSTRING_INDEX(CURRENT_USER(), '@', 1), '''@''', SUBSTRING_INDEX(CURRENT_USER(), '@', -1), '''')`,
+  AND GRANTEE = CONCAT('''', SUBSTRING_INDEX(CURRENT_USER(), '@', 1), '''@''', SUBSTRING_INDEX(CURRENT_USER(), '@', -1), '''')`, 1,
 		func(row [][]byte) error { can = string(row[0]) != "0"; return nil })
 	if err != nil {
 		return info, fmt.Errorf("%w: %w", data.ErrUnreachable, err)
@@ -376,11 +376,18 @@ func (e *Engine) ownerConn(ctx context.Context, t data.Target, owner data.Creden
 }
 
 // query runs sql and calls row for each row (values valid during the
-// call), bounded by ctx.
-func (c *conn) query(ctx context.Context, sql string, row func([][]byte) error) error {
+// call), bounded by ctx. The result must have at least cols columns, the
+// ones row reads by position: a server that sends fewer gets an error, not
+// an index past the row.
+func (c *conn) query(ctx context.Context, sql string, cols int, row func([][]byte) error) error {
 	stop := c.watch(ctx)
 	defer stop()
-	return c.Query(sql, func([]wire.Column) error { return nil }, row, nil)
+	return c.Query(sql, func(got []wire.Column) error {
+		if len(got) < cols {
+			return fmt.Errorf("%w: the server sent %d columns, want %d", data.ErrUnreachable, len(got), cols)
+		}
+		return nil
+	}, row, nil)
 }
 
 // Forget closes the database's idle connections (busy ones close when
