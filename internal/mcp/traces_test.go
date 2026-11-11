@@ -25,7 +25,7 @@ func TestTraceTools(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if spec, ok := f.rt.Spec("dock_p1_e3_s1_r1"); ok {
-			tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_HEADERS"], "authorization=Bearer%20")
+			tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
 			var err error
 			if claims, err = traces.Parse(f.rt.TraceKey(), tok); err == nil {
 				break

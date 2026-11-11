@@ -742,7 +742,8 @@ func intList(ids []int64) string {
 	return b.String()
 }
 
-// Trace reads one trace's spans of q.Org, by start time.
+// Trace reads one trace's spans of q.Org, by start time and span ID, a
+// page of q.Limit after q.After.
 func (s *Traces) Trace(ctx context.Context, q analytics.TraceQuery) (analytics.TraceDetail, error) {
 	res := analytics.TraceDetail{Spans: []analytics.Span{}}
 	if q.Org <= 0 || q.Trace.IsZero() {
@@ -761,9 +762,19 @@ func (s *Traces) Trace(ctx context.Context, q analytics.TraceQuery) (analytics.T
 		return res, nil
 	}
 	hi, lo := q.Trace.Halves()
+	limit := q.Limit
+	if limit <= 0 || limit > analytics.MaxTraceSpans {
+		limit = analytics.MaxTraceSpans
+	}
+	// A page starts after the cursor, by start and span ID (the order).
+	afterStart, afterSpan := int64(-1<<62), int64(-1<<63)
+	if q.After != nil {
+		afterStart, afterSpan = q.After.Start, int64(q.After.Span)
+	}
 	rows, err := s.db.QueryContext(ctx, "SELECT "+spanColumns+" FROM "+spansOf(days, spanColumns)+
-		" WHERE trace_hi = $1 AND trace_lo = $2 AND org_id = $3 AND start_us >= $4 AND start_us < $5 ORDER BY start_us, span_id LIMIT $6",
-		int64(hi), int64(lo), uint32(q.Org), from, to, analytics.MaxTraceSpans+1)
+		" WHERE trace_hi = $1 AND trace_lo = $2 AND org_id = $3 AND start_us >= $4 AND start_us < $5"+
+		" AND (start_us > $6 OR (start_us = $6 AND span_id > $7)) ORDER BY start_us, span_id LIMIT $8",
+		int64(hi), int64(lo), uint32(q.Org), from, to, afterStart, afterSpan, limit+1)
 	if err != nil {
 		return res, err
 	}
@@ -791,8 +802,8 @@ func (s *Traces) Trace(ctx context.Context, q analytics.TraceQuery) (analytics.T
 	if err := rows.Err(); err != nil {
 		return res, err
 	}
-	if len(res.Spans) > analytics.MaxTraceSpans {
-		res.Spans, res.Truncated = res.Spans[:analytics.MaxTraceSpans], true
+	if len(res.Spans) > limit {
+		res.Spans, res.Truncated = res.Spans[:limit], true
 	}
 	return res, nil
 }

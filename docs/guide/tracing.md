@@ -36,8 +36,10 @@ traces to Dock as they are:
 - **.NET**: `OpenTelemetry.Exporter.OpenTelemetryProtocol`, which follows
   `OTEL_EXPORTER_OTLP_PROTOCOL`.
 
-Your own `OTEL_*` variables win, so an app that sends to another backend
-keeps doing that. `OTEL_SDK_DISABLED=true` turns an app's SDK off.
+Your own `OTEL_*` variables win. An app that sends its traces to another
+backend (it sets `OTEL_EXPORTER_OTLP_ENDPOINT`, for example) gets none of
+Dock's, so it keeps doing that and `dock traces` says so.
+`OTEL_SDK_DISABLED=true` turns an app's SDK off.
 
 Services on a server behind a Cloudflare Tunnel don't get the variables
 yet.

@@ -15548,6 +15548,9 @@
       "TraceList": {
         "additionalProperties": false,
         "properties": {
+          "exports_elsewhere": {
+            "type": "string"
+          },
           "more": {
             "type": "boolean"
           },

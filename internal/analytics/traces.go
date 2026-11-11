@@ -272,16 +272,33 @@ type TraceQuery struct {
 	Org   int64   `json:"org"`
 	Trace TraceID `json:"trace"`
 	At    int64   `json:"at,omitzero"`
+	// After pages: only spans after it, by start and span ID. Limit is a
+	// page's size, at most MaxTraceSpans; 0 is MaxTraceSpans.
+	After *TraceCursor `json:"after,omitzero"`
+	Limit int          `json:"limit,omitzero"`
+}
+
+// TraceCursor is where a page of a trace's spans ended: the last span's
+// start and ID.
+type TraceCursor struct {
+	Start int64  `json:"start"`
+	Span  SpanID `json:"span"`
 }
 
 // MaxTraceSpans caps the spans a trace answers with.
 const MaxTraceSpans = 2000
 
+// TracePage is how many spans Client.Trace asks for at a time: a span is
+// at most about 17 KB (the ingest's caps), so a page stays well under the
+// answer cap.
+const TracePage = 250
+
 // TraceDetail is a trace's spans, by start time. The caller removes those
 // of services the actor may not read.
 type TraceDetail struct {
 	Spans []Span `json:"spans"`
-	// Truncated says the trace has more than MaxTraceSpans spans.
+	// Truncated says the trace has more spans than answered: past the
+	// query's limit, or past MaxTraceSpans in all.
 	Truncated bool `json:"truncated,omitzero"`
 }
 
@@ -359,9 +376,30 @@ func (c *Client) Traces(ctx context.Context, q TracesQuery) (TracesResult, error
 }
 
 // Trace reads one trace (TracePath).
+//
+// It reads the trace a page of TracePage spans at a time, up to
+// MaxTraceSpans, so a trace of big spans never meets the answer cap.
 func (c *Client) Trace(ctx context.Context, q TraceQuery) (TraceDetail, error) {
-	var res TraceDetail
-	return res, c.post(ctx, TracePath, q, &res)
+	res := TraceDetail{Spans: []Span{}}
+	q.Limit = TracePage
+	for len(res.Spans) < MaxTraceSpans {
+		var page TraceDetail
+		if err := c.post(ctx, TracePath, q, &page); err != nil {
+			return res, err
+		}
+		last := len(res.Spans)
+		res.Spans = append(res.Spans, page.Spans...)
+		if !page.Truncated || len(page.Spans) == 0 {
+			return res, nil
+		}
+		end := res.Spans[len(res.Spans)-1]
+		if q.After != nil && last > 0 && (end.Start < q.After.Start || (end.Start == q.After.Start && int64(end.ID) <= int64(q.After.Span))) {
+			return res, errors.New("the trace store doesn't page traces; update it")
+		}
+		q.After = &TraceCursor{Start: end.Start, Span: end.ID}
+	}
+	res.Spans, res.Truncated = res.Spans[:MaxTraceSpans], true
+	return res, nil
 }
 
 // PruneTraces drops old days of spans (TracesPrunePath).

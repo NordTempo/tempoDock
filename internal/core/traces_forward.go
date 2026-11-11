@@ -126,13 +126,12 @@ func (c *Core) forwardSpansOnce(serverID int64) error {
 		if b.Skipped {
 			c.log.Warn("traces: a server's spans spool was full and dropped spans before they reached the trace store", "server", serverID)
 		}
-		envs, err := c.store.ListServerEnvironmentIDs(ctx, serverID)
+		lines, dropped, err := c.boundSpans(ctx, serverID, b.Events)
 		if err != nil {
 			return err
 		}
-		lines, dropped := placedSpans(b.Events, envs)
 		if dropped > 0 {
-			c.log.Warn("traces: dropped spans of environments that aren't on the server that sent them", "server", serverID, "spans", dropped)
+			c.log.Warn("traces: dropped spans that don't name a service of the server that sent them", "server", serverID, "spans", dropped)
 		}
 		if _, err := cl.WriteSpanLines(ctx, source, b.Position, lines, lim); err != nil {
 			return err
@@ -147,25 +146,69 @@ func (c *Core) forwardSpansOnce(serverID int64) error {
 	return errTailEnded
 }
 
-// placedSpans keeps the spans (JSON lines) of the environments in envs,
-// and counts the others. A line that isn't a span goes on: the trace
-// store skips and counts it.
-func placedSpans(lines []byte, envs []int64) ([]byte, int) {
-	on := make(map[int64]bool, len(envs))
-	for _, id := range envs {
-		on[id] = true
+// boundSpans keeps the spans (JSON lines) a server may send: each must
+// name a service in an environment on that server, with that service's
+// environment, project and org, and one of its releases (or none). The
+// ingest takes them from the app's token, but a server's spool is only as
+// trustworthy as the server: this keeps one from writing spans for
+// another org's or another server's services. Two queries a batch. Lines
+// that aren't spans are dropped and counted too.
+func (c *Core) boundSpans(ctx context.Context, serverID int64, lines []byte) ([]byte, int, error) {
+	type claim struct {
+		Org     int64 `json:"org"`
+		Project int64 `json:"project"`
+		Env     int64 `json:"env"`
+		Service int64 `json:"service"`
+		Release int64 `json:"release"`
 	}
-	out := make([]byte, 0, len(lines))
+	var claims []claim
+	var raw [][]byte
+	var rels []int64
 	dropped := 0
 	for line := range bytes.SplitSeq(lines, []byte{'\n'}) {
-		var sp struct {
-			Env int64 `json:"env"`
+		if len(line) == 0 {
+			continue
 		}
-		if json.Unmarshal(line, &sp) == nil && !on[sp.Env] {
+		var cl claim
+		if json.Unmarshal(line, &cl) != nil || cl.Service == 0 {
 			dropped++
 			continue
 		}
-		out = append(append(out, line...), '\n')
+		claims, raw = append(claims, cl), append(raw, line)
+		if cl.Release != 0 {
+			rels = append(rels, cl.Release)
+		}
 	}
-	return out, dropped
+	if len(claims) == 0 {
+		return nil, dropped, nil
+	}
+	scopes, err := c.store.ListServerServiceScopes(ctx, serverID)
+	if err != nil {
+		return nil, 0, err
+	}
+	of := make(map[int64]store.ListServerServiceScopesRow, len(scopes))
+	for _, sc := range scopes {
+		of[sc.ID] = sc
+	}
+	relService := map[int64]int64{}
+	if len(rels) > 0 {
+		rows, err := c.store.ListReleaseServices(ctx, uniq(rels))
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, r := range rows {
+			relService[r.ID] = r.ServiceID
+		}
+	}
+	out := make([]byte, 0, len(lines))
+	for i, cl := range claims {
+		sc, ok := of[cl.Service]
+		if !ok || sc.EnvironmentID != cl.Env || sc.ProjectID != cl.Project || sc.OrgID != cl.Org ||
+			(cl.Release != 0 && relService[cl.Release] != cl.Service) {
+			dropped++
+			continue
+		}
+		out = append(append(out, raw[i]...), '\n')
+	}
+	return out, dropped, nil
 }

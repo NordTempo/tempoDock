@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -98,6 +99,38 @@ func TestSpansRoundTripAndSkipBatchesWrittenBefore(t *testing.T) {
 	// Another org never sees it, even with the ID.
 	if got, err := s.Trace(ctx, analytics.TraceQuery{Org: 2, Trace: tid(1)}); err != nil || len(got.Spans) != 0 {
 		t.Errorf("org 2 read %d spans, %v", len(got.Spans), err)
+	}
+}
+
+// A trace reads in pages after a cursor, in start and span ID order, so
+// one of big spans never meets the client's answer cap.
+func TestTracePages(t *testing.T) {
+	s, _ := openTraces(t)
+	ctx := context.Background()
+	var spans []analytics.Span
+	for i := range 5 {
+		// Spans 3 to 5 start together: the span ID breaks the tie.
+		spans = append(spans, mkSpan(1, analytics.SpanID(i+1), 0, 10, time.Minute+time.Duration(min(i, 2))*time.Millisecond, time.Millisecond))
+	}
+	writeSpans(t, s, 1, analytics.TraceLimits{}, spans...)
+	var got []analytics.SpanID
+	q := analytics.TraceQuery{Org: 1, Trace: tid(1), Limit: 2}
+	for range 4 {
+		page, err := s.Trace(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sp := range page.Spans {
+			got = append(got, sp.ID)
+		}
+		if !page.Truncated {
+			break
+		}
+		last := page.Spans[len(page.Spans)-1]
+		q.After = &analytics.TraceCursor{Start: last.Start, Span: last.ID}
+	}
+	if !slices.Equal(got, []analytics.SpanID{1, 2, 3, 4, 5}) {
+		t.Errorf("pages read %v", got)
 	}
 }
 

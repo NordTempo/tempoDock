@@ -52,6 +52,10 @@ type TraceList struct {
 	Traces []TraceSummary `json:"traces"`
 	// More says the range has more matching traces than the list holds.
 	More bool `json:"more,omitempty"`
+	// ExportsElsewhere is the variable the service sets that sends its
+	// traces somewhere else, or turns them off: Dock gives it none of its
+	// OpenTelemetry variables, so its traces don't come here.
+	ExportsElsewhere string `json:"exports_elsewhere,omitempty"`
 }
 
 // TraceSummary is one trace in a list: the span where it entered the

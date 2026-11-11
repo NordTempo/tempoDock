@@ -101,12 +101,18 @@ func (c *Core) ListTraces(ctx context.Context, a Actor, ref ServiceRef, f TraceF
 	if err != nil {
 		return apitypes.TraceList{}, err
 	}
+	masks, err := c.traceMasks(a, rels)
+	if err != nil {
+		return apitypes.TraceList{}, err
+	}
 	out := apitypes.TraceList{Range: rng, Since: to.Add(-span), Traces: make([]apitypes.TraceSummary, 0, len(res.Traces)), More: res.More}
-	for _, t := range res.Traces {
-		red, err := c.traceRedactor(a, rels, t.Release)
-		if err != nil {
-			return apitypes.TraceList{}, err
+	if rel, err := c.store.GetActiveRelease(ctx, ss.svc.ID); err == nil {
+		if cfg, err := c.openConfig(rel); err == nil {
+			out.ExportsElsewhere = exportsElsewhere(cfg.Env)
 		}
+	}
+	for _, t := range res.Traces {
+		red := masks[t.Release]
 		out.Traces = append(out.Traces, apitypes.TraceSummary{
 			Trace: t.Trace.String(), Span: t.Span.String(), Release: rels[t.Release].Number,
 			Start: time.UnixMicro(t.Start), DurationMS: ms(t.Duration), Name: red.mask(t.Name), Kind: spanKind(t.Kind),
@@ -161,6 +167,10 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 	if err != nil {
 		return apitypes.Trace{}, err
 	}
+	masks, err := c.traceMasks(a, rels)
+	if err != nil {
+		return apitypes.Trace{}, err
+	}
 	start, end := res.Spans[0].Start, res.Spans[0].Start
 	for _, sp := range res.Spans {
 		start, end = min(start, sp.Start), max(end, sp.Start+sp.Duration)
@@ -179,10 +189,7 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 			out.Spans = append(out.Spans, ts)
 			continue
 		}
-		red, err := c.traceRedactor(a, rels, sp.Release)
-		if err != nil {
-			return apitypes.Trace{}, err
-		}
+		red := masks[sp.Release]
 		n := names[sp.Service]
 		ts.Project, ts.Environment, ts.Service, ts.Release = n.Project, n.Environment, n.Name, rels[sp.Release].Number
 		ts.Name, ts.Method, ts.Route, ts.HTTPStatus = red.mask(sp.Name), sp.Method, red.mask(sp.Route), sp.HTTPStatus
@@ -230,18 +237,23 @@ func (c *Core) releasesByID(ctx context.Context, ids []int64) (map[int64]store.R
 }
 
 // traceMask masks a release's secret values in what a trace shows; nil
-// masks nothing.
+// masks nothing. Values are masked once decoded, so a secret with a quote
+// or a backslash, which JSON escapes, is masked too.
 type traceMask struct{ r *redactor }
 
-// traceRedactor is the mask for spans of release id, nil for a reader who
-// may reveal secret values or a release Dock no longer has.
-func (c *Core) traceRedactor(a Actor, rels map[int64]store.Release, id int64) (traceMask, error) {
-	rel, ok := rels[id]
-	if !ok {
-		return traceMask{}, nil
+// traceMasks are the masks of the releases in rels for a, each opened
+// once a request: a release's values are decrypted once, not per span.
+// A reader who may reveal secret values gets none.
+func (c *Core) traceMasks(a Actor, rels map[int64]store.Release) (map[int64]traceMask, error) {
+	out := make(map[int64]traceMask, len(rels))
+	for id, rel := range rels {
+		r, err := c.logRedactor(a, rel)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = traceMask{r}
 	}
-	r, err := c.logRedactor(a, rel)
-	return traceMask{r}, err
+	return out, nil
 }
 
 // mask masks s.
@@ -253,15 +265,36 @@ func (m traceMask) mask(s string) string {
 	return out
 }
 
+// value masks the strings in a decoded JSON value, in place.
+func (m traceMask) value(v any) any {
+	if m.r == nil {
+		return v
+	}
+	switch v := v.(type) {
+	case string:
+		return m.mask(v)
+	case []any:
+		for i := range v {
+			v[i] = m.value(v[i])
+		}
+	case map[string]any:
+		for k := range v {
+			v[k] = m.value(v[k])
+		}
+	}
+	return v
+}
+
 // attrs decodes a span's attributes, masked.
 func (m traceMask) attrs(raw []byte) map[string]any {
 	if len(raw) == 0 {
 		return nil
 	}
 	var out map[string]any
-	if json.Unmarshal([]byte(m.mask(string(raw))), &out) != nil {
+	if json.Unmarshal(raw, &out) != nil {
 		return nil
 	}
+	m.value(out)
 	return out
 }
 
@@ -275,12 +308,13 @@ func (m traceMask) events(raw []byte) []apitypes.TraceEvent {
 		At    int64          `json:"at"`
 		Attrs map[string]any `json:"attrs"`
 	}
-	if json.Unmarshal([]byte(m.mask(string(raw))), &evs) != nil {
+	if json.Unmarshal(raw, &evs) != nil {
 		return nil
 	}
 	out := make([]apitypes.TraceEvent, len(evs))
 	for i, e := range evs {
-		out[i] = apitypes.TraceEvent{Name: e.Name, AtMS: ms(e.At), Attrs: e.Attrs}
+		m.value(e.Attrs)
+		out[i] = apitypes.TraceEvent{Name: m.mask(e.Name), AtMS: ms(e.At), Attrs: e.Attrs}
 	}
 	return out
 }

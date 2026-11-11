@@ -28,7 +28,7 @@ func TestTracesCommands(t *testing.T) {
 		t.Fatal(stderr)
 	}
 	spec, found := srv.rt.Spec("dock_p1_e1_s1_r1")
-	tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_HEADERS"], "authorization=Bearer%20")
+	tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
 	claims, err := traces.Parse(srv.rt.TraceKey(), tok)
 	if !found || err != nil {
 		t.Fatalf("the container's token %q: %v", tok, err)

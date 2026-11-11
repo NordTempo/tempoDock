@@ -108,11 +108,12 @@ func TestTraceStoreFollowsTheAnalyticsServer(t *testing.T) {
 	eventually(t, "the trace store off homelab", func() bool { return lab.TraceStoreSpec() == nil })
 }
 
-// spanLine is a spooled span of environment env, as the trace ingest writes
-// it.
-func spanLine(t *testing.T, env int64, id byte) []byte {
+// spanLine is a spooled span of the service in sc, as the trace ingest
+// writes it.
+func spanLine(t *testing.T, sc analytics.Span, id byte) []byte {
 	t.Helper()
-	b, err := json.Marshal(analytics.Span{Org: 1, Project: 1, Env: env, Service: 1, Release: 1, Trace: analytics.TraceID{15: id}, ID: analytics.SpanID(id), Start: now().UnixMicro(), Name: "GET /"})
+	sc.Trace, sc.ID, sc.Start, sc.Name = analytics.TraceID{15: id}, analytics.SpanID(id), now().UnixMicro(), "GET /"
+	b, err := json.Marshal(sc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,34 +121,44 @@ func spanLine(t *testing.T, env int64, id byte) []byte {
 }
 
 // While tracing is on every server's ingest has the trace key, and its
-// spans spool goes to the trace store, only for the environments on that
-// server; off, the key goes.
+// spans spool goes to the trace store, only for spans naming a service on
+// that server with its own environment, project, org and release; off,
+// the key goes.
 func TestSpansReachTheTraceStore(t *testing.T) {
 	h := newHarness(t)
-	h.service("web", apitypes.CreateServiceRequest{})
-	envs, err := h.store.ListServerEnvironmentIDs(h.ctx, h.c.localID)
-	if err != nil || len(envs) != 1 {
-		t.Fatalf("environments on the server = %v, %v", envs, err)
+	ref := h.service("web", apitypes.CreateServiceRequest{})
+	rel := h.wait(ref, h.deploy(ref, "nginx:1").Number)
+	scopes, err := h.store.ListServerServiceScopes(h.ctx, h.c.localID)
+	if err != nil || len(scopes) != 1 {
+		t.Fatalf("services on the server = %v, %v", scopes, err)
 	}
-	// Spans wait in the spool before tracing is even on.
-	h.rt.AppendSpans(spanLine(t, envs[0], 1), spanLine(t, envs[0]+100, 2))
+	sc := scopes[0]
+	web := analytics.Span{Org: sc.OrgID, Project: sc.ProjectID, Env: sc.EnvironmentID, Service: sc.ID, Release: rel.ID}
+	// Spans wait in the spool before tracing is even on. A server's spool
+	// can't speak for another environment, org, service or release.
+	otherEnv, otherOrg, otherService, otherRelease := web, web, web, web
+	otherEnv.Env += 100
+	otherOrg.Org += 100
+	otherService.Service += 100
+	otherRelease.Release += 100
+	h.rt.AppendSpans(spanLine(t, web, 1), spanLine(t, otherEnv, 2), spanLine(t, otherOrg, 5), spanLine(t, otherService, 6), spanLine(t, otherRelease, 7), []byte("not a span"))
 	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) == 32 })
 	eventually(t, "the placed span in the trace store", func() bool {
 		ts := h.rt.TraceStore()
-		return ts != nil && len(ts.Spans()) == 1 && h.rt.Acked(node.SpoolSpans) == 2
+		return ts != nil && len(ts.Spans()) == 1 && h.rt.Acked(node.SpoolSpans) == 6
 	})
-	if sp := h.rt.TraceStore().Spans()[0]; sp.Env != envs[0] || sp.ID != 1 {
+	if sp := h.rt.TraceStore().Spans()[0]; sp.Service != sc.ID || sp.ID != 1 {
 		t.Errorf("the trace store has %+v", sp)
 	}
 	// Live: an append reaches it without anything polling; a restart
 	// resumes from the trace store's cursor.
-	h.rt.AppendSpans(spanLine(t, envs[0], 3))
+	h.rt.AppendSpans(spanLine(t, web, 3))
 	eventually(t, "a live span", func() bool { return len(h.rt.TraceStore().Spans()) == 2 })
 	h.restart()
-	h.rt.AppendSpans(spanLine(t, envs[0], 4))
+	h.rt.AppendSpans(spanLine(t, web, 4))
 	eventually(t, "a span after a restart, nothing twice", func() bool {
 		ts := h.rt.TraceStore()
 		return ts != nil && len(ts.Spans()) == 3
@@ -160,17 +171,19 @@ func TestSpansReachTheTraceStore(t *testing.T) {
 }
 
 // While tracing is on a release's container starts with the standard
-// OpenTelemetry variables and dock-otlp in its hosts file; the service's
-// own variables win, and with tracing off it gets none.
+// OpenTelemetry variables, per signal so Dock's token only goes to Dock,
+// and dock-otlp in its hosts file; the service's own variables win, one
+// that sends traces elsewhere gets none (and the list says so), and with
+// tracing off it gets none.
 func TestTracedAppsGetTheVariables(t *testing.T) {
 	h := newHarness(t)
 	ref := h.service("web", apitypes.CreateServiceRequest{})
-	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"OTEL_SERVICE_NAME": "storefront"}, Apply: true}); err != nil {
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"OTEL_SERVICE_NAME": "storefront", "OTEL_METRICS_EXPORTER": "prometheus"}, Apply: true}); err != nil {
 		t.Fatal(err)
 	}
 	h.wait(ref, h.deploy(ref, "nginx:1").Number)
 	spec, _ := h.rt.Spec(h.ctr(ref, 1))
-	if _, set := spec.Env["OTEL_EXPORTER_OTLP_ENDPOINT"]; set || len(spec.ExtraHosts) > 0 {
+	if _, set := spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"]; set || len(spec.ExtraHosts) > 0 {
 		t.Fatalf("tracing off, the container got %v, %v", spec.Env, spec.ExtraHosts)
 	}
 
@@ -179,16 +192,27 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 	}
 	rel := h.wait(ref, h.deploy(ref, "nginx:1").Number)
 	spec, _ = h.rt.Spec(h.ctr(ref, rel.Number))
-	if spec.Env["OTEL_EXPORTER_OTLP_ENDPOINT"] != "http://dock-otlp:80" || spec.Env["OTEL_EXPORTER_OTLP_PROTOCOL"] != "http/protobuf" ||
-		spec.Env["OTEL_SERVICE_NAME"] != "storefront" || spec.Env["OTEL_LOGS_EXPORTER"] != "none" ||
-		spec.Env["OTEL_RESOURCE_ATTRIBUTES"] != "service.namespace=shop,deployment.environment.name=production,service.version=r2" ||
-		len(spec.ExtraHosts) != 1 || spec.ExtraHosts[0] != "dock-otlp:host-gateway" {
-		t.Fatalf("traced container: env %v, hosts %v", spec.Env, spec.ExtraHosts)
+	for k, want := range map[string]string{
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://dock-otlp:80/v1/traces", "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+		"OTEL_SERVICE_NAME":                "storefront",
+		"OTEL_RESOURCE_ATTRIBUTES":         "service.namespace=shop,deployment.environment.name=production,service.version=r2",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://dock-otlp:80/v1/logs",
+		// The service chose its metrics exporter: they're its own.
+		"OTEL_METRICS_EXPORTER": "prometheus", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "",
+		// Never the global ones, which would reach any other endpoint.
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "", "OTEL_EXPORTER_OTLP_HEADERS": "", "OTEL_LOGS_EXPORTER": "",
+	} {
+		if spec.Env[k] != want {
+			t.Errorf("%s = %q, want %q", k, spec.Env[k], want)
+		}
+	}
+	if len(spec.ExtraHosts) != 1 || spec.ExtraHosts[0] != "dock-otlp:host-gateway" {
+		t.Fatalf("traced container: hosts %v", spec.ExtraHosts)
 	}
 	// The token names this release, under the key the servers have.
-	tok, ok := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_HEADERS"], "authorization=Bearer%20")
+	tok, ok := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
 	if !ok {
-		t.Fatalf("headers = %q", spec.Env["OTEL_EXPORTER_OTLP_HEADERS"])
+		t.Fatalf("headers = %q", spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"])
 	}
 	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) > 0 })
 	claims, err := traces.Parse(h.rt.TraceKey(), tok)
@@ -197,5 +221,21 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 	}
 	if r, err := h.store.GetReleaseByNumber(h.ctx, store.GetReleaseByNumberParams{ServiceID: claims.Service, Number: rel.Number}); err != nil || r.ID != claims.Release {
 		t.Errorf("the token's release is %d, the release's ID %d (%v)", claims.Release, r.ID, err)
+	}
+
+	// A service that sends its traces elsewhere gets none of Dock's
+	// variables, and its trace list says why it has no traces.
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "https://otlp.vendor.example"}, Apply: true}); err != nil {
+		t.Fatal(err)
+	}
+	rel = h.wait(ref, rel.Number+1)
+	spec, _ = h.rt.Spec(h.ctr(ref, rel.Number))
+	for k := range spec.Env {
+		if strings.HasPrefix(k, "OTEL_EXPORTER_OTLP_") && k != "OTEL_EXPORTER_OTLP_ENDPOINT" {
+			t.Errorf("exporting elsewhere, the container got %s", k)
+		}
+	}
+	if l, err := h.c.ListTraces(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, TraceFilter{}); err != nil || l.ExportsElsewhere != "OTEL_EXPORTER_OTLP_ENDPOINT" {
+		t.Errorf("list = %+v, %v", l, err)
 	}
 }
