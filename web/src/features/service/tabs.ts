@@ -48,19 +48,12 @@ export const serviceTabs = [
     key: "g m",
     group: "watch",
   },
-  // Scheduled jobs (ADR 0054). G J, "jobs".
+  // Commands run once (ADR 0048) and scheduled jobs (ADR 0054), one tab
+  // (ADR 0076). G J, "jobs".
   {
     label: "Jobs",
     to: "/$org/$project/$environment/$service/jobs",
     key: "g j",
-    group: "operate",
-  },
-  // One-off commands (ADR 0048), named so it isn't taken for how the
-  // service runs (Build & run). G C, "command": G R is the releases.
-  {
-    label: "One-off command",
-    to: "/$org/$project/$environment/$service/run",
-    key: "g c",
     group: "operate",
   },
   // Database services only (isDatabase). G B, "base": G D is Domains.

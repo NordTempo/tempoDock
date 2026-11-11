@@ -22,8 +22,8 @@ check(
   "an app without a domain has no Data or Requests tab",
 );
 check(
-  labels(app).includes("Variables") && labels(app).includes("One-off command"),
-  "every service has Variables and One-off command",
+  labels(app).includes("Variables") && labels(app).includes("Jobs"),
+  "every service has Variables and Jobs",
 );
 check(
   labels(db).includes("Data") &&

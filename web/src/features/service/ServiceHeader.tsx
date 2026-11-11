@@ -295,7 +295,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         <EnvServer environment={environment} />
       </span>,
     ],
-    // How it starts, a full row: the One-off command tab runs a command
+    // How it starts, a full row: Jobs' Run a command runs a command
     // once; this is where the start command changes.
     [
       "Start command",
