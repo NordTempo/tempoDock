@@ -157,6 +157,9 @@ instead; that is your login, so don't hand it to an agent.
 - **Fixing a failed health check**: `update_service` stages a new `port`
   or `health_check_path` (and the other settings), `show_changes` reviews
   it and `apply_changes` deploys it, health checked like any release.
+  The staging tools (`set_variables`, `update_service`,
+  `set_pre_deploy_command`, `add_volume`) also take `apply`, which does
+  both in one call, like the CLI's `--deploy`.
 - **Logs** can be filtered: the `logs` tool takes `grep` (a plain,
   case-sensitive substring) and `stderr` (stderr lines only), applied
   after `tail`, like `dock logs --grep` and `--stderr`.
