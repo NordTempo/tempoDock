@@ -73,6 +73,15 @@ export function TracesView({
           />
           Failed only
         </label>
+        {filter.release && (
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => onFilter({ ...filter, release: undefined })}
+          >
+            r{filter.release} ×
+          </button>
+        )}
         {filter.route && (
           <button
             type="button"

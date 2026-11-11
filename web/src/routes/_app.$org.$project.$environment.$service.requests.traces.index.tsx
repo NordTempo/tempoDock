@@ -5,7 +5,7 @@ import { TracesView } from "../features/traces/TracesView";
 
 // Requests' Traces view (ADR 0075): the service's traces, opening in
 // place. The filter is the address, so a list can be shared.
-// /shop/production/web/requests/traces?range=7d&slowest=1&errors=1
+// /shop/production/web/requests/traces?range=7d&slowest=1&errors=1&release=42
 export const Route = createFileRoute(
   "/_app/$org/$project/$environment/$service/requests/traces/",
 )({
@@ -14,6 +14,8 @@ export const Route = createFileRoute(
     slowest: s.slowest === 1 || s.slowest === "1" || undefined,
     errors: s.errors === 1 || s.errors === "1" || undefined,
     route: typeof s.route === "string" && s.route ? s.route : undefined,
+    release:
+      typeof s.release === "number" && s.release > 0 ? s.release : undefined,
   }),
   loaderDeps: ({ search }) => search,
   loader: ({ context: { queryClient }, params, deps }) =>
@@ -36,6 +38,7 @@ function Traces() {
             slowest: f.slowest || undefined,
             errors: f.errors || undefined,
             route: f.route || undefined,
+            release: f.release || undefined,
           },
           replace: true,
         })

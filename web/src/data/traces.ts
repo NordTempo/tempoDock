@@ -29,6 +29,8 @@ export type TraceFilter = {
   errors?: boolean;
   slowest?: boolean;
   route?: string;
+  /** One release, by number. */
+  release?: number;
 };
 
 export const traceKeys = {
@@ -71,6 +73,7 @@ export const tracesQuery = (ref: ServiceRef, f: TraceFilter) =>
                 errors: f.errors || undefined,
                 slowest: f.slowest || undefined,
                 route: f.route || undefined,
+                release: f.release || undefined,
               },
             },
           },
