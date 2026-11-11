@@ -312,7 +312,9 @@ func (s *Traces) WriteSpans(ctx context.Context, source string, position uint64,
 			d.rejected++
 			continue
 		}
-		important := sp.Kept == analytics.KeptError || sp.Kept == analytics.KeptForced
+		// A failed span is an error span whatever it says it was kept
+		// for: nodes before kept reasons left them unset.
+		important := sp.Kept == analytics.KeptError || sp.Kept == analytics.KeptForced || sp.Error()
 		switch {
 		case important && lim.ErrorDay > 0 && u.errors+d.errors >= lim.ErrorDay,
 			!important && lim.ServiceDay > 0 && u.spans+d.spans >= lim.ServiceDay,

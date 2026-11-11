@@ -293,3 +293,20 @@ func TestTraceSizeCapDropsTheOldestDays(t *testing.T) {
 		t.Errorf("days left: %v, want today's", days)
 	}
 }
+
+// Past a service's cap its failed spans are still written, up to the
+// error cap, whether or not the node said why it kept them.
+func TestErrorSpansPassTheServiceCap(t *testing.T) {
+	s, _ := openTraces(t)
+	lim := analytics.TraceLimits{ServiceDay: 1, ErrorDay: 2}
+	sp := func(n byte) analytics.Span {
+		return mkSpan(n, analytics.SpanID(n), 0, 10, time.Minute, time.Millisecond)
+	}
+	failed, fiveXX, third := sp(2), sp(3), sp(4)
+	failed.Status = analytics.StatusError // no Kept: an older node
+	fiveXX.HTTPStatus = 503
+	third.Status = analytics.StatusError
+	if res := writeSpans(t, s, 1, lim, sp(1), failed, fiveXX, third, sp(5)); res.Written != 3 || res.Rejected != 2 {
+		t.Errorf("caps: %+v, want the first span and two failed ones", res)
+	}
+}
