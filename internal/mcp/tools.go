@@ -91,6 +91,19 @@ func whoLine(me apitypes.Me) string {
 	return fmt.Sprintf("%s %q, scope %s, limited to %s: may %s.", me.Kind, me.Name, me.Scope, where, can)
 }
 
+// filterLimits fills a filter's project and environment from the token's
+// limits, as envOf does for the tools that act on one: tools/list leaves
+// both out for a token limited to them.
+func filterLimits(c *call, project, env string) (string, string) {
+	if project == "" {
+		project = c.Actor.ProjectName
+	}
+	if env == "" && project == c.Actor.ProjectName {
+		env = c.Actor.EnvironmentName
+	}
+	return project, env
+}
+
 // addPlatformTools registers the tools for projects, services, releases,
 // logs, variables, domains, previews, servers, the audit log and alerts.
 func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
@@ -381,7 +394,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in struct {
 			ServiceInput
 			Release int64  `json:"release,omitempty"`
-			Tail    int    `json:"tail,omitempty" doc:"Default 100, at most 1000."`
+			Tail    int    `json:"tail,omitempty" doc:"Default 100, or 1000 with grep or stderr; at most 1000."`
 			Since   string `json:"since,omitempty" doc:"e.g. 10m or an RFC 3339 time."`
 			Grep    string `json:"grep,omitempty" doc:"Plain text, after tail; lower case matches any case."`
 			Stderr  bool   `json:"stderr,omitempty"`
@@ -390,7 +403,12 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			n, err := mcpkit.Limit("tail", in.Tail, 100, 1000)
+			// A filter over the last 100 lines rarely finds what it's for.
+			def := 100
+			if in.Grep != "" || in.Stderr {
+				def = 1000
+			}
+			n, err := mcpkit.Limit("tail", in.Tail, def, 1000)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
@@ -469,8 +487,9 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
+			p, e := filterLimits(c, in.Project, in.Environment)
 			evs, err := h.core.ListAudit(ctx, c.Actor, core.AuditFilter{
-				Project: in.Project, Environment: in.Environment, Service: in.Service, Action: in.Action, Before: in.Before, Limit: n,
+				Project: p, Environment: e, Service: in.Service, Action: in.Action, Before: in.Before, Limit: n,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err

@@ -144,9 +144,8 @@ var hints = map[apitypes.ErrorCode]string{
 	apitypes.CodeDeployInProgress: "Another release of this service is deploying (its number is in release). Call wait_for_release, then retry.",
 	apitypes.CodeNotFound:         "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
 	apitypes.CodeServerOffline:    "The server the environment runs on is offline. Retry later, then report it.",
-	apitypes.CodeEnvironmentLocked: "A human locked this environment. This call filed an access request (its number is in request): tell the user what you asked for and why, then call wait_for_request; " +
-		"approved, the change runs as you. If you gave no reason, the same call with reason adds one to this request; otherwise don't retry, work around it or look for another token. " +
-		"Pass reason with changes, and apply on staging tools, so one request covers staging and applying.",
+	apitypes.CodeEnvironmentLocked: "A human locked this environment. This call filed an access request (its number is in request): tell the user what you asked for and why, then call wait_for_request with it and your reason; " +
+		"approved, the change runs as you. Don't retry, work around it or look for another token. Staging tools take apply, so one request covers staging and applying.",
 	apitypes.CodeInternal:      "Something failed inside Dock (the daemon log has it). Retry once; if it fails again, stop and report it.",
 	apitypes.CodeValidation:    "Fix the arguments the message names and call again. Don't guess values the user didn't give you; ask.",
 	apitypes.CodeConflict:      "It clashes with what exists. Look first (project_overview, show_changes, list_domains); don't remove or rename things to make room unless asked.",

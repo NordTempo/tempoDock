@@ -235,6 +235,14 @@ func TestScopedToken(t *testing.T) {
 		}
 	}
 
+	// Filters default to the token's limits too: tools/list doesn't offer
+	// project or environment, so a service alone must do.
+	for _, tool := range []string{"list_errors", "audit_log"} {
+		if c := call(t, s, tool, map[string]any{"service": "web"}); c.isError {
+			t.Errorf("%s with a service only: %q", tool, c.summary)
+		}
+	}
+
 	var me apitypes.Me
 	who := call(t, s, "whoami", nil)
 	who.decode(t, &me)

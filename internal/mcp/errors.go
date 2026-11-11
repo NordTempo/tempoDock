@@ -31,8 +31,9 @@ func (h *handler) addErrorTools(s *mcpkit.Server[core.Actor]) {
 					d.Title, d.State, d.Source, d.Project, d.Environment, d.Service, d.Count,
 					d.FirstSeen.Format("2006-01-02 15:04"), d.FirstRelease, d.LastSeen.Format("2006-01-02 15:04")), Data: d}, nil
 			}
+			p, e := filterLimits(c, in.Project, in.Environment)
 			l, err := h.core.ListErrors(ctx, c.Actor, core.ErrorFilter{
-				Project: in.Project, Environment: in.Environment, Service: in.Service, State: in.State, Limit: 50,
+				Project: p, Environment: e, Service: in.Service, State: in.State, Limit: 50,
 			})
 			if err != nil {
 				return mcpkit.Reply{}, err

@@ -128,6 +128,19 @@ func TestAccessRequestTools(t *testing.T) {
 	if r, err := f.core.GetRequest(ctx, sys, e.Error.Request); joined.Error.Request != e.Error.Request || err != nil || r.Reason != "launch prices" {
 		t.Fatalf("with reason: %s %s; request %+v %v", again.summary, again.json, r, err)
 	}
+	// wait_for_request gives a request without a reason one, and leaves
+	// one that has a reason alone.
+	other := call(t, s, "set_variables", map[string]any{"project": "shop", "environment": "staging", "service": "web", "set": map[string]string{"B": "2"}})
+	var filed struct{ Error struct{ Request int64 } }
+	other.decode(t, &filed)
+	for id, want := range map[int64]string{filed.Error.Request: "new prices", e.Error.Request: "launch prices"} {
+		if w := call(t, s, "wait_for_request", map[string]any{"id": id, "reason": "new prices", "wait_seconds": 0}); w.isError {
+			t.Fatalf("wait_for_request: %s", w.summary)
+		}
+		if r, err := f.core.GetRequest(ctx, sys, id); err != nil || r.Reason != want {
+			t.Errorf("request %d reason %q (%v), want %q", id, r.Reason, err, want)
+		}
+	}
 
 	// Asking first in blog/production, which isn't locked.
 	res = call(t, s, "request_access", map[string]any{
