@@ -1,7 +1,10 @@
 package core
 
 import (
+	"context"
+	"runtime"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -189,6 +192,26 @@ func TestWakeForRequest(t *testing.T) {
 	if err != nil || v.Sleep == nil || v.Sleep.WokeBy != "GET /orders/:id" {
 		t.Fatalf("woke by = %+v, %v", v.Sleep, err)
 	}
+
+	// Requests held while a wake is in flight wait for it, a goroutine
+	// each no longer: a slow wake met a page's reloads by the thousand.
+	if _, err := h.c.SleepEnvironment(h.ctx, testSystem, staging); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := strconv.ParseInt(key, 10, 64)
+	op := h.c.beginOp(id, h.c.localID, true)
+	before := runtime.NumGoroutine()
+	for range 200 {
+		ctx, cancel := context.WithTimeout(h.ctx, time.Millisecond)
+		if err := w.Wake(ctx, key, "GET /"); err == nil {
+			t.Fatal("woke while the wake is in flight")
+		}
+		cancel()
+	}
+	if n := runtime.NumGoroutine() - before; n > 20 {
+		t.Errorf("%d goroutines left by 200 held requests", n)
+	}
+	h.c.endOp(id, op, true, nil)
 }
 
 // Sleeping takes the environment from its users: deploy scope, refused to
@@ -300,5 +323,37 @@ func TestSleepOnAnotherServer(t *testing.T) {
 	}
 	if v, err := p.c.GetEnvironment(p.ctx, testSystem, staging); err != nil || v.Sleep != nil && v.Sleep.Blocked == "" {
 		t.Fatalf("an older node's environment: %+v, %v", v.Sleep, err)
+	}
+}
+
+// Moving an asleep environment wakes it first, and sleep follows it to
+// its new server: there it sleeps again and its wake check knows it.
+func TestSleepFollowsMove(t *testing.T) {
+	p, _, _, web, _ := movePool(t)
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.SetEnvironmentSleep(p.ctx, testSystem, staging, apitypes.SetSleepRequest{AfterMinutes: 30}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.SleepEnvironment(p.ctx, testSystem, staging); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	if e, err := p.c.GetEnvironment(p.ctx, testSystem, staging); err != nil || e.Sleep == nil || e.Sleep.State == apitypes.SleepAsleep || p.state(web) != apitypes.ServiceRunning {
+		t.Fatalf("after the move: %+v %v, web %s", e.Sleep, err, p.state(web))
+	}
+	if _, err := p.c.SleepEnvironment(p.ctx, testSystem, staging); err != nil {
+		t.Fatal(err)
+	}
+	es, err := p.c.loadEnv(p.ctx, 1, staging)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.c.RequestWaker().Asleep(strconv.FormatInt(es.env.ID, 10)) {
+		t.Error("the control plane's wake check doesn't know the moved environment sleeps")
 	}
 }

@@ -457,6 +457,17 @@ func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm str
 	if confirm != o.Slug {
 		return invalid("type the organization's slug, %s, to confirm deleting it", o.Slug)
 	}
+	// Its status pages go first: removing one removes the DNS record Dock
+	// made for its hostname, and a deleted org's pages aren't served.
+	pages, err := c.store.ListStatusPages(ctx, o.ID)
+	if err != nil {
+		return err
+	}
+	for _, p := range pages {
+		if err := c.DeleteStatusPage(ctx, System.InOrg(o.ID), p.Slug); err != nil {
+			return fmt.Errorf("remove status page %s first: %w", p.Slug, err)
+		}
+	}
 	n, err := c.store.CountOrgProjects(ctx, o.ID)
 	if err != nil {
 		return err

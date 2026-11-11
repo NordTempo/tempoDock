@@ -91,7 +91,7 @@ func (c *Core) RenameOrg(ctx context.Context, a Actor, req apitypes.UpdateOrgReq
 }
 
 // DeleteOrg deletes an org that has no projects (archived ones count:
-// projects are never deleted), with its memberships, invites, variables,
+// projects are never deleted) and no status pages, with its memberships, invites, variables,
 // registry credentials and data policy, and revokes its tokens. Its audit
 // log stays.
 func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
@@ -104,6 +104,13 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 	}
 	if n > 0 {
 		return conflict("organization %s has %d projects (archived ones count); only an organization without projects can be deleted", a.OrgSlug, n)
+	}
+	// Removing a page removes the DNS record Dock made for its hostname;
+	// the org's rows going with it would leave the record behind.
+	if n, err = c.store.CountOrgStatusPages(ctx, a.OrgID); err != nil {
+		return err
+	} else if n > 0 {
+		return conflict("organization %s has %d status pages; remove them first (`dock status-page remove`)", a.OrgSlug, n)
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy} {

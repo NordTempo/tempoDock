@@ -1485,7 +1485,7 @@ func (q *Queries) RequeueStaleLiveScans(ctx context.Context, built *int64) (int6
 
 const setBaseImageDigest = `-- name: SetBaseImageDigest :exec
 UPDATE image_scans SET base_moved = CAST(base_digest != ?1 AS INTEGER), base_checked_at = ?2
-WHERE base_image = +?3 AND base_digest != ''
+WHERE base_image = +?3 AND base_image != '' AND base_digest != ''
 `
 
 type SetBaseImageDigestParams struct {
@@ -1495,7 +1495,8 @@ type SetBaseImageDigestParams struct {
 }
 
 // What a base image's tag points at now: the images built on an older
-// digest have a newer base a rebuild picks up.
+// digest have a newer base a rebuild picks up. base_image != ” lets
+// SQLite use the partial index image_scans_base.
 func (q *Queries) SetBaseImageDigest(ctx context.Context, arg SetBaseImageDigestParams) error {
 	_, err := q.db.ExecContext(ctx, setBaseImageDigest, arg.Digest, arg.CheckedAt, arg.BaseImage)
 	return err
