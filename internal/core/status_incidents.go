@@ -39,10 +39,13 @@ const (
 
 // statusIncident is an incident with what it names and says.
 type statusIncident struct {
-	row     store.StatusIncident
-	alert   *apitypes.IncidentAlert
-	impacts []statusImpact
-	updates []store.StatusUpdate
+	row store.StatusIncident
+	// alert is the alert a draft came from, alertProject its project (0:
+	// none), which decides who may see it (toStatusIncident).
+	alert        *apitypes.IncidentAlert
+	alertProject int64
+	impacts      []statusImpact
+	updates      []store.StatusUpdate
 }
 
 // statusImpact is what an incident does to one component.
@@ -97,6 +100,9 @@ func (c *Core) loadStatusIncidents(ctx context.Context, pageID int64, since time
 		out[i] = statusIncident{row: r.StatusIncident}
 		if r.AlertKind != "" {
 			out[i].alert = &apitypes.IncidentAlert{Kind: apitypes.AlertKind(r.AlertKind), Title: r.AlertTitle}
+			if r.AlertProjectID != nil {
+				out[i].alertProject = *r.AlertProjectID
+			}
 			if r.AlertService != "" {
 				out[i].alert.Service = serviceKey(r.AlertProject, r.AlertEnvironment, r.AlertService)
 			}
@@ -133,6 +139,7 @@ func (c *Core) loadIncident(ctx context.Context, row store.StatusIncident) (stat
 		switch a, err := c.store.GetAlert(ctx, *row.AlertID); {
 		case err == nil:
 			out.alert = &apitypes.IncidentAlert{Kind: apitypes.AlertKind(a.Kind), Title: a.Title}
+			out.alertProject = alertProjectID(a)
 			if a.Service != "" {
 				out.alert.Service = serviceKey(a.Project, a.Environment, a.Service)
 			}
@@ -218,13 +225,17 @@ func applyIncidents(out []statusComputed, incs []statusIncident, since int64, at
 	}
 }
 
-// toStatusIncident is an incident as the editor shows it; url is its
-// public page, "" when it has none.
-func toStatusIncident(inc statusIncident, slug, url string) apitypes.StatusIncident {
+// toStatusIncident is an incident as a shows it in the editor; url is its
+// public page, "" when it has none. The alert a draft came from is left
+// out for a token that can't see the alert's project, as alert lists do.
+func toStatusIncident(a Actor, inc statusIncident, slug, url string) apitypes.StatusIncident {
 	r := inc.row
 	out := apitypes.StatusIncident{ID: r.PublicID, Page: slug, Kind: apitypes.IncidentKind(r.Kind), EndsAt: r.EndsAt, Title: r.Title, State: apitypes.IncidentState(r.State),
 		Components: toImpacts(inc.impacts), Draft: r.Draft, StartedAt: r.StartsAt, PublishedAt: r.PublishedAt,
 		ResolvedAt: r.ResolvedAt, CreatedBy: r.CreatedBy, Alert: inc.alert, Updates: make([]apitypes.IncidentUpdate, len(inc.updates))}
+	if inc.alert != nil && !a.canSee(a.OrgID, inc.alertProject, 0) {
+		out.Alert = nil
+	}
 	if inc.published() && url != "" {
 		out.URL = url + "/incidents/" + r.PublicID
 	}
@@ -474,7 +485,7 @@ func (c *Core) OpenIncident(ctx context.Context, a Actor, slug string, req apity
 	if !draft {
 		c.statusUpdatePosted(ctx, p, row, first)
 	}
-	return c.incidentView(ctx, p, row)
+	return c.incidentView(ctx, a, p, row)
 }
 
 // incidentNext is an incident's row as UpdateStatusIncident takes it, for
@@ -497,13 +508,13 @@ func writeImpacts(ctx context.Context, q *store.Queries, id int64, ims []statusI
 	return nil
 }
 
-// incidentView is an incident as the editor shows it.
-func (c *Core) incidentView(ctx context.Context, p store.StatusPage, row store.StatusIncident) (apitypes.StatusIncident, error) {
+// incidentView is an incident as the editor shows it to a.
+func (c *Core) incidentView(ctx context.Context, a Actor, p store.StatusPage, row store.StatusIncident) (apitypes.StatusIncident, error) {
 	inc, err := c.loadIncident(ctx, row)
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
-	return toStatusIncident(inc, p.Slug, c.statusPageURL(ctx, p)), nil
+	return toStatusIncident(a, inc, p.Slug, c.statusPageURL(ctx, p)), nil
 }
 
 // statusPageURL is a published page's address, "" for none.
@@ -524,7 +535,7 @@ func (c *Core) GetIncident(ctx context.Context, a Actor, id string) (apitypes.St
 	if err != nil {
 		return apitypes.StatusIncident{}, err
 	}
-	return c.incidentView(ctx, p, row)
+	return c.incidentView(ctx, a, p, row)
 }
 
 // UpdateIncident changes an incident's title, the components it names
@@ -610,7 +621,7 @@ func (c *Core) UpdateIncident(ctx context.Context, a Actor, id string, req apity
 		}
 	}
 	if len(changes) == 0 {
-		return toStatusIncident(inc, p.Slug, c.statusPageURL(ctx, p)), nil
+		return toStatusIncident(a, inc, p.Slug, c.statusPageURL(ctx, p)), nil
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if _, err := q.UpdateStatusIncident(ctx, next); err != nil {
@@ -792,7 +803,7 @@ func (c *Core) EditIncidentUpdate(ctx context.Context, a Actor, id string, updat
 		return apitypes.StatusIncident{}, invalid("an update needs a message: what the public reads")
 	}
 	if msg == u.Body {
-		return toStatusIncident(inc, p.Slug, c.statusPageURL(ctx, p)), nil
+		return toStatusIncident(a, inc, p.Slug, c.statusPageURL(ctx, p)), nil
 	}
 	t := now()
 	if _, err := c.store.EditStatusUpdate(ctx, store.EditStatusUpdateParams{ID: u.ID, Body: msg, EditedAt: &t}); err != nil {

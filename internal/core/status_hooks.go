@@ -115,8 +115,19 @@ func (c *Core) AddStatusHook(ctx context.Context, a Actor, slug string, req apit
 		return apitypes.CreatedStatusHook{}, err
 	}
 	target := u.Scheme + "://" + u.Host
-	row, err := c.store.CreateStatusHook(ctx, store.CreateStatusHookParams{PageID: p.ID, Name: req.Name, Kind: string(req.Kind),
-		Target: target, Config: sealed, CreatedAt: now(), CreatedBy: a.Name})
+	var row store.StatusHook
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		hooks, err := q.ListStatusHooks(ctx, p.ID)
+		if err != nil {
+			return err
+		}
+		if len(hooks) >= statusMaxHooks {
+			return conflict("status page %s has %d hooks, the most it may have; remove one first (`dock status-page hook remove`)", p.Slug, len(hooks))
+		}
+		row, err = q.CreateStatusHook(ctx, store.CreateStatusHookParams{PageID: p.ID, Name: req.Name, Kind: string(req.Kind),
+			Target: target, Config: sealed, CreatedAt: now(), CreatedBy: a.Name})
+		return err
+	})
 	if store.IsUnique(err) {
 		return apitypes.CreatedStatusHook{}, conflict("status page %s has a hook called %s; remove it first to change it", p.Slug, req.Name)
 	}

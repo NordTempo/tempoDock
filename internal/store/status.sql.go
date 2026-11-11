@@ -997,7 +997,7 @@ const listStatusIncidents = `-- name: ListStatusIncidents :many
 SELECT i.id, i.page_id, i.public_id, i.kind, i.title, i.state, i.draft, i.starts_at, i.ends_at, i.published_at, i.resolved_at, i.alert_id, i.created_at, i.created_by,
   CAST(coalesce(a.kind, '') AS TEXT) AS alert_kind, CAST(coalesce(a.title, '') AS TEXT) AS alert_title,
   CAST(coalesce(a.project, '') AS TEXT) AS alert_project, CAST(coalesce(a.environment, '') AS TEXT) AS alert_environment,
-  CAST(coalesce(a.service, '') AS TEXT) AS alert_service
+  CAST(coalesce(a.service, '') AS TEXT) AS alert_service, a.project_id AS alert_project_id
 FROM status_incidents AS i LEFT JOIN alerts AS a ON a.id = i.alert_id
 WHERE i.page_id = +?1 AND (i.resolved_at IS NULL OR i.resolved_at >= +?2)
 ORDER BY i.starts_at DESC, i.id DESC
@@ -1015,6 +1015,7 @@ type ListStatusIncidentsRow struct {
 	AlertProject     string
 	AlertEnvironment string
 	AlertService     string
+	AlertProjectID   *int64
 }
 
 // A page's incidents open or resolved since since, newest first, with
@@ -1048,6 +1049,7 @@ func (q *Queries) ListStatusIncidents(ctx context.Context, arg ListStatusInciden
 			&i.AlertProject,
 			&i.AlertEnvironment,
 			&i.AlertService,
+			&i.AlertProjectID,
 		); err != nil {
 			return nil, err
 		}

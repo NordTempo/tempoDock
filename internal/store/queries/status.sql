@@ -163,7 +163,7 @@ DELETE FROM status_incidents WHERE id = +?;
 SELECT sqlc.embed(i),
   CAST(coalesce(a.kind, '') AS TEXT) AS alert_kind, CAST(coalesce(a.title, '') AS TEXT) AS alert_title,
   CAST(coalesce(a.project, '') AS TEXT) AS alert_project, CAST(coalesce(a.environment, '') AS TEXT) AS alert_environment,
-  CAST(coalesce(a.service, '') AS TEXT) AS alert_service
+  CAST(coalesce(a.service, '') AS TEXT) AS alert_service, a.project_id AS alert_project_id
 FROM status_incidents AS i LEFT JOIN alerts AS a ON a.id = i.alert_id
 WHERE i.page_id = +sqlc.arg(page_id) AND (i.resolved_at IS NULL OR i.resolved_at >= +sqlc.arg(since))
 ORDER BY i.starts_at DESC, i.id DESC;

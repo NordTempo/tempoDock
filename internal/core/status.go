@@ -30,6 +30,8 @@ const (
 	statusMaxPages      = 5
 	statusMaxComponents = 100
 	statusMaxSources    = 10
+	// statusMaxHooks bounds the posts one update fans out to.
+	statusMaxHooks = 10
 )
 
 // statusState is what Dock holds in memory for status pages: which
@@ -209,6 +211,9 @@ func (c *Core) CreateStatusPage(ctx context.Context, a Actor, req apitypes.Creat
 	host := statusHostname(req.Slug, base)
 	if err := c.checkStatusHost(ctx, host); err != nil {
 		return apitypes.StatusPage{}, err
+	}
+	if _, ok := c.statusPageHost(host); ok {
+		return apitypes.StatusPage{}, errf(apitypes.CodeHostnameTaken, "%s is another status page's custom hostname; pick another name", host)
 	}
 	var p store.StatusPage
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
@@ -817,7 +822,7 @@ func (c *Core) statusPage(ctx context.Context, a Actor, p store.StatusPage) (api
 		url = out.URL
 	}
 	for i, inc := range incs {
-		out.Incidents[i] = toStatusIncident(inc, p.Slug, url)
+		out.Incidents[i] = toStatusIncident(a, inc, p.Slug, url)
 	}
 	for i, cc := range comps {
 		out.Components[i] = apitypes.StatusComponent{ID: cc.comp.ID, Name: cc.comp.Name, Group: cc.comp.Grp, Description: cc.comp.Description,
@@ -874,7 +879,7 @@ func (c *Core) PublicStatusPage(ctx context.Context, id int64) (apitypes.PublicS
 			pc.Days = make([]apitypes.StatusDay, len(cc.days))
 			for i, d := range cc.days {
 				// The colour of a day stays; its number goes.
-				pc.Days[i] = apitypes.StatusDay{Date: d.Date, Uptime: roundedDay(d.Uptime), Impact: d.Impact, Incident: d.Incident}
+				pc.Days[i] = apitypes.StatusDay{Date: d.Date, Uptime: roundedDay(d.Uptime), Impact: d.Impact, Incident: d.Incident, Maintenance: d.Maintenance}
 			}
 		}
 		g := &out.Groups[len(out.Groups)-1]

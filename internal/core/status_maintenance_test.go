@@ -113,6 +113,16 @@ func TestStatusMaintenance(t *testing.T) {
 		!pub.Groups[0].Components[0].Days[apitypes.StatusDays-1].Maintenance {
 		t.Errorf("completed: maintenance %d, recent %+v", len(pub.Maintenance), pub.Recent)
 	}
+	// Without the percentages the day keeps its maintenance.
+	if _, err := h.c.UpdateStatusPage(h.ctx, testSystem, "acme", apitypes.UpdateStatusPageRequest{ShowUptime: new(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if pub, err = h.c.PublicStatusPage(h.ctx, page); err != nil || !pub.Groups[0].Components[0].Days[apitypes.StatusDays-1].Maintenance {
+		t.Errorf("without uptime the maintenance day went: %v", err)
+	}
+	if _, err := h.c.UpdateStatusPage(h.ctx, testSystem, "acme", apitypes.UpdateStatusPageRequest{ShowUptime: new(true)}); err != nil {
+		t.Fatal(err)
+	}
 
 	// A cancelled window leaves nothing public.
 	c, err := h.c.ScheduleMaintenance(h.ctx, testSystem, "acme", apitypes.ScheduleMaintenanceRequest{Title: "Later",

@@ -53,6 +53,14 @@ func TestStatusHostname(t *testing.T) {
 	if _, err := h.c.UpdateStatusPage(h.ctx, testSystem, "other", apitypes.UpdateStatusPageRequest{Hostname: new(host)}); CodeOf(err) != apitypes.CodeHostnameTaken {
 		t.Errorf("another page took the hostname: %v", err)
 	}
+	// Pages' own addresses aren't custom hostnames, even of a page not
+	// made yet, and a page can't be made at another's custom hostname.
+	if _, err := h.c.UpdateStatusPage(h.ctx, admin, "other", apitypes.UpdateStatusPageRequest{Hostname: new("status-later.dock.example.net")}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Errorf("a page took a future page's address: %v", err)
+	}
+	if _, err := h.c.UpdateStatusPage(h.ctx, testSystem, "other", apitypes.UpdateStatusPageRequest{Hostname: new("status-later.dock.example.net")}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Errorf("an operator took a future page's address: %v", err)
+	}
 
 	// A service's verified domain is taken; an operator's claim needs no
 	// proof.
