@@ -156,7 +156,9 @@ export const LineChart = memo(function LineChart({
         )}
       </figcaption>
       <div
-        className={`grid grid-cols-[44px_minmax(0,1fr)] gap-x-2 ${roomy && labelled.size ? "mt-3" : ""}`}
+        // The top tick's label is centred on the top line: room above it,
+        // so it never runs into the caption.
+        className={`grid grid-cols-[44px_minmax(0,1fr)] gap-x-2 ${roomy && labelled.size ? "mt-3" : "mt-2"}`}
       >
         <div className="relative text-right text-2xs text-faint tabular-nums">
           {rows.map((f) => (

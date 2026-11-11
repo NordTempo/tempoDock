@@ -89,85 +89,89 @@ function Members() {
         }
       />
       <Page>
-        {/* The roles sit beside the table on wide windows, under it below 1400px. */}
-        <div className="grid items-start gap-8 min-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex min-w-0 flex-col gap-5">
-            {without > 0 && (
-              <p className="text-warn-text">
-                {plural(without, "person", "people")} without two-factor
-                sign-in.{" "}
-                <Link
-                  to="/$org/settings/general"
-                  params={{ org: slug }}
-                  className="text-warn underline"
-                >
-                  {required
-                    ? "They can't act here until they add one"
-                    : "Require it in General"}
-                </Link>
+        {/* The roles sit beside the table when the page itself is wide
+            (inside the settings column, the window's width says little),
+            under it otherwise, so the table's actions never clip. */}
+        <div className="@container">
+          <div className="grid items-start gap-8 @min-[1080px]:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="flex min-w-0 flex-col gap-5">
+              {without > 0 && (
+                <p className="text-warn-text">
+                  {plural(without, "person", "people")} without two-factor
+                  sign-in.{" "}
+                  <Link
+                    to="/$org/settings/general"
+                    params={{ org: slug }}
+                    className="text-warn underline"
+                  >
+                    {required
+                      ? "They can't act here until they add one"
+                      : "Require it in General"}
+                  </Link>
+                </p>
+              )}
+              {inviting && invite.local && (
+                <LocalLinkNote operator={invite.operator} />
+              )}
+              {inviting && (
+                <InviteForm
+                  onCreated={(created) => {
+                    setInviting(false);
+                    setLink(created);
+                  }}
+                  onCancel={() => setInviting(false)}
+                />
+              )}
+              {link && (
+                <InviteLink
+                  link={link}
+                  url={`${invite.base}/invite/${link.code}`}
+                  note={
+                    invite.local && <LocalLinkNote operator={invite.operator} />
+                  }
+                  onDone={() => setLink(undefined)}
+                />
+              )}
+              <Panel>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Person</th>
+                      <th>Role</th>
+                      <th title="Whether they sign in with a second factor">
+                        Two-factor
+                      </th>
+                      <th>Access</th>
+                      <th>Added</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((u) => (
+                      <MemberRow
+                        key={u.id}
+                        member={u}
+                        required={required}
+                        you={me?.email === u.email}
+                      />
+                    ))}
+                    {invites.map((i) => (
+                      <InviteRow
+                        key={`invite-${i.id}`}
+                        invite={i}
+                        onLink={setLink}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </Panel>
+              <p className="text-xs text-mut">
+                Removing someone takes them out of this organization; their
+                account stays. Leave the organization from General.
               </p>
-            )}
-            {inviting && invite.local && (
-              <LocalLinkNote operator={invite.operator} />
-            )}
-            {inviting && (
-              <InviteForm
-                onCreated={(created) => {
-                  setInviting(false);
-                  setLink(created);
-                }}
-                onCancel={() => setInviting(false)}
-              />
-            )}
-            {link && (
-              <InviteLink
-                link={link}
-                url={`${invite.base}/invite/${link.code}`}
-                note={
-                  invite.local && <LocalLinkNote operator={invite.operator} />
-                }
-                onDone={() => setLink(undefined)}
-              />
-            )}
-            <Panel>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Person</th>
-                    <th>Role</th>
-                    <th title="Whether they sign in with a second factor">
-                      Two-factor
-                    </th>
-                    <th>Access</th>
-                    <th>Added</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((u) => (
-                    <MemberRow
-                      key={u.id}
-                      member={u}
-                      required={required}
-                      you={me?.email === u.email}
-                    />
-                  ))}
-                  {invites.map((i) => (
-                    <InviteRow
-                      key={`invite-${i.id}`}
-                      invite={i}
-                      onLink={setLink}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </Panel>
-            <p className="text-xs text-mut">
-              Removing someone takes them out of this organization; their
-              account stays. Leave the organization from General.
-            </p>
+            </div>
+            <Roles />
           </div>
-          <Roles />
         </div>
       </Page>
     </>
