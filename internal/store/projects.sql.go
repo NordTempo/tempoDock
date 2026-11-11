@@ -108,7 +108,7 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 const createServer = `-- name: CreateServer :one
 INSERT INTO servers (name, accepts_production, accepts_non_production, builder, local, status, last_seen_at, version)
 VALUES (?, ?, ?, ?, ?, 'online', ?, ?)
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at
 `
 
 type CreateServerParams struct {
@@ -158,6 +158,7 @@ func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Ser
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }
@@ -230,7 +231,7 @@ func (q *Queries) GetEnvironmentByName(ctx context.Context, arg GetEnvironmentBy
 }
 
 const getLocalServer = `-- name: GetLocalServer :one
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error FROM servers WHERE local = 1 ORDER BY id LIMIT 1
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at FROM servers WHERE local = 1 ORDER BY id LIMIT 1
 `
 
 func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
@@ -262,6 +263,7 @@ func (q *Queries) GetLocalServer(ctx context.Context) (Server, error) {
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }
@@ -328,7 +330,7 @@ func (q *Queries) GetProjectByName(ctx context.Context, arg GetProjectByNamePara
 }
 
 const getServer = `-- name: GetServer :one
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error FROM servers WHERE id = +?
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at FROM servers WHERE id = +?
 `
 
 func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
@@ -360,12 +362,13 @@ func (q *Queries) GetServer(ctx context.Context, id int64) (Server, error) {
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }
 
 const getServerByName = `-- name: GetServerByName :one
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error FROM servers WHERE name = +?
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at FROM servers WHERE name = +?
 `
 
 func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, error) {
@@ -397,6 +400,7 @@ func (q *Queries) GetServerByName(ctx context.Context, name string) (Server, err
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }
@@ -591,7 +595,7 @@ func (q *Queries) ListServerEnvironments(ctx context.Context, serverID int64) ([
 
 const listServerLoads = `-- name: ListServerLoads :many
 SELECT
-    servers.id, servers.name, servers.builder, servers.local, servers.status, servers.last_seen_at, servers.created_at, servers.accepts_production, servers.accepts_non_production, servers.disabled_for_placement, servers.memory_bytes, servers.version, servers.key_fingerprint, servers.next_key_fingerprint, servers.revoked_at, servers.ingress, servers.public_ips, servers.tunnel_hostname, servers.docker_version, servers.base_domain, servers.connected_at, servers.disconnect_reason, servers.plain_http, servers.scan_db_built_at, servers.scan_error,
+    servers.id, servers.name, servers.builder, servers.local, servers.status, servers.last_seen_at, servers.created_at, servers.accepts_production, servers.accepts_non_production, servers.disabled_for_placement, servers.memory_bytes, servers.version, servers.key_fingerprint, servers.next_key_fingerprint, servers.revoked_at, servers.ingress, servers.public_ips, servers.tunnel_hostname, servers.docker_version, servers.base_domain, servers.connected_at, servers.disconnect_reason, servers.plain_http, servers.scan_db_built_at, servers.scan_error, servers.scan_db_checked_at,
     CAST((SELECT coalesce(sum(CASE WHEN sv.memory_mb > 0 THEN sv.memory_mb ELSE ?1 END), 0)
      FROM services sv JOIN environments e ON e.id = sv.environment_id
      WHERE e.server_id = servers.id AND sv.archived_at IS NULL) AS INTEGER) AS reserved_mb,
@@ -647,6 +651,7 @@ func (q *Queries) ListServerLoads(ctx context.Context, defaultMemoryMb interface
 			&i.Server.PlainHttp,
 			&i.Server.ScanDbBuiltAt,
 			&i.Server.ScanError,
+			&i.Server.ScanDbCheckedAt,
 			&i.ReservedMb,
 			&i.Projects,
 			&i.Environments,
@@ -707,7 +712,7 @@ func (q *Queries) ListServerPlacements(ctx context.Context, serverID int64) ([]L
 }
 
 const listServers = `-- name: ListServers :many
-SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error FROM servers ORDER BY id
+SELECT id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at FROM servers ORDER BY id
 `
 
 func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
@@ -745,6 +750,7 @@ func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
 			&i.PlainHttp,
 			&i.ScanDbBuiltAt,
 			&i.ScanError,
+			&i.ScanDbCheckedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -783,7 +789,7 @@ func (q *Queries) RenameProject(ctx context.Context, arg RenameProjectParams) (P
 
 const renameServer = `-- name: RenameServer :one
 UPDATE servers SET name = ?1 WHERE id = +?2
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at
 `
 
 type RenameServerParams struct {
@@ -822,6 +828,7 @@ func (q *Queries) RenameServer(ctx context.Context, arg RenameServerParams) (Ser
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }
@@ -908,7 +915,7 @@ func (q *Queries) SetServerMemory(ctx context.Context, arg SetServerMemoryParams
 
 const touchLocalServer = `-- name: TouchLocalServer :one
 UPDATE servers SET builder = ?, status = 'online', last_seen_at = ?, version = ? WHERE id = +?
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at
 `
 
 type TouchLocalServerParams struct {
@@ -952,6 +959,7 @@ func (q *Queries) TouchLocalServer(ctx context.Context, arg TouchLocalServerPara
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }
@@ -959,7 +967,7 @@ func (q *Queries) TouchLocalServer(ctx context.Context, arg TouchLocalServerPara
 const updateServerPlacement = `-- name: UpdateServerPlacement :one
 UPDATE servers SET accepts_production = ?, accepts_non_production = ?, disabled_for_placement = ?
 WHERE id = +?
-RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error
+RETURNING id, name, builder, local, status, last_seen_at, created_at, accepts_production, accepts_non_production, disabled_for_placement, memory_bytes, version, key_fingerprint, next_key_fingerprint, revoked_at, ingress, public_ips, tunnel_hostname, docker_version, base_domain, connected_at, disconnect_reason, plain_http, scan_db_built_at, scan_error, scan_db_checked_at
 `
 
 type UpdateServerPlacementParams struct {
@@ -1003,6 +1011,7 @@ func (q *Queries) UpdateServerPlacement(ctx context.Context, arg UpdateServerPla
 		&i.PlainHttp,
 		&i.ScanDbBuiltAt,
 		&i.ScanError,
+		&i.ScanDbCheckedAt,
 	)
 	return i, err
 }

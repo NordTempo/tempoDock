@@ -66,7 +66,19 @@ function Images() {
     navigate({ search: { ...search, ...next }, replace: true });
   return (
     <>
-      <PageBar title="Images" />
+      <PageBar
+        title="Images"
+        actions={
+          <Link
+            to="/$org/images/ignores"
+            params={{ org: useOrg() }}
+            className="btn no-underline"
+            title="dock vulns ignores"
+          >
+            Ignores
+          </Link>
+        }
+      />
       <Page gap="gap-3">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <span className="seg">

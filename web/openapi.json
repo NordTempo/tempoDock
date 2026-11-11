@@ -605,7 +605,7 @@
             "type": "integer"
           },
           "kind": {
-            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request; more may be added",
+            "description": "disk, memory, cpu, server_offline, update_failed, connection_failed, crash_loop, deploy_failed, domain_error, backup_failed, new_error, error_regressed, error_spike, traffic_drop, unhealthy, uptime_down, job_failed, access_request, new_vulnerability; more may be added",
             "type": "string"
           },
           "message": {
@@ -757,6 +757,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "image": {
+            "format": "int64",
+            "type": "integer"
+          },
           "job": {
             "type": "string"
           },
@@ -774,6 +778,15 @@
           },
           "site": {
             "type": "string"
+          },
+          "vulnerabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -7441,6 +7454,9 @@
             "description": "CVE-..., GHSA-...",
             "type": "string"
           },
+          "ignored": {
+            "type": "boolean"
+          },
           "kev": {
             "type": "boolean"
           },
@@ -8172,6 +8188,63 @@
         ],
         "type": "object"
       },
+      "IgnoreVulnRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "always": {
+            "type": "boolean"
+          },
+          "days": {
+            "format": "int64",
+            "maximum": 365,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "package": {
+            "description": "Only in this package; default any",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it doesn't matter here",
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scope": {
+            "description": "service needs deploy on its environment, project deploy on the project, org admin",
+            "enum": [
+              "service",
+              "project",
+              "org"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "vulnerability": {
+            "examples": [
+              "CVE-2026-22451"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "vulnerability",
+          "scope",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ImageDetail": {
         "additionalProperties": false,
         "properties": {
@@ -8187,6 +8260,15 @@
           "fixes": {
             "items": {
               "$ref": "#/components/schemas/FixGroup"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "ignores": {
+            "items": {
+              "$ref": "#/components/schemas/VulnIgnore"
             },
             "type": [
               "array",
@@ -8210,7 +8292,8 @@
           "scan",
           "used_by",
           "fixes",
-          "findings"
+          "findings",
+          "ignores"
         ],
         "type": "object"
       },
@@ -9271,6 +9354,9 @@
           "id": {
             "description": "CVE-..., GHSA-...",
             "type": "string"
+          },
+          "ignored": {
+            "type": "boolean"
           },
           "kev": {
             "type": "boolean"
@@ -16881,6 +16967,103 @@
           "name"
         ],
         "type": "object"
+      },
+      "VulnAlertSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "alert": {
+            "enum": [
+              "critical",
+              "high",
+              "off"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "alert"
+        ],
+        "type": "object"
+      },
+      "VulnIgnore": {
+        "additionalProperties": false,
+        "properties": {
+          "by": {
+            "description": "Who made it",
+            "type": "string"
+          },
+          "created": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "expires": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "package": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "service",
+              "project",
+              "org"
+            ],
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          },
+          "vulnerability": {
+            "examples": [
+              "CVE-2026-22451"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "vulnerability",
+          "scope",
+          "reason",
+          "by",
+          "created"
+        ],
+        "type": "object"
+      },
+      "VulnIgnores": {
+        "additionalProperties": false,
+        "properties": {
+          "ignores": {
+            "items": {
+              "$ref": "#/components/schemas/VulnIgnore"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ignores"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -18033,6 +18216,234 @@
           }
         ],
         "summary": "Send a test alert",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/vulnerabilities": {
+      "get": {
+        "description": "Which new vulnerabilities in live images alert: critical, high (and critical), or off. Scope: read.",
+        "operationId": "get-vulnerability-alerts",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnAlertSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get the vulnerability alert setting",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "put": {
+        "description": "An alert when a live release gets a vulnerability at least this bad that it didn't have: one per service, critical when CISA lists it as exploited, resolved once the live image no longer has it or it is ignored. Organization admins.",
+        "operationId": "set-vulnerability-alerts",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VulnAlertSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnAlertSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set the vulnerability alert setting",
         "tags": [
           "alerts"
         ]
@@ -32434,6 +32845,357 @@
           }
         ],
         "summary": "List vulnerabilities in live releases",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/api/v1/org/vulnerabilities/ignores": {
+      "get": {
+        "description": "Every ignore of the organization, newest first: the vulnerability, the package, where it applies, why, until when and who made it. Expired ones stay listed for 30 days. Scope: read.",
+        "operationId": "list-vulnerability-ignores",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnIgnores"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List vulnerability ignores",
+        "tags": [
+          "images"
+        ]
+      },
+      "post": {
+        "description": "Leaves a vulnerability out of counts, the overview, the Images page and alerts in a service (deploy on its environment), a project (deploy on the project) or the organization (admin), for 1 to 365 days (90 by default), or always (admins). Its findings stay listed, as ignored. Ignoring the same one in the same place again replaces the reason and expiry.",
+        "operationId": "ignore-vulnerability",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IgnoreVulnRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnIgnore"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Ignore a vulnerability",
+        "tags": [
+          "images"
+        ]
+      }
+    },
+    "/api/v1/org/vulnerabilities/ignores/{id}": {
+      "delete": {
+        "description": "Its findings count again. Takes what making the ignore took.",
+        "operationId": "remove-vulnerability-ignore",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Stop ignoring a vulnerability",
         "tags": [
           "images"
         ]

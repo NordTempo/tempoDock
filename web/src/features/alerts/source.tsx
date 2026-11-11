@@ -116,6 +116,17 @@ export function AlertLink({
           Open analytics
         </Link>
       );
+    case "new_vulnerability":
+      if (!a.target?.image) break;
+      return (
+        <Link
+          to="/$org/images/$id"
+          params={{ org, id: String(a.target.image) }}
+          {...props}
+        >
+          Open image
+        </Link>
+      );
     case "access_request":
       return (
         <Link

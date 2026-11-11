@@ -235,6 +235,7 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if out.scans, err = c.trimScans(ctx); err != nil {
 		c.log.Warn("retention: image scans", "err", err)
 	}
+	c.kickScanRefresh()
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {
 		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests,

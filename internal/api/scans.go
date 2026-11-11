@@ -90,6 +90,47 @@ func registerScans(s *Server, a huma.API) {
 			_, _ = io.Copy(hctx.BodyWriter(), f)
 		}}, nil
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-vulnerability-ignores", Method: http.MethodGet, Path: orgPath + "/vulnerabilities/ignores",
+		Summary: "List vulnerability ignores", Tags: tags,
+		Description: "Every ignore of the organization, newest first: the vulnerability, the package, where it applies, why, until when and who made it. Expired ones stay listed for 30 days. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.VulnIgnores], error) {
+		return reply(s.core.ListVulnIgnores(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "ignore-vulnerability", Method: http.MethodPost, Path: orgPath + "/vulnerabilities/ignores",
+		Summary: "Ignore a vulnerability", Tags: tags,
+		Description: "Leaves a vulnerability out of counts, the overview, the Images page and alerts in a service (deploy on its environment), a project (deploy on the project) or the organization (admin), for 1 to 365 days (90 by default), or always (admins). Its findings stay listed, as ignored. Ignoring the same one in the same place again replaces the reason and expiry.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.IgnoreVulnRequest
+	}) (*out[apitypes.VulnIgnore], error) {
+		return reply(s.core.IgnoreVulnerability(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "remove-vulnerability-ignore", Method: http.MethodDelete, Path: orgPath + "/vulnerabilities/ignores/{id}",
+		Summary: "Stop ignoring a vulnerability", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Its findings count again. Takes what making the ignore took.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID int64 `path:"id" minimum:"1"`
+	}) (*struct{}, error) {
+		return nil, s.core.RemoveVulnIgnore(ctx, actor, in.ID)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-vulnerability-alerts", Method: http.MethodGet, Path: Prefix + "/alerts/vulnerabilities",
+		Summary: "Get the vulnerability alert setting", Tags: []string{"alerts"},
+		Description: "Which new vulnerabilities in live images alert: critical, high (and critical), or off. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.VulnAlertSettings], error) {
+		return reply(s.core.VulnAlertSetting(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-vulnerability-alerts", Method: http.MethodPut, Path: Prefix + "/alerts/vulnerabilities",
+		Summary: "Set the vulnerability alert setting", Tags: []string{"alerts"},
+		Description: "An alert when a live release gets a vulnerability at least this bad that it didn't have: one per service, critical when CISA lists it as exploited, resolved once the live image no longer has it or it is ignored. Organization admins.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.VulnAlertSettings
+	}) (*out[apitypes.VulnAlertSettings], error) {
+		return reply(s.core.SetVulnAlerts(ctx, actor, in.Body))
+	})
 
 	tags = []string{"console"}
 	authed(s, a, huma.Operation{

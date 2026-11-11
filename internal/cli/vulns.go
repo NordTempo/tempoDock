@@ -90,7 +90,196 @@ releases, worst first, with where it runs and the version that fixes it.`,
 	cmd.Flags().BoolVar(&production, "production", false, "with --all: only production environments")
 	cmd.Flags().BoolVar(&fixable, "fixable", false, "only findings with a fixed version")
 	cmd.Flags().StringVar(&minimum, "min", "high", "lowest severity to show: critical, high, medium, low (with --all, or to narrow a service's list)")
+	cmd.AddCommand(newVulnIgnoreCmd(g), newVulnIgnoresCmd(g), newVulnUnignoreCmd(g))
 	return cmd
+}
+
+// newVulnIgnoreCmd is `dock vulns ignore <id>`: leave a vulnerability
+// out where it doesn't matter, with why.
+func newVulnIgnoreCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	var req apitypes.IgnoreVulnRequest
+	var in string
+	cmd := &cobra.Command{
+		Use:   "ignore <vulnerability> --reason <why>",
+		Short: "Ignore a vulnerability in a service, a project or the organization",
+		Long: `Leave a vulnerability out of counts, the service overview, the Images page
+and alerts: in the service (default; deploy on its environment), with
+--in project every service of the project (deploy on the project), or
+with --in org the whole organization (admin). --package limits it to one
+package. It holds --days (90 by default, at most 365); admins can make
+it --always. Its findings stay listed, as ignored, and nothing is
+scanned again. Ignoring the same one in the same place again replaces
+the reason and expiry.`,
+		Example: `  dock vulns ignore CVE-2026-22451 --package sharp --reason "we only resize images we generate"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req.Vulnerability, req.Scope = args[0], apitypes.IgnoreScope(in)
+			var s *session
+			var err error
+			switch req.Scope {
+			case apitypes.IgnoreOrg:
+				s, err = g.connect()
+			case apitypes.IgnoreProject:
+				var t target
+				s, t, err = g.open(f, needProject)
+				req.Project = t.Project
+			case apitypes.IgnoreService:
+				var t target
+				s, t, err = g.open(f, needService)
+				req.Project, req.Environment, req.Service = t.Project, t.Environment, t.Service
+			default:
+				return usageError("--in is service, project or org", "Ignore it in the service (the default), with --in project, or with --in org.")
+			}
+			if err != nil {
+				return err
+			}
+			ig, err := send[apitypes.VulnIgnore](cmd.Context(), s, http.MethodPost, apiPrefix+"/org/vulnerabilities/ignores", req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(ig, func() error {
+				until := "until " + ignoreUntil(ig)
+				if ig.Expires == nil {
+					until = "for good"
+				}
+				g.io.Successf("Ignoring %s for %s %s", ig.Vulnerability, ignoreWhere(ig), until)
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
+	cmd.Flags().StringVar(&in, "in", "service", "where: service, project or org")
+	cmd.Flags().StringVar(&req.Package, "package", "", "only in this package")
+	cmd.Flags().StringVar(&req.Reason, "reason", "", "why it doesn't matter here (required)")
+	cmd.Flags().IntVar(&req.Days, "days", 0, "how many days it holds, 1 to 365 (default 90)")
+	cmd.Flags().BoolVar(&req.Always, "always", false, "never expire (admins)")
+	_ = cmd.MarkFlagRequired("reason")
+	return cmd
+}
+
+// ignoreWhere says where an ignore applies.
+func ignoreWhere(ig apitypes.VulnIgnore) string {
+	switch ig.Scope {
+	case apitypes.IgnoreService:
+		return ig.Project + "/" + ig.Environment + "/" + ig.Service
+	case apitypes.IgnoreProject:
+		return "every service of " + ig.Project
+	}
+	return "the whole organization"
+}
+
+// ignoreUntil is "2027-02-08", "always" or "expired 2026-11-02".
+func ignoreUntil(ig apitypes.VulnIgnore) string {
+	switch {
+	case ig.Expires == nil:
+		return "always"
+	case ig.Expired:
+		return "expired " + ig.Expires.Format("2006-01-02")
+	}
+	return ig.Expires.Format("2006-01-02")
+}
+
+// newVulnIgnoresCmd is `dock vulns ignores`: every ignore of the org.
+func newVulnIgnoresCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "ignores",
+		Short: "Every vulnerability ignore in the organization",
+		Long: `Every ignore of the organization, newest first: the vulnerability, the
+package, where it applies, why, until when and who made it. Expired
+ignores no longer apply and are listed for 30 days.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			l, err := get[apitypes.VulnIgnores](cmd.Context(), s, apiPrefix+"/org/vulnerabilities/ignores")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(l, func() error {
+				if len(l.Ignores) == 0 {
+					g.io.Detail("No ignores.")
+					return nil
+				}
+				tbl := g.io.Table("id", "vulnerability", "package", "where", "why", "until", "by")
+				for _, ig := range l.Ignores {
+					pkg := ig.Package
+					if pkg == "" {
+						pkg = "any"
+					}
+					tbl.Row(itoa(ig.ID), ig.Vulnerability, pkg, ignoreWhere(ig), ig.Reason, ignoreUntil(ig), ig.By)
+				}
+				return tbl.Flush()
+			})
+		},
+	}
+}
+
+// newVulnUnignoreCmd is `dock vulns unignore <id>`.
+func newVulnUnignoreCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "unignore <id>",
+		Short: "Stop ignoring a vulnerability: its findings count again",
+		Long:  "Remove an ignore by its ID (`dock vulns ignores` lists them). It takes what making it took.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil || id < 1 {
+				return usageError("the ignore ID is a number", "`dock vulns ignores` lists them.")
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, apiPrefix+"/org/vulnerabilities/ignores/"+args[0]); err != nil {
+				return err
+			}
+			g.io.Successf("Removed ignore %d", id)
+			return nil
+		},
+	}
+}
+
+// newVulnAlertsCmd is `dock alerts vulns [critical|high|off]`.
+func newVulnAlertsCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "vulns [critical|high|off]",
+		Short: "Which new vulnerabilities in live images alert: critical (default), high, or off",
+		Long: `An alert when a live release gets a vulnerability at least this bad that it
+didn't have: one per service, critical when CISA lists it as exploited,
+never reminded of. It resolves once the live image no longer has it or
+it is ignored. A service's first scanned image alerts nothing. Without an
+argument, shows the setting; changing it takes an organization admin.`,
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"critical", "high", "off"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			path := apiPrefix + "/alerts/vulnerabilities"
+			var v apitypes.VulnAlertSettings
+			if len(args) == 0 {
+				v, err = get[apitypes.VulnAlertSettings](cmd.Context(), s, path)
+			} else {
+				v, err = send[apitypes.VulnAlertSettings](cmd.Context(), s, http.MethodPut, path, apitypes.VulnAlertSettings{Alert: apitypes.VulnAlerts(args[0])})
+			}
+			if err != nil {
+				return err
+			}
+			return g.io.Print(v, func() error {
+				words := map[apitypes.VulnAlerts]string{
+					apitypes.VulnAlertsCritical: "new critical vulnerabilities in live images alert",
+					apitypes.VulnAlertsHigh:     "new critical and high vulnerabilities in live images alert",
+					apitypes.VulnAlertsOff:      "vulnerabilities don't alert",
+				}
+				g.io.Detail(strings.ToUpper(words[v.Alert][:1]) + words[v.Alert][1:] + ".")
+				return nil
+			})
+		},
+	}
 }
 
 // severityRank orders severities, critical highest.
@@ -204,6 +393,12 @@ func printImageDetail(g *globals, d apitypes.ImageDetail, t target) error {
 	if sc.State != apitypes.ScanScanned || len(d.Findings) == 0 {
 		return nil
 	}
+	ignored := 0
+	for _, fd := range d.Findings {
+		if fd.Ignored {
+			ignored++
+		}
+	}
 	out := g.io.Out
 	for _, grp := range d.Fixes {
 		_, _ = fmt.Fprintf(out, "\n%s: %s\n", fixTitle(grp), countsText(grp.VulnCounts))
@@ -226,6 +421,9 @@ func printImageDetail(g *globals, d apitypes.ImageDetail, t target) error {
 			}
 			_, _ = fmt.Fprintf(out, "  %s %s%s  %s %s%s\n", p.Package, p.Version, fix, p.Worst, ids, kev)
 		}
+	}
+	if ignored > 0 {
+		_, _ = fmt.Fprintf(out, "\n%s not counted: `dock vulns ignores`\n", plural(ignored, "ignored finding"))
 	}
 	_, _ = fmt.Fprintf(out, "\nEvery finding: `dock vulns %s --json`; scan again: `dock scan %s`\n", t.flags(), t.flags())
 	return nil

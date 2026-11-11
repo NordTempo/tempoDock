@@ -54,6 +54,9 @@ func (c *Core) ListImages(ctx context.Context, a Actor, production bool) (apityp
 		for _, s := range list {
 			scans[s.ID] = s
 		}
+		if err := c.netOrgScans(ctx, a.OrgID, scans, rows); err != nil {
+			return apitypes.ImageList{}, err
+		}
 	}
 	waiting := c.scanWaitReason(ctx)
 	out := apitypes.ImageList{Images: []apitypes.ImageListItem{}}
@@ -88,6 +91,64 @@ func (c *Core) ListImages(ctx context.Context, a Actor, production bool) (apityp
 		return cmp.Or(-cmp.Compare(scanRank(x.Scan), scanRank(y.Scan)), cmp.Compare(x.Image, y.Image))
 	})
 	return out, nil
+}
+
+// netOrgScans leaves out of each image's counts what the org's ignores
+// hide wherever it runs live (rows).
+func (c *Core) netOrgScans(ctx context.Context, org int64, scans map[int64]store.ImageScan, rows []store.ListOrgImagesRow) error {
+	ig, err := c.ignoresOf(ctx, org)
+	if err != nil || len(ig) == 0 {
+		return err
+	}
+	uses := map[int64][]vulnUse{}
+	for _, r := range rows {
+		if r.ImageScanID != nil {
+			uses[*r.ImageScanID] = append(uses[*r.ImageScanID], vulnUse{r.ProjectID, r.ServiceID})
+		}
+	}
+	items := make([]netScan, 0, len(scans))
+	copies := make([]store.ImageScan, 0, len(scans))
+	for _, s := range scans {
+		copies = append(copies, s)
+	}
+	for i := range copies {
+		items = append(items, netScan{scan: &copies[i], uses: uses[copies[i].ID]})
+	}
+	if err := c.netScans(ctx, ig, items); err != nil {
+		return err
+	}
+	for _, s := range copies {
+		scans[s.ID] = s
+	}
+	return nil
+}
+
+// netServiceScans leaves out of each of a project's live images (by
+// service ID) what the org's ignores hide for that service.
+func (c *Core) netServiceScans(ctx context.Context, p store.Project, scanOf map[int64]store.ImageScan) error {
+	if len(scanOf) == 0 {
+		return nil
+	}
+	ig, err := c.ignoresOf(ctx, p.OrgID)
+	if err != nil || len(ig) == 0 {
+		return err
+	}
+	items := make([]netScan, 0, len(scanOf))
+	copies := make([]store.ImageScan, 0, len(scanOf))
+	services := make([]int64, 0, len(scanOf))
+	for id, s := range scanOf {
+		copies, services = append(copies, s), append(services, id)
+	}
+	for i := range copies {
+		items = append(items, netScan{scan: &copies[i], uses: []vulnUse{{p.ID, services[i]}}})
+	}
+	if err := c.netScans(ctx, ig, items); err != nil {
+		return err
+	}
+	for i, id := range services {
+		scanOf[id] = copies[i]
+	}
+	return nil
 }
 
 // scanRank orders images worst first: by criticals, then highs, then
@@ -146,12 +207,14 @@ func (c *Core) GetImage(ctx context.Context, a Actor, scanID int64) (apitypes.Im
 	if err := a.require(apitypes.ScopeRead, "reading images"); err != nil {
 		return apitypes.ImageDetail{}, err
 	}
-	return c.imageDetail(ctx, a, scanID, "")
+	return c.imageDetail(ctx, a, scanID, "", nil)
 }
 
 // imageDetail builds an image's page for a; name, when set, is how the
-// image is named.
-func (c *Core) imageDetail(ctx context.Context, a Actor, scanID int64, name string) (apitypes.ImageDetail, error) {
+// image is named. Ignores hide findings that are ignored at every one of
+// at, or with none, everywhere the org runs it live (else everywhere it
+// ran).
+func (c *Core) imageDetail(ctx context.Context, a Actor, scanID int64, name string, at []vulnUse) (apitypes.ImageDetail, error) {
 	rels, err := c.store.ListImageScanReleases(ctx, store.ListImageScanReleasesParams{ScanID: &scanID, OrgID: a.OrgID})
 	if err != nil {
 		return apitypes.ImageDetail{}, err
@@ -168,22 +231,73 @@ func (c *Core) imageDetail(ctx context.Context, a Actor, scanID int64, name stri
 	if err != nil {
 		return apitypes.ImageDetail{}, err
 	}
-	out := apitypes.ImageDetail{UsedBy: make([]apitypes.ImageUse, 0, len(rels)), Findings: make([]apitypes.Finding, 0, len(findings))}
+	ignores, err := c.store.ListVulnIgnores(ctx, store.ListVulnIgnoresParams{OrgID: a.OrgID, Cutoff: ptr(now().Unix())})
+	if err != nil {
+		return apitypes.ImageDetail{}, err
+	}
+	out := apitypes.ImageDetail{UsedBy: make([]apitypes.ImageUse, 0, len(rels)), Findings: make([]apitypes.Finding, 0, len(findings)), Ignores: []apitypes.VulnIgnore{}}
+	var live, ran []vulnUse
 	for _, r := range rels {
-		out.UsedBy = append(out.UsedBy, apitypes.ImageUse{Project: r.Project, Environment: r.Environment, Service: r.Service, Release: r.Number,
-			Production: r.EnvKind == string(apitypes.KindProduction), Live: r.Status == string(apitypes.ReleaseActive)})
+		u := apitypes.ImageUse{Project: r.Project, Environment: r.Environment, Service: r.Service, Release: r.Number,
+			Production: r.EnvKind == string(apitypes.KindProduction), Live: r.Status == string(apitypes.ReleaseActive)}
+		out.UsedBy = append(out.UsedBy, u)
+		vu := vulnUse{r.ProjectID, r.ServiceID}
+		if u.Live && !slices.Contains(live, vu) {
+			live = append(live, vu)
+		}
+		if !slices.Contains(ran, vu) {
+			ran = append(ran, vu)
+		}
+	}
+	if at == nil {
+		at = live
+		if len(at) == 0 {
+			at = ran
+		}
 	}
 	if name == "" {
 		name = c.imageName(rels[0].ImageRef, out.UsedBy[0])
+	}
+	var ig ignoreSet
+	for _, g := range ignores {
+		if g.ExpiresAt == nil || *g.ExpiresAt > now().Unix() {
+			ig = append(ig, store.VulnIgnore{ID: g.ID, ProjectID: g.ProjectID, ServiceID: g.ServiceID, VulnID: g.VulnID, Package: g.Package})
+		}
+	}
+	shows := map[int64]bool{} // ignores that hide a finding somewhere it runs
+	var counted []apitypes.Finding
+	var worst []node.Finding
+	for _, f := range findings {
+		fd := toFinding(f.Severity, f.VulnID, f.Package, f.Version, f.PkgType, f.FixedIn, f.Kev, f.Epss, f.FirstSeenAt)
+		for _, g := range ig {
+			if !shows[g.ID] && slices.ContainsFunc(ran, func(u vulnUse) bool { return covers(g, f.VulnID, f.Package, u) }) {
+				shows[g.ID] = true
+			}
+		}
+		if ig.hidden(f.VulnID, f.Package, at) {
+			fd.Ignored = true
+			uncount(&row, f.Severity, f.FixedIn != "", f.Kev != 0)
+		} else {
+			counted = append(counted, fd)
+			if f.Severity >= int64(node.SeverityHigh) {
+				worst = append(worst, node.Finding{Severity: node.Severity(f.Severity), Type: f.PkgType, FixedIn: f.FixedIn})
+			}
+		}
+		out.Findings = append(out.Findings, fd)
+	}
+	if len(counted) < len(out.Findings) {
+		row.WorstFix = string(countFindings(worst).worstFix)
+	}
+	for _, g := range ignores {
+		if shows[g.ID] {
+			out.Ignores = append(out.Ignores, toVulnIgnoreRow(g))
+		}
 	}
 	out.Scan = toImageScan(row, name)
 	if out.Scan.State == apitypes.ScanQueued && out.Scan.Error == "" {
 		out.Scan.Error = c.scanWaitReason(ctx)(row.Production != 0)
 	}
-	for _, f := range findings {
-		out.Findings = append(out.Findings, toFinding(f.Severity, f.VulnID, f.Package, f.Version, f.PkgType, f.FixedIn, f.Kev, f.Epss, f.FirstSeenAt))
-	}
-	out.Fixes = fixGroups(out.Findings)
+	out.Fixes = fixGroups(counted)
 	return out, nil
 }
 
@@ -205,7 +319,7 @@ func (c *Core) ServiceVulnerabilities(ctx context.Context, a Actor, ref ServiceR
 		return apitypes.ImageDetail{}, notFound("release %d of %s has no scan; scan it with `dock scan %s -r %d`", r.Number, ss, ss.svc.Name, r.Number)
 	}
 	use := apitypes.ImageUse{Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name, Release: r.Number}
-	return c.imageDetail(ctx, a, *r.ImageScanID, c.imageName(r.ImageRef, use))
+	return c.imageDetail(ctx, a, *r.ImageScanID, c.imageName(r.ImageRef, use), []vulnUse{{ss.project.ID, ss.svc.ID}})
 }
 
 // scanRelease is release N of a service, or its live one for 0.
@@ -231,10 +345,14 @@ func (c *Core) OrgFindings(ctx context.Context, a Actor, production bool, minSev
 	if err != nil {
 		return apitypes.OrgFindings{}, err
 	}
+	ig, err := c.ignoresOf(ctx, a.OrgID)
+	if err != nil {
+		return apitypes.OrgFindings{}, err
+	}
 	out := apitypes.OrgFindings{Findings: []apitypes.OrgFinding{}}
 	for _, r := range rows {
 		prod := r.EnvKind == string(apitypes.KindProduction)
-		if !a.canSee(a.OrgID, r.ProjectID, r.EnvironmentID) || production && !prod {
+		if !a.canSee(a.OrgID, r.ProjectID, r.EnvironmentID) || production && !prod || ig.hides(r.VulnID, r.Package, vulnUse{r.ProjectID, r.ServiceID}) {
 			continue
 		}
 		out.Findings = append(out.Findings, apitypes.OrgFinding{

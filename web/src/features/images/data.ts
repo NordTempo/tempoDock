@@ -24,6 +24,7 @@ export type ImageDetail = Schemas["ImageDetail"];
 export type FixGroup = Schemas["FixGroup"];
 export type Finding = Schemas["Finding"];
 export type FixKind = FixGroup["kind"];
+export type VulnIgnore = Schemas["VulnIgnore"];
 
 export const imageKeys = {
   all: ["images"] as const,
@@ -31,6 +32,8 @@ export const imageKeys = {
   list: (production: boolean) => ["images", "list", production] as const,
   /** One image's page, by its scan ID. */
   image: (id: number) => ["images", "image", id] as const,
+  /** Every ignore of the org (phase 2). */
+  ignores: ["images", "ignores"] as const,
 };
 
 export const imageQueries = {
@@ -54,6 +57,11 @@ export const imageQueries = {
           }),
         ),
     }),
+  ignores: () =>
+    queryOptions({
+      queryKey: imageKeys.ignores,
+      queryFn: () => body(api.GET("/api/v1/org/vulnerabilities/ignores")),
+    }),
 };
 
 export const useImages = (production: boolean) =>
@@ -61,6 +69,9 @@ export const useImages = (production: boolean) =>
 
 export const useImage = (id: number) =>
   useSuspenseQuery(imageQueries.image(id)).data;
+
+export const useIgnores = () =>
+  useSuspenseQuery(imageQueries.ignores()).data.ignores ?? [];
 
 /** Queues a service's live image (or release N's) for a scan again. */
 export const useScanService = () =>

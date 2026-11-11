@@ -368,6 +368,10 @@ the image itself; the control plane keeps it gzipped in the data dir, and
 Grype matches it against the builder's vulnerability database. One scan
 per image digest, shared by every release that runs it; the overview, the
 org's Images page, `dock vulns` and MCP `list_vulnerabilities` read it.
+Once a day a builder gets a newer database and live images are matched
+again from their SBOMs; a new critical in a live release alerts. An org's
+ignores (a reason and an expiry) apply when findings are read, since a
+scan is shared across orgs.
 
 ## Backups and updates
 

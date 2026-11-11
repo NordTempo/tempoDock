@@ -67,6 +67,10 @@ type scanState struct {
 	db map[int64]time.Time
 	// quiet overrides quietFor (Options.ScanQuiet).
 	quiet time.Duration
+	// refreshAt is when the next builder's database is due for its daily
+	// refresh, as the scanner's last pass saw its builders; zero for none
+	// known (the start-up pass looks).
+	refreshAt time.Time
 }
 
 func newScanState() scanState {
@@ -258,6 +262,10 @@ func (c *Core) scanPass() (more bool, retry time.Time) {
 	if len(builders) == 0 {
 		return false, time.Time{} // a builder coming online kicks
 	}
+	if srv, ok := c.scanRefreshDue(builders, now()); ok {
+		c.refreshScanDatabase(ctx, srv)
+		return true, time.Time{}
+	}
 	n := now()
 	row, err := c.store.NextImageScan(ctx, store.NextImageScanParams{Now: ptr(n.Unix()), ProductionBuilder: boolInt(prod)})
 	if store.IsNotFound(err) {
@@ -352,8 +360,12 @@ func (c *Core) syncScans(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// Open Images pages and overviews learn of the live image.
+		// Open Images pages and overviews learn of the live image, and an
+		// image already scanned may bring the service new vulnerabilities.
 		c.publishScan(ctx, attached)
+		if attached.MatchedAt != nil {
+			c.vulnAlerts(ctx, attached, vulnNewImage, nil, r.ServiceID)
+		}
 	}
 	return nil
 }
@@ -515,6 +527,9 @@ func (c *Core) ensureScanDatabase(ctx context.Context, srv store.Server, rt node
 	db, err := rt.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: c.scanImages(), Labels: labels})
 	if err == nil && db.Built.IsZero() {
 		db, err = rt.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: c.scanImages(), Update: true, Labels: labels})
+		if err == nil {
+			c.setScanChecked(srv.ID)
+		}
 	}
 	if err != nil {
 		if ctx.Err() == nil {
@@ -527,6 +542,89 @@ func (c *Core) ensureScanDatabase(ctx context.Context, srv store.Server, rt node
 	c.scans.mu.Unlock()
 	c.setServerScanError(srv.ID, ptr(db.Built.Unix()), "")
 	return nil
+}
+
+// scanRefreshEvery is how often a builder asks for a newer vulnerability
+// database (Grype's is published daily).
+const scanRefreshEvery = 24 * time.Hour
+
+// scanRefreshDue picks a builder whose database is due for a refresh:
+// it has one, and hasn't asked for a newer one for a day. It notes when
+// the next one is due, for kickScanRefresh.
+func (c *Core) scanRefreshDue(builders []store.Server, at time.Time) (store.Server, bool) {
+	var next time.Time
+	for _, s := range builders {
+		if s.ScanDbBuiltAt == nil {
+			continue // none yet: its first scan downloads one
+		}
+		due := at
+		if s.ScanDbCheckedAt != nil {
+			due = time.Unix(*s.ScanDbCheckedAt, 0).Add(scanRefreshEvery)
+		}
+		if !due.After(at) {
+			return s, true
+		}
+		if next.IsZero() || due.Before(next) {
+			next = due
+		}
+	}
+	c.scans.mu.Lock()
+	c.scans.refreshAt = next
+	c.scans.mu.Unlock()
+	return store.Server{}, false
+}
+
+// refreshScanDatabase has a builder get a newer vulnerability database
+// (a download of about 65 MB when there is one) and queues every live
+// image matched against an older one to be matched again from its
+// stored SBOM: no image is pulled or unpacked again. Like any step, a
+// build or deploy kills it, and the next quiet minute tries again; a
+// failure waits for the next day.
+func (c *Core) refreshScanDatabase(ctx context.Context, srv store.Server) {
+	rt := c.connected(srv.ID)
+	if rt == nil {
+		return
+	}
+	db, err := rt.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: c.scanImages(), Update: true, Labels: node.Labels{ControlPlane: c.install}})
+	if c.scanPreempted(ctx) || c.ctx.Err() != nil {
+		return
+	}
+	c.setScanChecked(srv.ID)
+	if err != nil {
+		c.log.Warn("refresh the vulnerability database", "server", srv.Name, "err", err)
+		c.setServerScanError(srv.ID, srv.ScanDbBuiltAt, "refreshing the vulnerability database: "+err.Error())
+		return
+	}
+	c.scans.mu.Lock()
+	c.scans.db[srv.ID] = db.Built
+	c.scans.mu.Unlock()
+	c.setServerScanError(srv.ID, ptr(db.Built.Unix()), "")
+	n, err := c.store.RequeueStaleLiveScans(context.WithoutCancel(ctx), ptr(db.Built.Unix()))
+	if err != nil {
+		c.log.Error("queue images to match again", "err", err)
+		return
+	}
+	c.log.Info("vulnerability database refreshed", "server", srv.Name, "built", db.Built, "rematch", n)
+}
+
+// setScanChecked records that a builder just asked for a newer database.
+func (c *Core) setScanChecked(serverID int64) {
+	if err := c.store.SetServerScanChecked(context.WithoutCancel(c.ctx), store.SetServerScanCheckedParams{ScanDbCheckedAt: ptr(now().Unix()), ID: serverID}); err != nil {
+		c.log.Warn("record the scan database check", "server", serverID, "err", err)
+	}
+}
+
+// kickScanRefresh starts the scanner when a builder's database is due
+// for its daily refresh, as its last pass noted. The hourly retention
+// pass calls it, so the refresh needs no timer of its own, and costs the
+// pass no query.
+func (c *Core) kickScanRefresh() {
+	c.scans.mu.Lock()
+	due := c.scans.enabled && !c.scans.refreshAt.IsZero() && !now().Before(c.scans.refreshAt)
+	c.scans.mu.Unlock()
+	if due {
+		c.kickScans()
+	}
 }
 
 // setServerScanError records a builder's database and last scan error.
@@ -610,25 +708,34 @@ func (c *Core) matchSBOM(ctx context.Context, row store.ImageScan, rt node.Runti
 	if err != nil {
 		return err
 	}
-	if err := c.writeFindings(context.WithoutCancel(ctx), row.ID, found, res); err != nil {
+	fresh, err := c.writeFindings(context.WithoutCancel(ctx), row.ID, found, res)
+	if err != nil {
 		return err
 	}
 	if scan, err := c.store.GetImageScan(ctx, row.ID); err == nil {
 		c.publishScan(ctx, scan)
+		check := vulnRematched
+		if row.MatchedAt == nil {
+			check = vulnNewImage // its first match: new to every service running it
+		}
+		c.vulnAlerts(ctx, scan, check, fresh, 0)
 	}
 	return nil
 }
 
 // writeFindings replaces an image's findings in one transaction, keeping
-// when each was first seen, and records its counts.
-func (c *Core) writeFindings(ctx context.Context, scanID int64, found []node.Finding, res node.MatchResult) error {
+// when each was first seen, and records its counts. fresh are the
+// findings the image's previous match didn't have, for alerts.
+func (c *Core) writeFindings(ctx context.Context, scanID int64, found []node.Finding, res node.MatchResult) (fresh map[findingKey]bool, err error) {
 	t := now().Unix()
 	counts := countFindings(found)
 	var built *int64
 	if !res.DatabaseBuilt.IsZero() {
 		built = ptr(res.DatabaseBuilt.Unix())
 	}
-	return c.store.Tx(ctx, func(q *store.Queries) error {
+	fresh = map[findingKey]bool{}
+	return fresh, c.store.Tx(ctx, func(q *store.Queries) error {
+		clear(fresh) // a retried transaction starts over
 		seen, err := q.ListImageFindingsSeen(ctx, scanID)
 		if err != nil {
 			return err
@@ -644,6 +751,7 @@ func (c *Core) writeFindings(ctx context.Context, scanID int64, found []node.Fin
 			at, ok := first[[3]string{f.ID, f.Package, f.Version}]
 			if !ok {
 				at = t
+				fresh[findingKey{f.ID, f.Package}] = true
 			}
 			if err := q.AddImageFinding(ctx, store.AddImageFindingParams{
 				ScanID: scanID, Severity: int64(f.Severity), VulnID: f.ID, Package: f.Package, Version: f.Version,

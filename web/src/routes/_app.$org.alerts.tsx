@@ -9,6 +9,7 @@ export const Route = createFileRoute("/_app/$org/alerts")({
     Promise.all([
       queryClient.ensureQueryData(alertQueries.open("org")),
       queryClient.ensureQueryData(alertQueries.all("org")),
+      queryClient.ensureQueryData(alertQueries.vulns()),
     ]),
   component: () => <AlertsPage scope="org" />,
 });

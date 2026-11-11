@@ -277,6 +277,16 @@ in production, `dock scan` matches again, `dock sbom` prints the package
 list. Production images are scanned only on builders that accept
 production; CI images by the digest they were pulled by.
 
+Each builder gets a newer vulnerability database once a day, and every
+live image is matched again from its package list. A live release that
+gets a critical vulnerability it didn't have alerts (`dock alerts vulns
+high` for high ones too, `off` for none). When one doesn't matter where
+it runs, ignore it from the image's page, or with `dock vulns ignore
+CVE-2026-22451 --package sharp --reason "..."`: for the service, `--in
+project` or `--in org` (admins), for 90 days (`--days`), or `--always`
+(admins). It stops counting and alerting there and stays listed as
+ignored; `dock vulns ignores` and Images, Ignores list every one.
+
 The same happens when a live release crash loops, or stays unhealthy
 after Dock restarted it: the alert waits a few seconds for the diagnosis
 and says the likely cause, the service's page names it, and the

@@ -1068,6 +1068,7 @@ func (c *Core) GetRelease(ctx context.Context, a Actor, ref ServiceRef, number i
 	}
 	if r.ImageScanID != nil {
 		if scan, err := c.store.GetImageScan(ctx, *r.ImageScanID); err == nil {
+			scan = c.netScan1(ctx, ss.project.OrgID, scan, vulnUse{ss.project.ID, ss.svc.ID})
 			s := toImageScan(scan, r.ImageRef)
 			out.Scan = &s
 		}

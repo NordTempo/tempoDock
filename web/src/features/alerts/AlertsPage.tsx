@@ -31,7 +31,10 @@ import {
   useOpenAlerts,
   useRemoveAlertChannel,
   useResolveAlert,
+  useSetVulnAlerts,
   useTestAlertChannel,
+  useVulnAlerts,
+  type VulnAlerts,
 } from "./data";
 import { AlertLink, alertText } from "./source";
 
@@ -110,10 +113,82 @@ export function AlertsPage({ scope }: { scope: AlertScope }) {
             <ErrorBlock error={older.error} onRetry={() => older.refetch()} />
           )}
         </section>
+        {scope === "org" && <VulnerabilityAlerts admin={admin} />}
         {(scope === "platform" || admin) && <Channels />}
         <p className="font-mono text-2xs text-mut">dock alerts{flag(scope)}</p>
       </Page>
     </Scope.Provider>
+  );
+}
+
+const vulnWords: Record<VulnAlerts, string> = {
+  critical: "Alert on new critical vulnerabilities in live images",
+  high: "Alert on new critical and high vulnerabilities in live images",
+  off: "No alerts on vulnerabilities",
+};
+
+/**
+ * The org's one vulnerability alert setting (ADR 0074, mock S): what
+ * alerts now, and for admins a way to change it.
+ */
+function VulnerabilityAlerts({ admin }: { admin: boolean }) {
+  const alert = useVulnAlerts();
+  const set = useSetVulnAlerts();
+  const [editing, setEditing] = useState<VulnAlerts>();
+  return (
+    <section aria-labelledby="vulns" className="flex flex-col gap-1.5">
+      <SectionHead id="vulns">Vulnerabilities</SectionHead>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-2.5">
+        {editing ? (
+          <>
+            <select
+              aria-label="Vulnerability alerts"
+              value={editing}
+              onChange={(e) => setEditing(e.target.value as VulnAlerts)}
+              className="py-[5px] text-sm"
+            >
+              {(Object.keys(vulnWords) as VulnAlerts[]).map((k) => (
+                <option key={k} value={k}>
+                  {vulnWords[k]}
+                </option>
+              ))}
+            </select>
+            <Act
+              small
+              primary
+              cli={`dock alerts vulns ${editing}`}
+              disabled={set.isPending}
+              onClick={() =>
+                set.mutate(editing, { onSuccess: () => setEditing(undefined) })
+              }
+            >
+              Save
+            </Act>
+            <Button small onClick={() => setEditing(undefined)}>
+              Cancel
+            </Button>
+            <ErrorText error={set.error} />
+          </>
+        ) : (
+          <>
+            <span>{vulnWords[alert]}</span>
+            {admin && (
+              <Button small onClick={() => setEditing(alert)}>
+                Edit
+              </Button>
+            )}
+            <span className="font-mono text-2xs text-faint">
+              dock alerts vulns critical|high|off
+            </span>
+          </>
+        )}
+      </div>
+      <p className="text-xs text-mut">
+        Resolved by itself when the release that has them is replaced by one
+        that doesn't, or they're ignored. No reminders: standing findings live
+        on the Images page.
+      </p>
+    </section>
   );
 }
 

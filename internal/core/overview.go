@@ -60,6 +60,9 @@ func (c *Core) Overview(ctx context.Context, a Actor, project string) (apitypes.
 			Low: r.Low, Other: r.Other, Fixable: r.Fixable, Kev: r.Kev, Truncated: r.Truncated, WorstFix: r.WorstFix, Error: r.Error,
 		}
 	}
+	if err := c.netServiceScans(ctx, p, scanOf); err != nil {
+		return out, err
+	}
 	vols, err := c.store.ListProjectVolumes(ctx, p.ID)
 	if err != nil {
 		return out, err

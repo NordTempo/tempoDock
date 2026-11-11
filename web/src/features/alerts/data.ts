@@ -21,6 +21,8 @@ export type Alert = Schemas["Alert"];
 export type AlertChannel = Schemas["AlertChannel"];
 export type NewAlertChannel = Schemas["CreateAlertChannelRequest"];
 export type Severity = Alert["severity"];
+/** Which new vulnerabilities in live images alert (ADR 0074). */
+export type VulnAlerts = Schemas["VulnAlertSettings"]["alert"];
 /** Whose alerts: the current org's, or the platform's. */
 export type AlertScope = "org" | "platform";
 
@@ -37,9 +39,15 @@ export const alertKeys = {
   /** Every alert, newest first. */
   all: (scope: AlertScope) => ["alerts", scope, "all"] as const,
   channels: (scope: AlertScope) => ["alerts", scope, "channels"] as const,
+  vulns: ["alerts", "org", "vulnerabilities"] as const,
 };
 
 export const alertQueries = {
+  vulns: () =>
+    queryOptions({
+      queryKey: alertKeys.vulns,
+      queryFn: () => body(api.GET("/api/v1/alerts/vulnerabilities")),
+    }),
   open: (scope: AlertScope) =>
     queryOptions({
       queryKey: alertKeys.open(scope),
@@ -135,6 +143,14 @@ function useAlertAction<Vars, Data>(mutationFn: (vars: Vars) => Promise<Data>) {
       ),
   });
 }
+
+export const useVulnAlerts = () =>
+  useSuspenseQuery(alertQueries.vulns()).data.alert;
+
+export const useSetVulnAlerts = () =>
+  useAlertAction((alert: VulnAlerts) =>
+    body(api.PUT("/api/v1/alerts/vulnerabilities", { body: { alert } })),
+  );
 
 export const useResolveAlert = () =>
   useAlertAction((id: number) =>
