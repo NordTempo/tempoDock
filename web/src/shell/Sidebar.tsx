@@ -40,7 +40,7 @@ import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
-import { modKey } from "./keys";
+import { modKey, useShortcuts } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
 
@@ -64,6 +64,12 @@ export const useShellMode = (): ShellMode =>
 export function Sidebar({ mode }: { mode: ShellMode }) {
   // Narrow screens fold the sidebar behind a button; moving on folds it.
   const [open, setOpen] = useState(false);
+  const [tree, toggleTree] = useTreeOpen();
+  useShortcuts(
+    mode === "app"
+      ? [{ key: "[", label: "project tree or rail", run: toggleTree }]
+      : [],
+  );
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [foldedAt, setFoldedAt] = useState(path);
   if (foldedAt !== path) {
@@ -73,7 +79,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
   return (
     <nav
       aria-label={mode === "console" ? "Platform" : "Organization"}
-      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky lg:w-[248px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
+      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${mode === "app" && !tree ? "lg:w-[60px]" : "lg:w-[248px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
         // Under the console's sticky amber bar.
         mode === "console"
           ? "lg:top-8 lg:h-[calc(100vh-2rem)]"
@@ -93,7 +99,11 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
         // Rows never shrink below their height: a long tree scrolls instead.
         className={`${open ? "flex" : "hidden"} flex-1 flex-col gap-0.5 *:shrink-0 lg:flex`}
       >
-        {mode === "app" ? <AppNav /> : <ConsoleNav />}
+        {mode === "app" ? (
+          <AppNav tree={tree} onToggle={toggleTree} />
+        ) : (
+          <ConsoleNav />
+        )}
       </div>
     </nav>
   );
@@ -121,64 +131,163 @@ function NavLink({
 
 const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
 
-function AppNav() {
-  const openPalette = usePalette();
-  const operator = useIsOperator();
+/**
+ * Whether the left column shows the full project tree or only the project
+ * rail (Saile's pick, option 3): an explicit toggle, kept per browser
+ * until changed. `[` toggles it.
+ */
+const treeKey = "dock.tree";
+export function useTreeOpen() {
+  const [open, setOpen] = useState(
+    () => localStorage.getItem(treeKey) !== "rail",
+  );
+  const toggle = () =>
+    setOpen((o) => {
+      localStorage.setItem(treeKey, o ? "rail" : "tree");
+      return !o;
+    });
+  return [open, toggle] as const;
+}
+
+/**
+ * The org's left column (WIP, option 3): the project tree, or the rail of
+ * project tiles; the org's views moved to the top bar (TopBar).
+ */
+function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
   return (
     <>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={tree}
+        title={`${tree ? "Collapse to the project rail" : "Expand the project tree"} ([)`}
+        className="nav-row text-mut"
+      >
+        <Icon name="list" />
+        {tree && <span className="flex-1">Projects</span>}
+        <kbd>[</kbd>
+      </button>
+      {tree ? (
+        <>
+          <ProjectTree />
+          <ArchivedProjects />
+        </>
+      ) : (
+        <ProjectRail />
+      )}
+    </>
+  );
+}
+
+/** The collapsed column: a tile per project, its initials and health. */
+function ProjectRail() {
+  const org = useOrg();
+  const projects = useProjects();
+  const health = new Map(
+    useProjectTree().map((o) => [
+      o.project.name,
+      o.environments.some((e) =>
+        e.services.some((v) => serviceState(v).tone === "fail"),
+      ),
+    ]),
+  );
+  return (
+    <ul className="flex flex-col items-center gap-1">
+      {projects.map((p) => (
+        <li key={p.name}>
+          <Link
+            to="/$org/$project"
+            params={{ org, project: p.name }}
+            title={p.name}
+            className="relative grid size-9 place-items-center rounded-ctl border border-line text-xs font-medium uppercase hover:bg-hover aria-[current=page]:bg-sel"
+          >
+            {p.name.slice(0, 2)}
+            <span
+              aria-label={health.get(p.name) ? "needs attention" : undefined}
+              className={`absolute -top-0.5 -right-0.5 size-2 rounded-full ${health.get(p.name) ? "bg-fail" : "bg-ok"}`}
+            />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The org's top bar (WIP, option 3): the switcher, the org's views,
+ * search, Inbox, Settings and the account. Members and Activity live
+ * under Settings; Help in the account menu; the console in the switcher.
+ */
+export function TopBar() {
+  const openPalette = usePalette();
+  // WIP: the spec puts the console in the org switcher (operators).
+  const operator = useIsOperator();
+  return (
+    <header className="flex h-[52px] items-center gap-1 border-b border-line bg-side px-3">
       <OrgSwitcher />
+      <nav
+        aria-label="Organization views"
+        className="flex items-center gap-0.5"
+      >
+        <TopLink to="/$org">Overview</TopLink>
+        <TopLink to="/$org/errors">Errors</TopLink>
+        <TopLink to="/$org/analytics">Analytics</TopLink>
+        <TopLink to="/$org/images">Images</TopLink>
+        <TopLink to="/$org/status-pages">Status pages</TopLink>
+      </nav>
+      <span className="flex-1" />
       <button
         type="button"
         onClick={() => openPalette()}
-        className="mx-1 mb-2.5 flex items-center gap-2 rounded-[7px] border border-line bg-panel px-2.5 py-[7px] text-left text-mut hover:border-edge hover:text-sec"
+        className="flex min-h-[28px] items-center gap-2 rounded-ctl border border-line px-2.5 text-mut hover:border-edge hover:text-sec"
       >
         <Icon name="search" />
-        <span className="flex-1">Search or run…</span>
+        Search
         <kbd>{modKey.trim()}K</kbd>
       </button>
-      <div className="px-2.5 pt-1.5 pb-1 text-2xs font-medium text-faint">
-        Projects
-      </div>
-      <ProjectTree />
-      <ArchivedProjects />
-      <div className="min-h-6 flex-1" />
-      {/* What waits on someone first: alerts and access requests (ADR 0076). */}
-      <NavLink to="/$org/inbox" icon="inbox">
-        <span className="flex-1">Inbox</span>
-        <InboxCount />
-      </NavLink>
-      <NavLink to="/$org/errors" icon="alert">
-        Errors
-      </NavLink>
-      <NavLink to="/$org/analytics" icon="bars">
-        Analytics
-      </NavLink>
-      <NavLink to="/$org/images" icon="box">
-        Images
-      </NavLink>
-      <NavLink to="/$org/status-pages" icon="globe">
-        Status pages
-      </NavLink>
-      <NavLink to="/$org/audit" icon="activity">
-        Activity
-      </NavLink>
-      {/* Named in full: projects and services have Settings of their own. */}
-      <NavLink to="/$org/settings" icon="sliders">
-        Organization settings
-      </NavLink>
-      <NavLink to="/$org/help" icon="help">
-        Help
-      </NavLink>
-      <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
-      <Me />
+      <TopLink to="/$org/inbox">
+        Inbox <InboxCount />
+      </TopLink>
+      <TopLink to="/$org/settings">Settings</TopLink>
       {operator && (
-        <Link to="/console" className="nav-row mt-0.5">
+        <Link
+          to="/console"
+          className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg"
+        >
           <Icon name="console" size={14} className="text-warn" />
-          <span className="flex-1">Platform console</span>
+          Console
           <PlatformAlertCount />
         </Link>
       )}
-    </>
+      <Me />
+    </header>
+  );
+}
+
+function TopLink({
+  to,
+  children,
+}: {
+  to:
+    | "/$org"
+    | "/$org/errors"
+    | "/$org/analytics"
+    | "/$org/images"
+    | "/$org/status-pages"
+    | "/$org/inbox"
+    | "/$org/settings";
+  children: ReactNode;
+}) {
+  const org = useOrg();
+  return (
+    <Link
+      to={to}
+      params={{ org }}
+      activeOptions={{ exact: to === "/$org" }}
+      className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
+    >
+      {children}
+    </Link>
   );
 }
 

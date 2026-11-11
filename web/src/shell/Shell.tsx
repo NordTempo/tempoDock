@@ -7,7 +7,7 @@ import { Icon } from "../ui/icons";
 import { Notices } from "../ui/notice";
 import { KeyHelpHost, NotLive } from "./KeyHelp";
 import { PaletteProvider } from "./palette";
-import { Sidebar, useShellMode } from "./Sidebar";
+import { Sidebar, TopBar, useShellMode } from "./Sidebar";
 
 /**
  * Everything behind login: the sidebar and the page (which brings its own
@@ -37,6 +37,7 @@ function OrgShell() {
       </a>
       {mode === "console" && <ConsoleBar />}
       {mode === "console" && <DrainStrip />}
+      {mode === "app" && <TopBar />}
       <div className="flex min-h-screen flex-col lg:flex-row">
         <Sidebar mode={mode} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">
