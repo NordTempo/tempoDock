@@ -15,7 +15,7 @@ PR, before merging. Timing is enforced by running `make perf` locally.
 
 Checked by `make perf` ([scripts/perf](../scripts/perf)). Product targets are
 in [experience](experience.md#performance-targets); the budgets keep
-headroom below them, except idle memory: its budget (32 MB) is measured
+headroom below them, except idle memory: its budget (34 MB) is measured
 with Dock Analytics on and sits above the 30 MB target. Dock and tempoBase
 are measured with `GOMAXPROCS=4`, a small server, so a runner's core count
 doesn't move their memory. The daemon is measured with analytics turned
@@ -27,10 +27,10 @@ than on a quiet machine.
 
 | What | Budget | Measured |
 |---|---|---|
-| Daemon idle memory | ≤ 32 MB anonymous RSS | 29.1 MB (2026-11-10) |
+| Daemon idle memory | ≤ 34 MB anonymous RSS | 32.0 MB (2026-11-11, 31ca4da1; 31.6-32.2 MB on main's runs that day) |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00/s; 0.60/s with 20 streams |
-| Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (34.9 MB with 20) | 27.1 MB with 20 streams |
+| Daemon memory with SSE clients | ≤ 34 MB plus 0.15 MB per stream (36.9 MB with 20) | 32.1 MB with 20 streams |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 10.5 ms, 11.4 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.35-8.2 ms (the project overview is the slowest); with a staged change, overview 8.2 ms and changes 4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 168.9 KB (24 files) |
@@ -49,7 +49,10 @@ Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
 
-The idle number moves with GC timing, by up to 3 MB between runs: the
+The idle number moves with GC timing, by up to 3 MB between runs, so
+the budget keeps 2 MB above main's typical reading; raise it (and say
+why) only after main has failed it on several runs, as on 2026-11-11
+when status pages, scanning and tracing had added about 2 MB. The
 daemon's last collection runs during start-up, and whatever it allocates
 after that (the first statistics ticks, each SSE handshake) stays in RSS
 until the next one, as do stream handlers' stacks. A forced GC leaves the
