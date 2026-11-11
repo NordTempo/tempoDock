@@ -46,6 +46,9 @@ func (h *handler) addTraceTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
+			if l.ExportsElsewhere != "" && len(l.Traces) == 0 {
+				return mcpkit.Reply{Summary: fmt.Sprintf("%s sets %s, so it sends its traces there, not to Dock.", ref, l.ExportsElsewhere), Data: l}, nil
+			}
 			if len(l.Traces) == 0 {
 				return mcpkit.Reply{Summary: fmt.Sprintf("No traces of %s match in the last %s.", ref, l.Range), Data: l}, nil
 			}

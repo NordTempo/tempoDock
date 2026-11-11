@@ -87,18 +87,20 @@ later shows up on the next release.
 While tracing is on (`dock tracing on`, operators), every service's
 containers also start with the standard OpenTelemetry variables, so an app
 instrumented with a stock OpenTelemetry SDK sends its traces to Dock with no
-setup. Unlike the ones above, **your own value wins**: an app that already
-sends to another backend keeps doing that, and `OTEL_SDK_DISABLED=true` turns
-an app's SDK off.
+setup. Unlike the ones above, **your own value wins**, and they are per
+signal, so Dock's token only ever goes to Dock. A service that sets
+`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`,
+`OTEL_TRACES_EXPORTER` or `OTEL_SDK_DISABLED` gets none of them: it keeps
+sending where it did, and `dock traces` says so.
 
 | Variable | Value |
 |---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://dock-otlp:80`: the server's own Caddy, which passes exports to its trace ingest |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` (Dock takes OTLP over HTTP, protobuf or JSON, not gRPC) |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `authorization=Bearer%20dtr1...`: the release's own token, which can only send spans |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | `http://dock-otlp:80/v1/traces`: the server's own Caddy, which passes exports to its trace ingest |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | `http/protobuf` (Dock takes OTLP over HTTP, protobuf or JSON, not gRPC) |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | `authorization=Bearer%20dtr1...`: the release's own token, which can only send spans |
 | `OTEL_SERVICE_NAME` | Service name |
 | `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=<project>,deployment.environment.name=<environment>,service.version=r<release>` |
-| `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `none`: Dock keeps logs from stdout, and no metrics yet |
+| `OTEL_EXPORTER_OTLP_METRICS_*`, `OTEL_EXPORTER_OTLP_LOGS_*` | Dock's endpoint, which answers and drops them (an SDK sends them by default, and without a place to send them logs an error a minute); not set when the service sets any `OTEL_EXPORTER_OTLP_*` variable or that signal's exporter |
 
 They are set when a container starts, so turning tracing on or off reaches a
 service with its next deploy or restart. Services on a server behind a

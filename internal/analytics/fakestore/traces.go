@@ -2,6 +2,7 @@ package fakestore
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json/v2"
 	"net/http"
 	"slices"
@@ -106,7 +107,17 @@ func (t *Traces) Handler() http.Handler {
 			}
 		}
 		t.mu.Unlock()
-		slices.SortStableFunc(res.Spans, func(a, b analytics.Span) int { return int(a.Start - b.Start) })
+		slices.SortStableFunc(res.Spans, func(a, b analytics.Span) int {
+			return cmp.Or(cmp.Compare(a.Start, b.Start), cmp.Compare(int64(a.ID), int64(b.ID)))
+		})
+		if q.After != nil {
+			res.Spans = slices.DeleteFunc(res.Spans, func(sp analytics.Span) bool {
+				return sp.Start < q.After.Start || (sp.Start == q.After.Start && int64(sp.ID) <= int64(q.After.Span))
+			})
+		}
+		if q.Limit > 0 && len(res.Spans) > q.Limit {
+			res.Spans, res.Truncated = res.Spans[:q.Limit], true
+		}
 		reply(w, res)
 	}))
 	mux.HandleFunc("POST "+analytics.TracesPrunePath, t.auth(func(w http.ResponseWriter, r *http.Request) {

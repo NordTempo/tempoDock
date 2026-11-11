@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json/v2"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,13 +11,17 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
+// traceSecret is a secret value JSON escapes, a quote and a backslash in
+// it, so masking must work on decoded values.
+const traceSecret = `sk-live-"0123\\456789`
+
 // tracedService deploys shop/production/<name> with a secret variable and
 // returns the IDs its spans carry: org, project, environment, service and
 // release 1.
 func tracedService(t *testing.T, h *harness, name string) analytics.Span {
 	t.Helper()
 	ref := h.service(name, apitypes.CreateServiceRequest{})
-	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: name, Set: map[string]string{"API_KEY": "sk-live-0123456789"}, Apply: true}); err != nil {
+	if _, err := h.c.SetVariables(h.ctx, testSystem, EnvRef{"shop", "production"}, apitypes.SetVariablesRequest{Service: name, Set: map[string]string{"API_KEY": traceSecret}, Apply: true}); err != nil {
 		t.Fatal(err)
 	}
 	h.wait(ref, h.deploy(ref, "nginx:1").Number)
@@ -72,8 +77,8 @@ func TestReadingTraces(t *testing.T) {
 	entry.Method, entry.Route, entry.HTTPStatus = "POST", "/orders", 500
 	call := api
 	call.Trace, call.ID, call.Parent, call.Start, call.Duration, call.Name, call.Kind, call.Entry, call.Status = entry.Trace, 2, 1, start+1000, 200_000, "INSERT orders", analytics.SpanServer, true, analytics.StatusError
-	call.Attrs = []byte(`{"db.statement":"INSERT ... key=sk-live-0123456789"}`)
-	call.Events = []byte(`[{"name":"exception","at":150000,"attrs":{"exception.type":"QueryFailedError"}}]`)
+	call.Attrs, _ = json.Marshal(map[string]string{"db.statement": "INSERT ... key=" + traceSecret})
+	call.Events, _ = json.Marshal([]map[string]any{{"name": "exception", "at": 150000, "attrs": map[string]any{"exception.type": "QueryFailedError", "exception.message": "bad key " + traceSecret}}})
 	quick := web
 	quick.Trace, quick.ID, quick.Start, quick.Duration, quick.Name, quick.Kind, quick.Entry = analytics.TraceID{15: 2}, 3, start+5000, 2_000, "GET /", analytics.SpanServer, true
 	spool(t, h, entry, call, quick)
@@ -103,13 +108,13 @@ func TestReadingTraces(t *testing.T) {
 	if err != nil || len(tr.Spans) != 2 || tr.DurationMS != 300 {
 		t.Fatalf("trace = %+v, %v", tr, err)
 	}
-	if sp := tr.Spans[1]; sp.Service != "api" || sp.Parent != tr.Spans[0].Span || sp.Status != "error" || sp.Attrs["db.statement"] != "INSERT ... key=sk-live-0123456789" ||
+	if sp := tr.Spans[1]; sp.Service != "api" || sp.Parent != tr.Spans[0].Span || sp.Status != "error" || sp.Attrs["db.statement"] != "INSERT ... key="+traceSecret ||
 		len(sp.Events) != 1 || sp.Events[0].AtMS != 150 {
 		t.Errorf("api's span = %+v", sp)
 	}
 	reader := Actor{Name: "reader", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 1}
 	tr, err = h.c.GetTrace(h.ctx, reader, ref, id, time.Time{})
-	if err != nil || tr.Spans[1].Attrs["db.statement"] != "INSERT ... key=*****" {
+	if err != nil || tr.Spans[1].Attrs["db.statement"] != "INSERT ... key=*****" || tr.Spans[1].Events[0].Attrs["exception.message"] != "bad key *****" {
 		t.Errorf("a reader's trace = %+v, %v", tr.Spans, err)
 	}
 	// A token limited to another environment sees neither the service
@@ -124,5 +129,30 @@ func TestReadingTraces(t *testing.T) {
 	}
 	if _, err := h.c.GetTrace(h.ctx, testSystem, ref, "nope", time.Time{}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("a bad ID: %v", err)
+	}
+}
+
+// A trace of big spans opens: the trace store answers a page at a time,
+// so 600 spans of 15 KB, 9 MB in all, never meet its 8 MB answer cap.
+func TestBigTracesOpen(t *testing.T) {
+	h := newHarness(t)
+	web := tracedService(t, h, "web")
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	attrs, _ := json.Marshal(map[string]string{"db.statement": strings.Repeat("x", 15<<10)})
+	start := now().Add(-time.Minute).UnixMicro()
+	spans := make([]analytics.Span, 600)
+	for i := range spans {
+		sp := web
+		sp.Trace, sp.ID, sp.Start, sp.Duration, sp.Name, sp.Attrs = analytics.TraceID{15: 9}, analytics.SpanID(i+1), start+int64(i), 10, "SELECT", attrs
+		sp.Entry = i == 0
+		spans[i] = sp
+	}
+	spool(t, h, spans...)
+	eventually(t, "the spans in the trace store", func() bool { ts := h.rt.TraceStore(); return ts != nil && len(ts.Spans()) == 600 })
+	tr, err := h.c.GetTrace(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, spans[0].Trace.String(), time.UnixMicro(start))
+	if err != nil || len(tr.Spans) != 600 || tr.Truncated || tr.Spans[599].Span != analytics.SpanID(600).String() {
+		t.Fatalf("trace: %d spans, truncated %v, %v", len(tr.Spans), tr.Truncated, err)
 	}
 }

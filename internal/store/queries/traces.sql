@@ -15,3 +15,8 @@ WHERE services.id IN (sqlc.slice(ids));
 -- (sqlc.slice: one query).
 -- name: ListReleasesByIDs :many
 SELECT * FROM releases WHERE id IN (sqlc.slice(ids));
+
+-- ListReleaseServices is the service of each release named: the trace
+-- forwarder keeps only spans whose release is their service's.
+-- name: ListReleaseServices :many
+SELECT id, service_id FROM releases WHERE id IN (sqlc.slice(ids));

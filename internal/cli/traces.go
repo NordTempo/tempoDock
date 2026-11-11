@@ -61,6 +61,9 @@ tracing on (` + "`dock tracing on`" + `); see the guide's variables page.
 				return err
 			}
 			return g.io.Print(list, func() error {
+				if v := list.ExportsElsewhere; v != "" {
+					_, _ = fmt.Fprintf(g.io.Out, "%s sets %s, so it sends its traces there, not to Dock.\n\n", t, v)
+				}
 				if len(list.Traces) == 0 {
 					g.io.Successf("No traces of %s in the last %s.", t, list.Range)
 					return nil

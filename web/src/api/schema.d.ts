@@ -10349,6 +10349,7 @@ export interface components {
             name: string;
         };
         TraceList: {
+            exports_elsewhere?: string;
             more?: boolean;
             /** @enum {string} */
             range: "1h" | "24h" | "7d";

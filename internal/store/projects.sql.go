@@ -561,36 +561,6 @@ func (q *Queries) ListProjects(ctx context.Context, orgID int64) ([]Project, err
 	return items, nil
 }
 
-const listServerEnvironmentIDs = `-- name: ListServerEnvironmentIDs :many
-SELECT id FROM environments WHERE server_id = +?
-`
-
-// ListServerEnvironmentIDs is every environment on a server, archived
-// ones too: the trace forwarder keeps only spans from environments on the
-// server that sent them.
-func (q *Queries) ListServerEnvironmentIDs(ctx context.Context, serverID int64) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listServerEnvironmentIDs, serverID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listServerEnvironments = `-- name: ListServerEnvironments :many
 SELECT environments.project_id, environments.name, environments.kind
 FROM environments JOIN projects ON projects.id = environments.project_id
@@ -732,6 +702,53 @@ func (q *Queries) ListServerPlacements(ctx context.Context, serverID int64) ([]L
 			&i.ProjectPlacement.Pinned,
 			&i.ProjectPlacement.CreatedAt,
 			&i.ProjectName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServerServiceScopes = `-- name: ListServerServiceScopes :many
+SELECT services.id, services.environment_id, environments.project_id, projects.org_id
+FROM environments
+JOIN services ON services.environment_id = environments.id
+JOIN projects ON projects.id = environments.project_id
+WHERE environments.server_id = +?
+`
+
+type ListServerServiceScopesRow struct {
+	ID            int64
+	EnvironmentID int64
+	ProjectID     int64
+	OrgID         int64
+}
+
+// ListServerServiceScopes is every service in an environment on a
+// server, archived ones too, with its environment's project and org: the
+// trace forwarder keeps only spans whose org, project, environment and
+// service are one service's on the server that sent them.
+func (q *Queries) ListServerServiceScopes(ctx context.Context, serverID int64) ([]ListServerServiceScopesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listServerServiceScopes, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListServerServiceScopesRow
+	for rows.Next() {
+		var i ListServerServiceScopesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EnvironmentID,
+			&i.ProjectID,
+			&i.OrgID,
 		); err != nil {
 			return nil, err
 		}
