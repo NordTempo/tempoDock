@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -479,14 +480,16 @@ func TestDataInfoWithoutAccess(t *testing.T) {
 // pageEngine is a data.Engine that records how Page was called and which
 // services were forgotten. Only Page, Schema, Query, SyncGrants, Redact,
 // Forget and Close are implemented; Page returns next as its cursor,
-// Schema an empty schema and Query no rows.
+// Schema the tables in schema and Query no rows.
 type pageEngine struct {
 	data.Engine
 	mu     sync.Mutex
 	calls  []data.Call
 	afters []string
+	paged  []string // the tables Page was asked for
 	forgot []int64
 	next   string
+	schema []apitypes.DataTable
 }
 
 func (e *pageEngine) Page(_ context.Context, _ data.Target, c data.Call, req apitypes.DataPageRequest) (apitypes.DataPage, error) {
@@ -494,11 +497,12 @@ func (e *pageEngine) Page(_ context.Context, _ data.Target, c data.Call, req api
 	defer e.mu.Unlock()
 	e.calls = append(e.calls, c)
 	e.afters = append(e.afters, req.After)
+	e.paged = append(e.paged, req.Table)
 	return apitypes.DataPage{Next: e.next}, nil
 }
 
 func (e *pageEngine) Schema(context.Context, data.Target, data.Call, []apitypes.DataColumnRef) (apitypes.DataSchema, error) {
-	return apitypes.DataSchema{}, nil
+	return apitypes.DataSchema{Tables: e.schema}, nil
 }
 
 func (e *pageEngine) Query(context.Context, data.Target, data.Call, apitypes.DataQueryRequest, func(apitypes.DataQueryFrame) error) (data.QueryStats, error) {
@@ -566,6 +570,23 @@ func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 		t.Fatal(err)
 	}
 	return h, eng, db, ss
+}
+
+// TestDataRowsBareTableName: a bare table name reads the table of that
+// name, in public first, else in the one schema that has it (MySQL's
+// databases); several candidates leave it to the engine.
+func TestDataRowsBareTableName(t *testing.T) {
+	h, eng, db, _ := fakeDatabase(t)
+	eng.schema = []apitypes.DataTable{{Schema: "shop", Name: "orders"}, {Schema: "a", Name: "users"}, {Schema: "public", Name: "users"},
+		{Schema: "a", Name: "logs"}, {Schema: "b", Name: "logs"}}
+	for _, name := range []string{"orders", "users", "logs", "x.orders"} {
+		if _, err := h.c.DataRows(h.ctx, testSystem, db, apitypes.DataPageRequest{Table: name}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if want := []string{"shop.orders", "public.users", "logs", "x.orders"}; !slices.Equal(eng.paged, want) {
+		t.Fatalf("paged %v, want %v", eng.paged, want)
+	}
 }
 
 // TestDataCursorsSealed: callers never see the engine's cursor (it may

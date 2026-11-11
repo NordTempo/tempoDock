@@ -124,6 +124,34 @@ func tables[D any](tg *target[D], doing string) (data.Tables, error) {
 	return t, nil
 }
 
+// qualifyTable names a bare table ("orders") as schema.name from the
+// cached schema: Postgres's public first, else the one table of that name,
+// as MySQL's schemas are its databases (shop.orders). Qualified names, and
+// names it can't settle, pass through for the engine to judge.
+func qualifyTable[D any](ctx context.Context, t data.Tables, tg *target[D], call data.Call, name string) (string, error) {
+	if strings.Contains(name, ".") {
+		return name, nil
+	}
+	s, err := t.Schema(ctx, tg.t, call, tg.sensitive)
+	if err != nil {
+		return "", err
+	}
+	var found []string
+	for _, tb := range s.Tables {
+		if tb.Name != name {
+			continue
+		}
+		if tb.Schema == "public" {
+			return "public." + name, nil
+		}
+		found = append(found, tb.Schema+"."+name)
+	}
+	if len(found) == 1 {
+		return found[0], nil
+	}
+	return name, nil
+}
+
 // ready is everything an engine call needs: a level check, a set-up
 // check, connect and, when the grants were never synced, a sync.
 func (p *Panel[D]) ready(ctx context.Context, db *Database[D], need apitypes.DataLevel, action string) (*target[D], error) {
@@ -506,6 +534,9 @@ func (p *Panel[D]) Rows(ctx context.Context, a Actor, db *Database[D], req apity
 	}
 	if req.Reveal && db.Perm.Sensitive != apitypes.SensitiveVisible {
 		return apitypes.DataPage{}, forbidden("revealing sensitive columns needs sensitive visible; yours are masked (%s)", Why(db.Perm))
+	}
+	if req.Table, err = qualifyTable(ctx, t, tg, tg.call(a, false), req.Table); err != nil {
+		return apitypes.DataPage{}, p.dataError(db, err)
 	}
 	if req.After, err = p.openCursor(a, db.ID, req.After); err != nil {
 		return apitypes.DataPage{}, err
