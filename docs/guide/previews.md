@@ -71,6 +71,9 @@ your server with the listed values.
 Dock posts a `dock/preview` commit status on the head commit (pending,
 success with a link to the preview, failure) and one comment listing the
 addresses, edited in place as the preview deploys, updates and closes.
+It also says when the preview sleeps (see [Sleeping](#sleeping)), so a
+slow first visit doesn't surprise a reviewer; it isn't edited each time
+the preview sleeps or wakes.
 
 Through Dock's GitHub App this needs the `pull_request` event and Pull
 requests write access. An App created before previews has neither: on

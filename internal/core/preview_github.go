@@ -179,7 +179,7 @@ func (c *Core) syncPreview(id int64) {
 			}
 		}
 	}
-	body := c.previewComment(p, out, link)
+	body := c.previewComment(p, out, link, int(e.SleepAfterMinutes))
 	if err := c.writePreviewComment(ctx, pv, conn.Repo, cred, body); err != nil {
 		c.log.Warn("comment on pull request", "preview", out.Environment, "err", err)
 		c.setPreviewEvent(id, "couldn't comment on the pull request: "+errorLine(err)+"; the GitHub App (or token) needs Pull requests write access")
@@ -230,8 +230,11 @@ func (c *Core) previewMarker(projectID int64) string {
 	return fmt.Sprintf("<!-- tempo-dock-preview %s/%d -->", c.install, projectID)
 }
 
-// previewComment is the comment's Markdown.
-func (c *Core) previewComment(p store.Project, pv apitypes.Preview, link string) string {
+// previewComment is the comment's Markdown. sleepAfter is the preview
+// environment's idle minutes before it sleeps (ADR 0070), 0 for never:
+// the comment says so, so a slow first visit isn't a surprise. It doesn't
+// track sleeping and waking, which would edit the comment every half hour.
+func (c *Core) previewComment(p store.Project, pv apitypes.Preview, link string, sleepAfter int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "**Tempo Dock preview** `%s` in %s: **%s**", pv.Environment, p.Name, pv.Status)
 	if pv.Status == apitypes.PreviewClosed {
@@ -249,6 +252,13 @@ func (c *Core) previewComment(p store.Project, pv apitypes.Preview, link string)
 		if pv.Status == apitypes.PreviewFailed {
 			// The comment is public: why it failed is in Dock.
 			b.WriteString("\nA service failed to deploy; its release in Tempo Dock says why.\n")
+		}
+		if sleepAfter > 0 && len(pv.URLs) > 0 {
+			idle := fmt.Sprintf("%d min", sleepAfter)
+			if sleepAfter%60 == 0 {
+				idle = fmt.Sprintf("%dh", sleepAfter/60)
+			}
+			fmt.Fprintf(&b, "\nIt sleeps after %s without traffic; the next visit wakes it in a few seconds.\n", idle)
 		}
 	}
 	if link != "" && pv.Status != apitypes.PreviewClosed {
