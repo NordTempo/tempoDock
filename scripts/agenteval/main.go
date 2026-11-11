@@ -420,7 +420,7 @@ func (r report) print() {
 	}
 	fmt.Println("| mode | pass | tool calls / task | tokens in / task | tokens out / task |")
 	fmt.Println("|---|---|---|---|---|")
-	for _, m := range []Mode{ModeMCP, ModeCLI} {
+	for _, m := range []Mode{ModeMCP, ModeCLI, ModeManual} {
 		rs := byMode[m]
 		if len(rs) == 0 {
 			continue
