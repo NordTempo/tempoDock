@@ -65,9 +65,9 @@ type liveEvent struct {
 	// barrier, on an event only the alert engine gets, is closed once the
 	// engine reached it (alertsHandled).
 	barrier chan struct{}
-	once   sync.Once
-	json   []byte
-	err    error
+	once    sync.Once
+	json    []byte
+	err     error
 }
 
 func newLiveEvent(ev apitypes.Event) LiveEvent {
