@@ -6,6 +6,7 @@
 //	dock-analytics traces                the trace store (its container's)
 //	dock-analytics seed -db F -events N  fill F with N synthetic events
 //	dock-analytics seed-traces -db F -spans N  fill a trace store with N spans
+//	                 [-metric-series S]        and S series of app metrics
 //	dock-analytics bench -db F           time the dashboards' queries on F
 //	                     [-traces]       or a trace store's views
 //	dock-analytics rollup -db F          build F's daily rollups
@@ -15,9 +16,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"flag"
 	"fmt"
@@ -146,13 +149,15 @@ func seedCmd(ctx context.Context, args []string) error {
 }
 
 // seedTracesCmd fills a trace store with about -spans spans over -days
-// days ending now (bench.SeedSpans), and reports the rate and the file's
-// size.
+// days ending now (bench.SeedSpans), and -metric-series series of app
+// metrics a point a minute over as many days (bench.SeedMetrics), and
+// reports the rates and the file's size.
 func seedTracesCmd(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("seed-traces", flag.ExitOnError)
 	db := fs.String("db", "", "the trace store's database file")
 	n := fs.Int("spans", 2_000_000, "about how many spans to write (the store keeps 30 days)")
-	days := fs.Int("days", 7, "days of traces, ending now")
+	days := fs.Int("days", 7, "days of traces and metrics, ending now")
+	metricSeries := fs.Int("metric-series", 0, "series of app metrics to write, a point a minute each")
 	_ = fs.Parse(args)
 	if *db == "" {
 		return errors.New("-db is required")
@@ -182,6 +187,29 @@ func seedTracesCmd(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("seeded %d spans in %s (%.0f spans/s); database %.1f MB, %.1f bytes/span\n",
 		written, el.Round(time.Second), float64(written)/el.Seconds(), float64(size)/1e6, float64(size)/float64(max(1, written)))
+	if *metricSeries == 0 {
+		return nil
+	}
+	start = time.Now()
+	points, err := bench.SeedMetrics(ctx, t, bench.SeedMetricsOptions{
+		Series: *metricSeries, Minutes: *days * 1440, End: time.Now().UTC(), Seed: 1,
+		Progress: func(minute, minutes, written int) {
+			fmt.Fprintf(os.Stderr, "day %d/%d: %d metric points, %.0f points/s\n", minute/1440, minutes/1440, written, float64(written)/time.Since(start).Seconds())
+		},
+	})
+	if err != nil {
+		return err
+	}
+	el = time.Since(start)
+	if err := t.Checkpoint(ctx); err != nil {
+		return err
+	}
+	after, err := t.FileBytes(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("seeded %d metric points in %s (%.0f points/s); database %.1f MB, %.1f bytes/point\n",
+		points, el.Round(time.Second), float64(points)/el.Seconds(), float64(after)/1e6, float64(after-size)/float64(max(1, points)))
 	return nil
 }
 
@@ -291,10 +319,14 @@ func loadCmd(ctx context.Context, args []string) error {
 	rate := fs.Int("rate", 0, "events per second to send at; 0 is as fast as the store takes them")
 	asJSON := fs.Bool("json", false, "print the result as JSON (for make perf)")
 	spans := fs.Bool("spans", false, "send -events spans to a trace store (-url) instead of events")
+	metrics := fs.Bool("metrics", false, "send -events app metric points to a trace store (-url) instead of events: 2,000 series a minute")
 	_ = fs.Parse(args)
 	c := &analytics.Client{BaseURL: *url, Token: os.Getenv("DOCK_ANALYTICS_TOKEN")}
 	if *spans {
 		return loadSpans(ctx, c, *events, *batch, *asJSON)
+	}
+	if *metrics {
+		return loadMetrics(ctx, c, *events, *batch, *asJSON)
 	}
 	lw := &loadWriter{c: c, batch: *batch, rate: *rate, source: "load-" + strconv.FormatInt(time.Now().UnixNano(), 36)}
 	start := time.Now()
@@ -374,6 +406,51 @@ func loadSpans(ctx context.Context, c *analytics.Client, n, batch int, asJSON bo
 	fmt.Printf("sent %d spans in %d writes in %s: %.0f spans/s; write p50 %.1f ms, p95 %.1f ms\n",
 		written, len(lw.times), el.Round(time.Millisecond), float64(written)/el.Seconds(), msOf(pctOf(lw.times, 50)), msOf(pctOf(lw.times, 95)))
 	return nil
+}
+
+// loadMetrics sends about n points of 2,000 series, the last minutes'
+// ending now, to a running trace store in batches of batch, as fast as it
+// takes them, and reports the rate.
+func loadMetrics(ctx context.Context, c *analytics.Client, n, batch int, asJSON bool) error {
+	lw := &metricLoadWriter{c: c}
+	source := "load-metrics-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	const series = 2000
+	start := time.Now()
+	written, err := bench.SeedMetrics(ctx, lw, bench.SeedMetricsOptions{
+		Series: series, Minutes: max(1, n/series), End: time.Now().UTC(), Seed: uint64(time.Now().UnixNano()), Batch: batch, Source: source,
+	})
+	if err != nil {
+		return err
+	}
+	el := time.Since(start)
+	if asJSON {
+		return json.NewEncoder(os.Stdout).Encode(LoadResult{Events: written, Seconds: el.Seconds(), WriteP95: pctOf(lw.times, 95)})
+	}
+	fmt.Printf("sent %d metric points in %d writes in %s: %.0f points/s; write p50 %.1f ms, p95 %.1f ms\n",
+		written, len(lw.times), el.Round(time.Millisecond), float64(written)/el.Seconds(), msOf(pctOf(lw.times, 50)), msOf(pctOf(lw.times, 95)))
+	return nil
+}
+
+// metricLoadWriter sends metric points over HTTP, timing each write.
+type metricLoadWriter struct {
+	c     *analytics.Client
+	times []time.Duration
+	body  bytes.Buffer
+}
+
+// WriteMetrics implements bench.MetricWriter.
+func (w *metricLoadWriter) WriteMetrics(ctx context.Context, source string, pos uint64, points []analytics.MetricPoint, lim analytics.MetricLimits) (analytics.MetricWriteResult, error) {
+	w.body.Reset()
+	for i := range points {
+		if err := jsonv2.MarshalWrite(&w.body, &points[i]); err != nil {
+			return analytics.MetricWriteResult{}, err
+		}
+		w.body.WriteByte('\n')
+	}
+	t := time.Now()
+	res, err := w.c.WriteMetricLines(ctx, source, pos, w.body.Bytes(), lim)
+	w.times = append(w.times, time.Since(t))
+	return res, err
 }
 
 // spanLoadWriter sends spans over HTTP, timing each write.

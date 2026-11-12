@@ -85,7 +85,7 @@ func (e *Edge) Request(r EdgeRequest) {
 	if e.rates.by == nil {
 		e.rates.by = map[int64]*bucket{}
 	}
-	if !e.rates.take(c.Service, in.Limits.ServiceRate, now) {
+	if !e.rates.take(c.Service, in.Limits.ServiceRate, 2*in.Limits.ServiceRate, now) {
 		return
 	}
 	e.line.Reset()

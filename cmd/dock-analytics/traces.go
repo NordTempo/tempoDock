@@ -63,6 +63,7 @@ func (a *api) tracesHandler(t *store.Traces) http.Handler {
 		reply(w, analytics.Health{Version: version, FileBytes: n})
 	})
 	mux.Handle("POST "+analytics.SpansWritePath, a.auth(func(w http.ResponseWriter, r *http.Request) { a.writeSpans(w, r, t) }))
+	mux.Handle("POST "+analytics.MetricsWritePath, a.auth(func(w http.ResponseWriter, r *http.Request) { a.writeMetrics(w, r, t) }))
 	mux.Handle("GET "+analytics.SpansCursorPath, a.auth(func(w http.ResponseWriter, r *http.Request) {
 		pos, err := t.SpansCursor(r.Context(), r.URL.Query().Get("source"))
 		if err != nil {
@@ -74,6 +75,7 @@ func (a *api) tracesHandler(t *store.Traces) http.Handler {
 	mux.Handle("POST "+analytics.TracesPath, a.auth(query(a, t.Traces)))
 	mux.Handle("POST "+analytics.TracePath, a.auth(query(a, t.Trace)))
 	mux.Handle("POST "+analytics.ErrorTracePath, a.auth(query(a, t.ErrorTrace)))
+	mux.Handle("POST "+analytics.MetricNamesPath, a.auth(query(a, t.MetricNames)))
 	mux.Handle("POST "+analytics.TracesPrunePath, a.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.TracePrune
 		if err := json.UnmarshalRead(io.LimitReader(r.Body, 4<<10), &q); err != nil {
@@ -143,6 +145,66 @@ func (a *api) writeSpans(w http.ResponseWriter, r *http.Request, t *store.Traces
 	}
 	if skipped > 0 {
 		a.log.Warn("write spans: lines that aren't spans were skipped", "source", source, "skipped", skipped)
+	}
+	res.Skipped = skipped
+	reply(w, res)
+}
+
+// writeMetrics appends a batch of JSON-line metric points
+// (analytics.MetricsWritePath) under the caps in its query, as writeSpans
+// does spans.
+func (a *api) writeMetrics(w http.ResponseWriter, r *http.Request, t *store.Traces) {
+	q := r.URL.Query()
+	source := q.Get("source")
+	pos, err := strconv.ParseUint(q.Get("position"), 10, 64)
+	if source == "" || err != nil {
+		http.Error(w, "source and position are required", http.StatusBadRequest)
+		return
+	}
+	var lim analytics.MetricLimits
+	for name, set := range map[string]func(int64){
+		"series": func(v int64) { lim.Series = int(v) }, "names": func(v int64) { lim.Names = int(v) }, "max_bytes": func(v int64) { lim.MaxBytes = v },
+	} {
+		if s := q.Get(name); s != "" {
+			v, err := strconv.ParseInt(s, 10, 64)
+			if err != nil {
+				http.Error(w, name+" must be a number", http.StatusBadRequest)
+				return
+			}
+			set(v)
+		}
+	}
+	sc := bufio.NewScanner(r.Body)
+	sc.Buffer(make([]byte, 0, 4<<10), analytics.MaxMetricLine)
+	var points []analytics.MetricPoint
+	skipped := 0
+	for sc.Scan() {
+		if len(sc.Bytes()) == 0 {
+			continue
+		}
+		if len(points)+skipped == analytics.MaxWriteBatch {
+			http.Error(w, fmt.Sprintf("a write takes at most %d points", analytics.MaxWriteBatch), http.StatusBadRequest)
+			return
+		}
+		var p analytics.MetricPoint
+		if json.Unmarshal(sc.Bytes(), &p) != nil {
+			skipped++
+			continue
+		}
+		points = append(points, p)
+	}
+	if err := sc.Err(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := t.WriteMetrics(r.Context(), source, pos, points, lim)
+	if err != nil {
+		a.log.Error("write metric points", "source", source, "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if skipped > 0 {
+		a.log.Warn("write metric points: lines that aren't points were skipped", "source", source, "skipped", skipped)
 	}
 	res.Skipped = skipped
 	reply(w, res)

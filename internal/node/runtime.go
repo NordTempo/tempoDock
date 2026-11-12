@@ -1124,6 +1124,10 @@ const (
 	// SpoolSpans holds spans from the trace ingest (analytics.Span JSON
 	// lines), for the trace store, capped on its own.
 	SpoolSpans Spool = "spans"
+	// SpoolMetrics holds app metrics' points from the trace ingest
+	// (analytics.MetricPoint JSON lines), for the trace store, capped on
+	// its own: a cardinality bomb can't push out spans.
+	SpoolMetrics Spool = "metrics"
 )
 
 // SpoolBatchEvents caps a SpoolBatch.

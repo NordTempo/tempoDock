@@ -200,11 +200,16 @@ func newCollector(cfg config.Config, store collect.Store, log *slog.Logger) (*co
 	if err != nil {
 		return nil, ingests{}, fmt.Errorf("spans spool: %w", err)
 	}
+	// App metrics' points too, so a cardinality bomb can't push out spans.
+	metrics, err := spool.Open(filepath.Join(cfg.DataDir, "traces", "metrics"), spool.Options{MaxBytes: int64(cfg.Traces.MetricsSpoolMaxMB) << 20, MaxLine: analytics.MaxMetricLine})
+	if err != nil {
+		return nil, ingests{}, fmt.Errorf("metrics spool: %w", err)
+	}
 	key := &traces.Key{}
-	return &collect.Collector{Spool: sp, Replay: replay, Spans: spans, TraceKey: key, Salts: salts, Rules: rules, Store: store},
+	return &collect.Collector{Spool: sp, Replay: replay, Spans: spans, Metrics: metrics, TraceKey: key, Salts: salts, Rules: rules, Store: store},
 		ingests{
 			analytics: &ingest.Ingest{Spool: sp, Replay: replay, Salts: salts, Rules: rules, Log: log.With("component", "analytics")},
-			traces:    &traces.Ingest{Spool: spans, Key: key, Log: log.With("component", "traces")},
+			traces:    &traces.Ingest{Spool: spans, Metrics: metrics, Key: key, Log: log.With("component", "traces")},
 		}, nil
 }
 

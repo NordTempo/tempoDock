@@ -50,7 +50,7 @@ func TestEdgeSpansHaveTheirOwnRate(t *testing.T) {
 	if n := len(sp.spans(t)); n != 2 {
 		t.Fatalf("edge spans kept %d, want the burst of 2", n)
 	}
-	if !in.rates.take(testClaims.Service, in.Limits.ServiceRate, at) {
+	if !in.rates.take(testClaims.Service, in.Limits.ServiceRate, 2*in.Limits.ServiceRate, at) {
 		t.Error("the edge flood spent the app's own rate")
 	}
 }

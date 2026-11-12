@@ -76,6 +76,10 @@ func (r *Runtime) AppendReplay(lines ...[]byte) { r.appendTo(node.SpoolReplay, l
 // as the trace ingest does.
 func (r *Runtime) AppendSpans(lines ...[]byte) { r.appendTo(node.SpoolSpans, lines) }
 
+// AppendMetrics adds points (analytics.MetricPoint JSON lines) to the
+// metrics spool, as the trace ingest does.
+func (r *Runtime) AppendMetrics(lines ...[]byte) { r.appendTo(node.SpoolMetrics, lines) }
+
 // TraceKey is the trace key SetAnalytics last handed over, nil while
 // tracing is off.
 func (r *Runtime) TraceKey() []byte {

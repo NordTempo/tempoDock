@@ -18,8 +18,8 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
-// OTLP/HTTP paths. Traces are kept; metrics and logs are answered and
-// dropped (Dock sets their exporters to none: logs come from stdout).
+// OTLP/HTTP paths. Traces and metrics are kept; logs are answered and
+// dropped (Dock keeps a container's stdout).
 const (
 	// TokenPathPrefix starts the path an endpoint Dock sets has: the
 	// release's token, then the OTLP path.
@@ -42,12 +42,20 @@ const (
 	// DefaultServiceRate is the spans a second a service may send, with
 	// twice as many in a burst; past it spans are rejected.
 	DefaultServiceRate = 5000
+	// DefaultMetricRate is the metric points a second a service may send,
+	// past a burst of metricBurst: SDKs export every series at once, once
+	// a minute, so a service at the store's 2,000 series sends a burst
+	// a minute and 33 points a second.
+	DefaultMetricRate = 100
+	metricBurst       = 4000
 )
 
 // Limits bound the ingest; zero values are the defaults.
 type Limits struct {
 	MaxBody, MaxDecoded, Decoders int
 	ServiceRate                   float64
+	// MetricRate is the metric points a second a service may send.
+	MetricRate float64
 	// Budget, Slow, Rescues and RingBytes are the sampler's (sample.go).
 	Budget, Rescues, RingBytes int
 	Slow                       time.Duration
@@ -59,11 +67,13 @@ type Spool interface {
 	Append(line []byte) error
 }
 
-// Ingest serves OTLP/HTTP. Spool and Key are required.
+// Ingest serves OTLP/HTTP. Spool and Key are required; Metrics is the
+// metrics spool, without which metrics are answered and dropped.
 type Ingest struct {
-	Spool Spool
-	Key   *Key
-	Log   *slog.Logger
+	Spool   Spool
+	Metrics Spool
+	Key     *Key
+	Log     *slog.Logger
 	// Limits bound it; set before it serves.
 	Limits Limits
 	// Now is the clock; nil is time.Now.
@@ -74,8 +84,10 @@ type Ingest struct {
 	readers  readers
 	bufs     sync.Pool
 	rates    rates
-	sample   sampler
-	sampling sampleLimits
+	// metricRates are the services' points buckets, apart from spans'.
+	metricRates rates
+	sample      sampler
+	sampling    sampleLimits
 }
 
 // init applies the limits' defaults.
@@ -86,6 +98,9 @@ func (in *Ingest) init() {
 		if l.ServiceRate <= 0 {
 			l.ServiceRate = DefaultServiceRate
 		}
+		if l.MetricRate <= 0 {
+			l.MetricRate = DefaultMetricRate
+		}
 		l.Budget, l.Rescues, l.RingBytes = cmpOr(l.Budget, DefaultBudget), cmpOr(l.Rescues, DefaultRescues), cmpOr(l.RingBytes, DefaultRingBytes)
 		if l.Slow <= 0 {
 			l.Slow = DefaultSlow
@@ -93,7 +108,7 @@ func (in *Ingest) init() {
 		in.sampling = sampleLimits{budget: l.Budget, rescues: l.Rescues, ringBytes: l.RingBytes, slow: l.Slow}
 		in.decoders = make(chan struct{}, l.Decoders)
 		in.bufs.New = func() any { return new(bytes.Buffer) }
-		in.rates.by = map[int64]*bucket{}
+		in.rates.by, in.metricRates.by = map[int64]*bucket{}, map[int64]*bucket{}
 		in.readers.by = map[int64]int{}
 		if in.Now == nil {
 			in.Now = time.Now
@@ -120,21 +135,38 @@ func (in *Ingest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if tok == "" {
 		tok, _ = strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	}
-	switch path {
-	case TracesPath:
-		in.serveTraces(w, r, strings.TrimSpace(tok))
-	case MetricsPath, LogsPath:
-		// Dropped: nothing in Dock keeps them (yet). 200, so SDKs don't
-		// send them again.
+	switch {
+	case path == TracesPath:
+		in.serve(w, r, strings.TrimSpace(tok), spansSignal)
+	case path == MetricsPath && in.Metrics != nil:
+		in.serve(w, r, strings.TrimSpace(tok), metricsSignal)
+	case path == MetricsPath, path == LogsPath:
+		// Dropped: nothing in Dock keeps them. 200, so SDKs don't send
+		// them again.
 		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, int64(in.Limits.MaxBody)))
-		reply(w, isJSON(r), 0, "")
+		reply(w, isJSON(r), spansSignal, 0)
 	default:
 		http.NotFound(w, r)
 	}
 }
 
-// serveTraces takes one export of spans.
-func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request, tok string) {
+// signal is what the ingest takes from one OTLP path.
+type signal struct {
+	// take decodes an export's body for the service c names, spooling
+	// what it keeps; line is a buffer to encode lines in.
+	take func(in *Ingest, body []byte, asJSON bool, c Claims, line *bytes.Buffer) (accepted, rejected int, err error)
+	// rejectedField is the partial success's count in OTLP/JSON, and
+	// dropped what its message says was dropped and why.
+	rejectedField, dropped string
+}
+
+var (
+	spansSignal   = signal{take: (*Ingest).takeSpans, rejectedField: "rejectedSpans", dropped: "spans: past the service's rate, or without IDs or a start"}
+	metricsSignal = signal{take: (*Ingest).takeMetrics, rejectedField: "rejectedDataPoints", dropped: "metric points: past the service's rate, summaries (send histograms), or without a name, a time or a numeric value"}
+)
+
+// serve takes one export of sig.
+func (in *Ingest) serve(w http.ResponseWriter, r *http.Request, tok string, sig signal) {
 	key := in.Key.Get()
 	if key == nil {
 		http.Error(w, "tracing is off on this Dock; an operator turns it on with `dock tracing on`", http.StatusNotFound)
@@ -176,14 +208,24 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request, tok string
 		return
 	}
 
-	// accepted counts spans taken, whether sampling kept or dropped them.
-	var accepted, rejected int
 	line := in.bufs.Get().(*bytes.Buffer)
 	defer in.bufs.Put(line)
+	accepted, rejected, err := sig.take(in, buf.Bytes(), asJSON, claims, line)
+	if err != nil && accepted == 0 {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	reply(w, asJSON, sig, rejected)
+}
+
+// takeSpans is the spans signal's export: every span decoded, converted,
+// sampled and spooled, under the service's rate. accepted counts spans
+// taken, whether sampling kept or dropped them.
+func (in *Ingest) takeSpans(body []byte, asJSON bool, claims Claims, line *bytes.Buffer) (accepted, rejected int, err error) {
 	now := in.Now()
 	add := func(sp *rawSpan) error {
 		s, ok := convert(sp, claims)
-		if !ok || !in.rates.take(claims.Service, in.Limits.ServiceRate, now) {
+		if !ok || !in.rates.take(claims.Service, in.Limits.ServiceRate, 2*in.Limits.ServiceRate, now) {
 			rejected++
 			return nil
 		}
@@ -204,19 +246,11 @@ func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request, tok string
 		return nil
 	}
 	if asJSON {
-		err = decodeJSON(buf.Bytes(), add)
+		err = decodeJSON(body, add)
 	} else {
-		err = decodeProto(buf.Bytes(), add)
+		err = decodeProto(body, add)
 	}
-	if err != nil && accepted == 0 {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	msg := ""
-	if rejected > 0 {
-		msg = "Dock dropped " + strconv.Itoa(rejected) + " spans: past the service's rate, or without IDs or a start"
-	}
-	reply(w, asJSON, rejected, msg)
+	return accepted, rejected, err
 }
 
 // busy answers a request the ingest has no room for: SDKs send it again.
@@ -304,16 +338,17 @@ func isJSON(r *http.Request) bool {
 	return mt == "application/json"
 }
 
-// reply answers an export: success, or partial success with rejected
-// spans, in the request's encoding.
-func reply(w http.ResponseWriter, asJSON bool, rejected int, msg string) {
+// reply answers an export of sig: success, or partial success with what
+// was rejected, in the request's encoding.
+func reply(w http.ResponseWriter, asJSON bool, sig signal, rejected int) {
+	msg := "Dock dropped " + strconv.Itoa(rejected) + " " + sig.dropped
 	if asJSON {
 		w.Header().Set("Content-Type", "application/json")
 		if rejected == 0 {
 			_, _ = w.Write([]byte("{}"))
 			return
 		}
-		b, _ := jsontext.AppendQuote([]byte(`{"partialSuccess":{"rejectedSpans":"`+strconv.Itoa(rejected)+`","errorMessage":`), msg)
+		b, _ := jsontext.AppendQuote([]byte(`{"partialSuccess":{"`+sig.rejectedField+`":"`+strconv.Itoa(rejected)+`","errorMessage":`), msg)
 		_, _ = w.Write(append(b, "}}"...))
 		return
 	}
@@ -321,7 +356,8 @@ func reply(w http.ResponseWriter, asJSON bool, rejected int, msg string) {
 	if rejected == 0 {
 		return
 	}
-	// ExportTraceServiceResponse{partial_success: {rejected_spans, error_message}}
+	// Export{Trace,Metrics}ServiceResponse{partial_success: {rejected_spans
+	// or rejected_data_points, error_message}}: the same fields.
 	var ps []byte
 	ps = protowire.AppendTag(ps, 1, protowire.VarintType)
 	ps = protowire.AppendVarint(ps, uint64(rejected))
@@ -341,22 +377,23 @@ type rates struct {
 	by map[int64]*bucket
 }
 
-// bucket is a token bucket: up to twice the rate in a burst.
+// bucket is a token bucket.
 type bucket struct {
 	tokens float64
 	last   time.Time
 }
 
-// take reports whether service may send one more span at now.
-func (r *rates) take(service int64, rate float64, now time.Time) bool {
+// take reports whether service may send one more span or point at now,
+// at rate a second past a burst.
+func (r *rates) take(service int64, rate, burst float64, now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	b := r.by[service]
 	if b == nil {
-		b = &bucket{tokens: 2 * rate, last: now}
+		b = &bucket{tokens: burst, last: now}
 		r.by[service] = b
 	}
-	b.tokens = min(2*rate, b.tokens+now.Sub(b.last).Seconds()*rate)
+	b.tokens = min(burst, b.tokens+now.Sub(b.last).Seconds()*rate)
 	b.last = now
 	if b.tokens < 1 {
 		return false

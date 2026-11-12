@@ -99,7 +99,9 @@ sending where it did, and `dock traces` says so.
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | `http/protobuf` (Dock takes OTLP over HTTP, protobuf or JSON, not gRPC) |
 | `OTEL_SERVICE_NAME` | Service name |
 | `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=<project>,deployment.environment.name=<environment>,service.version=r<release>` |
-| `OTEL_EXPORTER_OTLP_METRICS_*`, `OTEL_EXPORTER_OTLP_LOGS_*` | Dock's endpoint, which answers and drops them (an SDK sends them by default, and without a place to send them logs an error a minute); not set when the service sets any `OTEL_EXPORTER_OTLP_*` variable or that signal's exporter |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL` | Dock's endpoint, which keeps the app's metrics (a service's runtime, library and own metrics, up to 2,000 series a day); not set when the service sets any `OTEL_EXPORTER_OTLP_*` variable or `OTEL_METRICS_EXPORTER` |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `delta`, with Dock's metrics endpoint: sums and histograms arrive as what changed each minute |
+| `OTEL_EXPORTER_OTLP_LOGS_*` | Dock's endpoint, which answers and drops them (an SDK sends them by default, and without a place to send them logs an error a minute; Dock keeps the container's output); not set when the service sets any `OTEL_EXPORTER_OTLP_*` variable or `OTEL_LOGS_EXPORTER` |
 
 They are set when a container starts, so turning tracing on or off reaches a
 service with its next deploy or restart. Services on a server behind a
