@@ -277,11 +277,11 @@ export function TopBar() {
       <button
         type="button"
         onClick={() => openPalette()}
-        aria-label="Search or run"
         className="flex min-h-[28px] items-center gap-2 rounded-ctl border border-line px-2.5 text-mut hover:border-edge hover:text-sec"
       >
         <Icon name="search" />
-        <span className="hidden sm:inline">Search</span>
+        {/* Named by its text (WCAG 2.5.3); on narrow screens the word is only read. */}
+        <span className="sr-only sm:not-sr-only">Search</span>
         <kbd className="hidden sm:inline">{modKey.trim()}K</kbd>
       </button>
       <TopLink to="/$org/inbox">

@@ -497,7 +497,7 @@ function StatusPages() {
             <Link
               to="/$org/status-pages/$page"
               params={{ org, page: p.slug }}
-              className="min-w-0 flex-1 hover:underline"
+              className="-my-[2px] inline-flex min-h-[24px] min-w-0 flex-1 items-center hover:underline"
             >
               {p.title}
             </Link>
