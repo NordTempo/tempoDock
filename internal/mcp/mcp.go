@@ -92,7 +92,7 @@ const maxReason = 500
 
 // dataTools are the data tools a caller without data access can't use;
 // data_status stays, to say why.
-var dataTools = []string{"data_schema", "data_rows", "data_keys", "data_key", "data_query", "data_insights", "data_cancel", "propose_data_changes"}
+var dataTools = []string{"data_schema", "data_rows", "data_keys", "data_query", "data_insights", "data_cancel", "propose_data_changes"}
 
 // view is the tools an actor's tools/list shows (mcpkit.View): the
 // arguments its limits fill and the tools it can never use are left out.

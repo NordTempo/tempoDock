@@ -64,7 +64,7 @@ release's diagnosis links to the request that failed, and an error from a
 service's logs links to its latest trace when the app sends the same
 exception in a span.
 
-Agents get the same through MCP: `traces_list` and `trace_get`.
+Agents get the same through MCP: `traces`, which with `trace` reads one.
 
 ## What Dock keeps
 

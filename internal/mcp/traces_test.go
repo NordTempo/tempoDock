@@ -11,8 +11,8 @@ import (
 	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
-// "The slowest traces since release 1" is one traces_list call, and
-// trace_get says where the time went and what failed.
+// "The slowest traces since release 1" is one traces call, and the same
+// tool with trace says where the time went and what failed.
 func TestTraceTools(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.core.EnableTraces(context.Background(), sys); err != nil {
@@ -48,17 +48,17 @@ func TestTraceTools(t *testing.T) {
 	}
 	var res called
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
-		res = call(t, s, "traces_list", map[string]any{"service": "web", "since_release": 1, "slowest": true})
+		res = call(t, s, "traces", map[string]any{"service": "web", "since_release": 1, "slowest": true})
 		if strings.Contains(res.summary, "1 traces") || time.Now().After(deadline) {
 			break
 		}
 	}
 	if !strings.Contains(res.summary, "POST /orders 900 ms (r1, error)") {
-		t.Fatalf("traces_list = %q", res.summary)
+		t.Fatalf("traces = %q", res.summary)
 	}
-	got := call(t, s, "trace_get", map[string]any{"service": "web", "trace": analytics.TraceID{15: 7}.String()})
+	got := call(t, s, "traces", map[string]any{"service": "web", "trace": analytics.TraceID{15: 7}.String()})
 	if !strings.Contains(got.summary, "Slowest call: INSERT orders in web (850 ms)") || !strings.Contains(got.summary, "Failed: INSERT orders in web r1: QueryFailedError statement timeout") {
-		t.Fatalf("trace_get = %q", got.summary)
+		t.Fatalf("traces with trace = %q", got.summary)
 	}
 }
 

@@ -133,7 +133,7 @@ instead; that is your login, so don't hand it to an agent.
 
 | Tools | |
 |---|---|
-| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `diagnose`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `status_pages`, `list_errors`, `traces_list` and `trace_get` (a service's traces, slowest since a release; one trace's spans), `list_vulnerabilities` (what is vulnerable in live images and the fix), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
+| Look | `whoami`, `list_projects`, `project_overview`, `export_project`, `service_status`, `service_stats`, `list_releases`, `release_details`, `diagnose`, `logs`, `list_servers`, `list_alerts` (the org's; `platform` for operators), `status_pages`, `list_errors`, `traces` (a service's traces, slowest since a release; with `trace`, one trace's spans), `list_vulnerabilities` (what is vulnerable in live images and the fix), `list_registry_credentials` (admin; hosts and usernames only), `audit_log` |
 | Ship | `deploy_image`, `redeploy`, `stop_service`, `start_service`, `rollback`, `promote`, `clone_environment`, `wait_for_release`, `run_command`, `list_runs` |
 | Jobs | `list_jobs` (with `job`, its latest runs), `set_job`, `run_job`, `remove_job` |
 | Previews | `get_previews`, `get_preview` |
@@ -142,7 +142,7 @@ instead; that is your login, so don't hand it to an agent.
 | Volumes | `list_volumes`, `add_volume`, `list_snapshots`, `create_snapshot`, `restore_snapshot` (into a new service only) |
 | Project files | `plan_project_file`, `apply_project_file`, `import_compose` |
 | Analytics | `analytics`: a site's stats, a breakdown, browser errors, Web Vitals, replays (listed only; watched in the UI), goals or funnels, or the project's sites |
-| Data | `data_status`, `data_schema`, `data_rows`, `data_keys` and `data_key` (Redis), `data_query`, `data_insights`, `data_cancel`, `propose_data_changes` |
+| Data | `data_status`, `data_schema`, `data_rows`, `data_keys` (Redis; with `key`, one key), `data_query`, `data_insights`, `data_cancel`, `propose_data_changes` |
 | Ask | `request_access`, `wait_for_request`, `list_requests` |
 
 - **Project and environment default to the token's limits**, so a token
