@@ -60,7 +60,7 @@ func (c *Core) addTracing(spec *node.ContainerSpec, ss svcScope, rel store.Relea
 	if !ok {
 		return
 	}
-	token := traces.Mint(traces.KeyFrom(cl.Token), traces.Claims{
+	token := traces.Mint(c.traceKey(), traces.Claims{
 		Org: ss.project.OrgID, Project: ss.project.ID, Env: ss.env.ID, Service: ss.svc.ID, Release: rel.ID,
 	})
 	base := "http://" + node.TraceIngestHost + ":" + strconv.Itoa(port)
@@ -166,11 +166,11 @@ func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsR
 // edgeToken is the trace token edge spans of d's service and release
 // carry, or "" with tracing off.
 func (c *Core) edgeToken(d store.ListRoutableDomainsRow, release int64) string {
-	cl, _ := c.tracesClient()
-	if cl == nil {
+	key := c.traceKey()
+	if key == nil {
 		return ""
 	}
-	return traces.Mint(traces.KeyFrom(cl.Token), traces.Claims{
+	return traces.Mint(key, traces.Claims{
 		Org: d.OrgID, Project: d.ProjectID, Env: d.EnvironmentID, Service: d.ServiceID, Release: release,
 	})
 }

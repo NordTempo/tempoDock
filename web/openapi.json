@@ -7115,6 +7115,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "latest_trace": {
+            "$ref": "#/components/schemas/TraceRef",
+            "description": "The newest trace with this error, while tracing is on"
+          },
           "project": {
             "type": "string"
           },
@@ -15618,6 +15622,23 @@
         ],
         "type": "object"
       },
+      "TraceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "at"
+        ],
+        "type": "object"
+      },
       "TraceSpan": {
         "additionalProperties": false,
         "properties": {
@@ -15812,6 +15833,10 @@
             "type": "boolean"
           },
           "error": {
+            "type": "string"
+          },
+          "key_rotated_at": {
+            "format": "date-time",
             "type": "string"
           },
           "memory_mb": {
@@ -66703,6 +66728,76 @@
           }
         ],
         "summary": "Turn tracing on or off",
+        "tags": [
+          "tracing"
+        ]
+      }
+    },
+    "/api/v1/tracing/rotate-key": {
+      "post": {
+        "description": "Rotates the trace key: every ingest token minted before stops working at once, and traced services get new ones with their next deploy or restart. Operators only, with a recent sign-in.",
+        "operationId": "rotate-trace-key",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TracingStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Revoke every trace ingest token",
         "tags": [
           "tracing"
         ]

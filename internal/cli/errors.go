@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -141,6 +142,7 @@ func newErrorShowCmd(g *globals) *cobra.Command {
 					"first seen", ago(d.FirstSeen)+releaseNote(d.FirstRelease),
 					"last seen", ago(d.LastSeen)+releaseNote(d.LastRelease),
 					"resolved", resolved,
+					"latest trace", latestTrace(d),
 				)
 				if err != nil || d.Sample == "" {
 					return err
@@ -184,4 +186,13 @@ func newErrorResolveCmd(g *globals) *cobra.Command {
 			})
 		},
 	}
+}
+
+// latestTrace is the command that shows an issue's latest trace, or "".
+func latestTrace(d apitypes.ErrorIssueDetail) string {
+	t := d.LatestTrace
+	if t == nil {
+		return ""
+	}
+	return "dock traces show " + t.ID + " --at " + t.At.Format(time.RFC3339Nano) + " -p " + d.Project + " -e " + d.Environment + " -s " + d.Service
 }

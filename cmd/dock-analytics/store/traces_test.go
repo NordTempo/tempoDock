@@ -310,3 +310,21 @@ func TestErrorSpansPassTheServiceCap(t *testing.T) {
 		t.Errorf("caps: %+v, want the first span and two failed ones", res)
 	}
 }
+
+// An error fingerprint's newest span is its trace, within the range and
+// the services asked for.
+func TestErrorTrace(t *testing.T) {
+	s, _ := openTraces(t)
+	ctx := context.Background()
+	older, newer, other := mkSpan(1, 1, 0, 10, time.Minute, time.Millisecond), mkSpan(2, 2, 0, 10, 2*time.Minute, time.Millisecond), mkSpan(3, 3, 0, 11, 3*time.Minute, time.Millisecond)
+	older.ErrorFP, newer.ErrorFP, other.ErrorFP = "fp1", "fp1", "fp1"
+	writeSpans(t, s, 1, analytics.TraceLimits{}, older, newer, other)
+	q := hour(analytics.TracesQuery{})
+	got, err := s.ErrorTrace(ctx, analytics.ErrorTraceQuery{Org: 1, Services: []int64{10}, Fingerprint: "fp1", From: q.From, To: q.To})
+	if err != nil || got.Trace != tid(2) || got.Start != newer.Start {
+		t.Errorf("error trace = %+v, %v", got, err)
+	}
+	if got, _ := s.ErrorTrace(ctx, analytics.ErrorTraceQuery{Org: 1, Services: []int64{10}, Fingerprint: "nope", From: q.From, To: q.To}); !got.Trace.IsZero() {
+		t.Errorf("an unknown fingerprint found %+v", got)
+	}
+}

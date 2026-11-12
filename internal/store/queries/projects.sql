@@ -80,15 +80,16 @@ WHERE environments.server_id = +? AND projects.archived_at IS NULL AND environme
 ORDER BY environments.project_id, environments.name;
 
 -- ListServerServiceScopes is every service in an environment on a
--- server, archived ones too, with its environment's project and org: the
+-- server but archived ones, with its environment's project and org: the
 -- trace forwarder keeps only spans whose org, project, environment and
--- service are one service's on the server that sent them.
+-- service are one live service's on the server that sent them, so an
+-- archived service's tokens send nothing.
 -- name: ListServerServiceScopes :many
 SELECT services.id, services.environment_id, environments.project_id, projects.org_id
 FROM environments
 JOIN services ON services.environment_id = environments.id
 JOIN projects ON projects.id = environments.project_id
-WHERE environments.server_id = +?;
+WHERE environments.server_id = +? AND services.archived_at IS NULL;
 
 -- name: CreateProject :one
 INSERT INTO projects (org_id, name) VALUES (?, ?) RETURNING *;

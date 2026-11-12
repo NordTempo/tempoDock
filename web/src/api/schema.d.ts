@@ -5663,6 +5663,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tracing/rotate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke every trace ingest token
+         * @description Rotates the trace key: every ingest token minted before stops working at once, and traced services get new ones with their next deploy or restart. Operators only, with a recent sign-in.
+         */
+        post: operations["rotate-trace-key"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/update": {
         parameters: {
             query?: never;
@@ -7863,6 +7883,8 @@ export interface components {
             last_release?: number;
             /** Format: date-time */
             last_seen: string;
+            /** @description The newest trace with this error, while tracing is on */
+            latest_trace?: components["schemas"]["TraceRef"];
             project: string;
             /** Format: date-time */
             resolved_at?: string;
@@ -10370,6 +10392,11 @@ export interface components {
             since: string;
             traces: components["schemas"]["TraceSummary"][] | null;
         };
+        TraceRef: {
+            /** Format: date-time */
+            at: string;
+            id: string;
+        };
         TraceSpan: {
             attrs?: {
                 [key: string]: unknown;
@@ -10431,6 +10458,8 @@ export interface components {
         TracingStatus: {
             enabled: boolean;
             error?: string;
+            /** Format: date-time */
+            key_rotated_at?: string;
             /** Format: int64 */
             memory_mb: number;
             /** Format: int64 */
@@ -44409,6 +44438,56 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "rotate-trace-key": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TracingStatus"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

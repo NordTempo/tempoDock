@@ -194,3 +194,35 @@ func TestDiagnosisNamesTheFailedTrace(t *testing.T) {
 		t.Fatalf("diagnosis trace = %+v, %v", d.Trace, err)
 	}
 }
+
+// A log error's issue names its newest trace: a span whose exception has
+// the issue's fingerprint (the ingest computes it as the log follower
+// does), while tracing is on.
+func TestErrorIssuesNameTheirLatestTrace(t *testing.T) {
+	h := newHarness(t)
+	web := tracedService(t, h, "web")
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	at := now()
+	h.c.issues.add(web.Service, "0123456789abcdef", pendingError{source: apitypes.ErrorFromLogs, title: "QueryFailedError: timeout", count: 1, first: at, last: at, release: 1})
+	h.c.errorsTick(h.ctx, at)
+	list, err := h.c.ListErrors(h.ctx, testSystem, ErrorFilter{})
+	if err != nil || len(list.Issues) != 1 {
+		t.Fatalf("issues = %+v, %v", list.Issues, err)
+	}
+	id := list.Issues[0].ID
+	if d, err := h.c.GetError(h.ctx, testSystem, id); err != nil || d.LatestTrace != nil {
+		t.Fatalf("before any span: %+v, %v", d.LatestTrace, err)
+	}
+	failing := web
+	failing.Trace, failing.ID, failing.Start, failing.Name, failing.Status, failing.ErrorFP = analytics.TraceID{15: 7}, 1, at.Add(-time.Second).UnixMicro(), "INSERT orders", analytics.StatusError, "0123456789abcdef"
+	other := failing
+	other.Trace, other.ErrorFP = analytics.TraceID{15: 8}, "fedcba9876543210"
+	spool(t, h, failing, other)
+	eventually(t, "the spans in the trace store", func() bool { ts := h.rt.TraceStore(); return ts != nil && len(ts.Spans()) == 2 })
+	d, err := h.c.GetError(h.ctx, testSystem, id)
+	if err != nil || d.LatestTrace == nil || d.LatestTrace.ID != failing.Trace.String() || !d.LatestTrace.At.Equal(time.UnixMicro(failing.Start).UTC()) {
+		t.Fatalf("latest trace = %+v, %v", d.LatestTrace, err)
+	}
+}

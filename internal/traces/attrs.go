@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
+	"github.com/NordTempo/tempoDock/internal/errparse"
 )
 
 // Caps on what a span keeps (the ingest's, before anything is stored).
@@ -156,7 +157,54 @@ func convert(sp *rawSpan, c Claims) (analytics.Span, bool) {
 	}
 	out.Attrs = appendAttrs(nil, sp.attrs, maxAttrs, maxAttrsJSON)
 	out.Events = appendEvents(nil, sp)
+	out.ErrorFP = exceptionFingerprint(sp)
 	return out, true
+}
+
+// exceptionFingerprint is the Errors fingerprint of a span's first
+// exception, "" without one: its stack trace read as a log would be
+// (errparse), so an exception the app also logs has the same fingerprint
+// as the issue its log line opened, and the issue finds its traces
+// (ADR 0075). A span's exception never opens an issue of its own.
+func exceptionFingerprint(sp *rawSpan) string {
+	for _, e := range sp.events {
+		if e.name != "exception" {
+			continue
+		}
+		var typ, msg, stack string
+		for _, a := range e.attrs {
+			if a.val.kind != valueString {
+				continue
+			}
+			switch a.key {
+			case "exception.type":
+				typ = a.val.s
+			case "exception.message":
+				msg = a.val.s
+			case "exception.stacktrace":
+				stack = cut(a.val.s, maxStack)
+			}
+		}
+		if typ == "" && msg == "" && stack == "" {
+			return ""
+		}
+		var as errparse.Assembler
+		var ev errparse.Event
+		ok := false
+		for line := range strings.Lines(stack) {
+			if e, done := as.Line(strings.TrimRight(line, "\r\n")); done && !ok {
+				ev, ok = e, true
+			}
+		}
+		if e, done := as.Flush(); done && !ok {
+			ev, ok = e, true
+		}
+		if ok {
+			return ev.Fingerprint
+		}
+		return errparse.Fingerprint(typ, msg, nil)
+	}
+	return ""
 }
 
 // appendAttrs appends attrs as a JSON object, at most n of them and about

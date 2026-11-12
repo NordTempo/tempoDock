@@ -192,6 +192,10 @@ export const useSetTracing = () =>
     body(api.PUT("/api/v1/tracing", { body: { enabled } })),
   );
 
+/** Rotates the trace key: every trace ingest token minted before stops. */
+export const useRotateTraceKey = () =>
+  useAnalyticsAction(() => body(api.POST("/api/v1/tracing/rotate-key")));
+
 /**
  * A site's live view while the browser tab is visible: the daemon watches
  * the site only while a view is open (ADR 0037). null until the first view

@@ -721,7 +721,7 @@ SELECT services.id, services.environment_id, environments.project_id, projects.o
 FROM environments
 JOIN services ON services.environment_id = environments.id
 JOIN projects ON projects.id = environments.project_id
-WHERE environments.server_id = +?
+WHERE environments.server_id = +? AND services.archived_at IS NULL
 `
 
 type ListServerServiceScopesRow struct {
@@ -732,9 +732,10 @@ type ListServerServiceScopesRow struct {
 }
 
 // ListServerServiceScopes is every service in an environment on a
-// server, archived ones too, with its environment's project and org: the
+// server but archived ones, with its environment's project and org: the
 // trace forwarder keeps only spans whose org, project, environment and
-// service are one service's on the server that sent them.
+// service are one live service's on the server that sent them, so an
+// archived service's tokens send nothing.
 func (q *Queries) ListServerServiceScopes(ctx context.Context, serverID int64) ([]ListServerServiceScopesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listServerServiceScopes, serverID)
 	if err != nil {

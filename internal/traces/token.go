@@ -29,9 +29,12 @@ type Claims struct {
 // KeyFrom derives the install's trace key from its analytics token, which
 // the control plane holds sealed: no other secret to keep. The key goes
 // to every server; the analytics token never does.
-func KeyFrom(analyticsToken string) []byte {
+func KeyFrom(analyticsToken string, epoch int64) []byte {
 	m := hmac.New(sha256.New, []byte(analyticsToken))
 	m.Write([]byte("dock traces ingest key v1"))
+	if epoch > 0 {
+		m.Write([]byte(" epoch " + strconv.FormatInt(epoch, 10)))
+	}
 	return m.Sum(nil)
 }
 

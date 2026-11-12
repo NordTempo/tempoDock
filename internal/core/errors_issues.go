@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
@@ -180,7 +181,31 @@ func (c *Core) GetError(ctx context.Context, a Actor, id int64) (apitypes.ErrorI
 	if err != nil {
 		return apitypes.ErrorIssueDetail{}, err
 	}
-	return c.errorDetail(ctx, r)
+	d, err := c.errorDetail(ctx, r)
+	if err == nil {
+		d.LatestTrace = c.errorTrace(ctx, r.ErrorIssue)
+	}
+	return d, err
+}
+
+// errorTrace is a log issue's newest trace: a span whose exception has
+// the issue's fingerprint, from an hour before it was last seen to five
+// minutes after (spans start before the line is logged, and SDKs send
+// them seconds later). nil when tracing is off, nothing matched or the
+// trace store isn't answering: the issue reads without it.
+func (c *Core) errorTrace(ctx context.Context, i store.ErrorIssue) *apitypes.TraceRef {
+	cl, _ := c.tracesClient()
+	if cl == nil || apitypes.ErrorSource(i.Source) != apitypes.ErrorFromLogs {
+		return nil
+	}
+	res, err := cl.ErrorTrace(ctx, analytics.ErrorTraceQuery{
+		Org: i.OrgID, Services: []int64{i.ServiceID}, Fingerprint: i.Fingerprint,
+		From: i.LastSeen.Add(-time.Hour).UnixMicro(), To: i.LastSeen.Add(5 * time.Minute).UnixMicro(),
+	})
+	if err != nil || res.Trace.IsZero() {
+		return nil
+	}
+	return &apitypes.TraceRef{ID: res.Trace.String(), At: time.UnixMicro(res.Start).UTC()}
 }
 
 // errorDetail is a loaded issue with its trend and sample.

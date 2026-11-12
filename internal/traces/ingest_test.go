@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
+	"github.com/NordTempo/tempoDock/internal/errparse"
 )
 
 // memSpool keeps appended lines.
@@ -303,7 +304,10 @@ func TestSensitive(t *testing.T) {
 }
 
 func TestToken(t *testing.T) {
-	key := KeyFrom("the install's analytics token")
+	key := KeyFrom("the install's analytics token", 0)
+	if bytes.Equal(key, KeyFrom("the install's analytics token", 1)) {
+		t.Fatal("a rotated key is the same")
+	}
 	tok := Mint(key, testClaims)
 	if c, err := Parse(key, tok); err != nil || c != testClaims {
 		t.Fatalf("parse = %+v, %v", c, err)
@@ -312,5 +316,32 @@ func TestToken(t *testing.T) {
 		if _, err := Parse(key, bad); err == nil {
 			t.Errorf("%q parsed", bad)
 		}
+	}
+}
+
+// A span's exception gets the Errors fingerprint of the same exception
+// in a log: its stack read as log lines, so the issue the log line
+// opened finds the span's trace.
+func TestExceptionFingerprint(t *testing.T) {
+	stack := "QueryFailedError: canceling statement due to statement timeout\n" +
+		"    at PostgresQueryRunner.query (/app/node_modules/typeorm/driver/postgres.js:299:19)\n" +
+		"    at OrdersService.create (/app/dist/orders/service.js:41:7)\n"
+	var as errparse.Assembler
+	var logged errparse.Event
+	for line := range strings.Lines(stack + "listening on :3000\n") {
+		if ev, ok := as.Line(strings.TrimRight(line, "\n")); ok {
+			logged = ev
+		}
+	}
+	sp := &rawSpan{events: []event{{name: "exception", attrs: []attr{
+		{key: "exception.type", val: value{kind: valueString, s: "QueryFailedError"}},
+		{key: "exception.message", val: value{kind: valueString, s: "canceling statement due to statement timeout"}},
+		{key: "exception.stacktrace", val: value{kind: valueString, s: strings.ReplaceAll(stack, ":299:19", ":301:5")}},
+	}}}}
+	if fp := exceptionFingerprint(sp); logged.Fingerprint == "" || fp != logged.Fingerprint {
+		t.Errorf("span fingerprint %q, logged %q", fp, logged.Fingerprint)
+	}
+	if fp := exceptionFingerprint(&rawSpan{}); fp != "" {
+		t.Errorf("no exception: %q", fp)
 	}
 }

@@ -811,6 +811,38 @@ func (s *Traces) Trace(ctx context.Context, q analytics.TraceQuery) (analytics.T
 	return res, nil
 }
 
+// ErrorTrace finds the newest span of q's fingerprint among its services
+// in its range: one scan of the range's day tables on columns the filter
+// reads.
+func (s *Traces) ErrorTrace(ctx context.Context, q analytics.ErrorTraceQuery) (analytics.ErrorTrace, error) {
+	var res analytics.ErrorTrace
+	switch {
+	case q.Org <= 0 || q.Fingerprint == "" || len(q.Services) == 0:
+		return res, &QueryError{"an error's trace needs its org, services and fingerprint"}
+	case q.To <= q.From:
+		return res, &QueryError{"an error's trace needs a range that ends after it starts"}
+	}
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	days := s.daysIn(q.From, q.To)
+	if len(days) == 0 {
+		return res, nil
+	}
+	cols := "start_us, trace_hi, trace_lo, org_id, service_id, error_fp"
+	var hi, lo int64
+	err := s.db.QueryRowContext(ctx, "SELECT start_us, trace_hi, trace_lo FROM "+spansOf(days, cols)+
+		" WHERE error_fp = $1 AND org_id = $2 AND service_id IN ("+intList(q.Services)+") AND start_us >= $3 AND start_us < $4 ORDER BY start_us DESC LIMIT 1",
+		q.Fingerprint, uint32(q.Org), q.From, q.To).Scan(&res.Start, &hi, &lo)
+	if errors.Is(err, sql.ErrNoRows) {
+		return analytics.ErrorTrace{}, nil
+	}
+	if err != nil {
+		return res, err
+	}
+	res.Trace = analytics.TraceIDOf(uint64(hi), uint64(lo))
+	return res, nil
+}
+
 // PruneTraces drops the day tables before q.Before's day, and usage rows
 // as old; spans for those days are rejected from then on.
 func (s *Traces) PruneTraces(ctx context.Context, q analytics.TracePrune) (analytics.TracePruneResult, error) {

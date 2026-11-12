@@ -13,6 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
+	"github.com/NordTempo/tempoDock/internal/traces"
 )
 
 // The trace store: spans for tracing over OTLP, kept by the
@@ -40,6 +41,8 @@ type tracesState struct {
 	// turned off, ending the spans forwarders' tails.
 	runCtx    context.Context
 	runCancel context.CancelFunc
+	// keyEpoch is the trace key's epoch (RotateTraceKey).
+	keyEpoch int64
 	// forwarding holds the servers with a spans forwarder running.
 	forwarding map[int64]bool
 	// starting is set while a start runs; storeErr is why the last one
@@ -68,6 +71,7 @@ func (c *Core) runTraces(st store.AnalyticsSetting) error {
 	c.traces.mu.Lock()
 	c.traces.serverID = serverID
 	c.traces.client = c.traceClient(serverID, string(token))
+	c.traces.keyEpoch = st.TracesKeyEpoch
 	c.newTracesRun()
 	c.traces.mu.Unlock()
 	c.ensureTraceStore(serverID)
@@ -110,6 +114,17 @@ func (c *Core) traceClient(serverID int64, token string) *analytics.Client {
 			IdleConnTimeout: 90 * time.Second,
 		}},
 	}
+}
+
+// traceKey is the key trace tokens are minted and checked with, nil while
+// tracing is off: derived from the analytics token and the key's epoch.
+func (c *Core) traceKey() []byte {
+	c.traces.mu.Lock()
+	defer c.traces.mu.Unlock()
+	if c.traces.client == nil {
+		return nil
+	}
+	return traces.KeyFrom(c.traces.client.Token, c.traces.keyEpoch)
 }
 
 // tracesClient is the trace store's client and server, nil while tracing
@@ -253,7 +268,7 @@ func (c *Core) TracingStatus(ctx context.Context, a Actor) (apitypes.TracingStat
 	if err != nil {
 		return out, err
 	}
-	out.Enabled = st.TracesEnabled
+	out.Enabled, out.KeyRotatedAt = st.TracesEnabled, st.TracesKeyRotatedAt
 	serverID := c.localID
 	if st.ServerID != nil {
 		serverID = *st.ServerID
@@ -317,6 +332,35 @@ func (c *Core) EnableTraces(ctx context.Context, a Actor) (apitypes.TracingStatu
 		c.applyAllRoutes(ctx) // routes start traces at the edge
 		c.audit(ctx, a.platform(), "tracing.enable", nil, nil, "tracing", "turned tracing on")
 	}
+	return c.TracingStatus(ctx, a)
+}
+
+// RotateTraceKey revokes every trace ingest token: the trace key moves to
+// its next epoch, the servers get the new key and Caddy's routes their
+// new edge tokens. A container keeps the token it started with, so
+// traced apps send nothing Dock keeps until their next deploy or restart.
+// Operators, with a recent sign-in: it is how a leaked token is revoked.
+func (c *Core) RotateTraceKey(ctx context.Context, a Actor) (apitypes.TracingStatus, error) {
+	if err := a.requireOperator("rotating the trace key"); err != nil {
+		return apitypes.TracingStatus{}, err
+	}
+	if err := a.requireRecent("rotating the trace key"); err != nil {
+		return apitypes.TracingStatus{}, err
+	}
+	if cl, _ := c.tracesClient(); cl == nil {
+		return apitypes.TracingStatus{}, conflict("tracing is off, so there are no trace tokens to revoke")
+	}
+	t := now()
+	epoch, err := c.store.RotateTracesKey(ctx, store.RotateTracesKeyParams{TracesKeyRotatedAt: &t, UpdatedBy: a.Name, UpdatedAt: t})
+	if err != nil {
+		return apitypes.TracingStatus{}, err
+	}
+	c.traces.mu.Lock()
+	c.traces.keyEpoch = epoch
+	c.traces.mu.Unlock()
+	c.pushAnalyticsToAll(ctx) // the ingests take only the new key's tokens
+	c.applyAllRoutes(ctx)     // and Caddy's edge spans get new ones
+	c.audit(ctx, a.platform(), "tracing.rotate_key", nil, nil, "tracing", "rotated the trace key: ingest tokens minted before stop working; traced services get new ones with their next deploy or restart")
 	return c.TracingStatus(ctx, a)
 }
 

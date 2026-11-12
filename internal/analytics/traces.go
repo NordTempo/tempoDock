@@ -324,6 +324,24 @@ type TraceDetail struct {
 	Truncated bool `json:"truncated,omitzero"`
 }
 
+// ErrorTraceQuery finds the newest span of an Errors fingerprint among
+// Services from From to To (Unix microseconds): an error issue's latest
+// trace.
+type ErrorTraceQuery struct {
+	Org         int64   `json:"org"`
+	Services    []int64 `json:"services"`
+	Fingerprint string  `json:"fp"`
+	From        int64   `json:"from"`
+	To          int64   `json:"to"`
+}
+
+// ErrorTrace answers an ErrorTraceQuery: the span's trace and start, a
+// zero trace when none matched.
+type ErrorTrace struct {
+	Trace TraceID `json:"trace"`
+	Start int64   `json:"start,omitzero"`
+}
+
 // TracePrune drops the days of spans before Before (Unix ms; whole UTC
 // days before the day it is in), for the retention.
 type TracePrune struct {
@@ -351,6 +369,9 @@ const (
 	// TracePath a TraceQuery and TraceDetail.
 	TracesPath = "/v1/traces"
 	TracePath  = "/v1/trace"
+	// ErrorTracePath takes POST with an ErrorTraceQuery and answers
+	// ErrorTrace.
+	ErrorTracePath = "/v1/error-trace"
 	// TracesPrunePath takes POST with a TracePrune and answers
 	// TracePruneResult.
 	TracesPrunePath = "/v1/traces/prune"
@@ -422,6 +443,12 @@ func (c *Client) Trace(ctx context.Context, q TraceQuery) (TraceDetail, error) {
 	}
 	res.Spans, res.Truncated = res.Spans[:MaxTraceSpans], true
 	return res, nil
+}
+
+// ErrorTrace finds an error fingerprint's newest trace (ErrorTracePath).
+func (c *Client) ErrorTrace(ctx context.Context, q ErrorTraceQuery) (ErrorTrace, error) {
+	var res ErrorTrace
+	return res, c.post(ctx, ErrorTracePath, q, &res)
 }
 
 // PruneTraces drops old days of spans (TracesPrunePath).

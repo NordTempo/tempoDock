@@ -17,6 +17,11 @@ UPDATE analytics_settings SET enabled = 1, updated_by = ?, updated_at = ? WHERE 
 -- name: SetTracesEnabled :exec
 UPDATE analytics_settings SET traces_enabled = ?, updated_by = ?, updated_at = ? WHERE id = 1;
 
+-- RotateTracesKey moves the trace key to its next epoch, and returns it.
+-- name: RotateTracesKey :one
+UPDATE analytics_settings SET traces_key_epoch = traces_key_epoch + 1, traces_key_rotated_at = ?, updated_by = ?, updated_at = ?
+WHERE id = 1 RETURNING traces_key_epoch;
+
 -- ListAnalyticsSalts returns the salts of day and later, oldest first.
 -- name: ListAnalyticsSalts :many
 SELECT day, salt FROM analytics_salts WHERE day >= +sqlc.arg(day) ORDER BY day;

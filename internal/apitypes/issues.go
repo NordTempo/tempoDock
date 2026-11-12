@@ -73,6 +73,10 @@ type ErrorIssue struct {
 type ErrorIssueDetail struct {
 	ErrorIssue
 	Sample string `json:"sample"`
+	// LatestTrace is the newest trace with this error (ADR 0075): a span
+	// whose exception has the issue's fingerprint, around the last time
+	// it was seen. Set for log errors while tracing is on.
+	LatestTrace *TraceRef `json:"latest_trace,omitempty" doc:"The newest trace with this error, while tracing is on"`
 }
 
 // ErrorFacet counts the open issues (not resolved) of one service, for

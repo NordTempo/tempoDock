@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useServers } from "../../data/queries";
 import { CliHint } from "../../ui/CliHint";
 import { ErrorBlock } from "../../ui/ErrorBlock";
-import { bytes } from "../../ui/format";
+import { bytes, since } from "../../ui/format";
 import {
   Act,
   Button,
@@ -22,6 +22,7 @@ import {
   analyticsStatusQuery,
   orgAnalyticsDefaultsQuery,
   tracingStatusQuery,
+  useRotateTraceKey,
   useSetAnalyticsServer,
   useSetDefaults,
   useSetOrgDefaults,
@@ -208,7 +209,9 @@ function ServerPicker({
 function Tracing() {
   const { data: st } = useSuspenseQuery(tracingStatusQuery());
   const set = useSetTracing();
+  const rotate = useRotateTraceKey();
   const [asking, setAsking] = useState(false);
+  const [rotating, setRotating] = useState(false);
   const cli = st.enabled ? "dock tracing off" : "dock tracing on";
   return (
     <section aria-labelledby="tracing" className="flex flex-col gap-2">
@@ -234,6 +237,9 @@ function Tracing() {
         <Fact label="Keeps" note={`${st.memory_mb} MB of memory`}>
           {st.retention_days} days of spans
         </Fact>
+        {st.key_rotated_at && (
+          <Fact label="Trace key">rotated {since(st.key_rotated_at)}</Fact>
+        )}
       </Facts>
       {st.error && <ErrorText error={new Error(st.error)} />}
       <span className="flex flex-wrap items-center gap-2.5">
@@ -245,8 +251,38 @@ function Tracing() {
         >
           {st.enabled ? "Turn tracing off" : "Turn tracing on"}
         </Act>
+        {st.enabled && (
+          <Act
+            cli="dock tracing rotate-key"
+            small
+            disabled={rotate.isPending}
+            onClick={() => setRotating(true)}
+          >
+            Rotate trace key
+          </Act>
+        )}
         {!asking && <ErrorText error={set.error} />}
       </span>
+      {rotating && (
+        <Confirm
+          action="Rotate trace key"
+          cli="dock tracing rotate-key --yes"
+          danger
+          pending={rotate.isPending}
+          error={rotate.error}
+          onConfirm={() =>
+            rotate.mutate(undefined, { onSuccess: () => setRotating(false) })
+          }
+          onCancel={() => {
+            rotate.reset();
+            setRotating(false);
+          }}
+        >
+          Every trace ingest token stops working now, as when one leaked. Traced
+          services get new ones with their next deploy or restart, and Dock
+          refuses their spans until then.
+        </Confirm>
+      )}
       {asking && (
         <Confirm
           action="Turn tracing off"
