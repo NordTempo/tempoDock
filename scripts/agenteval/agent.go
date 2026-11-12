@@ -136,6 +136,8 @@ func (a agentRun) manual(ctx context.Context, start time.Time) Transcript {
 	task, _ := json.MarshalIndent(map[string]any{
 		"prompt": a.Prompt, "system": system + cliSystem,
 		"env":    map[string]string{"DOCK_URL": a.D.url, "DOCK_TOKEN": a.Token, "PATH": filepath.Dir(a.D.bin) + ":$PATH"},
+		// For an agent that speaks MCP (JSON-RPC over HTTP POST) instead.
+		"mcp": map[string]string{"url": a.D.url + "/api/v1/mcp", "authorization": "Bearer " + a.Token},
 		"answer": filepath.Join(dir, a.Case+".answer.txt"),
 	}, "", "  ")
 	if err := os.WriteFile(filepath.Join(dir, a.Case+".json"), task, 0o644); err != nil {
