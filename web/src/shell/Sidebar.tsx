@@ -287,7 +287,12 @@ export function TopBar() {
       <TopLink to="/$org/inbox">
         Inbox <InboxCount />
       </TopLink>
-      <TopLink to="/$org/settings">Settings</TopLink>
+      {/* Named in full: the project page has Project settings beside it,
+          and blind reviewers opened that one looking for Members. */}
+      <TopLink to="/$org/settings">Organization settings</TopLink>
+      <TopLink to="/$org/help" label="Help">
+        <span aria-hidden>?</span>
+      </TopLink>
       <AccountMenu />
     </header>
   );
@@ -345,9 +350,16 @@ function ViewsMenu() {
 /** A link in the top bar; current on its page (Overview only exactly). */
 function TopLink({
   to,
+  label,
   children,
 }: {
-  to: (typeof orgViews)[number][0] | "/$org/inbox" | "/$org/settings";
+  to:
+    | (typeof orgViews)[number][0]
+    | "/$org/inbox"
+    | "/$org/settings"
+    | "/$org/help";
+  /** The name when the text isn't one (Help's "?"). */
+  label?: string;
   children: ReactNode;
 }) {
   const org = useOrg();
@@ -356,6 +368,8 @@ function TopLink({
       to={to}
       params={{ org }}
       activeOptions={{ exact: to === "/$org" }}
+      aria-label={label}
+      title={label}
       className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
     >
       {children}

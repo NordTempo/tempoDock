@@ -121,8 +121,9 @@ for everything.
   organization switcher (the Platform console in it for operators), the
   organization's views (Overview, Errors, Analytics, Images, Status
   pages), one search (the palette, Cmd+K: pages and `dock` commands in one
-  list), Inbox with its count, Settings (Members, Activity and where
-  alerts go are inside) and the account menu (account, Help, Log out).
+  list), Inbox with its count, Organization settings (Members, Activity
+  and where alerts go are inside), Help (`?`) and the account menu
+  (account, Help, Log out).
   On the left the projects: a rail of tiles (initials and a health dot)
   that expands into the tree and stays expanded until collapsed (`[`).
   Sticky bars sit under the top bar (`--shell-top`). There is no second

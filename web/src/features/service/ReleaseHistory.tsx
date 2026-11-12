@@ -42,6 +42,7 @@ export function ReleaseHistory({
         serviceRef={ref}
         releases={releases}
         deploying={deploying}
+        quiet={short}
       />
       {short
         ? more && (
