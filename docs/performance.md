@@ -32,10 +32,10 @@ than on a quiet machine.
 
 | What | Budget | Measured |
 |---|---|---|
-| Daemon idle memory | ≤ 34 MB anonymous RSS | 32.0 MB (2026-11-11, 31ca4da1; 31.6-32.2 MB on main's runs that day) |
+| Daemon idle memory | ≤ 32 MB anonymous RSS, the median of three starts | 29.4 MB (2026-11-12, #285: 27.4, 29.4, 29.4) |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00/s; 0.60/s with 20 streams |
-| Daemon memory with SSE clients | ≤ 34 MB plus 0.15 MB per stream (36.9 MB with 20) | 32.1 MB with 20 streams |
+| Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (34.9 MB with 20) | 29.4 MB with 20 streams |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 10.5 ms, 11.4 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.35-8.2 ms (the project overview is the slowest); with a staged change, overview 8.2 ms and changes 4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 168.9 KB (24 files) |
@@ -78,7 +78,7 @@ and `tempobase-ui`. Measured as above (CI, 2026-11-10).
 | What | Budget | Measured |
 |---|---|---|
 | Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 3% (`tempobase_binary_bytes`) | 18.9 MB, its UI embedded gzipped |
-| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 12.0 MB |
+| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 10.2 MB (four SQLite connections, #285) |
 | Idle CPU | ≤ 1 clock tick in 30 s | 0 |
 | Idle wake-ups | ≤ 0.1/s | 0.03/s (Go's forced GC is ~0.01/s) |
 | API read p95 (`/me`, `/connections`), 8 clients, 50 connections and 20 users | ≤ 10 ms | 0.6 ms, 2.6 ms |
@@ -113,7 +113,16 @@ Measured as above (CI, 2026-11-10); a timed row shows its slowest range.
 | Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 37k events/s (a batch writes up to three tables) |
 | Errors and Web Vitals views p95, 1M events, every range (error groups with their series; vitals overall, by page and device, and LCP over time) | ≤ 200 ms | 119 ms (a year) |
 | Goals and funnels p95, 1M events, every range (five goals and a three-step funnel) | ≤ 200 ms | 74 ms (a year) |
-| Peak memory through all of it | ≤ 512 MB (the container's limit) | 326 MB |
+| Peak anonymous memory through all of it and 10 s past the ingest burst | ≤ 512 MB (the container's limit) | 220.8 MB (VmHWM 263.8 MB; #285) |
+
+The peak is anonymous RSS, polled every 100 ms (`scripts/perf/peak.go`),
+because the containers have no swap: anonymous memory is what the limit
+kills for, while the mapped binary and file pages are reclaimed first.
+VmHWM, which counts those too, prints beside it. On 2026-11-11's busy
+runners VmHWM read 407 to 480 MB. That was runner load, not code:
+the same check read about 250 MB here and 264 MB on #285's run. The
+sampling runs 10 s past the ingest burst, since DuckDB keeps growing
+after it (195 to 244 MB anonymous in one local run).
 
 DuckDB holds memory outside its `memory_limit` (freed operator memory,
 exact distinct counts), so the store runs one query at a time with a
@@ -144,7 +153,7 @@ Measured on CI's run of the pull request that added it (#212,
 | The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 48 ms |
 | Opening a trace p95, with its time or without | ≤ 30 ms | 9 ms |
 | Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 24.4k spans/s |
-| Peak memory through all of it | ≤ 512 MB (the container's limit) | 304 to 387 MB |
+| Peak anonymous memory through all of it and 10 s past the ingest bursts | ≤ 512 MB (the container's limit) | 314.3 MB (VmHWM 355.0 MB; #285) |
 
 Spans go in one table per UTC day (dropping a day is the retention, with
 no delete scan). With 10M seeded spans over a week (32 bytes a span on
