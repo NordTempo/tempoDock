@@ -226,6 +226,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "token.revoke": ["revoke token", "revoked"],
   "tracing.disable": ["turn off tracing", "turned off"],
   "tracing.enable": ["turn on tracing", "turned on"],
+  "tracing.rotate_key": ["rotate the trace key", "rotated the trace key"],
   "uptime.add": ["add uptime check", "added an uptime check to"],
   "uptime.remove": ["remove uptime check", "removed an uptime check from"],
   "uptime.update": ["change uptime check", "changed an uptime check of"],

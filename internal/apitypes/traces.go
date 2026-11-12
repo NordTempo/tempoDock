@@ -26,6 +26,16 @@ type TracingStatus struct {
 	// store_memory_mb.
 	RetentionDays int `json:"retention_days"`
 	MemoryMB      int `json:"memory_mb"`
+	// KeyRotatedAt is when the trace key was last rotated, revoking every
+	// ingest token minted before (dock tracing rotate-key); nil if never.
+	KeyRotatedAt *time.Time `json:"key_rotated_at,omitempty"`
+}
+
+// TraceRef names a trace with a time in it, for finding it quickly
+// (dock traces show ID --at AT).
+type TraceRef struct {
+	ID string    `json:"id"`
+	At time.Time `json:"at"`
 }
 
 // TracingSettings turns tracing on or off. Off removes the trace store

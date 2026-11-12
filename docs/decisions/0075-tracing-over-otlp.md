@@ -30,7 +30,7 @@ with no setup, and link traces to what it shows.
 | Why its own | Attached to the analytics store, its CI peak reached 483 then 549 MB against the container's 512: bursts of writes grow DuckDB past its memory limit, and nothing we tried (trims after writes, lower limits, allocator, checkpoint and arena settings) moved that by more than 20 MB. Apart, analytics keeps its numbers |
 | Turning it on | Operators: `dock tracing on/off`, `PUT /api/v1/tracing`, the console's Analytics page. Doesn't need analytics on. Off removes the trace store with its spans |
 | Ingest | On every server (`[traces] ingest_listen`, 127.0.0.1:4318): OTLP/HTTP, protobuf (decoded by hand with `protowire`) and JSON; no gRPC (`OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` covers stock SDKs). Metrics and logs are answered and dropped |
-| Auth | A token per service and release, `dtr1.<org>.<project>.<env>.<service>.<release>.<mac>`, an HMAC under the install's trace key (derived from the analytics token, handed to every server with the salts while tracing is on). The ingest takes the service from the token, never from attributes. The forwarder keeps only spans of environments placed on the sending server, so a server's key can't speak for another's services |
+| Auth | A token per service and release, `dtr1.<org>.<project>.<env>.<service>.<release>.<mac>`, an HMAC under the install's trace key (derived from the analytics token, handed to every server with the salts while tracing is on). The ingest takes the service from the token, never from attributes. The forwarder keeps only spans naming a live (not archived) service in an environment placed on the sending server, with that service's own environment, project, org and release, so a server's key can't speak for another's services and an archived service's tokens send nothing. Tokens are revoked by rotating the key (`dock tracing rotate-key`, `POST /api/v1/tracing/rotate-key`, the console; operators with a recent sign-in, migration 0099): the key is derived from the analytics token and an epoch, the servers get the new one and Caddy's routes new edge tokens at once, and a traced container keeps the token it started with, refused until its next deploy or restart |
 | Reaching it | Every release's container gets `dock-otlp:host-gateway` in its hosts file and the standard variables, per signal so the token only goes to Dock: traces endpoint `http://dock-otlp:<port>/v1/traces` (the server's own Caddy, which routes that hostname from private addresses to the ingest), protocol, headers with the token, service name, resource attributes. The service's own variables win, and one that sends traces elsewhere (it sets the global or traces endpoint, the traces exporter, or turns the SDK off) gets none: its list says so. Metrics and logs are pointed at Dock, which drops them, only for a service that configures no OTLP itself (an SDK's default export to localhost logs an error a minute); never set to `none`. Set when a container starts. Not on tunnel-mode servers yet: Caddy listens on loopback there |
 | Bounds | Bodies 2 MB (4 MB unpacked), two decodes at once (503 past), 5,000 spans a second per service, then OTLP partial success (SDKs don't resend). A span is cut on the way in: name, 64 attributes in 4 KB, values, 16 events in 12 KB, exceptions first. A spans spool per server (128 MB). Daily caps in the store: 2M spans a service, 5M an org, then error spans only (200k a service); 4 GB in all |
 | Secrets | At ingest, sensitive attribute names (by word: `db.password`, `x-api-key`, not `total_tokens`), headers outside a short allowlist and sensitive URL parameters are masked. At read, a reader who can't reveal secret values gets each span's release's values masked, as in logs |
@@ -58,7 +58,13 @@ with no setup, and link traces to what it shows.
   about 25 MB idle, at most 512 MB.
 - Spans don't survive a move of the analytics server or a restore of the
   control plane: they are diagnostics, kept for days.
-- Still to come: OTLP metrics (phase 6). Errors don't take span
-  exceptions as issues of their own: an app usually logs the same
-  exception, so the Errors page would show it twice; linking a log issue
-  to its latest trace is the follow-up.
+- Errors don't take span exceptions as issues of their own: an app
+  usually logs the same exception, so the Errors page would show it
+  twice. Instead the ingest gives a span's exception the fingerprint its
+  stack would get in a log (errparse), and a log issue names its newest
+  trace with that fingerprint (`latest_trace`, read with the issue: one
+  trace store query over an hour and five minutes around its last
+  sighting).
+- Still to come: OTLP metrics (phase 6), and the variables for services
+  on tunnel-mode servers (Caddy needs a listener containers can reach
+  there).

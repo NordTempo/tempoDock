@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json/v2"
 	"strings"
 	"testing"
@@ -285,5 +286,68 @@ func TestRoutesTraceAtTheEdge(t *testing.T) {
 	}
 	if r := h.routeOf("shop.example.com"); r.Trace != "" {
 		t.Errorf("tracing off, the route traces: %q", r.Trace)
+	}
+}
+
+// Rotating the trace key revokes every ingest token: the servers get a
+// new key that refuses the old tokens, routes get new edge tokens, and
+// new containers get new tokens. Operators only; an archived service's
+// spans are dropped too.
+func TestRotateTraceKeyRevokesTokens(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1", Port: 8080})
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.RotateTraceKey(h.ctx, testSystem); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("tracing off: %v", err)
+	}
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	rel := h.wait(web, h.deploy(web, "app:1").Number)
+	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) > 0 })
+	oldKey := h.rt.TraceKey()
+	spec, _ := h.rt.Spec(h.ctr(web, rel.Number))
+	oldTok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+	oldEdge := h.routeOf("shop.example.com").Trace
+
+	member := Actor{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeAdmin}
+	if _, err := h.c.RotateTraceKey(h.ctx, member); CodeOf(err) != apitypes.CodeForbidden {
+		t.Errorf("an org admin token: %v", err)
+	}
+	st, err := h.c.RotateTraceKey(h.ctx, testSystem)
+	if err != nil || st.KeyRotatedAt == nil {
+		t.Fatalf("rotate = %+v, %v", st, err)
+	}
+	eventually(t, "the new key on the server", func() bool { return !bytes.Equal(h.rt.TraceKey(), oldKey) })
+	if _, err := traces.Parse(h.rt.TraceKey(), oldTok); err == nil {
+		t.Error("the new key takes a token minted before")
+	}
+	if e := h.routeOf("shop.example.com").Trace; e == oldEdge || e == "" {
+		t.Errorf("edge token %q after rotating, was %q", e, oldEdge)
+	}
+	rel = h.wait(web, h.deploy(web, "app:1").Number)
+	spec, _ = h.rt.Spec(h.ctr(web, rel.Number))
+	tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+	if _, err := traces.Parse(h.rt.TraceKey(), tok); err != nil {
+		t.Errorf("a new container's token: %v", err)
+	}
+	// A restart keeps the epoch.
+	h.restart()
+	if _, err := traces.Parse(h.c.traceKey(), tok); err != nil {
+		t.Errorf("after a restart, the key refuses the new token: %v", err)
+	}
+
+	// An archived service's spans are dropped.
+	scopes, err := h.store.ListServerServiceScopes(h.ctx, h.c.localID)
+	if err != nil || len(scopes) != 1 {
+		t.Fatalf("scopes = %v, %v", scopes, err)
+	}
+	if _, err := h.c.ArchiveService(h.ctx, testSystem, web); err != nil {
+		t.Fatal(err)
+	}
+	if scopes, _ := h.store.ListServerServiceScopes(h.ctx, h.c.localID); len(scopes) != 0 {
+		t.Errorf("an archived service still takes spans: %v", scopes)
 	}
 }

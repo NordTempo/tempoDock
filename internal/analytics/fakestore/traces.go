@@ -120,6 +120,23 @@ func (t *Traces) Handler() http.Handler {
 		}
 		reply(w, res)
 	}))
+	mux.HandleFunc("POST "+analytics.ErrorTracePath, t.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.ErrorTraceQuery
+		if json.UnmarshalRead(r.Body, &q) != nil || q.Fingerprint == "" || q.To <= q.From {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		var res analytics.ErrorTrace
+		t.mu.Lock()
+		for _, sp := range t.spans {
+			if sp.Org == q.Org && sp.ErrorFP == q.Fingerprint && slices.Contains(q.Services, sp.Service) &&
+				sp.Start >= q.From && sp.Start < q.To && sp.Start >= res.Start {
+				res = analytics.ErrorTrace{Trace: sp.Trace, Start: sp.Start}
+			}
+		}
+		t.mu.Unlock()
+		reply(w, res)
+	}))
 	mux.HandleFunc("POST "+analytics.TracesPrunePath, t.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.TracePrune
 		if json.UnmarshalRead(r.Body, &q) != nil {

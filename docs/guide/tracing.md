@@ -60,7 +60,9 @@ dock traces show 4f2a9c1e…                   # one trace as a tree of its span
 
 In the UI, a service's Requests tab has a Traces view: a trace opens its
 spans in place, and "Open full trace" gives it a page of its own. A failed
-release's diagnosis links to the request that failed.
+release's diagnosis links to the request that failed, and an error from a
+service's logs links to its latest trace when the app sends the same
+exception in a span.
 
 Agents get the same through MCP: `traces_list` and `trace_get`.
 
@@ -81,3 +83,15 @@ Agents get the same through MCP: `traces_list` and `trace_get`.
   values masked, as in logs.
 - Spans of services outside a token's project or environment are hidden
   from it.
+
+## If a token leaks
+
+Each release's token can only send spans for its own service. To revoke
+every token at once, an operator rotates the trace key:
+
+```sh
+dock tracing rotate-key
+```
+
+Traced services get new tokens with their next deploy or restart; until
+then Dock refuses their spans.

@@ -390,6 +390,21 @@ function IssueDetail({ issue: i }: { issue: ErrorIssue }) {
           {since(i.last_seen)} ago
           {i.last_release ? ` in release ${i.last_release}` : ""}
         </dd>
+        {detail.data?.latest_trace && (
+          <>
+            <dt>Latest trace</dt>
+            <dd>
+              <Link
+                to="/$org/$project/$environment/$service/requests/traces/$trace"
+                params={{ ...svc, trace: detail.data.latest_trace.id }}
+                search={{ at: detail.data.latest_trace.at }}
+              >
+                {detail.data.latest_trace.id.slice(0, 8)}
+              </Link>{" "}
+              {since(detail.data.latest_trace.at)} ago
+            </dd>
+          </>
+        )}
         {i.resolved_at && (
           <>
             <dt>Resolved</dt>

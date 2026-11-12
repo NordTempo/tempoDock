@@ -60,6 +60,14 @@ func registerTracing(s *Server, a huma.API) {
 		}
 		return reply(s.core.DisableTraces(ctx, actor))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "rotate-trace-key", Method: http.MethodPost, Path: Prefix + "/tracing/rotate-key",
+		Summary: "Revoke every trace ingest token", Tags: tags,
+		Description: "Rotates the trace key: every ingest token minted before stops working at once, and traced services get new ones with their next deploy or restart. Operators only, with a recent sign-in.",
+		Errors:      []int{http.StatusConflict},
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.TracingStatus], error) {
+		return reply(s.core.RotateTraceKey(ctx, actor))
+	})
 }
 
 // SitePath addresses a site of a project.

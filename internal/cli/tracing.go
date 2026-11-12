@@ -61,6 +61,36 @@ container of its own beside the analytics store, on the analytics server
 	}
 	offCmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
 	cmd.AddCommand(offCmd)
+	var sure bool
+	rotate := &cobra.Command{
+		Use: "rotate-key", Args: cobra.NoArgs,
+		Short: "Revoke every trace ingest token: rotate the trace key",
+		Long: `Rotates the trace key, so every ingest token minted before stops working
+at once: what to do when a token leaked. Traced services get new tokens
+when their containers start, with their next deploy or restart; until
+then Dock refuses their spans.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !sure {
+				if err := g.io.Confirm("Rotate the trace key? Traced apps send nothing Dock keeps until their next deploy or restart.", "yes"); err != nil {
+					return err
+				}
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			st, err := send[apitypes.TracingStatus](cmd.Context(), s, http.MethodPost, apiPrefix+"/tracing/rotate-key", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(st, func() error {
+				g.io.Successf("Rotated the trace key. Restart or redeploy traced services to give them new tokens.")
+				return nil
+			})
+		},
+	}
+	rotate.Flags().BoolVarP(&sure, "yes", "y", false, "don't ask for confirmation")
+	cmd.AddCommand(rotate)
 	return cmd
 }
 
@@ -80,6 +110,11 @@ func printTracing(g *globals, st apitypes.TracingStatus) error {
 	case st.Enabled:
 		store = "not answering; see `docker logs dock-traces` on " + st.Server
 	}
+	rotated := ""
+	if st.KeyRotatedAt != nil {
+		rotated = st.KeyRotatedAt.Local().Format("Jan 2 2006 15:04")
+	}
 	return g.io.Fields("Tracing", state, "Server", st.Server, "Trace store", store, "Problem", st.Error,
-		"Keeps", fmt.Sprintf("%d days of spans, in %d MB of memory", st.RetentionDays, st.MemoryMB))
+		"Keeps", fmt.Sprintf("%d days of spans, in %d MB of memory", st.RetentionDays, st.MemoryMB),
+		"Key rotated", rotated)
 }

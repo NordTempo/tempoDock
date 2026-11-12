@@ -58,7 +58,7 @@ func (q *Queries) DeleteAnalyticsSaltsBefore(ctx context.Context, day int64) err
 }
 
 const getAnalyticsSettings = `-- name: GetAnalyticsSettings :one
-SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults, traces_enabled FROM analytics_settings WHERE id = 1
+SELECT id, server_id, token, enabled, updated_by, updated_at, site_defaults, traces_enabled, traces_key_epoch, traces_key_rotated_at FROM analytics_settings WHERE id = 1
 `
 
 func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, error) {
@@ -73,6 +73,8 @@ func (q *Queries) GetAnalyticsSettings(ctx context.Context) (AnalyticsSetting, e
 		&i.UpdatedAt,
 		&i.SiteDefaults,
 		&i.TracesEnabled,
+		&i.TracesKeyEpoch,
+		&i.TracesKeyRotatedAt,
 	)
 	return i, err
 }
@@ -103,6 +105,25 @@ func (q *Queries) ListAnalyticsSalts(ctx context.Context, day int64) ([]Analytic
 		return nil, err
 	}
 	return items, nil
+}
+
+const rotateTracesKey = `-- name: RotateTracesKey :one
+UPDATE analytics_settings SET traces_key_epoch = traces_key_epoch + 1, traces_key_rotated_at = ?, updated_by = ?, updated_at = ?
+WHERE id = 1 RETURNING traces_key_epoch
+`
+
+type RotateTracesKeyParams struct {
+	TracesKeyRotatedAt *time.Time
+	UpdatedBy          string
+	UpdatedAt          time.Time
+}
+
+// RotateTracesKey moves the trace key to its next epoch, and returns it.
+func (q *Queries) RotateTracesKey(ctx context.Context, arg RotateTracesKeyParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, rotateTracesKey, arg.TracesKeyRotatedAt, arg.UpdatedBy, arg.UpdatedAt)
+	var traces_key_epoch int64
+	err := row.Scan(&traces_key_epoch)
+	return traces_key_epoch, err
 }
 
 const setAnalyticsEnabled = `-- name: SetAnalyticsEnabled :exec

@@ -73,6 +73,7 @@ func (a *api) tracesHandler(t *store.Traces) http.Handler {
 	}))
 	mux.Handle("POST "+analytics.TracesPath, a.auth(query(a, t.Traces)))
 	mux.Handle("POST "+analytics.TracePath, a.auth(query(a, t.Trace)))
+	mux.Handle("POST "+analytics.ErrorTracePath, a.auth(query(a, t.ErrorTrace)))
 	mux.Handle("POST "+analytics.TracesPrunePath, a.auth(func(w http.ResponseWriter, r *http.Request) {
 		var q analytics.TracePrune
 		if err := json.UnmarshalRead(io.LimitReader(r.Body, 4<<10), &q); err != nil {
