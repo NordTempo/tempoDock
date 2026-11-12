@@ -639,6 +639,9 @@ func TestVersions(t *testing.T) {
 	t.Run("different major version", func(t *testing.T) {
 		h := newHarness(t)
 		h.stopNode()
+		// The hub sees the old connection close a moment later; until it
+		// does, the server still reads online.
+		waitFor(t, "the hub to see the node go", func() bool { return !h.client.Online() })
 		h.startNode(func(n *Node) { n.alpn = "dock-node/9" })
 		waitFor(t, "the node to log the mismatch", func() bool { return strings.Contains(h.nodeLog.String(), "upgrade dock") })
 		waitFor(t, "the hub to log the mismatch", func() bool { return strings.Contains(h.hubLog.String(), "protocol version this control plane doesn't") })

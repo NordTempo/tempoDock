@@ -372,7 +372,11 @@ end) are not listed.
 - **No N+1.** A request runs a fixed number of queries however many rows it
   shows: load per project or environment, assemble in Go
   (`internal/core/overview.go` is the pattern). A query inside a loop over
-  services, releases or events is a bug.
+  services, releases or events is a bug. A test proves it by counting
+  the reads of one call (`countingDB` and `countCalls` in
+  `internal/core/vuln_alerts_test.go`) for one row and for several:
+  count by the call's context, never every read of the store, which the
+  daemon's background loops share.
 - **An index for every filter and order.** Run `EXPLAIN QUERY PLAN` on every
   new or changed query against a seeded database. No `SCAN` of a table that
   grows (releases, events, audit, variables, domains) and no `USE TEMP

@@ -143,6 +143,9 @@ type Core struct {
 	// restart, active ones no longer matter.
 	checksMu sync.Mutex
 	checks   map[int64]domainCheck
+	// checking holds, by domain ID, the check of a domain running now,
+	// closed when it ends (holdDomainCheck); guarded by checksMu.
+	checking map[int64]chan struct{}
 	// lookupTXT is Options.LookupTXT, or the system resolver's.
 	lookupTXT func(ctx context.Context, name string) ([]string, error)
 	// lookupIP is Options.LookupIP, or the system resolver's.
@@ -284,6 +287,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		servers:    map[int64]*serverState{},
 		domainKick: make(chan struct{}, 1),
 		checks:     map[int64]domainCheck{},
+		checking:   map[int64]chan struct{}{},
 		lookupTXT:  o.LookupTXT,
 		lookupIP:   o.LookupIP,
 		status:     map[int64]apitypes.ServiceStatus{},

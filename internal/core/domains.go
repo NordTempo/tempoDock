@@ -583,6 +583,32 @@ func (c *Core) checkDomains() {
 	}
 }
 
+// holdDomainCheck waits until no other check of domain id runs and
+// claims it; release ends the claim. False if ctx ends first.
+func (c *Core) holdDomainCheck(ctx context.Context, id int64) (release func(), ok bool) {
+	for {
+		c.checksMu.Lock()
+		running, busy := c.checking[id]
+		if !busy {
+			done := make(chan struct{})
+			c.checking[id] = done
+			c.checksMu.Unlock()
+			return func() {
+				c.checksMu.Lock()
+				delete(c.checking, id)
+				c.checksMu.Unlock()
+				close(done)
+			}, true
+		}
+		c.checksMu.Unlock()
+		select {
+		case <-running:
+		case <-ctx.Done():
+			return nil, false
+		}
+	}
+}
+
 // domainCheck is when a domain was last checked and what its hostname
 // resolved to.
 type domainCheck struct {
@@ -599,6 +625,19 @@ const certPatience = 10 * time.Minute
 // A domain not yet verified is checked for its TXT record only, and goes
 // on to the DNS and certificate check once it verifies.
 func (c *Core) checkDomain(ctx context.Context, d store.Domain, dnsOK *time.Time) {
+	// One check of a domain at a time, each reading the row as the one
+	// before left it: the checker lists its domains at the start of a
+	// round, and a check from that round would otherwise save what DNS
+	// said before a CheckDomainNow that ran meanwhile.
+	release, ok := c.holdDomainCheck(ctx, d.ID)
+	if !ok {
+		return
+	}
+	defer release()
+	d, err := c.store.GetServiceDomain(ctx, store.GetServiceDomainParams{Hostname: d.Hostname, ServiceID: d.ServiceID})
+	if err != nil {
+		return // removed meanwhile, or shutting down
+	}
 	ss, err := c.scopeOf(ctx, d.ServiceID)
 	if err != nil || ss.svc.ArchivedAt != nil {
 		return
