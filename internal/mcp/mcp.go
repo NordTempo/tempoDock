@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/NordTempo/tempoDock/docs/guide"
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -59,7 +60,7 @@ func Handler(c *core.Core, opts Options) http.Handler {
 			org, _ := ctx.Value(orgKey{}).(string)
 			return c.AuthenticateToken(ctx, token, org)
 		},
-		Caller: func(a core.Actor) string { return "You act as " + whoLine(a.Me()) },
+		Caller: h.caller,
 		View:   h.view,
 		WithReason: func(ctx context.Context, r string) context.Context {
 			return core.WithReason(ctx, r[:min(len(r), maxReason)])
@@ -85,6 +86,25 @@ func Handler(c *core.Core, opts Options) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		srv.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), orgKey{}, r.URL.Query().Get("org"))))
 	})
+}
+
+// caller is the instructions' last line: who the token is and what it may
+// do, and for a token limited to a project, its environments, which tools
+// then need named.
+func (h *handler) caller(ctx context.Context, a core.Actor) string {
+	line := "You act as " + whoLine(a.Me())
+	if a.ProjectName == "" || a.EnvironmentName != "" {
+		return line
+	}
+	envs, err := h.core.ListEnvironments(ctx, a, a.ProjectName)
+	if err != nil || len(envs) == 0 {
+		return line
+	}
+	names := make([]string, len(envs))
+	for i, e := range envs {
+		names[i] = e.Name + " (" + string(e.Kind) + ")"
+	}
+	return line + " Its environments: " + strings.Join(names, ", ") + "."
 }
 
 // maxReason caps a reason's length in bytes, as the API's Dock-Reason.

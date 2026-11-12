@@ -99,6 +99,7 @@ func newFixture(t testing.TB) *fixture {
 	}
 	for name, req := range map[string]apitypes.CreateTokenRequest{
 		"shop-agent": {Scope: apitypes.ScopeDeploy, Project: "shop", Environment: "staging"},
+		"shop-all":   {Scope: apitypes.ScopeDeploy, Project: "shop"},
 		"admin":      {Scope: apitypes.ScopeAdmin},
 	} {
 		req.Name = name
@@ -890,5 +891,15 @@ func TestUpdateService(t *testing.T) {
 	svc, err := f.core.GetService(context.Background(), sys, core.ServiceRef{Project: "shop", Environment: "staging", Service: "web"})
 	if err != nil || svc.Port != 0 {
 		t.Errorf("update_service changed the live port: %d %v", svc.Port, err)
+	}
+}
+
+// A token limited to a project is told its environments on initialize:
+// tools need one named, and listing them would cost a call.
+func TestInstructionsNameEnvironments(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("shop-all", nil)
+	if got := s.InitializeResult().Instructions; !strings.Contains(got, "Its environments: ") || !strings.Contains(got, "staging (non_production)") {
+		t.Errorf("instructions end %q", got[max(0, len(got)-200):])
 	}
 }
