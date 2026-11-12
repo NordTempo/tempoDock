@@ -96,11 +96,17 @@ func TestIdleClose(t *testing.T) {
 	c.Release(a)
 	select {
 	case id := <-emptied:
-		if id != 1 || !a.Conn.closed.Load() || c.Len() != 0 {
-			t.Fatalf("emptied %d, closed %t, %d left", id, a.Conn.closed.Load(), c.Len())
+		if id != 1 || c.Len() != 0 {
+			t.Fatalf("emptied %d, %d left", id, c.Len())
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("idle connection never closed")
+		t.Fatal("idle connection never removed")
+	}
+	// Emptied runs under the cache's lock; the connection closes after.
+	for deadline := time.Now().Add(2 * time.Second); !a.Conn.closed.Load(); time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("idle connection never closed")
+		}
 	}
 }
 
