@@ -581,18 +581,21 @@ func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 
 // TestDataRowsBareTableName: a bare table name reads the table of that
 // name, in public first, else in the one schema that has it (MySQL's
-// databases); several candidates leave it to the engine.
+// databases); with several candidates the caller is told to name one.
 func TestDataRowsBareTableName(t *testing.T) {
 	h, eng, db, _ := fakeDatabase(t)
 	eng.schema = []apitypes.DataTable{{Schema: "shop", Name: "orders"}, {Schema: "a", Name: "users"}, {Schema: "public", Name: "users"},
 		{Schema: "a", Name: "logs"}, {Schema: "b", Name: "logs"}}
-	for _, name := range []string{"orders", "users", "logs", "x.orders"} {
+	for _, name := range []string{"orders", "users", "x.orders"} {
 		if _, err := h.c.DataRows(h.ctx, testSystem, db, apitypes.DataPageRequest{Table: name}); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	if want := []string{"shop.orders", "public.users", "logs", "x.orders"}; !slices.Equal(eng.paged, want) {
+	if want := []string{"shop.orders", "public.users", "x.orders"}; !slices.Equal(eng.paged, want) {
 		t.Fatalf("paged %v, want %v", eng.paged, want)
+	}
+	if _, err := h.c.DataRows(h.ctx, testSystem, db, apitypes.DataPageRequest{Table: "logs"}); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "a.logs, b.logs") {
+		t.Fatalf("an ambiguous name: %v", err)
 	}
 }
 
