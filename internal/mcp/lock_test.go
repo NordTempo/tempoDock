@@ -141,6 +141,14 @@ func TestAccessRequestTools(t *testing.T) {
 			t.Errorf("request %d reason %q (%v), want %q", id, r.Reason, err, want)
 		}
 	}
+	// Anyone who sees a request may wait on it: another token's, without
+	// a reason to give.
+	agent := call(t, f.connect("shop-agent", nil), "set_variables", map[string]any{"service": "web", "set": map[string]string{"C": "3"}})
+	var theirs struct{ Error struct{ Request int64 } }
+	agent.decode(t, &theirs)
+	if w := call(t, s, "wait_for_request", map[string]any{"id": theirs.Error.Request, "wait_seconds": 0}); w.isError {
+		t.Errorf("waiting on another token's request: %s", w.summary)
+	}
 
 	// Asking first in blog/production, which isn't locked.
 	res = call(t, s, "request_access", map[string]any{
@@ -155,6 +163,15 @@ func TestAccessRequestTools(t *testing.T) {
 	res.decode(t, &asked)
 	if res.isError || asked.ID == 0 || asked.Status != apitypes.RequestPending || asked.Reason != "rotate the key" {
 		t.Fatalf("request_access: %s %s", res.summary, res.json)
+	}
+	// A reason among the arguments, as a direct call takes one, isn't an
+	// unknown argument of the tool asked for.
+	nested := call(t, s, "request_access", map[string]any{
+		"tool": "set_variables", "reason": "rotate the other key",
+		"arguments": map[string]any{"project": "blog", "environment": "production", "service": "api", "set": map[string]string{"OTHER": "new"}, "reason": "inside"},
+	})
+	if nested.isError {
+		t.Errorf("request_access with a reason in its arguments: %s", nested.summary)
 	}
 	admin := core.Actor{Kind: "user", OrgID: 1, Name: "saile@example.com", UserID: 1, Scope: apitypes.ScopeAdmin}
 	if _, err := f.core.DecideRequest(ctx, admin, asked.ID, true, apitypes.DecideAccessRequest{}); err != nil {

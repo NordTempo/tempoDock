@@ -137,8 +137,20 @@ func qualifyTable[D any](ctx context.Context, t data.Tables, tg *target[D], call
 	if err != nil {
 		return "", err
 	}
+	return QualifyTable(s.Tables, name)
+}
+
+// QualifyTable names a table schema.name from a bare name among tables:
+// public's first, else the one schema that has it (MySQL's schemas are its
+// databases). A name in several schemas, or a schema-qualified one, is
+// for the caller to name; one in none is returned as given, for the
+// engine's own error.
+func QualifyTable(tables []apitypes.DataTable, name string) (string, error) {
+	if strings.Contains(name, ".") {
+		return name, nil
+	}
 	var found []string
-	for _, tb := range s.Tables {
+	for _, tb := range tables {
 		if tb.Name != name {
 			continue
 		}
@@ -147,10 +159,13 @@ func qualifyTable[D any](ctx context.Context, t data.Tables, tg *target[D], call
 		}
 		found = append(found, tb.Schema+"."+name)
 	}
-	if len(found) == 1 {
+	switch len(found) {
+	case 0:
+		return name, nil
+	case 1:
 		return found[0], nil
 	}
-	return name, nil
+	return "", Errorf(apitypes.CodeValidation, "table %s is in several schemas (%s); name it schema.table", name, strings.Join(found, ", "))
 }
 
 // ready is everything an engine call needs: a level check, a set-up

@@ -244,23 +244,48 @@ func compactSchema(js []byte) ([]byte, error) {
 // --reason, without it costing every schema in tools/list. The call and
 // an access request it files then hold the arguments without it.
 func (s *Server[A]) takeReason(ctx context.Context, t *tool[A], args json.RawMessage) (context.Context, json.RawMessage) {
-	if s.o.WithReason == nil || t.ownReason || !bytes.Contains(args, []byte(`"reason"`)) {
+	if s.o.WithReason == nil {
 		return ctx, args
+	}
+	reason, rest := splitReason(t, args)
+	if reason == "" {
+		return ctx, rest
+	}
+	return s.o.WithReason(ctx, reason), rest
+}
+
+// SplitReason takes the reason argument out of a call's arguments to the
+// named tool, unless the tool takes one of its own: for a host that
+// stores a call to run later (request_access), as takeReason does for a
+// call that runs now.
+func (s *Server[A]) SplitReason(name string, args json.RawMessage) (string, json.RawMessage) {
+	s.build()
+	t, ok := s.toolsByID[name]
+	if !ok {
+		return "", args
+	}
+	return splitReason(t, args)
+}
+
+// splitReason is SplitReason for a tool.
+func splitReason[A any](t *tool[A], args json.RawMessage) (string, json.RawMessage) {
+	if t.ownReason || !bytes.Contains(args, []byte(`"reason"`)) {
+		return "", args
 	}
 	var m map[string]json.RawMessage
 	if json.Unmarshal(args, &m) != nil {
-		return ctx, args
+		return "", args
 	}
 	var reason string
 	if json.Unmarshal(m["reason"], &reason) != nil {
-		return ctx, args
+		return "", args
 	}
 	delete(m, "reason")
 	b, err := json.Marshal(m)
 	if err != nil {
-		return ctx, args
+		return "", args
 	}
-	return s.o.WithReason(ctx, reason), b
+	return reason, b
 }
 
 // toolResult is a tools/call result.

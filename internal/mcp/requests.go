@@ -112,6 +112,13 @@ func (h *handler) addRequestTools(s *mcpkit.Server[core.Actor]) {
 			case notAskable(in.Tool):
 				return mcpkit.Reply{}, mcpkit.Invalid("%s can't be asked for; data changes are proposals (propose_data_changes)", in.Tool)
 			}
+			// A reason among the arguments is the request's, as on a direct
+			// call; the stored arguments go without it.
+			reason, args := h.srv.SplitReason(in.Tool, in.Arguments)
+			if in.Reason == "" {
+				in.Reason = reason
+			}
+			in.Arguments = args
 			_, err := h.srv.Call(ctx, c.Actor.AskFirst(), in.Tool, in.Arguments)
 			if err == nil {
 				return mcpkit.Reply{}, mcpkit.Invalid("%s finished without asking: it changed nothing that needs approval", in.Tool)
@@ -141,8 +148,10 @@ func (h *handler) addRequestTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			if err := h.core.GiveRequestReason(ctx, c.Actor, in.ID, in.Reason); err != nil {
-				return mcpkit.Reply{}, err
+			if in.Reason != "" {
+				if err := h.core.GiveRequestReason(ctx, c.Actor, in.ID, in.Reason); err != nil {
+					return mcpkit.Reply{}, err
+				}
 			}
 			c.Notify(fmt.Sprintf("waiting for access request #%d", in.ID))
 			r, err := h.core.WaitRequest(ctx, c.Actor, in.ID, wait)

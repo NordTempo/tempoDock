@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/core"
+	"github.com/NordTempo/tempoDock/internal/datapanel"
 	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
@@ -62,13 +64,18 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 			summary := fmt.Sprintf("Created %s/%s/%s.", ref.Project, ref.Environment, svc.Name)
 			if in.Deploy && svc.Template == apitypes.TemplateNone && svc.Image != "" {
 				sref := core.ServiceRef{Project: ref.Project, Environment: ref.Environment, Service: svc.Name}
+				// The service exists either way: a deploy that didn't start
+				// is said in a reply, not as the call's error, so the model
+				// doesn't create it again.
 				rel, err := h.core.DeployImage(ctx, c.Actor, sref, apitypes.DeployImageRequest{})
-				if err != nil {
-					return mcpkit.Reply{}, fmt.Errorf("created %s, but its deploy: %w", sref, err)
+				if err == nil {
+					var r mcpkit.Reply
+					if r, err = h.waitOne(ctx, c, "Deploy", rel, defaultWait); err == nil {
+						r.Summary = summary + " " + r.Summary
+						return r, nil
+					}
 				}
-				r, err := h.waitOne(ctx, c, "Deploy", rel, defaultWait)
-				r.Summary = summary + " " + r.Summary
-				return r, err
+				return mcpkit.Reply{Summary: fmt.Sprintf("%s Its deploy didn't go through: %s. Fix that, then deploy_image; don't create it again.", summary, errorText(err)), Data: svc}, nil
 			}
 			switch {
 			case svc.Template != apitypes.TemplateNone:
@@ -290,3 +297,13 @@ func viewStats(st apitypes.ServiceStats) statsView {
 
 // round1 rounds to one decimal, for percentages in summaries and views.
 func round1(f float64) float64 { return math.Round(f*10) / 10 }
+
+// errorText is what an error tells the model in a reply rather than as
+// the call's error: a Dock error's code and message, anything else as
+// fail renders it.
+func errorText(err error) string {
+	if de, ok := errors.AsType[*datapanel.Error](err); ok {
+		return string(de.Code) + ": " + de.Msg
+	}
+	return "internal error; see the daemon log"
+}
