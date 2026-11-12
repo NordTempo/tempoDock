@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
@@ -77,10 +78,38 @@ func TestConsoleIgnoresTheCurrentOrg(t *testing.T) {
 		"/api/v1/address",
 		"/api/v1/platform/security",
 	}
+	clearOfStatsTick(t, call, servers[0].Name)
 	for _, p := range paths {
 		a, b := call("GET", p, "test", nil), call("GET", p, "acme", nil)
 		if !bytes.Equal(a, b) {
 			t.Errorf("GET %s differs by the current org:\n test: %s\n acme: %s", p, a, b)
+		}
+	}
+}
+
+// clearOfStatsTick returns when the next minute's statistics tick
+// (internal/core/stats.go) is at least 10 s away, so a few seconds of
+// requests all see the same samples: a tick stores new usage for every
+// server and org, and would make two requests either side of it differ.
+// When the tick is closer, it waits until server's usage shows it.
+func clearOfStatsTick(t *testing.T, call func(method, path, org string, body any) []byte, server string) {
+	t.Helper()
+	next := time.Now().Truncate(time.Minute).Add(time.Minute)
+	if time.Until(next) >= 10*time.Second {
+		return
+	}
+	for deadline := next.Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		var got struct {
+			Server apitypes.Server `json:"server"`
+		}
+		if err := json.Unmarshal(call("GET", "/api/v1/servers/"+server, "test", nil), &got); err != nil {
+			t.Fatal(err)
+		}
+		if u := got.Server.Usage; u != nil && !u.Time.Before(next) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no statistics tick at %s", next.Format(time.TimeOnly))
 		}
 	}
 }
