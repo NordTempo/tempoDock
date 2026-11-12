@@ -17,7 +17,7 @@ import type {
   Variable,
   VariableChange,
 } from "../../data/types";
-import { modKey, useKeydown, useShortcuts } from "../../shell/keys";
+import { isModEnter, modKey, useKeydown, useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
 import { plural } from "../../ui/format";
@@ -250,7 +250,7 @@ export function ApplyBox(props: Parameters<typeof useStaged>[0]) {
   const { changes, busy, applyBlocked, apply, env } = staged;
   useKeydown((event) => {
     if (changes.count === 0 || busy || applyBlocked) return;
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (isModEnter(event)) {
       event.preventDefault();
       apply.mutate(env);
     }
@@ -302,7 +302,7 @@ export function ApplyControl({
   useKeydown((event) => {
     if (changes.count === 0 || busy || applyBlocked) return;
     if (open) return; // the drawer's own Apply has it
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (isModEnter(event)) {
       event.preventDefault();
       run();
     }
@@ -401,7 +401,7 @@ function StagedReview({
   // it is open; the panel has its own).
   useKeydown((event) => {
     if (!drawer || changes.count === 0 || busy || applyBlocked) return;
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (isModEnter(event)) {
       event.preventDefault();
       applyNow();
     }

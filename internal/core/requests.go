@@ -199,7 +199,7 @@ func (c *Core) alertRequest(ctx context.Context, r store.AccessRequest, le *Lock
 	c.signalAlert(ctx, alertSignal{
 		Key: requestAlertKey(r.ID), Kind: apitypes.AlertAccessRequest, Severity: apitypes.SeverityWarning,
 		Title:   fmt.Sprintf("Access request #%d: %s", r.ID, requestSummary(r, le.Project, le.Environment)),
-		Message: "Approve or reject it in Dock, under Requests." + reasonSuffix(r.Reason),
+		Message: "Approve or reject it in Dock, in the Inbox." + reasonSuffix(r.Reason),
 		Command: fmt.Sprintf("dock request show %d", r.ID), Target: &apitypes.AlertTarget{Request: r.ID},
 		Project: le.Project, Environment: le.Environment, projectID: le.ProjectID,
 	})
@@ -482,7 +482,7 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 		verb = "approving"
 	}
 	if a.Kind == "token" {
-		return apitypes.AccessRequest{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, under Requests", a)
+		return apitypes.AccessRequest{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, in the Inbox", a)
 	}
 	if err := a.require(apitypes.ScopeAdmin, verb+" access requests"); err != nil {
 		return apitypes.AccessRequest{}, err
@@ -589,7 +589,7 @@ var restartOps = map[string]bool{"api:restart": true, "mcp:redeploy": true}
 // nothing runs.
 func (c *Core) CheckRequest(ctx context.Context, a Actor, id int64) (apitypes.AccessRequestCheck, error) {
 	if a.Kind == "token" {
-		return apitypes.AccessRequestCheck{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, under Requests", a)
+		return apitypes.AccessRequestCheck{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, in the Inbox", a)
 	}
 	if err := a.require(apitypes.ScopeAdmin, "checking access requests"); err != nil {
 		return apitypes.AccessRequestCheck{}, err

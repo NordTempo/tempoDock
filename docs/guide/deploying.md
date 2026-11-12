@@ -639,7 +639,7 @@ dock git disconnect
 A push into a [locked environment](agents.md#locked-environments-and-access-requests)
 doesn't deploy by itself: it waits as an access request naming the
 commit, and the commit status on GitHub says so. An admin approves it
-under Requests in the UI, and the push deploys as usual; a newer push
+in the UI's Inbox, and the push deploys as usual; a newer push
 replaces the one waiting. This is production's deploy approval. Deploy in
 the UI or `dock git deploy` by a person isn't held.
 

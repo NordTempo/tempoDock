@@ -38,14 +38,20 @@ export function alertText(a: Alert): { text: string; cli?: string } {
   // An access request's says where to decide it (for channels: email,
   // chat); the row's Review link does that here.
   const message = (a.message ?? "")
-    .replace(/^Approve or reject it in Dock, under Requests\.\s*/, "")
+    .replace(
+      /^Approve or reject it in Dock, (under Requests|in the Inbox)\.\s*/,
+      "",
+    )
     .trim();
   if (!legacy(a)) return { text: message, cli: a.command || undefined };
   const cli = message.match(command)?.[1];
   const text = message
     .replace(/;\s*see `dock [^`]+`/, "")
     .replace(/\s*`dock [^`]+` shows its output\./, "")
-    .replace(/^Approve or reject it in Dock, under Requests\.\s*/, "")
+    .replace(
+      /^Approve or reject it in Dock, (under Requests|in the Inbox)\.\s*/,
+      "",
+    )
     .trim();
   return { text, cli };
 }

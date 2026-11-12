@@ -21,7 +21,7 @@ func newRequestCmd(g *globals) *cobra.Command {
 		Short: "Follow access requests: changes a locked environment refused",
 		Long: `A change a token (this CLI included) tries in a locked environment is
 refused with exit code 5 and filed as an access request. An admin approves
-or rejects it in the web UI, under Requests; approved, it runs as the
+or rejects it in the web UI, in the Inbox; approved, it runs as the
 token that asked. Pass --reason to any command to tell them why.
 
 Admins see their organization's requests; a token sees its own. There is

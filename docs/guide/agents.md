@@ -216,7 +216,7 @@ $ dock request wait 12
 ```
 
 - The request holds the exact call and its arguments. An admin sees it in
-  the web UI under Requests (and gets an alert), and approves or rejects
+  the web UI in the Inbox (and gets an alert), and approves or rejects
   it with a comment. Approved, it runs as your token, through every check
   it would pass then, and the audit log names both of you.
 - `--reason` on any command (MCP: `request_access`'s `reason`) tells the

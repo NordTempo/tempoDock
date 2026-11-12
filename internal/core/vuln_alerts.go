@@ -62,19 +62,36 @@ func vulnLevel(setting string) node.Severity {
 // findings a rematch found that the previous match didn't.
 func (c *Core) vulnAlerts(ctx context.Context, scan store.ImageScan, check vulnCheck, fresh map[findingKey]bool, only int64) {
 	ctx = context.WithoutCancel(ctx)
-	uses, err := c.store.ListImageScanLiveUses(ctx, &scan.ID)
+	rows, err := c.store.ListImageScanLiveUses(ctx, &scan.ID)
 	if err != nil {
 		c.log.Warn("vulnerability alerts: list releases", "scan", scan.ID, "err", err)
 		return
 	}
+	uses := make([]liveUse, 0, len(rows))
+	for _, u := range rows {
+		if only == 0 || u.ServiceID == only {
+			uses = append(uses, liveUse{u, scan.ID})
+		}
+	}
+	c.alertUses(ctx, uses, check, fresh)
+}
+
+// liveUse is a live release of a scanned image, what a service's
+// vulnerability alert is about.
+type liveUse struct {
+	store.ListImageScanLiveUsesRow
+	scan int64
+}
+
+// alertUses brings the vulnerability alerts of live releases up to date:
+// a fixed number of queries for any number of them (each org's setting
+// and ignores once, every scan's findings in one read), except a new
+// image's comparison with the image before it (vulnNewImage).
+func (c *Core) alertUses(ctx context.Context, uses []liveUse, check vulnCheck, fresh map[findingKey]bool) {
 	settings := map[int64]node.Severity{}
 	ignores := map[int64]ignoreSet{}
-	var found []store.ListScanFindingsAtLeastRow
-	loaded := false
+	var found map[int64][]store.ListScanFindingsAtLeastRow
 	for _, u := range uses {
-		if only != 0 && u.ServiceID != only {
-			continue
-		}
 		level, ok := settings[u.OrgID]
 		if !ok {
 			s, err := c.store.GetOrgVulnAlerts(ctx, u.OrgID)
@@ -89,17 +106,27 @@ func (c *Core) vulnAlerts(ctx context.Context, scan store.ImageScan, check vulnC
 			c.resolveAlert(ctx, key, time.Now())
 			continue
 		}
-		if !loaded {
+		if found == nil {
 			// Critical and high once, for every org's setting.
-			found, err = c.store.ListScanFindingsAtLeast(ctx, store.ListScanFindingsAtLeastParams{ScanIds: []int64{scan.ID}, MinSeverity: int64(node.SeverityHigh)})
+			var ids []int64
+			for _, u := range uses {
+				if !slices.Contains(ids, u.scan) {
+					ids = append(ids, u.scan)
+				}
+			}
+			rows, err := c.store.ListScanFindingsAtLeast(ctx, store.ListScanFindingsAtLeastParams{ScanIds: ids, MinSeverity: int64(node.SeverityHigh)})
 			if err != nil {
-				c.log.Warn("vulnerability alerts: read findings", "scan", scan.ID, "err", err)
+				c.log.Warn("vulnerability alerts: read findings", "scans", ids, "err", err)
 				return
 			}
-			loaded = true
+			found = make(map[int64][]store.ListScanFindingsAtLeastRow, len(ids))
+			for _, f := range rows {
+				found[f.ScanID] = append(found[f.ScanID], f)
+			}
 		}
 		ig, ok := ignores[u.OrgID]
 		if !ok {
+			var err error
 			if ig, err = c.ignoresOf(ctx, u.OrgID); err != nil {
 				continue
 			}
@@ -107,7 +134,7 @@ func (c *Core) vulnAlerts(ctx context.Context, scan store.ImageScan, check vulnC
 		}
 		at := vulnUse{u.ProjectID, u.ServiceID}
 		var current []store.ListScanFindingsAtLeastRow
-		for _, f := range found {
+		for _, f := range found[u.scan] {
 			if f.Severity >= int64(level) && !ig.hides(f.VulnID, f.Package, at) {
 				current = append(current, f)
 			}
@@ -125,7 +152,7 @@ func (c *Core) vulnAlerts(ctx context.Context, scan store.ImageScan, check vulnC
 				isNew = func(f store.ListScanFindingsAtLeastRow) bool { return !before[findingKey{f.VulnID, f.Package}] }
 			}
 		}
-		c.raiseVulnAlert(ctx, key, scan, u, current, isNew)
+		c.raiseVulnAlert(ctx, key, u.scan, u.ListImageScanLiveUsesRow, current, isNew)
 	}
 }
 
@@ -154,7 +181,7 @@ func (c *Core) previousFindings(ctx context.Context, serviceID, number int64) (m
 // raiseVulnAlert opens, updates or resolves a service's vulnerability
 // alert: what it already names and the live image still has, plus what
 // isNew says is new (nil: nothing is).
-func (c *Core) raiseVulnAlert(ctx context.Context, key string, scan store.ImageScan, u store.ListImageScanLiveUsesRow, current []store.ListScanFindingsAtLeastRow, isNew func(store.ListScanFindingsAtLeastRow) bool) {
+func (c *Core) raiseVulnAlert(ctx context.Context, key string, scan int64, u store.ListImageScanLiveUsesRow, current []store.ListScanFindingsAtLeastRow, isNew func(store.ListScanFindingsAtLeastRow) bool) {
 	c.alerts.mu.Lock()
 	open, isOpen := c.alerts.open[key]
 	c.alerts.mu.Unlock()
@@ -195,7 +222,7 @@ func (c *Core) raiseVulnAlert(ctx context.Context, key string, scan store.ImageS
 // first: "New critical vulnerability in shop/production/web",
 // "CVE-2026-31337 in openssl 3.3.1-r0, known exploited. Fixed by
 // rebuilding."
-func vulnAlert(key string, scan store.ImageScan, u store.ListImageScanLiveUsesRow, found []store.ListScanFindingsAtLeastRow) alertSignal {
+func vulnAlert(key string, scan int64, u store.ListImageScanLiveUsesRow, found []store.ListScanFindingsAtLeastRow) alertSignal {
 	svc := serviceKey(u.Project, u.Environment, u.Service)
 	slices.SortStableFunc(found, func(x, y store.ListScanFindingsAtLeastRow) int {
 		if x.Severity != y.Severity {
@@ -264,14 +291,16 @@ func vulnAlert(key string, scan store.ImageScan, u store.ListImageScanLiveUsesRo
 	return alertSignal{
 		Key: key, Kind: apitypes.AlertNewVulnerability, Severity: severity, Title: title, Message: msg,
 		Command: "dock vulns " + svcFlags(u.Project, u.Environment, u.Service),
-		Target:  &apitypes.AlertTarget{Image: scan.ID, Vulnerabilities: ids},
+		Target:  &apitypes.AlertTarget{Image: scan, Vulnerabilities: ids},
 		Project: u.Project, Environment: u.Environment, Service: u.Service, projectID: u.ProjectID, serviceID: u.ServiceID,
 	}
 }
 
 // recheckVulnAlerts brings the org's open vulnerability alerts in line
-// with its ignores and setting, after either changed: one live release
-// read per open alert.
+// with its ignores and setting, after either changed: one read of their
+// services' live releases, then alertUses' fixed few. An alert whose
+// service has no live release any more resolves; one whose live release
+// isn't scanned yet waits for its scan.
 func (c *Core) recheckVulnAlerts(ctx context.Context, org int64) {
 	var services []int64
 	c.alerts.mu.Lock()
@@ -281,20 +310,31 @@ func (c *Core) recheckVulnAlerts(ctx context.Context, org int64) {
 		}
 	}
 	c.alerts.mu.Unlock()
-	for _, id := range services {
-		r, err := c.store.GetActiveRelease(ctx, id)
-		if err != nil || r.ImageScanID == nil {
-			if store.IsNotFound(err) {
-				c.resolveAlert(ctx, vulnAlertKey+alertServiceKey(id, "", "", ""), time.Now())
-			}
-			continue
-		}
-		scan, err := c.store.GetImageScan(ctx, *r.ImageScanID)
-		if err != nil {
-			continue
-		}
-		c.vulnAlerts(ctx, scan, vulnRecheck, nil, id)
+	if len(services) == 0 {
+		return
 	}
+	rows, err := c.store.ListServicesLiveUses(ctx, services)
+	if err != nil {
+		c.log.Warn("vulnerability alerts: list live releases", "org", org, "err", err)
+		return
+	}
+	live := make(map[int64]bool, len(rows))
+	uses := make([]liveUse, 0, len(rows))
+	for _, r := range rows {
+		live[r.ServiceID] = true
+		if r.ImageScanID != nil {
+			uses = append(uses, liveUse{store.ListImageScanLiveUsesRow{
+				OrgID: r.OrgID, ProjectID: r.ProjectID, Project: r.Project, EnvironmentID: r.EnvironmentID, Environment: r.Environment,
+				ServiceID: r.ServiceID, Service: r.Service, Number: r.Number, ImageRef: r.ImageRef,
+			}, *r.ImageScanID})
+		}
+	}
+	for _, id := range services {
+		if !live[id] {
+			c.resolveAlert(ctx, vulnAlertKey+alertServiceKey(id, "", "", ""), time.Now())
+		}
+	}
+	c.alertUses(context.WithoutCancel(ctx), uses, vulnRecheck, nil)
 }
 
 // VulnAlertSetting is the org's vulnerability alert setting. Scope: read.

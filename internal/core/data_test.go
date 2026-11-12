@@ -544,7 +544,8 @@ func (e *pageEngine) last() (data.Call, int) {
 // customers.email marked sensitive.
 func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 	h := newHarness(t)
-	eng := &pageEngine{}
+	// The table the tests mark email of sensitive.
+	eng := &pageEngine{schema: []apitypes.DataTable{{Schema: "public", Name: "customers", Columns: []apitypes.DataColumn{{Name: "id"}, {Name: "email"}}}}}
 	h.opts.DataEngines = []data.Engine{eng}
 	h.restart()
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})
@@ -563,6 +564,12 @@ func fakeDatabase(t *testing.T) (*harness, *pageEngine, ServiceRef, svcScope) {
 		{Subject: apitypes.SubjectDeployUsers, Kind: apitypes.KindProduction, Level: apitypes.LevelRead, Sensitive: apitypes.SensitiveMasked},
 	}}); err != nil {
 		t.Fatal(err)
+	}
+	// A mark the database can't match would mask nothing: refused.
+	for _, col := range []apitypes.DataColumnRef{{Schema: "public", Table: "orders", Column: "email"}, {Schema: "public", Table: "customers", Column: "mail"}} {
+		if _, err := h.c.SetSensitiveColumns(h.ctx, testSystem, db, apitypes.SetSensitiveColumnsRequest{Columns: []apitypes.DataColumnRef{col}}); CodeOf(err) != apitypes.CodeValidation {
+			t.Fatalf("marking %s.%s.%s: %v", col.Schema, col.Table, col.Column, err)
+		}
 	}
 	if _, err := h.c.SetSensitiveColumns(h.ctx, testSystem, db, apitypes.SetSensitiveColumnsRequest{Columns: []apitypes.DataColumnRef{
 		{Schema: "public", Table: "customers", Column: "email"},
@@ -723,7 +730,7 @@ func TestContainerEventForget(t *testing.T) {
 // caller and table per interval), and masked callers can't reveal.
 func TestDataReveal(t *testing.T) {
 	h := newHarness(t)
-	eng := &pageEngine{}
+	eng := &pageEngine{schema: []apitypes.DataTable{{Schema: "public", Name: "customers", Columns: []apitypes.DataColumn{{Name: "email"}, {Name: "password_hash"}}}}}
 	h.opts.DataEngines = []data.Engine{eng}
 	h.restart()
 	db := h.service("db", apitypes.CreateServiceRequest{Image: "postgres:17"})

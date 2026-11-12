@@ -83,7 +83,7 @@ func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *L
 
 // message says what was refused and what to do next.
 func (e *LockedError) message() string {
-	follow := fmt.Sprintf("An admin approves or rejects it in the UI (Requests); approved, it runs as you. Follow it with `dock request wait %d`", e.Request)
+	follow := fmt.Sprintf("An admin approves or rejects it in the UI (the Inbox); approved, it runs as you. Follow it with `dock request wait %d`", e.Request)
 	switch {
 	case e.Request != 0 && e.askedFirst:
 		return fmt.Sprintf("%s in %s/%s waits for an admin's approval as access request #%d. %s", e.Action, e.Project, e.Environment, e.Request, follow)

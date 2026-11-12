@@ -1182,6 +1182,75 @@ func (q *Queries) ListScanFixesAtLeast(ctx context.Context, arg ListScanFixesAtL
 	return items, nil
 }
 
+const listServicesLiveUses = `-- name: ListServicesLiveUses :many
+SELECT p.org_id, p.id AS project_id, p.name AS project, e.id AS environment_id, e.name AS environment,
+       s.id AS service_id, s.name AS service, r.number, r.image_ref, r.image_scan_id
+FROM releases r
+JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
+JOIN environments e ON e.id = s.environment_id
+JOIN projects p ON p.id = e.project_id
+WHERE r.service_id IN (/*SLICE:service_ids*/?) AND r.status = 'active'
+`
+
+type ListServicesLiveUsesRow struct {
+	OrgID         int64
+	ProjectID     int64
+	Project       string
+	EnvironmentID int64
+	Environment   string
+	ServiceID     int64
+	Service       string
+	Number        int64
+	ImageRef      string
+	ImageScanID   *int64
+}
+
+// The live releases of some services and the scan of each (NULL before
+// it is scanned), for rechecking their vulnerability alerts at once.
+func (q *Queries) ListServicesLiveUses(ctx context.Context, serviceIds []int64) ([]ListServicesLiveUsesRow, error) {
+	query := listServicesLiveUses
+	var queryParams []interface{}
+	if len(serviceIds) > 0 {
+		for _, v := range serviceIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:service_ids*/?", strings.Repeat(",?", len(serviceIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:service_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListServicesLiveUsesRow
+	for rows.Next() {
+		var i ListServicesLiveUsesRow
+		if err := rows.Scan(
+			&i.OrgID,
+			&i.ProjectID,
+			&i.Project,
+			&i.EnvironmentID,
+			&i.Environment,
+			&i.ServiceID,
+			&i.Service,
+			&i.Number,
+			&i.ImageRef,
+			&i.ImageScanID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnscannedReleases = `-- name: ListUnscannedReleases :many
 
 SELECT r.id, r.service_id, r.image_ref, r.image_id, r.image_digest, r.pinned_ref, r.built_on_server_id,

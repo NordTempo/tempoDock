@@ -12,6 +12,19 @@ export function isTyping(event: KeyboardEvent) {
   );
 }
 
+/**
+ * True for ⌘↵ (Ctrl+Enter elsewhere) that nothing on the page took first:
+ * the SQL editor's ⌘↵ runs its query (and prevents the default), so it
+ * must not also apply the environment's staged changes.
+ */
+export function isModEnter(event: KeyboardEvent) {
+  return (
+    !event.defaultPrevented &&
+    (event.metaKey || event.ctrlKey) &&
+    event.key === "Enter"
+  );
+}
+
 /** Window keydown listener for the lifetime of the component. */
 export function useKeydown(handler: (event: KeyboardEvent) => void) {
   const onKey = useEffectEvent(handler);

@@ -29,8 +29,8 @@ func keys[D any](tg *target[D], doing string) (data.Keys, error) {
 
 // Keys reads one page of keys. Needs level read. Its cursor is sealed
 // for the caller. The first page per caller and logical database, then at
-// most every 10 minutes, is audited as data.browse with the pattern and
-// type, never key names.
+// most every 10 minutes, is audited as data.browse with the type and
+// whether a match pattern was given, never the pattern or key names.
 func (p *Panel[D]) Keys(ctx context.Context, a Actor, db *Database[D], req apitypes.DataKeysRequest) (apitypes.DataKeyPage, error) {
 	if req.Limit < 0 || req.Limit > apitypes.DataKeysMaxLimit {
 		return apitypes.DataKeyPage{}, invalid("limit must be between 1 and %d", apitypes.DataKeysMaxLimit)
@@ -72,7 +72,9 @@ func (p *Panel[D]) Keys(ctx context.Context, a Actor, db *Database[D], req apity
 	if p.browse.due(browseKey{apitypes.AuditDataBrowse, ActorKey(a), db.ID, "keys:" + strconv.Itoa(req.DB)}, time.Now()) {
 		summary := fmt.Sprintf("browsed keys in db %d", req.DB)
 		if req.Match != "" {
-			summary += " matching " + req.Match
+			// Not the pattern itself: it may spell out a key, and key
+			// names are data (any org member reads summaries).
+			summary += " with a match pattern"
 		}
 		if req.Type != "" {
 			summary += " of type " + req.Type
