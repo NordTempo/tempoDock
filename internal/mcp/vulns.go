@@ -29,6 +29,15 @@ func (h *handler) addVulnTools(s *mcpkit.Server[core.Actor]) {
 				min = apitypes.VulnHigh
 			}
 			if in.Service != "" {
+				if in.ProductionOnly && in.Environment == "" && c.Actor.EnvironmentName == "" {
+					// One service "in production": the project's production
+					// environment, when it has one.
+					e, err := h.productionEnv(ctx, c, in.ProjectInput)
+					if err != nil {
+						return mcpkit.Reply{}, err
+					}
+					in.Environment = e
+				}
 				ref, err := serviceOf(c, ServiceInput{EnvInput: in.EnvInput, Service: in.Service})
 				if err != nil {
 					return mcpkit.Reply{}, err
@@ -54,6 +63,29 @@ func (h *handler) addVulnTools(s *mcpkit.Server[core.Actor]) {
 			}
 			return mcpkit.Reply{Summary: orgVulnSummary(r, in.ProductionOnly), Data: r}, nil
 		})
+}
+
+// productionEnv is the name of the project's one production environment;
+// with none or several, environment must be named.
+func (h *handler) productionEnv(ctx context.Context, c *call, in ProjectInput) (string, error) {
+	p, err := projectOf(c, in)
+	if err != nil {
+		return "", err
+	}
+	envs, err := h.core.ListEnvironments(ctx, c.Actor, p)
+	if err != nil {
+		return "", err
+	}
+	var prod []string
+	for _, e := range envs {
+		if e.Kind == apitypes.KindProduction {
+			prod = append(prod, e.Name)
+		}
+	}
+	if len(prod) != 1 {
+		return "", mcpkit.Invalid("pass environment: %s has %d production environments (%s)", p, len(prod), strings.Join(prod, ", "))
+	}
+	return prod[0], nil
 }
 
 // serviceVulnSummary answers for one service: the counts and what fixes

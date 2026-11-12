@@ -34,4 +34,10 @@ func TestListVulnerabilities(t *testing.T) {
 	if !strings.Contains(svc.summary, "To fix 1 critical, rebuild on a newer base image") || !strings.Contains(svc.summary, "openssl 3.3.1-r0 to 3.3.2-r0") {
 		t.Fatalf("service summary = %q", svc.summary)
 	}
+	// A service "in production" with an unlimited token: the project's one
+	// production environment, without naming it.
+	prod := call(t, f.connect("admin", nil), "list_vulnerabilities", map[string]any{"project": "blog", "service": "api", "production_only": true})
+	if strings.Contains(prod.summary+prod.json, "pass environment") {
+		t.Errorf("production_only with a service = %q", prod.summary)
+	}
 }

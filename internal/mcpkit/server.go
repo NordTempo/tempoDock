@@ -54,7 +54,7 @@ type Options[A any] struct {
 	Instructions string
 	// Caller, when set, adds a line about the caller to the instructions,
 	// e.g. its scope and limits, so the model needs no call to learn them.
-	Caller func(A) string
+	Caller func(context.Context, A) string
 	// View, when set, tailors tools/list to the caller (see View).
 	View func(context.Context, A) View
 	// WithReason, when set, lets every tool take a reason argument (why the
@@ -302,7 +302,7 @@ func (s *Server[A]) dispatch(ctx context.Context, out *responder, a A, msg rpcMe
 		}
 		instructions := s.o.Instructions
 		if s.o.Caller != nil {
-			instructions += "\n\n" + s.o.Caller(a)
+			instructions += "\n\n" + s.o.Caller(ctx, a)
 		}
 		return map[string]any{
 			"protocolVersion": v,

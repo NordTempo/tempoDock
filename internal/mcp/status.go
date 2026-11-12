@@ -39,6 +39,11 @@ func (h *handler) addStatusTools(s *mcpkit.Server[core.Actor]) {
 				if err != nil {
 					return mcpkit.Reply{}, err
 				}
+				// The 90-day uptime is enough for an agent: each day's
+				// history is the page's to draw and would fill a context.
+				for i := range p.Components {
+					p.Components[i].Days = nil
+				}
 				pages = append(pages, p)
 				var bad []string
 				for _, comp := range p.Components {

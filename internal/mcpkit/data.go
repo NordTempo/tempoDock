@@ -303,43 +303,17 @@ func queryError(e *apitypes.DataQueryError) string {
 	return s
 }
 
-// DataKeyTools registers the key-value tools (data_keys, data_key) for a
-// host that has a key-value engine (Dock's Redis, ADR 0072); arguments
-// as DataTools'.
+// DataKeyTools registers data_keys (with key, one key's value) for a host
+// that has a key-value engine (Dock's Redis, ADR 0072); arguments as
+// DataTools'.
 func DataKeyTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*Call[A], L) (R, error)) {
 	addLocatedTool(s, "data_keys", "Redis keys",
-		"One page of a Redis database's keys (SCAN, match glob).",
+		"One page of a Redis database's keys (SCAN, match glob); with key, that key's type, TTL and a page of its value.",
 		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
 			DB    int    `json:"db,omitempty" doc:"Default 0."`
 			Match string `json:"match,omitempty" doc:"Glob, e.g. user:*."`
 			Type  string `json:"type,omitempty" enum:",string,hash,list,set,zset,stream"`
-			After string `json:"after,omitempty" doc:"The previous page's next."`
-			Limit int    `json:"limit,omitempty" doc:"Default 50, at most 200."`
-		}) (Reply, error) {
-			ref, err := locate(c, loc)
-			if err != nil {
-				return Reply{}, err
-			}
-			n, err := Limit("limit", in.Limit, defaultPageRows, maxPageRows)
-			if err != nil {
-				return Reply{}, err
-			}
-			page, err := ops.DataKeys(ctx, c.Actor, ref, apitypes.DataKeysRequest{DB: in.DB, Match: in.Match, Type: in.Type, After: in.After, Limit: n})
-			if err != nil {
-				return Reply{}, err
-			}
-			summary := fmt.Sprintf("%d keys (%d in db %d)", len(page.Keys), page.Total, in.DB)
-			if page.Next != "" {
-				summary += "; more with after"
-			}
-			return Reply{Summary: summary + ".", Data: page}, nil
-		})
-
-	addLocatedTool(s, "data_key", "Redis key",
-		"One Redis key's type, TTL and a page of its value.",
-		ReadOnly, func(ctx context.Context, c *Call[A], loc L, in struct {
-			DB    int    `json:"db,omitempty" doc:"Default 0."`
-			Key   string `json:"key" doc:"Hex when hex is set."`
+			Key   string `json:"key,omitempty" doc:"One key: its value instead of the list; hex when hex is set."`
 			Hex   bool   `json:"hex,omitempty"`
 			After string `json:"after,omitempty" doc:"The previous page's next."`
 			Limit int    `json:"limit,omitempty" doc:"Default 50, at most 200."`
@@ -352,21 +326,38 @@ func DataKeyTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate fun
 			if err != nil {
 				return Reply{}, err
 			}
-			v, err := ops.DataKey(ctx, c.Actor, ref, apitypes.DataKeyRequest{DB: in.DB, Key: in.Key, Hex: in.Hex, After: in.After, Limit: n})
+			if in.Key != "" {
+				return dataKey(ctx, c, ops, ref, apitypes.DataKeyRequest{DB: in.DB, Key: in.Key, Hex: in.Hex, After: in.After, Limit: n})
+			}
+			page, err := ops.DataKeys(ctx, c.Actor, ref, apitypes.DataKeysRequest{DB: in.DB, Match: in.Match, Type: in.Type, After: in.After, Limit: n})
 			if err != nil {
 				return Reply{}, err
 			}
-			var cut bool
-			if v.Rows, cut = capRows(v.Rows); cut {
-				v.Next = ""
-			}
-			summary := fmt.Sprintf("%s: a %s of length %d, %d rows", in.Key, v.Type, v.Length, len(v.Rows))
-			switch {
-			case cut:
-				summary += "; cut at 512 KB, ask for fewer"
-			case v.Next != "":
+			summary := fmt.Sprintf("%d keys (%d in db %d)", len(page.Keys), page.Total, in.DB)
+			if page.Next != "" {
 				summary += "; more with after"
 			}
-			return Reply{Summary: summary + ".", Data: v}, nil
+			return Reply{Summary: summary + ".", Data: page}, nil
 		})
+}
+
+// dataKey is one Redis key's type, TTL and a page of its value, cut at
+// what a reply may hold: data_keys with key.
+func dataKey[A, R any](ctx context.Context, c *Call[A], ops datapanel.Ops[A, R], ref R, req apitypes.DataKeyRequest) (Reply, error) {
+	v, err := ops.DataKey(ctx, c.Actor, ref, req)
+	if err != nil {
+		return Reply{}, err
+	}
+	var cut bool
+	if v.Rows, cut = capRows(v.Rows); cut {
+		v.Next = ""
+	}
+	summary := fmt.Sprintf("%s: a %s of length %d, %d rows", req.Key, v.Type, v.Length, len(v.Rows))
+	switch {
+	case cut:
+		summary += "; cut at 512 KB, ask for fewer"
+	case v.Next != "":
+		summary += "; more with after"
+	}
+	return Reply{Summary: summary + ".", Data: v}, nil
 }

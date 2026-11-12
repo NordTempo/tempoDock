@@ -65,7 +65,9 @@ Dock, the misuse is a case.
 
 `-mode manual` runs the cases for an agent outside the harness, such as
 another vendor's: for each case it sets up the daemon and writes
-`<out>/tasks/<case>.json` (the prompt, `DOCK_URL`, `DOCK_TOKEN` and where
-the answer goes), then waits up to 90 minutes for
+`<out>/tasks/<case>.json` (the prompt, `DOCK_URL` and `DOCK_TOKEN` for
+the CLI, the MCP endpoint's URL and authorization header, and where the
+answer goes), then waits up to 90 minutes for
 `<out>/tasks/<case>.answer.txt` and checks the result. The agent uses
-the CLI. Tool calls and tokens aren't recorded in this mode.
+the CLI or MCP (JSON-RPC over HTTP POST). Tool calls and tokens aren't
+recorded in this mode.

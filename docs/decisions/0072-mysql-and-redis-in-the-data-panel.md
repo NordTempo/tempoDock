@@ -90,7 +90,7 @@ tables and core holds one engine.
 
 - Existing endpoints, commands and tools serve every engine. Redis adds
   `GET /data/keys`, `GET /data/keys/value`, `PUT /data/sensitive-keys`,
-  `dock db keys`, `dock db key`, and MCP `data_keys` and `data_key`.
+  `dock db keys`, `dock db key`, and MCP `data_keys` (with `key`, one key; `data_key` until 2026-11-12).
 - UI: one panel with a per-engine descriptor (tabs, dialect, Health
   labels). Redis' Keys tab is mock B: a flat key grid filtered by MATCH
   and TYPE with a value drawer; Enter opens a key full width, and a click
