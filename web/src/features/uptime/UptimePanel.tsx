@@ -630,7 +630,7 @@ function AddCheck({
                 : undefined
           }
         >
-          {existing.length > 0 ? "Add a second check" : "Add check"}
+          {existing.length > 0 ? "Add a second check as well" : "Add check"}
         </Act>
         <ErrorText error={add.error} />
       </span>
@@ -673,7 +673,7 @@ function AddCheck({
                 )
               }
             >
-              Change it to every {every(intervalS)}
+              Change the existing check to every {every(intervalS)}
               {status !== first.expect_status ? `, expects ${status}` : ""}
             </Button>
           )}
