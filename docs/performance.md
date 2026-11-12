@@ -20,7 +20,7 @@ against main's) names it in its description with the reason.
 
 Checked by `make perf` ([scripts/perf](../scripts/perf)). Product targets are
 in [experience](experience.md#performance-targets); the budgets keep
-headroom below them, except idle memory: its budget (34 MB) is measured
+headroom below them, except idle memory: its budget (32 MB) is measured
 with Dock Analytics on and sits above the 30 MB target. Dock and tempoBase
 are measured with `GOMAXPROCS=4`, a small server, so a runner's core count
 doesn't move their memory. The daemon is measured with analytics turned
@@ -54,16 +54,18 @@ Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
 
-The idle number moves with GC timing, by up to 3 MB between runs, so
-the budget keeps 2 MB above main's typical reading; raise it (and say
-why) only after main has failed it on several runs, as on 2026-11-11
-when status pages, scanning and tracing had added about 2 MB. The
-daemon's last collection runs during start-up, and whatever it allocates
-after that (the first statistics ticks, each SSE handshake) stays in RSS
-until the next one, as do stream handlers' stacks. A forced GC leaves the
-live heap at about 10 MB with or without streams: nothing is kept per
-stream beyond its goroutine. The live heap is mostly Huma's schemas of
-the API types and compiled regexps.
+The idle reading is the median of three daemons started side by side
+(`idleStarts`). One daemon's RssAnon is flat through its window and
+through a forced GC, but it differs between starts by up to 4 MB on CI:
+it isn't GC timing but what start-up left in SQLite's C heap (each pool
+connection's schema copy, page cache and prepared statements), which
+modernc never gives back. Keeping four connections (#272) shrank that
+spread; the median takes out the rest. The budget keeps 2 MB above
+main's typical median; raise it (and say why) only after main has failed
+it on several runs. Of the rest, the Go heap is about 15 MB of spans for
+a 10 MB live heap, mostly Huma's schemas of the API types (validation
+needs them) and compiled regexps, and the Go runtime's own metadata is
+about 6 MB.
 
 ### tempoBase
 
