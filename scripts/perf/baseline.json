@@ -296,9 +296,9 @@
       "allocs_op": 52850
     },
     "core.BenchmarkTrafficTick50": {
-      "ns_op": 11827258,
-      "bytes_op": 2182024,
-      "allocs_op": 36989
+      "ns_op": 13900000,
+      "bytes_op": 4121500,
+      "allocs_op": 39490
     },
     "core.BenchmarkUptimeRecord/io=sqlite": {
       "ns_op": 34700,

@@ -20,7 +20,9 @@ import (
 
 // BenchmarkTrafficTick50 is the minute tick's traffic step for a server
 // whose 50 services all had requests: map hostnames and write 50 minute
-// and hour points and 2,500 path counts in one transaction. Core isn't started,
+// and hour points and 2,500 path counts (each with its errors and ten
+// latency buckets, #278: about twice the time and bytes of counts alone)
+// in one transaction. Core isn't started,
 // so nothing else runs.
 func BenchmarkTrafficTick50(b *testing.B) {
 	ctx := context.Background()
