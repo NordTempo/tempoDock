@@ -152,7 +152,7 @@ func (c *Client) WriteMetricLines(ctx context.Context, source string, position u
 }
 
 // MetricNamesQuery lists the metrics Services of Org sent from From to To
-// (Unix seconds), within the days of minute points the store keeps.
+// (Unix seconds): those with a series seen in the range's UTC days.
 type MetricNamesQuery struct {
 	Org      int64   `json:"org"`
 	Services []int64 `json:"services"`
@@ -160,16 +160,18 @@ type MetricNamesQuery struct {
 	To       int64   `json:"to"`
 }
 
-// MetricName is one metric of a service: its series and points in the
-// range, and the points of its new series the caps cut.
+// MetricName is one metric of a service: its series seen in the range's
+// days, and the points of its new series the caps cut.
 type MetricName struct {
 	Service int64      `json:"service"`
 	Name    string     `json:"name"`
 	Unit    string     `json:"unit,omitzero"`
 	Kind    MetricKind `json:"kind"`
 	Series  int        `json:"series"`
-	Points  int64      `json:"points"`
 	Cut     int64      `json:"cut,omitzero"`
+	// CutBy is, for a metric whose new series were cut, the attribute of
+	// its series with the most values: the one to drop.
+	CutBy string `json:"cut_by,omitzero"`
 }
 
 // MetricNamesResult answers a MetricNamesQuery, by service and name.
@@ -185,4 +187,131 @@ const MetricNamesPath = "/v1/metrics/names"
 func (c *Client) MetricNames(ctx context.Context, q MetricNamesQuery) (MetricNamesResult, error) {
 	var res MetricNamesResult
 	return res, c.post(ctx, MetricNamesPath, q, &res)
+}
+
+// MetricAgg is how a chart combines a metric's points in a step and its
+// series in a line: a level's (gauges, and sums that aren't counters)
+// sum, max, min or avg; a counter's rate a minute or sum a step; a
+// histogram's percentiles, its average, or its count's rate.
+type MetricAgg string
+
+// Aggregations.
+const (
+	AggSum  MetricAgg = "sum"
+	AggMax  MetricAgg = "max"
+	AggMin  MetricAgg = "min"
+	AggAvg  MetricAgg = "avg"
+	AggRate MetricAgg = "rate"
+	AggP50  MetricAgg = "p50"
+	AggP95  MetricAgg = "p95"
+	AggP99  MetricAgg = "p99"
+)
+
+// MetricShape is how a metric's points are read: a level (a gauge, or a
+// cumulative sum that isn't monotonic, an UpDownCounter), a counter (a
+// monotonic sum, or a delta one), or a histogram.
+type MetricShape string
+
+// Shapes.
+const (
+	ShapeLevel     MetricShape = "level"
+	ShapeCounter   MetricShape = "counter"
+	ShapeHistogram MetricShape = "histogram"
+)
+
+// ShapeOf is the shape of a metric of kind.
+func ShapeOf(kind MetricKind, monotonic, cumulative bool) MetricShape {
+	switch {
+	case kind == MetricHistogram:
+		return ShapeHistogram
+	case kind == MetricGauge || !monotonic && cumulative:
+		return ShapeLevel
+	}
+	return ShapeCounter
+}
+
+// Aggs are the aggregations of a shape, its default first.
+func Aggs(shape MetricShape) []MetricAgg {
+	switch shape {
+	case ShapeCounter:
+		return []MetricAgg{AggRate, AggSum}
+	case ShapeHistogram:
+		return []MetricAgg{AggP95, AggP50, AggP99, AggAvg, AggRate}
+	}
+	return []MetricAgg{AggSum, AggMax, AggMin, AggAvg}
+}
+
+// MetricChartQuery is one chart of a MetricsQuery: a metric, how its
+// points combine ("" is its shape's default) and the attribute that
+// splits it into lines ("" for one line).
+type MetricChartQuery struct {
+	Name string    `json:"name"`
+	Agg  MetricAgg `json:"agg,omitzero"`
+	By   string    `json:"by,omitzero"`
+}
+
+// MetricsQuery reads charts of one service of Org from From to To (Unix
+// seconds) in steps of Step seconds (a multiple of 60; of 3600 past the
+// minute points' days, which come from hours).
+type MetricsQuery struct {
+	Org     int64              `json:"org"`
+	Service int64              `json:"service"`
+	From    int64              `json:"from"`
+	To      int64              `json:"to"`
+	Step    int64              `json:"step"`
+	Charts  []MetricChartQuery `json:"charts"`
+}
+
+// Metrics query sizes: charts a query reads, lines a chart answers.
+const (
+	MaxCharts = 24
+	MaxLines  = 20
+)
+
+// MetricLine is a chart's line: the series with one value of the
+// chart's By (Label), or all of them; a value a step from the query's
+// From, nil where there was no point.
+type MetricLine struct {
+	Label  string     `json:"label,omitzero"`
+	Values []*float64 `json:"values"`
+}
+
+// MetricAttr is an attribute of a metric's series in the range and how
+// many values it has.
+type MetricAttr struct {
+	Key    string `json:"key"`
+	Values int    `json:"values"`
+}
+
+// MetricChart answers a MetricChartQuery: the metric's unit, kind and
+// shape (of its most common series, when they differ), the aggregation
+// used, its series in the range, the top MaxLines lines by total and how
+// many more there were, and its attributes. A metric with no points in
+// the range has no lines.
+type MetricChart struct {
+	Name   string       `json:"name"`
+	Unit   string       `json:"unit,omitzero"`
+	Kind   MetricKind   `json:"kind,omitzero"`
+	Shape  MetricShape  `json:"shape,omitzero"`
+	Agg    MetricAgg    `json:"agg"`
+	By     string       `json:"by,omitzero"`
+	Series int          `json:"series"`
+	Lines  []MetricLine `json:"lines"`
+	More   int          `json:"more,omitzero"`
+	Attrs  []MetricAttr `json:"attrs"`
+}
+
+// MetricsResult answers a MetricsQuery, a chart each in its order.
+type MetricsResult struct {
+	Charts []MetricChart `json:"charts"`
+}
+
+// MetricsQueryPath takes POST with a MetricsQuery and answers
+// MetricsResult.
+const MetricsQueryPath = "/v1/metrics/query"
+
+// QueryMetrics reads charts (MetricsQueryPath).
+func (c *Client) QueryMetrics(ctx context.Context, q MetricsQuery) (MetricsResult, error) {
+	var res MetricsResult
+	return res, c.post(ctx, MetricsQueryPath, q, &res)
 }

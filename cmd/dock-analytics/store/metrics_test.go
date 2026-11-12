@@ -80,8 +80,8 @@ func TestMetricsCaps(t *testing.T) {
 		got[m.Name] = m
 	}
 	for name, want := range map[string]analytics.MetricName{
-		"v8js.memory.heap.used": {Service: 4, Name: "v8js.memory.heap.used", Kind: analytics.MetricGauge, Series: 2, Points: 3, Cut: 1},
-		"http.client.duration":  {Service: 4, Name: "http.client.duration", Unit: "ms", Kind: analytics.MetricHistogram, Series: 1, Points: 1},
+		"v8js.memory.heap.used": {Service: 4, Name: "v8js.memory.heap.used", Kind: analytics.MetricGauge, Series: 2, Cut: 1, CutBy: "space"},
+		"http.client.duration":  {Service: 4, Name: "http.client.duration", Unit: "ms", Kind: analytics.MetricHistogram, Series: 1},
 		"queue.depth":           {Service: 4, Name: "queue.depth", Cut: 1},
 	} {
 		if got[name] != want {

@@ -569,6 +569,13 @@ type LogDrain struct {
 	CreatedAt     time.Time
 }
 
+type MetricDashboard struct {
+	ServiceID int64
+	Charts    string
+	UpdatedBy string
+	UpdatedAt time.Time
+}
+
 type Org struct {
 	ID               int64
 	Slug             string

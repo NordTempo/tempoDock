@@ -20,3 +20,11 @@ SELECT * FROM releases WHERE id IN (sqlc.slice(ids));
 -- forwarder keeps only spans whose release is their service's.
 -- name: ListReleaseServices :many
 SELECT id, service_id FROM releases WHERE id IN (sqlc.slice(ids));
+
+-- name: GetMetricDashboard :one
+-- A service's pinned charts; no row is Dock's defaults.
+SELECT * FROM metric_dashboards WHERE service_id = +?;
+
+-- name: SetMetricDashboard :exec
+INSERT INTO metric_dashboards (service_id, charts, updated_by, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (service_id) DO UPDATE SET charts = excluded.charts, updated_by = excluded.updated_by, updated_at = excluded.updated_at;

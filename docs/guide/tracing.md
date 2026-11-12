@@ -66,6 +66,38 @@ exception in a span.
 
 Agents get the same through MCP: `traces`, which with `trace` reads one.
 
+## App metrics
+
+The same SDKs send their metrics to Dock too, when the service sets no
+OTLP exporter of its own: the runtime's (heap, garbage collection, the
+event loop, goroutines), the libraries' (a database pool's connections)
+and your own counters and histograms. A service's Metrics tab shows
+them below its CPU and memory, as charts:
+
+- Until someone pins charts, Dock shows its own: the runtime metrics a
+  stock SDK sends (`v8js.memory.heap.used`, `nodejs.eventloop.delay.p99`,
+  `jvm.memory.used`, `go.memory.used`, `go.goroutine.count`, a pool's
+  `db.client.connection.count` by state, and the like).
+- **Add chart** pins any metric the service sends: how its points
+  combine (a level's sum, max, min or average; a counter's rate a
+  minute; a histogram's p50, p95, p99 or average) and an attribute that
+  splits it into lines (at most 20, the biggest). **Edit** unpins.
+  Pinning needs deploy access, like the service's other settings.
+
+```sh
+dock metrics                                               # the charts' latest values, and every metric sent
+dock metrics show http.server.request.duration --agg p99 --by http.route
+dock metrics pin queue.depth --agg max --by queue
+```
+
+Dock keeps a point a minute a series for the spans' retention (7 days),
+and hourly points for 90 days, which charts over 7 and 30 days read. A
+service keeps at most 2,000 series and 200 metrics a day (`[traces]
+metric_series`, `metric_names`): past either, a new series' points are
+dropped while the series it already sent go on, and the Metrics tab says
+which metric and which of its attributes has the most values (often a
+user ID or a URL): drop that attribute from the metric.
+
 ## What Dock keeps
 
 - About 3,000 traces a minute a service: every trace of a quieter

@@ -2787,6 +2787,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/app-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a service's app metrics
+         * @description The service's pinned charts over the range (Dock's default charts of the runtime metrics it sends, until someone pins charts), and every metric its apps sent then over OTLP, with the points the series caps cut. Needs tracing on (`dock tracing on`); without it, tracing_off. Attribute values are masked as in logs.
+         */
+        get: operations["get-app-metrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/app-metrics/chart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one app metric as a chart
+         * @description One metric of the service over the range, pinned or not: its points in steps, combined by agg (a level's sum, max, min or avg; a counter's rate a minute or sum; a histogram's p50, p95, p99, avg or rate) and split into lines by an attribute (at most 20, by size).
+         */
+        get: operations["get-app-metric-chart"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/app-metrics/charts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pin a service's charts
+         * @description The service's dashboard, in order, replacing what was pinned (at most 24 charts): a service setting. Scope: deploy.
+         */
+        put: operations["set-app-metric-charts"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/archive": {
         parameters: {
             query?: never;
@@ -6132,6 +6192,66 @@ export interface components {
             store_running: boolean;
             store_version?: string;
         };
+        AppMetric: {
+            /** Format: int64 */
+            cut?: number;
+            cut_by?: string;
+            kind?: string;
+            name: string;
+            /** Format: int64 */
+            series: number;
+            unit?: string;
+        };
+        AppMetricAttr: {
+            key: string;
+            /** Format: int64 */
+            values: number;
+        };
+        AppMetricChart: {
+            /** @enum {string} */
+            agg?: "sum" | "max" | "min" | "avg" | "rate" | "p50" | "p95" | "p99";
+            aggs: string[] | null;
+            attrs: components["schemas"]["AppMetricAttr"][] | null;
+            by?: string;
+            dock: boolean;
+            kind?: string;
+            lines: components["schemas"]["AppMetricLine"][] | null;
+            /** Format: int64 */
+            more?: number;
+            name: string;
+            /** Format: int64 */
+            series: number;
+            shape?: string;
+            unit?: string;
+        };
+        AppMetricChartResult: {
+            chart: components["schemas"]["AppMetricChart"];
+            /** Format: date-time */
+            from: string;
+            range: string;
+            /** Format: int64 */
+            step_seconds: number;
+        };
+        AppMetricLine: {
+            label: string;
+            values: (number | null)[] | null;
+        };
+        AppMetrics: {
+            charts: components["schemas"]["AppMetricChart"][] | null;
+            /** Format: date-time */
+            from: string;
+            /** Format: int64 */
+            max_names: number;
+            /** Format: int64 */
+            max_series: number;
+            metrics: components["schemas"]["AppMetric"][] | null;
+            metrics_elsewhere?: string;
+            range: string;
+            saved: boolean;
+            /** Format: int64 */
+            step_seconds: number;
+            tracing_off?: boolean;
+        };
         AppliedChanges: {
             failed?: string[] | null;
             releases: components["schemas"]["Release"][] | null;
@@ -8472,6 +8592,15 @@ export interface components {
             group: "apps" | "platform" | "kernel" | "system";
             name: string;
         };
+        MetricChartSpec: {
+            /** @enum {string} */
+            agg?: "sum" | "max" | "min" | "avg" | "rate" | "p50" | "p95" | "p99";
+            by?: string;
+            name: string;
+        };
+        MetricCharts: {
+            charts: components["schemas"]["MetricChartSpec"][] | null;
+        };
         MigrateRegistryRequest: {
             storage?: string;
             /**
@@ -9746,6 +9875,9 @@ export interface components {
         SetMemberRoleRequest: {
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
+        };
+        SetMetricChartsRequest: {
+            charts: components["schemas"]["MetricChartSpec"][] | null;
         };
         SetOperatorRequest: {
             operator: boolean;
@@ -27089,6 +27221,254 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Access"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-app-metrics": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description How far back, ending now; past 7 days from hourly points */
+                range?: "1h" | "24h" | "7d" | "30d";
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppMetrics"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-app-metric-chart": {
+        parameters: {
+            query: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The metric, as the app names it: v8js.memory.heap.used */
+                name: string;
+                /** @description How points combine; empty is the metric's default */
+                agg?: "sum" | "max" | "min" | "avg" | "rate" | "p50" | "p95" | "p99";
+                /** @description The attribute that splits it into lines */
+                by?: string;
+                /** @description How far back, ending now */
+                range?: "1h" | "24h" | "7d" | "30d";
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppMetricChartResult"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-app-metric-charts": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMetricChartsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricCharts"];
                 };
             };
             /** @description Bad Request */
