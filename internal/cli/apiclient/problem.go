@@ -94,7 +94,7 @@ var exitHints = map[output.ExitCode]string{
 // codeHints replace the exit code's hint for codes where it would mislead:
 // a server_offline 503 comes from a control plane that is answering.
 var codeHints = map[string]string{
-	"environment_locked": "Run `dock request wait <id>` next: it waits for an admin's decision in the UI (the Inbox) and exits 0 once the change ran as you, 3 if rejected (the admin's comment says why). Don't retry or work around it. Commands that stage a change take --deploy, so one request covers staging and applying.",
+	"environment_locked": "Run `dock request wait <id> --timeout 2m` next, again while it exits 5 (still waiting): it waits for an admin's decision in the UI (the Inbox) and exits 0 once the change ran as you, 3 if rejected (the admin's comment says why). Don't retry or work around it. Commands that stage a change take --deploy, so one request covers staging and applying.",
 	// A dock login token counts as two-factor only when the browser
 	// sign-in that approved it used a second factor (ADR 0057).
 	"two_factor_required": "Add a passkey or an authenticator app on your account page in the browser, then run `dock login` again: its new token counts as two-factor.",
