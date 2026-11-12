@@ -300,8 +300,8 @@
       "bytes_op": 2182024,
       "allocs_op": 36989
     },
-    "core.BenchmarkUptimeRecord": {
-      "ns_op": 28391,
+    "core.BenchmarkUptimeRecord/io=sqlite": {
+      "ns_op": 34700,
       "bytes_op": 392,
       "allocs_op": 9
     },

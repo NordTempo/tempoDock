@@ -40,17 +40,22 @@ func benchChecks(b *testing.B, bc *benchCore, n int) []store.ListUptimeScheduleR
 
 // BenchmarkUptimeRecord is one probe result recorded: the minute row's
 // upsert and the check's state, for a check that stays up (no alert, no
-// event). Every probe costs this.
+// event). Every probe costs this. Most of its time is the disk (SQLite's
+// WAL writes and checkpoint fsyncs): about 13 µs with the database on
+// tmpfs, 38-54 µs on a shared disk, so it is an io= benchmark, gated on
+// allocations only (docs/performance.md).
 func BenchmarkUptimeRecord(b *testing.B) {
 	bc := newBenchCore(b)
 	chk := benchChecks(b, bc, 1)[0]
 	res := node.ProbeResult{Up: true, Status: 200, Latency: 42 * time.Millisecond}
 	at := time.Now()
 	bc.c.recordProbe(bc.ctx, chk, "edge", res, at)
-	b.ReportAllocs()
-	for b.Loop() {
-		bc.c.recordProbe(bc.ctx, chk, "edge", res, at)
-	}
+	b.Run("io=sqlite", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			bc.c.recordProbe(bc.ctx, chk, "edge", res, at)
+		}
+	})
 }
 
 // BenchmarkUptimeRollup is the statistics tick's hourly uptime work with

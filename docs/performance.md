@@ -222,7 +222,11 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
   its whole package) before it fails.
   Benchmarks named `parallel=` depend on core count, and those named
   `io=` (a `b.Run("io=files", ...)` around the loop) on the disk and
-  other jobs' I/O; both are gated on allocations only. API latency budgets scale with the same factor on
+  other jobs' I/O; both are gated on allocations only. A benchmark whose
+  time is mostly SQLite writing to disk is `io=` too:
+  `BenchmarkUptimeRecord/io=sqlite` reads 13 µs with its database on
+  tmpfs and 38-54 µs on a shared disk (WAL writes, checkpoint fsyncs),
+  and the same code read anywhere from 16 to 60 µs on CI. API latency budgets scale with the same factor on
   machines slower than the baseline's.
 - **Updating the baseline.** When a change makes something slower on
   purpose, or a new benchmark is added, run `make perf-baseline` on a quiet
