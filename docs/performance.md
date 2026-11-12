@@ -118,9 +118,10 @@ Measured as above (CI, 2026-11-10); a timed row shows its slowest range.
 The peak is anonymous RSS, polled every 100 ms (`scripts/perf/peak.go`),
 because the containers have no swap: anonymous memory is what the limit
 kills for, while the mapped binary and file pages are reclaimed first.
-VmHWM, which counts those too, prints beside it. On 2026-11-11's busy
-runners VmHWM read 407 to 480 MB. That was runner load, not code:
-the same check read about 250 MB here and 264 MB on #285's run. The
+VmHWM, which counts those too, prints beside it. VmHWM moved with the
+runner, not the code: 407 to 480 MB on 2026-11-11's busy runners (and
+363 vs 449 MB for the same code on two runs), about 250 MB on the dev
+VM and 264 MB on #285's run; why is not pinned down. The
 sampling runs 10 s past the ingest burst, since DuckDB keeps growing
 after it (195 to 244 MB anonymous in one local run).
 
