@@ -178,11 +178,19 @@ export default function AddDomainDialog({
           </span>
         </label>
         {!target && (
-          <Check
-            label="Keep this hostname's earlier analytics, if it has any"
-            checked={!newSite}
-            onChange={(keep) => setNewSite(!keep)}
-          />
+          <span className="flex flex-col gap-0.5">
+            <Check
+              label="Keep this hostname's earlier analytics, if it has any"
+              checked={!newSite}
+              onChange={(keep) => setNewSite(!keep)}
+            />
+            {/* What the box does either way, so leaving it isn't a guess. */}
+            <span className="pl-6 text-xs text-mut">
+              {newSite
+                ? "Its visitors start from zero in a new site."
+                : "If the hostname was counted before, its visitors and errors carry on in the same site."}
+            </span>
+          </span>
         )}
         <Footer
           className="mt-1"
