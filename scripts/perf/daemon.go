@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -53,26 +54,43 @@ func checkDaemon(o options, t *table) error {
 		t.add("daemon", "needs /proc (Linux)", "", warn)
 		return nil
 	}
-	d, err := startDaemon(o.dock)
-	if err != nil {
-		return err
+	// idleStarts daemons start side by side for the idle memory reading,
+	// their median the result: one daemon's RssAnon is flat through the
+	// window, but it moves between starts (with what start-up left in
+	// SQLite's C heap, which modernc never gives back) by up to 4 MB on
+	// CI. CPU, wake-ups and everything after are measured on the first.
+	daemons := make([]*daemon, 0, idleStarts)
+	defer func() {
+		for _, d := range daemons {
+			d.stop()
+		}
+	}()
+	for range idleStarts {
+		d, err := startDaemon(o.dock)
+		if err != nil {
+			return err
+		}
+		daemons = append(daemons, d)
+		// Analytics on (ADR 0037): the store runs and every spool is
+		// tailed, which must cost nothing while no events arrive.
+		if err := d.call(http.MethodPut, "/analytics/server", map[string]string{"server": ""}, nil); err != nil {
+			return fmt.Errorf("turn analytics on: %w", err)
+		}
 	}
-	defer d.stop()
-
-	// Analytics on (ADR 0037): the store runs and every spool is tailed,
-	// which must cost nothing while no events arrive.
-	if err := d.call(http.MethodPut, "/analytics/server", map[string]string{"server": ""}, nil); err != nil {
-		return fmt.Errorf("turn analytics on: %w", err)
-	}
+	d := daemons[0]
 	// Let start-up work (migrations, reconcile, starting the analytics
 	// store and its forwarder, the GC cycles they bring) finish.
 	time.Sleep(10 * time.Second)
 	if err := o.gate.apart(func() error {
 		betweenTicks(o.idle)
-		return d.idle(t, "daemon idle, analytics on", o.idle, dockIdle(0))
+		return d.idle(t, "daemon idle, analytics on", o.idle, dockIdle(0), daemons[1:]...)
 	}); err != nil {
 		return err
 	}
+	for _, other := range daemons[1:] {
+		other.stop()
+	}
+	daemons = daemons[:1]
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := d.connectSSE(ctx, o.sseClients); err != nil {
@@ -80,7 +98,7 @@ func checkDaemon(o options, t *table) error {
 		return err
 	}
 	time.Sleep(time.Second)
-	err = o.gate.apart(func() error {
+	err := o.gate.apart(func() error {
 		betweenTicks(o.idle)
 		return d.idle(t, fmt.Sprintf("daemon idle, %d SSE clients", o.sseClients), o.idle, dockIdle(o.sseClients))
 	})
@@ -361,6 +379,25 @@ func (d *daemon) anon() (int64, error) {
 	return kb << 10, err
 }
 
+// idleStarts is how many daemons the idle memory reading takes the median
+// of (checkDaemon).
+const idleStarts = 3
+
+// medianOf is the median of anonymous RSS readings and how the table shows
+// it: one reading alone, or the median with every reading.
+func medianOf(readings []int64) (int64, string) {
+	sorted := slices.Sorted(slices.Values(readings))
+	m := sorted[len(sorted)/2]
+	if len(sorted) == 1 {
+		return m, mb(m) + " anon"
+	}
+	all := make([]string, len(readings))
+	for i, r := range readings {
+		all[i] = strings.TrimSuffix(mb(r), " MB")
+	}
+	return m, fmt.Sprintf("%s anon (median of %s)", mb(m), strings.Join(all, ", "))
+}
+
 // idleBudgets are the limits of one idle window.
 type idleBudgets struct {
 	anon    int64   // anonymous RSS, bytes
@@ -378,9 +415,10 @@ func dockIdle(clients int) idleBudgets {
 }
 
 // idle measures CPU ticks and wake-ups over one window, and memory at its
-// end, and adds a row for each against b. Callers pick when the window
-// starts: Dock's fits between two statistics ticks (betweenTicks).
-func (d *daemon) idle(t *table, name string, window time.Duration, b idleBudgets) error {
+// end, and adds a row for each against b. Memory is the median of d and
+// others, daemons started the same way (idleStarts). Callers pick when the
+// window starts: Dock's fits between two statistics ticks (betweenTicks).
+func (d *daemon) idle(t *table, name string, window time.Duration, b idleBudgets, others ...*daemon) error {
 	before, err := d.sample()
 	if err != nil {
 		return err
@@ -390,12 +428,17 @@ func (d *daemon) idle(t *table, name string, window time.Duration, b idleBudgets
 	if err != nil {
 		return err
 	}
-	anon, err := d.anon()
-	if err != nil {
-		return err
+	readings := make([]int64, 0, 1+len(others))
+	for _, x := range append([]*daemon{d}, others...) {
+		anon, err := x.anon()
+		if err != nil {
+			return err
+		}
+		readings = append(readings, anon)
 	}
+	anon, measured := medianOf(readings)
 	ticks := after.ticks - before.ticks
-	t.within(name+": memory", mb(anon)+" anon", "≤ "+mb(b.anon), anon <= b.anon)
+	t.within(name+": memory", measured, "≤ "+mb(b.anon), anon <= b.anon)
 	t.withinTiming(name+": CPU", fmt.Sprintf("%d ticks in %s", ticks, window), fmt.Sprintf("≤ %d ticks", b.ticks), ticks <= b.ticks)
 	wakeups := float64(after.wakeups-before.wakeups) / window.Seconds()
 	t.withinTiming(name+": wake-ups", fmt.Sprintf("%.2f/s", wakeups), fmt.Sprintf("≤ %.1f/s", b.wakeups), wakeups <= b.wakeups)

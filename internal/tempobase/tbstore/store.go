@@ -53,10 +53,12 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	// Keep every connection open: reopening one reruns the pragmas and
-	// re-prepares every statement on it.
-	db.SetMaxOpenConns(8)
-	db.SetMaxIdleConns(8)
+	// Four connections, all kept open: reopening one reruns the pragmas
+	// and re-prepares every statement on it, and each holds its schema,
+	// page cache and statements in SQLite's C heap, which modernc never
+	// gives back. As Dock's store (internal/store poolSize).
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
 	// A new file switches to WAL on its first connection. Another process
 	// opening it at that moment can get SQLITE_BUSY without waiting
 	// (SQLite doesn't wait where it could deadlock), so opening retries

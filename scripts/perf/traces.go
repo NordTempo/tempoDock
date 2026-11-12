@@ -87,6 +87,7 @@ func checkTraces(o options, t *table) error {
 	}
 	d := &daemon{cmd: cmd, dir: dir}
 	defer d.stop()
+	peak := samplePeak(cmd.Process.Pid)
 	if err := waitStore(url); err != nil {
 		log, _ := os.ReadFile(logf.Name())
 		return fmt.Errorf("%w: %s", err, log)
@@ -140,10 +141,10 @@ func checkTraces(o options, t *table) error {
 	t.withinTiming("traces: span ingest, batches of 1,000", fmt.Sprintf("%.0f spans/s (write p95 %s)", slowest, ms(p95)),
 		fmt.Sprintf("≥ %d spans/s", tracesIngestBudget), slowest >= tracesIngestBudget)
 
-	peak, err := statusField(fmt.Sprintf("/proc/%d/status", cmd.Process.Pid), "VmHWM")
+	anon, hwm, err := peak.settle()
 	if err != nil {
 		return err
 	}
-	t.within("traces peak memory", mb(peak<<10), "≤ "+mb(tracesPeakBudget)+" (the container's limit)", peak<<10 <= tracesPeakBudget)
+	addPeak(t, "traces peak memory", anon, hwm, tracesPeakBudget)
 	return nil
 }

@@ -20,7 +20,7 @@ against main's) names it in its description with the reason.
 
 Checked by `make perf` ([scripts/perf](../scripts/perf)). Product targets are
 in [experience](experience.md#performance-targets); the budgets keep
-headroom below them, except idle memory: its budget (34 MB) is measured
+headroom below them, except idle memory: its budget (32 MB) is measured
 with Dock Analytics on and sits above the 30 MB target. Dock and tempoBase
 are measured with `GOMAXPROCS=4`, a small server, so a runner's core count
 doesn't move their memory. The daemon is measured with analytics turned
@@ -32,10 +32,10 @@ than on a quiet machine.
 
 | What | Budget | Measured |
 |---|---|---|
-| Daemon idle memory | ≤ 34 MB anonymous RSS | 32.0 MB (2026-11-11, 31ca4da1; 31.6-32.2 MB on main's runs that day) |
+| Daemon idle memory | ≤ 32 MB anonymous RSS, the median of three starts | 29.4 MB (2026-11-12, #285: 27.4, 29.4, 29.4) |
 | Daemon idle CPU | ≤ 2 clock ticks in 30 s | 0 |
 | Daemon idle wake-ups | ≤ 0.2/s, plus 0.2/s per open SSE stream | 0.00/s; 0.60/s with 20 streams |
-| Daemon memory with SSE clients | ≤ 34 MB plus 0.15 MB per stream (36.9 MB with 20) | 32.1 MB with 20 streams |
+| Daemon memory with SSE clients | ≤ 32 MB plus 0.15 MB per stream (34.9 MB with 20) | 29.4 MB with 20 streams |
 | CLI start-up (`dock context list`, `dock --help`) | ≤ 20 ms median (target 50) | 10.5 ms, 11.4 ms |
 | API read p95, 8 concurrent clients, seeded (60-service project) | ≤ 20 ms | 0.35-8.2 ms (the project overview is the slowest); with a staged change, overview 8.2 ms and changes 4.5 ms |
 | UI initial JS (entry + modulepreloads, gzip) | ≤ 200 KB | 168.9 KB (24 files) |
@@ -54,16 +54,18 @@ Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
 
-The idle number moves with GC timing, by up to 3 MB between runs, so
-the budget keeps 2 MB above main's typical reading; raise it (and say
-why) only after main has failed it on several runs, as on 2026-11-11
-when status pages, scanning and tracing had added about 2 MB. The
-daemon's last collection runs during start-up, and whatever it allocates
-after that (the first statistics ticks, each SSE handshake) stays in RSS
-until the next one, as do stream handlers' stacks. A forced GC leaves the
-live heap at about 10 MB with or without streams: nothing is kept per
-stream beyond its goroutine. The live heap is mostly Huma's schemas of
-the API types and compiled regexps.
+The idle reading is the median of three daemons started side by side
+(`idleStarts`). One daemon's RssAnon is flat through its window and
+through a forced GC, but it differs between starts by up to 4 MB on CI:
+it isn't GC timing but what start-up left in SQLite's C heap (each pool
+connection's schema copy, page cache and prepared statements), which
+modernc never gives back. Keeping four connections (#272) shrank that
+spread; the median takes out the rest. The budget keeps 2 MB above
+main's typical median; raise it (and say why) only after main has failed
+it on several runs. Of the rest, the Go heap is about 15 MB of spans for
+a 10 MB live heap, mostly Huma's schemas of the API types (validation
+needs them) and compiled regexps, and the Go runtime's own metadata is
+about 6 MB.
 
 ### tempoBase
 
@@ -76,7 +78,7 @@ and `tempobase-ui`. Measured as above (CI, 2026-11-10).
 | What | Budget | Measured |
 |---|---|---|
 | Binary (linux/amd64, UI embedded) | ≤ 21 MB (20 MB until database insights, ADR 0069), and baseline + 3% (`tempobase_binary_bytes`) | 18.9 MB, its UI embedded gzipped |
-| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 12.0 MB |
+| Idle memory, after start, a login and a connection list | ≤ 20 MB anonymous RSS | 10.2 MB (four SQLite connections, #285) |
 | Idle CPU | ≤ 1 clock tick in 30 s | 0 |
 | Idle wake-ups | ≤ 0.1/s | 0.03/s (Go's forced GC is ~0.01/s) |
 | API read p95 (`/me`, `/connections`), 8 clients, 50 connections and 20 users | ≤ 10 ms | 0.6 ms, 2.6 ms |
@@ -111,7 +113,17 @@ Measured as above (CI, 2026-11-10); a timed row shows its slowest range.
 | Ingest over HTTP, batches of 1,000 | ≥ 5,000 events/s | 37k events/s (a batch writes up to three tables) |
 | Errors and Web Vitals views p95, 1M events, every range (error groups with their series; vitals overall, by page and device, and LCP over time) | ≤ 200 ms | 119 ms (a year) |
 | Goals and funnels p95, 1M events, every range (five goals and a three-step funnel) | ≤ 200 ms | 74 ms (a year) |
-| Peak memory through all of it | ≤ 512 MB (the container's limit) | 326 MB |
+| Peak anonymous memory through all of it and 10 s past the ingest burst | ≤ 512 MB (the container's limit) | 220.8 MB (VmHWM 263.8 MB; #285) |
+
+The peak is anonymous RSS, polled every 100 ms (`scripts/perf/peak.go`),
+because the containers have no swap: anonymous memory is what the limit
+kills for, while the mapped binary and file pages are reclaimed first.
+VmHWM, which counts those too, prints beside it. VmHWM moved with the
+runner, not the code: 407 to 480 MB on 2026-11-11's busy runners (and
+363 vs 449 MB for the same code on two runs), about 250 MB on the dev
+VM and 264 MB on #285's run; why is not pinned down. The
+sampling runs 10 s past the ingest burst, since DuckDB keeps growing
+after it (195 to 244 MB anonymous in one local run).
 
 DuckDB holds memory outside its `memory_limit` (freed operator memory,
 exact distinct counts), so the store runs one query at a time with a
@@ -142,7 +154,7 @@ Measured on CI's run of the pull request that added it (#212,
 | The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 48 ms |
 | Opening a trace p95, with its time or without | ≤ 30 ms | 9 ms |
 | Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 24.4k spans/s |
-| Peak memory through all of it | ≤ 512 MB (the container's limit) | 304 to 387 MB |
+| Peak anonymous memory through all of it and 10 s past the ingest bursts | ≤ 512 MB (the container's limit) | 314.3 MB (VmHWM 355.0 MB; #285) |
 
 Spans go in one table per UTC day (dropping a day is the retention, with
 no delete scan). With 10M seeded spans over a week (32 bytes a span on

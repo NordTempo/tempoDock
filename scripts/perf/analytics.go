@@ -117,6 +117,7 @@ func checkAnalytics(o options, t *table) error {
 	}
 	d := &daemon{cmd: cmd, dir: dir}
 	defer d.stop()
+	peak := samplePeak(cmd.Process.Pid)
 	if err := waitStore(url); err != nil {
 		log, _ := os.ReadFile(logf.Name())
 		return fmt.Errorf("%w: %s", err, log)
@@ -170,11 +171,11 @@ func checkAnalytics(o options, t *table) error {
 	t.withinTiming("analytics ingest, batches of 1,000", fmt.Sprintf("%.0f events/s (write p95 %s)", rate, ms(load.WriteP95)),
 		fmt.Sprintf("≥ %d events/s", analyticsIngestBudget), rate >= analyticsIngestBudget)
 
-	peak, err := statusField(fmt.Sprintf("/proc/%d/status", cmd.Process.Pid), "VmHWM")
+	anon, hwm, err := peak.settle()
 	if err != nil {
 		return err
 	}
-	t.within("analytics peak memory", mb(peak<<10), "≤ "+mb(analyticsPeakBudget)+" (the container's limit)", peak<<10 <= analyticsPeakBudget)
+	addPeak(t, "analytics peak memory", anon, hwm, analyticsPeakBudget)
 	return nil
 }
 
