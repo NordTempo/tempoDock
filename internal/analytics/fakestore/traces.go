@@ -293,8 +293,9 @@ func (t *Traces) metricNames(q analytics.MetricNamesQuery) analytics.MetricNames
 	return res
 }
 
-// queryMetrics answers each chart with one line: a step's values summed,
-// whatever its aggregation and attribute.
+// queryMetrics answers each chart with one line, whatever its
+// aggregation and attribute: a step's values averaged for a level (a
+// gauge's), summed for the rest.
 func (t *Traces) queryMetrics(q analytics.MetricsQuery) analytics.MetricsResult {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -303,6 +304,7 @@ func (t *Traces) queryMetrics(q analytics.MetricsQuery) analytics.MetricsResult 
 	for _, c := range q.Charts {
 		out := analytics.MetricChart{Name: c.Name, Agg: c.Agg, By: c.By, Lines: []analytics.MetricLine{}, Attrs: []analytics.MetricAttr{}}
 		var line []*float64
+		n := make([]float64, steps)
 		for _, p := range t.points {
 			if p.Org != q.Org || p.Service != q.Service || p.Name != c.Name || p.Time < q.From || p.Time >= q.To {
 				continue
@@ -320,6 +322,14 @@ func (t *Traces) queryMetrics(q analytics.MetricsQuery) analytics.MetricsResult 
 				v += *line[i]
 			}
 			line[i] = &v
+			n[i]++
+		}
+		if out.Shape == analytics.ShapeLevel {
+			for i, v := range line {
+				if v != nil {
+					*v /= n[i]
+				}
+			}
 		}
 		if line != nil {
 			out.Lines = append(out.Lines, analytics.MetricLine{Values: line})

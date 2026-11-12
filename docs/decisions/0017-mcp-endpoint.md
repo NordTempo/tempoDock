@@ -158,6 +158,7 @@ ones.
 | `wait_for_request` | Wait for a request's decision and run | `WaitRequest` | read |
 | `list_requests` | The caller's access requests | `ListRequests` | read |
 | `analytics` | A site's stats, a breakdown, browser errors, Web Vitals, replays (listed only), goals or funnels; or the project's sites (one tool with a `report` since 2026-11-11: every tool costs an agent's context) | `ListSites`, `SiteStats`, `SiteBreakdown`, `SiteErrors`, `SiteError`, `SiteVitals`, `SiteReplays`, `SiteGoals`, `SiteFunnels`, `SiteFunnel` | read |
+| `metrics` | A service's app metrics over OTLP ([0075](0075-tracing-over-otlp.md)): the metrics it sends and its pinned charts' latest, lowest and highest values; with `name`, one metric split by an attribute (`agg`, `by`). Values, not points. Pinning stays in the UI and CLI | `AppMetrics`, `AppMetricChart` | read |
 | `data_status` | Database state and the caller's data access, with why | `DataInfo` | sees the service |
 | `data_schema` | Tables, columns, keys; one table in full | `DataSchema` | data `schema` |
 | `data_rows` | One keyset page with filters, sensitive columns masked | `DataRows` | data `read` |
