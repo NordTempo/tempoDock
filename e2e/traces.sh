@@ -3,7 +3,7 @@
 # plane and a node installed with deploy/install.sh. Tracing goes on, and
 # a service on each server sends a span every two seconds the way an
 # OpenTelemetry SDK does: OTLP/HTTP JSON to $OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-# with the token from $OTEL_EXPORTER_OTLP_TRACES_HEADERS, both injected by Dock.
+# with the token in its path, injected by Dock.
 # Passes when the trace store has spans of both services: dock-otlp in the
 # containers' hosts file, the app firewall, Caddy's route, each server's
 # ingest and spool, the forwarders and the trace store all work.
@@ -45,11 +45,10 @@ wait_for "the trace store" 300 sh -c './bin/dock tracing --json | jq -e .store_r
 # The sender: nginx for the health check, and a loop posting a span with
 # a new trace ID every two seconds.
 SEND='(while true; do
-  tok=${OTEL_EXPORTER_OTLP_TRACES_HEADERS#authorization=Bearer%20}
   id=$(head -c16 /dev/urandom | od -An -tx1 | tr -d " \n")
   now=$(date +%s)
   body="{\"resourceSpans\":[{\"scopeSpans\":[{\"spans\":[{\"traceId\":\"$id\",\"spanId\":\"0102030405060708\",\"name\":\"GET /e2e\",\"kind\":2,\"startTimeUnixNano\":\"${now}000000000\",\"endTimeUnixNano\":\"${now}005000000\",\"attributes\":[{\"key\":\"http.route\",\"value\":{\"stringValue\":\"/e2e\"}},{\"key\":\"db.password\",\"value\":{\"stringValue\":\"hunter2\"}}]}]}]}]}"
-  wget -q -O- --header "Authorization: Bearer $tok" --header "Content-Type: application/json" --post-data "$body" "$OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" >/dev/null 2>&1
+  wget -q -O- --header "Content-Type: application/json" --post-data "$body" "$OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" >/dev/null 2>&1
   sleep 2
 done) & exec nginx -g "daemon off;"'
 

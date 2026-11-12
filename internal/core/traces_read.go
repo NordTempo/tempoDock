@@ -138,6 +138,11 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 	if err != nil {
 		return apitypes.Trace{}, err
 	}
+	done, err := c.traceReadSlot(ctx)
+	if err != nil {
+		return apitypes.Trace{}, err
+	}
+	defer done()
 	q := analytics.TraceQuery{Org: ss.project.OrgID, Trace: traceID}
 	if !at.IsZero() {
 		q.At = at.UnixMicro()
@@ -198,6 +203,32 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 		out.Spans = append(out.Spans, ts)
 	}
 	return out, nil
+}
+
+// maxTraceReads is how many traces are read at once: a trace is up to
+// 2,000 spans, about 33 MB decoded at the ingest's caps, so the daemon
+// holds at most a few.
+const maxTraceReads = 4
+
+// traceReadSlot waits up to 10 s for one of maxTraceReads slots and
+// returns its release, or that Dock is busy.
+func (c *Core) traceReadSlot(ctx context.Context) (func(), error) {
+	c.traces.mu.Lock()
+	if c.traces.reads == nil {
+		c.traces.reads = make(chan struct{}, maxTraceReads)
+	}
+	slots := c.traces.reads
+	c.traces.mu.Unlock()
+	wait := time.NewTimer(10 * time.Second)
+	defer wait.Stop()
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-wait.C:
+		return nil, errf(apitypes.CodeRateLimited, "Dock is reading %d traces already; try again in a moment", maxTraceReads)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // traceReader is the trace store's client, or why traces can't be read.

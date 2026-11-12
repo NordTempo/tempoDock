@@ -2,6 +2,7 @@ package caddy
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -577,7 +578,7 @@ func TestRenderEdgeTrace(t *testing.T) {
 	if n < 4 || h[0].Handler != "authentication" || h[n-3].Handler != "headers" || h[n-2].Handler != "tracing" || h[n-2].Span != "edge" || h[n-1].Handler != "reverse_proxy" {
 		t.Fatalf("traced handlers = %+v", h)
 	}
-	if del := h[n-3].Request.Delete; len(del) != 3 || del[0] != "traceparent" {
+	if del := h[n-3].Request.Delete; del[0] != "traceparent" || !slices.Contains(del, "X-B3-Sampled") || !slices.Contains(del, "uber-trace-id") {
 		t.Errorf("trace headers dropped = %v", del)
 	}
 	for _, r := range routes[1:] {

@@ -290,6 +290,7 @@ func TestSensitive(t *testing.T) {
 		"db.password": true, "x-api-key": true, "auth_token": true, "http.request.header.cookie": true,
 		"http.request.header.content-type": false, "llm.usage.total_tokens": false, "session.id": false, "user.id": false,
 		"private_key": true, "aws.secret": true,
+		"accessToken": true, "clientSecret": true, "authToken": true, "APIKey": true, "userId": false, "totalTokens": false,
 	} {
 		if sensitive(k) != want {
 			t.Errorf("sensitive(%q) = %v", k, !want)
@@ -300,6 +301,19 @@ func TestSensitive(t *testing.T) {
 	}
 	if got := maskQuery("/orders/7"); got != "/orders/7" {
 		t.Errorf("a path: %q", got)
+	}
+	for in, want := range map[string]string{
+		"https://x.example/maps?key=AIza&q=oslo":           "https://x.example/maps?key=*****&q=oslo",
+		"/cb?accessToken=abc":                              "/cb?accessToken=*****",
+		"/cb?access%5Ftoken=abc":                           "/cb?access%5Ftoken=*****",
+		"https://user:hunter2@db.example:5432/app":         "https://user:*****@db.example:5432/app",
+		"/cb#access_token=abc&state=1":                     "/cb#access_token=*****&state=1",
+		"https://x.example/a?page=2#section":               "https://x.example/a?page=2#section",
+		"postgres://app@db/app?sslmode=require&password=p": "postgres://app@db/app?sslmode=require&password=*****",
+	} {
+		if got := maskQuery(in); got != want {
+			t.Errorf("maskQuery(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -343,5 +357,21 @@ func TestExceptionFingerprint(t *testing.T) {
 	}
 	if fp := exceptionFingerprint(&rawSpan{}); fp != "" {
 		t.Errorf("no exception: %q", fp)
+	}
+}
+
+// The token rides in the endpoint's path, as Dock sets it; a bad one is
+// refused as a bad header is.
+func TestIngestTokenInPath(t *testing.T) {
+	in, sp := newIngest()
+	body, _ := proto.Marshal(testRequest(time.Now()))
+	if w := post(in, TokenPathPrefix+Mint(testKey, testClaims)+TracesPath, "application/x-protobuf", "", body, false); w.Code != http.StatusOK || len(sp.lines) == 0 {
+		t.Fatalf("token in the path: %d %s, %d spans", w.Code, w.Body, len(sp.lines))
+	}
+	if w := post(in, TokenPathPrefix+"dtr1.1.2.3.4.5.00"+TracesPath, "application/x-protobuf", "", body, false); w.Code != http.StatusUnauthorized {
+		t.Errorf("a bad token in the path: %d", w.Code)
+	}
+	if w := post(in, TokenPathPrefix+Mint(testKey, testClaims)+MetricsPath, "application/x-protobuf", "", body, false); w.Code != http.StatusOK {
+		t.Errorf("metrics with the token in the path: %d", w.Code)
 	}
 }

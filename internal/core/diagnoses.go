@@ -567,8 +567,8 @@ func (c *Core) GetDiagnosis(ctx context.Context, a Actor, ref ServiceRef, id int
 	if err != nil {
 		return b, err
 	}
-	maskDiagnosis(&b, red)
 	b.Trace = c.failedTrace(ctx, ss, rel, b.CapturedAt)
+	maskDiagnosis(&b, red)
 	return b, nil
 }
 
@@ -609,6 +609,9 @@ func maskDiagnosis(b *apitypes.Diagnosis, red *redactor) {
 	}
 	mask(&b.Failure.Error)
 	mask(&b.Cause.Detail)
+	if b.Trace != nil {
+		mask(&b.Trace.Name) // the app's route may hold a value
+	}
 	lines(b.ContainerTail)
 	lines(b.BuildTail)
 	if b.PreDeploy != nil {

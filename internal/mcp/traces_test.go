@@ -25,7 +25,7 @@ func TestTraceTools(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if spec, ok := f.rt.Spec("dock_p1_e3_s1_r1"); ok {
-			tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+			tok, _ := tokenOf(spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
 			var err error
 			if claims, err = traces.Parse(f.rt.TraceKey(), tok); err == nil {
 				break
@@ -60,4 +60,12 @@ func TestTraceTools(t *testing.T) {
 	if !strings.Contains(got.summary, "Slowest call: INSERT orders in web (850 ms)") || !strings.Contains(got.summary, "Failed: INSERT orders in web r1: QueryFailedError statement timeout") {
 		t.Fatalf("trace_get = %q", got.summary)
 	}
+}
+
+// tokenOf is the trace token in an endpoint Dock set:
+// http://dock-otlp:80/t/<token>/v1/traces.
+func tokenOf(endpoint string) (string, bool) {
+	_, rest, ok := strings.Cut(endpoint, "/t/")
+	tok, _, _ := strings.Cut(rest, "/")
+	return tok, ok && tok != ""
 }

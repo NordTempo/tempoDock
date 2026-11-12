@@ -20,8 +20,11 @@ RuntimeDirectoryMode=0750
 StateDirectory=dock-caddy
 Environment=XDG_DATA_HOME=/var/lib/dock-caddy XDG_CONFIG_HOME=/var/lib/dock-caddy
 # Traced routes (ADR 0075) start spans and pass traceparent to apps, and
-# Dock makes the edge span from the access log: Caddy exports nothing.
-Environment=OTEL_TRACES_EXPORTER=none
+# Dock makes the edge span from the access log: Caddy exports nothing,
+# reads and writes W3C trace context only, and its batch span processor
+# doesn't wake every 5 s to export to nowhere (it still exports a full
+# batch, which none drops).
+Environment=OTEL_TRACES_EXPORTER=none OTEL_PROPAGATORS=tracecontext,baggage OTEL_BSP_SCHEDULE_DELAY=86400000
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

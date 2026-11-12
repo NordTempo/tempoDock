@@ -43,6 +43,8 @@ type tracesState struct {
 	runCancel context.CancelFunc
 	// keyEpoch is the trace key's epoch (RotateTraceKey).
 	keyEpoch int64
+	// reads holds a slot per trace being read (traceReadSlot).
+	reads chan struct{}
 	// forwarding holds the servers with a spans forwarder running.
 	forwarding map[int64]bool
 	// starting is set while a start runs; storeErr is why the last one

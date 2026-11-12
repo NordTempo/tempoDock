@@ -35,6 +35,9 @@ type Edge struct {
 	In *Ingest
 
 	mu sync.Mutex
+	// rates are each service's edge span buckets, apart from its app's:
+	// a flood of internet requests can't starve the app's own spans.
+	rates rates
 	// claims caches parsed tokens: one per traced route, reset when the
 	// key changes.
 	claims map[string]Claims
@@ -79,7 +82,10 @@ func (e *Edge) Request(r EdgeRequest) {
 	if status >= 500 {
 		s.Status = analytics.StatusError
 	}
-	if !in.rates.take(c.Service, in.Limits.ServiceRate, now) {
+	if e.rates.by == nil {
+		e.rates.by = map[int64]*bucket{}
+	}
+	if !e.rates.take(c.Service, in.Limits.ServiceRate, now) {
 		return
 	}
 	e.line.Reset()
