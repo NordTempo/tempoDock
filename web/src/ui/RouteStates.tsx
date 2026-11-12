@@ -56,7 +56,7 @@ function Bar({ title }: { title: string }) {
       ?.map((p) => p.name) ?? [];
   const crumbs = crumbsFor(path, projects);
   return (
-    <header className="sticky top-0 z-10 flex min-h-[52px] items-center border-b border-line bg-page px-4 py-2.5 sm:px-5">
+    <header className="sticky top-(--shell-top) z-10 flex min-h-[52px] items-center border-b border-line bg-page px-4 py-2.5 sm:px-5">
       <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
         {crumbs.map((c) => (
           <span key={c.href} className="flex items-center gap-1.5">

@@ -2,7 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { queries, servicePath, useService } from "../data/queries";
-import type { ServiceTraffic } from "../data/types";
+import type { ServiceRef, ServiceTraffic } from "../data/types";
 import { RangeSwitch, Stat } from "../features/stats/parts";
 import { BarChart } from "../features/traffic/BarChart";
 import {
@@ -89,7 +89,7 @@ function TrafficTab() {
         <SectionHead id="endpoints">
           Top {traffic.paths.length || 20} endpoints
         </SectionHead>
-        <Endpoints traffic={traffic} />
+        <Endpoints traffic={traffic} serviceRef={ref} />
       </section>
     </>
   );
@@ -142,7 +142,19 @@ function Chart({ traffic, to }: { traffic: ServiceTraffic; to: number }) {
   );
 }
 
-function Endpoints({ traffic }: { traffic: ServiceTraffic }) {
+/**
+ * The most requested endpoints: their share, 5xx count and p95 (from
+ * Caddy's access log; 0 is unknown, rows before the timings were kept),
+ * and the way to their traces (ADR 0075).
+ */
+function Endpoints({
+  traffic,
+  serviceRef: ref,
+}: {
+  traffic: ServiceTraffic;
+  serviceRef: ServiceRef;
+}) {
+  const org = useOrg();
   const { paths, totals } = traffic;
   if (!paths.length) {
     return <p className="text-mut">No requests in this range.</p>;
@@ -161,7 +173,12 @@ function Endpoints({ traffic }: { traffic: ServiceTraffic }) {
             <th>Path</th>
             <th className="text-right">Requests</th>
             <th className="text-right">Share</th>
-            <th className="w-1/3" />
+            <th className="text-right">5xx</th>
+            <th className="text-right">p95</th>
+            <th className="w-1/5" />
+            <th>
+              <span className="sr-only">Traces</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -173,11 +190,35 @@ function Endpoints({ traffic }: { traffic: ServiceTraffic }) {
               </td>
               <td className="text-right">{count(p.requests)}</td>
               <td className="text-right text-mut">{share(p.requests)}</td>
+              <td
+                className={`text-right font-mono ${p.errors ? "text-fail" : "text-faint"}`}
+              >
+                {count(p.errors)}
+              </td>
+              <td className="text-right font-mono">
+                {p.p95_ms ? (
+                  `${Math.round(p.p95_ms)} ms`
+                ) : (
+                  <span className="text-faint" title="Not measured yet">
+                    ·
+                  </span>
+                )}
+              </td>
               <td className="align-middle">
                 <div
                   className="h-1.5 rounded-xs bg-info/55"
                   style={{ width: `${(p.requests / most) * 100}%` }}
                 />
+              </td>
+              <td className="text-right">
+                <Link
+                  to="/$org/$project/$environment/$service/requests/traces"
+                  params={{ org, ...ref }}
+                  search={{ route: p.path }}
+                  className="btn sm"
+                >
+                  Traces
+                </Link>
               </td>
             </tr>
           ))}

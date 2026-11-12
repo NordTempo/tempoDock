@@ -13,6 +13,8 @@ import { AlertLink } from "../features/alerts/source";
 import { AuditTable } from "../features/audit/AuditTable";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { errorsQuery } from "../features/errors/data";
+import { statusQueries } from "../features/status/data";
 import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
 import { Icon } from "../ui/icons";
@@ -29,7 +31,8 @@ import {
 
 // An organization's home ("/" lands here too), its Overview in the top
 // bar (option 3): what needs someone (open alerts, the Inbox's), its
-// projects with their health worst first, and the latest deploys. With
+// projects with their health worst first, the most frequent open errors,
+// the latest deploys and its status pages. With
 // no projects yet, it offers to create one or says how to deploy from a
 // terminal.
 export const Route = createFileRoute("/_app/$org/")({
@@ -154,7 +157,9 @@ function Home() {
             </table>
           </Panel>
         </section>
+        <TopErrors />
         <RecentDeploys />
+        <StatusPages />
       </Page>
     </>
   );
@@ -405,6 +410,113 @@ function RecentDeploys() {
         Recent deploys
       </SectionHead>
       <AuditTable events={events} compact />
+    </section>
+  );
+}
+
+/** The open error issues seen most, across the organization. */
+function TopErrors() {
+  const org = useOrg();
+  const issues = useQuery(errorsQuery({})).data?.issues ?? [];
+  if (issues.length === 0) return null;
+  const top = [...issues].sort((a, b) => b.count - a.count).slice(0, 5);
+  return (
+    <section aria-labelledby="errors-head">
+      <SectionHead
+        id="errors-head"
+        aside={`${issues.length} open`}
+        right={
+          <Link to="/$org/errors" params={{ org }} className="hover:text-fg">
+            All errors →
+          </Link>
+        }
+      >
+        Errors
+      </SectionHead>
+      <ul className="border-t border-line">
+        {top.map((i) => (
+          <li
+            key={i.id}
+            className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
+          >
+            <span className="min-w-0 flex-1 truncate" title={i.title}>
+              {i.title}
+            </span>
+            <Link
+              to="/$org/$project/$environment/$service/errors"
+              params={{
+                org,
+                project: i.project,
+                environment: i.environment,
+                service: i.service,
+              }}
+              className="font-mono text-xs text-sec hover:text-fg"
+            >
+              {i.project}/{i.service}
+            </Link>
+            <span
+              className="w-14 text-right font-mono text-xs tabular-nums"
+              title={`${i.count} events`}
+            >
+              {i.count}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The organization's status pages: published or not, and where. */
+function StatusPages() {
+  const org = useOrg();
+  const pages = useQuery(statusQueries.list()).data ?? [];
+  if (pages.length === 0) return null;
+  return (
+    <section aria-labelledby="status-head">
+      <SectionHead
+        id="status-head"
+        right={
+          <Link
+            to="/$org/status-pages"
+            params={{ org }}
+            className="hover:text-fg"
+          >
+            Status pages →
+          </Link>
+        }
+      >
+        Status pages
+      </SectionHead>
+      <ul className="border-t border-line">
+        {pages.map((p) => (
+          <li
+            key={p.slug}
+            className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
+          >
+            <Link
+              to="/$org/status-pages/$page"
+              params={{ org, page: p.slug }}
+              className="min-w-0 flex-1 hover:underline"
+            >
+              {p.title}
+            </Link>
+            <span className="text-xs text-mut">
+              {plural(p.components, "component")}
+            </span>
+            <span
+              className={p.published ? "text-xs text-ok" : "text-xs text-mut"}
+            >
+              {p.published ? "published" : "not published"}
+            </span>
+            {p.url && p.published && (
+              <span className="font-mono text-xs text-sec">
+                {p.url.replace(/^https?:\/\//, "")}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

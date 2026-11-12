@@ -396,6 +396,7 @@ export function useCommands({
           ],
         ] as const)
       : []),
+    ["Overview", "/$org", "dock project list"],
     ["Inbox", "/$org/inbox", "dock alerts"],
     ["Alert settings", "/$org/settings/alerts", "dock alerts channel list"],
     ["Analytics", "/$org/analytics", "dock analytics sites"],

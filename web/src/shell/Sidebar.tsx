@@ -83,7 +83,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
         // Under the console's sticky amber bar.
         mode === "console"
           ? "lg:top-8 lg:h-[calc(100vh-2rem)]"
-          : "lg:top-0 lg:h-screen"
+          : "lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]"
       }`}
     >
       <button
@@ -150,22 +150,32 @@ export function useTreeOpen() {
 }
 
 /**
- * The org's left column (WIP, option 3): the project tree, or the rail of
- * project tiles; the org's views moved to the top bar (TopBar).
+ * The org's left column (option 3): the project tree, or the rail of
+ * project tiles; the org's views are in the top bar (TopBar).
  */
 function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
   return (
     <>
+      {/* Expanded stays expanded until collapsed again (Saile). */}
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={tree}
-        title={`${tree ? "Collapse to the project rail" : "Expand the project tree"} ([)`}
-        className="nav-row text-mut"
+        aria-label={tree ? "Collapse the projects" : "Expand the projects"}
+        title={`${tree ? "Collapse to the project rail" : "Expand to the project tree"} ([)`}
+        className={`nav-row text-mut ${tree ? "" : "justify-center px-0"}`}
       >
-        <Icon name="list" />
-        {tree && <span className="flex-1">Projects</span>}
-        <kbd>[</kbd>
+        {tree ? (
+          <>
+            <span className="flex-1 text-left text-2xs font-medium text-faint">
+              Projects
+            </span>
+            <Icon name="chevronLeft" size={14} />
+            <kbd>[</kbd>
+          </>
+        ) : (
+          <Icon name="chevronRight" size={14} />
+        )}
       </button>
       {tree ? (
         <>
@@ -179,70 +189,100 @@ function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
   );
 }
 
-/** The collapsed column: a tile per project, its initials and health. */
+/**
+ * The collapsed column: a tile per project, its initials and a dot for
+ * its health, worst of its services (failing red, needs a look amber,
+ * running green; none while nothing is deployed). The current project's
+ * tile is marked.
+ */
 function ProjectRail() {
   const org = useOrg();
   const projects = useProjects();
-  const health = new Map(
-    useProjectTree().map((o) => [
-      o.project.name,
-      o.environments.some((e) =>
-        e.services.some((v) => serviceState(v).tone === "fail"),
-      ),
-    ]),
+  const tone = new Map(
+    useProjectTree().map((o) => {
+      const tones = o.environments.flatMap((e) =>
+        e.services.map((v) => serviceState(v).tone),
+      );
+      return [
+        o.project.name,
+        tones.includes("fail")
+          ? "fail"
+          : tones.includes("warn")
+            ? "warn"
+            : tones.includes("ok")
+              ? "ok"
+              : undefined,
+      ] as const;
+    }),
   );
+  const dot = { fail: "bg-fail", warn: "bg-warn", ok: "bg-ok" } as const;
+  const word = {
+    fail: "failing",
+    warn: "needs a look",
+    ok: "running",
+  } as const;
   return (
     <ul className="flex flex-col items-center gap-1">
-      {projects.map((p) => (
-        <li key={p.name}>
-          <Link
-            to="/$org/$project"
-            params={{ org, project: p.name }}
-            title={p.name}
-            className="relative grid size-9 place-items-center rounded-ctl border border-line text-xs font-medium uppercase hover:bg-hover aria-[current=page]:bg-sel"
-          >
-            {p.name.slice(0, 2)}
-            <span
-              aria-label={health.get(p.name) ? "needs attention" : undefined}
-              className={`absolute -top-0.5 -right-0.5 size-2 rounded-full ${health.get(p.name) ? "bg-fail" : "bg-ok"}`}
-            />
-          </Link>
-        </li>
-      ))}
+      {projects.map((p) => {
+        const t = tone.get(p.name);
+        return (
+          <li key={p.name}>
+            <Link
+              to="/$org/$project"
+              params={{ org, project: p.name }}
+              activeProps={{ "aria-current": "page" }}
+              title={t ? `${p.name}: ${word[t]}` : p.name}
+              className="relative grid size-9 place-items-center rounded-ctl border border-line text-xs font-medium uppercase hover:bg-hover aria-[current=page]:border-edge aria-[current=page]:bg-sel"
+            >
+              {p.name.slice(0, 2)}
+              {t && (
+                <span
+                  role="img"
+                  aria-label={`, ${word[t]}`}
+                  className={`absolute -top-0.5 -right-0.5 size-2 rounded-full ${dot[t]}`}
+                />
+              )}
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 /**
- * The org's top bar (WIP, option 3): the switcher, the org's views,
+ * The org's top bar (option 3): the switcher, the org's views,
  * search, Inbox, Settings and the account. Members and Activity live
  * under Settings; Help in the account menu; the console in the switcher.
  */
 export function TopBar() {
   const openPalette = usePalette();
   return (
-    // Narrow windows scroll the bar sideways rather than wrapping it.
-    <header className="flex h-[52px] items-center gap-1 overflow-x-auto border-b border-line bg-side px-3 whitespace-nowrap">
+    // Sticky over every page; its height is --shell-top (index.css).
+    <header className="app-shell sticky top-0 z-30 flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap">
       <OrgSwitcher />
       <nav
         aria-label="Organization views"
-        className="flex items-center gap-0.5"
+        className="hidden items-center gap-0.5 md:flex"
       >
-        <TopLink to="/$org">Overview</TopLink>
-        <TopLink to="/$org/errors">Errors</TopLink>
-        <TopLink to="/$org/analytics">Analytics</TopLink>
-        <TopLink to="/$org/images">Images</TopLink>
-        <TopLink to="/$org/status-pages">Status pages</TopLink>
+        {orgViews.map(([to, label]) => (
+          <TopLink key={to} to={to}>
+            {label}
+          </TopLink>
+        ))}
       </nav>
+      {/* Narrow windows: the same views in a menu. */}
+      <ViewsMenu />
       <span className="flex-1" />
       <button
         type="button"
         onClick={() => openPalette()}
+        aria-label="Search or run"
         className="flex min-h-[28px] items-center gap-2 rounded-ctl border border-line px-2.5 text-mut hover:border-edge hover:text-sec"
       >
         <Icon name="search" />
-        Search
-        <kbd>{modKey.trim()}K</kbd>
+        <span className="hidden sm:inline">Search</span>
+        <kbd className="hidden sm:inline">{modKey.trim()}K</kbd>
       </button>
       <TopLink to="/$org/inbox">
         Inbox <InboxCount />
@@ -253,18 +293,61 @@ export function TopBar() {
   );
 }
 
+/** The org's views, in the top bar's order. */
+const orgViews = [
+  ["/$org", "Overview"],
+  ["/$org/errors", "Errors"],
+  ["/$org/analytics", "Analytics"],
+  ["/$org/images", "Images"],
+  ["/$org/status-pages", "Status pages"],
+] as const;
+
+/** The top bar's views below md: one menu, named after the current view. */
+function ViewsMenu() {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const here =
+    [...orgViews]
+      .reverse()
+      .find(([to]) => path.startsWith(to.replace("$org", org)))?.[1] ?? "Views";
+  return (
+    <span className="md:hidden">
+      <Menu
+        label="Organization views"
+        button={
+          <span className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-fg">
+            {here} <Icon name="chevronDown" size={12} className="text-mut" />
+          </span>
+        }
+      >
+        {(close) =>
+          orgViews.map(([to, label]) => (
+            <button
+              key={to}
+              type="button"
+              role="menuitem"
+              className={menuItem}
+              onClick={() => {
+                close();
+                navigate({ to, params: { org } });
+              }}
+            >
+              {label}
+            </button>
+          ))
+        }
+      </Menu>
+    </span>
+  );
+}
+
+/** A link in the top bar; current on its page (Overview only exactly). */
 function TopLink({
   to,
   children,
 }: {
-  to:
-    | "/$org"
-    | "/$org/errors"
-    | "/$org/analytics"
-    | "/$org/images"
-    | "/$org/status-pages"
-    | "/$org/inbox"
-    | "/$org/settings";
+  to: (typeof orgViews)[number][0] | "/$org/inbox" | "/$org/settings";
   children: ReactNode;
 }) {
   const org = useOrg();
@@ -375,8 +458,7 @@ function OrgSwitcher() {
                     navigate({ to: "/console" });
                   }}
                 >
-                  <Icon name="console" className="text-warn" /> Platform
-                  console
+                  <Icon name="console" className="text-warn" /> Platform console
                   <span className="ml-auto">
                     <PlatformAlertCount />
                   </span>

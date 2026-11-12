@@ -117,14 +117,18 @@ for everything.
 
 ## Structure (2026-11 redesign)
 
-- **Navigation.** The sidebar holds the organization switcher, one search
-  (the palette, Cmd+K: pages and `dock` commands in one list), the project
-  tree (and archived projects), then Inbox (open alerts and, for admins,
-  access requests to decide), Errors, Analytics, Images, Status pages,
-  Activity, Organization settings (members, tokens and where alerts go),
-  Help, the account and, for operators, the console (ADR 0076). There is
-  no second command bar.
-- **Pages.** An organization lists its projects; a project page shows its
+- **Navigation** (ADR 0076, option 3). A top bar across every page: the
+  organization switcher (the Platform console in it for operators), the
+  organization's views (Overview, Errors, Analytics, Images, Status
+  pages), one search (the palette, Cmd+K: pages and `dock` commands in one
+  list), Inbox with its count, Settings (Members, Activity and where
+  alerts go are inside) and the account menu (account, Help, Log out).
+  On the left the projects: a rail of tiles (initials and a health dot)
+  that expands into the tree and stays expanded until collapsed (`[`).
+  Sticky bars sit under the top bar (`--shell-top`). There is no second
+  command bar.
+- **Pages.** An organization's home is its Overview (what needs someone,
+  its projects, errors, recent deploys, status pages); a project page shows its
   problems, one table per environment and its activity; an environment's
   address (`/org/project/env`) is that environment's own page. A service
   has one header (name, environment, state, actions) and its tabs in four

@@ -124,7 +124,7 @@ export function OrgSettingsColumn() {
   return (
     <nav
       aria-label="Organization settings"
-      className="flex gap-1 overflow-x-auto border-b border-line px-3 py-2 md:sticky md:top-[64px] md:block md:max-h-[calc(100vh-64px)] md:w-[220px] md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0 md:py-4"
+      className="flex gap-1 overflow-x-auto border-b border-line px-3 py-2 md:sticky md:top-[calc(var(--shell-top)+64px)] md:block md:max-h-[calc(100vh-var(--shell-top)-64px)] md:w-[220px] md:shrink-0 md:overflow-y-auto md:border-r md:border-b-0 md:py-4"
     >
       {settingsGroups.map((g) => {
         const shown = g.sections.filter((s) => admin || !s.admin);

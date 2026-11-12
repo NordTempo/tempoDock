@@ -361,7 +361,18 @@
    * under it (WCAG 2.4.11, focus not obscured).
    */
   html {
-    scroll-padding-top: 112px;
+    scroll-padding-top: calc(112px + var(--shell-top));
+  }
+
+  /*
+   * The height of the org's sticky top bar (option 3), which every sticky
+   * page bar sits under; 0 where there is none (the console, sign-in).
+   */
+  :root {
+    --shell-top: 0px;
+  }
+  html:has(.app-shell) {
+    --shell-top: 52px;
   }
 }
 

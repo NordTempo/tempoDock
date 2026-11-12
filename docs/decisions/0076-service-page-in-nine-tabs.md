@@ -26,7 +26,7 @@ looks.
 | Save model | Every setting is a row with Edit: Enter saves, Esc cancels. A setting that changes a running service is staged until Apply; every other saves at once. Checkboxes save at once only outside services |
 | Staged changes | One control in the service header (the count and Apply, Ctrl Enter), a review drawer with the diff, the downtime warning and Discard. Nothing pushes the page |
 | Failures | Said once, on the service's Overview, in a "Needs attention" list; elsewhere a dot, chip or count. In the organization, Inbox is the one list: Alerts and access requests together |
-| Organization sidebar | Inbox, Errors, Analytics, Images, Status pages, Activity, Settings (Members and alert channels inside), then Help and the account |
+| Organization navigation | Saile's pick (option 3 of the navigation mocks, 2026-11-11). A top bar: the organization switcher (with the Platform console for operators), the organization's views (Overview, Errors, Analytics, Images, Status pages), Search (Cmd K), Inbox with its count, Settings (Members, Activity, alert channels inside) and the account menu (account, Help, Log out). On the left the projects: a rail of tiles (initials and a health dot) that expands into the full tree (environments, services, status, release). Expanded stays expanded until collapsed again (per browser; `[` toggles); nothing opens on hover. The organization's home is its Overview: what needs someone, the projects with their health, the most frequent errors, recent deploys and the status pages. On narrow windows the views fold into one menu and the projects behind a Navigation button. A first version as one sidebar of ten rows (and then seven) was replaced by this |
 
 ## Consequences
 

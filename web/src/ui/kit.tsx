@@ -430,7 +430,7 @@ export function PageBar({
   actions?: ReactNode;
 }) {
   return (
-    <header className="page-bar sticky top-0 z-10 flex min-h-[64px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-7">
+    <header className="page-bar sticky top-(--shell-top) z-10 flex min-h-[64px] flex-wrap items-center gap-x-2.5 gap-y-2 border-b border-line bg-page px-4 py-2.5 sm:px-7">
       {/* Two lines (chosen in the 2026-11 trial): the way up, small, over a
           large title with what follows it. */}
       <div className="flex min-w-0 flex-col">

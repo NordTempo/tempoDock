@@ -160,9 +160,10 @@ export function ProjectView({
                 Compare <kbd>C</kbd>
               </Link>
             )}
+            {/* "Project settings": the top bar's Settings is the org's. */}
             <Button onClick={openSettings}>
-              Settings{staged && <span className="text-warn"> ▲</span>}{" "}
-              <kbd>S</kbd>
+              Project settings
+              {staged && <span className="text-warn"> ▲</span>} <kbd>S</kbd>
             </Button>
             {newService && (
               <Act
