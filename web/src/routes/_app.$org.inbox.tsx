@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useIsAdmin } from "../data/queries";
+import { queries, useIsAdmin } from "../data/queries";
 import { AlertLists } from "../features/alerts/AlertsPage";
 import { alertQueries } from "../features/alerts/data";
 import { AccessRequests } from "../features/requests/AccessRequests";
+import { requestQueries } from "../features/requests/data";
 import { Page, PageBar } from "../ui/kit";
 
 // The organization's Inbox (ADR 0076): what waits on someone, in one
@@ -14,11 +15,16 @@ export const Route = createFileRoute("/_app/$org/inbox")({
     const id = Number(s.request);
     return Number.isInteger(id) && id > 0 ? { request: id } : {};
   },
-  loader: ({ context: { queryClient } }) =>
-    Promise.all([
+  loader: async ({ context: { queryClient } }) => {
+    // Admins' access requests load with the alerts, not after them.
+    const session = await queryClient.ensureQueryData(queries.session());
+    await Promise.all([
       queryClient.ensureQueryData(alertQueries.open("org")),
       queryClient.ensureQueryData(alertQueries.all("org")),
-    ]),
+      session?.scope === "admin" &&
+        queryClient.ensureQueryData(requestQueries.list()),
+    ]);
+  },
   component: Inbox,
 });
 

@@ -106,6 +106,7 @@ test-integration: probe
 lint:
 	golangci-lint run ./...
 	scripts/ci/suppressions.sh
+	scripts/ci/changes_test.sh
 
 ## generate: sqlc queries and the UI's API client
 generate:

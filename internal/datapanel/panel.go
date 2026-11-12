@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -728,9 +729,24 @@ func (p *Panel[D]) DeleteSavedQuery(ctx context.Context, a Actor, db *Database[D
 	return nil
 }
 
+// columnsExist refuses a column ref the schema doesn't have.
+func columnsExist(s apitypes.DataSchema, refs []apitypes.DataColumnRef) error {
+	for _, ref := range refs {
+		i := slices.IndexFunc(s.Tables, func(t apitypes.DataTable) bool { return t.Schema == ref.Schema && t.Name == ref.Table })
+		if i < 0 {
+			return invalid("the database has no table %s.%s; name a table as the schema shows it (a new one shows within a minute)", ref.Schema, ref.Table)
+		}
+		if !slices.ContainsFunc(s.Tables[i].Columns, func(c apitypes.DataColumn) bool { return c.Name == ref.Column }) {
+			return invalid("table %s.%s has no column %s", ref.Schema, ref.Table, ref.Column)
+		}
+	}
+	return nil
+}
+
 // SetSensitiveColumns replaces the database's sensitive columns and, when
-// the database is set up and reachable, syncs the roles' grants
-// (otherwise the next masked query does, or refuses). Needs Manage.
+// the database is set up and reachable, checks they exist and syncs the
+// roles' grants (otherwise the next masked query does, or refuses). Needs
+// Manage.
 func (p *Panel[D]) SetSensitiveColumns(ctx context.Context, a Actor, db *Database[D], req apitypes.SetSensitiveColumnsRequest) ([]apitypes.DataColumnRef, error) {
 	if !db.Perm.Manage {
 		return nil, forbidden("marking sensitive columns is for admins (%s)", Why(db.Perm))
@@ -744,6 +760,23 @@ func (p *Panel[D]) SetSensitiveColumns(ctx context.Context, a Actor, db *Databas
 	if err != nil {
 		return nil, err
 	}
+	// Reachable: every mark names a column the database has. A mark that
+	// matches nothing masks nothing, and says so to no one (a MySQL column
+	// marked under Postgres's public schema).
+	connErr := ErrNotRunning
+	if tg.access != nil {
+		var conn Conn
+		if conn, connErr = p.host.Connect(ctx, db.Host); connErr == nil {
+			connErr = p.useConn(tg, conn)
+		}
+	}
+	if t, ok := tg.eng.(data.Tables); ok && connErr == nil {
+		if s, err := t.Schema(ctx, tg.t, tg.call(a, false), nil); err == nil {
+			if err := columnsExist(s, req.Columns); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err := p.host.ReplaceSensitiveColumns(ctx, db.ID, req.Columns); err != nil {
 		return nil, err
 	}
@@ -752,11 +785,9 @@ func (p *Panel[D]) SetSensitiveColumns(ctx context.Context, a Actor, db *Databas
 	}
 	if tg.access != nil {
 		// Best effort: if it fails, the next masked query syncs or refuses.
-		conn, err := p.host.Connect(ctx, db.Host)
+		err := connErr
 		if err == nil {
-			if err = p.useConn(tg, conn); err == nil {
-				err = p.syncGrants(ctx, tg, "")
-			}
+			err = p.syncGrants(ctx, tg, "")
 		}
 		if err != nil && !errors.Is(err, ErrNotRunning) {
 			p.log.Warn("sync masked reader after marking sensitive columns", "database", db.Name, "err", err)

@@ -67,6 +67,17 @@ func TestSensitiveKeys(t *testing.T) {
 		t.Fatalf("patterns: %v %v", got, err)
 	}
 
+	// A browse's audit says a match pattern was given, never which: a
+	// pattern can spell out a key.
+	h.audits = nil
+	if _, err := p.Keys(ctx, admin, redisDB(adminPerm), apitypes.DataKeysRequest{Match: "session:9f2c*"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range h.audits {
+		if a.Action == apitypes.AuditDataBrowse && strings.Contains(a.Summary, "9f2c") {
+			t.Errorf("browse summary names the pattern: %s", a.Summary)
+		}
+	}
 	// A masked caller sees that a session key exists, not its size, and
 	// can't spell its name out with matches.
 	for match, want := range map[string]string{"": "session:* user:1", "session:1*": "", "*:1": "user:1"} {

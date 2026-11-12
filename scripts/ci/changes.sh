@@ -11,7 +11,9 @@
 #
 # The API's contract sets both: its Go types and handlers, the OpenAPI
 # specs generated from them, the UI's clients generated from those, and
-# the recorder script the UI builds into internal/analytics. Markdown and
+# the recorder script the UI builds into internal/analytics. So do the UI
+# files Go tests read (routes, the browser's pack). changes_test.sh
+# checks the classification. Markdown and
 # docs/ set nothing: no build or test reads them. A change to .github/
 # runs everything, and so does anything this can't diff.
 #
@@ -59,6 +61,13 @@ while IFS= read -r f; do
 		web=true
 		;;
 	docs/* | *.md) ;;
+	# Go tests read these: the reserved project names cover the routes
+	# (internal/core/reserved_test.go), the browser's pack matches the
+	# CLI's (internal/pack/browser_test.go).
+	web/src/routes/* | web/src/features/deploy/pack.ts)
+		go=true
+		web=true
+		;;
 	web/*.go | web/tempobase/*.go) go=true ;;
 	web/*) web=true ;;
 	*) go=true ;;

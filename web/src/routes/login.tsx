@@ -102,8 +102,8 @@ function purpose(back: string | undefined): { title: string; note?: string } {
       note: "The service is protected by this Dock: only its members get in.",
     };
   }
-  if (/^\/[^/]+\/requests$/.test(path)) {
-    const id = query.get("id");
+  if (/^\/[^/]+\/(requests|inbox)$/.test(path)) {
+    const id = query.get("request") ?? query.get("id");
     return {
       title: id
         ? `Sign in to review request #${id}`

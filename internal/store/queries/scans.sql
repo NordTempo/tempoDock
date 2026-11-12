@@ -173,6 +173,17 @@ JOIN environments e ON e.id = s.environment_id
 JOIN projects p ON p.id = e.project_id
 WHERE r.image_scan_id = +sqlc.arg(scan_id) AND r.status = 'active';
 
+-- name: ListServicesLiveUses :many
+-- The live releases of some services and the scan of each (NULL before
+-- it is scanned), for rechecking their vulnerability alerts at once.
+SELECT p.org_id, p.id AS project_id, p.name AS project, e.id AS environment_id, e.name AS environment,
+       s.id AS service_id, s.name AS service, r.number, r.image_ref, r.image_scan_id
+FROM releases r
+JOIN services s ON s.id = r.service_id AND s.archived_at IS NULL
+JOIN environments e ON e.id = s.environment_id
+JOIN projects p ON p.id = e.project_id
+WHERE r.service_id IN (sqlc.slice(service_ids)) AND r.status = 'active';
+
 -- Phase 2: ignores, alerts on new vulnerabilities, the daily refresh.
 
 -- name: SetServerScanChecked :exec
