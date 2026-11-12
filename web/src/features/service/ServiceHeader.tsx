@@ -539,16 +539,22 @@ export function StatusSentence({ view }: { view: ServiceView }) {
 function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const runs = useQuery(queries.backups(ref)).data?.runs ?? [];
-  const last = runs.find(
-    (r) => r.operation === "backup" && r.status === "succeeded",
-  );
+  const backups = runs.filter((r) => r.operation === "backup");
+  const last = backups.find((r) => r.status === "succeeded");
+  // The newest run failed: said here, not hidden behind an older success.
+  const failed = backups[0]?.status === "failed" ? backups[0] : undefined;
   return (
     <Link
       to="/$org/$project/$environment/$service/settings/backups"
       params={{ org, ...ref }}
       className="-my-[4px] inline-flex min-h-[24px] items-center hover:underline"
     >
-      {last?.finished_at ? `last ${ago(last.finished_at)}` : "none yet"}
+      {failed && (
+        <span className="mr-2 text-fail">
+          ✕ latest failed {ago(failed.started_at)}
+        </span>
+      )}
+      {last?.finished_at ? `last good ${ago(last.finished_at)}` : "none yet"}
       <span className="ml-2 text-mut">backups →</span>
     </Link>
   );
