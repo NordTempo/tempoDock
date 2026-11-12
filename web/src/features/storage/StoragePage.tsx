@@ -253,7 +253,7 @@ function StorageForm({
             value={v.name}
             onChange={set("name")}
             placeholder="hetzner"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
         <label className="flex flex-[3_1_320px] flex-col gap-1.5">
@@ -265,7 +265,7 @@ function StorageForm({
             onChange={set("endpoint")}
             disabled={inUse}
             placeholder="https://fsn1.your-objectstorage.com"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       </div>
@@ -277,7 +277,7 @@ function StorageForm({
             onChange={set("bucket")}
             disabled={inUse}
             placeholder="dock-images"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
         <label className="flex flex-[1_1_140px] flex-col gap-1.5">
@@ -288,7 +288,7 @@ function StorageForm({
             value={v.region}
             onChange={set("region")}
             placeholder="fsn1"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       </div>
@@ -300,7 +300,7 @@ function StorageForm({
             onChange={set("keyId")}
             placeholder={storage ? "unchanged" : ""}
             autoComplete="off"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
         <label className="flex flex-[1_1_180px] flex-col gap-1.5">
@@ -311,7 +311,7 @@ function StorageForm({
             onChange={set("secret")}
             placeholder={storage ? "unchanged" : ""}
             autoComplete="new-password"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       </div>

@@ -351,7 +351,10 @@ function NoProjects() {
 /** Open alerts, worst first, the newest six; the rest are in the Inbox. */
 function NeedsYou() {
   const org = useOrg();
-  const open = useOrgOpenAlerts();
+  // Error alerts are the Errors section's below; said once (ADR 0076).
+  const open = useOrgOpenAlerts().filter(
+    (a) => !["new_error", "error_regressed", "error_spike"].includes(a.kind),
+  );
   return (
     <section aria-labelledby="needs-head">
       <SectionHead

@@ -573,7 +573,7 @@ function AddCheck({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={`https://${host}/`}
-            className="field w-[320px] py-[7px] font-mono"
+            className="field w-[320px] font-mono"
           />
         </label>
         <label className={fieldLabel} title="The answer that counts as up">
@@ -582,7 +582,7 @@ function AddCheck({
             value={status}
             onChange={(e) => setStatus(e.target.value.trim())}
             list="uptime-statuses"
-            className="field w-[96px] py-[7px] font-mono"
+            className="field w-[96px] font-mono"
           />
           <datalist id="uptime-statuses">
             <option value="200" />
@@ -595,7 +595,7 @@ function AddCheck({
           <select
             value={intervalS}
             onChange={(e) => setIntervalS(Number(e.target.value))}
-            className="field min-w-[96px] py-[7px]"
+            className="field min-w-[96px]"
           >
             {intervals.map(([s, label]) => (
               <option key={s} value={s}>
@@ -612,7 +612,7 @@ function AddCheck({
             max={30}
             value={timeoutS}
             onChange={(e) => setTimeoutS(Number(e.target.value))}
-            className="field w-[96px] py-[7px] font-mono"
+            className="field w-[96px] font-mono"
           />
         </label>
         {/* With a check of this URL already there, both ways are fine

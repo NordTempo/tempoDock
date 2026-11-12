@@ -315,7 +315,7 @@ function CreateToken({
             placeholder="agent-…"
             aria-invalid={!!nameError}
             aria-describedby={nameError ? `${nameId}-error` : undefined}
-            className={`field py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
+            className={`field font-mono ${nameError ? "border-fail" : ""}`}
           />
           {nameError && (
             <span
@@ -374,7 +374,7 @@ function CreateToken({
                 setProject(e.target.value);
                 setEnvironment("");
               }}
-              className="field py-[7px]"
+              className="field"
             >
               <option value="">all projects</option>
               {projects.map((p) => (
@@ -389,7 +389,7 @@ function CreateToken({
               disabled={!project}
               aria-describedby={project ? undefined : envWhy}
               onChange={(e) => setEnvironment(e.target.value)}
-              className="field py-[7px]"
+              className="field"
             >
               <option value="">all environments</option>
               {environments.map((e) => (
@@ -407,7 +407,7 @@ function CreateToken({
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
-              className="field py-[7px]"
+              className="field"
             >
               {expiries.map((x) => (
                 <option key={x.days} value={x.days}>

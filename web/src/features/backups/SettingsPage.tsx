@@ -245,7 +245,7 @@ function Settings({ settings }: { settings: BackupSettings }) {
         max={max}
         value={keep[k]}
         onChange={(e) => setKeep({ ...keep, [k]: Number(e.target.value) })}
-        className="field py-[7px] font-mono"
+        className="field font-mono"
       />
     </label>
   );

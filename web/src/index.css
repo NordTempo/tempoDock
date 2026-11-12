@@ -558,7 +558,8 @@
     background-color: var(--color-panel);
     border: 1px solid var(--color-field);
     border-radius: var(--radius-ctl);
-    padding: 6px 9px;
+    /* One height for every form field (row editors set their own, smaller). */
+    padding: 7px 9px;
   }
 
   .field:hover {

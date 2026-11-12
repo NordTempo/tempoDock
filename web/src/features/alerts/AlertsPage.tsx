@@ -572,7 +572,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             onChange={(e) => setName(e.target.value)}
             placeholder="ops"
             aria-invalid={!!nameError}
-            className={`field py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
+            className={`field font-mono ${nameError ? "border-fail" : ""}`}
           />
           {nameError && (
             <span role="alert" className="text-xs text-fail">
@@ -601,7 +601,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             step="any"
             value={hours}
             onChange={(e) => setHours(e.target.value)}
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       </div>
@@ -644,7 +644,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
                 value={smtp[k]}
                 onChange={set(k)}
                 type={k === "password" ? "password" : "text"}
-                className="field py-[7px] font-mono"
+                className="field font-mono"
               />
             </label>
           ))}
@@ -658,7 +658,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://hooks.slack.com/services/…"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       )}
@@ -675,7 +675,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
             autoComplete="off"
             value={signing}
             onChange={(e) => setSigning(e.target.value)}
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       )}

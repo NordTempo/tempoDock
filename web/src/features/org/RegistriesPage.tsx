@@ -219,7 +219,7 @@ function CredentialForm({
         onChange={(e) => onHost(e.target.value)}
         spellCheck={false}
         aria-invalid={!!mark(!host.trim())}
-        className={`field w-48 py-[7px] font-mono ${mark(!host.trim())}`}
+        className={`field w-48 font-mono ${mark(!host.trim())}`}
       />
       <input
         aria-label="Username"
@@ -229,7 +229,7 @@ function CredentialForm({
         spellCheck={false}
         autoComplete="off"
         aria-invalid={!!mark(!username)}
-        className={`field w-40 py-[7px] font-mono ${mark(!username)}`}
+        className={`field w-40 font-mono ${mark(!username)}`}
       />
       <input
         ref={password}
@@ -240,7 +240,7 @@ function CredentialForm({
         onChange={(e) => setSecret(e.target.value)}
         autoComplete="new-password"
         aria-invalid={!!mark(!secret)}
-        className={`field min-w-0 flex-[1_1_180px] py-[7px] font-mono ${mark(!secret)}`}
+        className={`field min-w-0 flex-[1_1_180px] font-mono ${mark(!secret)}`}
       />
       <Act
         type="submit"

@@ -232,7 +232,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       <span key="s" className="flex flex-col font-mono">
         <span className="break-all" title={running}>
           {/* The full name, but a digest only as long as it needs to be. */}
-          {running?.replace(/@sha256:([0-9a-f]{12})[0-9a-f]+/, "@sha256:$1…") ||
+          {running?.replace(/@sha256:([0-9a-f]{7})[0-9a-f]+/, "@$1") ||
             "built from source"}
         </span>
         {/* After a failed new tag, the status line says it once and the

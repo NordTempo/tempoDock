@@ -306,7 +306,7 @@ function MoveImages({
           <select
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="field py-[7px]"
+            className="field"
           >
             {targets.map((t) => (
               <option key={t} value={t}>

@@ -518,7 +518,7 @@ function ProviderForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={custom ? "corp" : kind}
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </Field>
       )}
@@ -529,7 +529,7 @@ function ProviderForm({
             value={issuer}
             onChange={(e) => setIssuer(e.target.value)}
             placeholder="https://id.example.com/realms/staff"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </Field>
       )}
@@ -539,14 +539,14 @@ function ProviderForm({
           maxLength={40}
           onChange={(e) => setLabel(e.target.value)}
           placeholder={defaultLabel[kind] || "Example ID"}
-          className="field py-[7px]"
+          className="field"
         />
       </Field>
       <Field label="Client ID">
         <input
           value={clientID}
           onChange={(e) => setClientID(e.target.value)}
-          className="field py-[7px] font-mono"
+          className="field font-mono"
         />
       </Field>
       <Field
@@ -559,7 +559,7 @@ function ProviderForm({
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           placeholder={provider ? "unchanged" : undefined}
-          className="field py-[7px] font-mono"
+          className="field font-mono"
         />
       </Field>
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
