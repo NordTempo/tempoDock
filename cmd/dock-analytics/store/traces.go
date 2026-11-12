@@ -62,12 +62,17 @@ type Traces struct {
 	daysMu sync.RWMutex
 	days   map[time.Time]bool
 	mdays  map[time.Time]bool
+	// rolled are the days of metric points rolled up into hours.
+	rolled map[time.Time]bool
 
 	// seriesDay is the UTC day series holds each service's series and
 	// metric names of, for the metrics caps (metrics.go); mu guards them.
 	seriesDay  time.Time
 	series     map[int64]*todaySeries
 	nextSeries uint32
+	// rolledTo is the day before which every day of points is rolled up
+	// into hours (rollupBefore), as of the last write; mu guards it.
+	rolledTo time.Time
 
 	now func() time.Time
 }
@@ -154,7 +159,7 @@ func OpenTraces(ctx context.Context, path string, opts Options) (*Traces, error)
 	if err != nil {
 		return nil, fmt.Errorf("open the traces database: %w", err)
 	}
-	s := &Traces{db: sql.OpenDB(connector), connector: connector, memoryLimit: memoryLimit, days: map[time.Time]bool{}, mdays: map[time.Time]bool{}, now: time.Now}
+	s := &Traces{db: sql.OpenDB(connector), connector: connector, memoryLimit: memoryLimit, days: map[time.Time]bool{}, mdays: map[time.Time]bool{}, rolled: map[time.Time]bool{}, now: time.Now}
 	if err := s.load(ctx); err != nil {
 		_ = s.Close()
 		return nil, err
@@ -187,6 +192,21 @@ func (s *Traces) load(ctx context.Context) error {
 		}
 	}
 	if err := rows.Err(); err != nil {
+		return err
+	}
+	rolled, err := s.db.QueryContext(ctx, "SELECT day FROM metric_rolled")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rolled.Close() }()
+	for rolled.Next() {
+		var d time.Time
+		if err := rolled.Scan(&d); err != nil {
+			return err
+		}
+		s.rolled[utcDay(d)] = true
+	}
+	if err := rolled.Err(); err != nil {
 		return err
 	}
 	today := utcDay(s.now())
@@ -935,7 +955,7 @@ func (s *Traces) enforceTraceSize(ctx context.Context, maxBytes int64, today tim
 		if err := s.dropDay(ctx, oldest); err != nil {
 			return err
 		}
-		if err := s.rollupMetricDay(ctx, oldest); err != nil {
+		if err := s.dropMetricDay(ctx, oldest); err != nil {
 			return err
 		}
 		s.keepFrom = later(s.keepFrom, oldest.Add(24*time.Hour))

@@ -116,6 +116,22 @@ func (t *Traces) Handler() http.Handler {
 		t.mu.Unlock()
 		reply(w, res)
 	}))
+	mux.HandleFunc("POST "+analytics.MetricNamesPath, t.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.MetricNamesQuery
+		if json.UnmarshalRead(r.Body, &q) != nil || len(q.Services) == 0 || q.To <= q.From {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, t.metricNames(q))
+	}))
+	mux.HandleFunc("POST "+analytics.MetricsQueryPath, t.auth(func(w http.ResponseWriter, r *http.Request) {
+		var q analytics.MetricsQuery
+		if json.UnmarshalRead(r.Body, &q) != nil || q.Step <= 0 || q.To <= q.From {
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		reply(w, t.queryMetrics(q))
+	}))
 	mux.HandleFunc("GET "+analytics.SpansCursorPath, t.auth(func(w http.ResponseWriter, r *http.Request) {
 		t.mu.Lock()
 		pos := t.cursors[r.URL.Query().Get("source")]
@@ -244,6 +260,71 @@ func (t *Traces) list(q analytics.TracesQuery) analytics.TracesResult {
 	}
 	if res.Traces == nil {
 		res.Traces = []analytics.TraceSummary{}
+	}
+	return res
+}
+
+// metricNames lists the metrics of q's services with points in its
+// range, a series per distinct attributes.
+func (t *Traces) metricNames(q analytics.MetricNamesQuery) analytics.MetricNamesResult {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	type key struct {
+		service int64
+		name    string
+	}
+	series := map[key]map[string]bool{}
+	at := map[key]int{}
+	res := analytics.MetricNamesResult{Metrics: []analytics.MetricName{}}
+	for _, p := range t.points {
+		if p.Org != q.Org || !slices.Contains(q.Services, p.Service) || p.Time < q.From || p.Time >= q.To {
+			continue
+		}
+		k := key{p.Service, p.Name}
+		i, ok := at[k]
+		if !ok {
+			i = len(res.Metrics)
+			at[k], series[k] = i, map[string]bool{}
+			res.Metrics = append(res.Metrics, analytics.MetricName{Service: p.Service, Name: p.Name, Unit: p.Unit, Kind: p.Kind})
+		}
+		series[k][string(p.Attrs)] = true
+		res.Metrics[i].Series = len(series[k])
+	}
+	return res
+}
+
+// queryMetrics answers each chart with one line: a step's values summed,
+// whatever its aggregation and attribute.
+func (t *Traces) queryMetrics(q analytics.MetricsQuery) analytics.MetricsResult {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	steps := int((q.To - q.From + q.Step - 1) / q.Step)
+	res := analytics.MetricsResult{Charts: []analytics.MetricChart{}}
+	for _, c := range q.Charts {
+		out := analytics.MetricChart{Name: c.Name, Agg: c.Agg, By: c.By, Lines: []analytics.MetricLine{}, Attrs: []analytics.MetricAttr{}}
+		var line []*float64
+		for _, p := range t.points {
+			if p.Org != q.Org || p.Service != q.Service || p.Name != c.Name || p.Time < q.From || p.Time >= q.To {
+				continue
+			}
+			out.Unit, out.Kind, out.Shape, out.Series = p.Unit, p.Kind, analytics.ShapeOf(p.Kind, p.Monotonic, p.Cumulative), 1
+			if out.Agg == "" {
+				out.Agg = analytics.Aggs(out.Shape)[0]
+			}
+			if line == nil {
+				line = make([]*float64, steps)
+			}
+			i := (p.Time - q.From) / q.Step
+			v := p.Value
+			if line[i] != nil {
+				v += *line[i]
+			}
+			line[i] = &v
+		}
+		if line != nil {
+			out.Lines = append(out.Lines, analytics.MetricLine{Values: line})
+		}
+		res.Charts = append(res.Charts, out)
 	}
 	return res
 }

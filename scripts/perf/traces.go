@@ -30,6 +30,14 @@ const (
 	tracesListBudget    = 60 * time.Millisecond
 	tracesOrgListBudget = 120 * time.Millisecond
 	tracesTraceBudget   = 30 * time.Millisecond
+	// The Metrics tab on a service at the 2,000-series cap: a dashboard
+	// charting all 12 of its metrics (the list and a chart each; Dock's
+	// defaults are 2 or 3 charts) and one metric split by an attribute
+	// (a histogram's p95 by route), at 1h, 24h and 7d. Locally 133 to
+	// 391 ms and 22 to 66 ms; histograms cost the most, their buckets a
+	// list a point.
+	tracesDashboardBudget = 600 * time.Millisecond
+	tracesMetricByBudget  = 100 * time.Millisecond
 	// tracesIngestBudget is spans per second, in batches of 1,000, and
 	// tracesMetricsBudget app metrics' points per second, the same way.
 	tracesIngestBudget  = 15_000
@@ -107,7 +115,7 @@ func checkTraces(o options, t *table) error {
 
 	fmt.Fprintln(os.Stderr, "perf: timing trace views...")
 	var cases []traceCase
-	if err := runJSON(&cases, env, o.analytics, "bench", "-url", url, "-traces", "-runs", "10", "-json"); err != nil {
+	if err := runJSON(&cases, env, o.analytics, "bench", "-url", url, "-traces", "-metrics", "-runs", "10", "-json"); err != nil {
 		return err
 	}
 	for _, c := range []struct {
@@ -118,6 +126,8 @@ func checkTraces(o options, t *table) error {
 		{"traces: a service's list p95, 2M spans, ≤ 7 days", tracesListBudget, []string{"service list", "service list, filtered"}},
 		{"traces: the org's errors p95, 2M spans, ≤ 7 days", tracesOrgListBudget, []string{"org list, filtered"}},
 		{"traces: opening a trace p95, 2M spans", tracesTraceBudget, []string{"trace, with its time", "trace, without a time"}},
+		{"traces: app metrics dashboard p95, 12 charts of 2,000 series", tracesDashboardBudget, []string{"metrics dashboard"}},
+		{"traces: one app metric by an attribute p95, ≤ 7 days", tracesMetricByBudget, []string{"metric by attribute"}},
 	} {
 		var w traceCase
 		for _, r := range cases {

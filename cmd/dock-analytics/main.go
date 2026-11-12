@@ -201,6 +201,10 @@ func seedTracesCmd(ctx context.Context, args []string) error {
 		return err
 	}
 	el = time.Since(start)
+	// The days before today, rolled up as each day's first write would.
+	if err := t.RollUpMetrics(ctx); err != nil {
+		return err
+	}
 	if err := t.Checkpoint(ctx); err != nil {
 		return err
 	}
@@ -239,6 +243,7 @@ func benchCmd(ctx context.Context, args []string) error {
 	asJSON := fs.Bool("json", false, "print the results as JSON (for make perf) instead of a table")
 	traces := fs.Bool("traces", false, "time a trace store's views instead (-db or -url is the trace store), on spans seed-traces wrote; ranges end now")
 	spanDays := fs.Int("span-days", 7, "the days of traces seeded (seed-traces -days)")
+	metrics := fs.Bool("metrics", false, "with -traces, time the Metrics tab too, on points seed-traces -metric-series wrote")
 	_ = fs.Parse(args)
 	endT, err := time.Parse(time.DateOnly, *end)
 	if err != nil {
@@ -256,7 +261,7 @@ func benchCmd(ctx context.Context, args []string) error {
 			defer func() { _ = t.Close() }()
 			tq = t
 		}
-		opts := bench.TraceOptions{End: time.Now().UTC(), Days: *spanDays, Runs: *runs, Out: os.Stdout}
+		opts := bench.TraceOptions{End: time.Now().UTC(), Days: *spanDays, Runs: *runs, Metrics: *metrics, Out: os.Stdout}
 		if *asJSON {
 			opts.Out = nil
 		}

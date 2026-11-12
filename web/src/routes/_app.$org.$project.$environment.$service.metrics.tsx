@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { queries, servicePath, useService } from "../data/queries";
 import type { Service, ServiceRef, StatsRange } from "../data/types";
+import { AppMetricsPanel } from "../features/appmetrics/AppMetricsPanel";
+import { appMetricsQuery } from "../features/appmetrics/data";
 import { CpuUsage, MemoryUsage } from "../features/service/Usage";
 import { LineChart } from "../features/stats/LineChart";
 import { useLiveService } from "../features/stats/live";
@@ -21,7 +23,8 @@ import { SectionHead } from "../ui/kit";
 const MiB = 1024 * 1024;
 
 // A service's Metrics tab (ADR 0076): CPU and memory, live while open,
-// and history across releases; then, where it has a domain or checks,
+// and history across releases; its app metrics' pinned charts (ADR
+// 0075); then, where it has a domain or checks,
 // its uptime checks and the health check on its server (ADR 0055).
 // /shop/production/web/metrics?range=24h, #uptime for the checks.
 export const Route = createFileRoute(
@@ -29,13 +32,18 @@ export const Route = createFileRoute(
 )({
   validateSearch: validateRange,
   loaderDeps: ({ search }) => ({ range: search.range ?? "1h" }),
-  loader: ({ context: { queryClient }, params, deps }) =>
-    Promise.all([
+  loader: ({ context: { queryClient }, params, deps }) => {
+    // App metrics load beside the rest, but don't hold the tab up.
+    void queryClient.prefetchQuery(
+      appMetricsQuery(servicePath(params), deps.range),
+    );
+    return Promise.all([
       queryClient.ensureQueryData(
         queries.serviceStats(servicePath(params), deps.range),
       ),
       queryClient.ensureQueryData(uptimeChecks(servicePath(params))),
-    ]),
+    ]);
+  },
   component: MetricsTab,
 });
 
@@ -77,6 +85,7 @@ function MetricsTab() {
         </SectionHead>
         <History serviceRef={ref} range={range} service={service} />
       </section>
+      <AppMetricsPanel serviceRef={ref} range={range} />
       {checked && (
         <div id="uptime" className="flex flex-col gap-7">
           <UptimePanel serviceRef={ref} />

@@ -2,6 +2,7 @@ package bench
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -16,10 +17,13 @@ type SpanWriter interface {
 	WriteSpans(ctx context.Context, source string, position uint64, spans []analytics.Span, lim analytics.TraceLimits) (analytics.SpanWriteResult, error)
 }
 
-// TraceQuerier is what the trace views ask of a store.
+// TraceQuerier is what the trace views and the Metrics tab ask of a
+// store.
 type TraceQuerier interface {
 	Traces(ctx context.Context, q analytics.TracesQuery) (analytics.TracesResult, error)
 	Trace(ctx context.Context, q analytics.TraceQuery) (analytics.TraceDetail, error)
+	MetricNames(ctx context.Context, q analytics.MetricNamesQuery) (analytics.MetricNamesResult, error)
+	QueryMetrics(ctx context.Context, q analytics.MetricsQuery) (analytics.MetricsResult, error)
 }
 
 // SeedSpansOptions shape the synthetic traces.
@@ -210,6 +214,8 @@ type TraceOptions struct {
 	End  time.Time
 	Days int
 	Runs int
+	// Metrics times the Metrics tab too, on points SeedMetrics wrote.
+	Metrics bool
 	// Out, when set, gets a table of the results.
 	Out io.Writer
 }
@@ -221,6 +227,11 @@ const (
 	CaseOrgList       = "org list, filtered"
 	CaseTraceAt       = "trace, with its time"
 	CaseTraceAnywhere = "trace, without a time"
+	// The Metrics tab, on SeedMetrics' busy service: its list and a
+	// chart of each seeded metric, and one metric split by an
+	// attribute.
+	CaseMetricsDashboard = "metrics dashboard"
+	CaseMetricBy         = "metric by attribute"
 )
 
 // RunTraces times the trace views on a store SeedSpans filled: the busy
@@ -309,10 +320,42 @@ func RunTraces(ctx context.Context, q TraceQuerier, opts TraceOptions) ([]TraceC
 	}); err != nil {
 		return out, err
 	}
-	err := time1(CaseTraceAnywhere, "7d", func() error {
+	if err := time1(CaseTraceAnywhere, "7d", func() error {
 		t := pick()
 		_, err := q.Trace(ctx, analytics.TraceQuery{Org: TraceOrg, Trace: t.Trace})
 		return err
-	})
-	return out, err
+	}); err != nil {
+		return out, err
+	}
+	if !opts.Metrics {
+		return out, nil
+	}
+	var charts []analytics.MetricChartQuery
+	for _, m := range metricNames {
+		charts = append(charts, analytics.MetricChartQuery{Name: m.name})
+	}
+	for _, rg := range []struct {
+		name       string
+		span, step time.Duration
+	}{{"1h", time.Hour, time.Minute}, {"24h", 24 * time.Hour, 20 * time.Minute}, {"7d", 7 * 24 * time.Hour, 2 * time.Hour}} {
+		mq := analytics.MetricsQuery{Org: TraceOrg, Service: BusyService, From: opts.End.Add(-rg.span).Unix(), To: opts.End.Unix(), Step: int64(rg.step.Seconds()), Charts: charts}
+		if err := time1(CaseMetricsDashboard, rg.name, func() error {
+			names, err := q.MetricNames(ctx, analytics.MetricNamesQuery{Org: TraceOrg, Services: []int64{BusyService}, From: mq.From, To: mq.To})
+			if err == nil && len(names.Metrics) == 0 {
+				err = errors.New("the busy service has no metrics: seed-traces -metric-series")
+			}
+			if err == nil {
+				_, err = q.QueryMetrics(ctx, mq)
+			}
+			return err
+		}); err != nil {
+			return out, err
+		}
+		by := mq
+		by.Charts = []analytics.MetricChartQuery{{Name: "http.client.request.duration", Agg: analytics.AggP95, By: "route"}}
+		if err := time1(CaseMetricBy, rg.name, func() error { _, err := q.QueryMetrics(ctx, by); return err }); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
 }

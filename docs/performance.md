@@ -157,6 +157,8 @@ Measured on CI's run of the pull request that added it (#212,
 | Opening a trace p95, with its time or without | ≤ 30 ms | 9 ms |
 | Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 24.4k spans/s |
 | Metric point writes over HTTP, batches of 1,000, 100 minutes of 2,000 series | ≥ 50,000 points/s | 113k points/s (locally) |
+| App metrics dashboard p95: the list and a chart of each of 12 metrics of a service at the 2,000-series cap, 1h, 24h and 7d | ≤ 600 ms | 428 ms (24h, locally) |
+| One app metric split by an attribute p95 (a histogram's p95 by route), 1h, 24h and 7d | ≤ 100 ms | 86 ms (24h, locally) |
 | Peak anonymous memory through all of it and 10 s past the ingest bursts | ≤ 512 MB (the container's limit) | 314.3 MB (VmHWM 355.0 MB; #285) |
 
 Spans go in one table per UTC day (dropping a day is the retention, with
@@ -174,8 +176,10 @@ container's 512: 384 MB was set from the first runs and failed on the
 fourth.
 
 App metrics go in tables of their own in the same database: a day's
-points in one table per UTC day, rolled up into hours when the day
-leaves the retention (kept 90 days), and a table of series. A point
+points in one table per UTC day, rolled up into hours on the next day's
+first write (kept 90 days), and a table of series. Charts in steps of
+an hour or more read the hours: before day-end rollups, a week's
+dashboard re-aggregated every minute point and took 10 s. A point
 takes about 19 bytes on disk (2,000 series for a week: 380 MB): its
 series is a dense number, not its 8-byte hash, and a histogram's 20
 counts are one list, NULL for gauges and sums. As a hash and 20

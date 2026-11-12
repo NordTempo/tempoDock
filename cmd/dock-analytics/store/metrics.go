@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,8 +30,12 @@ import (
 //     list of analytics.MetricBuckets, NULL for gauges and sums, so only
 //     histograms pay for them: as 20 columns every row did, 32 bytes a
 //     point in all against 11.
-//   - metric_hours: the days before the retention, rolled up into hours
-//     when their day table is dropped, kept for HoursBefore.
+//   - metric_hours: every day's points rolled up into hours once the day
+//     is over (the first write of the next day rolls it up, and metric_rolled
+//     names the days rolled), kept for HoursBefore: charts in steps of an
+//     hour read them, and the minute points only of the days not rolled
+//     up yet. A point that arrives for a day already rolled up stays in
+//     its minute points only.
 //   - metric_cuts: the points of new series cut past a cap, by day,
 //     service and metric, so the Metrics tab can say which metric to fix.
 //
@@ -70,6 +75,9 @@ CREATE TABLE IF NOT EXISTS metric_hours (
     min        DOUBLE,
     max        DOUBLE,
     buckets    UBIGINT[]
+);
+CREATE TABLE IF NOT EXISTS metric_rolled (
+    day DATE PRIMARY KEY
 );
 CREATE TABLE IF NOT EXISTS metric_cuts (
     day        DATE NOT NULL,
@@ -256,6 +264,14 @@ func (s *Traces) WriteMetrics(ctx context.Context, source string, position uint6
 		if err := s.loadSeries(ctx, today); err != nil {
 			return res, err
 		}
+	}
+	// A day's first write (since the store started, too) rolls the days
+	// before it up into hours.
+	if s.rolledTo.Before(today) {
+		if err := s.rollupBefore(ctx, today); err != nil {
+			return res, fmt.Errorf("roll up the days before %s: %w", today.Format(time.DateOnly), err)
+		}
+		s.rolledTo = today
 	}
 	// The in-memory series change as points are decided; if the write
 	// fails they are read again.
@@ -503,12 +519,14 @@ func (s *Traces) metricDays() []time.Time {
 	return days
 }
 
-// rollupMetricDay rolls day's points up into hours and drops its table,
-// in one transaction: an hour of a series is its points' count, sum,
-// last value, extremes (a gauge's or sum's values, a histogram's min and
-// max) and bucket counts.
+// rollupMetricDay rolls day's points up into hours, once: an hour of a
+// series is its points' count, sum, last value, extremes (a gauge's or
+// sum's values, a histogram's min and max) and bucket counts.
 func (s *Traces) rollupMetricDay(ctx context.Context, day time.Time) error {
-	if !s.hasMetricDay(day) {
+	s.daysMu.RLock()
+	skip := !s.mdays[day] || s.rolled[day]
+	s.daysMu.RUnlock()
+	if skip {
 		return nil
 	}
 	buckets := make([]string, analytics.MetricBuckets)
@@ -530,16 +548,70 @@ func (s *Traces) rollupMetricDay(ctx context.Context, day time.Time) error {
     GROUP BY p.series, p.minute // 3600 * 3600`); err != nil {
 		return fmt.Errorf("roll the metric points of %s up into hours: %w", day.Format(time.DateOnly), err)
 	}
-	if _, err := tx.ExecContext(ctx, "DROP TABLE "+metricDayTable(day)); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO metric_rolled VALUES ($1)", day); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	s.daysMu.Lock()
+	s.rolled[day] = true
+	s.daysMu.Unlock()
+	return nil
+}
+
+// dropMetricDay drops day's points, rolled up into hours first.
+func (s *Traces) dropMetricDay(ctx context.Context, day time.Time) error {
+	if err := s.rollupMetricDay(ctx, day); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, "DROP TABLE IF EXISTS "+metricDayTable(day)); err != nil {
+		return err
+	}
+	s.daysMu.Lock()
 	delete(s.mdays, day)
 	s.daysMu.Unlock()
 	return nil
+}
+
+// rollupBefore rolls up the days of points before today not rolled up
+// yet: on a day's first write, so the day before is in hours.
+func (s *Traces) rollupBefore(ctx context.Context, today time.Time) error {
+	for _, d := range s.metricDays() {
+		if !d.Before(today) {
+			break
+		}
+		if err := s.rollupMetricDay(ctx, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// rolledCut is where a chart's hours end and its minute points start
+// (Unix seconds): the first day of points not rolled up yet, else the
+// end of the last rolled up, else never.
+func (s *Traces) rolledCut() int64 {
+	s.daysMu.RLock()
+	defer s.daysMu.RUnlock()
+	var first, last time.Time
+	for d := range s.mdays {
+		if !s.rolled[d] && (first.IsZero() || d.Before(first)) {
+			first = d
+		}
+	}
+	if !first.IsZero() {
+		return first.Unix()
+	}
+	for d := range s.rolled {
+		if d.After(last) {
+			last = d
+		}
+	}
+	if last.IsZero() {
+		return math.MaxInt64
+	}
+	return last.Add(24 * time.Hour).Unix()
 }
 
 // pruneMetrics rolls up and drops the points days before before, and
@@ -551,7 +623,7 @@ func (s *Traces) pruneMetrics(ctx context.Context, before, hoursBefore time.Time
 		if !d.Before(before) {
 			break
 		}
-		if err := s.rollupMetricDay(ctx, d); err != nil {
+		if err := s.dropMetricDay(ctx, d); err != nil {
 			return days, err
 		}
 		days = append(days, d.Format(time.DateOnly))
@@ -565,13 +637,24 @@ func (s *Traces) pruneMetrics(ctx context.Context, before, hoursBefore time.Time
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM metric_hours WHERE hour < $1", hoursBefore.Unix()); err != nil {
 		return days, err
 	}
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM metric_rolled WHERE day < $1", hoursBefore); err != nil {
+		return days, err
+	}
+	s.daysMu.Lock()
+	for d := range s.rolled {
+		if d.Before(hoursBefore) {
+			delete(s.rolled, d)
+		}
+	}
+	s.daysMu.Unlock()
 	_, err := s.db.ExecContext(ctx, "DELETE FROM metric_series WHERE last_day < $1", hoursBefore)
 	return days, err
 }
 
 // MetricNames lists the metrics q's services sent in its range, by
-// service and name: two queries, the points over the day tables the range
-// covers joined to their series, and the cut rows of its days.
+// service and name: two queries, the series seen in the range's days (by
+// their first and last days: no scan of points, which took 170 ms for a
+// week of 2,000 series) and the cut rows of its days.
 func (s *Traces) MetricNames(ctx context.Context, q analytics.MetricNamesQuery) (analytics.MetricNamesResult, error) {
 	res := analytics.MetricNamesResult{Metrics: []analytics.MetricName{}}
 	switch {
@@ -589,35 +672,28 @@ func (s *Traces) MetricNames(ctx context.Context, q analytics.MetricNamesQuery) 
 		name    string
 	}
 	at := map[key]int{}
-	if days := s.metricDaysIn(q.From, q.To); len(days) > 0 {
-		parts := make([]string, len(days))
-		for i, d := range days {
-			parts[i] = "SELECT series, minute, service_id FROM " + metricDayTable(d)
-		}
-		rows, err := s.db.QueryContext(ctx, `SELECT s.service_id, s.name, any_value(s.unit), any_value(s.kind), count(DISTINCT p.series), count(*)
-    FROM (`+strings.Join(parts, " UNION ALL ")+`) p JOIN metric_series s ON s.num = p.series
-    WHERE p.service_id IN (`+intList(q.Services)+`) AND p.minute >= $1 AND p.minute < $2 AND s.org_id = $3
-    GROUP BY s.service_id, s.name ORDER BY s.service_id, s.name`, q.From, q.To, uint32(q.Org))
-		if err != nil {
+	rows, err := s.db.QueryContext(ctx, `SELECT service_id, name, any_value(unit), any_value(kind), count(*) FROM metric_series
+    WHERE service_id IN (`+intList(q.Services)+`) AND org_id = $1 AND last_day >= $2 AND first_day <= $3
+    GROUP BY service_id, name ORDER BY service_id, name`, uint32(q.Org), utcDay(time.Unix(q.From, 0)), utcDay(time.Unix(q.To-1, 0)))
+	if err != nil {
+		return res, err
+	}
+	for rows.Next() {
+		var m analytics.MetricName
+		if err := rows.Scan(&m.Service, &m.Name, &m.Unit, &m.Kind, &m.Series); err != nil {
+			_ = rows.Close()
 			return res, err
 		}
-		for rows.Next() {
-			var m analytics.MetricName
-			if err := rows.Scan(&m.Service, &m.Name, &m.Unit, &m.Kind, &m.Series, &m.Points); err != nil {
-				_ = rows.Close()
-				return res, err
-			}
-			at[key{m.Service, m.Name}] = len(res.Metrics)
-			res.Metrics = append(res.Metrics, m)
-		}
-		_ = rows.Close()
-		if err := rows.Err(); err != nil {
-			return res, err
-		}
+		at[key{m.Service, m.Name}] = len(res.Metrics)
+		res.Metrics = append(res.Metrics, m)
+	}
+	_ = rows.Close()
+	if err := rows.Err(); err != nil {
+		return res, err
 	}
 	// Cut rows name a service the caller may read (the services are the
 	// caller's), by day.
-	rows, err := s.db.QueryContext(ctx, `SELECT service_id, name, sum(points) FROM metric_cuts
+	rows, err = s.db.QueryContext(ctx, `SELECT service_id, name, sum(points) FROM metric_cuts
     WHERE service_id IN (`+intList(q.Services)+`) AND day >= $1 AND day <= $2 GROUP BY ALL`,
 		utcDay(time.Unix(q.From, 0)), utcDay(time.Unix(q.To-1, 0)))
 	if err != nil {
@@ -636,6 +712,41 @@ func (s *Traces) MetricNames(ctx context.Context, q analytics.MetricNamesQuery) 
 			res.Metrics = append(res.Metrics, analytics.MetricName{Service: k.service, Name: k.name, Cut: n})
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return res, err
+	}
+	// For each cut metric, the attribute with the most values: one query
+	// for all of them, only when there are cuts.
+	var cut []string
+	var args []any
+	for _, m := range res.Metrics {
+		if m.Cut > 0 && m.Name != "" {
+			args = append(args, m.Name)
+			cut = append(cut, "$"+strconv.Itoa(len(args)))
+		}
+	}
+	if len(cut) == 0 {
+		return res, nil
+	}
+	rows, err = s.db.QueryContext(ctx, `SELECT service_id, name, arg_max(key, n) FROM (
+    SELECT service_id, name, key, count(DISTINCT json_extract_string(attrs, '$."' || replace(key, '"', '\"') || '"')) AS n
+    FROM (SELECT service_id, name, attrs, unnest(json_keys(attrs)) AS key FROM metric_series
+        WHERE service_id IN (`+intList(q.Services)+`) AND name IN (`+strings.Join(cut, ", ")+`))
+    GROUP BY ALL) GROUP BY service_id, name`, args...)
+	if err != nil {
+		return res, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var k key
+		var by string
+		if err := rows.Scan(&k.service, &k.name, &by); err != nil {
+			return res, err
+		}
+		if i, ok := at[k]; ok {
+			res.Metrics[i].CutBy = by
+		}
+	}
 	return res, rows.Err()
 }
 
@@ -644,4 +755,15 @@ func (s *Traces) MetricNames(ctx context.Context, q analytics.MetricNamesQuery) 
 func (s *Traces) metricDaysIn(from, to int64) []time.Time {
 	first, last := utcDay(time.Unix(from, 0)), utcDay(time.Unix(to-1, 0))
 	return slices.DeleteFunc(s.metricDays(), func(d time.Time) bool { return d.Before(first) || d.After(last) })
+}
+
+// RollUpMetrics rolls the days of points before today up into hours, as
+// a day's first write does: for seed-traces, whose days are all written
+// on one.
+func (s *Traces) RollUpMetrics(ctx context.Context) error {
+	s.gate.RLock()
+	defer s.gate.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rollupBefore(ctx, utcDay(s.now()))
 }

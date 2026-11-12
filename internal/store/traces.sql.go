@@ -8,7 +8,25 @@ package store
 import (
 	"context"
 	"strings"
+	"time"
 )
+
+const getMetricDashboard = `-- name: GetMetricDashboard :one
+SELECT service_id, charts, updated_by, updated_at FROM metric_dashboards WHERE service_id = +?
+`
+
+// A service's pinned charts; no row is Dock's defaults.
+func (q *Queries) GetMetricDashboard(ctx context.Context, serviceID int64) (MetricDashboard, error) {
+	row := q.db.QueryRowContext(ctx, getMetricDashboard, serviceID)
+	var i MetricDashboard
+	err := row.Scan(
+		&i.ServiceID,
+		&i.Charts,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
 const listReleaseServices = `-- name: ListReleaseServices :many
 SELECT id, service_id FROM releases WHERE id IN (/*SLICE:ids*/?)
@@ -180,4 +198,26 @@ func (q *Queries) ListServiceNamesByIDs(ctx context.Context, ids []int64) ([]Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const setMetricDashboard = `-- name: SetMetricDashboard :exec
+INSERT INTO metric_dashboards (service_id, charts, updated_by, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT (service_id) DO UPDATE SET charts = excluded.charts, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+`
+
+type SetMetricDashboardParams struct {
+	ServiceID int64
+	Charts    string
+	UpdatedBy string
+	UpdatedAt time.Time
+}
+
+func (q *Queries) SetMetricDashboard(ctx context.Context, arg SetMetricDashboardParams) error {
+	_, err := q.db.ExecContext(ctx, setMetricDashboard,
+		arg.ServiceID,
+		arg.Charts,
+		arg.UpdatedBy,
+		arg.UpdatedAt,
+	)
+	return err
 }

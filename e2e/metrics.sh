@@ -6,7 +6,8 @@
 # one with the SDK's runtime metrics (e2e/apps/go-otel), which later sends
 # a counter with 2,000 values of an attribute: a cardinality bomb.
 # Passes when the trace store has both apps' runtime metrics and cut the
-# Go app's new series at its 2,000 a day, keeping the runtime ones.
+# Go app's new series at its 2,000 a day, keeping the runtime ones, and
+# `dock metrics` charts them and names the attribute to drop.
 #
 #   make web && make build && make analytics-binary
 #   e2e/metrics.sh           # e2e/vm/down.sh afterwards
@@ -80,4 +81,10 @@ out=$(names "$go")
 jq -e '([.metrics[].series] | add) == 2000 and (.metrics[] | select(.name == "go.memory.used") | .series > 0)' <<<"$out" >/dev/null ||
 	{ echo "FAIL: go-otel's metrics past the cap: $out" >&2; exit 1; }
 say "ok: go-otel's bomb was cut at 2,000 series, its runtime metrics kept: $(jq -c '[.metrics[] | select(.cut) | {name, series, cut}]' <<<"$out")"
+# `dock metrics` reads the same through the API: Dock's runtime charts,
+# and the attribute to drop.
+dock metrics "${P[@]}" -s go-otel --range 1h --json |
+	jq -e '(.charts | map(.name) | index("go.memory.used")) and (.metrics[] | select(.name == "bomb.hits") | .cut_by == "user.id")' >/dev/null ||
+	{ echo "FAIL: dock metrics for go-otel: $(dock metrics "${P[@]}" -s go-otel --range 1h 2>&1 | head -20)" >&2; exit 1; }
+say "ok: dock metrics shows Dock's runtime charts and names user.id to drop"
 say "passed"
