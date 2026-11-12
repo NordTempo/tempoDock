@@ -42,8 +42,14 @@
   --text-md: 15px;
   --text-lg: 16px;
   --text-xl: 20px;
+  /* Page titles. */
+  --text-2xl: 24px;
+  /* Small tags and chips inside text (KEV, an error's state). */
+  --text-tag: 11.5px;
 
   --radius-ctl: 6px;
+  /* Small tags and keys inside text. */
+  --radius-tag: 4px;
   --radius-panel: 10px;
 
   /* Surfaces: true black pages, raised steps for panels, hover and selection. */
@@ -234,7 +240,7 @@
     width: 16px;
     height: 16px;
     border: 1px solid var(--color-field);
-    border-radius: 4px;
+    border-radius: var(--radius-tag);
     background: var(--color-page) center / 12px 12px no-repeat;
     cursor: pointer;
     transition:
@@ -310,11 +316,11 @@
 
   kbd {
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--text-tag);
     line-height: 15px;
     color: var(--color-mut);
     border: 1px solid var(--color-edge);
-    border-radius: 4px;
+    border-radius: var(--radius-tag);
     padding: 0 4px;
   }
 
@@ -355,7 +361,18 @@
    * under it (WCAG 2.4.11, focus not obscured).
    */
   html {
-    scroll-padding-top: 112px;
+    scroll-padding-top: calc(112px + var(--shell-top));
+  }
+
+  /*
+   * The height of the org's sticky top bar (option 3), which every sticky
+   * page bar sits under; 0 where there is none (the console, sign-in).
+   */
+  :root {
+    --shell-top: 0px;
+  }
+  html:has(.app-shell) {
+    --shell-top: 52px;
   }
 }
 
@@ -541,7 +558,8 @@
     background-color: var(--color-panel);
     border: 1px solid var(--color-field);
     border-radius: var(--radius-ctl);
-    padding: 6px 9px;
+    /* One height for every form field (row editors set their own, smaller). */
+    padding: 7px 9px;
   }
 
   .field:hover {
@@ -601,7 +619,7 @@
     align-items: center;
     gap: 4px;
     padding: 0 8px;
-    border-radius: 999px;
+    border-radius: 9999px;
     font-size: 12px;
     font-weight: 500;
     line-height: 20px;
@@ -669,7 +687,7 @@
     font-size: 12px;
     line-height: 16px;
     padding: 1px 8px;
-    border-radius: 999px;
+    border-radius: 9999px;
     background: var(--color-chip);
     color: var(--color-mut);
   }

@@ -181,7 +181,7 @@ function AlertStrip({ alert: a }: { alert: Alert }) {
   const { text } = alertText(a);
   return (
     <div
-      className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-r-[6px] border-l-2 px-3 py-2 ${critical ? "border-fail bg-fail-bg" : "border-warn bg-warn-bg"}`}
+      className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-r-ctl border-l-2 px-3 py-2 ${critical ? "border-fail bg-fail-bg" : "border-warn bg-warn-bg"}`}
     >
       <span className={critical ? "text-fail" : "text-warn"}>{a.severity}</span>
       <span className="min-w-0 flex-1">

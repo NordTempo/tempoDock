@@ -58,7 +58,7 @@ function ServiceLayout() {
   return (
     <>
       {/* Header and tabs stick together, so the tabs never slide under it. */}
-      <div className="sticky top-0 z-10 bg-page">
+      <div className="sticky top-(--shell-top) z-10 bg-page">
         <ServiceBar serviceRef={ref} />
         <ServiceTabs serviceRef={ref} />
       </div>

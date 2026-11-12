@@ -119,7 +119,7 @@ function AccessEditor({
                 placeholder="username"
                 maxLength={64}
                 autoComplete="off"
-                className="field w-[150px] py-[7px] font-mono"
+                className="field w-[150px] font-mono"
               />
               <input
                 aria-label="Password"
@@ -133,7 +133,7 @@ function AccessEditor({
                 }
                 maxLength={72}
                 autoComplete="new-password"
-                className="field w-[220px] py-[7px]"
+                className="field w-[220px]"
               />
             </>
           )}

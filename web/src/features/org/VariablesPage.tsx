@@ -351,7 +351,7 @@ function AddVariable({
         onChange={(e) => setName(e.target.value.toUpperCase())}
         spellCheck={false}
         aria-invalid={!!nameError}
-        className={`field w-48 py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
+        className={`field w-48 font-mono ${nameError ? "border-fail" : ""}`}
       />
       <input
         aria-label="Value"
@@ -359,7 +359,7 @@ function AddVariable({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         spellCheck={false}
-        className="field min-w-0 flex-[1_1_220px] py-[7px] font-mono"
+        className="field min-w-0 flex-[1_1_220px] font-mono"
       />
       <Act
         type="submit"

@@ -255,7 +255,7 @@ function InviteForm({
           onChange={(e) => setEmail(e.target.value)}
           aria-invalid={!!emailError}
           aria-describedby={emailError ? "invite-email-error" : undefined}
-          className={`field py-[7px] ${emailError ? "border-fail" : ""}`}
+          className={`field ${emailError ? "border-fail" : ""}`}
         />
       </label>
       <span className="flex flex-col gap-1">

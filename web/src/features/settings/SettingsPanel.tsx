@@ -582,8 +582,8 @@ function SettingRow({
             </span>
           </span>
           <span className="text-xs text-mut">
-            Saved changes go live together when you apply them in the strip at
-            the top of the page. Empty means the default.
+            Saved changes wait to apply: Apply in the service's header (Ctrl
+            Enter) puts them live together. Empty means the default.
           </span>
           <ErrorText error={error ?? stage.error} />
         </form>

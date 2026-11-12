@@ -19,7 +19,7 @@ function AnalyticsDefaults() {
     <>
       <OrgSettingsBar />
       <Page>
-        <p className="max-w-xl text-[13px] text-sec">
+        <p className="max-w-xl text-xs text-sec">
           New sites in this organization start with these settings. Existing
           sites keep theirs; change one on its own settings. What isn't set here
           comes from the platform.

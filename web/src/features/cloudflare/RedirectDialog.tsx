@@ -110,14 +110,14 @@ export default function RedirectDialog({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="instagram, or empty for the zone"
-                className="field min-w-0 flex-[1_1_180px] py-[7px] font-mono"
+                className="field min-w-0 flex-[1_1_180px] font-mono"
               />
               <span className="text-mut">.</span>
               <select
                 aria-label="Zone"
                 value={picked}
                 onChange={(e) => setZone(e.target.value)}
-                className="field py-[7px] font-mono"
+                className="field font-mono"
               >
                 {zones.map((z) => (
                   <option key={z} value={z}>
@@ -136,7 +136,7 @@ export default function RedirectDialog({
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               placeholder="https://instagram.com/yours"
-              className={`field py-[7px] font-mono ${invalid(toError)}`}
+              className={`field font-mono ${invalid(toError)}`}
             />
             {toError && (
               <span role="alert" className="text-xs text-fail">

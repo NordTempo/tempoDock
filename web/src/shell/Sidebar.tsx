@@ -40,7 +40,7 @@ import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
-import { modKey } from "./keys";
+import { modKey, useShortcuts } from "./keys";
 import { useCurrentContext, useOrg } from "./location";
 import { usePalette } from "./palette";
 
@@ -64,6 +64,12 @@ export const useShellMode = (): ShellMode =>
 export function Sidebar({ mode }: { mode: ShellMode }) {
   // Narrow screens fold the sidebar behind a button; moving on folds it.
   const [open, setOpen] = useState(false);
+  const [tree, toggleTree] = useTreeOpen();
+  useShortcuts(
+    mode === "app"
+      ? [{ key: "[", label: "project tree or rail", run: toggleTree }]
+      : [],
+  );
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [foldedAt, setFoldedAt] = useState(path);
   if (foldedAt !== path) {
@@ -73,11 +79,11 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
   return (
     <nav
       aria-label={mode === "console" ? "Platform" : "Organization"}
-      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky lg:w-[248px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
+      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${mode === "app" && !tree ? "lg:w-[60px]" : "lg:w-[248px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
         // Under the console's sticky amber bar.
         mode === "console"
           ? "lg:top-8 lg:h-[calc(100vh-2rem)]"
-          : "lg:top-0 lg:h-screen"
+          : "lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]"
       }`}
     >
       <button
@@ -93,7 +99,11 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
         // Rows never shrink below their height: a long tree scrolls instead.
         className={`${open ? "flex" : "hidden"} flex-1 flex-col gap-0.5 *:shrink-0 lg:flex`}
       >
-        {mode === "app" ? <AppNav /> : <ConsoleNav />}
+        {mode === "app" ? (
+          <AppNav tree={tree} onToggle={toggleTree} />
+        ) : (
+          <ConsoleNav />
+        )}
       </div>
     </nav>
   );
@@ -121,64 +131,249 @@ function NavLink({
 
 const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
 
-function AppNav() {
-  const openPalette = usePalette();
-  const operator = useIsOperator();
+/**
+ * Whether the left column shows the full project tree or only the project
+ * rail (Saile's pick, option 3): an explicit toggle, kept per browser
+ * until changed. `[` toggles it.
+ */
+const treeKey = "dock.tree";
+export function useTreeOpen() {
+  const [open, setOpen] = useState(
+    () => localStorage.getItem(treeKey) !== "rail",
+  );
+  const toggle = () =>
+    setOpen((o) => {
+      localStorage.setItem(treeKey, o ? "rail" : "tree");
+      return !o;
+    });
+  return [open, toggle] as const;
+}
+
+/**
+ * The org's left column (option 3): the project tree, or the rail of
+ * project tiles; the org's views are in the top bar (TopBar).
+ */
+function AppNav({ tree, onToggle }: { tree: boolean; onToggle: () => void }) {
   return (
     <>
+      {/* Expanded stays expanded until collapsed again (Saile). */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={tree}
+        aria-label={tree ? "Collapse the projects" : "Expand the projects"}
+        title={`${tree ? "Collapse to the project rail" : "Expand to the project tree"} ([)`}
+        className={`nav-row text-mut ${tree ? "" : "justify-center px-0"}`}
+      >
+        {tree ? (
+          <>
+            <span className="flex-1 text-left text-2xs font-medium text-faint">
+              Projects
+            </span>
+            <Icon name="chevronLeft" size={14} />
+            <kbd>[</kbd>
+          </>
+        ) : (
+          <Icon name="chevronRight" size={14} />
+        )}
+      </button>
+      {tree ? (
+        <>
+          <ProjectTree />
+          <ArchivedProjects />
+        </>
+      ) : (
+        <ProjectRail />
+      )}
+    </>
+  );
+}
+
+/**
+ * The collapsed column: a tile per project, its initials and a dot for
+ * its health, worst of its services (failing red, needs a look amber,
+ * running green; none while nothing is deployed). The current project's
+ * tile is marked.
+ */
+function ProjectRail() {
+  const org = useOrg();
+  const projects = useProjects();
+  const tone = new Map(
+    useProjectTree().map((o) => {
+      const tones = o.environments.flatMap((e) =>
+        e.services.map((v) => serviceState(v).tone),
+      );
+      return [
+        o.project.name,
+        tones.includes("fail")
+          ? "fail"
+          : tones.includes("warn")
+            ? "warn"
+            : tones.includes("ok")
+              ? "ok"
+              : undefined,
+      ] as const;
+    }),
+  );
+  const dot = { fail: "bg-fail", warn: "bg-warn", ok: "bg-ok" } as const;
+  const word = {
+    fail: "failing",
+    warn: "needs a look",
+    ok: "running",
+  } as const;
+  return (
+    <ul className="flex flex-col items-center gap-1">
+      {projects.map((p) => {
+        const t = tone.get(p.name);
+        return (
+          <li key={p.name}>
+            <Link
+              to="/$org/$project"
+              params={{ org, project: p.name }}
+              activeProps={{ "aria-current": "page" }}
+              title={t ? `${p.name}: ${word[t]}` : p.name}
+              className="relative grid size-9 place-items-center rounded-ctl border border-line text-xs font-medium uppercase hover:bg-hover aria-[current=page]:border-edge aria-[current=page]:bg-sel"
+            >
+              {p.name.slice(0, 2)}
+              {t && (
+                <span
+                  role="img"
+                  aria-label={`, ${word[t]}`}
+                  className={`absolute -top-0.5 -right-0.5 size-2 rounded-full ${dot[t]}`}
+                />
+              )}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The org's top bar (option 3): the switcher, the org's views,
+ * search, Inbox, Settings and the account. Members and Activity live
+ * under Settings; Help in the account menu; the console in the switcher.
+ */
+export function TopBar() {
+  const openPalette = usePalette();
+  return (
+    // Sticky over every page; its height is --shell-top (index.css).
+    <header className="app-shell sticky top-0 z-30 flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap">
       <OrgSwitcher />
+      <nav
+        aria-label="Organization views"
+        className="hidden items-center gap-0.5 md:flex"
+      >
+        {orgViews.map(([to, label]) => (
+          <TopLink key={to} to={to}>
+            {label}
+          </TopLink>
+        ))}
+      </nav>
+      {/* Narrow windows: the same views in a menu. */}
+      <ViewsMenu />
+      <span className="flex-1" />
       <button
         type="button"
         onClick={() => openPalette()}
-        className="mx-1 mb-2.5 flex items-center gap-2 rounded-[7px] border border-line bg-panel px-2.5 py-[7px] text-left text-mut hover:border-edge hover:text-sec"
+        className="flex min-h-[28px] items-center gap-2 rounded-ctl border border-line px-2.5 text-mut hover:border-edge hover:text-sec"
       >
         <Icon name="search" />
-        <span className="flex-1">Search or run…</span>
-        <kbd>{modKey.trim()}K</kbd>
+        {/* Named by its text (WCAG 2.5.3); on narrow screens the word is only read. */}
+        <span className="sr-only sm:not-sr-only">Search</span>
+        <kbd className="hidden sm:inline">{modKey.trim()}K</kbd>
       </button>
-      <div className="px-2.5 pt-1.5 pb-1 text-2xs font-medium text-faint">
-        Projects
-      </div>
-      <ProjectTree />
-      <ArchivedProjects />
-      <div className="min-h-6 flex-1" />
-      {/* What waits on someone first: alerts and access requests (ADR 0076). */}
-      <NavLink to="/$org/inbox" icon="inbox">
-        <span className="flex-1">Inbox</span>
-        <InboxCount />
-      </NavLink>
-      <NavLink to="/$org/errors" icon="alert">
-        Errors
-      </NavLink>
-      <NavLink to="/$org/analytics" icon="bars">
-        Analytics
-      </NavLink>
-      <NavLink to="/$org/images" icon="box">
-        Images
-      </NavLink>
-      <NavLink to="/$org/status-pages" icon="globe">
-        Status pages
-      </NavLink>
-      <NavLink to="/$org/audit" icon="activity">
-        Activity
-      </NavLink>
-      {/* Named in full: projects and services have Settings of their own. */}
-      <NavLink to="/$org/settings" icon="sliders">
-        Organization settings
-      </NavLink>
-      <NavLink to="/$org/help" icon="help">
-        Help
-      </NavLink>
-      <div className="mx-1 mt-2 mb-1.5 border-t border-line" />
-      <Me />
-      {operator && (
-        <Link to="/console" className="nav-row mt-0.5">
-          <Icon name="console" size={14} className="text-warn" />
-          <span className="flex-1">Platform console</span>
-          <PlatformAlertCount />
-        </Link>
-      )}
-    </>
+      <TopLink to="/$org/inbox">
+        Inbox <InboxCount />
+      </TopLink>
+      {/* Named in full: the project page has Project settings beside it,
+          and blind reviewers opened that one looking for Members. */}
+      <TopLink to="/$org/settings">Organization settings</TopLink>
+      <TopLink to="/$org/help" label="Help">
+        <span aria-hidden>?</span>
+      </TopLink>
+      <AccountMenu />
+    </header>
+  );
+}
+
+/** The org's views, in the top bar's order. */
+const orgViews = [
+  ["/$org", "Overview"],
+  ["/$org/errors", "Errors"],
+  ["/$org/analytics", "Analytics"],
+  ["/$org/images", "Images"],
+  ["/$org/status-pages", "Status pages"],
+] as const;
+
+/** The top bar's views below md: one menu, named after the current view. */
+function ViewsMenu() {
+  const org = useOrg();
+  const navigate = useNavigate();
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const here =
+    [...orgViews]
+      .reverse()
+      .find(([to]) => path.startsWith(to.replace("$org", org)))?.[1] ?? "Views";
+  return (
+    <span className="md:hidden">
+      <Menu
+        label="Organization views"
+        button={
+          <span className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-fg">
+            {here} <Icon name="chevronDown" size={12} className="text-mut" />
+          </span>
+        }
+      >
+        {(close) =>
+          orgViews.map(([to, label]) => (
+            <button
+              key={to}
+              type="button"
+              role="menuitem"
+              className={menuItem}
+              onClick={() => {
+                close();
+                navigate({ to, params: { org } });
+              }}
+            >
+              {label}
+            </button>
+          ))
+        }
+      </Menu>
+    </span>
+  );
+}
+
+/** A link in the top bar; current on its page (Overview only exactly). */
+function TopLink({
+  to,
+  label,
+  children,
+}: {
+  to:
+    | (typeof orgViews)[number][0]
+    | "/$org/inbox"
+    | "/$org/settings"
+    | "/$org/help";
+  /** The name when the text isn't one (Help's "?"). */
+  label?: string;
+  children: ReactNode;
+}) {
+  const org = useOrg();
+  return (
+    <Link
+      to={to}
+      params={{ org }}
+      activeOptions={{ exact: to === "/$org" }}
+      aria-label={label}
+      title={label}
+      className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
+    >
+      {children}
+    </Link>
   );
 }
 
@@ -195,7 +390,7 @@ function OrgBadge({ org }: { org: Org }) {
     <span
       aria-hidden
       data-letter={(org.name || org.slug).charAt(0).toUpperCase()}
-      className={`grid size-5 flex-none place-items-center rounded-[5px] text-2xs font-semibold text-side before:content-[attr(data-letter)] ${badgeColours[h % badgeColours.length]}`}
+      className={`grid size-5 flex-none place-items-center rounded-ctl text-2xs font-semibold text-side before:content-[attr(data-letter)] ${badgeColours[h % badgeColours.length]}`}
     />
   );
 }
@@ -205,13 +400,13 @@ function OrgBadge({ org }: { org: Org }) {
  * others with your role in each, a new one, and signing out.
  */
 function OrgSwitcher() {
-  const logout = useLogout();
+  const operator = useIsOperator();
   const orgs = useOrgs();
   const slug = useOrg();
   const navigate = useNavigate();
   const current = orgs.find((o) => o.slug === slug) ?? orgs[0];
   return (
-    <div className="flex items-center gap-1.5 px-1 pt-0.5 pb-2">
+    <div className="flex items-center gap-1.5">
       <Menu
         label={`Organization: ${current?.name ?? "none"}`}
         className="min-w-0 flex-1"
@@ -265,16 +460,25 @@ function OrgSwitcher() {
             >
               <Icon name="plus" className="text-mut" /> New organization
             </button>
-            <hr className="my-1 border-0 border-t border-line" />
-            <button
-              type="button"
-              className={menuItem}
-              role="menuitem"
-              disabled={logout.isPending}
-              onClick={() => logout.mutate()}
-            >
-              <Icon name="logout" className="text-mut" /> Log out
-            </button>
+            {operator && (
+              <>
+                <hr className="my-1 border-0 border-t border-line" />
+                <button
+                  type="button"
+                  className={menuItem}
+                  role="menuitem"
+                  onClick={() => {
+                    close();
+                    navigate({ to: "/console" });
+                  }}
+                >
+                  <Icon name="console" className="text-warn" /> Platform console
+                  <span className="ml-auto">
+                    <PlatformAlertCount />
+                  </span>
+                </button>
+              </>
+            )}
           </>
         )}
       </Menu>
@@ -323,6 +527,78 @@ function Me() {
         Log out
       </button>
     </div>
+  );
+}
+
+/**
+ * The top bar's account menu: who is signed in, the account page, Help
+ * and Log out (option 3).
+ */
+function AccountMenu() {
+  const session = useSession();
+  const logout = useLogout();
+  const navigate = useNavigate();
+  const org = useOrg();
+  if (!session) return null;
+  return (
+    <Menu
+      label="Account"
+      right
+      button={
+        <span
+          className="grid size-7 place-items-center rounded-full bg-edge text-2xs font-semibold"
+          title={session.email ?? session.name}
+        >
+          {session.name.slice(0, 1).toUpperCase()}
+        </span>
+      }
+    >
+      {(close) => (
+        <>
+          <div role="presentation" className="px-2.5 pt-1 pb-1.5">
+            <span className="block truncate">
+              {session.email ?? session.name}
+            </span>
+            <span className="block text-2xs text-faint">
+              {session.kind === "token" ? "token, " : ""}
+              {session.scope}
+            </span>
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItem}
+            onClick={() => {
+              close();
+              navigate({ to: "/account" });
+            }}
+          >
+            <Icon name="users" className="text-mut" /> Your account
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItem}
+            onClick={() => {
+              close();
+              navigate({ to: "/$org/help", params: { org } });
+            }}
+          >
+            <Icon name="help" className="text-mut" /> Help
+          </button>
+          <hr className="my-1 border-0 border-t border-line" />
+          <button
+            type="button"
+            role="menuitem"
+            className={menuItem}
+            disabled={logout.isPending}
+            onClick={() => logout.mutate()}
+          >
+            <Icon name="logout" className="text-mut" /> Log out
+          </button>
+        </>
+      )}
+    </Menu>
   );
 }
 

@@ -153,7 +153,7 @@ export default function IgnoreDialog({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Untrusted input never reaches it."
-              className={`field py-[7px] ${invalid(reasonError)}`}
+              className={`field ${invalid(reasonError)}`}
             />
             {reasonError && (
               <span role="alert" className="text-xs text-fail">

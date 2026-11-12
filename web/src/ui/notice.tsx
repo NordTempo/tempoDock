@@ -76,7 +76,7 @@ export function Notices() {
       {list.map((n) => (
         <div
           key={n.id}
-          className="pointer-events-auto flex items-center gap-3 rounded-ctl border border-edge bg-panel py-1 pr-1 pl-3 text-[13px] text-fg shadow-lg shadow-black/60"
+          className="pointer-events-auto flex items-center gap-3 rounded-ctl border border-edge bg-panel py-1 pr-1 pl-3 text-xs text-fg shadow-lg shadow-black/60"
         >
           <span className="flex items-center gap-2 py-1">
             <span aria-hidden className={glyph[n.tone][1]}>

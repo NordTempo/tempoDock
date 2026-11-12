@@ -1,4 +1,4 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { isFailing } from "../data/problems";
 import {
@@ -8,8 +8,13 @@ import {
   useSession,
 } from "../data/queries";
 import type { ProjectOverview } from "../data/types";
+import { useOrgOpenAlerts } from "../features/alerts/data";
+import { AlertLink } from "../features/alerts/source";
+import { AuditTable } from "../features/audit/AuditTable";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { errorsQuery } from "../features/errors/data";
+import { statusQueries } from "../features/status/data";
 import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
 import { Icon } from "../ui/icons";
@@ -21,11 +26,15 @@ import {
   Page,
   PageBar,
   Panel,
+  SectionHead,
 } from "../ui/kit";
 
-// An organization's home ("/" lands here too): its projects with their
-// health, worst first. With no projects yet, it offers to create one here
-// or says how to deploy from a terminal.
+// An organization's home ("/" lands here too), its Overview in the top
+// bar (option 3): what needs someone (open alerts, the Inbox's), its
+// projects with their health worst first, the most frequent open errors,
+// the latest deploys and its status pages. With
+// no projects yet, it offers to create one or says how to deploy from a
+// terminal.
 export const Route = createFileRoute("/_app/$org/")({
   loader: async ({ context: { queryClient } }) => {
     const projects = await queryClient.ensureQueryData(queries.projects());
@@ -53,7 +62,7 @@ function Home() {
   return (
     <>
       <PageBar
-        title="Projects"
+        title="Overview"
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -63,87 +72,94 @@ function Home() {
         }
       />
       <Page>
-        <Panel>
-          <table className="tabular-nums">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Health</th>
-                <th className="text-right">Running</th>
-                <th>Environments</th>
-                <th>Last deploy</th>
-                <th>
-                  <span className="sr-only">Open</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ project, health: h }) => (
-                <tr key={project.id} className="row-link">
-                  <td className="w-[22%]">
-                    <Link
-                      to="/$org/$project"
-                      params={{ org, project: project.name }}
-                      className="row-main font-medium hover:underline"
-                    >
-                      {project.name}
-                    </Link>
-                  </td>
-                  <td className="w-[24%]">
-                    {h ? (
-                      <span className={h.tone}>
-                        <Glyph char={h.glyph} />{" "}
-                        {h.parts.map(([text, tone], i) => (
-                          <span key={text} className={tone}>
-                            {i > 0 && ", "}
-                            {text}
-                          </span>
-                        ))}
-                      </span>
-                    ) : (
-                      <span className="text-faint">not loaded</span>
-                    )}
-                  </td>
-                  <td className="w-[10%] text-right font-mono">
-                    {h ? `${h.running} of ${h.total}` : "·"}
-                  </td>
-                  <td className="w-[24%] truncate">
-                    {h?.environments.map((e, i) => (
-                      <span key={e.id}>
-                        {i > 0 && ", "}
-                        {e.name}
-                        {e.lock && (
-                          <>
-                            {" "}
-                            <LockMark lock={e.lock} />
-                          </>
-                        )}
-                      </span>
-                    )) ?? <span className="text-faint">·</span>}
-                  </td>
-                  <td className="text-mut">
-                    {h?.last ? (
-                      <span title={h.last.at}>
-                        <span className="font-mono text-sec">
-                          {h.last.service} r{h.last.number}
-                        </span>{" "}
-                        {h.last.failed && (
-                          <span className="text-fail">failed </span>
-                        )}
-                        {ago(h.last.at)}
-                      </span>
-                    ) : (
-                      <span className="text-faint">never</span>
-                    )}
-                  </td>
-                  <td className="row-go" aria-hidden>
-                    <Icon name="chevronRight" size={14} />
-                  </td>
+        <NeedsYou />
+        <section aria-labelledby="projects-head">
+          <SectionHead id="projects-head">Projects</SectionHead>
+          <Panel>
+            <table className="tabular-nums">
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Health</th>
+                  <th className="text-right">Running</th>
+                  <th>Environments</th>
+                  <th>Last deploy</th>
+                  <th>
+                    <span className="sr-only">Open</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
+              </thead>
+              <tbody>
+                {rows.map(({ project, health: h }) => (
+                  <tr key={project.id} className="row-link">
+                    <td className="w-[22%]">
+                      <Link
+                        to="/$org/$project"
+                        params={{ org, project: project.name }}
+                        className="row-main font-medium hover:underline"
+                      >
+                        {project.name}
+                      </Link>
+                    </td>
+                    <td className="w-[24%]">
+                      {h ? (
+                        <span className={h.tone}>
+                          <Glyph char={h.glyph} />{" "}
+                          {h.parts.map(([text, tone], i) => (
+                            <span key={text} className={tone}>
+                              {i > 0 && ", "}
+                              {text}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="text-faint">not loaded</span>
+                      )}
+                    </td>
+                    <td className="w-[10%] text-right font-mono">
+                      {h ? `${h.running} of ${h.total}` : "·"}
+                    </td>
+                    <td className="w-[24%] truncate">
+                      {h?.environments.map((e, i) => (
+                        <span key={e.id}>
+                          {i > 0 && ", "}
+                          {e.name}
+                          {e.lock && (
+                            <>
+                              {" "}
+                              <LockMark lock={e.lock} />
+                            </>
+                          )}
+                        </span>
+                      )) ?? <span className="text-faint">·</span>}
+                    </td>
+                    <td className="text-mut">
+                      {h?.last ? (
+                        <span title={h.last.at}>
+                          <span className="font-mono text-sec">
+                            {h.last.service} r{h.last.number}
+                          </span>{" "}
+                          {h.last.failed && (
+                            <span className="text-fail">failed </span>
+                          )}
+                          {ago(h.last.at)}
+                        </span>
+                      ) : (
+                        <span className="text-faint">never</span>
+                      )}
+                    </td>
+                    <td className="row-go" aria-hidden>
+                      <Icon name="chevronRight" size={14} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+        </section>
+        <TopErrors />
+        <RecentDeploys />
+        <StatusPages />
       </Page>
     </>
   );
@@ -280,7 +296,7 @@ function NoProjects() {
   return (
     <>
       <PageBar
-        title="Projects"
+        title="Overview"
         actions={
           canCreate && (
             <Button primary onClick={() => openCreate({ kind: "project" })}>
@@ -329,5 +345,181 @@ function NoProjects() {
         </p>
       </Page>
     </>
+  );
+}
+
+/** Open alerts, worst first, the newest six; the rest are in the Inbox. */
+function NeedsYou() {
+  const org = useOrg();
+  // Error alerts are the Errors section's below; said once (ADR 0076).
+  const open = useOrgOpenAlerts().filter(
+    (a) => !["new_error", "error_regressed", "error_spike"].includes(a.kind),
+  );
+  return (
+    <section aria-labelledby="needs-head">
+      <SectionHead
+        id="needs-head"
+        aside={open.length > 0 && `${open.length} open`}
+        right={
+          <Link to="/$org/inbox" params={{ org }} className="hover:text-fg">
+            Inbox →
+          </Link>
+        }
+      >
+        Needs you
+      </SectionHead>
+      {open.length === 0 ? (
+        <p className="text-mut">Nothing waits on anyone.</p>
+      ) : (
+        <ul className="border-t border-line">
+          {open.slice(0, 6).map((a) => (
+            <li
+              key={a.id}
+              className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
+            >
+              <span
+                className={
+                  a.severity === "critical" ? "text-fail" : "text-warn"
+                }
+              >
+                {a.severity === "critical" ? "✕" : "▲"}
+              </span>
+              <span className="min-w-0 flex-1">{a.title}</span>
+              <span className="text-xs text-mut">{ago(a.opened_at)}</span>
+              <AlertLink alert={a} className="btn sm no-underline" />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** The latest deploys, rollbacks and restarts across the organization. */
+function RecentDeploys() {
+  const org = useOrg();
+  const events = useQuery(queries.audit({ action: "release.", limit: 8 })).data;
+  if (!events?.length) return null;
+  return (
+    <section aria-labelledby="deploys-head">
+      <SectionHead
+        id="deploys-head"
+        right={
+          <Link to="/$org/audit" params={{ org }} className="hover:text-fg">
+            All activity →
+          </Link>
+        }
+      >
+        Recent deploys
+      </SectionHead>
+      <AuditTable events={events} compact />
+    </section>
+  );
+}
+
+/** The open error issues seen most, across the organization. */
+function TopErrors() {
+  const org = useOrg();
+  const issues = useQuery(errorsQuery({})).data?.issues ?? [];
+  if (issues.length === 0) return null;
+  const top = [...issues].sort((a, b) => b.count - a.count).slice(0, 5);
+  return (
+    <section aria-labelledby="errors-head">
+      <SectionHead
+        id="errors-head"
+        aside={`${issues.length} open`}
+        right={
+          <Link to="/$org/errors" params={{ org }} className="hover:text-fg">
+            All errors →
+          </Link>
+        }
+      >
+        Errors
+      </SectionHead>
+      <ul className="border-t border-line">
+        {top.map((i) => (
+          <li
+            key={i.id}
+            className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
+          >
+            <span className="min-w-0 flex-1 truncate" title={i.title}>
+              {i.title}
+            </span>
+            <Link
+              to="/$org/$project/$environment/$service/errors"
+              params={{
+                org,
+                project: i.project,
+                environment: i.environment,
+                service: i.service,
+              }}
+              className="font-mono text-xs text-sec hover:text-fg"
+            >
+              {i.project}/{i.service}
+            </Link>
+            <span
+              className="w-14 text-right font-mono text-xs tabular-nums"
+              title={`${i.count} events`}
+            >
+              {i.count}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The organization's status pages: published or not, and where. */
+function StatusPages() {
+  const org = useOrg();
+  const pages = useQuery(statusQueries.list()).data ?? [];
+  if (pages.length === 0) return null;
+  return (
+    <section aria-labelledby="status-head">
+      <SectionHead
+        id="status-head"
+        right={
+          <Link
+            to="/$org/status-pages"
+            params={{ org }}
+            className="hover:text-fg"
+          >
+            Status pages →
+          </Link>
+        }
+      >
+        Status pages
+      </SectionHead>
+      <ul className="border-t border-line">
+        {pages.map((p) => (
+          <li
+            key={p.slug}
+            className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
+          >
+            <Link
+              to="/$org/status-pages/$page"
+              params={{ org, page: p.slug }}
+              className="-my-[2px] inline-flex min-h-[24px] min-w-0 flex-1 items-center hover:underline"
+            >
+              {p.title}
+            </Link>
+            <span className="text-xs text-mut">
+              {plural(p.components, "component")}
+            </span>
+            <span
+              className={p.published ? "text-xs text-ok" : "text-xs text-mut"}
+            >
+              {p.published ? "published" : "not published"}
+            </span>
+            {p.url && p.published && (
+              <span className="font-mono text-xs text-sec">
+                {p.url.replace(/^https?:\/\//, "")}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

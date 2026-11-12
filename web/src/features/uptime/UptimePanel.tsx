@@ -573,7 +573,7 @@ function AddCheck({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={`https://${host}/`}
-            className="field w-[320px] py-[7px] font-mono"
+            className="field w-[320px] font-mono"
           />
         </label>
         <label className={fieldLabel} title="The answer that counts as up">
@@ -582,7 +582,7 @@ function AddCheck({
             value={status}
             onChange={(e) => setStatus(e.target.value.trim())}
             list="uptime-statuses"
-            className="field w-[96px] py-[7px] font-mono"
+            className="field w-[96px] font-mono"
           />
           <datalist id="uptime-statuses">
             <option value="200" />
@@ -595,7 +595,7 @@ function AddCheck({
           <select
             value={intervalS}
             onChange={(e) => setIntervalS(Number(e.target.value))}
-            className="field min-w-[96px] py-[7px]"
+            className="field min-w-[96px]"
           >
             {intervals.map(([s, label]) => (
               <option key={s} value={s}>
@@ -612,11 +612,12 @@ function AddCheck({
             max={30}
             value={timeoutS}
             onChange={(e) => setTimeoutS(Number(e.target.value))}
-            className="field w-[96px] py-[7px] font-mono"
+            className="field w-[96px] font-mono"
           />
         </label>
-        {/* With a check of this URL already there, changing it is the
-            likelier intent, so that is the primary; adding a second isn't. */}
+        {/* With a check of this URL already there, both ways are fine
+            (a second check, or the existing one changed), so neither is
+            the primary. */}
         <Act
           primary={existing.length === 0}
           type="submit"
@@ -630,7 +631,7 @@ function AddCheck({
                 : undefined
           }
         >
-          {existing.length > 0 ? "Add a second check" : "Add check"}
+          {existing.length > 0 ? "Add a second check as well" : "Add check"}
         </Act>
         <ErrorText error={add.error} />
       </span>
@@ -652,7 +653,6 @@ function AddCheck({
           {first && !repeat && (
             <Button
               small
-              primary
               disabled={update.isPending}
               title={`dock uptime update ${first.id} --interval ${intervalS}s --status ${status} -s ${ref.service} -e ${ref.environment}`}
               onClick={() =>
@@ -673,7 +673,7 @@ function AddCheck({
                 )
               }
             >
-              Change it to every {every(intervalS)}
+              Change the existing check to every {every(intervalS)}
               {status !== first.expect_status ? `, expects ${status}` : ""}
             </Button>
           )}

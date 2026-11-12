@@ -274,7 +274,7 @@ export function SpanDetails({
         {where && s.release ? (
           <Link
             className="btn sm no-underline"
-            to="/$org/$project/$environment/$service/releases/$number"
+            to="/$org/$project/$environment/$service/history/$number"
             params={{ org, ...where, number: String(s.release) }}
           >
             Release r{s.release}

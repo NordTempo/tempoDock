@@ -34,11 +34,17 @@ export function ReleasesTable({
   serviceRef: ref,
   releases,
   deploying,
+  quiet,
 }: {
   serviceRef: ServiceRef;
   releases: Release[];
   /** Rollback is locked while a deploy is in flight. */
   deploying: boolean;
+  /**
+   * The Overview's short list: a failure's chip, not its error, which
+   * Needs attention already says (ADR 0076).
+   */
+  quiet?: boolean;
 }) {
   const org = useOrg();
   // A stopped service's active release serves nothing (ADR 0050), and it
@@ -118,7 +124,7 @@ export function ReleasesTable({
                         {shortImage(image)}
                       </span>
                     </span>
-                    {r.status === "failed" && r.error && (
+                    {r.status === "failed" && r.error && !quiet && (
                       // Its diagnosis's likely cause when a rule matched
                       // (ADR 0071), else the error; the title has the error.
                       <div
@@ -254,7 +260,7 @@ export function RollbackConfirm({
       )}
       {/* What it takes away comes first, in red: the reason to stop. */}
       {losses.length > 0 && (
-        <div className="mb-3 rounded-[6px] border border-fail-edge bg-fail-bg px-3 py-2">
+        <div className="mb-3 rounded-ctl border border-fail-edge bg-fail-bg px-3 py-2">
           <p className="font-semibold text-fail">
             {ref.service} loses {losses.length === 1 ? "this" : "these"}
           </p>

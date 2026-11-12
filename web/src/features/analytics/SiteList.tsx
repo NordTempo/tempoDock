@@ -87,7 +87,7 @@ export function SiteRows({
               <span className="col-span-2 flex min-w-0 items-center gap-2.5 sm:col-span-1">
                 <SiteGlyph name={s.site.name} />
                 <span className="min-w-0">
-                  <span className="block truncate font-mono text-[15px] text-fg">
+                  <span className="block truncate font-mono text-md text-info underline-offset-3 group-hover:underline">
                     {s.site.name}
                   </span>
                   <span className="block truncate text-xs text-faint">
@@ -192,7 +192,8 @@ function SiteLink({
       to="/$org/analytics/$project/$site"
       params={{ org, project, site: site.name }}
       search={{ range }}
-      className={`text-faint hover:text-fg ${className}`}
+      // group: the site's name underlines with the row, so the row reads as a link.
+      className={`group text-faint hover:text-fg ${className}`}
     >
       {children}
     </Link>

@@ -512,7 +512,7 @@ function TokenForm({
               onChange={(e) => setName(e.target.value)}
               placeholder="home"
               aria-invalid={!!nameError}
-              className={`field py-[7px] font-mono ${nameError ? "border-fail" : ""}`}
+              className={`field font-mono ${nameError ? "border-fail" : ""}`}
             />
             {nameError && (
               <span role="alert" className="text-xs text-fail">
@@ -529,7 +529,7 @@ function TokenForm({
             onChange={(e) => setToken(e.target.value)}
             autoComplete="new-password"
             aria-invalid={!!tokenError}
-            className={`field py-[7px] font-mono ${tokenError ? "border-fail" : ""}`}
+            className={`field font-mono ${tokenError ? "border-fail" : ""}`}
           />
           {tokenError && (
             <span role="alert" className="text-xs text-fail">
@@ -547,7 +547,7 @@ function TokenForm({
             placeholder={
               connection?.account_id ?? "if the token reaches several"
             }
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </label>
       </div>

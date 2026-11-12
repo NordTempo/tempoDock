@@ -170,7 +170,7 @@ function AddDrain({ env, onClose }: { env: EnvRef; onClose: () => void }) {
   const [name, setName] = useState("");
   const [header, setHeader] = useState("");
   const [token, setToken] = useState("");
-  const field = "field py-[7px]";
+  const field = "field";
   const cli = [
     `dock logs drain add ${kind} -e ${env.environment}`,
     "-",

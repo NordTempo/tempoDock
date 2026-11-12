@@ -484,7 +484,7 @@ function StagedReview({
           is readable (and reachable without a mouse). */}
       <div className="font-mono text-xs leading-[1.9]">
         {lines.map((line) => (
-          <div key={line.id} className="break-all whitespace-pre-wrap">
+          <div key={line.id} className="wrap-break-word whitespace-pre-wrap">
             <span className="text-warn">{line.mark}</span>{" "}
             <span className="inline-block w-[9ch] text-faint">
               {line.scope}

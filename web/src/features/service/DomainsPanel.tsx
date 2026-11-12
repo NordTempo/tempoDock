@@ -146,7 +146,7 @@ function AddDomain({
   return (
     <div className="flex flex-wrap items-center gap-2.5">
       {/* The section's heading, with its actions on the right (Settings, ADR 0076). */}
-      <h2 id="domains" className="mr-auto text-[16px] font-semibold">
+      <h2 id="domains" className="mr-auto text-lg font-semibold">
         Domains
       </h2>
       <Button onClick={() => setOpen(true)}>

@@ -153,6 +153,13 @@ function History({
       memory: of((p) => p.memory_bytes),
     };
   }, [stats, share]);
+  // No points yet: one line, not two empty charts above the uptime checks.
+  if (stats.points.length === 0)
+    return (
+      <p className="text-mut">
+        No history yet: a point is recorded every minute while it runs.
+      </p>
+    );
   const to = dataUpdatedAt;
   const common = {
     from: to - rangeMs[range],

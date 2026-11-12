@@ -336,6 +336,15 @@ function ReleasePage() {
               onOpen={() => openDeploy(ref)}
             />
           )}
+          {/* The traces this release served (ADR 0075). */}
+          <Link
+            to="/$org/$project/$environment/$service/requests/traces"
+            params={{ org, ...ref }}
+            search={{ release: release.number }}
+            className="btn"
+          >
+            Traces of r{release.number}
+          </Link>
           <Act
             cli={`dock env set -s ${ref.service} -e ${ref.environment}`}
             onClick={() =>

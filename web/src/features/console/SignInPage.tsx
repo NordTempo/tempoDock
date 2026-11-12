@@ -303,7 +303,7 @@ function ProviderView({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="flex-1 text-[16px] font-semibold">{p.label}</h2>
+        <h2 className="flex-1 text-lg font-semibold">{p.label}</h2>
         <Act small cli={`dock sso set ${p.name}`} onClick={onEdit}>
           Edit
         </Act>
@@ -480,7 +480,7 @@ function ProviderForm({
         );
       }}
     >
-      <h2 className="text-[16px] font-semibold">
+      <h2 className="text-lg font-semibold">
         {provider ? `Change ${provider.label}` : "Add a provider"}
       </h2>
       {!provider && (
@@ -518,7 +518,7 @@ function ProviderForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={custom ? "corp" : kind}
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </Field>
       )}
@@ -529,7 +529,7 @@ function ProviderForm({
             value={issuer}
             onChange={(e) => setIssuer(e.target.value)}
             placeholder="https://id.example.com/realms/staff"
-            className="field py-[7px] font-mono"
+            className="field font-mono"
           />
         </Field>
       )}
@@ -539,14 +539,14 @@ function ProviderForm({
           maxLength={40}
           onChange={(e) => setLabel(e.target.value)}
           placeholder={defaultLabel[kind] || "Example ID"}
-          className="field py-[7px]"
+          className="field"
         />
       </Field>
       <Field label="Client ID">
         <input
           value={clientID}
           onChange={(e) => setClientID(e.target.value)}
-          className="field py-[7px] font-mono"
+          className="field font-mono"
         />
       </Field>
       <Field
@@ -559,7 +559,7 @@ function ProviderForm({
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           placeholder={provider ? "unchanged" : undefined}
-          className="field py-[7px] font-mono"
+          className="field font-mono"
         />
       </Field>
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">

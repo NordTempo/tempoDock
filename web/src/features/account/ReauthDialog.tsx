@@ -116,7 +116,7 @@ export default function ReauthDialog({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={pending}
-                className="field py-[7px]"
+                className="field"
               />
             </label>
           )

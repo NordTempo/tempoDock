@@ -37,7 +37,7 @@ export function OrgGitHubPage() {
       />
       <Page>
         {data.app ? (
-          <p className="max-w-2xl text-[13px] text-sec">
+          <p className="max-w-2xl text-xs text-sec">
             Dock's GitHub App is{" "}
             <a href={data.app.url} target="_blank" rel="noreferrer">
               {data.app.name}

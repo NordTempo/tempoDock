@@ -487,7 +487,7 @@ function AddUser({ onClose }: { onClose: () => void }) {
         : undefined) ?? v.required(!password, "Enter a first password."),
   };
   const field = (error: string | undefined) =>
-    `field py-[7px] text-sm text-fg ${error ? "border-fail" : ""}`;
+    `field text-sm text-fg ${error ? "border-fail" : ""}`;
   const label = "flex flex-col gap-1.5 text-xs text-mut";
   return (
     <form

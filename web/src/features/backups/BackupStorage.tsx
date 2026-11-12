@@ -175,7 +175,7 @@ function MoveForm({
             <select
               value={to}
               onChange={(e) => setPicked(e.target.value)}
-              className="field py-[7px]"
+              className="field"
             >
               {storage.map((s) => (
                 <option key={s.name} value={s.name}>
@@ -189,7 +189,7 @@ function MoveForm({
             <input
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              className="field py-[7px] font-mono"
+              className="field font-mono"
             />
           </label>
         </div>

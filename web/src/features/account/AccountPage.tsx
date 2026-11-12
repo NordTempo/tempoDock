@@ -319,7 +319,7 @@ function Password({
         value={value}
         aria-invalid={!!error}
         onChange={(e) => onChange(e.target.value)}
-        className={`field py-[7px] ${error ? "border-fail" : ""}`}
+        className={`field ${error ? "border-fail" : ""}`}
       />
       {error && (
         <span role="alert" className="text-xs text-fail">

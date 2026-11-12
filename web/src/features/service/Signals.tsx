@@ -72,7 +72,7 @@ function UptimeLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         hash="uptime"
         className={target}
       >
-        Uptime →
+        Uptime checks in Metrics →
       </Link>
     </p>
   );

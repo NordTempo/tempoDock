@@ -313,7 +313,7 @@ function Field({
       <input
         {...input}
         aria-invalid={!!error}
-        className={`field py-[7px] ${error ? "border-fail" : ""} ${className}`}
+        className={`field ${error ? "border-fail" : ""} ${className}`}
       />
       {error && (
         <span role="alert" className="text-xs text-fail">

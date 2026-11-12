@@ -99,7 +99,7 @@ export default function AddDomainDialog({
                   value={hostname}
                   onChange={(e) => setHostname(e.target.value)}
                   placeholder="app.example.com"
-                  className={`field min-w-0 flex-[1_1_220px] py-[7px] font-mono ${invalid(hostError)}`}
+                  className={`field min-w-0 flex-[1_1_220px] font-mono ${invalid(hostError)}`}
                 />
                 <label className="flex min-w-0 basis-full items-center gap-2 text-mut">
                   Redirect to
@@ -108,7 +108,7 @@ export default function AddDomainDialog({
                     value={redirect}
                     onChange={(e) => setRedirect(e.target.value)}
                     placeholder="optional, like example.com"
-                    className="field min-w-0 flex-1 py-[7px] font-mono"
+                    className="field min-w-0 flex-1 font-mono"
                   />
                 </label>
                 {hostError && (
@@ -150,14 +150,14 @@ export default function AddDomainDialog({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="shop, or empty for the zone"
-                    className="field min-w-0 flex-[1_1_180px] py-[7px] font-mono"
+                    className="field min-w-0 flex-[1_1_180px] font-mono"
                   />
                   <span className="text-mut">.</span>
                   <select
                     aria-label="Zone"
                     value={picked}
                     onChange={(e) => setZone(e.target.value)}
-                    className="field py-[7px] font-mono"
+                    className="field font-mono"
                   >
                     {zones.map((z) => (
                       <option key={z.name} value={z.name}>
@@ -178,11 +178,19 @@ export default function AddDomainDialog({
           </span>
         </label>
         {!target && (
-          <Check
-            label="Keep this hostname's earlier analytics, if it has any"
-            checked={!newSite}
-            onChange={(keep) => setNewSite(!keep)}
-          />
+          <span className="flex flex-col gap-0.5">
+            <Check
+              label="Keep this hostname's earlier analytics, if it has any"
+              checked={!newSite}
+              onChange={(keep) => setNewSite(!keep)}
+            />
+            {/* What the box does either way, so leaving it isn't a guess. */}
+            <span className="pl-6 text-xs text-mut">
+              {newSite
+                ? "Its visitors start from zero in a new site."
+                : "If the hostname was counted before, its visitors and errors carry on in the same site."}
+            </span>
+          </span>
         )}
         <Footer
           className="mt-1"
