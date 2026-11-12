@@ -510,9 +510,10 @@ func (c *Core) RenameProject(ctx context.Context, a Actor, name string, req apit
 	}
 	c.renameMu.Lock()
 	defer c.renameMu.Unlock()
-	// Alert writes use the same lock before their transaction; the project
-	// row and its open alert labels change together, without notifications.
-	c.alerts.mu.Lock()
+	// No alert write runs during the transaction (alertEngine.writes): the
+	// project row and its open alerts' labels change together, without
+	// notifications.
+	c.alerts.writes.Lock()
 	var alerts []store.Alert
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
@@ -535,15 +536,17 @@ func (c *Core) RenameProject(ctx context.Context, a Actor, name string, req apit
 		return err
 	})
 	if err == nil {
+		c.alerts.mu.Lock()
 		for _, row := range alerts {
 			c.alerts.open[row.Key] = row
 		}
+		c.alerts.mu.Unlock()
 		if name != p.Name {
 			// Canonicalize events from operations which captured the old scope.
 			c.bus.renameProject(p.ID, p.Name)
 		}
 	}
-	c.alerts.mu.Unlock()
+	c.alerts.writes.Unlock()
 	if store.IsUnique(err) {
 		return apitypes.Project{}, conflict("project %q already exists; pick another name", req.Name)
 	}
