@@ -180,8 +180,11 @@ func TestSampleOrgsApart(t *testing.T) {
 	s.send(t, analytics.Span{Org: 1, Trace: trace(1), ID: 1, Entry: true}, false) // org 1's sampled trace
 	theirs := trace(2)
 	s.send(t, analytics.Span{Org: 1, Trace: theirs, ID: 2, Parent: 1}, false) // dropped, in the ring
+	// Org 2's service spends its budget, so its error below is a rescue
+	// that scans the ring, not a sampled trace of its own.
+	s.send(t, analytics.Span{Org: 2, Service: 9, Trace: trace(3), ID: 6, Entry: true}, false)
 	s.send(t, analytics.Span{Org: 2, Service: 9, Trace: theirs, ID: 3, HTTPStatus: 500}, false)
-	if len(s.kept) != 2 || s.kept[1].Org != 2 {
+	if len(s.kept) != 3 || s.kept[2].Org != 2 || s.kept[2].ID != 3 {
 		t.Fatalf("kept %+v: org 2's error rescued org 1's span", s.kept)
 	}
 	sp := analytics.Span{Org: 2, Service: 9, Trace: trace(1), ID: 4, Entry: true}

@@ -343,14 +343,19 @@ type ring struct {
 }
 
 // chunk is a ring's unit: span lines back to back, with their traces.
+// orgs[i] is recs[i]'s org, apart because a rescue scans every record and
+// reads the org only where the trace ID matches: 24-byte records instead
+// of 32 keep that scan of the whole ring a third smaller
+// (BenchmarkSampleRescue).
 type chunk struct {
 	data []byte
 	recs []rec
+	orgs []int64
 }
 
 // rec is a span line in a chunk; a taken one has a zero trace.
 type rec struct {
-	key       traceKey
+	trace     analytics.TraceID
 	off, size int32
 }
 
@@ -370,15 +375,16 @@ func (r *ring) add(key traceKey, line []byte, size int) {
 		}
 		r.cur %= len(r.chunks)
 		c = r.chunks[r.cur]
-		c.data, c.recs = c.data[:0], c.recs[:0]
+		c.data, c.recs, c.orgs = c.data[:0], c.recs[:0], c.orgs[:0]
 	}
-	c.recs = append(c.recs, rec{key: key, off: int32(len(c.data)), size: int32(len(line))})
+	c.recs = append(c.recs, rec{trace: key.trace, off: int32(len(c.data)), size: int32(len(line))})
+	c.orgs = append(c.orgs, key.org)
 	c.data = append(c.data, line...)
 }
 
 // newChunk allocates a ring chunk.
 func newChunk() *chunk {
-	return &chunk{data: make([]byte, 0, ringChunk), recs: make([]rec, 0, ringChunk/512)}
+	return &chunk{data: make([]byte, 0, ringChunk), recs: make([]rec, 0, ringChunk/512), orgs: make([]int64, 0, ringChunk/512)}
 }
 
 // take calls fn with each of the trace's lines, oldest first, and
@@ -388,11 +394,11 @@ func (r *ring) take(key traceKey, fn func(line []byte)) {
 		c := r.chunks[(r.cur+1+i)%len(r.chunks)]
 		for j := range c.recs {
 			rc := &c.recs[j]
-			if rc.key != key {
+			if rc.trace != key.trace || c.orgs[j] != key.org {
 				continue
 			}
 			fn(c.data[rc.off : rc.off+rc.size])
-			rc.key = traceKey{}
+			rc.trace = analytics.TraceID{}
 		}
 	}
 }
