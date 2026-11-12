@@ -77,12 +77,16 @@ func (c *Core) addTracing(spec *node.ContainerSpec, ss svcScope, rel store.Relea
 	// An SDK exports metrics and logs over OTLP by default, to localhost
 	// in the container, which logs an error a minute. A service that
 	// configures no OTLP of its own sends them to Dock instead, which
-	// answers and drops them (the ingest keeps traces only, for now).
+	// keeps metrics (as deltas, so the ingest needs no state per series)
+	// and answers and drops logs (Dock keeps stdout).
 	for signal, path := range map[string]string{"METRICS": traces.MetricsPath, "LOGS": traces.LogsPath} {
 		if !configuresOTLP(spec.Env, signal) {
 			set["OTEL_EXPORTER_OTLP_"+signal+"_ENDPOINT"] = base + path
 			set["OTEL_EXPORTER_OTLP_"+signal+"_PROTOCOL"] = "http/protobuf"
 		}
+	}
+	if _, ok := set["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"]; ok {
+		set["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] = "delta"
 	}
 	env := maps.Clone(spec.Env)
 	if env == nil {

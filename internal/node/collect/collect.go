@@ -34,6 +34,9 @@ type Collector struct {
 	// none.
 	Replay *spool.Spool
 	Spans  *spool.Spool
+	// Metrics is the metrics spool (node.SpoolMetrics) the trace ingest
+	// fills with app metrics' points; nil where there is none.
+	Metrics *spool.Spool
 	// TraceKey is the key the trace ingest checks tokens with;
 	// SetAnalytics replaces it.
 	TraceKey *traces.Key
@@ -145,6 +148,10 @@ func (c *Collector) spool(which node.Spool) (*spool.Spool, error) {
 	case node.SpoolSpans:
 		if c.Spans != nil {
 			return c.Spans, nil
+		}
+	case node.SpoolMetrics:
+		if c.Metrics != nil {
+			return c.Metrics, nil
 		}
 	}
 	return nil, fmt.Errorf("this server has no %q spool", which)

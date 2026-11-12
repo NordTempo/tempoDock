@@ -15,12 +15,14 @@ import (
 
 // Traces is an in-memory trace store behind the real one's HTTP API
 // (dock-analytics traces), for core's tests and the fake runtime. It keeps
-// every span it is sent, applying the batch positions but not the caps.
+// every span and metric point it is sent, applying the batch positions
+// but not the caps.
 type Traces struct {
 	token string
 
 	mu      sync.Mutex
 	spans   []analytics.Span
+	points  []analytics.MetricPoint
 	cursors map[string]uint64
 	// prunes are the TracePrune.Before values asked, in order.
 	prunes []int64
@@ -36,6 +38,13 @@ func (t *Traces) Spans() []analytics.Span {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return slices.Clone(t.spans)
+}
+
+// Points returns a copy of the metric points written.
+func (t *Traces) Points() []analytics.MetricPoint {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.points)
 }
 
 // Prunes returns the Before of every prune asked, in order.
@@ -75,6 +84,34 @@ func (t *Traces) Handler() http.Handler {
 			t.spans = append(t.spans, spans...)
 			t.cursors[source] = pos
 			res.Written = len(spans)
+		}
+		t.mu.Unlock()
+		reply(w, res)
+	}))
+	mux.HandleFunc("POST "+analytics.MetricsWritePath, t.auth(func(w http.ResponseWriter, r *http.Request) {
+		source := r.URL.Query().Get("source")
+		pos, err := strconv.ParseUint(r.URL.Query().Get("position"), 10, 64)
+		if source == "" || err != nil {
+			http.Error(w, "source and position are required", http.StatusBadRequest)
+			return
+		}
+		var res analytics.MetricWriteResult
+		var points []analytics.MetricPoint
+		sc := bufio.NewScanner(r.Body)
+		sc.Buffer(nil, analytics.MaxMetricLine)
+		for sc.Scan() {
+			var p analytics.MetricPoint
+			if json.Unmarshal(sc.Bytes(), &p) != nil {
+				res.Skipped++
+				continue
+			}
+			points = append(points, p)
+		}
+		t.mu.Lock()
+		if pos > t.cursors[source] {
+			t.points = append(t.points, points...)
+			t.cursors[source] = pos
+			res.Written = len(points)
 		}
 		t.mu.Unlock()
 		reply(w, res)

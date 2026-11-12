@@ -45,8 +45,9 @@ type tracesState struct {
 	keyEpoch int64
 	// reads holds a slot per trace being read (traceReadSlot).
 	reads chan struct{}
-	// forwarding holds the servers with a spans forwarder running.
-	forwarding map[int64]bool
+	// forwarding holds the servers' trace spools (spans, metrics) with a
+	// forwarder running.
+	forwarding map[spoolOf]bool
 	// starting is set while a start runs; storeErr is why the last one
 	// failed, "" once one worked.
 	starting  bool
@@ -79,7 +80,7 @@ func (c *Core) runTraces(st store.AnalyticsSetting) error {
 	c.ensureTraceStore(serverID)
 	// The servers' ingests take spans once they have the key.
 	c.pushAnalyticsToAll(c.ctx)
-	c.forwardSpansFrom(c.localID)
+	c.forwardTracesFrom(c.localID)
 	if c.nodes != nil {
 		servers, err := c.store.ListServers(c.ctx)
 		if err != nil {
@@ -87,7 +88,7 @@ func (c *Core) runTraces(st store.AnalyticsSetting) error {
 		}
 		for _, s := range servers {
 			if !s.Local && c.online(s.ID) {
-				c.forwardSpansFrom(s.ID)
+				c.forwardTracesFrom(s.ID)
 			}
 		}
 	}
@@ -194,10 +195,10 @@ func (c *Core) tracesServerChanged(serverID int64) {
 	case cl == nil:
 	case serverID == traceServer:
 		c.ensureTraceStore(serverID)
-		c.forwardSpansFrom(serverID)
+		c.forwardTracesFrom(serverID)
 	default:
 		c.removeTraceStore(serverID)
-		c.forwardSpansFrom(serverID)
+		c.forwardTracesFrom(serverID)
 	}
 }
 
@@ -237,8 +238,13 @@ func (c *Core) moveTraceStore(from, to int64) {
 	}
 }
 
-// pruneTraces drops the days of spans past [traces] retention_days, in
-// the background, once a day with the analytics salts.
+// metricHoursDays is how long app metrics are kept as hourly rollups,
+// past the minute points' retention_days.
+const metricHoursDays = 90
+
+// pruneTraces drops the days of spans and metric points past [traces]
+// retention_days (points kept as hours for metricHoursDays), in the
+// background, once a day with the analytics salts.
 func (c *Core) pruneTraces() {
 	cl, _ := c.tracesClient()
 	if cl == nil {
@@ -248,7 +254,8 @@ func (c *Core) pruneTraces() {
 	c.wg.Go(func() {
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Minute)
 		defer cancel()
-		if _, err := cl.PruneTraces(ctx, analytics.TracePrune{Before: before.UnixMilli()}); err != nil && c.ctx.Err() == nil {
+		hours := now().AddDate(0, 0, -metricHoursDays)
+		if _, err := cl.PruneTraces(ctx, analytics.TracePrune{Before: before.UnixMilli(), HoursBefore: hours.UnixMilli()}); err != nil && c.ctx.Err() == nil {
 			c.log.Warn("traces: drop old spans; the next day's prune drops them", "err", err)
 		}
 	})

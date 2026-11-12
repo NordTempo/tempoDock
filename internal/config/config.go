@@ -165,8 +165,10 @@ type Traces struct {
 	// listener. Empty turns it off.
 	IngestListen string `toml:"ingest_listen"`
 	// SpoolMaxMB caps the spans waiting for the trace store on this
-	// server; past it the oldest go.
-	SpoolMaxMB int `toml:"spool_max_mb"`
+	// server, and MetricsSpoolMaxMB app metrics' points; past either the
+	// oldest go.
+	SpoolMaxMB        int `toml:"spool_max_mb"`
+	MetricsSpoolMaxMB int `toml:"metrics_spool_max_mb"`
 	// ServiceDaySpans and OrgDaySpans cap the spans a service and an org
 	// keep a UTC day; past either only error spans are kept, up to
 	// ErrorDaySpans a service. MaxGB caps the trace store's data; past it
@@ -175,6 +177,11 @@ type Traces struct {
 	OrgDaySpans     int64 `toml:"org_day_spans"`
 	ErrorDaySpans   int64 `toml:"error_day_spans"`
 	MaxGB           int   `toml:"max_gb"`
+	// MetricSeries and MetricNames cap the series and metric names of app
+	// metrics a service keeps a UTC day; past either its new series are
+	// cut. Control plane only.
+	MetricSeries int `toml:"metric_series"`
+	MetricNames  int `toml:"metric_names"`
 }
 
 // DefaultUpdateSource is the GitHub repository releases are published to
@@ -429,8 +436,8 @@ func Default() Config {
 			StatsListen:   "127.0.0.1:7078",
 		},
 		Traces: Traces{
-			StorePort: 7080, StoreMemoryMB: 512, RetentionDays: 7, IngestListen: "127.0.0.1:4318", SpoolMaxMB: 128,
-			ServiceDaySpans: 2_000_000, OrgDaySpans: 5_000_000, ErrorDaySpans: 200_000, MaxGB: 4,
+			StorePort: 7080, StoreMemoryMB: 512, RetentionDays: 7, IngestListen: "127.0.0.1:4318", SpoolMaxMB: 128, MetricsSpoolMaxMB: 64,
+			ServiceDaySpans: 2_000_000, OrgDaySpans: 5_000_000, ErrorDaySpans: 200_000, MaxGB: 4, MetricSeries: 2000, MetricNames: 200,
 		},
 		Status: Status{Listen: "127.0.0.1:7079"},
 		BuildKit: BuildKit{
@@ -579,6 +586,10 @@ func (c *Config) validate() error {
 		return fmt.Errorf("[traces] retention_days is %d; keep spans for 1 to 30 days", c.Traces.RetentionDays)
 	case c.Traces.SpoolMaxMB < 16:
 		return fmt.Errorf("[traces] spool_max_mb is %d; it must be at least 16", c.Traces.SpoolMaxMB)
+	case c.Traces.MetricsSpoolMaxMB < 16:
+		return fmt.Errorf("[traces] metrics_spool_max_mb is %d; it must be at least 16", c.Traces.MetricsSpoolMaxMB)
+	case c.Traces.MetricSeries < 1 || c.Traces.MetricNames < 1:
+		return fmt.Errorf("[traces] metric_series and metric_names must be at least 1")
 	case c.Traces.ServiceDaySpans < 1 || c.Traces.OrgDaySpans < 1 || c.Traces.ErrorDaySpans < 1 || c.Traces.MaxGB < 1:
 		return errors.New("[traces] service_day_spans, org_day_spans, error_day_spans and max_gb must be at least 1")
 	}

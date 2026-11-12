@@ -30,11 +30,14 @@ const (
 	tracesListBudget    = 60 * time.Millisecond
 	tracesOrgListBudget = 120 * time.Millisecond
 	tracesTraceBudget   = 30 * time.Millisecond
-	// tracesIngestBudget is spans per second, in batches of 1,000.
-	tracesIngestBudget = 15_000
+	// tracesIngestBudget is spans per second, in batches of 1,000, and
+	// tracesMetricsBudget app metrics' points per second, the same way.
+	tracesIngestBudget  = 15_000
+	tracesMetricsBudget = 50_000
 	// tracesPeakBudget is the container's memory limit: writes at full
 	// speed grow DuckDB past its memory_limit whatever the limit, and
-	// CI's runs of this check peaked at 304 to 387 MB.
+	// CI's runs of this check peaked at 304 to 387 MB before app metrics
+	// were seeded and written too.
 	tracesPeakBudget = 512 << 20
 )
 
@@ -44,8 +47,9 @@ type traceCase struct {
 	P95         time.Duration
 }
 
-// checkTraces seeds 2M spans into a temp trace store, then measures the
-// idle server, the trace views over its HTTP API, ingest (two loads of
+// checkTraces seeds 2M spans and 20M metric points into a temp trace
+// store, then measures the idle server, the trace views over its HTTP
+// API, metric point writes, ingest (two loads of
 // 100k spans, a backlog) and the peak memory of all that.
 func checkTraces(o options, t *table) error {
 	const name = "traces idle"
@@ -62,8 +66,10 @@ func checkTraces(o options, t *table) error {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	db := filepath.Join(dir, "traces.duckdb")
-	fmt.Fprintln(os.Stderr, "perf: seeding the trace store with 2M spans...")
-	if out, err := exec.Command(o.analytics, "seed-traces", "-db", db, "-spans", "2000000").CombinedOutput(); err != nil {
+	// And a service's 2,000 series of app metrics (the cap), a point a
+	// minute for the week: 20M points.
+	fmt.Fprintln(os.Stderr, "perf: seeding the trace store with 2M spans and 20M metric points...")
+	if out, err := exec.Command(o.analytics, "seed-traces", "-db", db, "-spans", "2000000", "-metric-series", "2000").CombinedOutput(); err != nil {
 		return fmt.Errorf("seed-traces: %w: %s", err, out)
 	}
 
@@ -140,6 +146,19 @@ func checkTraces(o options, t *table) error {
 	}
 	t.withinTiming("traces: span ingest, batches of 1,000", fmt.Sprintf("%.0f spans/s (write p95 %s)", slowest, ms(p95)),
 		fmt.Sprintf("≥ %d spans/s", tracesIngestBudget), slowest >= tracesIngestBudget)
+
+	// 100 minutes of the 2,000 series at once: a store catching up.
+	var load struct {
+		Events   int
+		Seconds  float64
+		WriteP95 time.Duration
+	}
+	if err := runJSON(&load, env, o.analytics, "load", "-url", url, "-metrics", "-events", "200000", "-json"); err != nil {
+		return err
+	}
+	rate := float64(load.Events) / load.Seconds
+	t.withinTiming("traces: metric point writes, batches of 1,000", fmt.Sprintf("%.0f points/s (write p95 %s)", rate, ms(load.WriteP95)),
+		fmt.Sprintf("≥ %d points/s", tracesMetricsBudget), rate >= tracesMetricsBudget)
 
 	anon, hwm, err := peak.settle()
 	if err != nil {

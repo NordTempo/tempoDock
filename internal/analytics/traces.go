@@ -342,10 +342,13 @@ type ErrorTrace struct {
 	Start int64   `json:"start,omitzero"`
 }
 
-// TracePrune drops the days of spans before Before (Unix ms; whole UTC
-// days before the day it is in), for the retention.
+// TracePrune drops the days of spans and metric points before Before
+// (Unix ms; whole UTC days before the day it is in), for the retention,
+// rolling each day of points up into hours first, and the hours and
+// series of metrics before HoursBefore (0 keeps them).
 type TracePrune struct {
-	Before int64 `json:"before"`
+	Before      int64 `json:"before"`
+	HoursBefore int64 `json:"hours_before,omitzero"`
 }
 
 // TracePruneResult names the days a prune dropped, "2026-11-03".

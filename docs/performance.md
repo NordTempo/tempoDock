@@ -141,7 +141,9 @@ headroom: bursts of writes grow DuckDB's memory past its
 went past the 512 MB limit on CI. It runs with `memory_limit` 128 MB, one
 query at a time and `GOMEMLIMIT=48MiB`, in a 512 MB container. The
 `traces` check seeds 2M spans (a week of a service at about 3 spans a
-second) and runs it with those settings.
+second) and a service's 2,000 series of app metrics for the week (the
+cap, a point a minute each: 20M points), and runs it with those
+settings.
 
 Measured on CI's run of the pull request that added it (#212,
 2026-11-11), until `main` has run it.
@@ -154,6 +156,7 @@ Measured on CI's run of the pull request that added it (#212,
 | The org's errors over 18 services p95, up to 7 days | ≤ 120 ms | 48 ms |
 | Opening a trace p95, with its time or without | ≤ 30 ms | 9 ms |
 | Span ingest over HTTP, batches of 1,000, the slower of two loads of 100k | ≥ 15,000 spans/s | 24.4k spans/s |
+| Metric point writes over HTTP, batches of 1,000, 100 minutes of 2,000 series | ≥ 50,000 points/s | 113k points/s (locally) |
 | Peak anonymous memory through all of it and 10 s past the ingest bursts | ≤ 512 MB (the container's limit) | 314.3 MB (VmHWM 355.0 MB; #285) |
 
 Spans go in one table per UTC day (dropping a day is the retention, with
@@ -169,6 +172,15 @@ cost two to ten times as much. Writes at full speed take the store to
 tried), and CI's runs of the check peaked at 304 to 387 MB, hence the
 container's 512: 384 MB was set from the first runs and failed on the
 fourth.
+
+App metrics go in tables of their own in the same database: a day's
+points in one table per UTC day, rolled up into hours when the day
+leaves the retention (kept 90 days), and a table of series. A point
+takes about 19 bytes on disk (2,000 series for a week: 380 MB): its
+series is a dense number, not its 8-byte hash, and a histogram's 20
+counts are one list, NULL for gauges and sums. As a hash and 20
+columns every row paid for, a point took 32 bytes. Seeding writes
+530k points a second.
 
 ## Running it
 
@@ -211,7 +223,7 @@ the analytics ingest and spool (`BenchmarkIngestEvent`,
 chunk, `BenchmarkIngestReplayMax` 3-10 KB for a full 384 KB one: bodies
 and lines come from a pool of their own) and the
 forwarder's error counting for alerts (`BenchmarkAnalyticsWritten`), and
-masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`), a deploy diagnosis's rules (`BenchmarkDiagnoseRules`, ~20 µs), and image scanning's hook on every build, deploy, wake and move (`BenchmarkScanBusy`, 47 ns, no allocation), a match's write (`BenchmarkScanFindingsWrite`) and the Images page (`BenchmarkListImages`, 0.18 ms for 180 live releases; `BenchmarkListImagesIgnored`, 0.45 ms with 20 ignores in force), and the trace ingest (`BenchmarkIngestProto512`, an SDK's batch of 512 spans with their attributes: about 3 µs and 28 allocations a span, token, decoding, caps and masking included). Use
+masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`), a deploy diagnosis's rules (`BenchmarkDiagnoseRules`, ~20 µs), and image scanning's hook on every build, deploy, wake and move (`BenchmarkScanBusy`, 47 ns, no allocation), a match's write (`BenchmarkScanFindingsWrite`) and the Images page (`BenchmarkListImages`, 0.18 ms for 180 live releases; `BenchmarkListImagesIgnored`, 0.45 ms with 20 ignores in force), and the trace ingest (`BenchmarkIngestProto512`, an SDK's batch of 512 spans with their attributes: about 3 µs and 28 allocations a span, token, decoding, caps and masking included; `BenchmarkIngestMetrics`, an export of 256 metric points: about 0.7 µs and 6 allocations a point). Use
   `b.Loop()` and `b.ReportAllocs()`, seed realistic data (the core
   benchmarks use a 60-service project), and add one for every new hot
   path.
@@ -352,7 +364,7 @@ end) are not listed.
 | CLI domain wait | `internal/cli/domains.go` | 10 s | `dock domain add` waits for DNS | one GET |
 | Analytics spool tail | `internal/node/collect` | once, a second after the first event that arrives while the tail is caught up | events, replay chunks or spans wait to go to the control plane (ADR 0037); each spool has its own tail | one timer; then one spool read of up to 1,000 events |
 | Analytics forwarder retry | `internal/core/analytics.go` | 1 s, doubling to 30 s | the store doesn't answer or a write fails | one cursor request to the store |
-| Spans forwarder retry | `internal/core/traces_forward.go` | 1 s, doubling to 30 s | tracing is on and the trace store doesn't answer or a write fails | one cursor request to the trace store; per batch one indexed query (the server's environments) and one write |
+| Trace spools' forwarder retry | `internal/core/traces_forward.go` | 1 s, doubling to 30 s | tracing is on and the trace store doesn't answer or a write fails (one forwarder a server's spans spool, one its metrics spool) | one cursor request to the trace store; per batch one indexed query (the server's environments) and one write |
 | Analytics alerts | `internal/core/analytics_alerts.go` | with the statistics tick; the traffic check once an hour | analytics is on | in memory: spikes that calmed down, new-error alerts a day old; once an hour one store query for every site's page views in an hour and the 7 days before. Errors are counted per forwarded batch (`BenchmarkAnalyticsWritten`, 52 µs for 1,000 events with 10 errors; a batch without errors is one `bytes.Contains`) |
 | Analytics salts | `internal/core/analytics.go` | with the statistics tick | always; does nothing on the same UTC day | at midnight: two inserts, a delete, one call per server; then the store's daily retention (one delete per site) and location database check (a download on a month's first day) |
 | Analytics store start | `internal/core/analytics_store.go` | 250 ms, doubling to 5 s, for at most 2 minutes | a start or move of the store waits for it to answer | one health request to the store |
@@ -473,6 +485,17 @@ end) are not listed.
   spans go to the spans spool, capped
   on its own (`[traces] spool_max_mb`, 128), so spans never push out
   page views.
+- App metrics (ADR 0075, phase 6) take the same ingest, under the same
+  body and decoder caps, and keep no state per series: Dock asks SDKs
+  for delta temporality. A service may send 100 points a second past a
+  burst of 4,000 (two exports of 2,000 series); a metric's export is cut
+  at 2,000 points and a point at 16 attributes of 128 bytes. Each point
+  costs about 0.7 µs and 6 allocations, all decoding its attributes
+  (`BenchmarkIngestMetrics`), and goes to a metrics spool capped on its
+  own (`[traces] metrics_spool_max_mb`, 64), so a cardinality bomb never
+  pushes out spans. The series caps (2,000 series and 200 names a
+  service a day) are the trace store's, which sees every server's
+  points: today's series in memory, a number and a name each.
 - Deploy diagnoses ([ADR 0071](decisions/0071-deploy-diagnosis.md))
   are captured only when a release fails, or once per crash loop or
   unhealthy alert (in a goroutine of its own, never the alert engine's):

@@ -450,6 +450,11 @@
       "bytes_op": 263508,
       "allocs_op": 2338
     },
+    "traces.BenchmarkIngestMetrics": {
+      "ns_op": 216000,
+      "bytes_op": 40119,
+      "allocs_op": 1589
+    },
     "traces.BenchmarkIngestProto512": {
       "ns_op": 1884615,
       "bytes_op": 1151500,

@@ -109,6 +109,45 @@ func TestTraceStoreFollowsTheAnalyticsServer(t *testing.T) {
 	eventually(t, "the trace store off homelab", func() bool { return lab.TraceStoreSpec() == nil })
 }
 
+// A traced app with no OTLP of its own sends Dock its metrics, as
+// deltas, and the points in a server's metrics spool reach the trace
+// store under the same rules as spans: only a service placed on that
+// server, with its own environment, project and org.
+func TestMetricsReachTheTraceStore(t *testing.T) {
+	h := newHarness(t)
+	ref := h.service("web", apitypes.CreateServiceRequest{})
+	if _, err := h.c.EnableTraces(h.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	rel := h.wait(ref, h.deploy(ref, "nginx:1").Number)
+	spec, _ := h.rt.Spec(h.ctr(ref, rel.Number))
+	if e := spec.Env["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"]; !strings.HasPrefix(e, "http://dock-otlp:80/t/dtr1.") || !strings.HasSuffix(e, "/v1/metrics") ||
+		spec.Env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] != "delta" {
+		t.Fatalf("metrics variables = %q, %q", e, spec.Env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"])
+	}
+	scopes, err := h.store.ListServerServiceScopes(h.ctx, h.c.localID)
+	if err != nil || len(scopes) != 1 {
+		t.Fatalf("services on the server = %v, %v", scopes, err)
+	}
+	sc := scopes[0]
+	point := func(env int64, v float64) []byte {
+		b, err := json.Marshal(analytics.MetricPoint{Org: sc.OrgID, Project: sc.ProjectID, Env: env, Service: sc.ID, Release: rel.ID,
+			Name: "v8js.memory.heap.used", Kind: analytics.MetricGauge, Time: now().Unix(), Value: v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	h.rt.AppendMetrics(point(sc.EnvironmentID, 1), point(sc.EnvironmentID+100, 2), []byte("not a point"))
+	eventually(t, "the placed point in the trace store", func() bool {
+		ts := h.rt.TraceStore()
+		return ts != nil && len(ts.Points()) == 1 && h.rt.Acked(node.SpoolMetrics) == 3
+	})
+	if p := h.rt.TraceStore().Points()[0]; p.Service != sc.ID || p.Value != 1 {
+		t.Errorf("the trace store has %+v", p)
+	}
+}
+
 // spanLine is a spooled span of the service in sc, as the trace ingest
 // writes it.
 func spanLine(t *testing.T, sc analytics.Span, id byte) []byte {
@@ -201,7 +240,7 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 		// would merge into an exporter configured in code.
 		"OTEL_EXPORTER_OTLP_TRACES_HEADERS": "", "OTEL_EXPORTER_OTLP_LOGS_HEADERS": "",
 		// The service chose its metrics exporter: they're its own.
-		"OTEL_METRICS_EXPORTER": "prometheus", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "",
+		"OTEL_METRICS_EXPORTER": "prometheus", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "", "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "",
 		// Never the global ones, which would reach any other endpoint.
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "", "OTEL_EXPORTER_OTLP_HEADERS": "", "OTEL_LOGS_EXPORTER": "",
 	} {

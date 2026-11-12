@@ -744,6 +744,10 @@ const TraceStoreProtocol = 24
 // trace ingest, its key in set-analytics and the spans spool.
 const TraceIngestProtocol = 25
 
+// MetricsProtocol is the first protocol whose nodes take app metrics:
+// the metrics spool (ADR 0075, phase 6).
+const MetricsProtocol = 28
+
 // TraceAppsProtocol is the first protocol whose nodes let apps reach the
 // trace ingest: the container spec's extra hosts and Caddy's dock-otlp
 // route. The control plane gives apps on older nodes no OTEL_* variables.
@@ -771,6 +775,8 @@ func spoolProtocol(spool node.Spool) (int, string) {
 		return ReplayProtocol, "record session replays"
 	case node.SpoolSpans:
 		return TraceIngestProtocol, "take spans for tracing"
+	case node.SpoolMetrics:
+		return MetricsProtocol, "take app metrics"
 	}
 	return AnalyticsProtocol, "collect analytics"
 }

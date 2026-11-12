@@ -57,10 +57,17 @@ type Traces struct {
 	// writes counts writes since the last size check.
 	writes int
 
-	// daysMu guards days: the day tables there are, which queries read
-	// without waiting for a write.
+	// daysMu guards days and mdays: the spans and metric points day
+	// tables there are, which queries read without waiting for a write.
 	daysMu sync.RWMutex
 	days   map[time.Time]bool
+	mdays  map[time.Time]bool
+
+	// seriesDay is the UTC day series holds each service's series and
+	// metric names of, for the metrics caps (metrics.go); mu guards them.
+	seriesDay  time.Time
+	series     map[int64]*todaySeries
+	nextSeries uint32
 
 	now func() time.Time
 }
@@ -147,7 +154,7 @@ func OpenTraces(ctx context.Context, path string, opts Options) (*Traces, error)
 	if err != nil {
 		return nil, fmt.Errorf("open the traces database: %w", err)
 	}
-	s := &Traces{db: sql.OpenDB(connector), connector: connector, memoryLimit: memoryLimit, days: map[time.Time]bool{}, now: time.Now}
+	s := &Traces{db: sql.OpenDB(connector), connector: connector, memoryLimit: memoryLimit, days: map[time.Time]bool{}, mdays: map[time.Time]bool{}, now: time.Now}
 	if err := s.load(ctx); err != nil {
 		_ = s.Close()
 		return nil, err
@@ -156,12 +163,12 @@ func OpenTraces(ctx context.Context, path string, opts Options) (*Traces, error)
 }
 
 // load creates the tables and loads the day tables there are and
-// today's usage.
+// today's usage and series.
 func (s *Traces) load(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, tracesSchema); err != nil {
+	if _, err := s.db.ExecContext(ctx, tracesSchema+metricsSchema); err != nil {
 		return fmt.Errorf("create the traces tables: %w", err)
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT table_name FROM duckdb_tables() WHERE database_name = current_database() AND starts_with(table_name, 'spans_')")
+	rows, err := s.db.QueryContext(ctx, "SELECT table_name FROM duckdb_tables() WHERE database_name = current_database() AND (starts_with(table_name, 'spans_') OR starts_with(table_name, 'metrics_'))")
 	if err != nil {
 		return err
 	}
@@ -171,14 +178,22 @@ func (s *Traces) load(ctx context.Context) error {
 		if err := rows.Scan(&name); err != nil {
 			return err
 		}
-		if d, err := time.Parse("20060102", strings.TrimPrefix(name, "spans_")); err == nil {
-			s.days[d] = true
+		if rest, ok := strings.CutPrefix(name, "spans_"); ok {
+			if d, err := time.Parse("20060102", rest); err == nil {
+				s.days[d] = true
+			}
+		} else if d, err := time.Parse("20060102", strings.TrimPrefix(name, "metrics_")); err == nil {
+			s.mdays[d] = true
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	return s.loadUsage(ctx, utcDay(s.now()))
+	today := utcDay(s.now())
+	if err := s.loadUsage(ctx, today); err != nil {
+		return err
+	}
+	return s.loadSeries(ctx, today)
 }
 
 // Close checkpoints and closes the database.
@@ -844,7 +859,9 @@ func (s *Traces) ErrorTrace(ctx context.Context, q analytics.ErrorTraceQuery) (a
 }
 
 // PruneTraces drops the day tables before q.Before's day, and usage rows
-// as old; spans for those days are rejected from then on.
+// as old, rolling metric points up into hours first; spans and points for
+// those days are rejected from then on. Metrics' hours and series go at
+// q.HoursBefore.
 func (s *Traces) PruneTraces(ctx context.Context, q analytics.TracePrune) (analytics.TracePruneResult, error) {
 	res := analytics.TracePruneResult{Days: []string{}}
 	before := utcDay(time.UnixMilli(q.Before))
@@ -865,6 +882,20 @@ func (s *Traces) PruneTraces(ctx context.Context, q analytics.TracePrune) (analy
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM usage WHERE day < $1", before); err != nil {
 		return res, err
 	}
+	var hoursBefore time.Time
+	if q.HoursBefore > 0 {
+		hoursBefore = utcDay(time.UnixMilli(q.HoursBefore))
+	}
+	mdays, err := s.pruneMetrics(ctx, before, hoursBefore)
+	for _, d := range mdays {
+		if !slices.Contains(res.Days, d) {
+			res.Days = append(res.Days, d)
+		}
+	}
+	if err != nil {
+		return res, err
+	}
+	slices.Sort(res.Days)
 	t.keepFrom = later(t.keepFrom, before)
 	return res, nil
 }
@@ -880,10 +911,10 @@ func (s *Traces) dropDay(ctx context.Context, day time.Time) error {
 	return nil
 }
 
-// enforceTraceSize drops the oldest days, never today's, while the traces
-// database uses more than maxBytes. A checkpoint before each measure
-// moves new rows out of the write-ahead log into blocks and frees a
-// dropped day's.
+// enforceTraceSize drops the oldest days of spans and metric points
+// (rolled up into hours), never today's, while the traces database uses
+// more than maxBytes. A checkpoint before each measure moves new rows out
+// of the write-ahead log into blocks and frees a dropped day's.
 func (s *Traces) enforceTraceSize(ctx context.Context, maxBytes int64, today time.Time) error {
 	for {
 		if _, err := s.db.ExecContext(ctx, "CHECKPOINT"); err != nil {
@@ -893,14 +924,21 @@ func (s *Traces) enforceTraceSize(ctx context.Context, maxBytes int64, today tim
 		if err != nil || used <= maxBytes {
 			return err
 		}
-		days := s.allDays()
-		if len(days) == 0 || !days[0].Before(today) {
+		days := append(s.allDays(), s.metricDays()...)
+		if len(days) == 0 {
+			return nil
+		}
+		oldest := slices.MinFunc(days, func(a, b time.Time) int { return a.Compare(b) })
+		if !oldest.Before(today) {
 			return nil // only today is left: the caps hold it
 		}
-		if err := s.dropDay(ctx, days[0]); err != nil {
+		if err := s.dropDay(ctx, oldest); err != nil {
 			return err
 		}
-		s.keepFrom = later(s.keepFrom, days[0].Add(24*time.Hour))
+		if err := s.rollupMetricDay(ctx, oldest); err != nil {
+			return err
+		}
+		s.keepFrom = later(s.keepFrom, oldest.Add(24*time.Hour))
 	}
 }
 
