@@ -531,7 +531,7 @@ func runCaddy(t *testing.T, bin, dir string, opts Options) (cmd *exec.Cmd, portT
 		"HOME="+dir,
 		"XDG_DATA_HOME="+filepath.Join(dir, "data"),
 		"XDG_CONFIG_HOME="+filepath.Join(dir, "config"),
-		"OTEL_TRACES_EXPORTER=none", // as dock-caddy.service
+		"OTEL_TRACES_EXPORTER=none", "OTEL_PROPAGATORS=tracecontext,baggage", "OTEL_BSP_SCHEDULE_DELAY=86400000", // as dock-caddy.service
 	)
 	logPath := filepath.Join(dir, "caddy.log")
 	logs, err := os.Create(logPath)

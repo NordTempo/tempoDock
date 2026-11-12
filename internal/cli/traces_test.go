@@ -28,7 +28,7 @@ func TestTracesCommands(t *testing.T) {
 		t.Fatal(stderr)
 	}
 	spec, found := srv.rt.Spec("dock_p1_e1_s1_r1")
-	tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+	tok, _ := tokenOf(spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
 	claims, err := traces.Parse(srv.rt.TraceKey(), tok)
 	if !found || err != nil {
 		t.Fatalf("the container's token %q: %v", tok, err)
@@ -64,4 +64,12 @@ func TestTracesCommands(t *testing.T) {
 			t.Errorf("show lacks %q:\n%s", want, stdout)
 		}
 	}
+}
+
+// tokenOf is the trace token in an endpoint Dock set:
+// http://dock-otlp:80/t/<token>/v1/traces.
+func tokenOf(endpoint string) (string, bool) {
+	_, rest, ok := strings.Cut(endpoint, "/t/")
+	tok, _, _ := strings.Cut(rest, "/")
+	return tok, ok && tok != ""
 }

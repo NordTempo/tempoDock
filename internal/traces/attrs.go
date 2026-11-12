@@ -3,6 +3,7 @@ package traces
 import (
 	"encoding/json/jsontext"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -59,15 +60,16 @@ var headerAllow = map[string]bool{
 }
 
 // sensitive reports whether the attribute or parameter name k holds a
-// value that is masked.
+// value that is masked. Its words are split at separators and at camel
+// case ("accessToken", "APIKey"), then lowercased.
 func sensitive(k string) bool {
-	k = strings.ToLower(k)
+	lower := strings.ToLower(k)
 	for _, prefix := range []string{"http.request.header.", "http.response.header."} {
-		if h, ok := strings.CutPrefix(k, prefix); ok {
+		if h, ok := strings.CutPrefix(lower, prefix); ok {
 			return !headerAllow[strings.ReplaceAll(h, "_", "-")]
 		}
 	}
-	words := strings.FieldsFunc(k, func(r rune) bool { return r == '.' || r == '_' || r == '-' || r == ' ' })
+	words := nameWords(k)
 	for i, w := range words {
 		if sensitiveWords[w] || i > 0 && sensitivePairs[[2]string{words[i-1], w}] {
 			return true
@@ -76,35 +78,97 @@ func sensitive(k string) bool {
 	return false
 }
 
-// maskQuery masks the values of sensitive parameters in a URL's query, or
-// in a bare query string.
-func maskQuery(s string) string {
-	base, q, ok := strings.Cut(s, "?")
-	if !ok {
-		if !strings.Contains(s, "=") || strings.Contains(s, "/") {
-			return s
+// nameWords splits a name into lowercase words at '.', '_', '-' and
+// spaces, and where case changes: "clientSecret" is client, secret;
+// "APIKey" is api, key.
+func nameWords(k string) []string {
+	var words []string
+	start := 0
+	flush := func(end int) {
+		if end > start {
+			words = append(words, strings.ToLower(k[start:end]))
 		}
-		base, q = "", s
+		start = end
 	}
-	q, frag, hasFrag := strings.Cut(q, "#")
+	for i := 0; i < len(k); i++ {
+		c := k[i]
+		switch {
+		case c == '.' || c == '_' || c == '-' || c == ' ':
+			flush(i)
+			start = i + 1
+		case isUpper(c) && i > start && (!isUpper(k[i-1]) || i+1 < len(k) && isLower(k[i+1])):
+			flush(i)
+		}
+	}
+	flush(len(k))
+	return words
+}
+
+func isUpper(c byte) bool { return c >= 'A' && c <= 'Z' }
+func isLower(c byte) bool { return c >= 'a' && c <= 'z' }
+
+// paramWords are query and fragment parameter names masked besides the
+// sensitive ones: an API key and an OAuth code travel in URLs as these.
+var paramWords = map[string]bool{"key": true, "code": true}
+
+// maskQuery masks what a URL can carry that is secret: the password of
+// its user info, and the values of sensitive query and fragment
+// parameters (names URL-decoded first). A bare query string is masked
+// as a query.
+func maskQuery(s string) string {
+	out := s
+	if i := strings.Index(out, "://"); i >= 0 {
+		rest := out[i+3:]
+		end := strings.IndexAny(rest, "/?#")
+		if end < 0 {
+			end = len(rest)
+		}
+		if at := strings.LastIndex(rest[:end], "@"); at >= 0 {
+			if user, _, ok := strings.Cut(rest[:at], ":"); ok {
+				out = out[:i+3] + user + ":" + mask + rest[at:]
+			}
+		}
+	}
+	rest, frag, hasFrag := strings.Cut(out, "#")
+	base, q, hasQ := strings.Cut(rest, "?")
+	switch {
+	case hasQ:
+		out = base + "?" + maskParams(q)
+	case strings.Contains(rest, "=") && !strings.Contains(rest, "/"):
+		out = maskParams(rest) // a bare query string
+	default:
+		out = rest
+	}
+	if hasFrag {
+		if strings.Contains(frag, "=") {
+			frag = maskParams(frag)
+		}
+		out += "#" + frag
+	}
+	return out
+}
+
+// maskParams masks the values of sensitive parameters in "a=1&b=2".
+func maskParams(q string) string {
 	params := strings.Split(q, "&")
 	changed := false
 	for i, p := range params {
-		if k, _, ok := strings.Cut(p, "="); ok && sensitive(k) {
+		k, _, ok := strings.Cut(p, "=")
+		if !ok {
+			continue
+		}
+		name := k
+		if d, err := url.QueryUnescape(k); err == nil {
+			name = d
+		}
+		if sensitive(name) || paramWords[strings.ToLower(name)] {
 			params[i], changed = k+"="+mask, true
 		}
 	}
 	if !changed {
-		return s
+		return q
 	}
-	out := strings.Join(params, "&")
-	if ok {
-		out = base + "?" + out
-	}
-	if hasFrag {
-		out += "#" + frag
-	}
-	return out
+	return strings.Join(params, "&")
 }
 
 // cut is s cut to at most n bytes, on a rune boundary.

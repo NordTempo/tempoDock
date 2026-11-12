@@ -21,9 +21,12 @@ import (
 // OTLP/HTTP paths. Traces are kept; metrics and logs are answered and
 // dropped (Dock sets their exporters to none: logs come from stdout).
 const (
-	TracesPath  = "/v1/traces"
-	MetricsPath = "/v1/metrics"
-	LogsPath    = "/v1/logs"
+	// TokenPathPrefix starts the path an endpoint Dock sets has: the
+	// release's token, then the OTLP path.
+	TokenPathPrefix = "/t/"
+	TracesPath      = "/v1/traces"
+	MetricsPath     = "/v1/metrics"
+	LogsPath        = "/v1/logs"
 )
 
 // Defaults of the ingest's limits (Limits' zero values).
@@ -105,9 +108,21 @@ func (in *Ingest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OTLP takes POST", http.StatusMethodNotAllowed)
 		return
 	}
-	switch r.URL.Path {
+	// The token rides in the path, /t/<token>/v1/traces, as Dock sets the
+	// endpoint: an app whose exporter is configured in code never sends
+	// it anywhere, as it would a header the SDK merges in (ADR 0075).
+	// Apps started before still send it as a bearer header.
+	path, tok := r.URL.Path, ""
+	if rest, ok := strings.CutPrefix(path, TokenPathPrefix); ok {
+		tok, path, _ = strings.Cut(rest, "/")
+		path = "/" + path
+	}
+	if tok == "" {
+		tok, _ = strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	}
+	switch path {
 	case TracesPath:
-		in.serveTraces(w, r)
+		in.serveTraces(w, r, strings.TrimSpace(tok))
 	case MetricsPath, LogsPath:
 		// Dropped: nothing in Dock keeps them (yet). 200, so SDKs don't
 		// send them again.
@@ -119,14 +134,13 @@ func (in *Ingest) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveTraces takes one export of spans.
-func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request) {
+func (in *Ingest) serveTraces(w http.ResponseWriter, r *http.Request, tok string) {
 	key := in.Key.Get()
 	if key == nil {
 		http.Error(w, "tracing is off on this Dock; an operator turns it on with `dock tracing on`", http.StatusNotFound)
 		return
 	}
-	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	claims, err := Parse(key, strings.TrimSpace(tok))
+	claims, err := Parse(key, tok)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

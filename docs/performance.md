@@ -346,7 +346,8 @@ end) are not listed.
 | Scan database refresh | `internal/core/scans.go` (`kickScanRefresh`, from the retention pass) | daily per scanning builder, at the first quiet minute | a builder has a vulnerability database it last refreshed a day ago (ADR 0074) | no timer and no query: each scanner pass notes when the next builder is due, and the hourly retention pass starts the scanner once that time has passed; then a `grype db update` job (about 200 MB when there is a newer database) and a match from the stored SBOM for each live image matched against an older one; then one manifest request per live base image, through the builder's Docker, to see whether its tag moved (ADR 0074 phase 3) |
 | Scan retry | `internal/core/scans.go` | 10 min doubling to 24 h, at most 5 attempts | a scan failed (a preempted one isn't failed) | one timer to the earliest retry |
 | Scan jobs | Docker on a builder (`internal/node/docker/scan.go`) | per queued image, one at a time platform-wide | nothing has been busy for the quiet period (ADR 0074) | one container at CPU shares 2, at most 1 CPU and `[scan] memory_mb`, no network: an SBOM (alpine 2 s, a node app 3.3 s) then a match (about 10 s, under 256 MB); killed by any build, deploy, wake or move. The daemon streams the SBOM to disk and writes the findings in one transaction (`BenchmarkScanFindingsWrite`, about 9 ms for 2,000). The first scan on a builder downloads Grype's database (about 200 MB, 3.4 GB on disk), or with `[scan] offline` imports the one an operator uploaded (`dock scanning import`) as a step of its own |
-| Trace sampler release | `internal/traces/sample.go` | once, two minutes after the last span, re-armed for what is left while spans still arrive | the server's ingest took spans | one timer; frees the ring of dropped spans (up to 4 MB), the trace decisions (up to about 1.5 MB) and the per-service state |
+| Trace sampler release | `internal/traces/sample.go` | once, two minutes after the last span, re-armed for what is left while spans still arrive | the server's ingest took spans | one timer; frees the ring of dropped spans (up to 4 MB), the trace decisions (up to about 3 MB: dropped and kept apart, so a flood can't push out a rescued trace) and the per-service state |
+| Caddy's span batch | `dock-caddy.service` (`OTEL_BSP_SCHEDULE_DELAY`) | once a day, or when 512 spans fill a batch | always, in Caddy, while a route is traced (ADR 0075) | one export to the `none` exporter: nothing |
 | Trace store trim | `cmd/dock-analytics/serve.go` (`api.serve`), in `dock-analytics traces` | once, a minute after the last request | the trace store was asked something | a checkpoint and two `SET memory_limit`, then `debug.FreeOSMemory`, as for the analytics store |
 | Analytics rollups | `cmd/dock-analytics/store/rollup.go` | no timer: woken by a write that brings events for a finished day, or the first write of a new day | there are days to roll up | per site and day, one transaction of about 25 grouped inserts (0.27 s for a day of a 100M-event-a-year site) |
 
@@ -430,9 +431,13 @@ end) are not listed.
   counting past them; a tick opens at most 10 issues per service, and a
   service has at most 1,000.
 - Edge spans (ADR 0075) cost Caddy nothing measurable (its tracing
-  handler exports nothing) and the daemon one span per traced request,
-  made from the access log line the traffic counter already parses and
-  sampled and rate-limited like an app's span.
+  handler exports nothing, and `OTEL_BSP_SCHEDULE_DELAY` in
+  `dock-caddy.service` keeps its batch span processor from waking every
+  5 s: once a day, or when a batch of 512 fills) and the daemon one span
+  per traced request, made from the access log line the traffic counter
+  already parses, sampled like an app's span and rate-limited in a
+  bucket of its own, so a flood of internet requests can't starve the
+  app's own spans.
 - The trace ingest takes OTLP/HTTP from apps on every server, so it is
   capped (`internal/traces`): a body is at most 2 MB as sent and 4 MB
   unpacked (413 past it), at most two are read and decoded at once (503

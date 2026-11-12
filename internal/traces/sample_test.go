@@ -159,15 +159,62 @@ func TestRingBounded(t *testing.T) {
 	var r ring
 	line := make([]byte, 1000)
 	for i := range 5000 {
-		r.add(trace(uint64(i)), line, 2*ringChunk)
+		r.add(traceKey{trace: trace(uint64(i))}, line, 2*ringChunk)
 	}
 	if len(r.chunks) != 2 {
 		t.Fatalf("%d chunks, want 2", len(r.chunks))
 	}
 	n := 0
-	r.take(trace(0), func([]byte) { n++ })
-	r.take(trace(4999), func([]byte) { n += 10 })
+	r.take(traceKey{trace: trace(0)}, func([]byte) { n++ })
+	r.take(traceKey{trace: trace(4999)}, func([]byte) { n += 10 })
 	if n != 10 {
 		t.Errorf("took %d: want only the newest trace's line", n)
+	}
+}
+
+// Decisions and dropped spans belong to an org: another org's app, which
+// may know a trace's ID from a call it made, can neither rescue its
+// spans nor drop them.
+func TestSampleOrgsApart(t *testing.T) {
+	s := newSampled(1)
+	s.send(t, analytics.Span{Org: 1, Trace: trace(1), ID: 1, Entry: true}, false) // org 1's sampled trace
+	theirs := trace(2)
+	s.send(t, analytics.Span{Org: 1, Trace: theirs, ID: 2, Parent: 1}, false) // dropped, in the ring
+	s.send(t, analytics.Span{Org: 2, Service: 9, Trace: theirs, ID: 3, HTTPStatus: 500}, false)
+	if len(s.kept) != 2 || s.kept[1].Org != 2 {
+		t.Fatalf("kept %+v: org 2's error rescued org 1's span", s.kept)
+	}
+	sp := analytics.Span{Org: 2, Service: 9, Trace: trace(1), ID: 4, Entry: true}
+	line, _ := json.Marshal(&sp)
+	_ = s.sm.span(&sp, line, signals{probe: true}, s.l, s.now, func([]byte) error { return nil })
+	s.send(t, analytics.Span{Org: 1, Trace: trace(1), ID: 5, Parent: 1}, false)
+	if last := s.kept[len(s.kept)-1]; last.Org != 1 || last.ID != 5 {
+		t.Errorf("org 2's probe span dropped org 1's sampled trace: %+v", s.kept)
+	}
+}
+
+// A flood of new traces turns over the dropped decisions, never the kept
+// ones: a trace a failed edge span rescued keeps its app spans coming in
+// later. Past the minute's rescues, failing traces are dropped like any.
+func TestSampleFloodKeepsRescues(t *testing.T) {
+	s := newSampled(1)
+	s.l.rescues = 2
+	s.send(t, analytics.Span{Trace: trace(1), ID: 1, Entry: true}, false) // the budget's one
+	failed := trace(2)
+	s.send(t, analytics.Span{Trace: failed, ID: 1, Entry: true, Kind: analytics.SpanEdge, HTTPStatus: 502}, false)
+	for i := range 2*decidedCap + 1 {
+		sp := analytics.Span{Service: 1, Trace: trace(uint64(i) + 1000), ID: 1, Entry: true}
+		_ = s.sm.span(&sp, []byte("{}"), signals{}, s.l, s.now, func([]byte) error { return nil })
+	}
+	s.kept = nil
+	s.send(t, analytics.Span{Trace: failed, ID: 2, Parent: 1}, false)
+	if len(s.kept) != 1 || s.kept[0].Kept != analytics.KeptError {
+		t.Fatalf("after the flood the failed trace's app span: %+v", s.kept)
+	}
+	// The second rescue fits; the third doesn't.
+	s.send(t, analytics.Span{Trace: trace(3), ID: 1, HTTPStatus: 500}, false)
+	s.send(t, analytics.Span{Trace: trace(4), ID: 1, HTTPStatus: 500}, false)
+	if len(s.kept) != 2 {
+		t.Errorf("past the minute's rescues: kept %+v", s.kept)
 	}
 }

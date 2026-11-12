@@ -186,12 +186,17 @@ func TestDiagnosisNamesTheFailedTrace(t *testing.T) {
 	}
 	probe := web
 	probe.Release, probe.Trace, probe.ID, probe.Start, probe.Duration = r2.ID, analytics.TraceIDOf(0x646f636b70726265, 1), 1, now().UnixMicro(), 3_000
-	probe.Name, probe.Kind, probe.Entry, probe.Method, probe.Route, probe.HTTPStatus, probe.Kept = "GET /health", analytics.SpanServer, true, "GET", "/health", 500, analytics.KeptError
+	probe.Name, probe.Kind, probe.Entry, probe.Method, probe.Route, probe.HTTPStatus, probe.Kept = "GET /health", analytics.SpanServer, true, "GET", "/health/"+traceSecret, 500, analytics.KeptError
 	spool(t, h, probe)
 	eventually(t, "the span in the trace store", func() bool { ts := h.rt.TraceStore(); return ts != nil && len(ts.Spans()) == 1 })
 	d, err := h.c.GetDiagnosis(h.ctx, testSystem, ref, got.Diagnosis.ID)
-	if err != nil || d.Trace == nil || d.Trace.ID != probe.Trace.String() || d.Trace.Name != "GET /health" || d.Trace.HTTPStatus != 500 {
+	if err != nil || d.Trace == nil || d.Trace.ID != probe.Trace.String() || d.Trace.Name != "GET /health/"+traceSecret || d.Trace.HTTPStatus != 500 {
 		t.Fatalf("diagnosis trace = %+v, %v", d.Trace, err)
+	}
+	// A reader who can't reveal secret values gets the trace's route masked.
+	reader := Actor{Name: "reader", Kind: "token", Scope: apitypes.ScopeRead, OrgID: 1}
+	if d, err := h.c.GetDiagnosis(h.ctx, reader, ref, got.Diagnosis.ID); err != nil || d.Trace == nil || d.Trace.Name != "GET /health/"+secretMask {
+		t.Errorf("a reader's diagnosis trace = %+v, %v", d.Trace, err)
 	}
 }
 

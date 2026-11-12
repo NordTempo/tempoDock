@@ -63,13 +63,13 @@ func (c *Core) addTracing(spec *node.ContainerSpec, ss svcScope, rel store.Relea
 	token := traces.Mint(c.traceKey(), traces.Claims{
 		Org: ss.project.OrgID, Project: ss.project.ID, Env: ss.env.ID, Service: ss.svc.ID, Release: rel.ID,
 	})
-	base := "http://" + node.TraceIngestHost + ":" + strconv.Itoa(port)
-	// W3C baggage format: the value's space percent-encoded.
-	auth := "authorization=Bearer%20" + token
+	// The token is in the endpoint's path, not a header: an SDK merges
+	// OTEL_EXPORTER_OTLP_*_HEADERS into exporters configured in code, and
+	// would send it to the app's own backend.
+	base := "http://" + node.TraceIngestHost + ":" + strconv.Itoa(port) + traces.TokenPathPrefix + token
 	set := map[string]string{
 		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": base + traces.TracesPath,
 		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
-		"OTEL_EXPORTER_OTLP_TRACES_HEADERS":  auth,
 		"OTEL_SERVICE_NAME":                  ss.svc.Name,
 		"OTEL_RESOURCE_ATTRIBUTES": "service.namespace=" + url.QueryEscape(ss.project.Name) +
 			",deployment.environment.name=" + url.QueryEscape(ss.env.Name) + ",service.version=r" + strconv.FormatInt(rel.Number, 10),
@@ -82,7 +82,6 @@ func (c *Core) addTracing(spec *node.ContainerSpec, ss svcScope, rel store.Relea
 		if !configuresOTLP(spec.Env, signal) {
 			set["OTEL_EXPORTER_OTLP_"+signal+"_ENDPOINT"] = base + path
 			set["OTEL_EXPORTER_OTLP_"+signal+"_PROTOCOL"] = "http/protobuf"
-			set["OTEL_EXPORTER_OTLP_"+signal+"_HEADERS"] = auth
 		}
 	}
 	env := maps.Clone(spec.Env)
@@ -154,7 +153,9 @@ func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsR
 		}
 		cfg, err := c.openConfig(rel)
 		if err != nil {
-			return nil, err
+			// Its routes go out untraced; every other service's still do.
+			c.log.Error("traces: read a release's settings; its domains aren't traced", "service", d.ServiceID, "release", rel.Number, "err", err)
+			continue
 		}
 		if exportsElsewhere(cfg.Env) == "" {
 			out[d.ServiceID] = c.edgeToken(d, rel.ID)

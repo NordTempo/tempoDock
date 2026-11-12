@@ -194,10 +194,12 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 	rel := h.wait(ref, h.deploy(ref, "nginx:1").Number)
 	spec, _ = h.rt.Spec(h.ctr(ref, rel.Number))
 	for k, want := range map[string]string{
-		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://dock-otlp:80/v1/traces", "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
-		"OTEL_SERVICE_NAME":                "storefront",
-		"OTEL_RESOURCE_ATTRIBUTES":         "service.namespace=shop,deployment.environment.name=production,service.version=r2",
-		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://dock-otlp:80/v1/logs",
+		"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf",
+		"OTEL_SERVICE_NAME":                  "storefront",
+		"OTEL_RESOURCE_ATTRIBUTES":           "service.namespace=shop,deployment.environment.name=production,service.version=r2",
+		// The token is in the endpoints' paths, never in a header an SDK
+		// would merge into an exporter configured in code.
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS": "", "OTEL_EXPORTER_OTLP_LOGS_HEADERS": "",
 		// The service chose its metrics exporter: they're its own.
 		"OTEL_METRICS_EXPORTER": "prometheus", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "",
 		// Never the global ones, which would reach any other endpoint.
@@ -210,10 +212,15 @@ func TestTracedAppsGetTheVariables(t *testing.T) {
 	if len(spec.ExtraHosts) != 1 || spec.ExtraHosts[0] != "dock-otlp:host-gateway" {
 		t.Fatalf("traced container: hosts %v", spec.ExtraHosts)
 	}
+	for k, path := range map[string]string{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "/v1/traces", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "/v1/logs"} {
+		if e := spec.Env[k]; !strings.HasPrefix(e, "http://dock-otlp:80/t/dtr1.") || !strings.HasSuffix(e, path) {
+			t.Errorf("%s = %q", k, e)
+		}
+	}
 	// The token names this release, under the key the servers have.
-	tok, ok := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+	tok, ok := tokenOf(spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
 	if !ok {
-		t.Fatalf("headers = %q", spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"])
+		t.Fatalf("endpoint = %q", spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
 	}
 	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) > 0 })
 	claims, err := traces.Parse(h.rt.TraceKey(), tok)
@@ -309,7 +316,7 @@ func TestRotateTraceKeyRevokesTokens(t *testing.T) {
 	eventually(t, "the trace key on the server", func() bool { return len(h.rt.TraceKey()) > 0 })
 	oldKey := h.rt.TraceKey()
 	spec, _ := h.rt.Spec(h.ctr(web, rel.Number))
-	oldTok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+	oldTok, _ := tokenOf(spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
 	oldEdge := h.routeOf("shop.example.com").Trace
 
 	member := Actor{Kind: "token", OrgID: 1, Name: "ci", Scope: apitypes.ScopeAdmin}
@@ -329,7 +336,7 @@ func TestRotateTraceKeyRevokesTokens(t *testing.T) {
 	}
 	rel = h.wait(web, h.deploy(web, "app:1").Number)
 	spec, _ = h.rt.Spec(h.ctr(web, rel.Number))
-	tok, _ := strings.CutPrefix(spec.Env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"], "authorization=Bearer%20")
+	tok, _ := tokenOf(spec.Env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"])
 	if _, err := traces.Parse(h.rt.TraceKey(), tok); err != nil {
 		t.Errorf("a new container's token: %v", err)
 	}
@@ -350,4 +357,12 @@ func TestRotateTraceKeyRevokesTokens(t *testing.T) {
 	if scopes, _ := h.store.ListServerServiceScopes(h.ctx, h.c.localID); len(scopes) != 0 {
 		t.Errorf("an archived service still takes spans: %v", scopes)
 	}
+}
+
+// tokenOf is the trace token in an endpoint Dock set:
+// http://dock-otlp:80/t/<token>/v1/traces.
+func tokenOf(endpoint string) (string, bool) {
+	_, rest, ok := strings.Cut(endpoint, "/t/")
+	tok, _, _ := strings.Cut(rest, "/")
+	return tok, ok && tok != ""
 }

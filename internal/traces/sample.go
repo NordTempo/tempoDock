@@ -37,8 +37,10 @@ const (
 	DefaultBudget = 3000
 	// DefaultSlow is how long an entry span takes to rescue its trace.
 	DefaultSlow = time.Second
-	// DefaultRescues caps the traces a service rescues from the ring a
-	// minute; past it the rescuing span and later ones are still kept.
+	// DefaultRescues caps the traces a service keeps for an error or for
+	// being slow a minute, beyond those it samples: past it they are
+	// dropped like any, so a flood of failing requests (a 5xx route on
+	// the internet) can't spend the day's error cap in seconds.
 	DefaultRescues = 600
 	// DefaultRingBytes is the ring of dropped spans, per server.
 	DefaultRingBytes = 4 << 20
@@ -51,8 +53,10 @@ const ProbeTraceHi = 0x646f636b70726265
 const (
 	// ringChunk is the unit the ring is allocated and recycled in.
 	ringChunk = 1 << 20
-	// decidedCap is how many decisions each of the two generations
-	// holds: about 1.5 MB at most for both.
+	// decidedCap is how many decisions each generation of dropped and of
+	// kept traces holds: about 3 MB at most for all four. Kept traces
+	// are bounded per service and minute (budget and rescues), so a flood
+	// of new traces turns the dropped ones over, never the kept.
 	decidedCap = 32 << 10
 	// idleRelease is how long the sampler keeps its memory after the
 	// last span.
@@ -66,16 +70,50 @@ const (
 type sampler struct {
 	mu       sync.Mutex
 	services map[int64]*serviceSample
-	// decided maps trace IDs to their decision, in two generations: when
-	// the newer fills it becomes the older and the older is dropped.
-	decided, older map[analytics.TraceID]decision
-	ring           ring
+	// dropped and kept are the decisions, by org and trace ID: one org's
+	// app can't reach another's traces even with their IDs.
+	dropped, kept generations
+	ring          ring
 	// last is the last span's arrival, release the timer that frees the
 	// state after idleRelease without one.
 	last    time.Time
 	release *time.Timer
 	// line is the buffer a rescued span is rewritten in.
 	line []byte
+}
+
+// traceKey is a trace in an org.
+type traceKey struct {
+	org   int64
+	trace analytics.TraceID
+}
+
+// generations holds decisions in two maps: when the newer fills it
+// becomes the older and the older is dropped, so there is no timer.
+type generations struct{ cur, old map[traceKey]decision }
+
+func (g *generations) get(k traceKey) (decision, bool) {
+	if d, ok := g.cur[k]; ok {
+		return d, true
+	}
+	d, ok := g.old[k]
+	return d, ok
+}
+
+func (g *generations) put(k traceKey, d decision) {
+	if g.cur == nil {
+		g.cur = make(map[traceKey]decision, 1024)
+	}
+	if _, ok := g.cur[k]; !ok && len(g.cur) >= decidedCap {
+		g.old, g.cur = g.cur, make(map[traceKey]decision, decidedCap)
+	}
+	g.cur[k] = d
+	delete(g.old, k)
+}
+
+func (g *generations) remove(k traceKey) {
+	delete(g.cur, k)
+	delete(g.old, k)
 }
 
 // decision is what a trace got: dropped, or kept for a reason.
@@ -140,32 +178,31 @@ func (sm *sampler) span(s *analytics.Span, line []byte, sig signals, l sampleLim
 	svc := sm.service(s.Service, l, now)
 	hi, _ := s.Trace.Halves()
 	probe := sig.probe || hi == ProbeTraceHi
-	d, ok := sm.lookup(s.Trace)
+	k := traceKey{s.Org, s.Trace}
+	d, ok := sm.lookup(k)
 	if !ok {
-		d = sm.decide(s.Trace, svc, probe, l)
+		d = sm.decide(k, svc, probe, l)
 	}
 	reason, rescue := trigger(s, sig.exception, probe, l)
 	switch {
-	case rescue && !d.kept:
+	case rescue && !d.kept && svc.rescued < l.rescues:
+		svc.rescued++
 		d = decision{kept: true, reason: reason}
-		sm.remember(s.Trace, d)
-		if svc.rescued < l.rescues {
-			svc.rescued++
-			if err := sm.rescue(s.Trace, reason, out); err != nil {
-				return err
-			}
+		sm.remember(k, d)
+		if err := sm.rescue(k, reason, out); err != nil {
+			return err
 		}
-	case rescue && strength(reason) > strength(d.reason):
+	case rescue && d.kept && strength(reason) > strength(d.reason):
 		d.reason = reason
-		sm.remember(s.Trace, d)
+		sm.remember(k, d)
 	case probe && d.kept && d.reason == analytics.KeptSampled:
 		// Sampled before its probe span said what it was: the rest of
 		// the trace, its entry span with it, isn't kept.
 		d = decision{}
-		sm.remember(s.Trace, d)
+		sm.remember(k, d)
 	}
 	if !d.kept {
-		sm.ring.add(s.Trace, line, l.ringBytes)
+		sm.ring.add(k, line, l.ringBytes)
 		return nil
 	}
 	return out(withKept(&sm.line, line, d.reason))
@@ -191,8 +228,8 @@ func strength(k analytics.Kept) int {
 
 // decide decides a trace from its first span, of service svc; a probe's
 // trace is never sampled.
-func (sm *sampler) decide(id analytics.TraceID, svc *serviceSample, probe bool, l sampleLimits) decision {
-	_, lo := id.Halves()
+func (sm *sampler) decide(id traceKey, svc *serviceSample, probe bool, l sampleLimits) decision {
+	_, lo := id.trace.Halves()
 	svc.seen++
 	d := decision{}
 	if !probe && lo&(1<<randomBits-1) < svc.threshold && svc.kept < l.budget {
@@ -223,25 +260,26 @@ func (sm *sampler) service(id int64, l sampleLimits, now time.Time) *serviceSamp
 }
 
 // lookup is a trace's decision, if it has one.
-func (sm *sampler) lookup(id analytics.TraceID) (decision, bool) {
-	if d, ok := sm.decided[id]; ok {
+func (sm *sampler) lookup(k traceKey) (decision, bool) {
+	if d, ok := sm.kept.get(k); ok {
 		return d, true
 	}
-	d, ok := sm.older[id]
-	return d, ok
+	return sm.dropped.get(k)
 }
 
-// remember records a trace's decision.
-func (sm *sampler) remember(id analytics.TraceID, d decision) {
-	if _, ok := sm.decided[id]; !ok && len(sm.decided) >= decidedCap {
-		sm.older, sm.decided = sm.decided, make(map[analytics.TraceID]decision, decidedCap)
+// remember records a trace's decision, with the kept or the dropped.
+func (sm *sampler) remember(k traceKey, d decision) {
+	if d.kept {
+		sm.kept.put(k, d)
+		sm.dropped.remove(k)
+		return
 	}
-	sm.decided[id] = d
-	delete(sm.older, id)
+	sm.dropped.put(k, d)
+	sm.kept.remove(k)
 }
 
 // rescue emits the trace's spans in the ring, kept for reason.
-func (sm *sampler) rescue(id analytics.TraceID, reason analytics.Kept, out emit) error {
+func (sm *sampler) rescue(id traceKey, reason analytics.Kept, out emit) error {
 	var err error
 	sm.ring.take(id, func(line []byte) {
 		if err == nil {
@@ -274,7 +312,6 @@ func (sm *sampler) touch(now time.Time) {
 		return
 	}
 	sm.services = map[int64]*serviceSample{}
-	sm.decided = make(map[analytics.TraceID]decision, 1024)
 	if sm.release == nil {
 		// Freeing the sampler's memory after the last span: one timer,
 		// armed while spans arrive (docs/performance.md).
@@ -293,7 +330,7 @@ func (sm *sampler) free() {
 		sm.release.Reset(left)
 		return
 	}
-	sm.services, sm.decided, sm.older, sm.line = nil, nil, nil, nil
+	sm.services, sm.dropped, sm.kept, sm.line = nil, generations{}, generations{}, nil
 	sm.ring = ring{}
 }
 
@@ -313,12 +350,12 @@ type chunk struct {
 
 // rec is a span line in a chunk; a taken one has a zero trace.
 type rec struct {
-	trace     analytics.TraceID
+	key       traceKey
 	off, size int32
 }
 
 // add keeps a dropped span's line, for a ring of at most size bytes.
-func (r *ring) add(trace analytics.TraceID, line []byte, size int) {
+func (r *ring) add(key traceKey, line []byte, size int) {
 	if len(line) > ringChunk {
 		return
 	}
@@ -335,7 +372,7 @@ func (r *ring) add(trace analytics.TraceID, line []byte, size int) {
 		c = r.chunks[r.cur]
 		c.data, c.recs = c.data[:0], c.recs[:0]
 	}
-	c.recs = append(c.recs, rec{trace: trace, off: int32(len(c.data)), size: int32(len(line))})
+	c.recs = append(c.recs, rec{key: key, off: int32(len(c.data)), size: int32(len(line))})
 	c.data = append(c.data, line...)
 }
 
@@ -344,18 +381,18 @@ func newChunk() *chunk {
 	return &chunk{data: make([]byte, 0, ringChunk), recs: make([]rec, 0, ringChunk/512)}
 }
 
-// take calls fn with each of trace's lines, oldest first, and forgets
-// them.
-func (r *ring) take(trace analytics.TraceID, fn func(line []byte)) {
+// take calls fn with each of the trace's lines, oldest first, and
+// forgets them.
+func (r *ring) take(key traceKey, fn func(line []byte)) {
 	for i := range r.chunks {
 		c := r.chunks[(r.cur+1+i)%len(r.chunks)]
 		for j := range c.recs {
 			rc := &c.recs[j]
-			if rc.trace != trace {
+			if rc.key != key {
 				continue
 			}
 			fn(c.data[rc.off : rc.off+rc.size])
-			rc.trace = analytics.TraceID{}
+			rc.key = traceKey{}
 		}
 	}
 }

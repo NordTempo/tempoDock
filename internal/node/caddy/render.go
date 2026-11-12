@@ -748,6 +748,17 @@ func redirect(location string) handler {
 	}
 }
 
+// traceHeaders are the trace context headers of every common propagator,
+// dropped from visitors' requests on traced routes: an app whose SDK reads
+// B3, Jaeger, Datadog, SkyWalking or AWS X-Ray context would otherwise let
+// the internet pick its trace IDs or force sampling.
+var traceHeaders = []string{
+	"traceparent", "tracestate", "baggage",
+	"b3", "X-B3-TraceId", "X-B3-SpanId", "X-B3-ParentSpanId", "X-B3-Sampled", "X-B3-Flags",
+	"uber-trace-id", "x-datadog-trace-id", "x-datadog-parent-id", "x-datadog-sampling-priority", "x-datadog-origin",
+	"sw8", "X-Amzn-Trace-Id",
+}
+
 // edgeTrace starts a trace at the edge (ADR 0075): the visitor's trace
 // headers are dropped, so the internet can't pick trace IDs or force
 // sampling, then Caddy's tracing handler starts a span, passes its
@@ -757,7 +768,7 @@ func redirect(location string) handler {
 // OTEL_TRACES_EXPORTER=none.
 func edgeTrace() []handler {
 	return []handler{
-		{Handler: "headers", Request: &headerOps{Delete: []string{"traceparent", "tracestate", "baggage"}}},
+		{Handler: "headers", Request: &headerOps{Delete: traceHeaders}},
 		{Handler: "tracing", Span: "edge"},
 	}
 }

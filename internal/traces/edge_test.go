@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -30,5 +31,26 @@ func TestEdgeSpans(t *testing.T) {
 	if s.Service != testClaims.Service || s.Release != testClaims.Release || s.Kind != analytics.SpanEdge || !s.Entry || s.Name != "GET /orders/:id" ||
 		s.HTTPStatus != 200 || s.Duration != 40_000 || s.Start != at.Add(-40*time.Millisecond).UnixMicro() || s.ID != 0x0a0b0c0d0e0f1011 || s.Parent != 0 {
 		t.Errorf("edge span = %+v", s)
+	}
+}
+
+// Edge spans have a rate of their own: a flood of internet requests
+// leaves the app's own spans their share.
+func TestEdgeSpansHaveTheirOwnRate(t *testing.T) {
+	in, sp := newIngest()
+	in.Limits.ServiceRate = 1 // a burst of 2
+	at := time.Unix(1_800_000_000, 0)
+	in.Now = func() time.Time { return at }
+	e := &Edge{In: in}
+	tok := Mint(testKey, testClaims)
+	for i := range 5 {
+		e.Request(EdgeRequest{Token: tok, Method: "GET", Route: "/", Status: 200, End: at, Duration: time.Millisecond,
+			TraceID: fmt.Sprintf("%032x", i+1), SpanID: "0a0b0c0d0e0f1011"})
+	}
+	if n := len(sp.spans(t)); n != 2 {
+		t.Fatalf("edge spans kept %d, want the burst of 2", n)
+	}
+	if !in.rates.take(testClaims.Service, in.Limits.ServiceRate, at) {
+		t.Error("the edge flood spent the app's own rate")
 	}
 }
