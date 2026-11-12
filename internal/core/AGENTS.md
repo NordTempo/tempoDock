@@ -54,6 +54,13 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   releases it before recording its outcome (`runBackup`, `takeClaimed`):
   whoever reads "done" (the CLI's wait, MCP, a script) may start the next
   operation at once and must not be refused as busy.
+- Never write to the store while holding a mutex other paths take
+  (`alerts.mu` and the like): every one of them then waits behind
+  SQLite's write lock and its busy wait, and under `synctest` the bubble
+  hangs. Claim the thing first (a per-key hold, like `alertEngine.hold` or
+  `holdDomainCheck`), read under the mutex, write without it, then store
+  the result under it again. Tests wait on a barrier (`alertsHandled`),
+  never a sleep.
 - Deploys: one per service at a time (`startRelease`, backed by a unique
   index), persisted as a state machine so recovery can fail it cleanly
   after a crash. Read `releases.go` and `deploy.go` before changing the

@@ -64,7 +64,19 @@ type alertSignal struct {
 // alertEngine is the alert state. Its methods are called from the bus
 // subscriber, the statistics tick and API requests, under mu.
 type alertEngine struct {
+	// mu guards the maps below. Nothing holding it writes to the store: a
+	// write there would hold every other alert path behind SQLite's
+	// write lock, and its busy wait.
 	mu sync.Mutex
+	// busy holds, by key, the raise or resolve writing an alert now,
+	// closed when it is done (hold): one write per alert at a time.
+	busy map[string]chan struct{}
+	// writes is held shared by every alert write and alone by a project
+	// rename, which relabels the project's open alerts in its transaction.
+	writes sync.RWMutex
+	// sub is the engine's bus subscription, which alertsHandled sends its
+	// barrier through.
+	sub *subscription
 	// open holds the open alerts by key: a handful, bounded by servers,
 	// services and domains.
 	open map[string]store.Alert
@@ -176,7 +188,7 @@ type restartLog struct {
 func newAlertEngine(allow []netip.Prefix) *alertEngine {
 	e := &alertEngine{
 		open: map[string]store.Alert{}, restarts: map[string]*restartLog{}, failed: map[string]int64{}, offline: map[int64]time.Time{}, hot: map[string]time.Time{},
-		causes: map[string]alertCause{}, diagnosing: map[string]bool{},
+		causes: map[string]alertCause{}, diagnosing: map[string]bool{}, busy: map[string]chan struct{}{},
 		outbox: outbox{queues: map[int64][]apitypes.AlertNotification{}},
 	}
 	e.guard.what = "alerts"
@@ -206,6 +218,9 @@ func (c *Core) startAlerts(ctx context.Context) error {
 	sub := c.bus.subscribe(func(ev busEvent) bool {
 		return ev.alert != nil || alertEventTypes[ev.ev.Type]
 	})
+	e.mu.Lock()
+	e.sub = sub
+	e.mu.Unlock()
 	c.reconcileAlerts(ctx, time.Now())
 	c.wg.Add(1)
 	go c.watchAlerts(sub)
@@ -227,10 +242,66 @@ func (c *Core) watchAlerts(sub *subscription) {
 		case <-c.ctx.Done():
 			return
 		case ev := <-sub.ch:
+			if ev.barrier != nil {
+				close(ev.barrier)
+				continue
+			}
 			if sub.takeLagged() {
 				c.reconcileAlerts(c.ctx, time.Now())
 			}
 			c.onAlertEvent(c.ctx, ev, time.Now())
+		}
+	}
+}
+
+// alertsHandled returns once the engine has handled every bus event
+// published before the call: a barrier through its subscription, which it
+// reads in order. Tests wait on it instead of sleeping. False if ctx ends
+// first or the engine isn't running.
+func (c *Core) alertsHandled(ctx context.Context) bool {
+	e := c.alerts
+	e.mu.Lock()
+	sub := e.sub
+	e.mu.Unlock()
+	if sub == nil {
+		return false
+	}
+	done := make(chan struct{})
+	select {
+	case sub.ch <- LiveEvent{&liveEvent{barrier: done}}:
+	case <-ctx.Done():
+		return false
+	}
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// hold waits until no raise or resolve of alert key runs and claims it;
+// release ends the claim. False if ctx ends first.
+func (e *alertEngine) hold(ctx context.Context, key string) (release func(), ok bool) {
+	for {
+		e.mu.Lock()
+		running, busy := e.busy[key]
+		if !busy {
+			done := make(chan struct{})
+			e.busy[key] = done
+			e.mu.Unlock()
+			return func() {
+				e.mu.Lock()
+				delete(e.busy, key)
+				e.mu.Unlock()
+				close(done)
+			}, true
+		}
+		e.mu.Unlock()
+		select {
+		case <-running:
+		case <-ctx.Done():
+			return nil, false
 		}
 	}
 }
@@ -734,6 +805,14 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	// recorded, sent when it ends (status_maintenance.go).
 	muted := c.maintMutedBy(s)
 	e := c.alerts
+	// Claimed, then read under mu, written without it, then stored again
+	// under mu: the claim keeps a second write of this alert out.
+	release, ok := e.hold(ctx, s.Key)
+	if !ok {
+		return
+	}
+	defer release()
+	e.writes.RLock()
 	e.mu.Lock()
 	if name := c.bus.projectName(s.projectID, s.Project); name != s.Project {
 		s.Title = strings.Replace(s.Title, s.Project+"/", name+"/", 1)
@@ -743,27 +822,35 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 	if cs, ok := e.causes[s.Key]; ok {
 		s = withCause(s, cs)
 	}
-	target := alertTargetJSON(s.Target)
 	cur, ok := e.open[s.Key]
+	e.mu.Unlock()
+	target := alertTargetJSON(s.Target)
 	if ok {
 		if cur.Severity == string(s.Severity) && cur.Title == s.Title && cur.Message == s.Message && cur.Project == s.Project &&
 			cur.Command == s.Command && cur.Target == target {
-			e.mu.Unlock()
+			e.writes.RUnlock()
 			return
 		}
 		escalated := severityRank(s.Severity) > severityRank(apitypes.AlertSeverity(cur.Severity))
-		cur.Severity, cur.Title, cur.Message, cur.Project, cur.UpdatedAt = string(s.Severity), s.Title, s.Message, s.Project, t
-		cur.Command, cur.Target = s.Command, target
 		err := c.store.UpdateAlert(ctx, store.UpdateAlertParams{
-			Severity: cur.Severity, Title: cur.Title, Message: cur.Message, Project: cur.Project, Command: cur.Command, Target: cur.Target, UpdatedAt: t, ID: cur.ID,
+			Severity: string(s.Severity), Title: s.Title, Message: s.Message, Project: s.Project, Command: s.Command, Target: target, UpdatedAt: t, ID: cur.ID,
 		})
 		if err != nil {
-			e.mu.Unlock()
+			e.writes.RUnlock()
 			c.log.Error("update alert", "alert", s.Key, "err", err)
 			return
 		}
+		// Onto the entry as it is now: a maintenance window may have
+		// unmuted it meanwhile.
+		e.mu.Lock()
+		if latest, still := e.open[s.Key]; still {
+			cur = latest
+		}
+		cur.Severity, cur.Title, cur.Message, cur.Project, cur.UpdatedAt = string(s.Severity), s.Title, s.Message, s.Project, t
+		cur.Command, cur.Target = s.Command, target
 		e.open[s.Key] = cur
 		e.mu.Unlock()
+		e.writes.RUnlock()
 		c.publishAlert(cur)
 		if escalated && cur.MutedBy == nil {
 			c.notify(ctx, cur, "escalated", now)
@@ -786,12 +873,14 @@ func (c *Core) raiseAlert(ctx context.Context, s alertSignal, now time.Time) {
 		Command: s.Command, Target: target, OrgID: c.alertOrg(ctx, s), MutedBy: mid,
 	})
 	if err != nil {
-		e.mu.Unlock()
+		e.writes.RUnlock()
 		c.log.Error("open alert", "alert", s.Key, "err", err)
 		return
 	}
+	e.mu.Lock()
 	e.open[s.Key] = row
 	e.mu.Unlock()
+	e.writes.RUnlock()
 	c.log.Info("alert opened", "alert", s.Key, "severity", s.Severity, "title", s.Title)
 	c.publishAlert(row)
 	c.statusAlertOpened(ctx, row)
@@ -877,21 +966,33 @@ func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostna
 // the channels that were told about it.
 func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {
 	e := c.alerts
+	release, ok := e.hold(ctx, key) // as raiseAlert: no write under mu
+	if !ok {
+		return
+	}
+	defer release()
+	e.writes.RLock()
 	e.mu.Lock()
 	delete(e.causes, key) // the next occurrence is diagnosed again
 	a, ok := e.open[key]
+	e.mu.Unlock()
 	if !ok {
-		e.mu.Unlock()
+		e.writes.RUnlock()
 		return
 	}
 	t := now.UTC()
 	if err := c.store.ResolveAlert(ctx, store.ResolveAlertParams{At: &t, ID: a.ID}); err != nil {
-		e.mu.Unlock()
+		e.writes.RUnlock()
 		c.log.Error("resolve alert", "alert", key, "err", err)
 		return
 	}
+	e.mu.Lock()
+	if latest, still := e.open[key]; still {
+		a = latest
+	}
 	delete(e.open, key)
 	e.mu.Unlock()
+	e.writes.RUnlock()
 	a.ResolvedAt, a.UpdatedAt = &t, t
 	c.log.Info("alert resolved", "alert", key)
 	c.publishAlert(a)

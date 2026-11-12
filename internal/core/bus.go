@@ -62,6 +62,9 @@ type liveEvent struct {
 	serviceID int64
 	// signal is the event's alertSignal, for the alert engine.
 	signal *alertSignal
+	// barrier, on an event only the alert engine gets, is closed once the
+	// engine reached it (alertsHandled).
+	barrier chan struct{}
 	once   sync.Once
 	json   []byte
 	err    error
