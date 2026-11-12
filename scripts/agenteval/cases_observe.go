@@ -183,6 +183,7 @@ func seedTraces(w *World) error {
 	for i := 1; i <= 10; i++ {
 		span(i, i*10, 0, r1, 20+i, "GET /products", "/products", true)
 	}
+	seedSearchSpans(span, r1)
 	for i := 11; i <= 20; i++ {
 		span(i, i*10, 0, r2, 30+i, "GET /products", "/products", true)
 		span(i+100, (i+100)*10, 0, r2, 2400+i, "POST /checkout", "/checkout", true)

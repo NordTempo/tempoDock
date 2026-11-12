@@ -11,7 +11,7 @@ import (
 
 // allCases is every case, in the order they run.
 func allCases() []Case {
-	return slices.Concat(shipCases(), configCases(), safetyCases(), observeCases(), dataCases())
+	return slices.Concat(shipCases(), configCases(), safetyCases(), observeCases(), dataCases(), shippedCases())
 }
 
 // shipCases deploy, restart, stop, roll back and diagnose releases.
