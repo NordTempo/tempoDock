@@ -44,6 +44,14 @@ func observeCases() []Case {
 			},
 		},
 		{
+			Name:   "app-memory-growing",
+			Prompt: "Is the api service in staging using more memory than an hour ago? How much heap does it use now, and how much did it use an hour ago?",
+			Token:  TokenSpec{},
+			Env:    map[string]string{"DOCK_FAKE_METRICS": "{dir}/metrics.jsonl"},
+			Setup:  seedMetrics,
+			Check:  func(_ *World, t Transcript) error { return answerMatches(t, `212`, `120`) },
+		},
+		{
 			Name:   "vulnerable-production",
 			Prompt: "Which images live in production have critical vulnerabilities, and what version of the package fixes them?",
 			Token:  TokenSpec{Scope: apitypes.ScopeRead, AllEnvs: true},
@@ -199,6 +207,51 @@ func seedTraces(w *World) error {
 	return waitFor(30*time.Second, func() bool {
 		l, err := jsonOf[apitypes.TraceList](w, "traces", "-p", "shop", "-e", "staging", "-s", "api")
 		return err == nil && len(l.Traces) >= 20
+	})
+}
+
+// seedMetrics is seedShop with tracing on and api's heap in
+// DOCK_FAKE_METRICS, a point a minute: 120 MB an hour ago, climbing from
+// 40 minutes ago to 212 MB 25 minutes ago, and there since.
+func seedMetrics(w *World) error {
+	if err := w.seedShop(); err != nil {
+		return err
+	}
+	svc, err := w.service("staging", "api")
+	if err != nil {
+		return err
+	}
+	env, err := get[apitypes.Environment](w.daemon, "/projects/shop/environments/staging")
+	if err != nil {
+		return err
+	}
+	o, err := get[apitypes.ProjectOverview](w.daemon, "/projects/shop/overview")
+	if err != nil {
+		return err
+	}
+	var lines []string
+	now := time.Now()
+	for ago := 59; ago >= 1; ago-- {
+		mb := 212.0
+		switch {
+		case ago > 40:
+			mb = 120
+		case ago > 25:
+			mb = 120 + (212-120)*float64(40-ago)/15
+		}
+		b, _ := json.Marshal(map[string]any{"org": 1, "project": o.Project.ID, "env": env.ID, "service": svc.ID,
+			"name": "v8js.memory.heap.used", "unit": "By", "kind": 1, "t": now.Add(-time.Duration(ago) * time.Minute).Unix(), "v": mb * (1 << 20)})
+		lines = append(lines, string(b))
+	}
+	if err := os.WriteFile(filepath.Join(w.Vars["dir"], "metrics.jsonl"), []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		return err
+	}
+	if err := w.run("tracing", "on"); err != nil {
+		return err
+	}
+	return waitFor(30*time.Second, func() bool {
+		m, err := jsonOf[apitypes.AppMetrics](w, "metrics", "-p", "shop", "-e", "staging", "-s", "api", "--range", "1h")
+		return err == nil && len(m.Charts) == 1 && len(m.Charts[0].Lines) == 1
 	})
 }
 

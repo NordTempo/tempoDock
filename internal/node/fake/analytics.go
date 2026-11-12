@@ -39,9 +39,10 @@ type fakeAnalytics struct {
 	traces     *node.AnalyticsStoreSpec
 	traceStore *fakestore.Traces
 	traceLn    net.Listener
-	// demo and demoSpans append DOCK_FAKE_SPOOL's and DOCK_FAKE_SPANS's
-	// lines once, on the first tail of their spool.
-	demo, demoSpans sync.Once
+	// demo, demoSpans and demoMetrics append DOCK_FAKE_SPOOL's,
+	// DOCK_FAKE_SPANS's and DOCK_FAKE_METRICS's lines once, on the first
+	// tail of their spool.
+	demo, demoSpans, demoMetrics sync.Once
 }
 
 // fakeSpool is one in-memory spool.
@@ -197,6 +198,8 @@ func (r *Runtime) TailSpool(ctx context.Context, which node.Spool, after uint64)
 		a.demo.Do(func() { r.appendDemoSpool("DOCK_FAKE_SPOOL", which) })
 	case node.SpoolSpans:
 		a.demoSpans.Do(func() { r.appendDemoSpool("DOCK_FAKE_SPANS", which) })
+	case node.SpoolMetrics:
+		a.demoMetrics.Do(func() { r.appendDemoSpool("DOCK_FAKE_METRICS", which) })
 	}
 	a.mu.Lock()
 	sp := a.spool(which)
