@@ -340,14 +340,14 @@ func TestStatusHistoryDays(t *testing.T) {
 	// from minute rows until the first roll-up after a start): 3 of 4
 	// probes up across two hours of check 0, 1 of 1 of check 1. Hour
 	// rows, as the hourly roll-up leaves them.
+	// One statement: the uptime scheduler rolls days up too, and one of
+	// its roll-ups between separate inserts would leave a partial day row
+	// that rollUptimeDays then carries on after.
 	before := day.Add(-24 * time.Hour)
-	for _, r := range []struct {
-		check, at, up, total int64
-	}{{checks[0].ID, -7200, 1, 2}, {checks[0].ID, -3600, 2, 2}, {checks[1].ID, -3600, 1, 1}} {
-		if _, err := h.store.DB.ExecContext(h.ctx, `INSERT INTO uptime_stats (check_id, res, at, up, total, latency_ms_sum) VALUES (?, 3600, ?, ?, ?, 0)`,
-			r.check, before.Unix()+r.at, r.up, r.total); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := h.store.DB.ExecContext(h.ctx, `INSERT INTO uptime_stats (check_id, res, at, up, total, latency_ms_sum) VALUES
+		(?, 3600, ?, 1, 2, 0), (?, 3600, ?, 2, 2, 0), (?, 3600, ?, 1, 1, 0)`,
+		checks[0].ID, before.Unix()-7200, checks[0].ID, before.Unix()-3600, checks[1].ID, before.Unix()-3600); err != nil {
+		t.Fatal(err)
 	}
 	for range 2 {
 		next, err := h.c.rollUptimeDays(h.ctx, at, day.Unix(), 0)
