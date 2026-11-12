@@ -867,6 +867,12 @@ func TestStageAndApply(t *testing.T) {
 	if c := call(t, s, "create_service", map[string]any{"name": "worker", "image": "app:3", "deploy": true}); c.isError || !strings.Contains(c.summary, "worker #1 active") {
 		t.Errorf("create_service with deploy = %q", c.summary)
 	}
+	// A deploy that fails still says the service was created, so it isn't
+	// created again.
+	f.rt.FailPull(errors.New("manifest unknown"))
+	if c := call(t, s, "create_service", map[string]any{"name": "cron", "image": "app:404", "deploy": true}); c.isError || !strings.Contains(c.summary, "Created shop/staging/cron") {
+		t.Errorf("create_service with a failing deploy = %q", c.summary)
+	}
 }
 
 // update_service stages settings like set_variables stages variables.

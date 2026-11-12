@@ -129,9 +129,9 @@ func DataTools[A, R, L any](s *Server[A], ops datapanel.Ops[A, R], locate func(*
 				return Reply{}, err
 			}
 			if in.Table != "" {
-				table := in.Table
-				if !strings.Contains(table, ".") {
-					table = "public." + table
+				table, err := datapanel.QualifyTable(sch.Tables, in.Table)
+				if err != nil {
+					return Reply{}, err
 				}
 				for _, t := range sch.Tables {
 					if t.Schema+"."+t.Name == table {

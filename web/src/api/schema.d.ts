@@ -32390,7 +32390,7 @@ export interface operations {
                 tail?: number;
                 /** @description RFC 3339 time or a duration like 10m */
                 since?: string;
-                /** @description Only lines containing this text (plain, case-sensitive). Applied after tail: matches among the last N lines */
+                /** @description Only lines containing this text (plain; all lower case matches any case). Applied after tail: matches among the last N lines */
                 grep?: string;
                 /** @description Only lines written to stderr. Applied after tail, like grep */
                 stderr?: boolean;

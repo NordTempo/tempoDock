@@ -48339,12 +48339,12 @@
             }
           },
           {
-            "description": "Only lines containing this text (plain, case-sensitive). Applied after tail: matches among the last N lines",
+            "description": "Only lines containing this text (plain; all lower case matches any case). Applied after tail: matches among the last N lines",
             "explode": false,
             "in": "query",
             "name": "grep",
             "schema": {
-              "description": "Only lines containing this text (plain, case-sensitive). Applied after tail: matches among the last N lines",
+              "description": "Only lines containing this text (plain; all lower case matches any case). Applied after tail: matches among the last N lines",
               "type": "string"
             }
           },

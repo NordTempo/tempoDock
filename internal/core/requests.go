@@ -413,6 +413,9 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 // has none, as an identical call with one would: what the approver reads.
 // A request that has a reason keeps it.
 func (c *Core) GiveRequestReason(ctx context.Context, a Actor, id int64, reason string) error {
+	if reason == "" {
+		return nil // nothing to give: anyone who may see it may wait on it
+	}
 	r, es, err := c.loadRequest(ctx, a, id)
 	if err != nil {
 		return err
@@ -420,7 +423,7 @@ func (c *Core) GiveRequestReason(ctx context.Context, a Actor, id int64, reason 
 	switch {
 	case a.TokenID == 0 || derefOr(r.TokenID) != a.TokenID:
 		return errf(apitypes.CodeForbidden, "only the token that filed access request #%d gives it a reason", id)
-	case r.Status != string(apitypes.RequestPending) || r.Reason != "" || reason == "":
+	case r.Status != string(apitypes.RequestPending) || r.Reason != "":
 		return nil
 	}
 	if err := c.store.SetAccessRequestReason(ctx, store.SetAccessRequestReasonParams{Reason: reason, ID: r.ID}); err != nil {

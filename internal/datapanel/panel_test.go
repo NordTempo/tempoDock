@@ -360,3 +360,21 @@ func TestCutSQL(t *testing.T) {
 		t.Fatal(sqlSummary("SELECT *\n  FROM orders"))
 	}
 }
+
+// A bare table name resolves to public's table, else the one schema that
+// has it; in several, the caller names the schema.
+func TestQualifyTable(t *testing.T) {
+	tables := []apitypes.DataTable{
+		{Schema: "public", Name: "users"}, {Schema: "audit", Name: "users"},
+		{Schema: "shop", Name: "orders"},
+		{Schema: "a", Name: "items"}, {Schema: "b", Name: "items"},
+	}
+	for name, want := range map[string]string{"users": "public.users", "orders": "shop.orders", "missing": "missing", "b.items": "b.items"} {
+		if got, err := QualifyTable(tables, name); err != nil || got != want {
+			t.Errorf("QualifyTable(%q) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+	if _, err := QualifyTable(tables, "items"); err == nil || !strings.Contains(err.Error(), "a.items, b.items") {
+		t.Errorf("an ambiguous name: %v", err)
+	}
+}

@@ -835,7 +835,6 @@ func alertOrgID(a store.Alert) int64 {
 	return *a.OrgID
 }
 
-// alertProjectID is the project an alert is about, 0 for none.
 // seesAlert reports whether a sees an org alert: a token limited to an
 // environment sees that environment's alerts only. Alerts keep their
 // environment by name, so it is matched by name.
@@ -850,6 +849,7 @@ func (a Actor) seesAlert(r store.Alert) bool {
 	return a.canSee(alertOrgID(r), alertProjectID(r), env)
 }
 
+// alertProjectID is the project an alert is about, 0 for none.
 func alertProjectID(a store.Alert) int64 {
 	if a.ProjectID == nil {
 		return 0
