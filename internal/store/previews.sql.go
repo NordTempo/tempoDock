@@ -54,6 +54,19 @@ func (q *Queries) ClosePreview(ctx context.Context, arg ClosePreviewParams) (int
 	return result.RowsAffected()
 }
 
+const countOpenBasePreviews = `-- name: CountOpenBasePreviews :one
+SELECT count(*) FROM previews WHERE base_environment_id = +? AND closed_at IS NULL
+`
+
+// The open previews cloned from an environment, which its max_previews
+// caps.
+func (q *Queries) CountOpenBasePreviews(ctx context.Context, baseEnvironmentID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOpenBasePreviews, baseEnvironmentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOpenPreviews = `-- name: CountOpenPreviews :one
 SELECT count(*) FROM previews WHERE project_id = +? AND closed_at IS NULL
 `
@@ -155,18 +168,6 @@ func (q *Queries) DeleteEnvironmentVariables(ctx context.Context, environmentID 
 	return err
 }
 
-const deletePreviewSettings = `-- name: DeletePreviewSettings :execrows
-DELETE FROM preview_settings WHERE project_id = +?
-`
-
-func (q *Queries) DeletePreviewSettings(ctx context.Context, projectID int64) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deletePreviewSettings, projectID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const deleteServiceDomains = `-- name: DeleteServiceDomains :many
 DELETE FROM domains WHERE service_id = +? RETURNING id
 `
@@ -194,6 +195,27 @@ func (q *Queries) DeleteServiceDomains(ctx context.Context, serviceID int64) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const getEnvironmentPreviews = `-- name: GetEnvironmentPreviews :one
+
+SELECT environment_id, max_previews, sleep_after_minutes, copy_shared, updated_by, updated_at FROM environment_previews WHERE environment_id = +?
+`
+
+// Preview environments per pull request (ADR 0056).
+// The numbers of previews cloned from an environment (ADR 0077).
+func (q *Queries) GetEnvironmentPreviews(ctx context.Context, environmentID int64) (EnvironmentPreview, error) {
+	row := q.db.QueryRowContext(ctx, getEnvironmentPreviews, environmentID)
+	var i EnvironmentPreview
+	err := row.Scan(
+		&i.EnvironmentID,
+		&i.MaxPreviews,
+		&i.SleepAfterMinutes,
+		&i.CopyShared,
+		&i.UpdatedBy,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getLatestPreview = `-- name: GetLatestPreview :one
@@ -369,25 +391,22 @@ func (q *Queries) GetPreviewByEnvironment(ctx context.Context, environmentID int
 	return i, err
 }
 
-const getPreviewSettings = `-- name: GetPreviewSettings :one
-
-SELECT project_id, base_environment_id, max_previews, copy_variables, allow_forks, updated_by, updated_at, seed_from_snapshot, sleep_after_minutes FROM preview_settings WHERE project_id = +?
+const getServicePreviews = `-- name: GetServicePreviews :one
+SELECT service_id, build, allow_forks, copy_variables, seed, updated_by, updated_at FROM service_previews WHERE service_id = +?
 `
 
-// Preview environments per pull request (ADR 0056).
-func (q *Queries) GetPreviewSettings(ctx context.Context, projectID int64) (PreviewSetting, error) {
-	row := q.db.QueryRowContext(ctx, getPreviewSettings, projectID)
-	var i PreviewSetting
+// A service's preview settings (ADR 0077).
+func (q *Queries) GetServicePreviews(ctx context.Context, serviceID int64) (ServicePreview, error) {
+	row := q.db.QueryRowContext(ctx, getServicePreviews, serviceID)
+	var i ServicePreview
 	err := row.Scan(
-		&i.ProjectID,
-		&i.BaseEnvironmentID,
-		&i.MaxPreviews,
-		&i.CopyVariables,
+		&i.ServiceID,
+		&i.Build,
 		&i.AllowForks,
+		&i.CopyVariables,
+		&i.Seed,
 		&i.UpdatedBy,
 		&i.UpdatedAt,
-		&i.SeedFromSnapshot,
-		&i.SleepAfterMinutes,
 	)
 	return i, err
 }
@@ -396,7 +415,7 @@ const listAppPreviewConnections = `-- name: ListAppPreviewConnections :many
 SELECT git_connections.id, git_connections.service_id, git_connections.hook_id, git_connections.repo, git_connections.branch, git_connections.dir, git_connections.secret, git_connections.token, git_connections.post_status, git_connections.pending_sha, git_connections.pending_message, git_connections.pending_author, git_connections.pending_by, git_connections.pending_force, git_connections.last_event, git_connections.last_event_at, git_connections.created_by, git_connections.created_at, git_connections.installation_id, git_connections.repo_id, git_connections.pending_approved FROM git_connections
 JOIN services ON services.id = git_connections.service_id
 WHERE git_connections.repo_id = +? AND git_connections.installation_id = +? AND services.archived_at IS NULL
-  AND (EXISTS (SELECT 1 FROM preview_settings WHERE preview_settings.base_environment_id = services.environment_id)
+  AND (EXISTS (SELECT 1 FROM service_previews WHERE service_previews.service_id = services.id AND service_previews.build)
        OR EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = services.environment_id AND previews.closed_at IS NULL))
 ORDER BY git_connections.id
 `
@@ -406,10 +425,10 @@ type ListAppPreviewConnectionsParams struct {
 	InstallationID int64
 }
 
-// The App connections of one repository in a base environment previews
-// are made from, or in an open preview (so its pull request closing
-// still archives it after previews were turned off), which an App
-// pull_request delivery is routed to.
+// The App connections of one repository whose service builds pull
+// requests, or in an open preview (so its pull request closing still
+// archives it after previews were turned off), which an App pull_request
+// delivery is routed to.
 func (q *Queries) ListAppPreviewConnections(ctx context.Context, arg ListAppPreviewConnectionsParams) ([]GitConnection, error) {
 	rows, err := q.db.QueryContext(ctx, listAppPreviewConnections, arg.RepoID, arg.InstallationID)
 	if err != nil {
@@ -595,6 +614,58 @@ func (q *Queries) ListEnvGitConnections(ctx context.Context, environmentID int64
 			&i.InstallationID,
 			&i.RepoID,
 			&i.PendingApproved,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnvServicePreviews = `-- name: ListEnvServicePreviews :many
+SELECT service_previews.service_id, service_previews.build, service_previews.allow_forks, service_previews.copy_variables, service_previews.seed, service_previews.updated_by, service_previews.updated_at, services.name
+FROM services JOIN service_previews ON service_previews.service_id = services.id
+WHERE services.environment_id = +? AND services.archived_at IS NULL
+ORDER BY services.name
+`
+
+type ListEnvServicePreviewsRow struct {
+	ServiceID     int64
+	Build         bool
+	AllowForks    bool
+	CopyVariables string
+	Seed          bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
+	Name          string
+}
+
+// The preview settings of an environment's live services, with their
+// names, for making a preview from it.
+func (q *Queries) ListEnvServicePreviews(ctx context.Context, environmentID int64) ([]ListEnvServicePreviewsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEnvServicePreviews, environmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnvServicePreviewsRow
+	for rows.Next() {
+		var i ListEnvServicePreviewsRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.Build,
+			&i.AllowForks,
+			&i.CopyVariables,
+			&i.Seed,
+			&i.UpdatedBy,
+			&i.UpdatedAt,
+			&i.Name,
 		); err != nil {
 			return nil, err
 		}
@@ -797,6 +868,77 @@ func (q *Queries) ListProjectPreviewEnvironments(ctx context.Context, projectID 
 	return items, nil
 }
 
+const listProjectServicePreviews = `-- name: ListProjectServicePreviews :many
+SELECT service_previews.service_id, service_previews.build, service_previews.allow_forks, service_previews.copy_variables, service_previews.seed, service_previews.updated_by, service_previews.updated_at, services.name AS service, environments.id AS environment_id, environments.name AS environment,
+       CAST(coalesce(git_connections.repo, '') AS TEXT) AS repo, CAST(coalesce(git_connections.branch, '') AS TEXT) AS branch,
+       CAST(coalesce(git_connections.dir, '') AS TEXT) AS dir, CAST(coalesce(git_connections.repo_id, 0) AS INTEGER) AS repo_id
+FROM environments
+JOIN services ON services.environment_id = environments.id
+JOIN service_previews ON service_previews.service_id = services.id
+LEFT JOIN git_connections ON git_connections.service_id = services.id
+WHERE environments.project_id = +? AND environments.archived_at IS NULL AND services.archived_at IS NULL
+ORDER BY environments.name, services.name
+`
+
+type ListProjectServicePreviewsRow struct {
+	ServiceID     int64
+	Build         bool
+	AllowForks    bool
+	CopyVariables string
+	Seed          bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
+	Service       string
+	EnvironmentID int64
+	Environment   string
+	Repo          string
+	Branch        string
+	Dir           string
+	RepoID        int64
+}
+
+// Every live service of a project's live environments with preview
+// settings, with its environment and GitHub source (empty without one),
+// for the project's Previews summary and for the rule that one
+// repository and branch previews from one environment.
+func (q *Queries) ListProjectServicePreviews(ctx context.Context, projectID int64) ([]ListProjectServicePreviewsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listProjectServicePreviews, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListProjectServicePreviewsRow
+	for rows.Next() {
+		var i ListProjectServicePreviewsRow
+		if err := rows.Scan(
+			&i.ServiceID,
+			&i.Build,
+			&i.AllowForks,
+			&i.CopyVariables,
+			&i.Seed,
+			&i.UpdatedBy,
+			&i.UpdatedAt,
+			&i.Service,
+			&i.EnvironmentID,
+			&i.Environment,
+			&i.Repo,
+			&i.Branch,
+			&i.Dir,
+			&i.RepoID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setPreviewComment = `-- name: SetPreviewComment :exec
 UPDATE previews SET comment_id = ? WHERE id = +?
 `
@@ -823,6 +965,16 @@ type SetPreviewEventParams struct {
 
 func (q *Queries) SetPreviewEvent(ctx context.Context, arg SetPreviewEventParams) error {
 	_, err := q.db.ExecContext(ctx, setPreviewEvent, arg.LastEvent, arg.UpdatedAt, arg.ID)
+	return err
+}
+
+const stopServicePreviewBuilds = `-- name: StopServicePreviewBuilds :exec
+UPDATE service_previews SET build = 0, allow_forks = 0 WHERE service_id = +?
+`
+
+// A disconnected service builds no more pull requests.
+func (q *Queries) StopServicePreviewBuilds(ctx context.Context, serviceID int64) error {
+	_, err := q.db.ExecContext(ctx, stopServicePreviewBuilds, serviceID)
 	return err
 }
 
@@ -858,37 +1010,60 @@ func (q *Queries) UpdatePreviewHead(ctx context.Context, arg UpdatePreviewHeadPa
 	return err
 }
 
-const upsertPreviewSettings = `-- name: UpsertPreviewSettings :exec
-INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, sleep_after_minutes, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (project_id) DO UPDATE SET
-    base_environment_id = excluded.base_environment_id, max_previews = excluded.max_previews,
-    copy_variables = excluded.copy_variables, allow_forks = excluded.allow_forks,
-    seed_from_snapshot = excluded.seed_from_snapshot, sleep_after_minutes = excluded.sleep_after_minutes,
-    updated_by = excluded.updated_by, updated_at = excluded.updated_at
+const upsertEnvironmentPreviews = `-- name: UpsertEnvironmentPreviews :exec
+INSERT INTO environment_previews (environment_id, max_previews, sleep_after_minutes, copy_shared, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (environment_id) DO UPDATE SET
+    max_previews = excluded.max_previews, sleep_after_minutes = excluded.sleep_after_minutes,
+    copy_shared = excluded.copy_shared, updated_by = excluded.updated_by, updated_at = excluded.updated_at
 `
 
-type UpsertPreviewSettingsParams struct {
-	ProjectID         int64
-	BaseEnvironmentID int64
+type UpsertEnvironmentPreviewsParams struct {
+	EnvironmentID     int64
 	MaxPreviews       int64
-	CopyVariables     string
-	AllowForks        bool
-	SeedFromSnapshot  string
 	SleepAfterMinutes int64
+	CopyShared        string
 	UpdatedBy         string
 	UpdatedAt         time.Time
 }
 
-func (q *Queries) UpsertPreviewSettings(ctx context.Context, arg UpsertPreviewSettingsParams) error {
-	_, err := q.db.ExecContext(ctx, upsertPreviewSettings,
-		arg.ProjectID,
-		arg.BaseEnvironmentID,
+func (q *Queries) UpsertEnvironmentPreviews(ctx context.Context, arg UpsertEnvironmentPreviewsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertEnvironmentPreviews,
+		arg.EnvironmentID,
 		arg.MaxPreviews,
-		arg.CopyVariables,
-		arg.AllowForks,
-		arg.SeedFromSnapshot,
 		arg.SleepAfterMinutes,
+		arg.CopyShared,
+		arg.UpdatedBy,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const upsertServicePreviews = `-- name: UpsertServicePreviews :exec
+INSERT INTO service_previews (service_id, build, allow_forks, copy_variables, seed, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (service_id) DO UPDATE SET
+    build = excluded.build, allow_forks = excluded.allow_forks, copy_variables = excluded.copy_variables,
+    seed = excluded.seed, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+`
+
+type UpsertServicePreviewsParams struct {
+	ServiceID     int64
+	Build         bool
+	AllowForks    bool
+	CopyVariables string
+	Seed          bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
+}
+
+func (q *Queries) UpsertServicePreviews(ctx context.Context, arg UpsertServicePreviewsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertServicePreviews,
+		arg.ServiceID,
+		arg.Build,
+		arg.AllowForks,
+		arg.CopyVariables,
+		arg.Seed,
 		arg.UpdatedBy,
 		arg.UpdatedAt,
 	)

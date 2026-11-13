@@ -1,20 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useRef, useState } from "react";
-import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import type { EnvRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
-import { since } from "../../ui/format";
 import { Button, DialogFoot, ErrorText, Menu, menuItem } from "../../ui/kit";
-import { autofocus, input, invalid, nameProblem, toName } from "./form";
+import { useGitHubBranches, useGitHubPaths } from "../git/api";
+import { RepoPicker } from "../git/PickList";
+import { input, invalid, nameProblem, toName } from "./form";
 import { useCreateService } from "./mutations";
 
 type Schemas = components["schemas"];
 type Repo = Schemas["GitHubRepo"];
-
-/** The most repositories listed at once; typing narrows the rest. */
-const shownRepos = 50;
 
 /**
  * Creating services from GitHub (plan mock A, with C's multi-select):
@@ -66,94 +62,13 @@ function RepoStep({
   onClose: () => void;
 }) {
   const org = useOrg();
-  const [filter, setFilter] = useState("");
-  const [at, setAt] = useState(0);
-  const q = filter.trim().toLowerCase();
-  const matches = q
-    ? repos.filter((r) => r.full_name.toLowerCase().includes(q))
-    : repos;
-  const shown = matches.slice(0, shownRepos);
-  const current = shown[Math.min(at, shown.length - 1)];
   return (
-    <form
-      aria-label="Pick a repository"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (current) onPick(current);
-      }}
-    >
+    <div>
       {head}
-      <input
-        ref={autofocus}
-        aria-label="Filter repositories"
-        aria-controls="github-repos"
-        value={filter}
-        placeholder={`Filter ${repos.length} ${repos.length === 1 ? "repository" : "repositories"}`}
-        spellCheck={false}
-        autoComplete="off"
-        onChange={(e) => {
-          setFilter(e.target.value);
-          setAt(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-            e.preventDefault();
-            const step = e.key === "ArrowDown" ? 1 : -1;
-            setAt((i) =>
-              Math.max(
-                0,
-                Math.min(
-                  shown.length - 1,
-                  Math.min(i, shown.length - 1) + step,
-                ),
-              ),
-            );
-          }
-        }}
-        className={`${input} mt-3 w-full`}
-      />
-      <div
-        id="github-repos"
-        role="listbox"
-        aria-label="Repositories"
-        className="mt-2 max-h-80 overflow-y-auto border-line border-t"
-      >
-        {shown.map((r) => (
-          <button
-            key={r.id}
-            type="button"
-            role="option"
-            aria-selected={r === current}
-            onClick={() => onPick(r)}
-            className={`grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 border-soft border-b px-2 py-1.5 text-left hover:bg-hover ${r === current ? "bg-sel" : ""}`}
-          >
-            <span
-              className={`truncate font-mono ${r === current ? "text-fg" : "text-sec"}`}
-            >
-              {r.full_name}
-            </span>
-            <span className="truncate text-xs text-mut">
-              {(r.used_by ?? [])
-                .map((u) => u.split(":")[0]?.split("/").at(-1))
-                .join(", ")}
-            </span>
-            <span className="text-faint text-xs">
-              {r.private ? "private" : ""}
-            </span>
-            <span className="w-8 text-right text-faint text-xs">
-              {r.pushed_at ? since(r.pushed_at) : ""}
-            </span>
-          </button>
-        ))}
-        {shown.length === 0 && (
-          <p className="px-2 py-2 text-mut">
-            No repository matches {filter.trim()}.
-          </p>
-        )}
+      <div className="mt-3">
+        <RepoPicker repos={repos} onPick={onPick} />
       </div>
-      <p className="mt-2 text-xs text-faint">
-        {matches.length > shown.length &&
-          `${shown.length} of ${matches.length} shown; type to narrow. `}
+      <p className="mt-2 text-faint text-xs">
         Missing one? Give the GitHub App access to it on GitHub, from{" "}
         <Link to="/$org/settings/github" params={{ org }} onClick={onClose}>
           the organization's GitHub settings
@@ -162,11 +77,8 @@ function RepoStep({
       </p>
       <DialogFoot cli="dock github repos">
         <Button onClick={onClose}>Cancel</Button>
-        <button type="submit" className="btn pri" disabled={!current}>
-          Next <kbd>↵</kbd>
-        </button>
       </DialogFoot>
-    </form>
+    </div>
   );
 }
 
@@ -210,29 +122,9 @@ function PathStep({
   const org = useOrg();
   const navigate = useNavigate();
   const create = useCreateService();
-  const [owner = "", name = ""] = repo.full_name.split("/");
-  const path = { owner, name };
   const [branch, setBranch] = useState(repo.default_branch);
-  const branches = useQuery({
-    queryKey: ["github", "branches", repo.full_name],
-    queryFn: () =>
-      body(
-        api.GET("/api/v1/github/repos/{owner}/{name}/branches", {
-          params: { path },
-        }),
-      ),
-    staleTime: 60_000,
-  });
-  const paths = useQuery({
-    queryKey: ["github", "paths", repo.full_name, branch],
-    queryFn: () =>
-      body(
-        api.GET("/api/v1/github/repos/{owner}/{name}/paths", {
-          params: { path, query: { branch } },
-        }),
-      ),
-    staleTime: 60_000,
-  });
+  const branches = useGitHubBranches(repo.full_name);
+  const paths = useGitHubPaths(repo.full_name, branch);
   const [picks, setPicks] = useState<Pick[]>([]);
   // A directory typed by hand, for one that doesn't look like an app.
   const [other, setOther] = useState("");

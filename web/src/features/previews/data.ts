@@ -3,25 +3,50 @@ import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
-import type { EnvRef } from "../../data/types";
+import type { EnvRef, ServiceRef } from "../../data/types";
 
-// Preview environments per pull request (ADR 0056): a project's preview
-// settings and open previews. live.ts refetches them on preview audit
-// events and on releases and domains of preview environments.
+// Preview environments per pull request (ADR 0056, 0077): a project's
+// previews (which services build pull requests, each base's numbers, the
+// open previews), a service's and an environment's settings. live.ts
+// refetches them on preview audit events and on releases and domains of
+// preview environments.
 
 type Schemas = components["schemas"];
 export type Preview = Omit<Schemas["Preview"], "urls"> & {
   urls: Schemas["PreviewURL"][];
 };
+export type ServicePreviews = Omit<
+  Schemas["ServicePreviews"],
+  "copy_variables"
+> & { copy_variables: string[] };
+export type EnvironmentPreviews = Omit<
+  Schemas["EnvironmentPreviews"],
+  "copy_shared"
+> & { copy_shared: string[] };
+export type PreviewService = Omit<
+  Schemas["PreviewService"],
+  "copy_variables"
+> & {
+  copy_variables: string[];
+};
+export type PreviewEnvironment = Omit<
+  Schemas["PreviewEnvironment"],
+  "copy_shared"
+> & { copy_shared: string[] };
 export type PreviewSettings = Omit<
   Schemas["PreviewSettings"],
-  "copy_variables" | "seed_from_snapshot" | "previews"
+  | "copy_variables"
+  | "seed_from_snapshot"
+  | "previews"
+  | "services"
+  | "environments"
 > & {
   copy_variables: string[];
   seed_from_snapshot: string[];
   previews: Preview[];
+  services: PreviewService[];
+  environments: PreviewEnvironment[];
 };
-export type PreviewRequest = Schemas["SetPreviewsRequest"];
 export type PullRequestRef = Schemas["PullRequestRef"];
 
 /** The default and the most open previews a project may have. */
@@ -35,15 +60,36 @@ const toPreview = (p: Schemas["Preview"]): Preview => ({
   urls: p.urls ?? [],
 });
 
+const toServicePreviews = (s: Schemas["ServicePreviews"]): ServicePreviews => ({
+  ...s,
+  copy_variables: s.copy_variables ?? [],
+});
+const toEnvironmentPreviews = (
+  e: Schemas["EnvironmentPreviews"],
+): EnvironmentPreviews => ({ ...e, copy_shared: e.copy_shared ?? [] });
+
 const toSettings = (s: Schemas["PreviewSettings"]): PreviewSettings => ({
   ...s,
   copy_variables: s.copy_variables ?? [],
   seed_from_snapshot: s.seed_from_snapshot ?? [],
   previews: (s.previews ?? []).map(toPreview),
+  services: (s.services ?? []).map((p) => ({
+    ...p,
+    copy_variables: p.copy_variables ?? [],
+  })),
+  environments: (s.environments ?? []).map((e) => ({
+    ...e,
+    copy_shared: e.copy_shared ?? [],
+  })),
 });
 
+const servicePreviewsPath =
+  "/api/v1/projects/{project}/environments/{environment}/services/{service}/previews";
+const environmentPreviewsPath =
+  "/api/v1/projects/{project}/environments/{environment}/previews";
+
 export const previewQueries = {
-  /** Whether previews are on, their settings and the open previews. */
+  /** Who builds pull requests, each base's numbers, open previews. */
   settings: (project: string) =>
     queryOptions({
       queryKey: keys.previews(project),
@@ -54,6 +100,33 @@ export const previewQueries = {
           }),
         ).then(toSettings),
     }),
+  /** What one service does in previews (under the project's key). */
+  service: (ref: ServiceRef) =>
+    queryOptions({
+      queryKey: [
+        ...keys.previews(ref.project),
+        "service",
+        ref.environment,
+        ref.service,
+      ],
+      queryFn: () =>
+        body(api.GET(servicePreviewsPath, { params: { path: ref } })).then(
+          toServicePreviews,
+        ),
+    }),
+  /** The numbers of previews cloned from an environment. */
+  environment: (env: EnvRef) =>
+    queryOptions({
+      queryKey: [...keys.previews(env.project), "environment", env.environment],
+      queryFn: () =>
+        body(
+          api.GET(environmentPreviewsPath, {
+            params: {
+              path: { project: env.project, environment: env.environment },
+            },
+          }),
+        ).then(toEnvironmentPreviews),
+    }),
 };
 
 /** What setting or closing previews changes on screen. */
@@ -63,29 +136,41 @@ const touched = (project: string) => [
   ["audit"],
 ];
 
-/** Turns previews on, or changes their settings (admin, whole project). */
-export const useSetPreviews = () =>
+/** Sets what a service does in previews (admin of its environment). */
+export const useSetServicePreviews = () =>
   useAction(
-    ({ project, req }: { project: string; req: PreviewRequest }) =>
+    ({
+      ref,
+      req,
+    }: {
+      ref: ServiceRef;
+      req: Schemas["SetServicePreviewsRequest"];
+    }) =>
       body(
-        api.PUT("/api/v1/projects/{project}/previews", {
-          params: { path: { project } },
-          body: req,
-        }),
-      ).then(toSettings),
-    ({ project }) => touched(project),
+        api.PUT(servicePreviewsPath, { params: { path: ref }, body: req }),
+      ).then(toServicePreviews),
+    ({ ref }) => touched(ref.project),
   );
 
-/** Turns previews off; open ones stay until their pull requests close. */
-export const useDisablePreviews = () =>
+/** Sets the numbers of previews cloned from an environment (admin). */
+export const useSetEnvironmentPreviews = () =>
   useAction(
-    (project: string) =>
+    ({
+      env,
+      req,
+    }: {
+      env: EnvRef;
+      req: Schemas["SetEnvironmentPreviewsRequest"];
+    }) =>
       body(
-        api.DELETE("/api/v1/projects/{project}/previews", {
-          params: { path: { project } },
+        api.PUT(environmentPreviewsPath, {
+          params: {
+            path: { project: env.project, environment: env.environment },
+          },
+          body: req,
         }),
-      ).then(toSettings),
-    (project) => touched(project),
+      ).then(toEnvironmentPreviews),
+    ({ env }) => touched(env.project),
   );
 
 /** Closes a preview: its environment is archived and leaves the lists. */
@@ -108,3 +193,11 @@ export const useClosePreview = () =>
 /** `dock environment previews ...` with the project flag. */
 export const previewsCli = (rest: string, project: string) =>
   `dock environment previews ${rest} -p ${project}`;
+
+/** `dock service previews ...` for a service. */
+export const servicePreviewsCli = (rest: string, ref: ServiceRef) =>
+  `dock service previews ${rest}${rest ? " " : ""}-s ${ref.service} -e ${ref.environment} -p ${ref.project}`;
+
+/** Minutes as people say them: "30 min", "2h". */
+export const minutes = (m: number) =>
+  m % 60 === 0 ? `${m / 60}h` : `${m} min`;

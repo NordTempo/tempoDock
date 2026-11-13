@@ -88,6 +88,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "environment.move": ["move environment", "started moving"],
   "environment.move_failed": ["environment move failed", "failed to move"],
   "environment.moved": ["environment moved", "moved"],
+  "environment.previews": ["set previews", "set the previews cloned from"],
   "environment.sleep": ["put to sleep", "put to sleep"],
   "environment.sleep_settings": [
     "change sleep setting",
@@ -199,6 +200,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "service.create": ["create service", "created"],
   "service.database": ["set database", "set the database of"],
   "service.health_restart": ["restart unhealthy", "restarted unhealthy"],
+  "service.previews": ["set previews", "set what previews do with"],
   "service.run": ["run command", "ran a command in"],
   "service.start": ["start service", "started"],
   "service.stop": ["stop service", "stopped"],

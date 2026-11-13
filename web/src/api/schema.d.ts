@@ -2758,6 +2758,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The numbers of previews cloned from an environment
+         * @description How many may be open at once, when they sleep, and which shared variables' literal values they copy. Scope: read.
+         */
+        get: operations["get-environment-previews"];
+        /**
+         * Set the numbers of previews cloned from an environment
+         * @description Open previews take the new sleep setting at once. Every field is replaced. Scope: admin.
+         */
+        put: operations["set-environment-previews"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services": {
         parameters: {
             query?: never;
@@ -3735,6 +3759,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a service does in previews
+         * @description Whether pull requests into its branch build it in a preview, forks too, which of its variables' literal values previews copy, and whether its volumes start from its newest snapshot (ADR 0077). Scope: read.
+         */
+        get: operations["get-service-previews"];
+        /**
+         * Set what a service does in previews
+         * @description With build, pull requests to the service's repository, into the branch it deploys, that change its directory get a non-production environment pr-<number> cloned from its environment. Only the listed variables' literal values are copied; pull requests from forks only with `allow_forks`. Every field is replaced. Scope: admin.
+         */
+        put: operations["set-service-previews"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases": {
         parameters: {
             query?: never;
@@ -4556,21 +4604,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Preview settings and open previews
-         * @description Whether pull requests get preview environments, cloned from which environment, the limits, and the open previews with their pull request, status and addresses. Scope: read.
+         * A project's previews
+         * @description Which services build pull requests (and where from), the numbers of each environment previews are cloned from, and the open previews with their pull request, status and addresses. Scope: read.
          */
         get: operations["get-previews"];
-        /**
-         * Turn previews on or change them
-         * @description Pull requests to a repository the base environment's services deploy, into the branch they deploy, get a non-production environment pr-<number> cloned from the base. Only the listed variables' literal values are copied; pull requests from forks only with `allow_forks`. Scope: admin, whole project.
-         */
-        put: operations["set-previews"];
+        put?: never;
         post?: never;
-        /**
-         * Turn previews off
-         * @description New pull requests get no preview. Open previews stay until their pull requests close. Scope: admin, whole project.
-         */
-        delete: operations["disable-previews"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -7916,6 +7956,23 @@ export interface components {
             pending_changes: number;
             services: components["schemas"]["ServiceOverview"][] | null;
         };
+        EnvironmentPreviews: {
+            /** @description Shared variables whose literal values previews copy, by key */
+            copy_shared: string[] | null;
+            /**
+             * Format: int64
+             * @description Most open previews at once; a pull request beyond it gets no preview until one closes
+             */
+            max_previews: number;
+            /**
+             * Format: int64
+             * @description Minutes without requests before a preview sleeps; 0 when previews never sleep
+             */
+            sleep_after_minutes: number;
+            /** Format: date-time */
+            updated_at?: string;
+            updated_by?: string;
+        };
         EnvironmentSleep: {
             /**
              * Format: int64
@@ -8357,11 +8414,17 @@ export interface components {
             orgs: string[] | null;
             webhook_url: string;
         };
+        GitSibling: {
+            branch: string;
+            dir?: string;
+            service: string;
+        };
         GitSource: {
             app_ready: boolean;
             connection?: components["schemas"]["GitConnection"];
             hooks_hint?: string;
             hooks_ready: boolean;
+            same_repo: components["schemas"]["GitSibling"][] | null;
         };
         Goal: {
             /** Format: int64 */
@@ -8943,26 +9006,65 @@ export interface components {
             updated_at: string;
             urls: components["schemas"]["PreviewURL"][] | null;
         };
-        PreviewSettings: {
-            /** @description Also preview pull requests from forks (off by default) */
-            allow_forks: boolean;
-            /** @description Environment previews are cloned from */
-            base?: string;
-            /** @description Base variables whose literal values previews copy, as web.KEY or shared.KEY; no other literal value is copied */
-            copy_variables: string[] | null;
-            enabled: boolean;
+        PreviewEnvironment: {
+            /** @description Shared variables whose literal values previews copy, by key */
+            copy_shared: string[] | null;
+            environment: string;
             /**
              * Format: int64
              * @description Most open previews at once; a pull request beyond it gets no preview until one closes
              */
             max_previews: number;
-            /** @description Open previews, newest first */
-            previews: components["schemas"]["Preview"][] | null;
-            /** @description Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty */
-            seed_from_snapshot: string[] | null;
             /**
              * Format: int64
              * @description Minutes without requests before a preview sleeps; 0 when previews never sleep
+             */
+            sleep_after_minutes: number;
+            /** Format: date-time */
+            updated_at?: string;
+            updated_by?: string;
+        };
+        PreviewService: {
+            /** @description Also pull requests from forks (anyone on GitHub) */
+            allow_forks: boolean;
+            branch?: string;
+            /** @description Pull requests into the service's branch get a preview that builds them */
+            build: boolean;
+            /** @description The service's variables whose literal values previews copy, by key */
+            copy_variables: string[] | null;
+            dir?: string;
+            environment: string;
+            /** @description owner/name */
+            repo?: string;
+            /** @description New previews fill the service's volumes from its newest snapshot */
+            seed: boolean;
+            service: string;
+            /** Format: date-time */
+            updated_at?: string;
+            updated_by?: string;
+        };
+        PreviewSettings: {
+            /** @description Some service of the first base also builds pull requests from forks */
+            allow_forks: boolean;
+            /** @description The first environment previews are cloned from */
+            base?: string;
+            /** @description The first base's variables whose literal values previews copy, as web.KEY or shared.KEY */
+            copy_variables: string[] | null;
+            enabled: boolean;
+            environments: components["schemas"]["PreviewEnvironment"][] | null;
+            /**
+             * Format: int64
+             * @description The first base's most open previews at once
+             */
+            max_previews: number;
+            /** @description Open previews, newest first */
+            previews: components["schemas"]["Preview"][] | null;
+            /** @description The first base's services whose volumes a new preview fills from their latest snapshot */
+            seed_from_snapshot: string[] | null;
+            services: components["schemas"]["PreviewService"][] | null;
+            /**
+             * Format: int64
+             * @description The first base's minutes without requests before a preview sleeps; 0 when previews never sleep
              */
             sleep_after_minutes: number;
             /** Format: date-time */
@@ -9781,6 +9883,19 @@ export interface components {
             service: components["schemas"]["Service"];
             uptime?: components["schemas"]["ServiceUptime"];
         };
+        ServicePreviews: {
+            /** @description Also pull requests from forks (anyone on GitHub) */
+            allow_forks: boolean;
+            /** @description Pull requests into the service's branch get a preview that builds them */
+            build: boolean;
+            /** @description The service's variables whose literal values previews copy, by key */
+            copy_variables: string[] | null;
+            /** @description New previews fill the service's volumes from its newest snapshot */
+            seed: boolean;
+            /** Format: date-time */
+            updated_at?: string;
+            updated_by?: string;
+        };
         ServiceRelease: {
             /** Format: int64 */
             number: number;
@@ -9926,6 +10041,20 @@ export interface components {
             /** @description Move even though the old analytics server is offline: the new store starts empty */
             start_empty?: boolean;
         };
+        SetEnvironmentPreviewsRequest: {
+            /** @description Shared variables whose literal values previews copy, by key */
+            copy_shared?: string[] | null;
+            /**
+             * Format: int64
+             * @description Most open previews at once (default 3)
+             */
+            max_previews?: number;
+            /**
+             * Format: int64
+             * @description Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never
+             */
+            sleep_after_minutes?: number;
+        };
         SetJobEnabledRequest: {
             enabled: boolean;
         };
@@ -9962,26 +10091,6 @@ export interface components {
         SetOrgVariableRequest: {
             value: string;
         };
-        SetPreviewsRequest: {
-            /** @description Also preview pull requests from forks */
-            allow_forks?: boolean;
-            /** @description Environment to clone previews from, e.g. staging */
-            base: string;
-            /** @description Base variables whose literal values previews copy, as web.KEY or shared.KEY */
-            copy_variables?: string[] | null;
-            /**
-             * Format: int64
-             * @description Most open previews at once (default 3)
-             */
-            max_previews?: number;
-            /** @description Base services whose volumes a new preview fills from their latest snapshot, e.g. db */
-            seed_from_snapshot?: string[] | null;
-            /**
-             * Format: int64
-             * @description Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never
-             */
-            sleep_after_minutes?: number;
-        };
         SetRegistryCredentialRequest: {
             password: string;
             username: string;
@@ -9991,6 +10100,16 @@ export interface components {
         };
         SetSensitiveKeysRequest: {
             patterns: string[] | null;
+        };
+        SetServicePreviewsRequest: {
+            /** @description Also pull requests from forks */
+            allow_forks?: boolean;
+            /** @description Pull requests into the service's branch get a preview that builds them */
+            build?: boolean;
+            /** @description The service's variables whose literal values previews copy, by key */
+            copy_variables?: string[] | null;
+            /** @description New previews fill the service's volumes from its newest snapshot */
+            seed?: boolean;
         };
         SetSleepRequest: {
             /**
@@ -26949,6 +27068,207 @@ export interface operations {
             };
         };
     };
+    "get-environment-previews": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentPreviews"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-environment-previews": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetEnvironmentPreviewsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentPreviews"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-services": {
         parameters: {
             query?: {
@@ -33133,6 +33453,211 @@ export interface operations {
             };
         };
     };
+    "get-service-previews": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServicePreviews"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-service-previews": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+                /** @description Service name */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetServicePreviewsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServicePreviews"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-releases": {
         parameters: {
             query?: {
@@ -38002,212 +38527,6 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "set-previews": {
-        parameters: {
-            query?: {
-                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
-                org?: string;
-            };
-            header?: {
-                /** @description Expected project identity for linked clients */
-                "Dock-Project-ID"?: number;
-            };
-            path: {
-                /** @description Project name */
-                project: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SetPreviewsRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewSettings"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Locked */
-            423: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "disable-previews": {
-        parameters: {
-            query?: {
-                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
-                org?: string;
-            };
-            header?: {
-                /** @description Expected project identity for linked clients */
-                "Dock-Project-ID"?: number;
-            };
-            path: {
-                /** @description Project name */
-                project: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PreviewSettings"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Locked */
-            423: {
                 headers: {
                     [name: string]: unknown;
                 };

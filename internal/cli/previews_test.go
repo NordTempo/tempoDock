@@ -18,9 +18,10 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 )
 
-// An admin turns previews on; a pull request's preview shows in
-// `dock environment list` and `dock env previews`; closing it asks first
-// (--yes off a terminal); disabling turns them off.
+// An admin turns previews on for a service and sets its environment's
+// numbers; a pull request's preview shows in `dock environment list` and
+// `dock env previews`; closing it asks first (--yes off a terminal);
+// turning the service's previews off turns them off.
 func TestPreviews(t *testing.T) {
 	setup(t)
 	// GitHub answers nothing; the preview's build and comment fail
@@ -53,12 +54,24 @@ func TestPreviews(t *testing.T) {
 	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
 
 	code, stdout, stderr := exec(t, "env", "previews", "-p", "shop")
-	if code != 0 || !strings.Contains(stdout, "Previews of pull requests are off for shop") {
+	if code != 0 || !strings.Contains(stdout, "No service of shop builds pull requests") {
 		t.Fatalf("previews while off: exit %d\n%s%s", code, stdout, stderr)
 	}
-	set := ok[apitypes.PreviewSettings](t, "env", "previews", "enable", "staging", "-p", "shop", "--max", "2", "--copy", "web.PUBLIC_URL", "--copy", "shared.SENTRY_DSN", "--forks")
-	if !set.Enabled || set.Base != "staging" || set.MaxPreviews != 2 || !set.AllowForks || strings.Join(set.CopyVariables, " ") != "shared.SENTRY_DSN web.PUBLIC_URL" {
-		t.Fatalf("enable = %+v", set)
+	sp := ok[apitypes.ServicePreviews](t, "service", "previews", "on", "-s", "web", "-e", "staging", "-p", "shop", "--copy", "PUBLIC_URL", "--forks")
+	if !sp.Build || !sp.AllowForks || strings.Join(sp.CopyVariables, " ") != "PUBLIC_URL" {
+		t.Fatalf("service previews on = %+v", sp)
+	}
+	// A flag alone changes only itself.
+	if sp := ok[apitypes.ServicePreviews](t, "service", "previews", "-s", "web", "-e", "staging", "-p", "shop", "--forks=false"); !sp.Build || sp.AllowForks || len(sp.CopyVariables) != 1 {
+		t.Fatalf("service previews --forks=false = %+v", sp)
+	}
+	ep := ok[apitypes.EnvironmentPreviews](t, "env", "previews", "set", "staging", "-p", "shop", "--max", "2", "--copy", "SENTRY_DSN")
+	if ep.MaxPreviews != 2 || strings.Join(ep.CopyShared, " ") != "SENTRY_DSN" {
+		t.Fatalf("env previews set = %+v", ep)
+	}
+	set := ok[apitypes.PreviewSettings](t, "env", "previews", "-p", "shop")
+	if !set.Enabled || set.Base != "staging" || set.MaxPreviews != 2 || strings.Join(set.CopyVariables, " ") != "shared.SENTRY_DSN web.PUBLIC_URL" {
+		t.Fatalf("previews = %+v", set)
 	}
 
 	body := `{"action":"opened","number":12,"pull_request":{"html_url":"https://github.com/acme/shop/pull/12","title":"Fix the checkout page for guests who pay by card",
@@ -86,7 +99,7 @@ func TestPreviews(t *testing.T) {
 		t.Fatalf("environment list --json = %+v", envs)
 	}
 	code, stdout, stderr = exec(t, "env", "previews", "-p", "shop")
-	if code != 0 || !strings.Contains(stdout, "on, cloned from staging") || !strings.Contains(stdout, "shared.SENTRY_DSN, web.PUBLIC_URL") ||
+	if code != 0 || !strings.Contains(stdout, "staging/web") || !strings.Contains(stdout, "acme/shop@main") || !strings.Contains(stdout+stderr, "at most 2 open") ||
 		!strings.Contains(stdout, "pr-12        #12 Fix the checkout page for guests wh…") || !strings.Contains(stdout, "web-shop-pr-12.") ||
 		!strings.Contains(stdout, " abc1234\n") {
 		t.Fatalf("previews: exit %d\n%s%s", code, stdout, stderr)
@@ -98,7 +111,10 @@ func TestPreviews(t *testing.T) {
 	if pv := ok[apitypes.Preview](t, "environment", "previews", "close", "pr-12", "-p", "shop", "--yes"); pv.Status != apitypes.PreviewClosed || pv.ClosedAt == nil {
 		t.Fatalf("close = %+v", pv)
 	}
-	if set := ok[apitypes.PreviewSettings](t, "env", "previews", "disable", "-p", "shop"); set.Enabled || len(set.Previews) != 0 {
-		t.Fatalf("disable = %+v", set)
+	if sp := ok[apitypes.ServicePreviews](t, "service", "previews", "off", "-s", "web", "-e", "staging", "-p", "shop"); sp.Build {
+		t.Fatalf("service previews off = %+v", sp)
+	}
+	if set := ok[apitypes.PreviewSettings](t, "env", "previews", "-p", "shop"); set.Enabled || len(set.Previews) != 0 {
+		t.Fatalf("previews after off = %+v", set)
 	}
 }

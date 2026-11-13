@@ -407,6 +407,15 @@ type EnvironmentMoveService struct {
 	Error       string
 }
 
+type EnvironmentPreview struct {
+	EnvironmentID     int64
+	MaxPreviews       int64
+	SleepAfterMinutes int64
+	CopyShared        string
+	UpdatedBy         string
+	UpdatedAt         time.Time
+}
+
 type ErrorCount struct {
 	IssueID int64
 	Hour    int64
@@ -674,18 +683,6 @@ type Preview struct {
 	ClosedAt          *time.Time
 }
 
-type PreviewSetting struct {
-	ProjectID         int64
-	BaseEnvironmentID int64
-	MaxPreviews       int64
-	CopyVariables     string
-	AllowForks        bool
-	UpdatedBy         string
-	UpdatedAt         time.Time
-	SeedFromSnapshot  string
-	SleepAfterMinutes int64
-}
-
 type Project struct {
 	ID         int64
 	OrgID      int64
@@ -906,6 +903,16 @@ type ServiceJob struct {
 	CreatedBy      string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type ServicePreview struct {
+	ServiceID     int64
+	Build         bool
+	AllowForks    bool
+	CopyVariables string
+	Seed          bool
+	UpdatedBy     string
+	UpdatedAt     time.Time
 }
 
 type ServiceRun struct {

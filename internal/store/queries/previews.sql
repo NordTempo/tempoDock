@@ -1,29 +1,68 @@
 -- Preview environments per pull request (ADR 0056).
 
--- name: GetPreviewSettings :one
-SELECT * FROM preview_settings WHERE project_id = +?;
+-- name: GetEnvironmentPreviews :one
+-- The numbers of previews cloned from an environment (ADR 0077).
+SELECT * FROM environment_previews WHERE environment_id = +?;
 
--- name: UpsertPreviewSettings :exec
-INSERT INTO preview_settings (project_id, base_environment_id, max_previews, copy_variables, allow_forks, seed_from_snapshot, sleep_after_minutes, updated_by, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (project_id) DO UPDATE SET
-    base_environment_id = excluded.base_environment_id, max_previews = excluded.max_previews,
-    copy_variables = excluded.copy_variables, allow_forks = excluded.allow_forks,
-    seed_from_snapshot = excluded.seed_from_snapshot, sleep_after_minutes = excluded.sleep_after_minutes,
-    updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+-- name: UpsertEnvironmentPreviews :exec
+INSERT INTO environment_previews (environment_id, max_previews, sleep_after_minutes, copy_shared, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (environment_id) DO UPDATE SET
+    max_previews = excluded.max_previews, sleep_after_minutes = excluded.sleep_after_minutes,
+    copy_shared = excluded.copy_shared, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
 
--- name: DeletePreviewSettings :execrows
-DELETE FROM preview_settings WHERE project_id = +?;
+-- name: GetServicePreviews :one
+-- A service's preview settings (ADR 0077).
+SELECT * FROM service_previews WHERE service_id = +?;
+
+-- name: UpsertServicePreviews :exec
+INSERT INTO service_previews (service_id, build, allow_forks, copy_variables, seed, updated_by, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (service_id) DO UPDATE SET
+    build = excluded.build, allow_forks = excluded.allow_forks, copy_variables = excluded.copy_variables,
+    seed = excluded.seed, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+
+-- name: StopServicePreviewBuilds :exec
+-- A disconnected service builds no more pull requests.
+UPDATE service_previews SET build = 0, allow_forks = 0 WHERE service_id = +?;
+
+-- name: ListEnvServicePreviews :many
+-- The preview settings of an environment's live services, with their
+-- names, for making a preview from it.
+SELECT service_previews.*, services.name
+FROM services JOIN service_previews ON service_previews.service_id = services.id
+WHERE services.environment_id = +? AND services.archived_at IS NULL
+ORDER BY services.name;
+
+-- name: ListProjectServicePreviews :many
+-- Every live service of a project's live environments with preview
+-- settings, with its environment and GitHub source (empty without one),
+-- for the project's Previews summary and for the rule that one
+-- repository and branch previews from one environment.
+SELECT service_previews.*, services.name AS service, environments.id AS environment_id, environments.name AS environment,
+       CAST(coalesce(git_connections.repo, '') AS TEXT) AS repo, CAST(coalesce(git_connections.branch, '') AS TEXT) AS branch,
+       CAST(coalesce(git_connections.dir, '') AS TEXT) AS dir, CAST(coalesce(git_connections.repo_id, 0) AS INTEGER) AS repo_id
+FROM environments
+JOIN services ON services.environment_id = environments.id
+JOIN service_previews ON service_previews.service_id = services.id
+LEFT JOIN git_connections ON git_connections.service_id = services.id
+WHERE environments.project_id = +? AND environments.archived_at IS NULL AND services.archived_at IS NULL
+ORDER BY environments.name, services.name;
+
+-- name: CountOpenBasePreviews :one
+-- The open previews cloned from an environment, which its max_previews
+-- caps.
+SELECT count(*) FROM previews WHERE base_environment_id = +? AND closed_at IS NULL;
 
 -- name: ListAppPreviewConnections :many
--- The App connections of one repository in a base environment previews
--- are made from, or in an open preview (so its pull request closing
--- still archives it after previews were turned off), which an App
--- pull_request delivery is routed to.
+-- The App connections of one repository whose service builds pull
+-- requests, or in an open preview (so its pull request closing still
+-- archives it after previews were turned off), which an App pull_request
+-- delivery is routed to.
 SELECT git_connections.* FROM git_connections
 JOIN services ON services.id = git_connections.service_id
 WHERE git_connections.repo_id = +? AND git_connections.installation_id = +? AND services.archived_at IS NULL
-  AND (EXISTS (SELECT 1 FROM preview_settings WHERE preview_settings.base_environment_id = services.environment_id)
+  AND (EXISTS (SELECT 1 FROM service_previews WHERE service_previews.service_id = services.id AND service_previews.build)
        OR EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = services.environment_id AND previews.closed_at IS NULL))
 ORDER BY git_connections.id;
 

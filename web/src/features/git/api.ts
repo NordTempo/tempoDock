@@ -69,3 +69,37 @@ export const commitText = (c: Commit) =>
 /** The `dock git deploy` line for a ref. */
 export const gitDeployCli = (ref: ServiceRef, gitRef: string) =>
   `dock git deploy${gitRef ? ` --ref ${gitRef}` : ""} -s ${ref.service} -e ${ref.environment}`;
+
+/** owner/name as the API's path parameters. */
+const repoParams = (repo: string) => {
+  const [owner = "", name = ""] = repo.split("/");
+  return { owner, name };
+};
+
+/** A repository's branches, the default first; fetched while shown. */
+export const useGitHubBranches = (repo: string, enabled = true) =>
+  useQuery({
+    queryKey: ["github", "branches", repo],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/github/repos/{owner}/{name}/branches", {
+          params: { path: repoParams(repo) },
+        }),
+      ),
+    enabled: enabled && repo.includes("/"),
+    staleTime: 60_000,
+  });
+
+/** A repository's directories at a branch, app-like ones first. */
+export const useGitHubPaths = (repo: string, branch: string, enabled = true) =>
+  useQuery({
+    queryKey: ["github", "paths", repo, branch],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/github/repos/{owner}/{name}/paths", {
+          params: { path: repoParams(repo), query: { branch } },
+        }),
+      ),
+    enabled: enabled && repo.includes("/") && !!branch,
+    staleTime: 60_000,
+  });

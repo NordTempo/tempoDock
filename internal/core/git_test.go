@@ -35,6 +35,8 @@ type fakeGitHub struct {
 	files map[string]string
 	// branches are the repository's branches besides main.
 	branches []string
+	// changed are the files a comparison lists; nil answers 404.
+	changed []string
 	// statuses are "<sha7> <state> <context> <target_url>" as posted.
 	statuses []string
 	// auth is the Authorization header of every request.
@@ -160,6 +162,20 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 			tree = append(tree, map[string]string{"path": p, "type": entries[p], "mode": "100644", "sha": shaA})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"sha": shaC, "url": "https://api.github.com/x", "tree": tree, "truncated": false})
+	})
+	mux.HandleFunc("GET /repos/acme/shop/compare/{spec...}", func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		changed := g.changed
+		g.mu.Unlock()
+		if changed == nil {
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			return
+		}
+		files := []map[string]string{}
+		for _, f := range changed {
+			files = append(files, map[string]string{"filename": f})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"files": files})
 	})
 	g.mux = mux
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

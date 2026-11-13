@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,10 +16,11 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Preview environments per pull request (ADR 0056). A project opts in
-// with a base environment (PreviewSettings). A pull_request event for a
-// repository a base service deploys, to the branch that service deploys,
-// clones the base into pr-<number> (non-production, placed by ADR 0015),
+// Preview environments per pull request (ADR 0056). A service opts in
+// (ADR 0077: service_previews.build); its environment is the base. A
+// pull_request event for a repository such a service deploys, into the
+// branch it deploys, that changes something in its directory, clones the
+// base into pr-<number> (non-production, placed by ADR 0015),
 // connects the matching services to the pull request's head commit,
 // promotes the base's images for the rest and gives every service that
 // has a domain in the base a generated one. New commits redeploy it; the
@@ -58,171 +58,11 @@ func newPreviewState() previewState {
 	return previewState{refreshing: map[int64]*previewRefresh{}, posted: map[int64]string{}}
 }
 
-// variableRefRe matches a copy_variables entry: web.KEY or shared.KEY.
-var variableRefRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?\.[A-Za-z_][A-Za-z0-9_]*$`)
-
-// GetPreviews returns a project's preview settings and its open previews
-// (those of environments the actor can see). Scope: read.
-func (c *Core) GetPreviews(ctx context.Context, a Actor, project string) (apitypes.PreviewSettings, error) {
-	p, err := c.projectFor(ctx, a, project, apitypes.ScopeRead, "reading preview settings")
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	return c.previewSettings(ctx, a, p)
-}
-
-// previewSettings is the answer of GetPreviews: a fixed number of
-// queries whatever the number of previews.
-func (c *Core) previewSettings(ctx context.Context, a Actor, p store.Project) (apitypes.PreviewSettings, error) {
-	out := apitypes.PreviewSettings{MaxPreviews: defaultMaxPreviews, CopyVariables: []string{}, SeedFromSnapshot: []string{}, Previews: []apitypes.Preview{}}
-	set, err := c.store.GetPreviewSettings(ctx, p.ID)
-	switch {
-	case err == nil:
-		base, err := c.store.GetEnvironment(ctx, set.BaseEnvironmentID)
-		if err != nil {
-			return out, err
-		}
-		t := set.UpdatedAt
-		out.Enabled, out.Base, out.MaxPreviews, out.AllowForks = true, base.Name, int(set.MaxPreviews), set.AllowForks
-		out.CopyVariables, out.UpdatedBy, out.UpdatedAt = copyList(set.CopyVariables), set.UpdatedBy, &t
-		out.SeedFromSnapshot = copyList(set.SeedFromSnapshot)
-		out.SleepAfterMinutes = int(set.SleepAfterMinutes)
-	case !store.IsNotFound(err):
-		return out, err
-	}
-	all, err := c.previewsOf(ctx, p, 0)
-	if err != nil {
-		return out, err
-	}
-	for _, pv := range all {
-		if a.canSee(p.OrgID, p.ID, pv.envID) {
-			out.Previews = append(out.Previews, pv.Preview)
-		}
-	}
-	return out, nil
-}
-
-// copyList reads preview_settings.copy_variables.
+// copyList reads a JSON list column (copy_variables, copy_shared).
 func copyList(s string) []string {
 	out := []string{}
 	_ = json.Unmarshal([]byte(s), &out)
 	return out
-}
-
-// SetPreviews turns previews on for a project, from req.Base, or changes
-// their settings. Previews run whatever code a pull request holds with
-// the copied variables, so this is for admins of the whole project; the
-// base can't be a preview itself. Scope: admin.
-func (c *Core) SetPreviews(ctx context.Context, a Actor, project string, req apitypes.SetPreviewsRequest) (apitypes.PreviewSettings, error) {
-	p, err := c.projectFor(ctx, a, project, apitypes.ScopeAdmin, "setting up previews")
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	if err := notArchived(p); err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	max := req.MaxPreviews
-	if max == 0 {
-		max = defaultMaxPreviews
-	}
-	if max < 1 || max > maxMaxPreviews {
-		return apitypes.PreviewSettings{}, invalid("max previews must be 1-%d", maxMaxPreviews)
-	}
-	sleepAfter := req.SleepAfterMinutes
-	switch sleepAfter {
-	case 0:
-		sleepAfter = apitypes.SleepAfterDefault
-	case -1:
-		sleepAfter = 0
-	}
-	if err := validSleepAfter(sleepAfter); err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	vars := make([]string, 0, len(req.CopyVariables))
-	for _, v := range req.CopyVariables {
-		v = strings.TrimSpace(v)
-		if !variableRefRe.MatchString(v) {
-			return apitypes.PreviewSettings{}, invalid("%q is not a variable; name it as service.KEY, or shared.KEY for a shared one", v)
-		}
-		vars = append(vars, v)
-	}
-	slices.Sort(vars)
-	vars = slices.Compact(vars)
-	es, err := c.loadEnv(ctx, p.OrgID, EnvRef{p.Name, req.Base})
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	if _, err := c.store.GetPreviewByEnvironment(ctx, es.env.ID); err == nil {
-		return apitypes.PreviewSettings{}, invalid("%s is a preview environment; previews are cloned from a long-lived one, e.g. staging", es)
-	} else if !store.IsNotFound(err) {
-		return apitypes.PreviewSettings{}, err
-	}
-	seedList, seeds, err := c.previewSeeds(ctx, es, req.SeedFromSnapshot)
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	list, _ := json.Marshal(vars)
-	c.previews.mu.Lock()
-	defer c.previews.mu.Unlock()
-	_, err = c.store.GetPreviewSettings(ctx, p.ID)
-	existed := err == nil
-	if err != nil && !store.IsNotFound(err) {
-		return apitypes.PreviewSettings{}, err
-	}
-	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		if err := q.UpsertPreviewSettings(ctx, store.UpsertPreviewSettingsParams{
-			ProjectID: p.ID, BaseEnvironmentID: es.env.ID, MaxPreviews: int64(max), CopyVariables: string(list),
-			AllowForks: req.AllowForks, SeedFromSnapshot: seedList, SleepAfterMinutes: int64(sleepAfter), UpdatedBy: a.Name, UpdatedAt: now(),
-		}); err != nil {
-			return err
-		}
-		// Open previews follow the project's setting.
-		return q.SetPreviewsSleepAfter(ctx, store.SetPreviewsSleepAfterParams{SleepAfterMinutes: int64(sleepAfter), ProjectID: p.ID})
-	})
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	c.reloadSleep(ctx)
-	action, summary := "previews.enable", "previews of pull requests on, "
-	if existed {
-		action, summary = "previews.update", "previews of pull requests: "
-	}
-	summary += fmt.Sprintf("cloned from %s, at most %d open", es.env.Name, max)
-	if len(vars) > 0 {
-		summary += "; values copied: " + strings.Join(vars, ", ")
-	}
-	if req.AllowForks {
-		summary += "; forks too"
-	}
-	if len(seeds) > 0 {
-		summary += "; seeded from snapshots: " + strings.Join(seeds, ", ")
-	}
-	if sleepAfter > 0 {
-		summary += fmt.Sprintf("; they sleep after %d minutes without requests", sleepAfter)
-	} else {
-		summary += "; they never sleep"
-	}
-	c.audit(ctx, a, action, &p, &es.env, es.String(), summary)
-	return c.previewSettings(ctx, a, p)
-}
-
-// DisablePreviews turns a project's previews off. Open previews stay
-// until their pull requests close (or ClosePreview). Scope: admin.
-func (c *Core) DisablePreviews(ctx context.Context, a Actor, project string) (apitypes.PreviewSettings, error) {
-	p, err := c.projectFor(ctx, a, project, apitypes.ScopeAdmin, "turning previews off")
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	c.previews.mu.Lock()
-	n, err := c.store.DeletePreviewSettings(ctx, p.ID)
-	c.previews.mu.Unlock()
-	if err != nil {
-		return apitypes.PreviewSettings{}, err
-	}
-	if n > 0 {
-		c.audit(ctx, a, "previews.disable", &p, nil, p.Name, "previews of pull requests off; open previews stay until their pull requests close")
-	}
-	return c.previewSettings(ctx, a, p)
 }
 
 // GetPreview returns a preview environment's pull request and status.
@@ -487,14 +327,14 @@ func (c *Core) gitHookPullRequest(ctx context.Context, conn store.GitConnection,
 	}
 	ok, err := c.previewHook(ctx, conn, p.Number)
 	if err != nil || !ok {
-		return "ignored: this webhook's service isn't in the environment previews are cloned from", err
+		return "ignored: this webhook's service doesn't build pull requests (`dock service previews on`)", err
 	}
 	return c.previewDeliveries(ctx, []store.GitConnection{conn}, p)
 }
 
 // previewHook reports whether a webhook connection may speak for a pull
-// request: only one of a service in the base environment, the project's
-// now or the open preview's. Anyone who may connect a service anywhere
+// request: only one of a service that builds pull requests, or of one in
+// the open preview's base. Anyone who may connect a service anywhere
 // gets its webhook secret, so a connection elsewhere (another
 // environment, perhaps one a limited token controls) could otherwise sign
 // a pull request and have it built with the base's credentials and copied
@@ -504,9 +344,9 @@ func (c *Core) previewHook(ctx context.Context, conn store.GitConnection, number
 	if err != nil {
 		return false, err
 	}
-	set, err := c.store.GetPreviewSettings(ctx, ss.project.ID)
+	sp, err := c.store.GetServicePreviews(ctx, ss.svc.ID)
 	switch {
-	case err == nil && set.BaseEnvironmentID == ss.env.ID:
+	case err == nil && sp.Build:
 		return true, nil
 	case err != nil && !store.IsNotFound(err):
 		return false, err
@@ -591,14 +431,34 @@ func (c *Core) previewEvent(ctx context.Context, p store.Project, repo string, e
 		return pr + ": preview " + e.Name + " archived", nil
 	}
 
-	set, err := c.store.GetPreviewSettings(ctx, p.ID)
-	if store.IsNotFound(err) {
-		return pr + ": ignored, previews are off", nil
-	}
+	// The services this pull request builds: connected to its repository,
+	// deploying the branch it merges into, with previews on. One
+	// repository and branch previews from one environment (ADR 0077).
+	rows, err := c.store.ListProjectServicePreviews(ctx, p.ID)
 	if err != nil {
 		return "", err
 	}
-	base, err := c.store.GetEnvironment(ctx, set.BaseEnvironmentID)
+	builds := map[int64]store.ListProjectServicePreviewsRow{}
+	var branches []string
+	var baseID int64
+	for _, r := range rows {
+		if !r.Build || r.Repo != repo {
+			continue
+		}
+		branches = append(branches, r.Branch)
+		if r.Branch == ev.PullRequest.Base.Ref && (baseID == 0 || baseID == r.EnvironmentID) {
+			baseID = r.EnvironmentID
+			builds[r.ServiceID] = r
+		}
+	}
+	if len(branches) == 0 {
+		return pr + ": ignored, previews are off for " + repo, nil
+	}
+	if baseID == 0 {
+		return fmt.Sprintf("%s: ignored, it merges into %s and the services previewing %s deploy %s", pr, cleanLine(ev.PullRequest.Base.Ref, 100), repo,
+			strings.Join(slices.Compact(slices.Sorted(slices.Values(branches))), ", ")), nil
+	}
+	base, err := c.store.GetEnvironment(ctx, baseID)
 	if err != nil {
 		return "", err
 	}
@@ -611,23 +471,15 @@ func (c *Core) previewEvent(ctx context.Context, p store.Project, repo string, e
 	if err != nil {
 		return "", err
 	}
-	// The base services this pull request changes: connected to its
-	// repository and deploying the branch it merges into.
 	var matched []store.GitConnection
-	var branches []string
 	for _, conn := range conns {
 		i := slices.IndexFunc(svcs, func(s store.Service) bool { return s.ID == conn.ServiceID })
-		if i < 0 || svcs[i].ArchivedAt != nil || conn.Repo != repo {
-			continue
-		}
-		branches = append(branches, conn.Branch)
-		if conn.Branch == ev.PullRequest.Base.Ref {
+		if _, ok := builds[conn.ServiceID]; ok && i >= 0 && svcs[i].ArchivedAt == nil {
 			matched = append(matched, conn)
 		}
 	}
 	if len(matched) == 0 {
-		return fmt.Sprintf("%s: ignored, it merges into %s and %s deploys %s", pr, cleanLine(ev.PullRequest.Base.Ref, 100), base.Name,
-			strings.Join(slices.Compact(slices.Sorted(slices.Values(branches))), ", ")), nil
+		return pr + ": ignored, previews are off for " + repo, nil
 	}
 	sha := ev.PullRequest.Head.SHA
 	if !shaRe.MatchString(sha) {
@@ -651,19 +503,31 @@ func (c *Core) previewEvent(ctx context.Context, p store.Project, repo string, e
 	if ev.Action == "edited" {
 		return pr + ": ignored, no open preview", nil
 	}
-	if head.fork && !set.AllowForks {
-		c.postPreviewStatus(bes, matched[0], sha, "error", "No preview: pull requests from forks aren't previewed", "")
-		return pr + ": ignored, it comes from a fork and previews of forks are off", nil
+	if head.fork {
+		// A fork's code is built only by services that allow forks.
+		matched = slices.DeleteFunc(matched, func(conn store.GitConnection) bool { return !builds[conn.ServiceID].AllowForks })
+		if len(matched) == 0 {
+			conn := conns[slices.IndexFunc(conns, func(c store.GitConnection) bool { _, ok := builds[c.ServiceID]; return ok })]
+			c.postPreviewStatus(bes, conn, sha, "error", "No preview: pull requests from forks aren't previewed", "")
+			return pr + ": ignored, it comes from a fork and previews of forks are off", nil
+		}
 	}
-	n, err := c.store.CountOpenPreviews(ctx, p.ID)
+	setup, err := c.previewSetupOf(ctx, base.ID)
 	if err != nil {
 		return "", err
 	}
-	if n >= set.MaxPreviews {
-		c.postPreviewStatus(bes, matched[0], sha, "error", fmt.Sprintf("No preview: %d are open, the most this project allows", n), "")
-		return fmt.Sprintf("%s: no preview, %d are open, the most %s allows; close one or raise the limit", pr, n, p.Name), nil
+	n, err := c.store.CountOpenBasePreviews(ctx, base.ID)
+	if err != nil {
+		return "", err
 	}
-	return c.createPreview(ctx, actor, bes, set, svcs, matched, repo, ev.Number, head)
+	if n >= setup.maxPreviews {
+		c.postPreviewStatus(bes, matched[0], sha, "error", fmt.Sprintf("No preview: %d are open, the most allowed", n), "")
+		return fmt.Sprintf("%s: no preview, %d are open, the most %s allows; close one or raise the limit (`dock env previews set %s --max N`)", pr, n, bes, base.Name), nil
+	}
+	if touched, ok := c.previewTouches(ctx, bes, matched, ev); !ok {
+		return pr + ": ignored, nothing changed in " + touched, nil
+	}
+	return c.createPreview(ctx, actor, bes, setup, svcs, matched, repo, ev.Number, head)
 }
 
 // previewHead is a pull request's state as an event describes it.
@@ -677,15 +541,15 @@ type previewHead struct {
 // deploys it: the matched services build the head commit, the rest run
 // the base's images, and services with a domain in the base get a
 // generated one. The caller holds previews.mu.
-func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set store.PreviewSetting, svcs []store.Service, matched []store.GitConnection, repo string, number int64, head previewHead) (string, error) {
+func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, setup previewSetup, svcs []store.Service, matched []store.GitConnection, repo string, number int64, head previewHead) (string, error) {
 	p := base.project
 	pr := fmt.Sprintf("pull request #%d", number)
 	name, err := c.previewName(ctx, p, number)
 	if err != nil {
 		return "", err
 	}
-	allowed := copyList(set.CopyVariables)
-	seeded := seedLiterals(svcs, set)
+	allowed := setup.copyVariables
+	seeded := seedLiterals(svcs, setup.seed)
 	rules := cloneRules{literal: func(v apitypes.VariableRef) bool { return slices.Contains(allowed, v.String()) || seeded(v) }, orgRefsLiteral: true}
 	clone := apitypes.CloneResult{Services: []string{}, Generated: []apitypes.VariableRef{}, Skipped: []apitypes.VariableRef{}, CopiedAcrossKinds: []apitypes.VariableRef{}}
 	var dst envScope
@@ -705,9 +569,9 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 			}
 			return conflict("server %s's disk is past [retention] prune_disk_percent; free space on it (`dock server prune %s`) before previews go there", srv.Name, srv.Name)
 		}
-		if set.SleepAfterMinutes > 0 {
+		if setup.sleepAfter > 0 {
 			// It sleeps when nobody looks at it (sleep.go).
-			if e, err = q.SetEnvironmentSleepAfter(ctx, store.SetEnvironmentSleepAfterParams{SleepAfterMinutes: set.SleepAfterMinutes, ID: e.ID}); err != nil {
+			if e, err = q.SetEnvironmentSleepAfter(ctx, store.SetEnvironmentSleepAfterParams{SleepAfterMinutes: setup.sleepAfter, ID: e.ID}); err != nil {
 				return err
 			}
 		}
@@ -764,7 +628,7 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, set st
 			promoted = append(promoted, s.Name)
 		}
 	}
-	promoted = c.seedPreview(a, base, dst, pv.ID, set, svcs, promoted)
+	promoted = c.seedPreview(a, base, dst, pv.ID, setup.seed, svcs, promoted)
 	if len(promoted) > 0 {
 		if _, err := c.promote(ctx, a, base, dst, promoted, true); err != nil {
 			c.setPreviewEvent(pv.ID, "the base's images weren't deployed: "+errorLine(err))

@@ -12,7 +12,7 @@ import (
 )
 
 // Preview seeds (ADR 0056): a preview's stateful services start with new,
-// empty volumes, unless the settings name them in seed_from_snapshot. A
+// empty volumes, unless their service_previews.seed is set (ADR 0077). A
 // seeded service's volumes are filled from its base service's latest
 // ready snapshot (ADR 0047) before its first deploy: the snapshot is
 // copied into the preview's own new volumes, the base's are never
@@ -56,8 +56,7 @@ func (c *Core) previewSeeds(ctx context.Context, base envScope, names []string) 
 // services: a template database's generated literals (user, password,
 // database), which the copied data files only open with. Used by
 // createPreview's clone rules next to copy_variables.
-func seedLiterals(svcs []store.Service, set store.PreviewSetting) func(apitypes.VariableRef) bool {
-	seeds := copyList(set.SeedFromSnapshot)
+func seedLiterals(svcs []store.Service, seeds []string) func(apitypes.VariableRef) bool {
 	keys := map[apitypes.VariableRef]bool{}
 	for _, s := range svcs {
 		t, ok := templateOf(s)
@@ -73,12 +72,11 @@ func seedLiterals(svcs []store.Service, set store.PreviewSetting) func(apitypes.
 	return func(v apitypes.VariableRef) bool { return keys[v] }
 }
 
-// seedPreview starts seeding a new preview's services named in set's
-// seed_from_snapshot and returns promoted (the base services createPreview
+// seedPreview starts seeding a new preview's services named in seeds
+// (service_previews.seed) and returns promoted (the base services createPreview
 // promotes now) without them: each seeded one is promoted on its own in
 // the background, once its volumes are filled.
-func (c *Core) seedPreview(a Actor, base, dst envScope, previewID int64, set store.PreviewSetting, svcs []store.Service, promoted []string) []string {
-	seeds := copyList(set.SeedFromSnapshot)
+func (c *Core) seedPreview(a Actor, base, dst envScope, previewID int64, seeds []string, svcs []store.Service, promoted []string) []string {
 	rest := make([]string, 0, len(promoted))
 	for _, name := range promoted {
 		i := slices.IndexFunc(svcs, func(s store.Service) bool { return s.Name == name && s.ArchivedAt == nil })
