@@ -269,27 +269,31 @@ export const topics: Record<TopicId, Topic> = {
   previews: {
     title: "Previews",
     group: "Ship",
-    what: "An environment per pull request, cloned from a base environment, archived when the pull request closes.",
+    what: "An environment per pull request, cloned from the environment of the services that build it; archived on close.",
     do: [
       {
-        what: "Turn them on, cloned from staging",
-        cli: "dock env previews enable staging",
+        what: "Turn them on for a service",
+        cli: "dock service previews on -s web",
         at: { p: "previews" },
       },
       {
-        what: "Copy a value into every preview",
-        cli: "dock env previews enable staging --copy web.STRIPE_KEY",
+        what: "Copy one of its values into every preview",
+        cli: "dock service previews on -s web --copy STRIPE_KEY",
       },
       {
-        what: "Start each database from staging's snapshot",
-        cli: "dock env previews enable staging --seed db",
+        what: "Start a database from its newest snapshot",
+        cli: "dock service previews -s db --seed",
+      },
+      {
+        what: "Limit how many are open, and when they sleep",
+        cli: "dock env previews set staging --max 5 --sleep-after 1h",
       },
       { what: "See open previews", cli: "dock env previews" },
       { what: "Close one", cli: "dock env previews close pr-12" },
     ],
     watch: [
-      "Off until a project admin turns them on; the base's services must deploy from GitHub.",
-      "enable replaces the settings: pass every one each time.",
+      "Off until an environment admin turns them on for a service that deploys from GitHub.",
+      "A pull request that changes nothing in a previewing service's directory gets no preview.",
       "Idle previews sleep and wake on the next request.",
     ],
     related: ["deploying", "variables", "organizations"],
