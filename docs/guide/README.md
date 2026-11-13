@@ -16,6 +16,8 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
 | [Single sign-on](sso.md) | Continue with Google, GitHub or any OpenID Connect provider, set up by operators; who gets an account, invite only, turning passwords off |
 | [Tracing](tracing.md) | Apps' traces and metrics with no setup: OpenTelemetry SDKs send to Dock, `dock traces` and the Metrics tab read them |
+| [Watching](watching.md) | Logs, errors, alerts and the Inbox, Analytics, image vulnerabilities |
+| [Organizations](organizations.md) | Switching, members and roles, tokens, the organization's settings |
 | [Status pages](status-pages.md) | A public page of your services' status and 90 days of uptime, from Dock's uptime checks |
 | [Agents](agents.md) | Letting Claude Code, CI and other bots deploy safely |
 | [API](api.md) | Auth, OpenAPI spec, event stream, errors, curl examples |
