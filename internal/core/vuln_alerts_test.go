@@ -92,6 +92,12 @@ func TestRecheckVulnAlertsFixedQueries(t *testing.T) {
 				t.Fatalf("%s has no alert", ref)
 			}
 		}
+		// Once uncounted first: the test raised the alerts over every high
+		// finding, and the scans' own evaluation (the org's level) may land
+		// before or after that; a recheck brings each alert to the state a
+		// recheck leaves, so the counted one reads its steady path, whatever
+		// the scans did meanwhile.
+		h.c.recheckVulnAlerts(h.ctx, 1)
 		before := db.n.Load()
 		h.c.recheckVulnAlerts(countCalls(h.ctx), 1)
 		return db.n.Load() - before
