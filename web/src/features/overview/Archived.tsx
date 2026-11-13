@@ -7,6 +7,7 @@ import { Page, PageBar, Panel, SectionHead } from "../../ui/kit";
 import { kindLabel } from "../../ui/status";
 import { EnvServer } from "../servers/parts";
 import { imageLabel } from "../service/releases";
+import { ArchivedPageActions } from "./ArchivedActions";
 import { Activity } from "./Live";
 
 /** What an archived service ran: its last release's image, or its own. */
@@ -39,7 +40,8 @@ export function ArchivedServices({ env }: { env: EnvironmentView }) {
 
 /**
  * An archived project's page, read-only: when it was archived, what each
- * environment held, and its activity. `children` go at the end (export).
+ * environment held, and its activity, with Rename and Delete permanently
+ * for org admins. `children` go at the end (export).
  */
 export function ArchivedProject({
   project,
@@ -52,7 +54,10 @@ export function ArchivedProject({
   const archivedAt = overview.project.archived_at ?? "";
   return (
     <>
-      <PageBar title={<span className="text-mut">{project}</span>} />
+      <PageBar
+        title={<span className="text-mut">{project}</span>}
+        actions={<ArchivedPageActions project={overview.project} />}
+      />
       <Page>
         <p className="text-mut">
           Archived <span title={archivedAt}>{day(archivedAt)}</span> (
