@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
 import { useOrg } from "../../shell/location";
 import { Act, Button, CopyButton, ErrorText, SectionHead } from "../../ui/kit";
 import {
@@ -152,7 +152,8 @@ function Row({
 
 /**
  * A row whose value opens a form with Edit. `form` gets `close`; the form
- * saves and closes itself, Esc closes it. Read-only people see the value.
+ * saves and closes itself, and closes on Esc (escapes). Read-only people
+ * see the value.
  */
 function EditRow({
   label,
@@ -172,10 +173,7 @@ function EditRow({
   return (
     <Row label={label} hint={hint}>
       {open ? (
-        // biome-ignore lint/a11y/noStaticElementInteractions: Esc closes the form inside
-        <div onKeyDown={(e) => e.key === "Escape" && close()}>
-          {form(close)}
-        </div>
+        form(close)
       ) : (
         <span className="flex max-w-[760px] items-start gap-3">
           <span className="min-w-0 flex-1 break-words">{shown}</span>
@@ -193,6 +191,11 @@ function EditRow({
     </Row>
   );
 }
+
+/** A form's Esc: cancels it, like Cancel. */
+const escapes = (cancel: () => void) => (e: KeyboardEvent) => {
+  if (e.key === "Escape") cancel();
+};
 
 /** Save and Cancel at the end of a row's form, with the error under them. */
 function FormEnd({
@@ -296,6 +299,7 @@ function NameForm({
   return (
     <form
       aria-label="Edit name"
+      onKeyDown={escapes(onCancel)}
       className="flex flex-wrap items-center gap-2"
       onSubmit={(e) => {
         e.preventDefault();
@@ -401,6 +405,7 @@ function SettingForm({
   return (
     <form
       aria-label={`Edit ${field.label.toLowerCase()}`}
+      onKeyDown={escapes(onDone)}
       className="flex flex-col gap-2"
       onSubmit={(e) => {
         e.preventDefault();
@@ -512,6 +517,7 @@ function SharingForm({
   return (
     <form
       aria-label="Edit public dashboard"
+      onKeyDown={escapes(onDone)}
       className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault();
