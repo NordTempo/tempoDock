@@ -234,6 +234,9 @@ func (c *Core) removeProjectResources(ctx context.Context, d deletion) error {
 				mine = append(mine, ct)
 			}
 		}
+		if err := c.awaitRemovals(ctx, mine); err != nil {
+			return fmt.Errorf("wait for the containers of project %s to stop: %w", p.Name, err)
+		}
 		if err := c.removeContainers(ctx, sid, mine, node.RemoveOptions{}); err != nil {
 			return fmt.Errorf("remove the containers of project %s: %w", p.Name, err)
 		}
@@ -264,6 +267,28 @@ func (c *Core) removeProjectResources(ctx context.Context, d deletion) error {
 		}
 		if err := c.deleteSnapshots(ctx, sid, snaps); err != nil {
 			return fmt.Errorf("delete the volume snapshots of project %s: %w", p.Name, err)
+		}
+	}
+	return nil
+}
+
+// awaitRemovals waits for the daemon's own removals of ctrs to end: an
+// archive just before stops its containers in the background, and Docker
+// refuses a second removal while one runs. A container whose removal
+// ended is gone (removeContainers then finds nothing to do) or failed
+// (and is removed again). The wait is bounded by stopTimeout and a bit.
+func (c *Core) awaitRemovals(ctx context.Context, ctrs []node.Container) error {
+	ctx, cancel := context.WithTimeout(ctx, stopTimeout+30*time.Second)
+	defer cancel()
+	for _, ct := range ctrs {
+		done := c.removalOf(ct.ID)
+		if done == nil {
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return fmt.Errorf("container %s is still stopping; delete again in a minute: %w", ct.Name, ctx.Err())
 		}
 	}
 	return nil
