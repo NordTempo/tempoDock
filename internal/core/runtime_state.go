@@ -230,7 +230,7 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 				s.State, s.StartedAt = apitypes.ServiceRestarting, nil
 				return
 			}
-			s.State, s.StartedAt = apitypes.ServiceRunning, eventTime(ev)
+			started(s, ev)
 			if s.Health != "" {
 				s.Health = apitypes.HealthStarting
 			}
@@ -253,7 +253,7 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 			if s.State == apitypes.ServiceCrashed || s.State == apitypes.ServiceRestarting || ev.Action == "restart" {
 				s.RestartCount++
 			}
-			s.State, s.StartedAt = apitypes.ServiceRunning, eventTime(ev)
+			started(s, ev)
 			if ev.Action == "start" && s.Health != "" {
 				s.Health = apitypes.HealthStarting // Docker starts its check over
 			}
@@ -274,14 +274,19 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 	}
 }
 
-// eventTime is when a container event happened, by the server's clock:
-// a start event's is the container's start time.
-func eventTime(ev node.ContainerEvent) *time.Time {
-	t := ev.Time
-	if t.IsZero() {
-		t = time.Now()
+// started marks a status running after a start or restart event. The
+// event's time is its start time unless the status has one already: the
+// exact one, from Inspect (a deploy's cutover), for the same start, since
+// a container doesn't start again without a die event, which clears it.
+func started(s *apitypes.ServiceStatus, ev node.ContainerEvent) {
+	if s.State != apitypes.ServiceRunning || s.StartedAt == nil {
+		t := ev.Time
+		if t.IsZero() {
+			t = time.Now()
+		}
+		s.StartedAt = &t
 	}
-	return &t
+	s.State = apitypes.ServiceRunning
 }
 
 // recover fails deploys that were in flight when the daemon stopped and
