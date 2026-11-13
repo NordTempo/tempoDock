@@ -2,17 +2,19 @@ import { Link, Outlet } from "@tanstack/react-router";
 import { useLiveUpdates } from "../data/live";
 import { useLogout } from "../data/mutations";
 import { useSession } from "../data/queries";
+import { HelpHost } from "../features/help/open";
 import { DrainStrip } from "../features/servers/DrainStrip";
 import { Icon } from "../ui/icons";
 import { Notices } from "../ui/notice";
-import { KeyHelpHost, NotLive } from "./KeyHelp";
+import { NotLive } from "./NotLive";
 import { PaletteProvider } from "./palette";
 import { Sidebar, TopBar, useShellMode } from "./Sidebar";
 
 /**
  * Everything behind login: the sidebar and the page (which brings its own
  * PageBar). One command surface, the palette (Cmd+K or the sidebar's
- * search), finds pages and runs commands; ? lists the keys. The platform
+ * search), finds pages and runs commands; ? opens help for the page,
+ * with its keys. The platform
  * console gets an amber bar across the top. A person whose org needs a
  * second factor (ADR 0057) or single sign-on (ADR 0058) they didn't sign
  * in with acts in none: they get their account page alone, with the way
@@ -48,7 +50,7 @@ function OrgShell() {
           </div>
         </main>
       </div>
-      <KeyHelpHost />
+      <HelpHost />
       <Notices />
     </PaletteProvider>
   );

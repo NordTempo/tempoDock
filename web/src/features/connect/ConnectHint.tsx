@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { api, body } from "../../api/client";
 import { servicePath, useEnvironment } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
-import { useOrg } from "../../shell/location";
 import { CopyButton } from "../../ui/kit";
+import { openHelp } from "../help/open";
 
 // `dock connect` stays a CLI action (ADR 0023, 0025): it opens a port on
 // the user's machine. The UI shows the command for this service and
@@ -23,7 +22,6 @@ export const connectCli = (ref: ServiceRef, production: boolean) =>
  * each with Copy.
  */
 export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
-  const org = useOrg();
   const production = useEnvironment(ref).environment.kind === "production";
   const info = useQuery({
     queryKey: ["connect", ref.project, ref.environment, ref.service],
@@ -70,14 +68,13 @@ export function ConnectHint({ serviceRef: ref }: { serviceRef: ServiceRef }) {
           <span className="text-mut">
             <span className="text-ok">✓</span> You may run it: it opens
             localhost:{info.data.port} on your machine, reaching the service.{" "}
-            <Link
-              to="/$org/help"
-              params={{ org }}
-              hash="connect"
+            <button
+              type="button"
               className="underline underline-offset-3"
+              onClick={() => openHelp("data")}
             >
               What's this?
-            </Link>
+            </button>
           </span>
         ) : info.error ? (
           <span className="text-warn">{info.error.message}</span>

@@ -45,6 +45,15 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
 - Heavy code loads with what opens it: dialogs and editors are `lazy()`
   (see `features/create/open.tsx`). `make perf` holds the initial JS, CSS
   and fonts to a budget.
+- Only a route's components are code-split. `beforeLoad`, `loader` and
+  `validateSearch` go into the route tree, in the initial bundle, with
+  everything they import: a check that needs a big module belongs in the
+  component (see `routes/_app.$org.help.$topic.tsx`, whose topic check in
+  `beforeLoad` once put every help topic in the initial JS).
+- Help (`features/help`): a new page gets its topic in `where.ts` if its
+  parent's isn't right, and a new feature a topic in `topics.ts`, short:
+  the rows' `dock` commands are run against the real CLI in
+  `internal/cli`'s tests and the guide links against `docs/guide`.
 - Styling per `docs/design/README.md`: style A, Tailwind theme tokens
   instead of literal colors, no em dashes in copy, no repainting
   animations.

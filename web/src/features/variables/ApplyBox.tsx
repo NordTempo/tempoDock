@@ -24,6 +24,7 @@ import { plural } from "../../ui/format";
 import { Act, ErrorText, Glyph } from "../../ui/kit";
 import { notify } from "../../ui/notice";
 import { failurePhrase, stepPhrase } from "../../ui/status";
+import { openHelp } from "../help/open";
 import { imageLabel, shortImage } from "../service/releases";
 import {
   formatSetting,
@@ -379,7 +380,6 @@ function StagedReview({
   drawer?: boolean;
   onClose?: () => void;
 }) {
-  const org = useOrg();
   const {
     env,
     service,
@@ -465,14 +465,13 @@ function StagedReview({
       <p className="text-xs text-mut">
         Nothing changes until you apply. Each affected service gets a new
         release, health checked as usual.{" "}
-        <Link
-          to="/$org/help"
-          params={{ org }}
-          hash="apply"
+        <button
+          type="button"
           className="underline underline-offset-3"
+          onClick={() => openHelp("services")}
         >
           What's this?
-        </Link>
+        </button>
       </p>
       {changes.last_failure && (
         <p className="text-fail">
