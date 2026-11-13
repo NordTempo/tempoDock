@@ -1,7 +1,5 @@
 ---
-import Section from "./Section.astro";
-
-/** The Data tab as an illustration: a table with one staged edit, its SQL and the production confirm. */
+/** The Data tab as a panel: a table with one staged edit, its SQL and the production confirm. */
 
 const cols = ["id", "email", "plan", "created"];
 const rows = [
@@ -13,13 +11,7 @@ const rows = [
 ];
 const staged = 2;
 ---
-
-<Section id="data" title="See your data." dim="Change it on purpose.">
-  <Fragment slot="aside">
-    Every Postgres service gets a Data tab. Browse tables, run queries, edit rows. Edits are staged, shown as SQL and
-    committed in one transaction.
-  </Fragment>
-  <div class="min-w-0 border border-[#1b2a3d] bg-panel">
+<div class="min-w-0 border border-[#1b2a3d] bg-panel">
     <div class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-6">
       <span class="eyebrow text-meta">SHOP / PRODUCTION / POSTGRES · USERS</span>
       <span class="eyebrow bg-[#2a2208] px-1.5 py-0.5 text-domains">EDIT MODE</span>
@@ -48,7 +40,7 @@ const staged = 2;
         </tbody>
       </table>
     </div>
-    <div class="grid gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[1fr_auto] lg:items-end">
+    <div class="grid gap-4 px-4 py-5 sm:px-6">
       <div class="min-w-0">
         <p class="eyebrow mb-2 text-meta">1 CHANGE · REVIEW</p>
         <pre class="overflow-x-auto font-mono text-[13px] leading-[23px] text-sub">UPDATE "users" SET "plan" = 'pro' WHERE "id" = 1042;</pre>
@@ -60,4 +52,3 @@ const staged = 2;
       </div>
     </div>
   </div>
-</Section>
