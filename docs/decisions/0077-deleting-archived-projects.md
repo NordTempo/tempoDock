@@ -76,7 +76,7 @@ There was no way to get either back.
     services, or a move of one of its environments, refuses the delete
     until it ends.
   - **Audit:** `project.delete`, with what went and the notes.
-- **IDs are never reused** (migration 0101). SQLite hands a new row the
+- **IDs are never reused** (migration 0102). SQLite hands a new row the
   highest ID plus one, so deleting the newest project would give the
   next one its ID, and with it what outlives the rows: analytics events
   by site, traces and metrics by service, trace tokens, Docker names and

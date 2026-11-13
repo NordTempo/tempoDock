@@ -296,7 +296,7 @@ func (c *Core) awaitRemovals(ctx context.Context, ctrs []node.Container) error {
 
 // deleteProjectAnalytics deletes the sites' raw events, errors, Web
 // Vitals and replays from the analytics store. Its daily totals stay
-// under the sites' IDs, which no new site gets (migration 0101). A store
+// under the sites' IDs, which no new site gets (migration 0102). A store
 // that can't be reached keeps the events; the note says so. Nothing
 // reads them once the sites are gone.
 func (c *Core) deleteProjectAnalytics(ctx context.Context, sites []int64) []string {

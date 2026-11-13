@@ -21,7 +21,7 @@ const (
 // log is not in it: its events keep the project's ID and name their
 // target in words. Neither is service_stats, keyed by service ID without
 // an index that leads with it: its rows age out with the stats'
-// retention, and no new service gets the ID (migration 0101).
+// retention, and no new service gets the ID (migration 0102).
 //
 // A new table holding a project's, environment's, service's, release's
 // or site's ID gets a statement here; TestProjectDeletesCoverForeignKeys
