@@ -110,6 +110,10 @@ func updateBaseline(o options) error {
 	return nil
 }
 
+// nearGate is the share of a benchmark's allocations gate past which it
+// warns (checkBench).
+const nearGate = 0.98
+
 func checkBench(o options, t *table) error {
 	base, err := loadBaseline(o.baseline)
 	if err != nil {
@@ -181,6 +185,14 @@ func checkBench(o options, t *table) error {
 		measured, budget, allocsOK, nsOK := judge(name, r)
 		if !allocsOK {
 			t.within("bench "+name, measured, budget, false)
+			continue
+		}
+		// Allocations are deterministic, so a count just under its gate
+		// fails the next change that adds a little, often a parallel PR
+		// that passed on its own (#307 and #306 on BenchmarkNewAPI). Warn
+		// while the change that got it there can still re-record it.
+		if limit := base.Benchmarks[name].AllocsOp*(1+o.allocsTol) + 2; r.AllocsOp > nearGate*limit && r.AllocsOp >= 100 {
+			t.add("bench "+name, measured, fmt.Sprintf("allocs within %.0f%% of their gate: re-record if intended", (1-nearGate)*100), warn)
 			continue
 		}
 		t.withinTiming("bench "+name, measured, budget, nsOK)
