@@ -51,7 +51,13 @@ func TestReleaseWait(t *testing.T) {
 		t.Fatalf("deploy during a deploy: exit %d\n%s", code, stderr)
 	}
 
-	// Giving up after --timeout says how to wait again.
+	// Giving up after --timeout says how to wait again. The release is
+	// health checking first: the held check keeps it there, but on a slow
+	// runner it was still queued 50ms after the deploy.
+	waitUntil(t, "release 2 health checking", func() bool {
+		r := ok[apitypes.Release](t, append([]string{"release", "show", "2"}, web...)...)
+		return r.Status == apitypes.ReleaseHealthChecking
+	})
 	code, _, stderr = exec(t, append([]string{"release", "wait", "--timeout", "50ms"}, web...)...)
 	if code != int(output.ExitError) || !strings.Contains(stderr, "still health_checking") || !strings.Contains(stderr, "`dock release wait 2 -p shop -e production -s web`") {
 		t.Fatalf("wait --timeout: exit %d\n%s", code, stderr)
