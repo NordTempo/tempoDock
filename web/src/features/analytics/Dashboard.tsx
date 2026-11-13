@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { ErrorBlock } from "../../ui/ErrorBlock";
 import { clock } from "../../ui/format";
 import { Panel } from "../../ui/kit";
@@ -31,7 +31,10 @@ import {
 
 // A site's dashboard (ADR 0037, mock C): the numbers against the period
 // before, the chart with deploys and domain moves, the breakdowns, and a
-// live column. Clicking a value filters by it.
+// live column. Clicking a value filters by it. Locations has a Globe tab,
+// loaded when picked.
+
+const Globe = lazy(() => import("./globe/Globe"));
 
 export function Dashboard({
   project,
@@ -39,7 +42,6 @@ export function Dashboard({
   range,
   filters,
   onPick,
-  canEdit,
 }: {
   project: string;
   site: Site;
@@ -47,8 +49,6 @@ export function Dashboard({
   filters: Filter[];
   /** A value was clicked: filter by it (row carries its label). */
   onPick: (dimension: string, row: AnalyticsRow) => void;
-  /** May add and remove goals (deploy). */
-  canEdit: boolean;
 }) {
   const {
     data: stats,
@@ -72,7 +72,6 @@ export function Dashboard({
               range={range}
               filters={filters}
               onPick={onPick}
-              canEdit={canEdit}
             />
           ) : (
             !error && <p className="text-mut">Loading…</p>
@@ -102,7 +101,6 @@ function Main({
   range,
   filters,
   onPick,
-  canEdit,
 }: {
   project: string;
   site: string;
@@ -110,7 +108,6 @@ function Main({
   range: StatsRange;
   filters: Filter[];
   onPick: (dimension: string, row: AnalyticsRow) => void;
-  canEdit: boolean;
 }) {
   const [metric, setMetric] = useState<Metric>("visitors");
   const o = stats.overview;
@@ -189,7 +186,6 @@ function Main({
           site={site}
           range={range}
           filters={filters}
-          canEdit={canEdit}
         />
         <Breakdown
           {...panel}
@@ -199,6 +195,7 @@ function Main({
             ["Regions", "region"],
             ["Cities", "city"],
           ]}
+          globe
         />
         <Breakdown
           {...panel}
@@ -276,10 +273,13 @@ const counted: Record<string, string> = {
 /**
  * A panel of one dimension's top values, with tabs for related ones. The
  * dashboard's own dimensions come with it; the others load when picked.
+ * With `globe`, a last tab shows every country on a globe beside the top
+ * ones, across the panel's row.
  */
 function Breakdown({
   title,
   tabs,
+  globe,
   project,
   site,
   stats,
@@ -289,6 +289,7 @@ function Breakdown({
 }: {
   title: string;
   tabs: [label: string, dimension: string][];
+  globe?: boolean;
   project: string;
   site: string;
   stats: SiteStats;
@@ -297,8 +298,10 @@ function Breakdown({
   onPick: (dimension: string, row: AnalyticsRow) => void;
 }) {
   const [tab, setTab] = useState(0);
-  const dimension = tabs[tab]?.[1] ?? "page";
-  const loaded = stats.breakdowns[dimension];
+  const [hover, setHover] = useState<string | null>(null);
+  const onGlobe = !!globe && tab === tabs.length;
+  const dimension = onGlobe ? "country" : (tabs[tab]?.[1] ?? "page");
+  const loaded = onGlobe ? undefined : stats.breakdowns[dimension];
   // Not while the store is unreachable: the dashboard already says so.
   const fetched = useBreakdown(
     project,
@@ -307,17 +310,86 @@ function Breakdown({
     filters,
     dimension,
     !loaded && stats.store_online,
+    onGlobe ? 250 : 10,
   );
-  const rows = loaded ?? fetched.data;
+  const all = loaded ?? fetched.data;
+  // The globe has every country; the list beside it the top ones.
+  const rows = onGlobe ? all?.slice(0, 12) : all;
   const most = Math.max(1, ...(rows ?? []).map((r) => r.visitors));
+  const labels = globe
+    ? [...tabs.map(([l]) => l), "Globe"]
+    : tabs.map(([l]) => l);
+  const table = (
+    <Panel>
+      <table className="tabular-nums">
+        <thead>
+          <tr>
+            <th className="sr-only">
+              {onGlobe ? "Countries" : tabs[tab]?.[0]}
+            </th>
+            <th className="w-20 text-right">Visitors</th>
+            <th className="w-20 text-right">
+              {counted[dimension] ?? "Events"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows?.map((r) => (
+            <tr
+              key={r.value}
+              className={onGlobe && r.value === hover ? "bg-hover" : undefined}
+              onPointerEnter={onGlobe ? () => setHover(r.value) : undefined}
+              onPointerLeave={onGlobe ? () => setHover(null) : undefined}
+            >
+              <td className="relative max-w-0 truncate">
+                <span
+                  className="absolute inset-y-1 left-0 rounded-xs bg-info/8"
+                  style={{ width: `${(r.visitors / most) * 100}%` }}
+                />
+                <button
+                  type="button"
+                  className="relative -my-[3px] min-h-[24px] min-w-[24px] max-w-full truncate text-left"
+                  title={`Filter by ${shown(dimension, r)}`}
+                  onClick={() => onPick(dimension, r)}
+                >
+                  <Labeled dimension={dimension} value={r.value}>
+                    {shown(dimension, r)}
+                  </Labeled>
+                </button>
+              </td>
+              <td className="text-right">{count(r.visitors)}</td>
+              <td className="text-right text-mut">{count(r.count)}</td>
+            </tr>
+          ))}
+          {rows?.length === 0 && (
+            <tr>
+              <td colSpan={3} className="text-mut">
+                None in this range.
+              </td>
+            </tr>
+          )}
+          {!rows && (
+            <tr>
+              <td colSpan={3} className="text-mut">
+                {fetched.error ? fetched.error.message : "Loading…"}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </Panel>
+  );
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-1.5">
+    <section
+      aria-label={title}
+      className={`flex min-w-0 flex-col gap-1.5 ${onGlobe ? "lg:col-span-2" : ""}`}
+    >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 className="text-sm font-semibold">{title}</h3>
         {/* The app's one segmented control, as everywhere else. */}
-        {tabs.length > 1 && (
+        {labels.length > 1 && (
           <span className="seg">
-            {tabs.map(([label], i) => (
+            {labels.map((label, i) => (
               <button
                 key={label}
                 type="button"
@@ -330,57 +402,21 @@ function Breakdown({
           </span>
         )}
       </div>
-      <Panel>
-        <table className="tabular-nums">
-          <thead>
-            <tr>
-              <th className="sr-only">{tabs[tab]?.[0]}</th>
-              <th className="w-20 text-right">Visitors</th>
-              <th className="w-20 text-right">
-                {counted[dimension] ?? "Events"}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows?.map((r) => (
-              <tr key={r.value}>
-                <td className="relative max-w-0 truncate">
-                  <span
-                    className="absolute inset-y-1 left-0 rounded-xs bg-info/8"
-                    style={{ width: `${(r.visitors / most) * 100}%` }}
-                  />
-                  <button
-                    type="button"
-                    className="relative -my-[3px] min-h-[24px] min-w-[24px] max-w-full truncate text-left"
-                    title={`Filter by ${shown(dimension, r)}`}
-                    onClick={() => onPick(dimension, r)}
-                  >
-                    <Labeled dimension={dimension} value={r.value}>
-                      {shown(dimension, r)}
-                    </Labeled>
-                  </button>
-                </td>
-                <td className="text-right">{count(r.visitors)}</td>
-                <td className="text-right text-mut">{count(r.count)}</td>
-              </tr>
-            ))}
-            {rows?.length === 0 && (
-              <tr>
-                <td colSpan={3} className="text-mut">
-                  None in this range.
-                </td>
-              </tr>
-            )}
-            {!rows && (
-              <tr>
-                <td colSpan={3} className="text-mut">
-                  {fetched.error ? fetched.error.message : "Loading…"}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Panel>
+      {onGlobe ? (
+        <div className="grid items-start gap-x-6 gap-y-3 md:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+          <Suspense fallback={<p className="text-mut">Loading the globe…</p>}>
+            <Globe
+              rows={all ?? []}
+              hover={hover}
+              onHover={setHover}
+              onPick={(row) => onPick("country", row)}
+            />
+          </Suspense>
+          {table}
+        </div>
+      ) : (
+        table
+      )}
     </section>
   );
 }

@@ -8,7 +8,7 @@ export const Route = createFileRoute("/_app/$org/analytics/$project/$site/")({
 });
 
 function Overview() {
-  const { project, site, range, filters, onPick, canEdit } = useSiteView();
+  const { project, site, range, filters, onPick } = useSiteView();
   return (
     <Dashboard
       project={project}
@@ -16,7 +16,6 @@ function Overview() {
       range={range}
       filters={filters}
       onPick={onPick}
-      canEdit={canEdit}
     />
   );
 }

@@ -20,3 +20,11 @@ link to the old org preloads must end in the new org with no failed page,
 and a loader whose query was cancelled must load again instead of showing
 "This page didn't load". The title says `PASS: org switch` or the console
 has the failed assertion.
+
+# Globe
+
+Open `/tests/globe.html` under `pnpm dev`; no backend. It checks the
+analytics globe's arithmetic (`features/analytics/globe/sphere.ts`): the
+land decodes to its dot count, the globe opens facing the visitors and
+the generated country centres are where they should be. The title says
+`PASS: globe`.

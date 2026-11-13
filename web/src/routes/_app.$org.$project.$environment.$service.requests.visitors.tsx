@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { servicePath, useCanDeploy } from "../data/queries";
+import { servicePath } from "../data/queries";
 import { Dashboard } from "../features/analytics/Dashboard";
 import {
   type AnalyticsChange,
@@ -27,7 +27,6 @@ function Visitors() {
   const ref = servicePath(Route.useParams());
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const canEdit = useCanDeploy(ref);
   const range = search.range ?? "30d";
   const filters = (search.f ?? []).flatMap((f) => parseFilter(f) ?? []);
   const onChange = (change: AnalyticsChange) =>
@@ -46,7 +45,6 @@ function Visitors() {
           site={site}
           range={range}
           filters={filters}
-          canEdit={canEdit}
           onPick={(dimension, row) =>
             onChange({
               filters: [
