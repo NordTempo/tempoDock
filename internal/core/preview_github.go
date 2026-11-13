@@ -322,3 +322,65 @@ func (c *Core) postPreviewStatus(base envScope, conn store.GitConnection, sha, s
 		}
 	}()
 }
+
+// previewTell is an open preview of a project being deleted, with what
+// its pull request is told through.
+type previewTell struct {
+	pv   store.Preview
+	env  string
+	repo string
+	cred githubCred
+}
+
+// previewsToTell reads what DeleteProject's open previews post with,
+// before their git connections go with the project. One without
+// credentials is skipped: nothing was posted for it.
+func (c *Core) previewsToTell(ctx context.Context, d deletion) []previewTell {
+	rows, err := c.store.ListOpenPreviews(ctx, d.project.ID)
+	if err != nil {
+		c.log.Warn("list a deleted project's open previews", "project", d.project.Name, "err", err)
+		return nil
+	}
+	var out []previewTell
+	for _, pv := range rows {
+		conn, ok, err := c.previewConnectionOf(ctx, pv)
+		if err != nil || !ok {
+			continue
+		}
+		cred, err := c.gitCred(ctx, svcScope{envScope: envScope{project: d.project}}, conn)
+		if err != nil {
+			continue
+		}
+		out = append(out, previewTell{pv: pv, env: d.env(pv.EnvironmentID).Name, repo: conn.Repo, cred: cred})
+	}
+	return out
+}
+
+// tellPreviewsDeleted tells open previews' pull requests, in the
+// background, that the preview went with its project: the comment says
+// so, and the dock/preview status stops linking to an address that is
+// gone. The status stays a success, so a deleted project never blocks a
+// merge. Failures are logged; there is no preview left to record them on.
+func (c *Core) tellPreviewsDeleted(p store.Project, tells []previewTell) {
+	if len(tells) == 0 {
+		return
+	}
+	c.wg.Go(func() {
+		ctx := c.ctx
+		for _, t := range tells {
+			st := githubStatus{State: "success", Context: previewStatusContext,
+				Description: fmt.Sprintf("Preview %s was deleted with project %s", t.env, p.Name)}
+			if err := c.git.github.status(ctx, t.repo, t.pv.HeadSha, t.cred, st); err != nil && ctx.Err() == nil {
+				c.log.Warn("post a deleted preview's status", "preview", t.env, "err", err)
+			}
+			if t.pv.CommentID == 0 {
+				continue
+			}
+			body := fmt.Sprintf("**Tempo Dock preview** `%s` in %s: **deleted**\n\nThe project was deleted in Tempo Dock: this preview environment and everything in it are gone.\n\n%s\n",
+				t.env, p.Name, c.previewMarker(p.ID))
+			if err := c.git.github.editComment(ctx, t.repo, t.pv.CommentID, t.cred, body); err != nil && ctx.Err() == nil {
+				c.log.Warn("comment on a deleted preview's pull request", "preview", t.env, "err", err)
+			}
+		}
+	})
+}

@@ -12,7 +12,7 @@ access goes through the daemon's API, which enforces permissions.
 |---|---|
 | `read` | Status, logs, releases, variable *names* |
 | `deploy` | Deploy, rollback, restart, set variables, add domains, run commands |
-| `admin` | Archive services and projects, manage members, tokens and locks, read secret values |
+| `admin` | Archive services and projects, delete archived projects (unlimited), manage members, tokens and locks, read secret values |
 
 - Scopes act within one organization ([0027](decisions/0027-organizations.md)).
   Tokens can also be limited to specific projects and environments, so an
@@ -82,6 +82,11 @@ The UI controls production, so a password shouldn't be enough
   The one exception is a closed preview environment's volumes
   ([0056](decisions/0056-preview-environments.md)); after a move, the old
   server's volumes stay until someone removes them.
+- **Deleting a project** is the one operation whose point is deleting
+  volumes and history, so it takes three things: the project must be
+  archived first, its name typed again, and an unlimited admin with a
+  recent sign-in. Its activity and its backups stay
+  ([0077](decisions/0077-deleting-archived-projects.md)).
 - **Staged changes:** variables, settings, volumes and domains are staged
   and shown (`dock changes`, the UI's bar) before they go live together.
 - Client flags like `--yes` skip confirmation prompts, never permission checks.

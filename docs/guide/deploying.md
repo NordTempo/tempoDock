@@ -794,6 +794,26 @@ the audit log) says what was left:
   label=dock.managed=true`), or join it again with `dock server add` and
   they are removed when it connects.
 
+## Deleting an archived project
+
+An archived project keeps its volumes, history and name until it is
+deleted. On its page, or in Organization settings, General, choose
+**Delete permanently** and type its name, or run:
+
+```sh
+dock project delete shop --confirm shop
+```
+
+Its containers, networks, volumes and volume snapshots are removed from
+its servers, its sites' analytics events from the analytics store, and
+everything Dock knows of it (releases, variables, domains, jobs, previews,
+the tokens limited to it) is deleted, which frees its name and its
+domains. Its activity stays in the audit log. Its backups stay in their
+restic repository: the answer names the repository and the tags that find
+them, should you want them gone too. Only an archived project can be
+deleted, by an admin of the whole organization, with every server it is on
+online. It can't be undone ([ADR 0077](../decisions/0077-deleting-archived-projects.md)).
+
 ## Rename a project
 
 On the project overview, choose **Rename project**, or run:
@@ -803,8 +823,8 @@ dock project rename shop storefront
 ```
 
 This needs admin access to the whole project. Use the same lowercase name rules
-as project creation. Archived projects cannot be renamed, and their names remain
-reserved.
+as project creation. An archived project can be renamed too (its page, or
+Organization settings), which frees its name for a new project.
 
 The project's ID, services, containers, volumes, domains, tokens and release
 history stay unchanged. Renaming does not redeploy anything, even if a deployment

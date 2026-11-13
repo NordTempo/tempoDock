@@ -618,6 +618,13 @@ func (r *Runtime) RemoveVolume(_ context.Context, name string, labels node.Label
 	return nil
 }
 
+// Volumes returns the names of the volumes there are, sorted.
+func (r *Runtime) Volumes() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Sorted(maps.Keys(r.volumes))
+}
+
 // Networks returns the names of networks created so far, sorted.
 func (r *Runtime) Networks() []string {
 	r.mu.Lock()

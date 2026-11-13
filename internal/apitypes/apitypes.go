@@ -236,6 +236,23 @@ type RenameProjectRequest struct {
 	ID   int64  `json:"id,omitempty" minimum:"1" doc:"Expected project ID; prevents renaming a reused name"`
 }
 
+// DeleteProjectRequest confirms deleting an archived project for good
+// (ADR 0077).
+type DeleteProjectRequest struct {
+	Confirm string `json:"confirm" doc:"The project's name, typed again to confirm"`
+	ID      int64  `json:"id,omitempty" minimum:"1" doc:"Expected project ID; prevents deleting a project that took a reused name"`
+}
+
+// ProjectDeleted is what deleting an archived project removed, and what
+// stays.
+type ProjectDeleted struct {
+	Project      string   `json:"project"`
+	Environments int      `json:"environments"`
+	Services     int      `json:"services"`
+	Volumes      int      `json:"volumes" doc:"Docker volumes removed from the project's servers"`
+	Notes        []string `json:"notes,omitempty" doc:"What stays: backups in restic repositories (with the tags that find them), and analytics events when the analytics store couldn't be reached"`
+}
+
 // ProjectRenamed lets open clients follow a project to its new address.
 type ProjectRenamed struct {
 	PreviousName string  `json:"previous_name"`

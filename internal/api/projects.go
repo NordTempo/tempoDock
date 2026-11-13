@@ -104,6 +104,18 @@ func registerProjects(s *Server, a huma.API) {
 		return reply(s.core.ArchiveProject(ctx, actor, in.Project))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "delete-project", Method: http.MethodDelete, Path: projectPathT,
+		Summary: "Delete an archived project", Tags: tags,
+		Description: "Deletes an archived project for good (ADR 0077): its containers, networks, volumes and volume snapshots on its servers, its sites' analytics events, " +
+			"and everything Dock knows of it, which frees its name and its domains. Its activity stays in the audit log; its backups stay in their restic repositories (`notes` says where). " +
+			"`confirm` is the project's name. Every server it has something on must be online. Scope: admin, unlimited; a session needs a recent sign-in.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ProjectPath
+		Body apitypes.DeleteProjectRequest
+	}) (*out[apitypes.ProjectDeleted], error) {
+		return reply(s.core.DeleteProject(ctx, actor, in.Project, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "project-overview", Method: http.MethodGet, Path: projectPathT + "/overview",
 		Summary: "Project overview", Description: "Environments → services with status, releases, domains and staged-change counts, in one call.",
 		Tags: tags,
