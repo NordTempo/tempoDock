@@ -517,16 +517,17 @@ func (c *Core) incidentView(ctx context.Context, a Actor, p store.StatusPage, ro
 	return toStatusIncident(a, inc, p.Slug, c.statusPageURL(ctx, p)), nil
 }
 
-// statusPageURL is a published page's address, "" for none.
+// statusPageURL is a published page's address (statusAddress), "" for
+// none.
 func (c *Core) statusPageURL(ctx context.Context, p store.StatusPage) string {
 	if !p.Published {
 		return ""
 	}
 	base, err := c.publicBase(ctx)
-	if err != nil || base == "" {
+	if err != nil {
 		return ""
 	}
-	return c.controlURL(statusHostname(p.Slug, base))
+	return c.statusAddress(p, base)
 }
 
 // GetIncident is an incident with its updates. Read scope.

@@ -8,7 +8,8 @@ import (
 
 // A page's custom hostname is served, routed and given certificates only
 // once its TXT record proves the org controls it; then no service and no
-// other page can take it. An operator's needs no proof.
+// other page can take it, and it is the page's address. An operator's
+// needs no proof.
 func TestStatusHostname(t *testing.T) {
 	h, _, _ := incidentPage(t)
 	admin := h.user("admin@example.com", apitypes.ScopeAdmin)
@@ -26,6 +27,10 @@ func TestStatusHostname(t *testing.T) {
 	if _, _, ok := h.c.StatusPageAt(host); ok || h.routed(host) {
 		t.Error("an unverified hostname is served")
 	}
+	const generated = "https://status-acme.dock.example.net"
+	if p.URL != generated {
+		t.Errorf("address before the check = %q, want the generated %q", p.URL, generated)
+	}
 	if ok, _ := h.c.AllowCertificate(h.ctx, host); ok {
 		t.Error("an unverified hostname gets a certificate")
 	}
@@ -40,6 +45,12 @@ func TestStatusHostname(t *testing.T) {
 	}
 	if _, _, ok := h.c.StatusPageAt(host); !ok || !h.routed(host) {
 		t.Error("a verified hostname isn't served")
+	}
+	if p.URL != "https://"+host {
+		t.Errorf("address once verified = %q, want the custom hostname", p.URL)
+	}
+	if pages, err := h.c.ListStatusPages(h.ctx, admin); err != nil || len(pages) != 1 || pages[0].URL != "https://"+host {
+		t.Errorf("listed address once verified: %+v, %v", pages, err)
 	}
 	if ok, _ := h.c.AllowCertificate(h.ctx, host); !ok {
 		t.Error("a verified hostname gets no certificate")
@@ -76,6 +87,9 @@ func TestStatusHostname(t *testing.T) {
 
 	if p, err = h.c.UpdateStatusPage(h.ctx, admin, "acme", apitypes.UpdateStatusPageRequest{Hostname: new("")}); err != nil || p.Hostname != nil {
 		t.Fatalf("removed: %+v, %v", p.Hostname, err)
+	}
+	if p.URL != generated {
+		t.Errorf("address once removed = %q, want the generated %q", p.URL, generated)
 	}
 	if _, _, ok := h.c.StatusPageAt(host); ok || h.routed(host) {
 		t.Error("a removed hostname is still served")
