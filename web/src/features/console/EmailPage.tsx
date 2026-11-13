@@ -409,6 +409,10 @@ function RecentMail() {
 const kindName: Record<EmailDelivery["kind"], string> = {
   invite: "Invite",
   test: "Test",
+  password_reset: "Password reset",
+  security: "Security notice",
+  alert: "Alert",
+  access_request: "Access request",
 };
 
 /** A mail's outcome. */

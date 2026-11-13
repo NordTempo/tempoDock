@@ -452,7 +452,7 @@ type Kind = NewAlertChannel["kind"];
 const kinds: Array<{ kind: Kind; note: string }> = [
   { kind: "webhook", note: "JSON, signed with HMAC-SHA256" },
   { kind: "slack", note: "a Slack-compatible incoming webhook" },
-  { kind: "email", note: "through an SMTP server" },
+  { kind: "email", note: "through Dock's email server" },
 ];
 
 function AddChannel({ onClose }: { onClose: () => void }) {
@@ -467,17 +467,9 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   const [signing, setSigning] = useState("");
   const [severity, setSeverity] = useState<Severity>("warning");
   const [hours, setHours] = useState("4");
-  const [smtp, setSmtp] = useState({
-    host: "",
-    port: "587",
-    username: "",
-    password: "",
-    from: "",
-    to: "",
-  });
+  // An email channel's recipients, comma separated.
+  const [to, setTo] = useState("");
   const [secret, setSecret] = useState<string>();
-  const set = (k: keyof typeof smtp) => (e: { target: { value: string } }) =>
-    setSmtp((s) => ({ ...s, [k]: e.target.value }));
 
   if (secret) {
     return (
@@ -507,15 +499,7 @@ function AddChannel({ onClose }: { onClose: () => void }) {
   const cli = [
     `dock alerts channel add ${name.trim() || "<name>"}${flag(scope)}`,
     kind === "email"
-      ? [
-          `--email ${smtp.to.replace(/\s/g, "") || "<to>"}`,
-          `--from ${smtp.from.trim() || "<address>"}`,
-          `--smtp-host ${smtp.host.trim() || "<host>"}`,
-          smtp.port !== "587" && `--smtp-port ${smtp.port}`,
-          smtp.username && `--smtp-user ${smtp.username} --smtp-password-stdin`,
-        ]
-          .filter(Boolean)
-          .join(" ")
+      ? `--email ${to.replace(/\s/g, "") || "<to>"}`
       : `--${kind} -`,
     kind === "webhook" && signing && "--secret …",
     severity === "critical" && "--min-severity critical",
@@ -539,19 +523,10 @@ function AddChannel({ onClose }: { onClose: () => void }) {
           renotify_minutes: Math.round(Number(hours || 0) * 60),
         };
         if (kind === "email") {
-          input.smtp = {
-            host: smtp.host.trim(),
-            port: Number(smtp.port) || 587,
-            from: smtp.from.trim(),
-            to: smtp.to
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean),
-            ...(smtp.username && {
-              username: smtp.username,
-              password: smtp.password,
-            }),
-          };
+          input.to = to
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
         } else {
           input.url = url.trim();
           if (kind === "webhook" && signing) input.secret = signing;
@@ -625,30 +600,20 @@ function AddChannel({ onClose }: { onClose: () => void }) {
         </div>
       </fieldset>
       {kind === "email" ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-          {(
-            [
-              ["to", "To", "ops@example.com, comma separated"],
-              ["from", "From", "dock@example.com"],
-              ["host", "SMTP host", "smtp.example.com"],
-              ["port", "Port", "587; 465 for TLS"],
-              ["username", "User", "optional"],
-              ["password", "Password", "stored encrypted"],
-            ] as const
-          ).map(([k, label, hint]) => (
-            <label key={k} className="flex flex-col gap-1.5">
-              <span>
-                {label} <span className="text-mut">{hint}</span>
-              </span>
-              <input
-                value={smtp[k]}
-                onChange={set(k)}
-                type={k === "password" ? "password" : "text"}
-                className="field font-mono"
-              />
-            </label>
-          ))}
-        </div>
+        <label className="flex flex-col gap-1.5">
+          <span>
+            To{" "}
+            <span className="text-mut">
+              comma separated; Dock's email server sends, set up by an operator
+            </span>
+          </span>
+          <input
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="ops@example.com, oncall@example.com"
+            className="field font-mono"
+          />
+        </label>
       ) : (
         <label className="flex flex-col gap-1.5">
           <span>

@@ -505,6 +505,9 @@ func (c *Core) Start(ctx context.Context) error {
 	// Scans wait for a quiet minute; with nothing queued it exits.
 	c.startScans(ctx)
 	// Mail queued before a stop goes now; with none the sender exits.
+	c.email.mu.Lock()
+	c.email.started = true
+	c.email.mu.Unlock()
 	c.kickEmail()
 	go c.runCloudflare()
 	// In the background: running the tunnel may pull an image.

@@ -305,6 +305,11 @@ func (c *Core) SignInMethods(ctx context.Context) (apitypes.SignInMethods, error
 		return apitypes.SignInMethods{}, err
 	}
 	out := apitypes.SignInMethods{Password: set.PasswordSignIn, Providers: make([]apitypes.SignInButton, len(rows))}
+	if out.Password {
+		if out.PasswordReset, err = c.canEmailLinks(ctx); err != nil {
+			return apitypes.SignInMethods{}, err
+		}
+	}
 	for i, p := range rows {
 		out.Providers[i] = apitypes.SignInButton{Name: p.Name, Kind: apitypes.SSOKind(p.Kind), Label: p.Label}
 	}

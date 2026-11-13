@@ -1,0 +1,8 @@
+{{define "reset.html"}}{{template "head" "Reset your Tempo Dock password"}}
+<p style="margin:0 0 18px;font-size:20px;font-weight:600;color:#fafafa">Reset your password</p>
+<p style="margin:0 0 18px;color:#d0d0d6">Someone asked to reset the password of {{.Email}} on Tempo Dock.</p>
+<p style="margin:0 0 16px"><a href="{{.URL}}" style="display:inline-block;background:#fafafa;color:#000000;border-radius:6px;padding:10px 18px;font-weight:600;text-decoration:none">Set a new password</a></p>
+<p style="margin:0 0 18px;font-size:13px;color:#8b8b94;word-break:break-all">Or open <a href="{{.URL}}" style="color:#93c5fd">{{.URL}}</a></p>
+<p style="margin:0 0 6px;font-size:13px;color:#a1a1aa">The link works once, until {{.ExpiresText}}. Setting a password signs you out everywhere; a second factor stays as it is.</p>
+<p style="margin:0;font-size:13px;color:#a1a1aa">Didn't ask for this? Ignore this email; your password stays as it is.</p>
+{{template "foot" .Site}}{{end}}

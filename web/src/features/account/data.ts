@@ -90,3 +90,21 @@ export function useUpdateName() {
     () => [["audit"]],
   );
 }
+
+const myEmailKey = ["me", "email"];
+
+/** The mail the caller may turn off (`dock me email`, ADR 0079). */
+export const myEmailQuery = () =>
+  queryOptions({
+    queryKey: myEmailKey,
+    queryFn: () => body(api.GET("/api/v1/me/email")),
+  });
+
+/** Turns access request mail on or off. */
+export const useSetMyEmail = () =>
+  useAction(
+    (req: components["schemas"]["MyEmail"]) =>
+      body(api.PUT("/api/v1/me/email", { body: req })),
+    () => [myEmailKey],
+    (req) => `Access request emails ${req.access_requests ? "on" : "off"}`,
+  );

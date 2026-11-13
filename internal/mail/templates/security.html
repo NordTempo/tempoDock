@@ -1,0 +1,10 @@
+{{define "security.html"}}{{template "head" .What}}
+<p style="margin:0 0 18px;font-size:20px;font-weight:600;color:#fafafa">{{.What}}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;font-size:14px">
+{{template "row" (list "Account" .Email)}}
+{{template "row" (list "When" .WhenText)}}
+{{if .By}}{{template "row" (list "By" .By)}}{{end}}
+</table>
+<p style="margin:0 0 12px;color:#d0d0d6">If this was you, there is nothing to do.</p>
+<p style="margin:0;color:#d0d0d6">If it wasn't, reset your password from the sign-in page now, then check your second factors on your {{if .Account}}<a href="{{.Account}}" style="color:#93c5fd">Account page</a>{{else}}Account page{{end}}, and tell an operator of this Dock.</p>
+{{template "foot" .Site}}{{end}}

@@ -239,6 +239,9 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if out.emails, err = c.pruneEmail(ctx, now); err != nil {
 		c.log.Warn("retention: email", "err", err)
 	}
+	if _, err = c.prunePasswordResets(ctx, now); err != nil {
+		c.log.Warn("retention: password reset links", "err", err)
+	}
 	c.kickScanRefresh()
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {

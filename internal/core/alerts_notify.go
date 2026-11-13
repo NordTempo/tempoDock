@@ -55,11 +55,26 @@ const (
 	SignatureHeader = "Dock-Signature"
 )
 
-// channelConfig is a channel's sealed settings.
+// channelConfig is a channel's sealed settings. An email channel holds
+// only its recipients (To); Dock's email server sends (ADR 0079). SMTP is
+// an email channel's own server from before, moved on start
+// (moveEmailChannels).
 type channelConfig struct {
-	URL    string                 `json:"url,omitempty"`
-	Secret string                 `json:"secret,omitempty"`
-	SMTP   *apitypes.SMTPSettings `json:"smtp,omitempty"`
+	URL    string      `json:"url,omitempty"`
+	Secret string      `json:"secret,omitempty"`
+	To     []string    `json:"to,omitempty"`
+	SMTP   *legacySMTP `json:"smtp,omitempty"`
+}
+
+// legacySMTP is an email channel's own SMTP server, as channels stored it
+// before Dock had one (ADR 0020).
+type legacySMTP struct {
+	Host     string   `json:"host"`
+	Port     int      `json:"port,omitempty"`
+	Username string   `json:"username,omitempty"`
+	Password string   `json:"password,omitempty"`
+	From     string   `json:"from"`
+	To       []string `json:"to"`
 }
 
 // notify sends what happened to an alert (opened, escalated, resolved) to
@@ -213,6 +228,10 @@ func (c *Core) withRetries(attempt func() error) error {
 // running. A channel with maxQueued notifications waiting (it has been
 // failing for a while) drops new ones and records that.
 func (c *Core) deliver(ch store.AlertChannel, n apitypes.AlertNotification) {
+	if apitypes.AlertChannelKind(ch.Kind) == apitypes.ChannelEmail {
+		c.mailChannel(c.ctx, ch, n)
+		return
+	}
 	start, full := c.alerts.outbox.add(ch.ID, n)
 	if full {
 		c.channelFailed(c.ctx, ch.ID, errors.New("too many notifications waiting to be sent; this one was dropped"))
@@ -291,12 +310,8 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 		}
 		return c.alerts.post(ctx, ch.OrgID != nil, cfg.URL, body, nil)
 	case apitypes.ChannelEmail:
-		if cfg.SMTP == nil {
-			return errors.New("the channel has no SMTP settings")
-		}
 		subject, text := emailText(n)
-		g, _ := c.alerts.guardFor(ch.OrgID != nil)
-		return sendMail(ctx, g, *cfg.SMTP, subject, text)
+		return c.sendNow(ctx, mailAddresses(cfg.To), mail.Content{Subject: subject, Text: text})
 	}
 	return fmt.Errorf("unknown channel kind %q", ch.Kind)
 }
@@ -433,35 +448,6 @@ func emailText(n apitypes.AlertNotification) (subject, text string) {
 	return "dock " + headline(n), b.String()
 }
 
-// sendMail sends one plain-text mail, never to an address g refuses,
-// with internal/mail's client: port 465 is TLS from the start; on other
-// ports STARTTLS is used when offered, and required before a password is
-// sent.
-func sendMail(ctx context.Context, g *egressGuard, s apitypes.SMTPSettings, subject, text string) error {
-	from, err := mail.ParseAddress(s.From)
-	if err != nil {
-		return err
-	}
-	to := make([]mail.Address, 0, len(s.To))
-	for _, addr := range s.To {
-		a, err := mail.ParseAddress(addr)
-		if err != nil {
-			return err
-		}
-		to = append(to, *a)
-	}
-	srv := mail.Server{Host: s.Host, Port: s.Port, Security: mail.StartTLS, Username: s.Username, Password: s.Password}
-	if s.Port == 465 {
-		srv.Security = mail.TLS
-	}
-	var sendErr error
-	msg := mail.Message{From: *from, To: to, Content: mail.Content{Subject: subject, Text: text}}
-	if err := mail.Send(ctx, (&net.Dialer{Control: g.control}).DialContext, srv, []mail.Message{msg}, func(_ int, err error) { sendErr = err }); err != nil {
-		return err
-	}
-	return sendErr
-}
-
 // oneLine keeps a header value on one line.
 func oneLine(s string) string { return strings.NewReplacer("\r", " ", "\n", " ").Replace(s) }
 
@@ -586,8 +572,8 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, or
 		if req.URL == "" || perr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 			return cfg, "", "", invalid("a %s channel needs --url, an http:// or https:// URL", req.Kind)
 		}
-		if req.SMTP != nil {
-			return cfg, "", "", invalid("SMTP settings are for email channels")
+		if len(req.To) > 0 {
+			return cfg, "", "", invalid("recipients are for email channels")
 		}
 		// Named hosts are checked when delivering (newChannelClient), after DNS.
 		if err := guard.hostErr(u.Hostname()); err != nil {
@@ -606,23 +592,20 @@ func (e *alertEngine) channelSettings(req apitypes.CreateAlertChannelRequest, or
 			return cfg, "", "", invalid("only webhook channels are signed; slack channels take no secret")
 		}
 	case apitypes.ChannelEmail:
-		s := req.SMTP
-		if s == nil || s.Host == "" || s.From == "" || len(s.To) == 0 {
-			return cfg, "", "", invalid("an email channel needs an SMTP host, a from address and at least one recipient")
+		if len(req.To) == 0 {
+			return cfg, "", "", invalid("an email channel needs at least one recipient")
 		}
 		if req.URL != "" || req.Secret != "" {
-			return cfg, "", "", invalid("email channels take SMTP settings, not a URL or secret")
+			return cfg, "", "", invalid("email channels take recipients, not a URL or secret")
 		}
-		for _, addr := range append([]string{s.From}, s.To...) {
-			if _, perr := mail.ParseAddress(addr); perr != nil || strings.ContainsAny(addr, "\r\n") {
+		for _, addr := range req.To {
+			a, perr := mail.ParseAddress(addr)
+			if perr != nil {
 				return cfg, "", "", invalid("%q is not an email address", addr)
 			}
+			cfg.To = append(cfg.To, a.Address)
 		}
-		if err := guard.hostErr(s.Host); err != nil {
-			return cfg, "", "", invalid("%v", err)
-		}
-		smtpCopy := *s
-		cfg.SMTP, target = &smtpCopy, strings.Join(s.To, ", ")
+		target = strings.Join(cfg.To, ", ")
 	default:
 		return cfg, "", "", invalid("channel kind must be webhook, slack or email")
 	}

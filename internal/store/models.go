@@ -675,6 +675,15 @@ type OrgVariable struct {
 	UpdatedBy string
 }
 
+type PasswordReset struct {
+	ID        int64
+	UserID    int64
+	Hash      string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+}
+
 type PlatformDataPolicy struct {
 	Rule      string
 	Subject   string
@@ -1260,6 +1269,7 @@ type User struct {
 	Operator       bool
 	FactorFailures int64
 	FactorFailedAt *time.Time
+	EmailRequests  bool
 }
 
 type UserFactor struct {

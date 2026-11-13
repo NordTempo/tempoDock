@@ -198,10 +198,14 @@ func newAlertEngine(allow []netip.Prefix) *alertEngine {
 	return e
 }
 
-// startAlerts makes the channel copies migration 0070 asked for, loads the open alerts, brings deploy and domain alerts in
+// startAlerts moves email channels onto Dock's email server (ADR 0079),
+// makes the channel copies migration 0070 asked for, loads the open alerts, brings deploy and domain alerts in
 // line with the DB (they may have changed while the daemon was down) and
 // starts following the bus. Start calls it after recovery.
 func (c *Core) startAlerts(ctx context.Context) error {
+	if err := c.moveEmailChannels(ctx); err != nil {
+		return fmt.Errorf("move email channels onto Dock's email: %w", err)
+	}
 	if err := c.copyPlatformChannels(ctx); err != nil {
 		return err
 	}

@@ -69,11 +69,48 @@ apps: Dock receives nothing.
 |---|---|---|---|
 | Invite | The address invited, from `CreateInvite` and the console's invite; a new link sends again | No | Now |
 | Test | The operator, or `--to` | n/a | Now |
-| Password reset link | The account's email, from "Forgot password?" while password sign-in is on | No | Next |
-| Security notices | Password changed or reset, factors added or removed, a recovery code used | No | Next |
-| Alert email channels | Their recipients, through the platform's server: an email channel keeps only its recipients | Per channel | Next |
-| Access requests | The admins who can decide them | Yes, per user | Next |
+| Password reset link | The account's email, from "Forgot password?" while password sign-in is on | No | Now |
+| Security notices | The account's email: its password changed or reset, a factor added or removed, a recovery code used, new recovery codes, two-factor reset | No | Now |
+| Alert email channels | Their recipients, through the platform's server: an email channel keeps only its recipients | Per channel | Now |
+| Access requests | The org's admins (not temporary ones), each unless they turned it off | Yes, per user (`dock me email`, Account) | Now |
 | Sign-in from a new device, email change, digests, status page subscribers | | | Later |
+
+### Password reset by email
+
+| Topic | Decision |
+|---|---|
+| Offered | While passwords sign in, email is set up and Dock has a public address (`GET /auth/methods` says `password_reset`); otherwise "Forgot password?" says who resets passwords |
+| Asking | `POST /auth/password-reset {email}`, public, rate limited like logins. The answer is the same whether or not the address has an account; a disabled account gets nothing. Audited `user.password_reset_sent` |
+| The link | `<public address>/reset-password/dpr_...`, 256 random bits kept as SHA-256 in `password_resets`; it works once, for an hour, and a newer link, a password change or an operator's reset replaces it. Links go a day after they expire |
+| Using it | `POST /auth/password-reset/{code} {password}` sets the password (the usual rule), spends the link, ends every session and `dock login` token, keeps second factors, sends a notice. It doesn't sign in: the person signs in with the new password and their second factor |
+| Limits | Reset links count against the per-address limit (10 an hour); security notices and alerts don't |
+
+### Security notices and access requests
+
+- **Notices** go to the account's own address and can't be turned off.
+  When someone else acted (an operator's reset), the notice names them.
+  They say what to do if it wasn't the person: reset the password, check
+  the factors, tell an operator.
+- **Access requests**: a new request (not a newer call replacing a
+  pending one) is mailed to its org's admins with `users.email_requests`
+  on, with the Inbox link. Without a public address none is sent: the
+  Inbox and the org's alert channels carry it.
+- Mail queued by a command that runs core on its own (`dock admin
+  reset-2fa`) waits for the daemon's next pass: only a started daemon
+  sends, so the two never race.
+
+### Alert email channels
+
+- A channel holds only its recipients (`to`); each notification is a mail
+  per recipient in the outbox, its outcome the channel's status. A test
+  sends at once.
+- On start, a channel with an SMTP server of its own moves: a platform
+  channel's server becomes the platform's when it has none (the operator
+  set it up for this), and every channel keeps only its recipients.
+  Audited `alert.channel_email` in its owner's log. An org that used its
+  own relay keeps its recipients, not its sender.
+- `dock alerts channel add --email TO,...`; the old `--smtp-*` and
+  `--from` flags say where SMTP went.
 
 **No second factor recovery by email.** Email would become a way past the
 second factor; recovery codes and `dock admin reset-2fa` stay the ways
@@ -84,6 +121,7 @@ back.
 - An invite reaches the person without the admin copying anything; the
   link is still shown once, behind "Copy the link instead" once sent.
 - Invites list how their mail went (`Invite.mail`, `dock org invites`).
-- Email alert channels still carry their own SMTP settings until they move
-  onto the platform's server; they already share its client.
+- Every mail Dock sends goes through one server and one outbox.
+- Without email set up, reset links, notices, request mail and email
+  channels don't go; channels say why in their status.
 - A Dock without a public address sends no invite mail.

@@ -1,0 +1,13 @@
+{{define "security.subject"}}{{.What}}{{end}}
+{{define "security.text"}}
+{{.What}}{{if .By}}, by {{.By}}{{end}}, on {{.WhenText}}.
+Account: {{.Email}}
+
+If this was you, there is nothing to do.
+
+If it wasn't, reset your password from the sign-in page now, then check
+your second factors on your Account page{{if .Account}} ({{.Account}}){{end}},
+and tell an operator of this Dock.
+
+Tempo Dock at {{.Site}}
+{{end}}

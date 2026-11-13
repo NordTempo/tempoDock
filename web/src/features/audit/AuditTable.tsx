@@ -147,6 +147,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   ],
   "platform.address_removed": ["remove address", "removed the address"],
   "platform.address_set": ["set address", "set the address to"],
+  "alert.channel_email": ["move email channel", "moved onto Dock's email:"],
   "platform.email_clear": ["turn email off", "turned off"],
   "platform.email_set": ["set up email", "set"],
   "platform.email_test": ["test email", "sent a test to"],
@@ -248,7 +249,16 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "user.name": ["change name", "changed the name of"],
   "user.login": ["sign in", "signed in as"],
   "user.login_failed": ["failed sign-in", "failed to sign in as"],
+  "user.email_requests": ["change email", "changed the optional email of"],
   "user.password": ["change password", "changed the password of"],
+  "user.password_reset": [
+    "reset password by email",
+    "set a new password by email for",
+  ],
+  "user.password_reset_sent": [
+    "email reset link",
+    "emailed a password reset link to",
+  ],
   "user.password_failed": [
     "failed password change",
     "failed to change the password of",

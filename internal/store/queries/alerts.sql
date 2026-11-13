@@ -117,3 +117,11 @@ JOIN alert_channels ON alert_channels.id = alert_channel_copies.channel_id;
 
 -- name: DeleteAlertChannelCopy :exec
 DELETE FROM alert_channel_copies WHERE channel_id = +? AND org_id = +?;
+
+-- ListEmailChannels is every email channel, the platform's and every
+-- org's, to move their settings onto the platform's SMTP server.
+-- name: ListEmailChannels :many
+SELECT * FROM alert_channels WHERE kind = 'email' ORDER BY id;
+
+-- name: SetAlertChannelConfig :exec
+UPDATE alert_channels SET config = ?, target = ? WHERE id = +?;

@@ -333,6 +333,7 @@ func (c *Core) useRecoveryCode(ctx context.Context, u store.User, code string) e
 	}
 	left, _ := c.store.CountRecoveryCodes(ctx, u.ID)
 	c.audit(ctx, userActor(u), "user.recovery_code_used", nil, nil, u.Email, fmt.Sprintf("signed in with a recovery code; %d left", left))
+	c.securityNotice(ctx, u, "A recovery code signed in to your Tempo Dock account", "")
 	return nil
 }
 
@@ -573,6 +574,7 @@ func (c *Core) addFactor(ctx context.Context, a Actor, u store.User, p store.Cre
 		summary += "; two-factor sign-in is on, recovery codes created and other sessions ended"
 	}
 	c.audit(ctx, a.platform(), "user.2fa_add", nil, nil, u.Email, summary)
+	c.noticeFor(ctx, a, u, "A second factor was added to your Tempo Dock account")
 	return out, nil
 }
 
@@ -622,6 +624,7 @@ func (c *Core) RemoveFactor(ctx context.Context, a Actor, id int64) error {
 		return err
 	}
 	c.audit(ctx, a.platform(), "user.2fa_remove", nil, nil, u.Email, fmt.Sprintf("removed %s %q", factorName(f.Kind), f.Name))
+	c.noticeFor(ctx, a, u, "A second factor was removed from your Tempo Dock account")
 	return nil
 }
 
@@ -674,6 +677,7 @@ func (c *Core) NewRecoveryCodes(ctx context.Context, a Actor) (apitypes.Recovery
 		return apitypes.RecoveryCodes{}, err
 	}
 	c.audit(ctx, a.platform(), "user.recovery_codes", nil, nil, u.Email, "created new recovery codes; the old ones stopped working")
+	c.noticeFor(ctx, a, u, "New recovery codes were made for your Tempo Dock account")
 	return apitypes.RecoveryCodes{Codes: codes}, nil
 }
 
@@ -714,6 +718,7 @@ func (c *Core) ResetTwoFactor(ctx context.Context, a Actor, email string) error 
 	}
 	c.audit(ctx, a.platform(), "user.2fa_reset", nil, nil, u.Email,
 		fmt.Sprintf("reset the two-factor sign-in of %s (%d factors removed, recovery codes spent) and ended their sessions%s", u.Email, n, revokedNote(revoked)))
+	c.noticeFor(ctx, a, u, "Your Tempo Dock two-factor sign-in was reset")
 	return nil
 }
 

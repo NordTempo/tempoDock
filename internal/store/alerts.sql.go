@@ -417,6 +417,49 @@ func (q *Queries) ListDueReminders(ctx context.Context, now int64) ([]ListDueRem
 	return items, nil
 }
 
+const listEmailChannels = `-- name: ListEmailChannels :many
+SELECT id, org_id, name, kind, target, config, min_severity, renotify_minutes, created_at, last_sent_at, last_error, last_error_at, failures FROM alert_channels WHERE kind = 'email' ORDER BY id
+`
+
+// ListEmailChannels is every email channel, the platform's and every
+// org's, to move their settings onto the platform's SMTP server.
+func (q *Queries) ListEmailChannels(ctx context.Context) ([]AlertChannel, error) {
+	rows, err := q.db.QueryContext(ctx, listEmailChannels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AlertChannel
+	for rows.Next() {
+		var i AlertChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.Kind,
+			&i.Target,
+			&i.Config,
+			&i.MinSeverity,
+			&i.RenotifyMinutes,
+			&i.CreatedAt,
+			&i.LastSentAt,
+			&i.LastError,
+			&i.LastErrorAt,
+			&i.Failures,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFailedLatestReleases = `-- name: ListFailedLatestReleases :many
 SELECT projects.id AS project_id, services.id AS service_id,
   projects.name AS project, environments.name AS environment, services.name AS service,
@@ -722,6 +765,21 @@ type ResolveAlertParams struct {
 
 func (q *Queries) ResolveAlert(ctx context.Context, arg ResolveAlertParams) error {
 	_, err := q.db.ExecContext(ctx, resolveAlert, arg.At, arg.ID)
+	return err
+}
+
+const setAlertChannelConfig = `-- name: SetAlertChannelConfig :exec
+UPDATE alert_channels SET config = ?, target = ? WHERE id = +?
+`
+
+type SetAlertChannelConfigParams struct {
+	Config []byte
+	Target string
+	ID     int64
+}
+
+func (q *Queries) SetAlertChannelConfig(ctx context.Context, arg SetAlertChannelConfigParams) error {
+	_, err := q.db.ExecContext(ctx, setAlertChannelConfig, arg.Config, arg.Target, arg.ID)
 	return err
 }
 

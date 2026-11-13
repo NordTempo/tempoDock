@@ -83,8 +83,12 @@ type SignInSettingsRequest struct {
 // SignInMethods is what the sign-in page offers, for anyone: a button per
 // provider, and whether it takes passwords.
 type SignInMethods struct {
-	Password  bool           `json:"password"`
-	Providers []SignInButton `json:"providers"`
+	Password bool `json:"password"`
+	// PasswordReset: the sign-in page offers "Forgot password?", which
+	// emails a reset link (ADR 0079): passwords sign in, email is set up
+	// and Dock has a public address.
+	PasswordReset bool           `json:"password_reset"`
+	Providers     []SignInButton `json:"providers"`
 }
 
 // SignInButton is a provider on the sign-in page.

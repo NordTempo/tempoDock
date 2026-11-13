@@ -15,7 +15,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service and switch to it |
 | [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
 | [Single sign-on](sso.md) | Continue with Google, GitHub or any OpenID Connect provider, set up by operators; who gets an account, invite only, turning passwords off |
-| [Email](email.md) | The SMTP server Dock sends invites through, set up by operators; what is sent and what happens without it |
+| [Email](email.md) | The SMTP server Dock sends through, set up by operators: invites, reset links, security notices, alert email, access requests |
 | [Tracing](tracing.md) | Apps' traces and metrics with no setup: OpenTelemetry SDKs send to Dock, `dock traces` and the Metrics tab read them |
 | [Watching](watching.md) | Logs, errors, alerts and the Inbox, Analytics, image vulnerabilities |
 | [Organizations](organizations.md) | Switching, members and roles, tokens, the organization's settings |
@@ -44,7 +44,7 @@ Every command takes `--json`. Exit codes are in [CLI conventions](../cli.md#exit
 
 | Area | Commands |
 |---|---|
-| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock version`, `dock me name\|password\|two-factor`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
+| Auth and servers | `dock login`, `dock logout`, `dock whoami`, `dock version`, `dock me name\|password\|two-factor\|email`, `dock context add\|list\|use\|current\|remove`, `dock mcp` |
 | Organizations | `dock org list\|use\|create\|rename\|delete\|join\|leave`, `dock org members\|member role\|member remove`, `dock org invite\|invites\|invites revoke`, `dock org env list\|set\|unset\|redeploy`, `dock org locks`, `dock org two-factor` |
 | Where you deploy | `dock link`, `dock unlink`, `dock project list\|create\|rename\|export\|archive\|pin`, `dock export`, `dock apply FILE`, `dock import compose`, `dock environment list\|create\|clone\|lock\|unlock\|move\|previews`, `dock service list\|create\|show\|update\|start\|stop\|archive\|switch-references` |
 | Deploys | `dock deploy`, `dock status`, `dock logs`, `dock releases`, `dock release list\|show\|wait\|rollback`, `dock rollback`, `dock restart`, `dock promote`, `dock git connect\|status\|deploy\|disconnect`, `dock github status\|installations\|app\|install\|assign\|unassign\|repos` |

@@ -168,13 +168,12 @@ func channelFailing(ch apitypes.AlertChannel) string {
 const maxSecretInput = 4 << 10
 
 func newAlertChannelAddCmd(g *globals) *cobra.Command {
-	var webhook, slack, email, minSeverity string
+	var webhook, slack, email, minSeverity, oldSMTP string
+	var oldPasswordStdin bool
 	var renotify time.Duration
-	var passwordStdin bool
 	var req apitypes.CreateAlertChannelRequest
-	smtp := apitypes.SMTPSettings{}
 	cmd := &cobra.Command{
-		Use:   "add <name> (--webhook <url> | --slack <url> | --email <to,...> --smtp-host <host> --from <address>)",
+		Use:   "add <name> (--webhook <url> | --slack <url> | --email <to,...>)",
 		Short: "Add an alert channel (admin)",
 		Long: `Add a channel alerts are sent to: when they open, when their severity goes
 up, as reminders while they stay open (--renotify), and when they resolve.
@@ -183,16 +182,15 @@ up, as reminders while they stay open (--renotify), and when they resolve.
 t=<unix time>,v1=<hex HMAC of "<t>.<body>">. Without --secret a signing
 secret is generated and printed once.
 --slack POSTs {"text": ...} to a Slack-compatible incoming webhook.
---email sends through an SMTP server; port 465 uses TLS, any other port
-needs STARTTLS before a password is sent.
+--email sends mail through Dock's email server, which an operator sets
+up with ` + "`dock email set`" + ` (ADR 0079).
 
 URLs often hold tokens: pass - to read the URL from stdin instead of the
 command line. URLs, secrets and passwords are stored encrypted and never
 shown again.`,
 		Example: `  dock alerts channel add ops --slack - < slack-webhook-url
   dock alerts channel add pager --webhook https://hooks.example.com/dock --min-severity critical
-  dock alerts channel add mail --email ops@example.com --from dock@example.com \
-    --smtp-host smtp.example.com --smtp-user dock --smtp-password-stdin < password`,
+  dock alerts channel add mail --email ops@example.com,oncall@example.com`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req.Name = args[0]
@@ -213,21 +211,14 @@ shown again.`,
 					return err
 				}
 			case apitypes.ChannelEmail:
-				smtp.To = strings.Split(email, ",")
-				for i := range smtp.To {
-					smtp.To[i] = strings.TrimSpace(smtp.To[i])
+				if oldSMTP != "" || oldPasswordStdin {
+					return usageError("email channels send through Dock's email server now; they take no SMTP settings", "Leave out the --smtp-* and --from flags; an operator sets the server with `dock email set`.")
 				}
-				if smtp.Username != "" {
-					if passwordStdin {
-						smtp.Password, err = g.stdinIfDash("-")
-					} else {
-						smtp.Password, err = g.io.PromptSecret("SMTP password", "smtp-password-stdin")
-					}
-					if err != nil {
-						return err
+				for _, to := range strings.Split(email, ",") {
+					if to = strings.TrimSpace(to); to != "" {
+						req.To = append(req.To, to)
 					}
 				}
-				req.SMTP = &smtp
 			}
 			req.MinSeverity = apitypes.AlertSeverity(minSeverity)
 			if cmd.Flags().Changed("renotify") {
@@ -258,11 +249,13 @@ shown again.`,
 	f.StringVar(&slack, "slack", "", "POST to this Slack-compatible incoming webhook (- reads it from stdin)")
 	f.StringVar(&req.Secret, "secret", "", "webhook signing secret (generated when not given)")
 	f.StringVar(&email, "email", "", "send email to these addresses, comma separated")
-	f.StringVar(&smtp.Host, "smtp-host", "", "email: SMTP server")
-	f.IntVar(&smtp.Port, "smtp-port", 587, "email: SMTP port (465: TLS, others: STARTTLS)")
-	f.StringVar(&smtp.Username, "smtp-user", "", "email: SMTP user name (the password is asked for)")
-	f.BoolVar(&passwordStdin, "smtp-password-stdin", false, "email: read the SMTP password from stdin")
-	f.StringVar(&smtp.From, "from", "", "email: sender address")
+	// The SMTP flags from before ADR 0079, hidden, to say where they went.
+	for _, name := range []string{"smtp-host", "smtp-port", "smtp-user", "from"} {
+		f.StringVar(&oldSMTP, name, "", "gone: Dock's email server sends (dock email)")
+		_ = f.MarkHidden(name)
+	}
+	f.BoolVar(&oldPasswordStdin, "smtp-password-stdin", false, "gone: Dock's email server sends (dock email)")
+	_ = f.MarkHidden("smtp-password-stdin")
 	f.StringVar(&minSeverity, "min-severity", "warning", "send only alerts this severe: warning or critical")
 	f.DurationVar(&renotify, "renotify", 4*time.Hour, "remind about alerts still open this often; 0 never")
 	return cmd

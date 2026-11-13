@@ -20,6 +20,7 @@ import { Route as AppOrgRouteImport } from './routes/_app.$org'
 import { Route as AppAccountRouteImport } from './routes/_app.account'
 import { Route as AppConsoleRouteImport } from './routes/_app.console'
 import { Route as InviteCodeRouteImport } from './routes/invite.$code'
+import { Route as ResetPasswordCodeRouteImport } from './routes/reset-password.$code'
 import { Route as AppOrgIndexRouteImport } from './routes/_app.$org.index'
 import { Route as AppOrgAlertsRouteImport } from './routes/_app.$org.alerts'
 import { Route as AppOrgAuditRouteImport } from './routes/_app.$org.audit'
@@ -169,6 +170,11 @@ const AppConsoleRoute = AppConsoleRouteImport.update({
 const InviteCodeRoute = InviteCodeRouteImport.update({
   id: '/invite/$code',
   path: '/invite/$code',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordCodeRoute = ResetPasswordCodeRouteImport.update({
+  id: '/reset-password/$code',
+  path: '/reset-password/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppOrgIndexRoute = AppOrgIndexRouteImport.update({
@@ -712,6 +718,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AppAccountRoute
   '/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
+  '/reset-password/$code': typeof ResetPasswordCodeRoute
   '/$org/alerts': typeof AppOrgAlertsRoute
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/errors': typeof AppOrgErrorsRoute
@@ -817,6 +824,7 @@ export interface FileRoutesByTo {
   '/no-org': typeof NoOrgRoute
   '/account': typeof AppAccountRoute
   '/invite/$code': typeof InviteCodeRoute
+  '/reset-password/$code': typeof ResetPasswordCodeRoute
   '/': typeof AppIndexRoute
   '/$org/alerts': typeof AppOrgAlertsRoute
   '/$org/audit': typeof AppOrgAuditRoute
@@ -920,6 +928,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/_app/console': typeof AppConsoleRouteWithChildren
   '/invite/$code': typeof InviteCodeRoute
+  '/reset-password/$code': typeof ResetPasswordCodeRoute
   '/_app/': typeof AppIndexRoute
   '/_app/$org/alerts': typeof AppOrgAlertsRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
@@ -1031,6 +1040,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/console'
     | '/invite/$code'
+    | '/reset-password/$code'
     | '/$org/alerts'
     | '/$org/audit'
     | '/$org/errors'
@@ -1136,6 +1146,7 @@ export interface FileRouteTypes {
     | '/no-org'
     | '/account'
     | '/invite/$code'
+    | '/reset-password/$code'
     | '/'
     | '/$org/alerts'
     | '/$org/audit'
@@ -1238,6 +1249,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/_app/console'
     | '/invite/$code'
+    | '/reset-password/$code'
     | '/_app/'
     | '/_app/$org/alerts'
     | '/_app/$org/audit'
@@ -1345,6 +1357,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   NoOrgRoute: typeof NoOrgRoute
   InviteCodeRoute: typeof InviteCodeRoute
+  ResetPasswordCodeRoute: typeof ResetPasswordCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1424,6 +1437,13 @@ declare module '@tanstack/react-router' {
       path: '/invite/$code'
       fullPath: '/invite/$code'
       preLoaderRoute: typeof InviteCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password/$code': {
+      id: '/reset-password/$code'
+      path: '/reset-password/$code'
+      fullPath: '/reset-password/$code'
+      preLoaderRoute: typeof ResetPasswordCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/$org/': {
@@ -2455,6 +2475,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   NoOrgRoute: NoOrgRoute,
   InviteCodeRoute: InviteCodeRoute,
+  ResetPasswordCodeRoute: ResetPasswordCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

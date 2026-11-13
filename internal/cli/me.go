@@ -18,7 +18,7 @@ func newMeCmd(g *globals) *cobra.Command {
 		Use:   "me",
 		Short: "Your own account",
 	})
-	cmd.AddCommand(newMeNameCmd(g), newMePasswordCmd(g), newMeTwoFactorCmd(g))
+	cmd.AddCommand(newMeNameCmd(g), newMePasswordCmd(g), newMeTwoFactorCmd(g), newMeEmailCmd(g))
 	return cmd
 }
 
@@ -44,6 +44,47 @@ tokens have no account.`,
 			return g.io.Print(me, func() error {
 				g.io.Successf("Your name is %s now", me.DisplayName)
 				return nil
+			})
+		},
+	}
+}
+
+// newMeEmailCmd shows or turns on and off the mail you may turn off
+// (GET|PUT /me/email, ADR 0079).
+func newMeEmailCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "email [access-requests on|off]",
+		Short: "Which optional mail Dock sends you",
+		Long: `Show which optional mail Dock sends you, or turn one on or off. Access
+requests: as an admin, a mail when one waits for you to decide. Invites,
+password reset links and security notices always come.`,
+		Example: "  dock me email\n  dock me email access-requests off",
+		Args: cobra.MatchAll(cobra.RangeArgs(0, 2), func(_ *cobra.Command, args []string) error {
+			if len(args) == 1 || (len(args) == 2 && (args[0] != "access-requests" || (args[1] != "on" && args[1] != "off"))) {
+				return usageError("say `access-requests on` or `access-requests off`", "Run `dock me email` to see what you get.")
+			}
+			return nil
+		}),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			var e apitypes.MyEmail
+			if len(args) == 2 {
+				e, err = send[apitypes.MyEmail](cmd.Context(), s, http.MethodPut, apiPrefix+"/me/email", apitypes.MyEmail{AccessRequests: args[1] == "on"})
+			} else {
+				e, err = get[apitypes.MyEmail](cmd.Context(), s, apiPrefix+"/me/email")
+			}
+			if err != nil {
+				return err
+			}
+			return g.io.Print(e, func() error {
+				state := "off"
+				if e.AccessRequests {
+					state = "on"
+				}
+				return g.io.Fields("access requests", state)
 			})
 		},
 	}
