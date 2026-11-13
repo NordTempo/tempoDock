@@ -63,7 +63,13 @@ drain: --resume tries it again, --resume --skip leaves it and goes on.
 				if err != nil {
 					return err
 				}
-				return g.io.Print(d, func() error { return g.printDrain(d) })
+				return g.io.Print(d, func() error {
+					if d.ID == 0 && len(d.Forwards) == 0 {
+						_, err := fmt.Fprintf(g.io.Out, "%s never drained; drain it with `dock server drain %s`\n", d.Server, d.Server)
+						return err
+					}
+					return g.printDrain(d)
+				})
 			case cancel:
 				d, err := send[apitypes.ServerDrain](ctx, s, http.MethodPost, path+"/cancel", nil)
 				if err != nil {

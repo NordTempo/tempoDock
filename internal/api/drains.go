@@ -30,7 +30,7 @@ func registerServerDrains(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "get-server-drain", Method: http.MethodGet, Path: serverPathT + "/drain",
 		Summary: "A server's drain", Tags: tags,
-		Description: "The running or latest drain: each environment, its target and how far its move got, and the ports the server forwards for services that moved away. 404 if it never drained and forwards nothing. Operators only.",
+		Description: "The running or latest drain: each environment, its target and how far its move got, and the ports the server forwards for services that moved away. A server that never drained answers a drain with id 0 and no status, items or forwards. Operators only.",
 	}, func(ctx context.Context, actor core.Actor, in *ServerPath) (*out[apitypes.ServerDrain], error) {
 		return reply(s.core.ServerDrainStatus(ctx, actor, in.Server))
 	})

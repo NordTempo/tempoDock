@@ -32,6 +32,10 @@ func TestDrainServer(t *testing.T) {
 	if _, err := p.c.DrainServer(p.ctx, admin, "homelab", apitypes.DrainServerRequest{DryRun: true}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Errorf("a non-operator drained: %v", err)
 	}
+	// A server that never drained answers an empty drain, not a not found.
+	if never, err := p.c.ServerDrainStatus(p.ctx, testSystem, "homelab"); err != nil || never.ID != 0 || never.Status != "" || never.Items == nil || never.Forwards == nil || len(never.Forwards) != 0 {
+		t.Fatalf("never drained = %+v, %v", never, err)
+	}
 	plan, err := p.c.DrainServer(p.ctx, testSystem, "homelab", apitypes.DrainServerRequest{DryRun: true})
 	if err != nil {
 		t.Fatal(err)
