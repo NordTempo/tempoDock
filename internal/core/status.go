@@ -184,12 +184,22 @@ func (c *Core) ListStatusPages(ctx context.Context, a Actor) ([]apitypes.StatusP
 
 // toStatusSummary is a page in lists.
 func (c *Core) toStatusSummary(p store.StatusPage, base string, components int) apitypes.StatusPageSummary {
-	out := apitypes.StatusPageSummary{Slug: p.Slug, Title: p.Title, Published: p.Published, Components: components,
-		CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy}
-	if h := statusHostname(p.Slug, base); h != "" {
-		out.URL = c.controlURL(h)
+	return apitypes.StatusPageSummary{Slug: p.Slug, Title: p.Title, Published: p.Published, Components: components,
+		URL: c.statusAddress(p, base), CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy}
+}
+
+// statusAddress is where a page is served: its custom hostname once
+// verified, otherwise its generated address under base, "" with neither.
+// Lists, the editor's Open page, incident links and update hooks all use
+// it, so they point where the organization chose.
+func (c *Core) statusAddress(p store.StatusPage, base string) string {
+	if p.Hostname != nil && p.VerifiedAt != nil {
+		return c.controlURL(*p.Hostname)
 	}
-	return out
+	if h := statusHostname(p.Slug, base); h != "" {
+		return c.controlURL(h)
+	}
+	return ""
 }
 
 // CreateStatusPage makes an unpublished page. Organization admins.

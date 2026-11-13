@@ -87,8 +87,9 @@ type StatusPageSummary struct {
 	Slug      string `json:"slug"`
 	Title     string `json:"title"`
 	Published bool   `json:"published"`
-	// URL is where it is served, "" while the control plane has no base
-	// domain.
+	// URL is where it is served: its custom hostname once verified,
+	// otherwise its generated address; "" while the control plane has no
+	// base domain and the page no verified hostname.
 	URL        string    `json:"url"`
 	Components int       `json:"components"`
 	CreatedAt  time.Time `json:"created_at"`
