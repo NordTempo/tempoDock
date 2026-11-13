@@ -8,8 +8,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { useIsOperator } from "../data/queries";
 import { CreateHost } from "../features/create/open";
 import { DeployHost } from "../features/deploy/start";
+import { openHelp } from "../features/help/open";
 import { Dialog } from "../ui/Dialog";
 import { Icon } from "../ui/icons";
 import { ErrorText } from "../ui/kit";
@@ -58,6 +60,45 @@ export function PaletteProvider({ children }: { children: ReactNode }) {
 
 type Row = Match & { group: string };
 
+type HelpSearch = typeof import("../features/help/search");
+
+/**
+ * The help topics' search, loaded once something is typed: the topics
+ * stay out of the shell's bundle (they load with the help panel).
+ */
+function useHelpSearch(wanted: boolean) {
+  const [search, setSearch] = useState<HelpSearch | null>(null);
+  useEffect(() => {
+    if (wanted && !search)
+      void import("../features/help/search").then(setSearch);
+  }, [wanted, search]);
+  return search;
+}
+
+/** The best three help topics for the query, as rows that open them. */
+function helpRows(
+  help: HelpSearch | null,
+  query: string,
+  operator: boolean,
+): Row[] {
+  if (!help) return [];
+  return help
+    .matchTopics(query, operator)
+    .slice(0, 3)
+    .map((m) => ({
+      group: "Help",
+      score: m.score,
+      command: {
+        id: `help:${m.id}`,
+        group: "Go to",
+        label: `Help: ${m.title}`,
+        cli: "?",
+        weight: -1,
+        run: () => openHelp(m.id),
+      },
+    }));
+}
+
 function Palette({
   initial,
   onClose,
@@ -75,12 +116,14 @@ function Palette({
   const [armed, setArmed] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
 
+  const help = useHelpSearch(query !== "");
+  const operator = useIsOperator();
   const rows = useMemo((): Row[] => {
     const matches = matchCommands(commands, query).map((m) => ({
       ...m,
       group: m.command.group,
     }));
-    if (query) return matches;
+    if (query) return [...matches, ...helpRows(help, query, operator)];
     // With nothing typed, the last few commands come first, then places to
     // go, then actions: Enter on an untouched palette never changes anything.
     const recent = recentIds().flatMap((id) => {
@@ -98,7 +141,7 @@ function Palette({
         .map((r) => ({ ...r, group: r.command.group })),
       ...rest.filter((m) => m.group !== "Go to"),
     ];
-  }, [commands, query]);
+  }, [commands, query, help, operator]);
   const selected = rows[Math.min(index, rows.length - 1)];
 
   // Hand focus back to wherever it was when the palette opened.

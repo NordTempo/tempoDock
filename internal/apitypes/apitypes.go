@@ -34,6 +34,13 @@ type Version struct {
 	MaxUploadBytes int64 `json:"max_upload_bytes"`
 }
 
+// GuidePage is one page of the user guide (docs/guide) as Markdown: the
+// web UI's help shows it, matching the daemon's version.
+type GuidePage struct {
+	Page     string `json:"page" example:"deploying"`
+	Markdown string `json:"markdown"`
+}
+
 // Health reports that the daemon is up.
 type Health struct {
 	Status  string `json:"status" example:"ok"`

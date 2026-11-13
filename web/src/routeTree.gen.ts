@@ -48,6 +48,8 @@ import { Route as AppOrgProjectIndexRouteImport } from './routes/_app.$org.$proj
 import { Route as AppOrgProjectCompareRouteImport } from './routes/_app.$org.$project.compare'
 import { Route as AppOrgProjectSettingsRouteImport } from './routes/_app.$org.$project.settings'
 import { Route as AppOrgAnalyticsIndexRouteImport } from './routes/_app.$org.analytics.index'
+import { Route as AppOrgHelpIndexRouteImport } from './routes/_app.$org.help.index'
+import { Route as AppOrgHelpTopicRouteImport } from './routes/_app.$org.help.$topic'
 import { Route as AppOrgImagesIndexRouteImport } from './routes/_app.$org.images.index'
 import { Route as AppOrgImagesIdRouteImport } from './routes/_app.$org.images.$id'
 import { Route as AppOrgImagesIgnoresRouteImport } from './routes/_app.$org.images.ignores'
@@ -72,6 +74,7 @@ import { Route as AppOrgProjectSettingsIndexRouteImport } from './routes/_app.$o
 import { Route as AppOrgProjectSettingsLogDrainsRouteImport } from './routes/_app.$org.$project.settings.log-drains'
 import { Route as AppOrgProjectSettingsPreviewsRouteImport } from './routes/_app.$org.$project.settings.previews'
 import { Route as AppOrgAnalyticsProjectSiteRouteImport } from './routes/_app.$org.analytics.$project.$site'
+import { Route as AppOrgHelpGuidePageRouteImport } from './routes/_app.$org.help.guide.$page'
 import { Route as AppOrgProjectEnvironmentServiceIndexRouteImport } from './routes/_app.$org.$project.$environment.$service.index'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics'
 import { Route as AppOrgProjectEnvironmentServiceAuditRouteImport } from './routes/_app.$org.$project.$environment.$service.audit'
@@ -306,6 +309,16 @@ const AppOrgAnalyticsIndexRoute = AppOrgAnalyticsIndexRouteImport.update({
   path: '/analytics/',
   getParentRoute: () => AppOrgRoute,
 } as any)
+const AppOrgHelpIndexRoute = AppOrgHelpIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppOrgHelpRoute,
+} as any)
+const AppOrgHelpTopicRoute = AppOrgHelpTopicRouteImport.update({
+  id: '/$topic',
+  path: '/$topic',
+  getParentRoute: () => AppOrgHelpRoute,
+} as any)
 const AppOrgImagesIndexRoute = AppOrgImagesIndexRouteImport.update({
   id: '/images/',
   path: '/images/',
@@ -435,6 +448,11 @@ const AppOrgAnalyticsProjectSiteRoute =
     path: '/analytics/$project/$site',
     getParentRoute: () => AppOrgRoute,
   } as any)
+const AppOrgHelpGuidePageRoute = AppOrgHelpGuidePageRouteImport.update({
+  id: '/guide/$page',
+  path: '/guide/$page',
+  getParentRoute: () => AppOrgHelpRoute,
+} as any)
 const AppOrgProjectEnvironmentServiceIndexRoute =
   AppOrgProjectEnvironmentServiceIndexRouteImport.update({
     id: '/',
@@ -684,7 +702,7 @@ export interface FileRoutesByFullPath {
   '/$org/alerts': typeof AppOrgAlertsRoute
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/errors': typeof AppOrgErrorsRoute
-  '/$org/help': typeof AppOrgHelpRoute
+  '/$org/help': typeof AppOrgHelpRouteWithChildren
   '/$org/inbox': typeof AppOrgInboxRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/$org/settings': typeof AppOrgSettingsRouteWithChildren
@@ -707,6 +725,7 @@ export interface FileRoutesByFullPath {
   '/console/': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
+  '/$org/help/$topic': typeof AppOrgHelpTopicRoute
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
   '/$org/settings/activity': typeof AppOrgSettingsActivityRoute
@@ -724,6 +743,7 @@ export interface FileRoutesByFullPath {
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project/': typeof AppOrgProjectIndexRoute
   '/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
+  '/$org/help/': typeof AppOrgHelpIndexRoute
   '/$org/images/': typeof AppOrgImagesIndexRoute
   '/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
@@ -731,6 +751,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/$org/analytics/$project/$site': typeof AppOrgAnalyticsProjectSiteRouteWithChildren
+  '/$org/help/guide/$page': typeof AppOrgHelpGuidePageRoute
   '/$org/$project/$environment/': typeof AppOrgProjectEnvironmentIndexRoute
   '/$org/$project/settings/': typeof AppOrgProjectSettingsIndexRoute
   '/$org/$project/$environment/$service/analytics': typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
@@ -785,7 +806,6 @@ export interface FileRoutesByTo {
   '/$org/alerts': typeof AppOrgAlertsRoute
   '/$org/audit': typeof AppOrgAuditRoute
   '/$org/errors': typeof AppOrgErrorsRoute
-  '/$org/help': typeof AppOrgHelpRoute
   '/$org/inbox': typeof AppOrgInboxRoute
   '/$org/requests': typeof AppOrgRequestsRoute
   '/console/address': typeof AppConsoleAddressRoute
@@ -806,6 +826,7 @@ export interface FileRoutesByTo {
   '/$org': typeof AppOrgIndexRoute
   '/console': typeof AppConsoleIndexRoute
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
+  '/$org/help/$topic': typeof AppOrgHelpTopicRoute
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
   '/$org/settings/activity': typeof AppOrgSettingsActivityRoute
@@ -823,11 +844,13 @@ export interface FileRoutesByTo {
   '/console/servers/$server': typeof AppConsoleServersServerRoute
   '/$org/$project': typeof AppOrgProjectIndexRoute
   '/$org/analytics': typeof AppOrgAnalyticsIndexRoute
+  '/$org/help': typeof AppOrgHelpIndexRoute
   '/$org/images': typeof AppOrgImagesIndexRoute
   '/$org/settings': typeof AppOrgSettingsIndexRoute
   '/$org/status-pages': typeof AppOrgStatusPagesIndexRoute
   '/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
+  '/$org/help/guide/$page': typeof AppOrgHelpGuidePageRoute
   '/$org/$project/$environment': typeof AppOrgProjectEnvironmentIndexRoute
   '/$org/$project/settings': typeof AppOrgProjectSettingsIndexRoute
   '/$org/$project/$environment/$service/analytics': typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
@@ -884,7 +907,7 @@ export interface FileRoutesById {
   '/_app/$org/alerts': typeof AppOrgAlertsRoute
   '/_app/$org/audit': typeof AppOrgAuditRoute
   '/_app/$org/errors': typeof AppOrgErrorsRoute
-  '/_app/$org/help': typeof AppOrgHelpRoute
+  '/_app/$org/help': typeof AppOrgHelpRouteWithChildren
   '/_app/$org/inbox': typeof AppOrgInboxRoute
   '/_app/$org/requests': typeof AppOrgRequestsRoute
   '/_app/$org/settings': typeof AppOrgSettingsRouteWithChildren
@@ -907,6 +930,7 @@ export interface FileRoutesById {
   '/_app/console/': typeof AppConsoleIndexRoute
   '/_app/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/_app/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
+  '/_app/$org/help/$topic': typeof AppOrgHelpTopicRoute
   '/_app/$org/images/$id': typeof AppOrgImagesIdRoute
   '/_app/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
   '/_app/$org/settings/activity': typeof AppOrgSettingsActivityRoute
@@ -924,6 +948,7 @@ export interface FileRoutesById {
   '/_app/console/servers_/$server': typeof AppConsoleServersServerRoute
   '/_app/$org/$project/': typeof AppOrgProjectIndexRoute
   '/_app/$org/analytics/': typeof AppOrgAnalyticsIndexRoute
+  '/_app/$org/help/': typeof AppOrgHelpIndexRoute
   '/_app/$org/images/': typeof AppOrgImagesIndexRoute
   '/_app/$org/settings/': typeof AppOrgSettingsIndexRoute
   '/_app/$org/status-pages/': typeof AppOrgStatusPagesIndexRoute
@@ -931,6 +956,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/settings/log-drains': typeof AppOrgProjectSettingsLogDrainsRoute
   '/_app/$org/$project/settings/previews': typeof AppOrgProjectSettingsPreviewsRoute
   '/_app/$org/analytics/$project/$site': typeof AppOrgAnalyticsProjectSiteRouteWithChildren
+  '/_app/$org/help/guide/$page': typeof AppOrgHelpGuidePageRoute
   '/_app/$org/$project/$environment/': typeof AppOrgProjectEnvironmentIndexRoute
   '/_app/$org/$project/settings/': typeof AppOrgProjectSettingsIndexRoute
   '/_app/$org/$project/$environment/$service/analytics': typeof AppOrgProjectEnvironmentServiceAnalyticsRoute
@@ -1012,6 +1038,7 @@ export interface FileRouteTypes {
     | '/console/'
     | '/$org/$project/compare'
     | '/$org/$project/settings'
+    | '/$org/help/$topic'
     | '/$org/images/$id'
     | '/$org/images/ignores'
     | '/$org/settings/activity'
@@ -1029,6 +1056,7 @@ export interface FileRouteTypes {
     | '/console/servers/$server'
     | '/$org/$project/'
     | '/$org/analytics/'
+    | '/$org/help/'
     | '/$org/images/'
     | '/$org/settings/'
     | '/$org/status-pages/'
@@ -1036,6 +1064,7 @@ export interface FileRouteTypes {
     | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
     | '/$org/analytics/$project/$site'
+    | '/$org/help/guide/$page'
     | '/$org/$project/$environment/'
     | '/$org/$project/settings/'
     | '/$org/$project/$environment/$service/analytics'
@@ -1090,7 +1119,6 @@ export interface FileRouteTypes {
     | '/$org/alerts'
     | '/$org/audit'
     | '/$org/errors'
-    | '/$org/help'
     | '/$org/inbox'
     | '/$org/requests'
     | '/console/address'
@@ -1111,6 +1139,7 @@ export interface FileRouteTypes {
     | '/$org'
     | '/console'
     | '/$org/$project/compare'
+    | '/$org/help/$topic'
     | '/$org/images/$id'
     | '/$org/images/ignores'
     | '/$org/settings/activity'
@@ -1128,11 +1157,13 @@ export interface FileRouteTypes {
     | '/console/servers/$server'
     | '/$org/$project'
     | '/$org/analytics'
+    | '/$org/help'
     | '/$org/images'
     | '/$org/settings'
     | '/$org/status-pages'
     | '/$org/$project/settings/log-drains'
     | '/$org/$project/settings/previews'
+    | '/$org/help/guide/$page'
     | '/$org/$project/$environment'
     | '/$org/$project/settings'
     | '/$org/$project/$environment/$service/analytics'
@@ -1211,6 +1242,7 @@ export interface FileRouteTypes {
     | '/_app/console/'
     | '/_app/$org/$project/compare'
     | '/_app/$org/$project/settings'
+    | '/_app/$org/help/$topic'
     | '/_app/$org/images/$id'
     | '/_app/$org/images/ignores'
     | '/_app/$org/settings/activity'
@@ -1228,6 +1260,7 @@ export interface FileRouteTypes {
     | '/_app/console/servers_/$server'
     | '/_app/$org/$project/'
     | '/_app/$org/analytics/'
+    | '/_app/$org/help/'
     | '/_app/$org/images/'
     | '/_app/$org/settings/'
     | '/_app/$org/status-pages/'
@@ -1235,6 +1268,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/settings/log-drains'
     | '/_app/$org/$project/settings/previews'
     | '/_app/$org/analytics/$project/$site'
+    | '/_app/$org/help/guide/$page'
     | '/_app/$org/$project/$environment/'
     | '/_app/$org/$project/settings/'
     | '/_app/$org/$project/$environment/$service/analytics'
@@ -1563,6 +1597,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAnalyticsIndexRouteImport
       parentRoute: typeof AppOrgRoute
     }
+    '/_app/$org/help/': {
+      id: '/_app/$org/help/'
+      path: '/'
+      fullPath: '/$org/help/'
+      preLoaderRoute: typeof AppOrgHelpIndexRouteImport
+      parentRoute: typeof AppOrgHelpRoute
+    }
+    '/_app/$org/help/$topic': {
+      id: '/_app/$org/help/$topic'
+      path: '/$topic'
+      fullPath: '/$org/help/$topic'
+      preLoaderRoute: typeof AppOrgHelpTopicRouteImport
+      parentRoute: typeof AppOrgHelpRoute
+    }
     '/_app/$org/images/': {
       id: '/_app/$org/images/'
       path: '/images'
@@ -1730,6 +1778,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$org/analytics/$project/$site'
       preLoaderRoute: typeof AppOrgAnalyticsProjectSiteRouteImport
       parentRoute: typeof AppOrgRoute
+    }
+    '/_app/$org/help/guide/$page': {
+      id: '/_app/$org/help/guide/$page'
+      path: '/guide/$page'
+      fullPath: '/$org/help/guide/$page'
+      preLoaderRoute: typeof AppOrgHelpGuidePageRouteImport
+      parentRoute: typeof AppOrgHelpRoute
     }
     '/_app/$org/$project/$environment/$service/': {
       id: '/_app/$org/$project/$environment/$service/'
@@ -2007,6 +2062,22 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppOrgHelpRouteChildren {
+  AppOrgHelpTopicRoute: typeof AppOrgHelpTopicRoute
+  AppOrgHelpIndexRoute: typeof AppOrgHelpIndexRoute
+  AppOrgHelpGuidePageRoute: typeof AppOrgHelpGuidePageRoute
+}
+
+const AppOrgHelpRouteChildren: AppOrgHelpRouteChildren = {
+  AppOrgHelpTopicRoute: AppOrgHelpTopicRoute,
+  AppOrgHelpIndexRoute: AppOrgHelpIndexRoute,
+  AppOrgHelpGuidePageRoute: AppOrgHelpGuidePageRoute,
+}
+
+const AppOrgHelpRouteWithChildren = AppOrgHelpRoute._addFileChildren(
+  AppOrgHelpRouteChildren,
+)
+
 interface AppOrgSettingsRouteChildren {
   AppOrgSettingsActivityRoute: typeof AppOrgSettingsActivityRoute
   AppOrgSettingsAlertsRoute: typeof AppOrgSettingsAlertsRoute
@@ -2220,7 +2291,7 @@ interface AppOrgRouteChildren {
   AppOrgAlertsRoute: typeof AppOrgAlertsRoute
   AppOrgAuditRoute: typeof AppOrgAuditRoute
   AppOrgErrorsRoute: typeof AppOrgErrorsRoute
-  AppOrgHelpRoute: typeof AppOrgHelpRoute
+  AppOrgHelpRoute: typeof AppOrgHelpRouteWithChildren
   AppOrgInboxRoute: typeof AppOrgInboxRoute
   AppOrgRequestsRoute: typeof AppOrgRequestsRoute
   AppOrgSettingsRoute: typeof AppOrgSettingsRouteWithChildren
@@ -2245,7 +2316,7 @@ const AppOrgRouteChildren: AppOrgRouteChildren = {
   AppOrgAlertsRoute: AppOrgAlertsRoute,
   AppOrgAuditRoute: AppOrgAuditRoute,
   AppOrgErrorsRoute: AppOrgErrorsRoute,
-  AppOrgHelpRoute: AppOrgHelpRoute,
+  AppOrgHelpRoute: AppOrgHelpRouteWithChildren,
   AppOrgInboxRoute: AppOrgInboxRoute,
   AppOrgRequestsRoute: AppOrgRequestsRoute,
   AppOrgSettingsRoute: AppOrgSettingsRouteWithChildren,

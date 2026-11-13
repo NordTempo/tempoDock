@@ -17,13 +17,13 @@ import {
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { openDeploy } from "../features/deploy/start";
+import { openHelp } from "../features/help/open";
 import { requestLock } from "../features/overview/lockRequest";
 import { promoteCli, promotionPairs } from "../features/promote/plan";
 import { rollbackTarget } from "../features/service/releases";
 import { tabsFor } from "../features/service/tabs";
 import { serviceState, type Tone } from "../ui/status";
 import { openConfirm } from "./confirmHost";
-import { openKeyHelp } from "./KeyHelp";
 import { useCurrentContext, useOrg } from "./location";
 import { useShellMode } from "./Sidebar";
 
@@ -38,6 +38,8 @@ export type Command = {
   note?: { text: string; tone: Tone };
   /** The equivalent `dock` CLI invocation, or the page's key sequence. */
   cli: string;
+  /** More words it is found by, not shown. */
+  keywords?: string;
   /** Context relevance: the current service beats the current project. */
   weight: number;
   run: () => unknown;
@@ -434,18 +436,11 @@ export function useCommands({
   add({
     id: "help",
     group: "Go to",
-    label: "Help: what Dock's words mean",
-    cli: "",
-    weight: -1,
-    run: () => navigate({ to: "/$org/help", params: { org } }),
-  });
-  add({
-    id: "keys",
-    group: "Go to",
-    label: "Keyboard shortcuts",
+    label: "Help for this page",
+    keywords: "keyboard shortcuts keys",
     cli: "?",
     weight: -1,
-    run: openKeyHelp,
+    run: () => openHelp(),
   });
   add({
     id: "logout",
@@ -474,7 +469,8 @@ export function matchCommands(commands: Command[], query: string): Match[] {
     .filter(Boolean);
   const scored: Match[] = [];
   for (const command of commands) {
-    const text = `${command.label} ${command.cli}`.toLowerCase();
+    const text =
+      `${command.label} ${command.cli} ${command.keywords ?? ""}`.toLowerCase();
     let score = command.weight;
     let all = true;
     for (const word of words) {

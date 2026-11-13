@@ -96,6 +96,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	a.UseMiddleware(s.authenticate(a))
 
 	registerSystem(s, a)
+	registerGuide(a)
 	registerAuth(s, a)
 	registerTwoFactor(s, a)
 	registerSSO(s, a)

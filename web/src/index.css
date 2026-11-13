@@ -374,6 +374,16 @@
   html:has(.app-shell) {
     --shell-top: 52px;
   }
+
+  /*
+   * The help panel (features/help) sits beside the page on wide windows:
+   * the page gives up its width instead of hiding under it.
+   */
+  @media (min-width: 900px) {
+    html.help-open #main {
+      padding-right: 400px;
+    }
+  }
 }
 
 @layer components {

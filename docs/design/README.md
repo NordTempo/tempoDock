@@ -120,10 +120,17 @@ for everything.
 - **Navigation** (ADR 0076, option 3). A top bar across every page: the
   organization switcher (the Platform console in it for operators), the
   organization's views (Overview, Errors, Analytics, Images, Status
-  pages), one search (the palette, Cmd+K: pages and `dock` commands in one
-  list), Inbox with its count, Organization settings (Members, Activity
-  and where alerts go are inside), Help (`?`) and the account menu
-  (account, Help, Log out).
+  pages), one search (the palette, Cmd+K: pages, `dock` commands and help
+  topics in one list), Inbox with its count, Organization settings
+  (Members, Activity and where alerts go are inside), Help (`?`) and the
+  account menu (account, Help, Log out).
+- **Help.** `?` (the key or the top bar's button) opens a panel at the
+  right edge, beside the page, on the topic for where you are: one line
+  on what it is, the things to do there with their `dock` commands, what
+  to watch out for, related topics, a link into the guide, and the page's
+  keys. Topics are short and live in `web/src/features/help/topics.ts`;
+  routes map to them in `where.ts`. `/$org/help/$topic` and
+  `/$org/help/guide/$page` give a topic and a guide page an address.
   On the left the projects: a rail of tiles (initials and a health dot)
   that expands into the tree and stays expanded until collapsed (`[`).
   Sticky bars sit under the top bar (`--shell-top`). There is no second

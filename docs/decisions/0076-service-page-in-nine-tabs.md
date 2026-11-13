@@ -37,3 +37,6 @@ looks.
   with their tabs.
 - `web/src/features/service/tabs.ts` stays the one list the strip, the
   palette and the ? help read.
+- Help (2026-11-13, Saile's pick B of the help mocks): `?` opens a panel
+  beside the page with the topic for it instead of one long Help page,
+  and takes in the keyboard shortcuts window. See docs/design/README.md.

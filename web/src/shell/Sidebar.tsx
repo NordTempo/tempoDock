@@ -35,6 +35,7 @@ import {
   canCreateProject,
 } from "../features/create/access";
 import { openCreate } from "../features/create/open";
+import { closeHelp, openHelp, useHelpOpen } from "../features/help/open";
 import { useUpdateNote } from "../features/update/data";
 import { since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
@@ -253,7 +254,8 @@ function ProjectRail() {
 /**
  * The org's top bar (option 3): the switcher, the org's views,
  * search, Inbox, Settings and the account. Members and Activity live
- * under Settings; Help in the account menu; the console in the switcher.
+ * under Settings; Help (?) here and in the account menu; the console in
+ * the switcher.
  */
 export function TopBar() {
   const openPalette = usePalette();
@@ -290,9 +292,7 @@ export function TopBar() {
       {/* Named in full: the project page has Project settings beside it,
           and blind reviewers opened that one looking for Members. */}
       <TopLink to="/$org/settings">Organization settings</TopLink>
-      <TopLink to="/$org/help" label="Help">
-        <span aria-hidden>?</span>
-      </TopLink>
+      <HelpButton />
       <AccountMenu />
     </header>
   );
@@ -350,16 +350,9 @@ function ViewsMenu() {
 /** A link in the top bar; current on its page (Overview only exactly). */
 function TopLink({
   to,
-  label,
   children,
 }: {
-  to:
-    | (typeof orgViews)[number][0]
-    | "/$org/inbox"
-    | "/$org/settings"
-    | "/$org/help";
-  /** The name when the text isn't one (Help's "?"). */
-  label?: string;
+  to: (typeof orgViews)[number][0] | "/$org/inbox" | "/$org/settings";
   children: ReactNode;
 }) {
   const org = useOrg();
@@ -368,12 +361,27 @@ function TopLink({
       to={to}
       params={{ org }}
       activeOptions={{ exact: to === "/$org" }}
-      aria-label={label}
-      title={label}
       className="flex min-h-[28px] items-center gap-1.5 rounded-ctl px-2.5 text-mut hover:text-fg aria-[current=page]:bg-sel aria-[current=page]:text-fg"
     >
       {children}
     </Link>
+  );
+}
+
+/** The top bar's ?: opens or closes help for the page (features/help). */
+function HelpButton() {
+  const open = useHelpOpen();
+  return (
+    <button
+      type="button"
+      aria-label="Help"
+      aria-expanded={open}
+      title="Help (?)"
+      onClick={() => (open ? closeHelp() : openHelp())}
+      className="flex min-h-[28px] items-center rounded-ctl px-2.5 text-mut hover:text-fg aria-expanded:bg-sel aria-expanded:text-fg"
+    >
+      <span aria-hidden>?</span>
+    </button>
   );
 }
 
@@ -538,7 +546,6 @@ function AccountMenu() {
   const session = useSession();
   const logout = useLogout();
   const navigate = useNavigate();
-  const org = useOrg();
   if (!session) return null;
   return (
     <Menu
@@ -581,7 +588,7 @@ function AccountMenu() {
             className={menuItem}
             onClick={() => {
               close();
-              navigate({ to: "/$org/help", params: { org } });
+              openHelp();
             }}
           >
             <Icon name="help" className="text-mut" /> Help
