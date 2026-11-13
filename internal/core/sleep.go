@@ -554,7 +554,7 @@ func (c *Core) resumeService(ctx context.Context, rt node.Runtime, ss svcScope, 
 		c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceNone})
 		return err
 	}
-	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning, StartedAt: startedAt(ct)})
 	c.adoptHealth(ctx, ss, rel.ContainerID)
 	return nil
 }

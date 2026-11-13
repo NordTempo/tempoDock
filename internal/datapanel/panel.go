@@ -489,8 +489,8 @@ func (p *Panel[D]) Setup(ctx context.Context, a Actor, db *Database[D]) (apitype
 		return apitypes.DataInfo{}, err
 	}
 	tg.access = &acc
-	p.audit(ctx, a, db, apitypes.AuditDataSetup, fmt.Sprintf("set up data access on Postgres %s: created or rotated %s, %s, %s and %s",
-		srv.Version, p.roles.Reader, p.roles.Writer, p.roles.ReaderMasked, p.roles.Monitor), nil)
+	p.audit(ctx, a, db, apitypes.AuditDataSetup, fmt.Sprintf("set up data access on %s: created or rotated %s, %s, %s and %s",
+		apitypes.ServerLabel(db.Engine, srv.Version), p.roles.Reader, p.roles.Writer, p.roles.ReaderMasked, p.roles.Monitor), nil)
 	if err := p.loadSensitive(ctx, tg); err != nil {
 		return apitypes.DataInfo{}, err
 	}

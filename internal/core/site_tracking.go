@@ -338,7 +338,8 @@ type sitePage struct {
 }
 
 // siteGet fetches a URL for a check; with read, it keeps up to
-// siteCheckBody of the body. Errors are said without the URL.
+// siteCheckBody of the body. Errors are said in plain words (errorLine),
+// without the URL.
 func (c *Core) siteGet(ctx context.Context, target string, read bool) (sitePage, error) {
 	ctx, cancel := context.WithTimeout(ctx, siteCheckTimeout)
 	defer cancel()
@@ -350,10 +351,10 @@ func (c *Core) siteGet(ctx context.Context, target string, read bool) (sitePage,
 	req.Header.Set("Accept", "text/html,*/*")
 	resp, err := c.tracking.client.Do(req)
 	if err != nil {
-		if ue, ok := errors.AsType[*url.Error](err); ok {
-			err = ue.Err
+		if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
+			return sitePage{}, fmt.Errorf("no answer within %s", siteCheckTimeout)
 		}
-		return sitePage{}, fmt.Errorf("%s", errorLine(err))
+		return sitePage{}, errors.New(c.errorLine(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out := sitePage{status: resp.StatusCode, header: resp.Header}

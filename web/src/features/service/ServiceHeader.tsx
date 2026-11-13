@@ -531,10 +531,12 @@ export function StatusSentence({ view }: { view: ServiceView }) {
         ) : (
           <>
             <span className="text-ok">●</span> {mono(`r${serving}`)} is serving
-            {status.updated_at &&
-              (since(status.updated_at) === "now"
+            {/* The container's own start, not the status's last update,
+                which a daemon restart resets. */}
+            {status.started_at &&
+              (since(status.started_at) === "now"
                 ? ", just started"
-                : `, up ${since(status.updated_at)}`)}
+                : `, up ${since(status.started_at)}`)}
             .
           </>
         )}{" "}

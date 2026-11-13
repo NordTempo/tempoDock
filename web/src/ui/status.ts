@@ -91,8 +91,8 @@ export function isCrashLooping(status: ServiceView["service"]["status"]) {
   return (
     status.state === "running" &&
     status.restart_count > 0 &&
-    !!status.updated_at &&
-    Date.now() - Date.parse(status.updated_at) < LOOP_WINDOW_MS
+    !!status.started_at &&
+    Date.now() - Date.parse(status.started_at) < LOOP_WINDOW_MS
   );
 }
 

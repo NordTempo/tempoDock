@@ -470,9 +470,13 @@ func (d *deployment) cutover(ctx context.Context) error {
 	serverID := d.ss.env.ServerID
 	canFallBack := d.old != nil && !d.oldRemoved
 
-	// Its health so far, read before taking the lock, so the release
-	// reads as active with it; adoptHealth takes what changes after.
-	health := c.containerHealth(ctx, d.ss, d.rel.ContainerID)
+	// Its health so far and start time, read before taking the lock, so
+	// the release reads as active with them; adoptHealth takes what
+	// changes after. A failed read leaves both empty.
+	ct, err := c.runtime(serverID).Inspect(ctx, d.rel.ContainerID)
+	if err != nil {
+		ct = node.Container{}
+	}
 	c.routesMu.Lock()
 	routeErr := c.applyRoutesLocked(ctx, serverID, map[int64]routeOverride{d.ss.svc.ID: {port: d.rel.HostPort, release: d.rel.ID}})
 	if routeErr != nil && canFallBack {
@@ -484,8 +488,8 @@ func (d *deployment) cutover(ctx context.Context) error {
 	// active (a deploy's caller polling, a backup, the data panel) sees
 	// the service running too.
 	prev := c.getStatus(d.ss.svc.ID)
-	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning, Health: health})
-	err := c.store.Tx(ctx, func(q *store.Queries) error {
+	c.setStatus(d.ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning, Health: apitypes.HealthState(ct.Health), StartedAt: startedAt(ct)})
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if d.old != nil {
 			if err := q.SupersedeRelease(ctx, d.old.ID); err != nil {
 				return err
@@ -716,7 +720,7 @@ func (c *Core) restartRelease(ctx context.Context, ss svcScope, rel store.Releas
 	if err := c.store.SetReleaseContainer(ctx, store.SetReleaseContainerParams{ContainerID: ctr.ID, ID: rel.ID}); err != nil {
 		return err
 	}
-	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+	c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning, StartedAt: startedAt(ctr)})
 	c.adoptHealth(ctx, ss, ctr.ID)
 	return nil
 }

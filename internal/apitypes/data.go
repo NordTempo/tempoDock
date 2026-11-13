@@ -72,6 +72,24 @@ const (
 	EngineRedis    DataEngine = "redis"
 )
 
+// ServerLabel names a database server for people: "Postgres 17.2",
+// "MySQL 8.4.13", or the version alone where it names its server
+// ("MariaDB 11.4.5", "Redis 8.10.2", "Valkey 8.1.1"). version is a
+// ServerVersion; "" gives the engine's name.
+func ServerLabel(e DataEngine, version string) string {
+	if version != "" && (version[0] < '0' || version[0] > '9') {
+		return version
+	}
+	name := map[DataEngine]string{EnginePostgres: "Postgres", EngineMySQL: "MySQL", EngineRedis: "Redis"}[e]
+	if name == "" {
+		name = string(e)
+	}
+	if version == "" {
+		return name
+	}
+	return name + " " + version
+}
+
 // DataEngines lists every engine. The store's CHECK constraints list them
 // too (services.database, data_access.engine); its tests check each one
 // takes every engine here, so a new engine needs a migration widening them.

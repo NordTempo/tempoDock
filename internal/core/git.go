@@ -133,7 +133,7 @@ func (c *Core) GitStatus(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	if err != nil {
 		return apitypes.GitSource{}, err
 	}
-	out := apitypes.GitSource{HooksReady: c.hooksHost() != "", HooksHint: c.hooksHint(), SameRepo: []apitypes.GitSibling{}}
+	out := apitypes.GitSource{HooksReady: c.hooksHost() != "", SameRepo: []apitypes.GitSibling{}}
 	insts, err := c.store.ListOrgGitHubInstallations(ctx, ss.project.OrgID)
 	if err != nil {
 		return out, err
@@ -148,6 +148,8 @@ func (c *Core) GitStatus(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	}
 	gc := c.toGitConnection(conn)
 	out.Connection = &gc
+	// Only a connected service waits on pushes, so only it gets the hint.
+	out.HooksHint = c.hooksHint()
 	conns, err := c.store.ListEnvGitConnections(ctx, ss.env.ID)
 	if err != nil {
 		return out, err
@@ -671,7 +673,7 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 		if ctx.Err() != nil {
 			return gitDone // shutting down; the push stays queued
 		}
-		return finish(fmt.Sprintf("push %s: not deployed: %s", shortSHA(sha), errorLine(err)))
+		return finish(fmt.Sprintf("push %s: not deployed: %s", shortSHA(sha), c.errorLine(err)))
 	}
 
 	fctx, cancel := context.WithTimeout(ctx, githubFetchTimeout)
@@ -721,18 +723,9 @@ func (c *Core) gitStep(serviceID int64, w *gitWorker) gitStep {
 		return gitRetry // an upload holds the slot; no release will kick us
 	}
 	if conn.PostStatus {
-		c.postGitStatus(ss, conn, store.Release{}, "error", errorLine(err))
+		c.postGitStatus(ss, conn, store.Release{}, "error", c.errorLine(err))
 	}
-	return finish(fmt.Sprintf("push %s: not deployed: %s", shortSHA(sha), errorLine(err)))
-}
-
-// errorLine is an error's message for a one-line event: internal errors
-// are logged and summarized.
-func errorLine(err error) string {
-	if CodeOf(err) == apitypes.CodeInternal {
-		return "internal error; see the daemon log"
-	}
-	return err.Error()
+	return finish(fmt.Sprintf("push %s: not deployed: %s", shortSHA(sha), c.errorLine(err)))
 }
 
 // gitDeployStart runs as a release built from a push starts, before its
@@ -786,7 +779,7 @@ func (c *Core) gitDeployDone(ss svcScope, rel store.Release, deployErr error) {
 	if conn.PostStatus && rel.CommitSha != "" && rel.Source == string(apitypes.SourceUpload) {
 		state, desc := "success", fmt.Sprintf("Release %d is live", rel.Number)
 		if deployErr != nil {
-			state, desc = "failure", fmt.Sprintf("Release %d failed: %s", rel.Number, errorLine(deployErr))
+			state, desc = "failure", fmt.Sprintf("Release %d failed: %s", rel.Number, c.errorLine(deployErr))
 		}
 		c.postGitStatus(ss, conn, rel, state, desc)
 	}

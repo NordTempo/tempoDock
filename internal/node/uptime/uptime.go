@@ -132,40 +132,16 @@ func expected(expect int) string {
 	return strconv.Itoa(expect)
 }
 
-// describe says in plain, fixed words why a request got no answer. It
-// never passes on raw dial or TLS errors: those can name addresses and
-// certificate names of whatever answered (the probe's result goes back to
-// the check's owner).
+// describe says in plain, fixed words why a request got no answer
+// (httpkit.NetErrorText). It never passes on raw dial or TLS errors:
+// those can name addresses and certificate names of whatever answered
+// (the probe's result goes back to the check's owner).
 func describe(err error, timeout time.Duration) string {
 	if r, ok := errors.AsType[*refusedError](err); ok {
 		return r.Error()
 	}
-	if d, ok := errors.AsType[*net.DNSError](err); ok {
-		if d.IsNotFound {
-			return "DNS: the domain has no address"
-		}
-		return "DNS lookup failed"
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "no answer within " + timeout.String()
-	}
-	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
-		return "no answer within " + timeout.String()
-	}
-	if errors.Is(err, syscall.ECONNREFUSED) {
-		return "connection refused"
-	}
-	if errors.Is(err, syscall.ECONNRESET) {
-		return "connection reset"
-	}
-	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
-		return "TLS certificate invalid"
-	}
-	if _, ok := errors.AsType[tls.AlertError](err); ok {
-		return "TLS handshake failed"
-	}
-	if _, ok := errors.AsType[tls.RecordHeaderError](err); ok {
-		return "TLS handshake failed"
+	if text := httpkit.NetErrorText(err, timeout); text != "" {
+		return text
 	}
 	return "request failed"
 }

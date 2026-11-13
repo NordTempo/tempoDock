@@ -226,14 +226,15 @@ func TestStatusOnOfflineServer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// The deploy's last status update may land between the two reads,
-		// so only the time may differ.
+		// The deploy's last status update (the cutover's, then its start
+		// event's) may land between the two reads, so only the times may
+		// differ. TestStatusStartedAtIsTheContainers checks the start.
 		s := svc.Status
-		s.UpdatedAt = nil
+		s.UpdatedAt, s.StartedAt = nil, nil
 		for _, e := range o.Environments {
 			for _, so := range e.Services {
 				os := so.Service.Status
-				os.UpdatedAt = nil
+				os.UpdatedAt, os.StartedAt = nil, nil
 				if so.Service.ID == svc.ID && os != s {
 					t.Fatalf("overview status %+v, service status %+v", so.Service.Status, svc.Status)
 				}

@@ -144,7 +144,7 @@ func (c *Core) promote(ctx context.Context, a Actor, src, dst envScope, names []
 		if err != nil {
 			// Earlier releases are deploying: stop here, as a failed
 			// release would stop the ones after it.
-			skip(name, apitypes.SkipFailed, "%s couldn't start in %s: %s", name, dst.env.Name, errorLine(err))
+			skip(name, apitypes.SkipFailed, "%s couldn't start in %s: %s", name, dst.env.Name, c.errorLine(err))
 			for _, rest := range names[n+1:] {
 				skip(rest, apitypes.SkipFailed, "not promoted: %s failed first", name)
 			}

@@ -7,6 +7,11 @@ export type LogLevel = "error" | "warn" | null;
 const stated =
   /"(?:level|lvl|severity)"\s*:\s*"?([a-z]+|\d+)|(?:^|\s)(?:level|lvl|severity)="?([a-z]+)|\t(DEBUG|INFO|WARN|ERROR|FATAL|PANIC)\t/i;
 
+// Redis's (and Valkey's) own format: "1:M 13 Nov 2026 11:25:50.521 * msg",
+// "." debug, "-" verbose, "*" notice, "#" warning (its errors too).
+const redis =
+  /^\d+:[XCSM] \d\d [A-Za-z]{3} \d{4} \d\d:\d\d:\d\d\.\d{3} ([.\-*#]) /;
+
 // Error words, or an HTTP 5xx status between spaces ("POST /api 502 31ms").
 const errorWords = /\b(error|fatal|panic|exception)\b|\s5\d\d\s/i;
 
@@ -33,11 +38,17 @@ const levels = new Map<string, LogLevel>(
 /**
  * Judges a log line by the level it states, so a server that logs
  * everything to stderr (Caddy) or says "error" in an info message isn't
- * read as failing. A line without a known level falls back to error
+ * read as failing. Go's errparse.LineLevel judges the Errors tab's lines
+ * the same way. A line without a known level falls back to error
  * words. The stream (stdout or stderr) plays no part. Used by the logs
  * pane's row tint and its Errors only filter.
  */
 export function logLevel(text: string): LogLevel {
+  const r = redis.exec(text);
+  if (r) {
+    if (r[1] !== "#") return null;
+    return errorWords.test(text) ? "error" : "warn";
+  }
   const m = stated.exec(text);
   const word = (m?.[1] ?? m?.[2] ?? m?.[3])?.toLowerCase();
   if (word !== undefined) {

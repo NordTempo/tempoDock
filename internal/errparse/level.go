@@ -28,9 +28,13 @@ const (
 // pino's numeric "level":50), logfmt (level=error) or a tab-separated
 // column (Caddy's and zap's console format); the first one wins. A line
 // without a known level falls back to the words error, fatal, panic and
-// exception. Unlike the logs pane, an HTTP 5xx status in an access line
-// is not an error here: traffic counts those (core's traffic errors).
+// exception. Redis's own format states its level too (redisLevel).
+// Unlike the logs pane, an HTTP 5xx status in an access line is not an
+// error here: traffic counts those (core's traffic errors).
 func LineLevel(s string) Level {
+	if lv, ok := redisLevel(s); ok {
+		return lv
+	}
 	words := false
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -115,6 +119,34 @@ func statedLevel(s string, i int) (lv Level, known, ok bool) {
 		return 0, false, false
 	}
 	return 0, false, false
+}
+
+// redisLevel reads the level of Redis's (and Valkey's) own log format,
+// "1:M 13 Nov 2026 11:25:50.521 * Ready to accept connections": "." debug,
+// "-" verbose and "*" notice are no error, so a notice that names a
+// setting ("<bf> { bf-error-rate : 0.01 }") isn't one. "#" is a warning,
+// which Redis also logs its errors at, so there the error words decide.
+// ok is false for a line in another format.
+func redisLevel(s string) (Level, bool) {
+	// pid ":" role " " dd Mon yyyy hh:mm:ss.mmm " " level " "
+	i := digits(s)
+	if i == 0 || len(s) < i+3+24+3 || s[i] != ':' || !strings.ContainsRune("XCSM", rune(s[i+1])) || s[i+2] != ' ' {
+		return 0, false
+	}
+	at := s[i+3:]
+	if at[2] != ' ' || at[6] != ' ' || at[11] != ' ' || at[14] != ':' || at[20] != '.' || at[24] != ' ' || at[26] != ' ' {
+		return 0, false
+	}
+	switch at[25] {
+	case '.', '-', '*':
+		return LevelNone, true
+	case '#':
+		if hasErrorWord(at[27:]) {
+			return LevelError, true
+		}
+		return LevelWarn, true
+	}
+	return 0, false
 }
 
 // tabLevel reads a console format's level column: rest follows a tab and

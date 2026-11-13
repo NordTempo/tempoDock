@@ -1270,10 +1270,16 @@ func (c *Core) moveSwitch(ctx context.Context, es envScope, m store.EnvironmentM
 	c.reloadSleep(ctx)
 	moved := es
 	moved.env.ServerID = m.ToServerID
+	rt := c.runtime(m.ToServerID)
 	for _, s := range svcs {
 		if s.runs() {
 			ss := svcScope{moved, s.ss.svc}
-			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning})
+			// Its start time on the target; none if that can't be read.
+			ct, err := rt.Inspect(ctx, s.row.ContainerID)
+			if err != nil {
+				ct = node.Container{}
+			}
+			c.setStatus(ss, apitypes.ServiceStatus{State: apitypes.ServiceRunning, StartedAt: startedAt(ct)})
 		}
 	}
 	c.ensureForwards(ctx, m.ToServerID)

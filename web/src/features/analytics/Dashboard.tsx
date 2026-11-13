@@ -162,7 +162,9 @@ function Main({
         </p>
       )}
       <Chart stats={stats} metric={metric} />
-      <div className="grid gap-x-6 gap-y-6 lg:grid-cols-2">
+      {/* Dense: when Locations spans both columns for its globe, the
+          next panel fills the slot beside Goals instead of leaving it. */}
+      <div className="grid gap-x-6 gap-y-6 lg:grid-flow-row-dense lg:grid-cols-2">
         <Breakdown
           {...panel}
           title="Pages"

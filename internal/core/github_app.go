@@ -297,7 +297,7 @@ func (c *Core) GitHubStatus(ctx context.Context, a Actor) (apitypes.GitHubStatus
 		listed, listErr = c.git.github.installations(ctx, jwt)
 	}
 	if listErr != nil {
-		out.InstallationsError = errorLine(listErr)
+		out.InstallationsError = c.errorLine(listErr)
 	}
 	seen := map[int64]bool{}
 	for _, i := range listed {
@@ -662,7 +662,7 @@ func (c *Core) GitHubOrgStatus(ctx context.Context, a Actor) (apitypes.GitHubOrg
 		}
 	}
 	if listErr != nil {
-		out.InstallationsError = errorLine(listErr)
+		out.InstallationsError = c.errorLine(listErr)
 	}
 	for _, r := range own {
 		inst := apitypes.GitHubInstallation{ID: r.InstallationID, Account: r.Account, Org: a.OrgSlug, Connections: conns[r.InstallationID]}

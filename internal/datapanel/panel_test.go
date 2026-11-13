@@ -247,8 +247,8 @@ func TestPanelSetup(t *testing.T) {
 	if eng.reader == "" || bytes.Contains(h.access.ReaderSecret, []byte(eng.reader)) || h.access.GrantsSyncedHash != "synced" {
 		t.Fatalf("access record: %+v", h.access)
 	}
-	if got := h.actions(); got != apitypes.AuditDataSetup {
-		t.Fatalf("audited %s", got)
+	if got := h.actions(); got != apitypes.AuditDataSetup || !strings.HasPrefix(h.audits[0].Summary, "set up data access on Postgres 17.2: ") {
+		t.Fatalf("audited %s: %+v", got, h.audits)
 	}
 	h.notRunning = true
 	if info, err := p.Info(ctx, admin, testDB(adminPerm)); err != nil || info.Status != apitypes.DataNotRunning {

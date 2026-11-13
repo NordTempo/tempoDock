@@ -40,6 +40,7 @@ const (
 	modeStack       // a JavaScript or Java exception's "at" frames
 	modeGo          // a Go panic and its goroutine traces
 	modePython      // a Python traceback, up to its exception line
+	modeNpm         // npm's "npm error" block, after its script ended
 )
 
 // Assembler turns one container's lines into events. Feed it every line
@@ -70,6 +71,8 @@ type Assembler struct {
 	// for a chained exception. pyFrames are its frames, innermost last.
 	pyDone   bool
 	pyFrames []pyFrame
+	// stopped: an npm block says its script was stopped (npmStopped).
+	stopped bool
 	// prev is the last line outside an event: a JavaScript or Java
 	// exception's first line, if frames follow it.
 	prev string
@@ -92,9 +95,9 @@ func (a *Assembler) Line(s string) (Event, bool) {
 		a.add(s)
 		return Event{}, false
 	}
-	ev := a.finish()
+	ev, ok := a.finish()
 	a.start(s)
-	return ev, true
+	return ev, ok
 }
 
 // Flush ends the open event, if any, and returns it.
@@ -102,7 +105,7 @@ func (a *Assembler) Flush() (Event, bool) {
 	if a.mode == modeNone {
 		return Event{}, false
 	}
-	return a.finish(), true
+	return a.finish()
 }
 
 // start opens an event if s begins one, and otherwise remembers it as
@@ -113,6 +116,9 @@ func (a *Assembler) start(s string) {
 		a.mode = modePython
 	case strings.HasPrefix(s, "panic: ") || strings.HasPrefix(s, "fatal error: "):
 		a.mode, a.head = modeGo, s
+	case isNpm(s):
+		a.mode, a.head = modeNpm, s
+		a.npmLine(s)
 	case a.prev != "" && isAtFrame(s) && looksLikeException(a.prev):
 		a.mode, a.head = modeStack, a.prev
 		a.add(a.prev)
@@ -151,6 +157,12 @@ func (a *Assembler) continues(s string) bool {
 		return a.pythonLine(s)
 	case modeGo:
 		return a.goLine(s)
+	case modeNpm:
+		if !isNpm(s) {
+			return false
+		}
+		a.npmLine(s)
+		return true
 	}
 	switch {
 	case strings.HasPrefix(s, "goroutine ") && strings.Contains(s, " ["):
@@ -224,6 +236,69 @@ func pythonFrame(s string) (pyFrame, bool) {
 	return pyFrame{norm: Normalize(fn + " (" + file + ")"), raw: raw}, true
 }
 
+// npmRest is the text of one of npm's error lines after its prefix
+// ("npm error " from npm 10 on, "npm ERR! " before), which a blank line
+// of the block lacks; ok is false for another line.
+func npmRest(s string) (rest string, ok bool) {
+	if len(s) < 8 || s[0] != 'n' {
+		return "", false
+	}
+	for _, p := range [...]string{"npm error", "npm ERR!"} {
+		if r, ok := strings.CutPrefix(s, p); ok && (r == "" || r[0] == ' ') {
+			return strings.TrimPrefix(r, " "), true
+		}
+	}
+	return "", false
+}
+
+// isNpm reports whether s is one of npm's error lines.
+func isNpm(s string) bool {
+	_, ok := npmRest(s)
+	return ok
+}
+
+// npmLine notes a line of npm's block: a block is one error, named by its
+// first line that says more than where and what ran ("npm error code
+// ENOENT", "npm error signal SIGTERM", "npm error Missing script:
+// start"), and dropped when its script was stopped (npmStopped).
+func (a *Assembler) npmLine(s string) {
+	rest, _ := npmRest(s)
+	if npmStopped(rest) {
+		a.stopped = true
+	}
+	head, _ := npmRest(a.head)
+	if npmBoilerplate(head) && !npmBoilerplate(rest) {
+		a.head = s
+	}
+}
+
+// npmStopped reports whether an npm line says its script ended on
+// SIGTERM or SIGINT (or exited 143 or 130, as a script that handles them
+// does): something asked it to stop, Dock's own stop or redeploy above
+// all, which is no error of the app's. A crash ends on another signal
+// (SIGKILL when out of memory, SIGSEGV) or exit code, and stays one.
+func npmStopped(rest string) bool {
+	switch rest {
+	case "signal SIGTERM", "signal SIGINT", "code 143", "code 130":
+		return true
+	}
+	return false
+}
+
+// npmBoilerplate reports whether an npm line only says where and what
+// ran, or where its debug log went.
+func npmBoilerplate(rest string) bool {
+	if rest == "" {
+		return true
+	}
+	for _, p := range [...]string{"path ", "command", "errno ", "syscall ", "A complete log of this run"} {
+		if strings.HasPrefix(rest, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // goLine continues a Go trace.
 func (a *Assembler) goLine(s string) bool {
 	switch {
@@ -283,8 +358,13 @@ func (a *Assembler) frame(f string) {
 	}
 }
 
-// finish builds the open event and resets for the next.
-func (a *Assembler) finish() Event {
+// finish builds the open event and resets for the next; ok is false for
+// one that is no error (a stopped npm script).
+func (a *Assembler) finish() (ev Event, ok bool) {
+	if a.stopped {
+		a.reset()
+		return Event{}, false
+	}
 	typ, msg, stack := "", "", ""
 	switch a.mode {
 	case modeGo:
@@ -326,7 +406,7 @@ func (a *Assembler) finish() Event {
 	case msg != "":
 		title = typ + ": " + msg
 	}
-	ev := Event{
+	ev = Event{
 		Fingerprint: Fingerprint(typ, msg, a.frames),
 		Title:       oneLine(title, maxTitle),
 		Culprit:     oneLine(a.culprit, maxTitle),
@@ -335,13 +415,18 @@ func (a *Assembler) finish() Event {
 	if stack != "" && len(ev.Sample)+len(stack)+1 <= MaxSample {
 		ev.Sample += "\n" + stack
 	}
+	a.reset()
+	return ev, true
+}
+
+// reset forgets the event just ended.
+func (a *Assembler) reset() {
 	a.mode, a.head, a.lines = modeNone, "", 0
 	a.frames, a.culprit, a.goFunc, a.goroutines, a.cause = a.frames[:0], "", "", 0, false
-	a.pyDone, a.pyFrames = false, a.pyFrames[:0]
+	a.pyDone, a.pyFrames, a.stopped = false, a.pyFrames[:0], false
 	// An idle follower keeps no sample buffer; errors are rare enough to
 	// allocate one each.
 	a.sample = nil
-	return ev
 }
 
 // stackFrames reads frames from a stack a structured log line carried

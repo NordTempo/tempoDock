@@ -101,12 +101,12 @@ func (c *Core) seedService(a Actor, from svcScope, dst envScope, previewID int64
 		return
 	}
 	if err != nil {
-		msg = fmt.Sprintf("%s starts empty: %s", from.svc.Name, errorLine(err))
+		msg = fmt.Sprintf("%s starts empty: %s", from.svc.Name, c.errorLine(err))
 	}
 	c.audit(ctx, System, "preview.seed", &dst.project, &dst.env, dst.String()+"/"+from.svc.Name, msg)
 	c.setPreviewEvent(previewID, msg)
 	if _, err := c.promote(ctx, a, from.envScope, dst, []string{from.svc.Name}, true); err != nil {
-		c.setPreviewEvent(previewID, fmt.Sprintf("%s wasn't deployed: %s", from.svc.Name, errorLine(err)))
+		c.setPreviewEvent(previewID, fmt.Sprintf("%s wasn't deployed: %s", from.svc.Name, c.errorLine(err)))
 	}
 	c.refreshPreview(previewID)
 }
