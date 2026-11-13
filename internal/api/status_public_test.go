@@ -89,7 +89,7 @@ func statusGet(h http.Handler, host, path string, plain bool) *httptest.Response
 func TestStatusPagesServe(t *testing.T) {
 	page := testStatusPage()
 	srv := newStatusServer(func(host string) (int64, int64, bool) { return 7, 1, host == "status-acme.dock.example.net" },
-		&fakeStatus{page: page}, slog.Default())
+		notMoved, &fakeStatus{page: page}, slog.Default())
 	h := srv.handler()
 	const host = "status-acme.dock.example.net"
 
@@ -148,6 +148,25 @@ func TestStatusPagesServe(t *testing.T) {
 	}
 }
 
+// notMoved is StatusPageMoved with no renamed pages.
+func notMoved(string) (string, bool) { return "", false }
+
+// A renamed page's old address answers its paths with a 301 to the same
+// path at the page's address, cached for a while only.
+func TestStatusPageMoved(t *testing.T) {
+	h := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, func(host string) (string, bool) {
+		return "https://status-tempo-api.dock.example.net", host == "status-api.dock.example.net"
+	}, &fakeStatus{page: testStatusPage()}, slog.Default()).handler()
+	w := statusGet(h, "status-api.dock.example.net", "/incidents/abc?x=1", true)
+	if w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != "https://status-tempo-api.dock.example.net/incidents/abc?x=1" ||
+		w.Header().Get("Cache-Control") != "public, max-age=3600" {
+		t.Errorf("old address: %d %v", w.Code, w.Header())
+	}
+	if w := statusGet(h, "status-tempo-api.dock.example.net", "/", true); w.Code != http.StatusOK {
+		t.Errorf("new address: %d", w.Code)
+	}
+}
+
 // A page hiding percentages shows no numbers, only whether a day had
 // downtime.
 func TestStatusPageHidesUptime(t *testing.T) {
@@ -170,7 +189,7 @@ func TestStatusPageHidesUptime(t *testing.T) {
 func TestStatusPagesCache(t *testing.T) {
 	src := &fakeStatus{page: testStatusPage()}
 	renders, fail := &src.renders, &src.fail
-	srv := newStatusServer(nil, src, slog.Default())
+	srv := newStatusServer(nil, notMoved, src, slog.Default())
 	ctx, k := context.Background(), statusKey{id: 7, format: statusHTML}
 	first, err := srv.answer(ctx, k, 1)
 	if err != nil || len(first.gz) == 0 {
@@ -199,7 +218,7 @@ func TestStatusPagesCache(t *testing.T) {
 // BenchmarkStatusServe is a status page answered from its cache: what
 // every view but one in a while costs.
 func BenchmarkStatusServe(b *testing.B) {
-	srv := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, &fakeStatus{page: testStatusPage()}, slog.Default())
+	srv := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, notMoved, &fakeStatus{page: testStatusPage()}, slog.Default())
 	h := srv.handler()
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Host = "status-acme.dock.example.net"
@@ -228,7 +247,7 @@ func BenchmarkRenderStatusPage(b *testing.B) {
 		}
 		page.Groups = append(page.Groups, grp)
 	}
-	srv := newStatusServer(nil, &fakeStatus{page: page}, slog.Default())
+	srv := newStatusServer(nil, notMoved, &fakeStatus{page: page}, slog.Default())
 	b.ReportAllocs()
 	var size int
 	for b.Loop() {
@@ -264,7 +283,7 @@ func TestStatusIncidentPages(t *testing.T) {
 	page.Groups[0].Components[1].Days[89].Impact = apitypes.StatusMajorOutage
 	page.Groups[0].Components[1].Days[89].Incident = `Jobs "stuck"`
 	src := &fakeStatus{page: page, inc: inc}
-	h := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, src, slog.Default()).handler()
+	h := newStatusServer(func(string) (int64, int64, bool) { return 7, 1, true }, notMoved, src, slog.Default()).handler()
 	const host = "status-acme.dock.example.net"
 
 	html := statusGet(h, host, "/", true).Body.String()

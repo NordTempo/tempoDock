@@ -15513,6 +15513,9 @@
       "StatusPage": {
         "additionalProperties": false,
         "properties": {
+          "base_domain": {
+            "type": "string"
+          },
           "components": {
             "items": {
               "$ref": "#/components/schemas/StatusComponent"
@@ -17130,6 +17133,15 @@
           },
           "show_uptime": {
             "type": "boolean"
+          },
+          "slug": {
+            "description": "A new name: lowercase letters, digits and dashes; the old address redirects",
+            "examples": [
+              "acme-api"
+            ],
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
           },
           "title": {
             "maxLength": 80,
@@ -65333,7 +65345,7 @@
         ]
       },
       "patch": {
-        "description": "Its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
+        "description": "Its name (`slug`: the generated address moves to status-\u003cslug\u003e.\u003cbase domain\u003e, and the old name and address keep working, redirecting, until another page takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
         "operationId": "update-status-page",
         "parameters": [
           {

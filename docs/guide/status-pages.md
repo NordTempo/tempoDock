@@ -19,6 +19,10 @@ Or in the UI: **Status pages** in the sidebar, then **New status page**.
 Organization admins make and change pages; every member sees them.
 
 - **The name** is the page's address and one page's in the whole install.
+  `dock status-page rename acme acme-api` (or Edit next to the name in
+  the page's settings) moves it to `status-acme-api.<base domain>`; the
+  old address redirects there, and the old name still finds the page,
+  until another page takes it. A custom hostname stays as it is.
 - **Components** have a public name: what everyone sees. Pick names that
   don't name your services or servers ("API", not "postgres-primary").
 - **What a component shows** is private: services (all their uptime

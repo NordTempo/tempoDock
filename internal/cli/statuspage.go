@@ -18,7 +18,7 @@ import (
 // status pages (ADR 0073).
 func newStatusPageCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "status-page", Short: "Public status pages of the organization's services"})
-	cmd.AddCommand(newStatusPageListCmd(g), newStatusPageShowCmd(g), newStatusPageCreateCmd(g), newStatusPageUpdateCmd(g),
+	cmd.AddCommand(newStatusPageListCmd(g), newStatusPageShowCmd(g), newStatusPageCreateCmd(g), newStatusPageUpdateCmd(g), newStatusPageRenameCmd(g),
 		newStatusPagePublishCmd(g, true), newStatusPagePublishCmd(g, false), newStatusPageRemoveCmd(g), newStatusComponentCmd(g),
 		newStatusHostnameCmd(g), newStatusHookCmd(g))
 	return cmd
@@ -180,6 +180,35 @@ func newStatusPageUpdateCmd(g *globals) *cobra.Command {
 	cmd.Flags().BoolVar(&showUptime, "show-uptime", true, "show uptime percentages (the bars and statuses stay either way)")
 	cmd.Flags().BoolVar(&drafts, "drafts", true, "open a draft incident when a component's uptime check goes down or its service crash loops")
 	return cmd
+}
+
+// newStatusPageRenameCmd changes a page's name, and so its generated
+// address; the old ones keep working, redirecting, until another page
+// takes the name.
+func newStatusPageRenameCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <page> <new>",
+		Short: "Rename a status page and move its address; the old address redirects (admin)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			p, err := send[apitypes.StatusPage](cmd.Context(), s, http.MethodPatch, statusPagePath(args[0]), apitypes.UpdateStatusPageRequest{Slug: &args[1]})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(p, func() error {
+				g.io.Successf("Renamed status page %s to %s", args[0], p.Slug)
+				if p.BaseDomain != "" {
+					g.io.Progressf("Its address is status-%s.%s; status-%s.%s redirects to it until another page takes the name %s.",
+						p.Slug, p.BaseDomain, args[0], p.BaseDomain, args[0])
+				}
+				return nil
+			})
+		},
+	}
 }
 
 func newStatusPagePublishCmd(g *globals, publish bool) *cobra.Command {

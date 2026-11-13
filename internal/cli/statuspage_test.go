@@ -57,6 +57,12 @@ func TestStatusPageCommands(t *testing.T) {
 	if pages := ok[[]apitypes.StatusPageSummary](t, "status-page", "list"); len(pages) != 1 || pages[0].Components != 2 {
 		t.Fatalf("list = %+v", pages)
 	}
+	if code, _, stderr := exec(t, "status-page", "rename", "acme", "acme-api"); code != 0 || !strings.Contains(stderr, "status-acme.apps.test redirects") {
+		t.Fatalf("rename = %d %q", code, stderr)
+	}
+	if p := ok[apitypes.StatusPage](t, "status-page", "rename", "acme-api", "acme"); p.Slug != "acme" || p.URL != "https://status-acme.apps.test" {
+		t.Fatalf("renamed back = %+v", p.StatusPageSummary)
+	}
 	if code, _, _ := exec(t, "status-page", "remove", "acme"); code != int(output.ExitUsage) {
 		t.Fatalf("remove without --yes: %d", code)
 	}

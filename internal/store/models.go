@@ -1098,6 +1098,12 @@ type StatusPage struct {
 	VerifiedAt  *time.Time
 }
 
+type StatusPageOldSlug struct {
+	Slug      string
+	PageID    int64
+	ChangedAt time.Time
+}
+
 type StatusSource struct {
 	ID          int64
 	ComponentID int64

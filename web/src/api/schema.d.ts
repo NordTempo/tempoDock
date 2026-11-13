@@ -5454,7 +5454,7 @@ export interface paths {
         head?: never;
         /**
          * Change a status page
-         * @description Its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.
+         * @description Its name (`slug`: the generated address moves to status-<slug>.<base domain>, and the old name and address keep working, redirecting, until another page takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.
          */
         patch: operations["update-status-page"];
         trace?: never;
@@ -10437,6 +10437,7 @@ export interface components {
             url?: string;
         };
         StatusPage: {
+            base_domain?: string;
             components: components["schemas"]["StatusComponent"][] | null;
             /** Format: date-time */
             created_at: string;
@@ -10941,6 +10942,11 @@ export interface components {
             hostname?: string;
             published?: boolean;
             show_uptime?: boolean;
+            /**
+             * @description A new name: lowercase letters, digits and dashes; the old address redirects
+             * @example acme-api
+             */
+            slug?: string;
             title?: string;
         };
         UpdateStorageRequest: {

@@ -37,6 +37,36 @@ RETURNING *;
 -- Its components and their sources go with it (ON DELETE CASCADE).
 DELETE FROM status_pages WHERE id = +?;
 
+-- name: GetStatusPageByOldSlug :one
+-- An organization's page by a name it had before (ADR 0073, renaming),
+-- asked only when no page has the name now.
+SELECT * FROM status_pages
+WHERE org_id = +? AND id = (SELECT o.page_id FROM status_page_old_slugs o WHERE o.slug = +?);
+
+-- name: SetStatusPageSlug :one
+UPDATE status_pages SET slug = ? WHERE id = +?
+RETURNING *;
+
+-- name: ReleaseStatusOldSlug :exec
+-- A page takes slug, so it is no longer an old name of any page.
+DELETE FROM status_page_old_slugs WHERE slug = +?;
+
+-- name: AddStatusOldSlug :exec
+INSERT INTO status_page_old_slugs (slug, page_id, changed_at) VALUES (?, ?, ?);
+
+-- name: TrimStatusOldSlugs :exec
+-- Keeps a page's newest keep old names.
+DELETE FROM status_page_old_slugs
+WHERE status_page_old_slugs.page_id = +sqlc.arg(page_id) AND status_page_old_slugs.slug NOT IN (
+    SELECT k.slug FROM status_page_old_slugs k WHERE k.page_id = +sqlc.arg(page_id)
+    ORDER BY k.changed_at DESC LIMIT +sqlc.arg(keep)
+);
+
+-- name: ListStatusOldSlugs :many
+-- Every page's old names, for the addresses that redirect (as few as
+-- ListStatusPageHosts' rows, read with them).
+SELECT slug, page_id FROM status_page_old_slugs;
+
 -- name: ListStatusComponents :many
 SELECT * FROM status_components WHERE page_id = +? ORDER BY position;
 

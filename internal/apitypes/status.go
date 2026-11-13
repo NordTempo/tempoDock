@@ -37,6 +37,10 @@ type CreateStatusPageRequest struct {
 
 // UpdateStatusPageRequest changes a page's settings: any of its fields.
 type UpdateStatusPageRequest struct {
+	// Slug renames the page, and so moves its generated address to
+	// status-<slug>.<base domain>. The old name keeps finding the page and
+	// its address redirects to the page's until another page takes it.
+	Slug  *string `json:"slug,omitempty" minLength:"1" maxLength:"32" example:"acme-api" doc:"A new name: lowercase letters, digits and dashes; the old address redirects"`
 	Title *string `json:"title,omitempty" minLength:"1" maxLength:"80"`
 	// Published serves the page at its address; unpublished, the address
 	// answers 404.
@@ -100,8 +104,11 @@ type StatusPageSummary struct {
 // its editor in Dock shows it.
 type StatusPage struct {
 	StatusPageSummary
-	ShowUptime bool `json:"show_uptime"`
-	Drafts     bool `json:"drafts"`
+	// BaseDomain is the control plane's, under which the page's generated
+	// address status-<slug>.<base domain> is; "" without one.
+	BaseDomain string `json:"base_domain,omitempty"`
+	ShowUptime bool   `json:"show_uptime"`
+	Drafts     bool   `json:"drafts"`
 	// Status is the page's worst component (idle ones aside).
 	Status     ComponentStatus   `json:"status" enum:"operational,idle,maintenance,degraded,partial_outage,major_outage"`
 	Components []StatusComponent `json:"components"`

@@ -23,7 +23,9 @@ import (
 // listen, which only the control plane's Caddy reaches, for the
 // hostnames it routes there: the page at /, its incidents at
 // /incidents/<id>, /history, /feed.atom and /status.json, and 404 for
-// everything else. Nothing else of Dock is reachable through it, and no
+// everything else. A renamed page's old address answers those paths
+// with a 301 to the same path at the page's address
+// (core.StatusPageMoved). Nothing else of Dock is reachable through it, and no
 // access protection applies: a status page is public by definition.
 //
 // A view never reads the database. Each page and format is rendered
@@ -36,7 +38,7 @@ import (
 // at most statusRenders run at once, and the cache holds at most
 // statusCacheBytes. A render that fails keeps the last bytes.
 func StatusPages(c *core.Core, log *slog.Logger) http.Handler {
-	return newStatusServer(c.StatusPageAt, c, log).handler()
+	return newStatusServer(c.StatusPageAt, c.StatusPageMoved, c, log).handler()
 }
 
 // statusSource is what the listener reads from core: *core.Core, or a
@@ -72,7 +74,9 @@ const (
 // statusServer is the handler's state.
 type statusServer struct {
 	// at is core.StatusPageAt, or a stand-in in tests.
-	at      func(host string) (id, gen int64, ok bool)
+	at func(host string) (id, gen int64, ok bool)
+	// moved is core.StatusPageMoved, or a stand-in in tests.
+	moved   func(host string) (to string, ok bool)
 	src     statusSource
 	log     *slog.Logger
 	limiter *ipLimiter
@@ -108,8 +112,8 @@ type statusBody struct {
 }
 
 // newStatusServer is the handler's state over what it reads from core.
-func newStatusServer(at func(string) (int64, int64, bool), src statusSource, log *slog.Logger) *statusServer {
-	return &statusServer{at: at, src: src, log: log, slots: make(chan struct{}, statusRenders),
+func newStatusServer(at func(string) (int64, int64, bool), moved func(string) (string, bool), src statusSource, log *slog.Logger) *statusServer {
+	return &statusServer{at: at, moved: moved, src: src, log: log, slots: make(chan struct{}, statusRenders),
 		limiter: &ipLimiter{burst: statusBurst, rate: statusRate, buckets: map[string]*bucket{}}, cache: map[statusKey]*statusEntry{}}
 }
 
@@ -146,6 +150,12 @@ func (p *statusServer) serve(f statusFormat) http.HandlerFunc {
 		host := strings.ToLower(r.Host)
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
+		}
+		if to, ok := p.moved(host); ok {
+			// Cached an hour, not for good: another page may take the name.
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			http.Redirect(w, r, to+r.URL.RequestURI(), http.StatusMovedPermanently)
+			return
 		}
 		id, gen, ok := p.at(host)
 		k := statusKey{id: id, format: f}

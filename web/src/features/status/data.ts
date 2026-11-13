@@ -134,11 +134,13 @@ export const useUpdateStatusPage = (slug: string) =>
       ).then(toPage),
     () => [statusKeys.all],
     (patch) =>
-      patch.published === true
-        ? `Published ${slug}`
-        : patch.published === false
-          ? `Unpublished ${slug}`
-          : `Saved ${slug}`,
+      patch.slug
+        ? `Renamed ${slug} to ${patch.slug}`
+        : patch.published === true
+          ? `Published ${slug}`
+          : patch.published === false
+            ? `Unpublished ${slug}`
+            : `Saved ${slug}`,
   );
 
 export const useCheckStatusHostname = (slug: string) =>

@@ -10,6 +10,21 @@ import (
 	"time"
 )
 
+const addStatusOldSlug = `-- name: AddStatusOldSlug :exec
+INSERT INTO status_page_old_slugs (slug, page_id, changed_at) VALUES (?, ?, ?)
+`
+
+type AddStatusOldSlugParams struct {
+	Slug      string
+	PageID    int64
+	ChangedAt time.Time
+}
+
+func (q *Queries) AddStatusOldSlug(ctx context.Context, arg AddStatusOldSlugParams) error {
+	_, err := q.db.ExecContext(ctx, addStatusOldSlug, arg.Slug, arg.PageID, arg.ChangedAt)
+	return err
+}
+
 const countOrgStatusPages = `-- name: CountOrgStatusPages :one
 SELECT count(*) FROM status_pages WHERE org_id = +?
 `
@@ -612,6 +627,38 @@ func (q *Queries) GetStatusPageByID(ctx context.Context, id int64) (StatusPage, 
 	return i, err
 }
 
+const getStatusPageByOldSlug = `-- name: GetStatusPageByOldSlug :one
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at FROM status_pages
+WHERE org_id = +? AND id = (SELECT o.page_id FROM status_page_old_slugs o WHERE o.slug = +?)
+`
+
+type GetStatusPageByOldSlugParams struct {
+	OrgID int64
+	Slug  string
+}
+
+// An organization's page by a name it had before (ADR 0073, renaming),
+// asked only when no page has the name now.
+func (q *Queries) GetStatusPageByOldSlug(ctx context.Context, arg GetStatusPageByOldSlugParams) (StatusPage, error) {
+	row := q.db.QueryRowContext(ctx, getStatusPageByOldSlug, arg.OrgID, arg.Slug)
+	var i StatusPage
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Slug,
+		&i.Title,
+		&i.Published,
+		&i.ShowUptime,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.Drafts,
+		&i.Hostname,
+		&i.VerifyToken,
+		&i.VerifiedAt,
+	)
+	return i, err
+}
+
 const getStatusUpdate = `-- name: GetStatusUpdate :one
 SELECT id, incident_id, state, body, at, created_by, edited_at FROM status_updates WHERE id = +? AND incident_id = +?
 `
@@ -1064,6 +1111,40 @@ func (q *Queries) ListStatusIncidents(ctx context.Context, arg ListStatusInciden
 	return items, nil
 }
 
+const listStatusOldSlugs = `-- name: ListStatusOldSlugs :many
+SELECT slug, page_id FROM status_page_old_slugs
+`
+
+type ListStatusOldSlugsRow struct {
+	Slug   string
+	PageID int64
+}
+
+// Every page's old names, for the addresses that redirect (as few as
+// ListStatusPageHosts' rows, read with them).
+func (q *Queries) ListStatusOldSlugs(ctx context.Context) ([]ListStatusOldSlugsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listStatusOldSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStatusOldSlugsRow
+	for rows.Next() {
+		var i ListStatusOldSlugsRow
+		if err := rows.Scan(&i.Slug, &i.PageID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStatusPageHosts = `-- name: ListStatusPageHosts :many
 SELECT id, slug, published, CAST(CASE WHEN verified_at IS NULL THEN '' ELSE coalesce(hostname, '') END AS TEXT) AS hostname
 FROM status_pages
@@ -1326,6 +1407,16 @@ func (q *Queries) ListStatusUpdates(ctx context.Context, arg ListStatusUpdatesPa
 	return items, nil
 }
 
+const releaseStatusOldSlug = `-- name: ReleaseStatusOldSlug :exec
+DELETE FROM status_page_old_slugs WHERE slug = +?
+`
+
+// A page takes slug, so it is no longer an old name of any page.
+func (q *Queries) ReleaseStatusOldSlug(ctx context.Context, slug string) error {
+	_, err := q.db.ExecContext(ctx, releaseStatusOldSlug, slug)
+	return err
+}
+
 const setStatusHookFailed = `-- name: SetStatusHookFailed :exec
 UPDATE status_hooks SET last_error = ?, last_error_at = ? WHERE id = +?
 `
@@ -1376,6 +1467,36 @@ func (q *Queries) SetStatusPageHostname(ctx context.Context, arg SetStatusPageHo
 		arg.VerifiedAt,
 		arg.ID,
 	)
+	var i StatusPage
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Slug,
+		&i.Title,
+		&i.Published,
+		&i.ShowUptime,
+		&i.CreatedAt,
+		&i.CreatedBy,
+		&i.Drafts,
+		&i.Hostname,
+		&i.VerifyToken,
+		&i.VerifiedAt,
+	)
+	return i, err
+}
+
+const setStatusPageSlug = `-- name: SetStatusPageSlug :one
+UPDATE status_pages SET slug = ? WHERE id = +?
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at
+`
+
+type SetStatusPageSlugParams struct {
+	Slug string
+	ID   int64
+}
+
+func (q *Queries) SetStatusPageSlug(ctx context.Context, arg SetStatusPageSlugParams) (StatusPage, error) {
+	row := q.db.QueryRowContext(ctx, setStatusPageSlug, arg.Slug, arg.ID)
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
@@ -1554,6 +1675,25 @@ func (q *Queries) StatusSlugTaken(ctx context.Context, slug string) (bool, error
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const trimStatusOldSlugs = `-- name: TrimStatusOldSlugs :exec
+DELETE FROM status_page_old_slugs
+WHERE status_page_old_slugs.page_id = +?1 AND status_page_old_slugs.slug NOT IN (
+    SELECT k.slug FROM status_page_old_slugs k WHERE k.page_id = +?1
+    ORDER BY k.changed_at DESC LIMIT +?2
+)
+`
+
+type TrimStatusOldSlugsParams struct {
+	PageID int64
+	Keep   int64
+}
+
+// Keeps a page's newest keep old names.
+func (q *Queries) TrimStatusOldSlugs(ctx context.Context, arg TrimStatusOldSlugsParams) error {
+	_, err := q.db.ExecContext(ctx, trimStatusOldSlugs, arg.PageID, arg.Keep)
+	return err
 }
 
 const updateStatusComponent = `-- name: UpdateStatusComponent :exec

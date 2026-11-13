@@ -47,7 +47,7 @@ func registerStatusPages(s *Server, a huma.API) {
 	authed(s, a, huma.Operation{
 		OperationID: "update-status-page", Method: http.MethodPatch, Path: statusPagePathT,
 		Summary: "Change a status page", Tags: tags,
-		Description: "Its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
+		Description: "Its name (`slug`: the generated address moves to status-<slug>.<base domain>, and the old name and address keep working, redirecting, until another page takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
 	}, func(ctx context.Context, actor core.Actor, in *struct {
 		StatusPagePath
 		Body apitypes.UpdateStatusPageRequest

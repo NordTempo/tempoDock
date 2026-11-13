@@ -1,5 +1,5 @@
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
 import { useIsAdmin, useSession } from "../../data/queries";
 import { useShortcuts } from "../../shell/keys";
@@ -70,6 +70,15 @@ export function StatusPageEditor({ slug }: { slug: string }) {
   const pageState = page.published
     ? statusState[page.status]
     : ({ tone: "mut", glyph: "○", label: "unpublished" } as const);
+  // Opened by a name the page had before: move to its name now.
+  if (page.slug !== slug)
+    return (
+      <Navigate
+        to="/$org/status-pages/$page"
+        params={{ org, page: page.slug }}
+        replace
+      />
+    );
   return (
     <>
       <PageBar
@@ -406,18 +415,82 @@ const percent = (p: number | undefined) =>
       ? "100%"
       : `${Math.min(p, 99.99).toFixed(2)}%`;
 
-/** The page's title, whether it shows percentages, and removing it. */
+/**
+ * The page's name and title, whether it shows percentages, and removing
+ * it.
+ */
 function Settings({ page, admin }: { page: StatusPage; admin: boolean }) {
   const update = useUpdateStatusPage(page.slug);
   const remove = useDeleteStatusPage(page.slug);
   const navigate = useNavigate();
   const org = useOrg();
+  const [name, setName] = useState<string | null>(null);
   const [title, setTitle] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
+  const renamed = name?.trim() ?? "";
   return (
     <section>
       <SectionHead>Settings</SectionHead>
       <div className="flex flex-col gap-4 border-t border-line pt-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="w-40 text-sec">Name</span>
+          {name === null ? (
+            <>
+              <span className="font-mono">{page.slug}</span>
+              {admin && (
+                <Button small onClick={() => setName(page.slug)}>
+                  Edit
+                </Button>
+              )}
+            </>
+          ) : (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                update.mutate(
+                  { slug: renamed },
+                  {
+                    onSuccess: (p) => {
+                      setName(null);
+                      navigate({
+                        to: "/$org/status-pages/$page",
+                        params: { org, page: p.slug },
+                        replace: true,
+                      });
+                    },
+                  },
+                );
+              }}
+            >
+              <input
+                className="field w-64 font-mono"
+                aria-label="Name"
+                value={name}
+                onKeyDown={(e) => e.key === "Escape" && setName(null)}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Button small onClick={() => setName(null)}>
+                Cancel
+              </Button>
+              <Act
+                small
+                primary
+                type="submit"
+                cli={`dock status-page rename ${page.slug} ${renamed || "<name>"}`}
+                disabled={!renamed || renamed === page.slug || update.isPending}
+              >
+                Rename
+              </Act>
+              {page.base_domain && renamed && renamed !== page.slug && (
+                <span className="basis-full text-sec">
+                  The address becomes status-{renamed}.{page.base_domain};
+                  status-{page.slug}.{page.base_domain} redirects to it.
+                </span>
+              )}
+            </form>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="w-40 text-sec">Title</span>
           {title === null ? (
