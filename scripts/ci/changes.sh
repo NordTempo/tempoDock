@@ -12,9 +12,10 @@
 # The API's contract sets both: its Go types and handlers, the OpenAPI
 # specs generated from them, the UI's clients generated from those, and
 # the recorder script the UI builds into internal/analytics. So do the UI
-# files Go tests read (routes, the browser's pack). changes_test.sh
-# checks the classification. Markdown and
-# docs/ set nothing: no build or test reads them. A change to .github/
+# files Go tests read (routes, the browser's pack, the help topics). Docs
+# a binary embeds (the guide, tempoBase's) set go; other markdown and
+# docs/ set nothing. changes_test.sh checks all of it: every file Go
+# embeds or a test reads by relative path must set go. A change to .github/
 # runs everything, and so does anything this can't diff.
 #
 # A pull request's checkout is its merge commit, whose first parent is the
@@ -60,15 +61,19 @@ while IFS= read -r f; do
 		go=true
 		web=true
 		;;
-	docs/* | *.md) ;;
 	# Go tests read these: the reserved project names cover the routes
 	# (internal/core/reserved_test.go), the browser's pack matches the
-	# CLI's (internal/pack/browser_test.go).
-	web/src/routes/* | web/src/features/deploy/pack.ts)
+	# CLI's (internal/pack/browser_test.go), the help topics' commands run
+	# (internal/cli/help_topics_test.go, docs/guide/guide_test.go).
+	web/src/routes/* | web/src/features/deploy/pack.ts | web/src/features/help/topics.ts)
 		go=true
 		web=true
 		;;
-	web/*.go | web/tempobase/*.go) go=true ;;
+	*.go) go=true ;;
+	# Embedded in the binaries (//go:embed): the in-app guide, tempoBase's
+	# docs, the built UIs' directories.
+	docs/guide/* | docs/tempobase/* | web/dist/* | web/tempobase/dist/*) go=true ;;
+	docs/* | *.md) ;;
 	web/*) web=true ;;
 	*) go=true ;;
 	esac
