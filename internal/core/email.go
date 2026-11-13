@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -217,27 +218,18 @@ func (c *Core) TestEmail(ctx context.Context, a Actor, req apitypes.TestEmailReq
 	if err != nil {
 		return apitypes.EmailTest{}, invalid("%q isn't an email address", to)
 	}
-	srv, ok, err := c.loadEmailServer(ctx)
-	if err != nil {
-		return apitypes.EmailTest{}, err
-	}
-	if !ok {
+	st, err := c.store.GetEmailSettings(ctx)
+	if store.IsNotFound(err) {
 		return apitypes.EmailTest{}, invalid("email isn't set up; set a server first (`dock email set`, or the console's Email page)")
 	}
-	content, err := mail.TestMail(mail.Test{SentBy: cmp.Or(a.DisplayName, a.Name), Server: srv.server.Addr(), Site: c.siteName()})
 	if err != nil {
 		return apitypes.EmailTest{}, err
 	}
-	sctx, cancel := context.WithTimeout(ctx, emailTimeout)
-	defer cancel()
-	var sendErr error
-	msg := mail.Message{From: srv.from, ReplyTo: srv.replyTo, To: []mail.Address{{Address: addr.Address}}, Content: content}
-	if err := mail.Send(sctx, c.email.dial, srv.server, []mail.Message{msg}, func(_ int, err error) { sendErr = err }); err != nil {
-		sendErr = err
-		c.emailServerFailed(ctx, err)
-	} else {
-		c.emailServerOK(ctx)
+	content, err := mail.TestMail(mail.Test{SentBy: cmp.Or(a.DisplayName, a.Name), Server: net.JoinHostPort(st.Host, strconv.FormatInt(st.Port, 10)), Site: c.siteName()})
+	if err != nil {
+		return apitypes.EmailTest{}, err
 	}
+	sendErr := c.sendNow(ctx, []mail.Address{{Address: addr.Address}}, content)
 	out := apitypes.EmailTest{To: addr.Address, OK: sendErr == nil}
 	status, summary := apitypes.EmailSent, "sent a test email to "+addr.Address
 	if sendErr != nil {

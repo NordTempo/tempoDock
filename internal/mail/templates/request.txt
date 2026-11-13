@@ -1,0 +1,19 @@
+{{define "request.subject"}}Access request #{{.ID}} in {{.Project}}/{{.Environment}}{{end}}
+{{define "request.text"}}
+{{.RequestedBy}} asks to change the locked environment {{.Project}}/{{.Environment}}
+in {{.Org}}:
+
+  {{.Title}}
+{{if .Reason}}
+Why: {{.Reason}}
+{{end}}
+Approve or reject it in the Inbox:
+{{.URL}}
+
+It lapses undecided on {{.ExpiresText}}.
+
+You get this as an admin of {{.Org}}. Turn these emails off on your
+Account page{{if .Account}}: {{.Account}}{{end}}.
+
+Tempo Dock at {{.Site}}
+{{end}}

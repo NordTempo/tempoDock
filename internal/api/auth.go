@@ -226,6 +226,20 @@ func registerAuth(s *Server, a huma.API) {
 		return reply(s.core.UpdateMe(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-my-email", Method: http.MethodGet, Path: Prefix + "/me/email",
+		Summary: "Which optional mail you get", Tags: []string{"auth"},
+		Description: "Mail you may turn off (ADR 0079): access requests waiting for you to decide. Users only.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.MyEmail], error) {
+		return reply(s.core.MyEmail(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-my-email", Method: http.MethodPut, Path: Prefix + "/me/email",
+		Summary: "Turn optional mail on or off", Tags: []string{"auth"},
+		Description: "Users only. Invites, password reset links and security notices can't be turned off.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.MyEmail }) (*out[apitypes.MyEmail], error) {
+		return reply(s.core.SetMyEmail(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "me", Method: http.MethodGet, Path: Prefix + "/me",
 		Summary: "Who the caller is and what it may do", Tags: []string{"auth"},
 	}, func(_ context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.Me], error) {

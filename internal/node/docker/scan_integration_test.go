@@ -90,7 +90,9 @@ func TestScanDatabaseAndMatch(t *testing.T) {
 	e.DataDir = t.TempDir()
 	ctx := ctxTimeout(t, 20*time.Minute)
 	e.ScanNetwork = "bridge"
-	t.Cleanup(func() { _, _ = e.cli.VolumeRemove(context.Background(), e.scanDBVolume(), client.VolumeRemoveOptions{}) })
+	t.Cleanup(func() {
+		_, _ = e.cli.VolumeRemove(context.Background(), e.scanDBVolume(), client.VolumeRemoveOptions{})
+	})
 	db, err := e.ScanDatabase(ctx, node.ScanDatabaseRequest{Images: scanImages(), Update: true, Labels: node.Labels{ControlPlane: e.prefix}})
 	if err != nil || db.Built.IsZero() {
 		t.Fatalf("database = %+v, %v", db, err)

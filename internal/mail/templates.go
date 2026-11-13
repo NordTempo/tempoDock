@@ -82,6 +82,60 @@ type Test struct {
 // TestMail renders a test mail.
 func TestMail(d Test) (Content, error) { return render("test", d) }
 
+// PasswordReset is a link that sets a new password, asked for on the
+// sign-in page.
+type PasswordReset struct {
+	Email   string
+	URL     string
+	Expires time.Time
+	Site    string
+}
+
+// ExpiresText is when the link stops working.
+func (p PasswordReset) ExpiresText() string { return p.Expires.UTC().Format("15:04 UTC") }
+
+// PasswordResetMail renders a password reset link.
+func PasswordResetMail(d PasswordReset) (Content, error) { return render("reset", d) }
+
+// Notice tells someone their account's sign-in changed: what, when and
+// by whom, and what to do if it wasn't them.
+type Notice struct {
+	What    string // "Your password was changed", one line
+	By      string // who did it, when not the person themselves
+	When    time.Time
+	Email   string
+	Account string // the Account page's URL; "" without a public address
+	Site    string
+}
+
+// WhenText is when it happened.
+func (s Notice) WhenText() string { return s.When.UTC().Format("2 January 2006 at 15:04 UTC") }
+
+// NoticeMail renders a security notice.
+func NoticeMail(d Notice) (Content, error) { return render("security", d) }
+
+// Request is an access request waiting for an admin (ADR 0044): what a
+// token asked to do, where, and the Inbox link that decides it.
+type Request struct {
+	ID          int64
+	Title       string
+	Org         string
+	Project     string
+	Environment string
+	RequestedBy string
+	Reason      string
+	Expires     time.Time
+	URL         string // the org's Inbox
+	Account     string // the Account page, where the mail is turned off
+	Site        string
+}
+
+// ExpiresText is when the request lapses undecided.
+func (r Request) ExpiresText() string { return r.Expires.UTC().Format("2 January 2006 at 15:04 UTC") }
+
+// RequestMail renders an access request.
+func RequestMail(d Request) (Content, error) { return render("request", d) }
+
 // render renders name's subject, text and HTML (if it has one).
 func render(name string, data any) (Content, error) {
 	t, err := parsed()

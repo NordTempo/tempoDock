@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -51,6 +52,10 @@ const (
 type emailState struct {
 	mu      sync.Mutex
 	sending bool
+	// started is set by Start: only the daemon sends. A command that runs
+	// core on its own (`dock admin reset-2fa`) queues mail for the
+	// daemon's next pass instead of racing it.
+	started bool
 	kick    chan struct{}
 	// recent are the send times of the last minute, for emailPerMinute;
 	// only the sender goroutine touches it.
@@ -84,7 +89,7 @@ type outgoing struct {
 
 // queueEmail adds m to the outbox through q (the caller's transaction),
 // unless the outbox is full or m's address had too many mails in the last
-// hour (errEmailRefused). The caller kicks the sender and publishes the
+// hour (errEmailRefused; not for security notices and alerts). The caller kicks the sender and publishes the
 // row once q's transaction commits (emailQueued).
 func (c *Core) queueEmail(ctx context.Context, q *store.Queries, m outgoing) (store.EmailOutbox, error) {
 	n := now()
@@ -95,11 +100,14 @@ func (c *Core) queueEmail(ctx context.Context, q *store.Queries, m outgoing) (st
 	if counts.Total >= emailMaxQueued || (m.orgID != 0 && counts.Org >= emailMaxQueuedOrg) {
 		return store.EmailOutbox{}, errEmailRefused{"too many emails are waiting to be sent; send the link yourself, and ask an operator to check the console's Email page"}
 	}
+	// Security notices and alerts aren't held back: they follow what
+	// already happened, and an alert storm is bounded by its channel.
+	limited := m.kind != apitypes.EmailNotice && m.kind != apitypes.EmailAlert
 	sent, err := q.CountEmailTo(ctx, store.CountEmailToParams{ToAddr: m.to, Since: n.Add(-time.Hour).Unix()})
 	if err != nil {
 		return store.EmailOutbox{}, err
 	}
-	if sent >= emailPerAddress {
+	if limited && sent >= emailPerAddress {
 		return store.EmailOutbox{}, errEmailRefused{m.to + " got " + strconv.Itoa(emailPerAddress) + " emails from Dock in the last hour; send the link yourself, or try again later"}
 	}
 	body, err := json.Marshal(m.content)
@@ -132,11 +140,12 @@ func newNonce() string {
 }
 
 // kickEmail wakes the sender, starting it if it isn't running. A kick
-// after Close does nothing.
+// before Start or after Close does nothing.
 func (c *Core) kickEmail() {
 	c.email.mu.Lock()
 	defer c.email.mu.Unlock()
 	switch {
+	case !c.email.started:
 	case c.email.sending:
 		select {
 		case c.email.kick <- struct{}{}:
@@ -314,6 +323,16 @@ func (c *Core) emailDone(ctx context.Context, r store.EmailOutbox, status apityp
 	}
 	if status == apitypes.EmailFailed {
 		c.log.Warn("email: gave up", "id", r.ID, "kind", r.Kind, "err", msg)
+	}
+	// An alert channel's mail is its delivery: its status is the mail's.
+	if id, ok := strings.CutPrefix(r.Ref, "channel:"); ok {
+		if ch, err := strconv.ParseInt(id, 10, 64); err == nil {
+			if status == apitypes.EmailSent {
+				c.channelSent(ctx, ch)
+			} else {
+				c.channelFailed(ctx, ch, errors.New(msg))
+			}
+		}
 	}
 	c.publishEmail(ctx, row)
 }

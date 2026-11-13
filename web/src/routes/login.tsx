@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
-import { ApiError, api, body } from "../api/client";
+import { ApiError, api, body, done } from "../api/client";
 import type { components } from "../api/schema";
 import { useLogin, useLoginVerify } from "../data/mutations";
 import { currentMe, keys, queries } from "../data/queries";
@@ -332,7 +332,10 @@ function Login() {
               />
               <FieldError id={`${ids}-password`} text={invalid.password} />
             </label>
-            <Forgot />
+            <Forgot
+              email={email}
+              canEmail={methods.data?.password_reset ?? false}
+            />
             {/* A line kept for the answer; a failed sign-in shows as a red box above the button. */}
             <p
               role="alert"
@@ -558,8 +561,21 @@ function SecondStep({
  * "Forgot password?" under the password: Dock sends no email, so it says
  * who can reset one.
  */
-function Forgot() {
+/**
+ * "Forgot password?": with email that carries links set up (ADR 0079),
+ * it emails a reset link to the address typed above; without, it says
+ * who resets passwords. The answer is the same whether or not the
+ * address has an account.
+ */
+function Forgot({ email, canEmail }: { email: string; canEmail: boolean }) {
   const [open, setOpen] = useState(false);
+  const ask = useMutation({
+    mutationFn: (address: string) =>
+      done(
+        api.POST("/api/v1/auth/password-reset", { body: { email: address } }),
+      ),
+  });
+  const address = email.trim();
   if (!open) {
     return (
       <button
@@ -572,12 +588,46 @@ function Forgot() {
       </button>
     );
   }
+  if (!canEmail) {
+    return (
+      <p className="-mt-1.5 text-xs text-sec">
+        This Dock can't email reset links. Ask an operator to reset it on the
+        console's Users page, or with{" "}
+        <code className="font-mono">
+          dock user reset-password &lt;email&gt;
+        </code>
+        .
+      </p>
+    );
+  }
+  if (ask.isSuccess && ask.variables === address) {
+    return (
+      <p role="status" className="-mt-1.5 text-xs text-sec">
+        <span className="text-ok">✓</span> If {address} has an account here, a
+        link to set a new password is on its way. It works for an hour.
+      </p>
+    );
+  }
+  const valid = /^[^\s@]+@[^\s@]+$/.test(address);
   return (
-    <p className="-mt-1.5 text-xs text-sec">
-      Dock doesn't send reset emails. Ask an operator to reset it on the
-      console's Users page, or with{" "}
-      <code className="font-mono">dock user reset-password &lt;email&gt;</code>.
-    </p>
+    <div className="-mt-1.5 flex flex-col gap-1.5 text-xs text-sec">
+      <span>
+        {valid
+          ? `Email a link that sets a new password to ${address}?`
+          : "Type your email above, and Dock emails you a link that sets a new password."}
+      </span>
+      {valid && (
+        <button
+          type="button"
+          disabled={ask.isPending}
+          onClick={() => ask.mutate(address)}
+          className="btn sm self-start"
+        >
+          Email me a reset link
+        </button>
+      )}
+      <ErrorText error={ask.error} />
+    </div>
   );
 }
 

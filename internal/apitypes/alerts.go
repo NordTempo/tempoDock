@@ -181,17 +181,6 @@ type AlertChannel struct {
 	Failures    int        `json:"failures"`
 }
 
-// SMTPSettings is how an email channel sends. Port 465 uses TLS from the
-// start; any other port must offer STARTTLS before credentials are sent.
-type SMTPSettings struct {
-	Host     string   `json:"host" minLength:"1"`
-	Port     int      `json:"port,omitempty" minimum:"0" maximum:"65535" doc:"Default 587"`
-	Username string   `json:"username,omitempty"`
-	Password string   `json:"password,omitempty" doc:"Stored encrypted, never returned"`
-	From     string   `json:"from" minLength:"3"`
-	To       []string `json:"to" minItems:"1"`
-}
-
 // CreateAlertChannelRequest adds a channel.
 type CreateAlertChannelRequest struct {
 	Name string           `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
@@ -200,8 +189,8 @@ type CreateAlertChannelRequest struct {
 	URL string `json:"url,omitempty" maxLength:"2048" doc:"webhook and slack: where to POST. Stored encrypted, never returned"`
 	// Secret signs webhook deliveries; when empty one is generated and
 	// returned once in CreatedAlertChannel.
-	Secret string        `json:"secret,omitempty" maxLength:"256" doc:"webhook: HMAC-SHA256 signing key; generated when empty"`
-	SMTP   *SMTPSettings `json:"smtp,omitempty" doc:"email: the SMTP server and recipients"`
+	Secret string   `json:"secret,omitempty" maxLength:"256" doc:"webhook: HMAC-SHA256 signing key; generated when empty"`
+	To     []string `json:"to,omitempty" maxItems:"20" doc:"email: the recipients; Dock's email server sends (dock email, ADR 0079)"`
 	// MinSeverity defaults to warning (everything).
 	MinSeverity AlertSeverity `json:"min_severity,omitempty" enum:"warning,critical"`
 	// RenotifyMinutes defaults to 240; 0 sends each alert once.

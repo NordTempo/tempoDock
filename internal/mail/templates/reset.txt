@@ -1,0 +1,14 @@
+{{define "reset.subject"}}Reset your Tempo Dock password{{end}}
+{{define "reset.text"}}
+Someone asked to reset the password of {{.Email}} on Tempo Dock.
+
+Set a new password:
+{{.URL}}
+
+The link works once, until {{.ExpiresText}}. Setting a password signs
+you out everywhere; a second factor stays as it is.
+
+Didn't ask for this? Ignore this email; your password stays as it is.
+
+Tempo Dock at {{.Site}}
+{{end}}

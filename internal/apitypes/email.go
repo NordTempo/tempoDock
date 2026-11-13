@@ -85,8 +85,14 @@ type EmailKind string
 
 // Mail kinds.
 const (
-	EmailInvite   EmailKind = "invite"
-	EmailTestKind EmailKind = "test"
+	EmailInvite        EmailKind = "invite"
+	EmailTestKind      EmailKind = "test"
+	EmailPasswordReset EmailKind = "password_reset"
+	// EmailNotice is a security notice: a password or second factor
+	// changed.
+	EmailNotice        EmailKind = "security"
+	EmailAlert         EmailKind = "alert"
+	EmailAccessRequest EmailKind = "access_request"
 )
 
 // EmailState is where a mail is.
@@ -102,7 +108,7 @@ const (
 // EmailDelivery is one mail in the outbox, without its body.
 type EmailDelivery struct {
 	ID       int64      `json:"id"`
-	Kind     EmailKind  `json:"kind" enum:"invite,test"`
+	Kind     EmailKind  `json:"kind" enum:"invite,test,password_reset,security,alert,access_request"`
 	To       string     `json:"to"`
 	Subject  string     `json:"subject"`
 	Org      string     `json:"org,omitempty" doc:"The org it is about; empty for the platform's"`
@@ -147,4 +153,28 @@ type InviteMail struct {
 	Error string `json:"error,omitempty"`
 	// At is when it was sent or given up on.
 	At *time.Time `json:"at,omitempty"`
+}
+
+// PasswordResetAsk asks for a password reset link by email.
+type PasswordResetAsk struct {
+	Email string `json:"email" maxLength:"254"`
+}
+
+// PasswordResetInfo is a reset link that still works, as its page shows
+// it: whose password it sets.
+type PasswordResetInfo struct {
+	Email     string    `json:"email"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// PasswordResetRequest sets a new password with a reset link's code.
+type PasswordResetRequest struct {
+	Password string `json:"password" maxLength:"1024"`
+}
+
+// MyEmail is the mail a user may turn off, and whether they get it:
+// access requests waiting for them to decide (admins). Invites, reset links and
+// security notices can't be turned off.
+type MyEmail struct {
+	AccessRequests bool `json:"access_requests"`
 }

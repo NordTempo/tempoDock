@@ -1,7 +1,8 @@
 # Email
 
 Dock sends its own mail through one SMTP server that operators set up for
-the whole Dock: invites now, password resets and security notices next.
+the whole Dock: invites, password reset links, security notices, alert
+email and access requests.
 Organizations don't set a sender of their own. Dock never receives mail.
 The design is [ADR 0079](../decisions/0079-dock-sends-its-own-email.md).
 
@@ -48,3 +49,32 @@ With email set up, an invite is emailed to the person, and the Members
 page says when it was sent, or why it failed. The link is still shown
 once, under **Copy the link instead**, so you can send it yourself too.
 Without email the page shows the link to copy, as before.
+
+## Forgot password
+
+With email set up and a public address, **Forgot password?** on the
+sign-in page emails a link that sets a new password. It works once, for
+an hour; the answer is the same whether or not the address has an
+account. Setting the password signs the person out everywhere and keeps
+their second factors. Without email, the page says to ask an operator
+(`dock user reset-password`).
+
+## Security notices
+
+Dock emails an account's own address when its password changes or is
+reset, a second factor is added or removed, a recovery code signs in or
+new codes are made, and when an operator resets its two-factor sign-in.
+These can't be turned off.
+
+## Alert channels
+
+Email alert channels send through this server: a channel is just its
+recipients (`dock alerts channel add mail --email ops@example.com`).
+Channels added before Dock had its own server moved onto it on upgrade; a
+platform channel's server became Dock's when none was set.
+
+## Access requests
+
+When an agent's change in a locked environment becomes an access request,
+the organization's admins get a mail with the Inbox link. Each turns it
+off on their Account page or with `dock me email access-requests off`.

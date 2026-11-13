@@ -191,6 +191,10 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 	}
 	c.publishRequest(r, le.Project, le.Environment)
 	c.alertRequest(ctx, r, le)
+	if replaced == nil {
+		// A newer call replacing a pending one isn't mailed again.
+		c.requestMail(ctx, r, le)
+	}
 	return r, nil
 }
 

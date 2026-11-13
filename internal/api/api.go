@@ -132,6 +132,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerUpdate(s, a)
 	registerAddress(s, a)
 	registerEmail(s, a)
+	registerPasswordReset(s, a)
 	registerOperator(s, a)
 	registerAnalytics(s, a)
 	registerTracing(s, a)

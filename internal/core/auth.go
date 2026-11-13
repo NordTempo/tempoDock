@@ -340,6 +340,9 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
 			return err
 		}
+		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
+			return err
+		}
 		revoked, err = endUserAccess(ctx, q, u.ID, a.TokenID)
 		return err
 	})
@@ -353,6 +356,7 @@ func (c *Core) ChangePassword(ctx context.Context, a Actor, req apitypes.ChangeP
 	}
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.password", nil, nil, u.Email, "changed own password; other sessions ended"+revokedNote(revoked))
+	c.securityNotice(ctx, u, "Your Tempo Dock password was changed", "")
 	return secret, expires, nil
 }
 
@@ -709,6 +713,9 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: string(hash), ID: u.ID}); err != nil {
 			return err
 		}
+		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
+			return err
+		}
 		revoked, err = endUserAccess(ctx, q, u.ID, 0)
 		return err
 	})
@@ -717,6 +724,7 @@ func (c *Core) ResetPassword(ctx context.Context, a Actor, id int64, req apitype
 	}
 	c.endOrphanedRequests(ctx)
 	c.audit(ctx, a.platform(), "user.reset_password", nil, nil, u.Email, "reset the password of "+u.Email+" and ended their sessions"+revokedNote(revoked))
+	c.noticeFor(ctx, a, u, "Your Tempo Dock password was reset")
 	out.User = c.userIn(ctx, a, u)
 	return out, nil
 }

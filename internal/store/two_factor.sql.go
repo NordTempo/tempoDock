@@ -195,7 +195,7 @@ func (q *Queries) GetOperatorsTwoFactor(ctx context.Context) (bool, error) {
 }
 
 const getPasskeyByCredentialID = `-- name: GetPasskeyByCredentialID :one
-SELECT user_factors.id, user_factors.user_id, user_factors.kind, user_factors.name, user_factors.credential_id, user_factors.secret, user_factors.last_step, user_factors.created_at, user_factors.last_used_at, users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at
+SELECT user_factors.id, user_factors.user_id, user_factors.kind, user_factors.name, user_factors.credential_id, user_factors.secret, user_factors.last_step, user_factors.created_at, user_factors.last_used_at, users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, users.email_requests
 FROM user_factors JOIN users ON users.id = user_factors.user_id
 WHERE user_factors.credential_id = +?
 `
@@ -229,6 +229,7 @@ func (q *Queries) GetPasskeyByCredentialID(ctx context.Context, credentialID []b
 		&i.User.Operator,
 		&i.User.FactorFailures,
 		&i.User.FactorFailedAt,
+		&i.User.EmailRequests,
 	)
 	return i, err
 }

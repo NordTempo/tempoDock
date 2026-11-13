@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { api, done } from "../../api/client";
@@ -10,7 +10,7 @@ import { useValidation } from "../create/form";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
 import { TokenTable } from "../tokens/TokenTable";
-import { useUpdateName } from "./data";
+import { myEmailQuery, useSetMyEmail, useUpdateName } from "./data";
 import { TwoFactorSection } from "./TwoFactorSection";
 
 // The signed-in person's own account (`dock whoami`, `dock me name`, `dock
@@ -101,6 +101,7 @@ export function AccountPage() {
             <TwoFactorSection />
             <OwnTokens />
             <ChangePassword />
+            <EmailSection />
           </>
         ) : (
           <p className="text-mut">
@@ -109,8 +110,8 @@ export function AccountPage() {
         )}
         {/* The page's CLI equivalents, in the usual mono footer. */}
         <p className="font-mono text-2xs text-mut">
-          dock whoami · dock me password · dock me two-factor · dock token list
-          --mine
+          dock whoami · dock me password · dock me two-factor · dock me email ·
+          dock token list --mine
         </p>
       </Page>
     </>
@@ -192,6 +193,39 @@ function OwnTokens() {
           .
         </p>
       )}
+    </section>
+  );
+}
+
+/**
+ * The mail you may turn off: access requests waiting for you to decide.
+ * Security notices, invites and reset links always come.
+ */
+function EmailSection() {
+  const mine = useQuery(myEmailQuery()).data;
+  const set = useSetMyEmail();
+  if (!mine) return null;
+  const on = mine.access_requests;
+  return (
+    <section aria-labelledby="my-email" className="flex flex-col gap-3">
+      <SectionHead id="my-email">Email</SectionHead>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span>Access requests</span>
+        <span className={on ? "text-ok" : "text-mut"}>{on ? "on" : "off"}</span>
+        <Act
+          small
+          cli={`dock me email access-requests ${on ? "off" : "on"}`}
+          disabled={set.isPending}
+          onClick={() => set.mutate({ access_requests: !on })}
+        >
+          Turn {on ? "off" : "on"}
+        </Act>
+      </div>
+      <p className="text-mut">
+        As an admin, a mail when an access request waits for you. Security
+        notices about your sign-in always come.
+      </p>
+      <ErrorText error={set.error} />
     </section>
   );
 }
