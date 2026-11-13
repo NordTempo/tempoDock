@@ -216,8 +216,11 @@ jobs:
       # The results as Markdown, for the job summary and perf-comment.
       - if: ${{ !cancelled() }}
         run: if [ -f "$RUNNER_TEMP/perf.md" ]; then cat "$RUNNER_TEMP/perf.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      # Capped: on GitHub's 5xx the action retries for about 11 minutes
+      # after the checks are done.
       - if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
+        timeout-minutes: 2
         with:
           name: perf-artifacts
           path: ${{ runner.temp }}/perf.md
@@ -240,8 +243,11 @@ jobs:
       - run: make perf-bench PERF_FLAGS="-soft-timing -base-rev HEAD^1 -markdown $RUNNER_TEMP/perf.md"
       - if: ${{ !cancelled() }}
         run: if [ -f "$RUNNER_TEMP/perf.md" ]; then cat "$RUNNER_TEMP/perf.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      # Capped: on GitHub's 5xx the action retries for about 11 minutes
+      # after the checks are done.
       - if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v4
+        timeout-minutes: 2
         with:
           name: perf-bench
           path: ${{ runner.temp }}/perf.md
@@ -259,20 +265,34 @@ jobs:
     permissions:
       pull-requests: write
     steps:
+      # One step per job, each into its own directory: a pattern that
+      # matches a single artifact (a UI-only change skips perf-bench)
+      # extracts it into path itself, where the script didn't look. A
+      # missing artifact (a skipped job, GitHub's 5xx) fails only its step.
       - uses: actions/download-artifact@v5
+        continue-on-error: true
+        timeout-minutes: 2
         with:
-          pattern: perf-*
-          path: perf
+          name: perf-artifacts
+          path: perf/perf-artifacts
+      - uses: actions/download-artifact@v5
+        if: ${{ needs.perf-bench.result != 'skipped' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        with:
+          name: perf-bench
+          path: perf/perf-bench
       - uses: actions/github-script@v9
         with:
           script: |
             const fs = require('node:fs');
             const marker = '<!-- dock-perf -->';
-            const skipped = { 'perf-bench': '${{ needs.perf-bench.result }}' === 'skipped' };
+            const result = { 'perf-artifacts': '${{ needs.perf-artifacts.result }}', 'perf-bench': '${{ needs.perf-bench.result }}' };
             const part = (job, title) => {
               const f = `perf/${job}/perf.md`;
               const md = fs.existsSync(f) ? fs.readFileSync(f, 'utf8')
-                : skipped[job] ? 'Skipped: the change touches no Go.'
+                : result[job] === 'skipped' ? 'Skipped: the change touches no Go.'
+                : result[job] === 'success' ? `No results: ${job} passed, but its results couldn't be downloaded (see this job's log).`
                 : `No results: ${job} stopped before its checks ran. See its log.`;
               return `### ${title}\n\n${md}`;
             };
