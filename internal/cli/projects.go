@@ -9,10 +9,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
 func newProjectCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "project", Short: "List, create, rename, export and archive projects"})
+	cmd := group(&cobra.Command{Use: "project", Short: "List, create, rename, export, archive and delete projects"})
 	var all bool
 	list := &cobra.Command{
 		Use:     "list",
@@ -49,6 +50,7 @@ func newProjectCmd(g *globals) *cobra.Command {
 	cmd.AddCommand(
 		list,
 		newProjectArchiveCmd(g),
+		newProjectDeleteCmd(g),
 		newProjectRenameCmd(g),
 		newProjectPinCmd(g),
 		newProjectExportCmd(g),
@@ -111,6 +113,64 @@ func newProjectArchiveCmd(g *globals) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask for confirmation")
+	return cmd
+}
+
+// newProjectDeleteCmd deletes an archived project for good (ADR 0078).
+// The name is required, never taken from the directory's link, and typed
+// again to confirm (--confirm without a terminal).
+func newProjectDeleteCmd(g *globals) *cobra.Command {
+	var confirm string
+	cmd := &cobra.Command{
+		Use:   "delete <name> [--confirm <name>]",
+		Short: "Delete an archived project for good: volumes, containers and history",
+		Long: `Delete an archived project and everything in it, which frees its name and
+its domains: on its servers its containers, networks, volumes and volume
+snapshots; its sites' analytics events; its releases, variables, domains,
+backup records and the tokens limited to it. Its activity stays in the
+audit log. Its backups stay in their restic repositories, and the answer
+says where. Only an archived project can be deleted (dock project archive),
+by an org admin, with every server it has something on online. This can't
+be undone.
+
+Type the project's name when asked, or pass it with --confirm.`,
+		Example:           "  dock project delete shop-old --confirm shop-old",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeProjectArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			t := target{Project: args[0]}
+			current, err := get[apitypes.Project](cmd.Context(), s, t.projectPath())
+			if err != nil {
+				return err
+			}
+			if current.ArchivedAt == nil {
+				return &output.Error{Exit: output.ExitUsage, Message: fmt.Sprintf("project %s isn't archived; only an archived project can be deleted", t.Project),
+					Hint: fmt.Sprintf("Archive it first: dock project archive %s", t.Project)}
+			}
+			if confirm == "" {
+				if confirm, err = g.io.Prompt(fmt.Sprintf("This deletes project %s, its volumes and its history for good. Type its name to confirm", t.Project), "confirm"); err != nil {
+					return err
+				}
+			}
+			d, err := send[apitypes.ProjectDeleted](cmd.Context(), s, http.MethodDelete, t.projectPath(), apitypes.DeleteProjectRequest{Confirm: confirm, ID: current.ID})
+			if err != nil {
+				return err
+			}
+			return g.io.Print(d, func() error {
+				g.io.Successf("Deleted project %s: %s, %s, %s. Its name is free.", d.Project,
+					plural(d.Environments, "environment"), plural(d.Services, "service"), plural(d.Volumes, "volume"))
+				for _, n := range d.Notes {
+					g.io.Warnf("%s", n)
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&confirm, "confirm", "", "the project's name, to confirm without a prompt")
 	return cmd
 }
 
@@ -216,6 +276,8 @@ eligible server with the most free memory.`,
 func newProjectRenameCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use: "rename <current> <new>", Short: "Rename a project and its address, keeping services and domains unchanged",
+		Long: `Rename a project and its address. Its ID, services, domains and history stay.
+Archived projects can be renamed too, which frees their name for a new project.`,
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: completeProjectArg,
 		RunE: func(cmd *cobra.Command, args []string) error {

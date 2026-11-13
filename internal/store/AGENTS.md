@@ -20,6 +20,11 @@ migrates it; `stmts.go` prepares each query on first use and reuses it.
   (`apitypes.DataEngines`). A new value widens every such CHECK.
 - Every column a query filters or sorts on is covered by an index.
   Partial indexes (`WHERE revoked_at IS NULL`) for "open" subsets.
+- A new table holding a project's, environment's, service's, release's
+  or site's ID gets a statement in `projectDeletes`
+  (`project_delete.go`), so deleting an archived project removes its
+  rows (ADR 0078). `TestProjectDeletesCoverForeignKeys` catches a
+  missing one with a foreign key; one without needs you to remember.
 
 ## Queries
 

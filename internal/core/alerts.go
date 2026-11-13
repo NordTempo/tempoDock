@@ -72,7 +72,8 @@ type alertEngine struct {
 	// closed when it is done (hold): one write per alert at a time.
 	busy map[string]chan struct{}
 	// writes is held shared by every alert write and alone by a project
-	// rename, which relabels the project's open alerts in its transaction.
+	// rename, which relabels the project's open alerts in its transaction,
+	// and by a project delete, which deletes its alerts.
 	writes sync.RWMutex
 	// sub is the engine's bus subscription, which alertsHandled sends its
 	// barrier through.

@@ -2411,7 +2411,11 @@ export interface paths {
         get: operations["get-project"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an archived project
+         * @description Deletes an archived project for good (ADR 0078): its containers, networks, volumes and volume snapshots on its servers, its sites' analytics events, and everything Dock knows of it, which frees its name and its domains. Its activity stays in the audit log; its backups stay in their restic repositories (`notes` says where). `confirm` is the project's name. Every server it has something on must be online. Scope: admin, unlimited; a session needs a recent sign-in.
+         */
+        delete: operations["delete-project"];
         options?: never;
         head?: never;
         /**
@@ -7553,6 +7557,15 @@ export interface components {
             /** @description Shown to the requester and in the audit log */
             comment?: string;
         };
+        DeleteProjectRequest: {
+            /** @description The project's name, typed again to confirm */
+            confirm: string;
+            /**
+             * Format: int64
+             * @description Expected project ID; prevents deleting a project that took a reused name
+             */
+            id?: number;
+        };
         DeployImageRequest: {
             /** @description Image reference; defaults to the service's image setting, which a deploy of another image updates */
             image?: string;
@@ -9107,6 +9120,20 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+        };
+        ProjectDeleted: {
+            /** Format: int64 */
+            environments: number;
+            /** @description What stays: backups in restic repositories (with the tags that find them), and analytics events when the analytics store couldn't be reached */
+            notes?: string[] | null;
+            project: string;
+            /** Format: int64 */
+            services: number;
+            /**
+             * Format: int64
+             * @description Docker volumes removed from the project's servers
+             */
+            volumes: number;
         };
         ProjectExport: {
             environments: components["schemas"]["EnvironmentExport"][] | null;
@@ -24776,6 +24803,111 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "delete-project": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDeleted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };

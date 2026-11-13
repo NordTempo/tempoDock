@@ -165,6 +165,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "previews.disable": ["turn off previews", "turned off previews for"],
   "project.archive": ["archive project", "archived project"],
   "project.create": ["create project", "created project"],
+  "project.delete": ["delete project", "deleted project"],
   "project.pin": ["pin project", "pinned the environments of"],
   "project.rename": ["rename project", "renamed a project to"],
   "reconcile.drift": ["fix drift", "fixed drift in"],

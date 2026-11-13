@@ -69,7 +69,8 @@ func TestRenameProjectPreservesIdentityAndHistory(t *testing.T) {
 }
 
 // Creation and rename share name validation and permissions; archived names
-// remain reserved and an expected ID prevents accidentally renaming a reused name.
+// stay taken until renamed or deleted, and an expected ID prevents
+// accidentally renaming a reused name.
 func TestRenameProjectValidationAndScope(t *testing.T) {
 	h := newHarness(t)
 	h.service("web", apitypes.CreateServiceRequest{})
@@ -111,9 +112,6 @@ func TestRenameProjectValidationAndScope(t *testing.T) {
 	}
 	if _, err := h.c.RenameProject(h.ctx, testSystem, "shop", apitypes.RenameProjectRequest{Name: "taken"}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("archived name: %v", err)
-	}
-	if _, err := h.c.RenameProject(h.ctx, testSystem, "taken", apitypes.RenameProjectRequest{Name: "new"}); CodeOf(err) != apitypes.CodeValidation {
-		t.Fatalf("archived rename: %v", err)
 	}
 	if _, err := h.c.RenameProject(h.ctx, testSystem, "shop", apitypes.RenameProjectRequest{Name: "storefront"}); err != nil {
 		t.Fatalf("other org's name: %v", err)

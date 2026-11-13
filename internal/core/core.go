@@ -159,8 +159,10 @@ type Core struct {
 	status   map[int64]apitypes.ServiceStatus // by service ID
 	// removing holds the IDs of containers the daemon itself is stopping
 	// and removing, so their die and destroy events aren't taken for a
-	// crash or drift. An ID leaves the set on its destroy event.
-	removing map[string]bool
+	// crash or drift. An ID leaves the set on its destroy event, or when
+	// its removal fails; its channel is closed then, for whoever waits on
+	// the removal (removalOf).
+	removing map[string]chan struct{}
 	// health follows the services' ongoing health checks (health.go).
 	health healthWatch
 
@@ -291,7 +293,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		lookupTXT:  o.LookupTXT,
 		lookupIP:   o.LookupIP,
 		status:     map[int64]apitypes.ServiceStatus{},
-		removing:   map[string]bool{},
+		removing:   map[string]chan struct{}{},
 		health:     newHealthWatch(),
 		uploads:    map[int64]bool{},
 		loginLimit: httpkit.NewLoginLimiter(),

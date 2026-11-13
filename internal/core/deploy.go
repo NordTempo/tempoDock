@@ -833,17 +833,37 @@ func (c *Core) removeContainer(ctx context.Context, serverID int64, id string, o
 // isRemoving reports whether the daemon is stopping and removing a
 // container (removeContainer).
 func (c *Core) isRemoving(id string) bool {
-	c.statusMu.Lock()
-	defer c.statusMu.Unlock()
-	return c.removing[id]
+	return c.removalOf(id) != nil
 }
 
+// removalOf is closed when the daemon's removal of a container ends
+// (removed, or failed); nil when none is under way.
+func (c *Core) removalOf(id string) <-chan struct{} {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+	if ch, ok := c.removing[id]; ok {
+		return ch
+	}
+	return nil
+}
+
+// setRemoving marks a container as being removed by the daemon, or ends
+// that (endRemovalLocked).
 func (c *Core) setRemoving(id string, on bool) {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
-	if on {
-		c.removing[id] = true
-	} else {
+	if !on {
+		c.endRemovalLocked(id)
+	} else if _, ok := c.removing[id]; !ok {
+		c.removing[id] = make(chan struct{})
+	}
+}
+
+// endRemovalLocked forgets a container's removal and wakes whoever waits
+// on it. The caller holds statusMu.
+func (c *Core) endRemovalLocked(id string) {
+	if ch, ok := c.removing[id]; ok {
+		close(ch)
 		delete(c.removing, id)
 	}
 }
@@ -853,11 +873,11 @@ func (c *Core) setRemoving(id string, on bool) {
 func (c *Core) ownRemoval(ev node.ContainerEvent) bool {
 	c.statusMu.Lock()
 	defer c.statusMu.Unlock()
-	if !c.removing[ev.ContainerID] {
+	if _, ok := c.removing[ev.ContainerID]; !ok {
 		return false
 	}
 	if ev.Action == "destroy" {
-		delete(c.removing, ev.ContainerID)
+		c.endRemovalLocked(ev.ContainerID)
 	}
 	return true
 }
