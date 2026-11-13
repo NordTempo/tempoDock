@@ -14031,6 +14031,11 @@
             ],
             "type": "string"
           },
+          "started_at": {
+            "description": "When the running container started; empty unless it runs",
+            "format": "date-time",
+            "type": "string"
+          },
           "state": {
             "enum": [
               "running",

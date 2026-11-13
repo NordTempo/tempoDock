@@ -623,6 +623,30 @@ func TestOOMKillStatusHasLimit(t *testing.T) {
 	}
 }
 
+// A running service's start time is its container's, so a daemon
+// restart doesn't make every service read "up a few seconds".
+func TestStatusStartedAtIsTheContainers(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "app:1")
+	ss, _ := h.c.loadService(h.ctx, 1, web)
+	active, _ := h.c.store.GetActiveRelease(h.ctx, ss.svc.ID)
+	ct, err := h.rt.Inspect(h.ctx, active.ContainerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(when string) {
+		t.Helper()
+		svc, err := h.c.GetService(h.ctx, testSystem, web)
+		if s := svc.Status; err != nil || s.StartedAt == nil || !s.StartedAt.Equal(ct.StartedAt) {
+			t.Fatalf("%s: status %+v, container started %s, %v", when, s, ct.StartedAt, err)
+		}
+	}
+	check("deployed")
+	h.restart()
+	check("after a restart")
+}
+
 func TestVariableReferences(t *testing.T) {
 	h := newHarness(t)
 	api := h.service("api", apitypes.CreateServiceRequest{})

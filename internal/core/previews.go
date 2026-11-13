@@ -608,7 +608,7 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, setup 
 	if CodeOf(err) == apitypes.CodeConflict || CodeOf(err) == apitypes.CodeServerOffline {
 		// The status is public: it says why without naming servers.
 		c.postPreviewStatus(base, matched[0], head.sha, "error", "No preview: no server can take it now; see the delivery in Tempo Dock", "")
-		return fmt.Sprintf("%s: no preview: %s", pr, errorLine(err)), nil
+		return fmt.Sprintf("%s: no preview: %s", pr, c.errorLine(err)), nil
 	}
 	if err != nil {
 		return "", err
@@ -631,7 +631,7 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, setup 
 	promoted = c.seedPreview(a, base, dst, pv.ID, setup.seed, svcs, promoted)
 	if len(promoted) > 0 {
 		if _, err := c.promote(ctx, a, base, dst, promoted, true); err != nil {
-			c.setPreviewEvent(pv.ID, "the base's images weren't deployed: "+errorLine(err))
+			c.setPreviewEvent(pv.ID, "the base's images weren't deployed: "+c.errorLine(err))
 		}
 	}
 	for _, conn := range conns {
@@ -721,7 +721,7 @@ func (c *Core) previewDomains(ctx context.Context, a Actor, base, dst envScope) 
 		done[svcs[i].Name] = true
 		if _, err := c.GenerateDomain(ctx, a, ServiceRef{dst.project.Name, dst.env.Name, svcs[i].Name}); err != nil {
 			if pv, perr := c.store.GetPreviewByEnvironment(ctx, dst.env.ID); perr == nil {
-				c.setPreviewEvent(pv.ID, fmt.Sprintf("no address for %s: %s", svcs[i].Name, errorLine(err)))
+				c.setPreviewEvent(pv.ID, fmt.Sprintf("no address for %s: %s", svcs[i].Name, c.errorLine(err)))
 			}
 		}
 	}
@@ -852,7 +852,7 @@ func (c *Core) archivePreview(ctx context.Context, es envScope, pv store.Preview
 	})
 	if err != nil {
 		c.log.Error("archive a closed preview", "env", es.String(), "err", err)
-		c.setPreviewEvent(pv.ID, "not archived yet: "+errorLine(err))
+		c.setPreviewEvent(pv.ID, "not archived yet: "+c.errorLine(err))
 		return false
 	}
 	if busy {

@@ -346,16 +346,6 @@ func (c *Core) adoptHealth(ctx context.Context, ss svcScope, containerID string)
 	})
 }
 
-// containerHealth is a container's ongoing health check state, empty
-// without one or when it can't be read.
-func (c *Core) containerHealth(ctx context.Context, ss svcScope, containerID string) apitypes.HealthState {
-	ct, err := c.runtime(ss.env.ServerID).Inspect(ctx, containerID)
-	if err != nil {
-		return ""
-	}
-	return apitypes.HealthState(ct.Health)
-}
-
 // healthAlertKey is the key of a service's unhealthy alert.
 func healthAlertKey(serviceID int64) string {
 	return "health:" + alertServiceKey(serviceID, "", "", "")

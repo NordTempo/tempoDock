@@ -354,9 +354,15 @@ type ServiceStatus struct {
 	OOMKilled    bool         `json:"oom_killed"`
 	// MemoryLimitMB is the active release's memory limit, set along with
 	// OOMKilled so clients can say which limit was hit.
-	MemoryLimitMB int        `json:"memory_limit_mb,omitempty"`
-	ExitCode      int        `json:"exit_code"`
-	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
+	MemoryLimitMB int `json:"memory_limit_mb,omitempty"`
+	ExitCode      int `json:"exit_code"`
+	// UpdatedAt is when the control plane last set the status, which a
+	// daemon restart does too: not how long the service has been up.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+	// StartedAt is when the running container started, by Docker's
+	// clock: how long the service has been up, across daemon restarts.
+	// Empty unless it runs.
+	StartedAt *time.Time `json:"started_at,omitempty" doc:"When the running container started; empty unless it runs"`
 	// ServerOffline: the service's server can't be reached now, so State
 	// is the last known one. Server and ServerStatus say which and why.
 	// Only set in reads (services, overview, server pages), not in

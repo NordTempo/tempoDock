@@ -562,7 +562,7 @@ func (c *Core) runRequest(r store.AccessRequest, es envScope, by Actor) {
 	result, err := c.replayRequest(ctx, r, es, by, false)
 	status, msg := apitypes.RequestDone, ""
 	if err != nil {
-		status, msg = apitypes.RequestFailed, errorLine(err)
+		status, msg = apitypes.RequestFailed, c.errorLine(err)
 		if CodeOf(err) == apitypes.CodeUnauthorized {
 			msg = "the token that asked is revoked, expired or no longer acts for its user; nothing ran"
 		}
@@ -614,7 +614,7 @@ func (c *Core) CheckRequest(ctx context.Context, a Actor, id int64) (apitypes.Ac
 	case CodeOf(err) == apitypes.CodeUnauthorized:
 		return apitypes.AccessRequestCheck{Reason: "the token that asked is revoked, expired or no longer acts for its user"}, nil
 	case err != nil:
-		return apitypes.AccessRequestCheck{Reason: errorLine(err)}, nil
+		return apitypes.AccessRequestCheck{Reason: c.errorLine(err)}, nil
 	default:
 		// The call reached no lock, so it would change nothing here.
 		return apitypes.AccessRequestCheck{Reason: "the call no longer changes anything in " + es.String()}, nil
@@ -625,7 +625,7 @@ func (c *Core) CheckRequest(ctx context.Context, a Actor, id int64) (apitypes.Ac
 			return apitypes.AccessRequestCheck{}, err
 		}
 		if _, err := c.restartable(ctx, ss); err != nil {
-			return apitypes.AccessRequestCheck{Reason: errorLine(err), Service: le.Service}, nil
+			return apitypes.AccessRequestCheck{Reason: c.errorLine(err), Service: le.Service}, nil
 		}
 	}
 	return apitypes.AccessRequestCheck{OK: true}, nil

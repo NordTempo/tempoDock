@@ -148,7 +148,7 @@ func (c *Core) syncPreview(id int64) {
 	}
 	cred, err := c.gitCred(ctx, svcScope{envScope: es}, conn)
 	if err != nil {
-		c.setPreviewEvent(id, "nothing posted to the pull request: "+errorLine(err))
+		c.setPreviewEvent(id, "nothing posted to the pull request: "+c.errorLine(err))
 		return
 	}
 	link := c.previewLink(ctx, p, out.Environment)
@@ -182,7 +182,7 @@ func (c *Core) syncPreview(id int64) {
 	body := c.previewComment(p, out, link, int(e.SleepAfterMinutes))
 	if err := c.writePreviewComment(ctx, pv, conn.Repo, cred, body); err != nil {
 		c.log.Warn("comment on pull request", "preview", out.Environment, "err", err)
-		c.setPreviewEvent(id, "couldn't comment on the pull request: "+errorLine(err)+"; the GitHub App (or token) needs Pull requests write access")
+		c.setPreviewEvent(id, "couldn't comment on the pull request: "+c.errorLine(err)+"; the GitHub App (or token) needs Pull requests write access")
 	}
 }
 

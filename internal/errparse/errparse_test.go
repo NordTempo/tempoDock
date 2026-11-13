@@ -31,6 +31,10 @@ func TestLineLevel(t *testing.T) {
 		{`GET /api/checkout 502 31ms`, LevelNone},
 		{`no errors found, 0 failures`, LevelNone},
 		{`listening on :8080`, LevelNone},
+		// Redis states its level: "*" notice, "#" warning (its errors too).
+		{`1:M 13 Nov 2026 11:25:50.521 * <bf> { bf-error-rate : 0.01 }`, LevelNone},
+		{`1:C 13 Nov 2026 11:25:50.519 # WARNING Memory overcommit must be enabled!`, LevelWarn},
+		{`1:M 13 Nov 2026 11:25:50.530 # Fatal error loading the DB, check server logs. Exiting.`, LevelError},
 	} {
 		if got := LineLevel(tc.line); got != tc.want {
 			t.Errorf("LineLevel(%q) = %d, want %d", tc.line, got, tc.want)
@@ -255,5 +259,39 @@ func TestEventCaps(t *testing.T) {
 	ev := one(t, lines...)
 	if n := strings.Count(ev.Sample, "\n") + 1; n > MaxLines || len(ev.Sample) > MaxSample {
 		t.Fatalf("sample has %d lines, %d bytes", n, len(ev.Sample))
+	}
+}
+
+// npm's block is one error, named by the line that says what failed; a
+// script stopped with SIGTERM (a stop or redeploy) is none.
+func TestNpm(t *testing.T) {
+	stopped := []string{
+		"npm error path /app",
+		"npm error command failed",
+		"npm error signal SIGTERM",
+		"npm error command sh -c node --require ./tracing.js server.js",
+		"npm error A complete log of this run can be found in: /root/.npm/_logs/2026-11-13T06_58_19_792Z-debug-0.log",
+	}
+	if evs := events(append(stopped, "listening on :8080")...); len(evs) != 0 {
+		t.Fatalf("a stopped script: %+v", evs)
+	}
+	// Exiting 1 is the app's failure, one issue whatever the log's name.
+	failed := strings.Join(stopped, "\n")
+	ev := one(t, strings.Split(strings.Replace(failed, "signal SIGTERM", "code 1", 1), "\n")...)
+	if ev.Title != "npm error code 1" || !strings.HasSuffix(ev.Sample, "debug-0.log") {
+		t.Fatalf("a failed script: %+v", ev)
+	}
+	again := strings.ReplaceAll(failed, "2026-11-13T06_58_19_792Z", "2026-11-14T08_01_02_003Z")
+	if o := one(t, strings.Split(strings.Replace(again, "signal SIGTERM", "code 1", 1), "\n")...); o.Fingerprint != ev.Fingerprint {
+		t.Fatal("the same failure, another issue")
+	}
+	// npm's own errors stay, in npm 10's words or older npm's.
+	for _, lines := range [][]string{
+		{"npm error Missing script: \"start\"", "npm error", "npm error To see a list of scripts, run:", "npm error   npm run"},
+		{"npm ERR! code ENOENT", "npm ERR! syscall open", "npm ERR! path /app/package.json", "npm ERR! errno -2"},
+	} {
+		if ev := one(t, lines...); ev.Title != lines[0] {
+			t.Errorf("npm's error: %+v", ev)
+		}
 	}
 }

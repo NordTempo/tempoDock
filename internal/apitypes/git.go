@@ -16,7 +16,8 @@ type GitSource struct {
 	Connection *GitConnection `json:"connection,omitempty"`
 	// HooksReady is false while the server has neither a public address
 	// nor [hooks] public_host: GitHub has nowhere to deliver pushes.
-	// HooksHint says how to fix it.
+	// HooksHint says how to fix it, for a service with a connection only:
+	// one without has no pushes to deliver.
 	HooksReady bool   `json:"hooks_ready"`
 	HooksHint  string `json:"hooks_hint,omitempty"`
 	// AppReady says the org can connect through the GitHub App (ADR 0031):

@@ -229,16 +229,15 @@ func TestStatusOnOfflineServer(t *testing.T) {
 		// The deploy's last status update may land between the two reads,
 		// so only the time may differ.
 		s := svc.Status
-		s.UpdatedAt = nil
 		for _, e := range o.Environments {
 			for _, so := range e.Services {
-				os := so.Service.Status
-				os.UpdatedAt = nil
-				if so.Service.ID == svc.ID && os != s {
+				if so.Service.ID == svc.ID && !sameStatus(so.Service.Status, s) {
 					t.Fatalf("overview status %+v, service status %+v", so.Service.Status, svc.Status)
 				}
 			}
 		}
+		// Times aside (TestStatusStartedAtIsTheContainers checks the start).
+		s.UpdatedAt, s.StartedAt = nil, nil
 		return s
 	}
 	if s := status(); s != (apitypes.ServiceStatus{State: apitypes.ServiceRunning}) {

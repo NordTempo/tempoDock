@@ -51,14 +51,20 @@ func (g *egressGuard) addrErr(ip netip.Addr) error {
 		if g.loopback.Load() {
 			return nil
 		}
-		return fmt.Errorf("%s is this server itself; %s go to other hosts (use the receiver's LAN, tailnet or public address)", ip, g.what)
+		return egressRefused(fmt.Sprintf("%s is this server itself; %s go to other hosts (use the receiver's LAN, tailnet or public address)", ip, g.what))
 	case httpkit.IsInternalAddr(ip):
-		return fmt.Errorf("%s is a link-local, multicast or cloud metadata address; %s can't go there", ip, g.what)
+		return egressRefused(fmt.Sprintf("%s is a link-local, multicast or cloud metadata address; %s can't go there", ip, g.what))
 	case g.private && firewall.Blocked(ip) && !slices.ContainsFunc(g.allow, func(p netip.Prefix) bool { return p.Contains(ip) }):
-		return fmt.Errorf("%s is a private address (LAN, tailnet or container network); %s go only to public addresses, so use the receiver's public address", ip, g.what)
+		return egressRefused(fmt.Sprintf("%s is a private address (LAN, tailnet or container network); %s go only to public addresses, so use the receiver's public address", ip, g.what))
 	}
 	return nil
 }
+
+// egressRefused is addrErr's refusal. Its text is meant for whoever
+// configured the destination, so errorLine passes it on as it is.
+type egressRefused string
+
+func (e egressRefused) Error() string { return string(e) }
 
 // hostErr checks a destination's host when it is added: a literal
 // address (or localhost) that addrErr refuses. Names are checked when

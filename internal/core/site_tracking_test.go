@@ -69,10 +69,16 @@ func TestSiteCheck(t *testing.T) {
 	if p := checkProblem(ch); p != "" {
 		t.Fatalf("a site with one good hostname: %q", p)
 	}
-	// An unreachable host is skipped, not failed.
+	// An unreachable host is skipped, not failed, and the step says why
+	// in plain words: a network error, or the guard's refusal.
 	ch = h.c.checkSite(h.ctx, []string{"127.0.0.1:1"})
-	if st := ch.Hosts[0].Steps; len(st) != 1 || st[0].Result != apitypes.CheckSkip {
+	if st := ch.Hosts[0].Steps; len(st) != 1 || st[0].Result != apitypes.CheckSkip || st[0].Text != "can't reach 127.0.0.1:1 from this server: connection refused" {
 		t.Fatalf("unreachable: %+v", st)
+	}
+	h.c.AllowLoopbackSiteChecks(false)
+	ch = h.c.checkSite(h.ctx, []string{"127.0.0.1:1"})
+	if st := ch.Hosts[0].Steps; len(st) != 1 || !strings.HasSuffix(st[0].Text, "127.0.0.1 is this server itself; tracking checks go to other hosts (use the receiver's LAN, tailnet or public address)") {
+		t.Fatalf("refused by the guard: %+v", st)
 	}
 }
 

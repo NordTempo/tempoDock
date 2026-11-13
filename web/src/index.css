@@ -351,6 +351,14 @@
     border-bottom: 1px solid var(--color-soft);
   }
 
+  /*
+   * A cell spanning columns holds a message ("None in this range.", an
+   * error) or a detail row: it wraps, or a narrow table clips it.
+   */
+  td[colspan] {
+    white-space: normal;
+  }
+
   tr:hover > td {
     background: var(--color-hover);
   }

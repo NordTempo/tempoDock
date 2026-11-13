@@ -10203,6 +10203,11 @@ export interface components {
              * @enum {string}
              */
             server_status?: "offline" | "incompatible" | "revoked";
+            /**
+             * Format: date-time
+             * @description When the running container started; empty unless it runs
+             */
+            started_at?: string;
             /** @enum {string} */
             state: "running" | "restarting" | "crashed" | "stopped" | "asleep" | "none";
             /** Format: date-time */

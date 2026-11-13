@@ -61,8 +61,7 @@ func (l serverLink) mark(s apitypes.ServiceStatus) apitypes.ServiceStatus {
 func (c *Core) setStatus(ss svcScope, s apitypes.ServiceStatus) {
 	c.statusMu.Lock()
 	prev, had := c.status[ss.svc.ID]
-	prev.UpdatedAt = nil
-	changed := !had || prev != s
+	changed := !had || !sameStatus(prev, s)
 	t := now()
 	s.UpdatedAt = &t
 	c.status[ss.svc.ID] = s
@@ -70,6 +69,16 @@ func (c *Core) setStatus(ss svcScope, s apitypes.ServiceStatus) {
 	if changed {
 		c.publish(ss, apitypes.Event{Type: apitypes.EventServiceStatus, ServiceStatus: &s})
 	}
+}
+
+// sameStatus reports whether two statuses say the same: when they were
+// set aside, and start times compared by value.
+func sameStatus(a, b apitypes.ServiceStatus) bool {
+	if (a.StartedAt == nil) != (b.StartedAt == nil) || a.StartedAt != nil && !a.StartedAt.Equal(*b.StartedAt) {
+		return false
+	}
+	a.UpdatedAt, b.UpdatedAt, a.StartedAt, b.StartedAt = nil, nil, nil, nil
+	return a == b
 }
 
 // changeStatus changes a service's stored status with fn, under the lock,
@@ -84,7 +93,7 @@ func (c *Core) changeStatus(ss svcScope, fn func(*apitypes.ServiceStatus)) {
 	}
 	prev := s
 	fn(&s)
-	if ok && s == prev {
+	if ok && sameStatus(s, prev) {
 		c.statusMu.Unlock()
 		return
 	}
@@ -95,13 +104,14 @@ func (c *Core) changeStatus(ss svcScope, fn func(*apitypes.ServiceStatus)) {
 	c.publish(ss, apitypes.Event{Type: apitypes.EventServiceStatus, ServiceStatus: &s})
 }
 
+// statusOf is a service's status as its container reads.
 func statusOf(ct node.Container) apitypes.ServiceStatus {
 	s := apitypes.ServiceStatus{RestartCount: ct.RestartCount, OOMKilled: ct.OOMKilled, ExitCode: ct.ExitCode, Health: apitypes.HealthState(ct.Health)}
 	switch ct.State {
 	case node.StateRunning, node.StatePaused:
 		// Dock pauses a service only while a snapshot copies its volumes
 		// (ADR 0047): seconds, with its connections kept.
-		s.State = apitypes.ServiceRunning
+		s.State, s.StartedAt = apitypes.ServiceRunning, startedAt(ct)
 	case node.StateRestarting:
 		s.State = apitypes.ServiceRestarting
 	case node.StateExited, node.StateDead:
@@ -112,6 +122,16 @@ func statusOf(ct node.Container) apitypes.ServiceStatus {
 		s.State = apitypes.ServiceNone
 	}
 	return s
+}
+
+// startedAt is a container's start time for ServiceStatus.StartedAt, or
+// nil when the runtime didn't say (a failed Inspect's zero Container).
+func startedAt(ct node.Container) *time.Time {
+	if ct.StartedAt.IsZero() {
+		return nil
+	}
+	t := ct.StartedAt
+	return &t
 }
 
 // memoryLimitMB is a release's memory limit (0 if its config can't be read).
@@ -207,10 +227,10 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 		}
 		c.changeStatus(ss, func(s *apitypes.ServiceStatus) {
 			if ev.Action == "die" {
-				s.State = apitypes.ServiceRestarting
+				s.State, s.StartedAt = apitypes.ServiceRestarting, nil
 				return
 			}
-			s.State = apitypes.ServiceRunning
+			s.State, s.StartedAt = apitypes.ServiceRunning, eventTime(ev)
 			if s.Health != "" {
 				s.Health = apitypes.HealthStarting
 			}
@@ -233,25 +253,35 @@ func (c *Core) onContainerEvent(ctx context.Context, serverID int64, ev node.Con
 			if s.State == apitypes.ServiceCrashed || s.State == apitypes.ServiceRestarting || ev.Action == "restart" {
 				s.RestartCount++
 			}
-			s.State = apitypes.ServiceRunning
+			s.State, s.StartedAt = apitypes.ServiceRunning, eventTime(ev)
 			if ev.Action == "start" && s.Health != "" {
 				s.Health = apitypes.HealthStarting // Docker starts its check over
 			}
 		case "health_status":
 			s.Health, s.HealthRestarts = apitypes.HealthState(ev.Health), restarts
 		case "die":
-			s.State, s.ExitCode = apitypes.ServiceCrashed, ev.ExitCode
+			s.State, s.ExitCode, s.StartedAt = apitypes.ServiceCrashed, ev.ExitCode, nil
 		case "oom":
 			s.OOMKilled, s.MemoryLimitMB = true, limitMB
 		case "destroy":
 			// Not ServiceStopped: that is a service stopped on purpose
 			// (ADR 0050).
-			s.State = apitypes.ServiceNone
+			s.State, s.StartedAt = apitypes.ServiceNone, nil
 		}
 	})
 	if ev.Action == "destroy" {
 		c.drift(ctx, &ss, fmt.Sprintf("container of active release %d of %s was removed outside the platform", rel.Number, ss))
 	}
+}
+
+// eventTime is when a container event happened, by the server's clock:
+// a start event's is the container's start time.
+func eventTime(ev node.ContainerEvent) *time.Time {
+	t := ev.Time
+	if t.IsZero() {
+		t = time.Now()
+	}
+	return &t
 }
 
 // recover fails deploys that were in flight when the daemon stopped and

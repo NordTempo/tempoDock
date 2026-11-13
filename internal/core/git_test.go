@@ -432,6 +432,25 @@ func TestGitWebhookDeploys(t *testing.T) {
 
 // A signed push resent under a new delivery ID (by someone who captured
 // it) is answered without effect, so an old commit can't be put back live.
+// Without a public address, only a service connected to GitHub gets the
+// hint: one without a connection has no pushes to deliver.
+func TestGitStatusHooksHintNeedsConnection(t *testing.T) {
+	h, _ := gitHarness(t)
+	h.opts.Config.Hooks.PublicHost = ""
+	h.restart()
+	web := h.service("web", apitypes.CreateServiceRequest{Name: "web"})
+	src, err := h.c.GitStatus(h.ctx, testSystem, web)
+	if err != nil || src.HooksReady || src.HooksHint != "" {
+		t.Fatalf("unconnected: %+v, %v", src, err)
+	}
+	if _, err := h.c.GitConnect(h.ctx, testSystem, web, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if src, err = h.c.GitStatus(h.ctx, testSystem, web); err != nil || src.HooksHint == "" {
+		t.Fatalf("connected: %+v, %v", src, err)
+	}
+}
+
 func TestGitWebhookReplayedBody(t *testing.T) {
 	h, _ := gitHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})
