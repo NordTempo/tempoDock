@@ -96,6 +96,7 @@ func runCause(cmd string, cfg releaseConfig, code int, output string) string {
 // diagRules in order: the first that matches is the cause.
 var diagRules = []diagRule{
 	{"server_offline", ruleServerOffline},
+	{"push_failed", rulePushFailed},
 	{"build_failed", ruleBuildFailed},
 	{"pull_failed", rulePullFailed},
 	{"pre_deploy_failed", rulePreDeployFailed},
@@ -189,12 +190,42 @@ func ruleServerOffline(in *diagInput) diagVerdict {
 		summary: fmt.Sprintf("The server went offline during %s; the previous release kept serving", strings.ReplaceAll(string(in.step), "_", " "))}
 }
 
+// rulePushFailed: the image built, but storing it in the platform
+// registry failed (the builder's "push <ref>: ..." error). The build's
+// log ends at "Pushing", so without this the cause read "The build
+// failed" while every build step had passed.
+func rulePushFailed(in *diagInput) diagVerdict {
+	if in.step != apitypes.ReleaseBuilding || in.pulled {
+		return diagVerdict{skip: true}
+	}
+	if in.code != apitypes.CodeBuildFailed || !pushFailed(in.err) {
+		return diagVerdict{why: "no push to the registry failed"}
+	}
+	v := diagVerdict{matched: true, why: "the image built; storing it in the platform registry failed", detail: in.err,
+		summary: "The image built, but the platform registry didn't take it; deploy again, and if it keeps failing an operator checks `dock registry` and the registry's storage"}
+	if e := strings.ToLower(in.err); strings.Contains(e, "timeout") || strings.Contains(e, "deadline exceeded") {
+		v.summary = "The image built, but the platform registry didn't answer in time; deploy again, and if it keeps failing an operator checks `dock registry` and the registry's storage"
+	}
+	return v
+}
+
+// pushFailed reports whether a build's error is its push to the
+// registry failing: deploy.go's "build failed: " around the builder's
+// "push <ref>: ..." (internal/node/build/push.go).
+func pushFailed(err string) bool {
+	_, rest, ok := strings.Cut(err, "build failed: push ")
+	return ok && strings.Contains(rest, ": ")
+}
+
 func ruleBuildFailed(in *diagInput) diagVerdict {
 	if in.step != apitypes.ReleaseBuilding || in.pulled {
 		return diagVerdict{skip: true}
 	}
 	if in.code != apitypes.CodeBuildFailed {
 		return diagVerdict{why: "the build passed"}
+	}
+	if pushFailed(in.err) {
+		return diagVerdict{why: "every build step passed"}
 	}
 	v := diagVerdict{matched: true, why: "the build failed", summary: "The build failed"}
 	if line, ok := firstBuildError(in.build); ok {
@@ -228,7 +259,7 @@ func rulePullFailed(in *diagInput) diagVerdict {
 	case strings.Contains(e, "unauthorized") || strings.Contains(e, "denied") || strings.Contains(e, "authentication required"):
 		return diagVerdict{matched: true, why: "the registry refused access",
 			summary: "The image's registry refused access; add or fix its registry credentials",
-			fix:     &apitypes.DiagnosisFix{Setting: "image", CLI: "dock registry add"}}
+			fix:     &apitypes.DiagnosisFix{Setting: "image", CLI: "dock registry login HOST --username NAME"}}
 	case strings.Contains(e, "manifest unknown") || strings.Contains(e, "not found") || strings.Contains(e, "no such"):
 		return diagVerdict{matched: true, why: "the registry has no such image",
 			summary: "The image or its tag doesn't exist in the registry",
