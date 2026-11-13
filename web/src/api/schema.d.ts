@@ -1403,6 +1403,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/guide/{page}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A page of the user guide, as Markdown */
+        get: operations["guide-page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -8386,6 +8403,11 @@ export interface components {
             kind: "page" | "event";
             /** @example /pricing */
             match: string;
+        };
+        GuidePage: {
+            markdown: string;
+            /** @example deploying */
+            page: string;
         };
         Health: {
             /** @example ok */
@@ -18854,6 +18876,37 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "guide-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                page: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidePage"];
+                };
+            };
+            /** @description Error */
+            default: {
                 headers: {
                     [name: string]: unknown;
                 };

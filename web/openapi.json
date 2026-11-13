@@ -8576,6 +8576,25 @@
         ],
         "type": "object"
       },
+      "GuidePage": {
+        "additionalProperties": false,
+        "properties": {
+          "markdown": {
+            "type": "string"
+          },
+          "page": {
+            "examples": [
+              "deploying"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "page",
+          "markdown"
+        ],
+        "type": "object"
+      },
       "Health": {
         "additionalProperties": false,
         "properties": {
@@ -28459,6 +28478,51 @@
         "summary": "List a repository's directories",
         "tags": [
           "github"
+        ]
+      }
+    },
+    "/api/v1/guide/{page}": {
+      "get": {
+        "operationId": "guide-page",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "examples": [
+                "deploying"
+              ],
+              "pattern": "^[A-Za-z0-9-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidePage"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "A page of the user guide, as Markdown",
+        "tags": [
+          "system"
         ]
       }
     },
