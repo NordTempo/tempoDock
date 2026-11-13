@@ -321,6 +321,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
     "removed an update hook from",
   ],
   "status_page.publish": ["publish status page", "published status page"],
+  "status_page.rename": ["rename status page", "renamed status page"],
   "status_page.unpublish": ["unpublish status page", "unpublished status page"],
   "status_page.update": ["change status page", "changed status page"],
   "status_page.verify": ["verify hostname", "verified the hostname of"],

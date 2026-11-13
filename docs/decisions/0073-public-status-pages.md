@@ -5,6 +5,7 @@ A picked by Saile, Postplan `mqr6y0crg60j`). Builds on
 [0055](0055-uptime-checks.md) (uptime checks) and
 [0037](0037-analytics.md) (public dashboards, whose serving it copies).
 Phases 1 to 5 of 5 are in; [Later phases](#later-phases) says what is left.
+[Renaming](#renaming-a-page) was added after (Saile, 2026-11-13).
 
 ## Context
 
@@ -31,7 +32,7 @@ with Dock's.
 | Sources | A component is built from **services** (all their uptime checks, including those Dock adds for domains, [0059](0059-analytics-area-and-slimmer-service-page.md), and their health) and single **uptime checks**, at most 10, or none (manual). Only the org's live services; **previews are refused** (random names, short lives). A source whose service is archived later adds nothing |
 | Status | From memory, on every read: of a component's checks (each counted once), all down is a **major outage**, some a **partial outage**; a source service's open crash loop alert is a partial outage, unhealthy **degraded**. A check unknown after a restart is down only while its `uptime_down` alert is open, so restarting Dock never turns a page red. An environment asleep ([0070](0070-sleeping-environments.md)) is **idle**: neutral, never down, and its asleep time is no data. `auto` off: operational until incidents (phase 2) set it. The page's status is its worst component, idle ones aside |
 | History | `uptime_stats` gains **day rows** (`res` 86400, UTC days, kept 90 days). The statistics tick's hourly uptime rollup also rolls each finished day's hour rows into a day row: no new timer. After a restart it carries on from the newest day row; it never rolls a day whose hour rows are partly trimmed. The first roll after the upgrade fills the 30 days hour rows hold; older days read "no data" (gray), never green. A page reads day rows, then hour rows for days not rolled yet, then minute rows for the hour not rolled yet, in one query through `uptime_stats`' key |
-| Addresses | `status-<slug>.<base domain>` (the control plane's), once published. A slug is one page's in the whole install, so no org can take or shadow another's; it can't be a service's domain, Dock's own hostname or a public dashboard, and services and redirects can't take a page's address, published or not. Unpublished, the address answers 404. Custom hostnames come in phase 4 |
+| Addresses | `status-<slug>.<base domain>` (the control plane's), once published. A slug is one page's in the whole install, so no org can take or shadow another's; it can't be a service's domain, Dock's own hostname or a public dashboard, and services and redirects can't take a page's address, published or not. Unpublished, the address answers 404. Custom hostnames come in phase 4; names can change ([renaming](#renaming-a-page)) |
 | Serving | The control plane's Caddy routes published pages' hostnames to `[status] listen` (default `127.0.0.1:7079`), a listener serving nothing else: `GET /` and `/status.json`, 404 for anything else, with the client's address and certificates on demand like Dock's address. No access protection ([0030](0030-access-protection.md)) applies: these are not service domains |
 | Rendering | A page is rendered when it is asked for after something it shows may have changed, or once it is a minute old; the gzipped bytes are served until then, with an ETag. "May have changed" is a generation counted on the event bus: every uptime, alert and sleep event, and every change to a page. Within 5 s of a render a stale page is served as it was. At most 2 renders run at once, the cache holds at most 8 MB, and a render that fails keeps the last bytes |
 | Limits | Each client address gets 60 requests and then 2 a second |
@@ -99,6 +100,22 @@ with Dock's.
 | No subscribe form, no mail | Letting anyone register URLs would have Dock POST wherever a stranger says, and confirming them needs mail, which Dock doesn't send. Visitors follow the Atom feed; a partner sends the page's admins a webhook URL. The public listener stays GET only |
 | API, CLI, UI | `GET`/`POST /status-pages/{page}/hooks`, `DELETE .../hooks/{hook}`, `POST .../hooks/{hook}/test`; `dock status-page hook list\|add\|remove\|test` (URLs from stdin with `-`); the page's **Update hooks** section. Audited as `status_page.hook_add` and `.hook_remove` |
 | Migration | 0094: `status_hooks` |
+
+## Renaming a page
+
+A page made as `api` was stuck with the name and so with
+`status-api.<base domain>`. Names now change the way an organization's
+slug does ([0064](0064-changing-an-org-slug.md)): links people
+published keep working.
+
+| Topic | Decision |
+|---|---|
+| How | `PATCH /status-pages/{page}` with `slug`, like `PATCH /org`; `dock status-page rename PAGE NEW`; Edit next to the name in the page's settings, which says what the address becomes. Organization admins. Audited as `status_page.rename` |
+| Rules | A new page's: `validName`, no page in the install has it, and its address isn't something else's (a service's domain, Dock's own names, a dashboard, another page's custom hostname) |
+| Old names | `status_page_old_slugs` maps an old name to the page. Lookups by name try current names first, so the API, CLI, MCP and the editor's old URLs (which move to the new one) find the page by an old name. The old generated address stays routed with a certificate while the page is published and answers its paths with a **301** to the same path at the page's address (its custom hostname once verified), cached an hour, not for good. While it redirects, services, redirects and custom hostnames can't take it |
+| Released when taken | Another page (or this one, renamed back) taking the name removes it from the table, and the old address is that page's. A page keeps its 5 newest old names: each is a route and a certificate |
+| Unchanged | IDs, components, incidents (their public URLs are built when sent, so they carry the new address), maintenance, hooks (sealed by page ID), the custom hostname and the Cloudflare record Dock made for it. A custom hostname's CNAME to the old generated address keeps resolving, since the base domain's names are a wildcard; the editor shows the new target |
+| Migration | 0101: `status_page_old_slugs` |
 
 ## Performance
 

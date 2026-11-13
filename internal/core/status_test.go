@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -266,6 +267,98 @@ func TestStatusPagePublished(t *testing.T) {
 	}
 }
 
+// Renaming a page moves its address; the old name keeps finding the page
+// and its address redirects, routed with a certificate, until another
+// page takes the name. A new name follows a new page's rules, and a page
+// keeps its statusOldSlugs newest old names.
+func TestStatusPageRename(t *testing.T) {
+	h, _ := statusHarness(t)
+	admin := h.user("admin@example.com", apitypes.ScopeAdmin)
+	if _, err := h.c.CreateStatusPage(h.ctx, admin, apitypes.CreateStatusPageRequest{Slug: "api", Title: "API"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.SetStatusComponents(h.ctx, admin, "api", apitypes.SetStatusComponentsRequest{Components: []apitypes.StatusComponentInput{
+		{Name: "Web", Sources: []apitypes.StatusSourceRef{{Service: "shop/production/web"}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	const oldHost, newHost = "status-api.dock.example.net", "status-tempo-api.dock.example.net"
+	p, err := h.c.UpdateStatusPage(h.ctx, admin, "api", apitypes.UpdateStatusPageRequest{Slug: new("tempo-api"), Title: new("Tempo API"), Published: new(true)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Slug != "tempo-api" || p.Title != "Tempo API" || p.URL != "https://"+newHost || len(p.Components) != 1 {
+		t.Fatalf("renamed page = %+v", p.StatusPageSummary)
+	}
+	if _, _, ok := h.c.StatusPageAt(newHost); !ok || !h.routed(newHost) {
+		t.Error("the new address isn't served")
+	}
+	if _, _, ok := h.c.StatusPageAt(oldHost); ok {
+		t.Error("the old address serves the page instead of redirecting")
+	}
+	if to, ok := h.c.StatusPageMoved(oldHost); !ok || to != "https://"+newHost || !h.routed(oldHost) {
+		t.Errorf("old address moved to %q, %v, routed %v", to, ok, h.routed(oldHost))
+	}
+	if ok, _ := h.c.AllowCertificate(h.ctx, oldHost); !ok {
+		t.Error("the old address gets no certificate")
+	}
+	if got, err := h.c.GetStatusPage(h.ctx, admin, "api"); err != nil || got.Slug != "tempo-api" {
+		t.Errorf("the old name finds %+v, %v", got.StatusPageSummary, err)
+	}
+	if evs, _ := h.c.ListAudit(h.ctx, testSystem, AuditFilter{Action: "status_page.rename"}); len(evs) != 1 ||
+		evs[0].Summary != "renamed status page api to tempo-api; "+oldHost+" redirects to its new address" {
+		t.Errorf("rename audit: %+v", evs)
+	}
+
+	// The rules of a new page's name.
+	if _, err := h.c.CreateStatusPage(h.ctx, admin, apitypes.CreateStatusPageRequest{Slug: "other"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.AddDomain(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, apitypes.AddDomainRequest{Hostname: "status-shop.dock.example.net"}); err != nil {
+		t.Fatal(err)
+	}
+	for slug, code := range map[string]apitypes.ErrorCode{
+		"tempo-api": apitypes.CodeHostnameTaken, // another page's
+		"shop":      apitypes.CodeHostnameTaken, // a service's domain
+		"Not_Valid": apitypes.CodeValidation,
+	} {
+		if _, err := h.c.UpdateStatusPage(h.ctx, admin, "other", apitypes.UpdateStatusPageRequest{Slug: new(slug)}); CodeOf(err) != code {
+			t.Errorf("renamed to %s: %v, want %s", slug, err, code)
+		}
+	}
+	if _, err := h.c.AddDomain(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, apitypes.AddDomainRequest{Hostname: oldHost}); CodeOf(err) != apitypes.CodeHostnameTaken {
+		t.Errorf("a service took a redirecting address: %v", err)
+	}
+
+	// Another page may take the old name; the redirect stops.
+	if p, err = h.c.UpdateStatusPage(h.ctx, admin, "other", apitypes.UpdateStatusPageRequest{Slug: new("api")}); err != nil || p.Slug != "api" {
+		t.Fatalf("took the old name: %+v, %v", p.StatusPageSummary, err)
+	}
+	if _, ok := h.c.StatusPageMoved(oldHost); ok {
+		t.Error("a taken old name still redirects")
+	}
+	if got, err := h.c.GetStatusPage(h.ctx, admin, "api"); err != nil || got.Title != "other" {
+		t.Errorf("the taken name finds %+v, %v", got.StatusPageSummary, err)
+	}
+
+	slug := "tempo-api"
+	for i := range statusOldSlugs + 2 {
+		next := fmt.Sprintf("tempo-%d", i)
+		if _, err := h.c.UpdateStatusPage(h.ctx, admin, slug, apitypes.UpdateStatusPageRequest{Slug: &next}); err != nil {
+			t.Fatal(err)
+		}
+		slug = next
+	}
+	moved := 0
+	for host := range *h.c.statusPages.hosts.Load() {
+		if _, ok := h.c.StatusPageMoved(host); ok {
+			moved++
+		}
+	}
+	if _, ok := h.c.StatusPageMoved("status-tempo-0.dock.example.net"); moved != statusOldSlugs || ok {
+		t.Errorf("%d old addresses redirect, tempo-0 too: %v; want the newest %d", moved, ok, statusOldSlugs)
+	}
+}
+
 // Members read pages; only admins acting for the whole org change them.
 // A token limited to a project sees other projects' sources unnamed.
 func TestStatusPagePermissions(t *testing.T) {
@@ -298,6 +391,9 @@ func TestStatusPagePermissions(t *testing.T) {
 		}
 		if _, err := h.c.UpdateStatusPage(h.ctx, a, "acme", apitypes.UpdateStatusPageRequest{Title: new("Mine")}); CodeOf(err) != apitypes.CodeForbidden {
 			t.Errorf("%s changed the page: %v", a.Name, err)
+		}
+		if _, err := h.c.UpdateStatusPage(h.ctx, a, "acme", apitypes.UpdateStatusPageRequest{Slug: new("mine")}); CodeOf(err) != apitypes.CodeForbidden {
+			t.Errorf("%s renamed the page: %v", a.Name, err)
 		}
 		if _, err := h.c.SetStatusComponents(h.ctx, a, "acme", apitypes.SetStatusComponentsRequest{}); CodeOf(err) != apitypes.CodeForbidden {
 			t.Errorf("%s set components: %v", a.Name, err)

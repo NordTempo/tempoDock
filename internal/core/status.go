@@ -19,7 +19,9 @@ import (
 // checks. A published page is served at status-<slug>.<base domain> by
 // the control plane's Caddy, through [status] listen (api.StatusPages),
 // which renders it when it is viewed after a change and serves the
-// cached bytes otherwise.
+// cached bytes otherwise. A renamed page's old generated addresses
+// answer 301 to its address (StatusPageMoved) until another page takes
+// the name.
 //
 // A component's status is worked out from memory: the checks' states
 // (checkStatus), the open crash loop and unhealthy alerts, and whether
@@ -32,6 +34,9 @@ const (
 	statusMaxSources    = 10
 	// statusMaxHooks bounds the posts one update fans out to.
 	statusMaxHooks = 10
+	// statusOldSlugs is how many old names a page keeps: each is a route
+	// and a certificate, so a page renamed over and over holds a few.
+	statusOldSlugs = 5
 )
 
 // statusState is what Dock holds in memory for status pages: which
@@ -40,10 +45,12 @@ type statusState struct {
 	hosts atomic.Pointer[map[string]statusHost]
 }
 
-// statusHost is a page a hostname belongs to.
+// statusHost is a page a hostname belongs to. moved is set for an old
+// name's address: the page's address it redirects to.
 type statusHost struct {
 	id        int64
 	published bool
+	moved     string
 }
 
 // statusHostname is a page's address under the control plane's base
@@ -70,7 +77,14 @@ func (c *Core) statusPageHost(host string) (statusHost, bool) {
 // under an older one is stale.
 func (c *Core) StatusPageAt(host string) (id, gen int64, ok bool) {
 	h, ok := c.statusPageHost(host)
-	return h.id, c.bus.statusGen.Load(), ok && h.published && c.cfg.Status.Listen != ""
+	return h.id, c.bus.statusGen.Load(), ok && h.published && h.moved == "" && c.cfg.Status.Listen != ""
+}
+
+// StatusPageMoved is where a published page's old address redirects, for
+// the public listener: the page's address now.
+func (c *Core) StatusPageMoved(host string) (string, bool) {
+	h, ok := c.statusPageHost(host)
+	return h.moved, ok && h.published && h.moved != "" && c.cfg.Status.Listen != ""
 }
 
 // statusPagesChanged rebuilds the pages' hostnames and, when the
@@ -92,8 +106,8 @@ func (c *Core) statusPagesChanged(ctx context.Context) {
 	}
 }
 
-// loadStatusHosts reads every page's hostname: none without a base
-// domain.
+// loadStatusHosts reads every page's hostnames, its old names'
+// addresses too: none without a base domain.
 func (c *Core) loadStatusHosts(ctx context.Context) (map[string]statusHost, error) {
 	hosts := map[string]statusHost{}
 	base, err := c.publicBase(ctx)
@@ -104,10 +118,25 @@ func (c *Core) loadStatusHosts(ctx context.Context) (map[string]statusHost, erro
 	if err != nil {
 		return nil, err
 	}
+	olds, err := c.store.ListStatusOldSlugs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	at := make(map[int64]statusHost, len(rows))
 	for _, r := range rows {
-		hosts[statusHostname(r.Slug, base)] = statusHost{id: r.ID, published: r.Published}
+		h := statusHost{id: r.ID, published: r.Published}
+		hosts[statusHostname(r.Slug, base)] = h
+		h.moved = c.controlURL(statusHostname(r.Slug, base))
 		if r.Hostname != "" {
 			hosts[r.Hostname] = statusHost{id: r.ID, published: r.Published}
+			h.moved = c.controlURL(r.Hostname)
+		}
+		at[r.ID] = h
+	}
+	for _, o := range olds {
+		page, ok := at[o.PageID]
+		if h := statusHostname(o.Slug, base); ok && hosts[h].id == 0 {
+			hosts[h] = page
 		}
 	}
 	return hosts, nil
@@ -148,6 +177,10 @@ func (c *Core) loadStatusPage(ctx context.Context, a Actor, slug string, need ap
 		return store.StatusPage{}, err
 	}
 	p, err := c.store.GetStatusPage(ctx, store.GetStatusPageParams{OrgID: a.OrgID, Slug: slug})
+	if store.IsNotFound(err) {
+		// A name the page had before keeps naming it, for links and scripts.
+		p, err = c.store.GetStatusPageByOldSlug(ctx, store.GetStatusPageByOldSlugParams{OrgID: a.OrgID, Slug: slug})
+	}
 	if store.IsNotFound(err) {
 		return p, notFound("status page %q not found; `dock status-page list` shows the organization's", slug)
 	}
@@ -207,26 +240,15 @@ func (c *Core) CreateStatusPage(ctx context.Context, a Actor, req apitypes.Creat
 	if err := statusPagesIn(a, "making a status page"); err != nil {
 		return apitypes.StatusPage{}, err
 	}
-	if err := validName("status page", req.Slug); err != nil {
+	if err := c.checkStatusSlug(ctx, req.Slug); err != nil {
 		return apitypes.StatusPage{}, err
 	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		title = req.Slug
 	}
-	base, err := c.publicBase(ctx)
-	if err != nil {
-		return apitypes.StatusPage{}, err
-	}
-	host := statusHostname(req.Slug, base)
-	if err := c.checkStatusHost(ctx, host); err != nil {
-		return apitypes.StatusPage{}, err
-	}
-	if _, ok := c.statusPageHost(host); ok {
-		return apitypes.StatusPage{}, errf(apitypes.CodeHostnameTaken, "%s is another status page's custom hostname; pick another name", host)
-	}
 	var p store.StatusPage
-	err = c.store.Tx(ctx, func(q *store.Queries) error {
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
 		n, err := q.CountOrgStatusPages(ctx, a.OrgID)
 		if err != nil {
 			return err
@@ -234,10 +256,8 @@ func (c *Core) CreateStatusPage(ctx context.Context, a Actor, req apitypes.Creat
 		if n >= statusMaxPages {
 			return conflict("the organization has %d status pages, the most it may have; remove one first (`dock status-page rm`)", n)
 		}
-		if taken, err := q.StatusSlugTaken(ctx, req.Slug); err != nil {
+		if err := takeStatusSlug(ctx, q, req.Slug); err != nil {
 			return err
-		} else if taken {
-			return errf(apitypes.CodeHostnameTaken, "a status page called %s exists, here or in another organization; its address would be the same, so pick another name", req.Slug)
 		}
 		p, err = q.CreateStatusPage(ctx, store.CreateStatusPageParams{OrgID: a.OrgID, Slug: req.Slug, Title: title, CreatedAt: now(), CreatedBy: a.Name})
 		return err
@@ -248,6 +268,40 @@ func (c *Core) CreateStatusPage(ctx context.Context, a Actor, req apitypes.Creat
 	c.audit(ctx, a, "status_page.create", nil, nil, "status page "+p.Slug, "made status page "+p.Slug)
 	c.statusPagesChanged(ctx)
 	return c.statusPage(ctx, a, p)
+}
+
+// checkStatusSlug refuses a name a new or renamed page can't have: one
+// that isn't a valid name, or whose address something else answers on
+// (checkStatusHost) or is another page's custom hostname. An old name's
+// address is free to take.
+func (c *Core) checkStatusSlug(ctx context.Context, slug string) error {
+	if err := validName("status page", slug); err != nil {
+		return err
+	}
+	base, err := c.publicBase(ctx)
+	if err != nil {
+		return err
+	}
+	host := statusHostname(slug, base)
+	if err := c.checkStatusHost(ctx, host); err != nil {
+		return err
+	}
+	if h, ok := c.statusPageHost(host); ok && h.moved == "" {
+		return errf(apitypes.CodeHostnameTaken, "%s is another status page's custom hostname; pick another name", host)
+	}
+	return nil
+}
+
+// takeStatusSlug claims slug for a page in q's transaction: refused when
+// a page has it, and no longer an old name of any page, whose old
+// address then stops redirecting.
+func takeStatusSlug(ctx context.Context, q *store.Queries, slug string) error {
+	if taken, err := q.StatusSlugTaken(ctx, slug); err != nil {
+		return err
+	} else if taken {
+		return errf(apitypes.CodeHostnameTaken, "a status page called %s exists, here or in another organization; its address would be the same, so pick another name", slug)
+	}
+	return q.ReleaseStatusOldSlug(ctx, slug)
 }
 
 // checkStatusHost refuses a page address something else answers on: a
@@ -278,12 +332,17 @@ func (c *Core) GetStatusPage(ctx context.Context, a Actor, slug string) (apitype
 	return c.statusPage(ctx, a, p)
 }
 
-// UpdateStatusPage changes a page's title and settings, and publishes
-// or unpublishes it. Organization admins.
+// UpdateStatusPage renames a page, changes its title and settings, and
+// publishes or unpublishes it. Organization admins.
 func (c *Core) UpdateStatusPage(ctx context.Context, a Actor, slug string, req apitypes.UpdateStatusPageRequest) (apitypes.StatusPage, error) {
 	p, err := c.loadStatusPage(ctx, a, slug, apitypes.ScopeAdmin, "changing a status page")
 	if err != nil {
 		return apitypes.StatusPage{}, err
+	}
+	if req.Slug != nil && *req.Slug != p.Slug {
+		if p, err = c.renameStatusPage(ctx, a, p, *req.Slug); err != nil {
+			return apitypes.StatusPage{}, err
+		}
 	}
 	next := store.UpdateStatusPageParams{ID: p.ID, Title: p.Title, Published: p.Published, ShowUptime: p.ShowUptime, Drafts: p.Drafts}
 	var changes []string
@@ -360,6 +419,44 @@ func (c *Core) UpdateStatusPage(ctx context.Context, a Actor, slug string, req a
 	c.audit(ctx, a, action, nil, nil, "status page "+p.Slug, "status page "+p.Slug+": "+strings.Join(changes, ", "))
 	c.statusPagesChanged(ctx)
 	return c.statusPage(ctx, a, p)
+}
+
+// renameStatusPage gives a page a new name, checked like a new page's,
+// and so a new generated address. The old name keeps naming the page in
+// the API and its address redirects to the page's (ADR 0073, renaming),
+// until another page takes it; a page keeps its statusOldSlugs newest.
+// The custom hostname, components, incidents and hooks stay.
+func (c *Core) renameStatusPage(ctx context.Context, a Actor, p store.StatusPage, slug string) (store.StatusPage, error) {
+	if err := c.checkStatusSlug(ctx, slug); err != nil {
+		return p, err
+	}
+	old := p.Slug
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := takeStatusSlug(ctx, q, slug); err != nil {
+			return err
+		}
+		var err error
+		if p, err = q.SetStatusPageSlug(ctx, store.SetStatusPageSlugParams{Slug: slug, ID: p.ID}); err != nil {
+			return err
+		}
+		if err := q.AddStatusOldSlug(ctx, store.AddStatusOldSlugParams{Slug: old, PageID: p.ID, ChangedAt: now()}); err != nil {
+			return err
+		}
+		return q.TrimStatusOldSlugs(ctx, store.TrimStatusOldSlugsParams{PageID: p.ID, Keep: statusOldSlugs})
+	})
+	if store.IsUnique(err) {
+		return p, errf(apitypes.CodeHostnameTaken, "a status page called %s exists, here or in another organization; pick another name", slug)
+	}
+	if err != nil {
+		return p, err
+	}
+	summary := fmt.Sprintf("renamed status page %s to %s", old, slug)
+	if base, err := c.publicBase(ctx); err == nil && base != "" {
+		summary += fmt.Sprintf("; %s redirects to its new address", statusHostname(old, base))
+	}
+	c.audit(ctx, a, "status_page.rename", nil, nil, "status page "+slug, summary)
+	c.statusPagesChanged(ctx)
+	return p, nil
 }
 
 // DeleteStatusPage removes a page and its components; its address
@@ -822,7 +919,7 @@ func (c *Core) statusPage(ctx context.Context, a Actor, p store.StatusPage) (api
 	if err != nil {
 		return apitypes.StatusPage{}, err
 	}
-	out := apitypes.StatusPage{StatusPageSummary: c.toStatusSummary(p, base, len(comps)), ShowUptime: p.ShowUptime, Drafts: p.Drafts,
+	out := apitypes.StatusPage{StatusPageSummary: c.toStatusSummary(p, base, len(comps)), BaseDomain: base, ShowUptime: p.ShowUptime, Drafts: p.Drafts,
 		Status: pageStatus(comps), Components: make([]apitypes.StatusComponent, len(comps)), Incidents: make([]apitypes.StatusIncident, len(incs))}
 	if out.Hostname, err = c.statusHostnameView(ctx, p, base); err != nil {
 		return apitypes.StatusPage{}, err
