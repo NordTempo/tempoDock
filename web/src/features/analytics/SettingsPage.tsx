@@ -33,6 +33,7 @@ import {
   valid,
   value,
 } from "./settings";
+import { TrackingStatus } from "./Tracking";
 
 // A site's settings page in the Analytics area (Saile's pick, 2026-11-13;
 // it replaced a dialog): the site, its hostnames, goals, what it collects,
@@ -84,6 +85,7 @@ export function SettingsPage() {
           <span className="flex flex-wrap items-center gap-3">
             <code className="text-xs break-all">{scriptTag}</code>
             <CopyButton text={scriptTag} />
+            <TrackingStatus project={project} site={site.name} />
           </span>
         </Row>
       </Section>

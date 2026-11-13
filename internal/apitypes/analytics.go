@@ -575,3 +575,74 @@ type OrgSiteDefaults struct {
 	Own       SiteSettings `json:"own"`
 	Effective SiteSettings `json:"effective"`
 }
+
+// TrackingState says whether a site's tracking script works.
+type TrackingState string
+
+const (
+	// TrackingActive: an event arrived in the last 24 hours.
+	TrackingActive TrackingState = "active"
+	// TrackingWaiting: no events in 30 days and nothing found wrong.
+	TrackingWaiting TrackingState = "waiting"
+	// TrackingQuiet: none in 24 hours on a site with little traffic.
+	TrackingQuiet TrackingState = "quiet"
+	// TrackingStopped: none in 24 hours after a week that averaged ten a
+	// day or more.
+	TrackingStopped TrackingState = "stopped"
+	// TrackingNoScript: a check found no Dock script tag on the page.
+	TrackingNoScript TrackingState = "no_script"
+	// TrackingWrongHost: the page lives on, or loads the script from, a
+	// host without the site's analytics.
+	TrackingWrongHost TrackingState = "wrong_host"
+	// TrackingBlocked: the page's Content-Security-Policy blocks it.
+	TrackingBlocked TrackingState = "blocked"
+	// TrackingUnknown: the analytics store can't be read.
+	TrackingUnknown TrackingState = "unknown"
+)
+
+// SiteTracking is whether a site's tracking script works: from the last
+// event, and the newest check of its pages, when one ran.
+type SiteTracking struct {
+	State       TrackingState `json:"state" enum:"active,waiting,quiet,stopped,no_script,wrong_host,blocked,unknown"`
+	LastEventAt *time.Time    `json:"last_event_at,omitempty"`
+	// Check is the newest check of the site's pages, kept for a while.
+	Check *SiteCheck `json:"check,omitempty"`
+	// CheckDue: the site isn't active and has no recent check, so the
+	// page runs one (POST .../check) when it opens.
+	CheckDue bool `json:"check_due"`
+	// StoreError says why the store couldn't be read.
+	StoreError string `json:"store_error,omitempty"`
+}
+
+// SiteCheck is one check of a site's pages: per hostname, what Dock
+// found fetching the page and the script.
+type SiteCheck struct {
+	At    time.Time       `json:"at"`
+	Hosts []SiteCheckHost `json:"hosts"`
+}
+
+// SiteCheckHost is the check of one hostname, step by step.
+type SiteCheckHost struct {
+	Hostname string          `json:"hostname"`
+	Steps    []SiteCheckStep `json:"steps"`
+}
+
+// SiteCheckStep is one thing a check looked at.
+type SiteCheckStep struct {
+	Result CheckResult `json:"result" enum:"ok,fail,skip"`
+	// Problem names a failure's kind; empty for ok and skip.
+	Problem TrackingState `json:"problem,omitempty" enum:",no_script,wrong_host,blocked"`
+	Text    string        `json:"text"`
+	// Fix is what to do: a tag to add, a command to run.
+	Fix string `json:"fix,omitempty"`
+}
+
+// CheckResult is how one step of a check went: skip when it couldn't be
+// looked at (the page didn't answer).
+type CheckResult string
+
+const (
+	CheckOK   CheckResult = "ok"
+	CheckFail CheckResult = "fail"
+	CheckSkip CheckResult = "skip"
+)

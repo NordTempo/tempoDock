@@ -80,7 +80,7 @@ old store is removed when that server is back.`,
 	}
 	cmd.AddCommand(server)
 	cmd.AddCommand(newAnalyticsEnableCmd(g), newAnalyticsDisableCmd(g), newAnalyticsSitesCmd(g),
-		newAnalyticsStatsCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsGoalsCmd(g), newAnalyticsFunnelsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
+		newAnalyticsStatsCmd(g), newAnalyticsCheckCmd(g), newAnalyticsErrorsCmd(g), newAnalyticsVitalsCmd(g), newAnalyticsReplaysCmd(g), newAnalyticsGoalsCmd(g), newAnalyticsFunnelsCmd(g), newAnalyticsSiteCmd(g), newAnalyticsDefaultsCmd(g))
 	return cmd
 }
 

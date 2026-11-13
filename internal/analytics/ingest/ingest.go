@@ -30,6 +30,12 @@ import (
 	"github.com/NordTempo/tempoDock/internal/analytics/spool"
 )
 
+// ScriptHeader is the response header that marks s.js as Dock's, so a
+// tracking check can tell it from an app's own answer at the same path (a
+// hostname without analytics, or a proxy in front that doesn't pass
+// /_dock/a/).
+const ScriptHeader = "X-Dock-Script"
+
 // Headers Caddy sets on every request it sends here, replacing any a
 // visitor sent.
 const (
@@ -207,6 +213,7 @@ func (in *Ingest) serveScript(w http.ResponseWriter, r *http.Request) {
 	if in.Replay != nil {
 		v.replay, v.mask = in.Rules.replay(site)
 	}
+	w.Header().Set(ScriptHeader, "analytics")
 	serveBuilt(w, r, in.script(v), "public, max-age=3600")
 }
 

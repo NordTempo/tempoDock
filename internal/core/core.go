@@ -238,6 +238,8 @@ type Core struct {
 	git gitState
 	// previews is the state of preview environments (previews.go).
 	previews previewState
+	// tracking holds the newest checks of sites' pages (site_tracking.go).
+	tracking *siteChecks
 	// analytics is Dock Analytics' state (analytics.go).
 	analytics analyticsState
 	// traces is the trace store (traces.go).
@@ -314,6 +316,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		data:       o.DataEngines,
 		git:        newGitState(o.GitHubAPI),
 		previews:   newPreviewState(),
+		tracking:   newSiteChecks(o.Config.Network.AllowPrivate),
 		updates:    newUpdates(o),
 		cf:         newCFState(o.CloudflareAPI),
 	}

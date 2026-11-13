@@ -2,7 +2,9 @@ import {
   keepPreviousData,
   type QueryKey,
   queryOptions,
+  useMutation,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, body, done, list, withOrg } from "../../api/client";
@@ -206,6 +208,7 @@ export const useRotateTraceKey = () =>
  */
 export function useSiteLive(project: string, site: string) {
   const visible = usePageVisible();
+  const client = useQueryClient();
   const [view, setView] = useState<{ site: string; live: SiteLive } | null>(
     null,
   );
@@ -223,7 +226,20 @@ export function useSiteLive(project: string, site: string) {
       ? `/api/v1/projects/${encodeURIComponent(project)}/sites/${encodeURIComponent(site)}/live`
       : null,
     ["live"],
-    (_, live) => setView({ site, live }),
+    (_, live) => {
+      setView({ site, live });
+      // An event on the live stream means the script works.
+      const at = live.recent?.[0]?.at;
+      if (at) {
+        client.setQueryData<SiteTracking>(
+          siteTrackingQuery(project, site).queryKey,
+          (old) =>
+            old && old.state !== "active"
+              ? { ...old, state: "active", last_event_at: at, check_due: false }
+              : old,
+        );
+      }
+    },
     {
       onClose: (error) =>
         setFailed({ site, error: error ?? "the live view ended" }),
@@ -657,3 +673,36 @@ export const useRemoveFunnel = () =>
         }),
       ),
   );
+
+export type SiteTracking = Schemas["SiteTracking"];
+
+/** Whether a site's tracking script works (two store reads, no fetch). */
+export const siteTrackingQuery = (project: string, site: string) =>
+  queryOptions({
+    queryKey: ["analytics", "tracking", project, site],
+    queryFn: () =>
+      body(
+        api.GET("/api/v1/projects/{project}/sites/{site}/tracking", {
+          params: { path: { project, site } },
+        }),
+      ),
+    staleTime: 60_000,
+  });
+
+/**
+ * Checks a site's pages now (`dock analytics check`); the answer replaces
+ * the tracking state.
+ */
+export function useCheckSite(project: string, site: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      body(
+        api.POST("/api/v1/projects/{project}/sites/{site}/check", {
+          params: { path: { project, site } },
+        }),
+      ),
+    onSuccess: (t) =>
+      client.setQueryData(siteTrackingQuery(project, site).queryKey, t),
+  });
+}
