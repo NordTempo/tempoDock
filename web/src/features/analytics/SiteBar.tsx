@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { lazy, Suspense, useState } from "react";
-import { Button } from "../../ui/kit";
+import { Link } from "@tanstack/react-router";
+import { useOrg } from "../../shell/location";
 import { RangeSwitch } from "../stats/parts";
 import {
   type Filter,
@@ -13,10 +13,9 @@ import {
 import { shown } from "./parts";
 
 // The bar above every analytics view (ADR 0037): the site (a choice of
-// sites on a service's Errors tab), its settings, the range and the
-// filters they share.
-
-const SiteSettingsDialog = lazy(() => import("./SiteSettingsDialog"));
+// sites on a service's Errors tab), the range and the filters they share.
+// The site's settings are a page in the Analytics area; a service's view
+// links to it.
 
 export function SiteBar({
   project,
@@ -26,15 +25,15 @@ export function SiteBar({
   filters,
   labels,
   onSite,
-  onRenamed,
   onRange,
   onFilters,
   named = true,
-  settingsOpen,
-  onSettings,
 }: {
   project: string;
-  /** Show the site's name (or the choice of sites); a site page has it in its header. */
+  /**
+   * Show the site's name (or the choice of sites) and a link to its
+   * settings; a site page has both in its header and menu.
+   */
   named?: boolean;
   /** The sites to choose from, when there are others. */
   sites?: Site[];
@@ -44,17 +43,10 @@ export function SiteBar({
   /** Labels of filtered values (services, releases) from rows clicked. */
   labels: Record<string, string>;
   onSite?: (name: string) => void;
-  /** The site was renamed: keep showing it, filters and all. */
-  onRenamed: (name: string) => void;
   onRange: (range: StatsRange) => void;
   onFilters: (filters: Filter[]) => void;
-  /** The settings dialog, when the page opens it too (a site page does). */
-  settingsOpen?: boolean;
-  onSettings?: (open: boolean) => void;
 }) {
-  const [ownSettings, setOwnSettings] = useState(false);
-  const settings = settingsOpen ?? ownSettings;
-  const setSettings = onSettings ?? setOwnSettings;
+  const org = useOrg();
   // A filter from the URL finds its label in the dashboard's rows, if they
   // are loaded.
   const queryClient = useQueryClient();
@@ -86,7 +78,15 @@ export function SiteBar({
           {hostnames.length === 1 ? "hostname" : "hostnames"} · {services.size}{" "}
           {services.size === 1 ? "service" : "services"}
         </span>
-        <Button onClick={() => setSettings(true)}>Settings</Button>
+        {named && (
+          <Link
+            to="/$org/analytics/$project/$site/settings"
+            params={{ org, project, site: site.name }}
+            className="btn sm"
+          >
+            Site settings
+          </Link>
+        )}
         {site.public_urls?.[0] && (
           <a
             href={site.public_urls[0]}
@@ -132,16 +132,6 @@ export function SiteBar({
             Clear all
           </button>
         </div>
-      )}
-      {settings && (
-        <Suspense fallback={null}>
-          <SiteSettingsDialog
-            project={project}
-            site={site}
-            onRenamed={onRenamed}
-            onClose={() => setSettings(false)}
-          />
-        </Suspense>
       )}
     </div>
   );

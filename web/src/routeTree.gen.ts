@@ -99,6 +99,7 @@ import { Route as AppOrgProjectSettingsVariablesEnvironmentRouteImport } from '.
 import { Route as AppOrgAnalyticsProjectSiteIndexRouteImport } from './routes/_app.$org.analytics.$project.$site.index'
 import { Route as AppOrgAnalyticsProjectSiteErrorsRouteImport } from './routes/_app.$org.analytics.$project.$site.errors'
 import { Route as AppOrgAnalyticsProjectSiteFunnelsRouteImport } from './routes/_app.$org.analytics.$project.$site.funnels'
+import { Route as AppOrgAnalyticsProjectSiteSettingsRouteImport } from './routes/_app.$org.analytics.$project.$site.settings'
 import { Route as AppOrgAnalyticsProjectSiteVitalsRouteImport } from './routes/_app.$org.analytics.$project.$site.vitals'
 import { Route as AppOrgStatusPagesPageIncidentsIncidentRouteImport } from './routes/_app.$org.status-pages.$page_.incidents.$incident'
 import { Route as AppOrgProjectEnvironmentServiceAnalyticsSplatRouteImport } from './routes/_app.$org.$project.$environment.$service.analytics_.$'
@@ -597,6 +598,12 @@ const AppOrgAnalyticsProjectSiteFunnelsRoute =
     path: '/funnels',
     getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
   } as any)
+const AppOrgAnalyticsProjectSiteSettingsRoute =
+  AppOrgAnalyticsProjectSiteSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AppOrgAnalyticsProjectSiteRoute,
+  } as any)
 const AppOrgAnalyticsProjectSiteVitalsRoute =
   AppOrgAnalyticsProjectSiteVitalsRouteImport.update({
     id: '/vitals',
@@ -775,6 +782,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/settings/variables/$environment': typeof AppOrgProjectSettingsVariablesEnvironmentRoute
   '/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
+  '/$org/analytics/$project/$site/settings': typeof AppOrgAnalyticsProjectSiteSettingsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
   '/$org/status-pages/$page/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   '/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
@@ -872,6 +880,7 @@ export interface FileRoutesByTo {
   '/$org/$project/settings/variables/$environment': typeof AppOrgProjectSettingsVariablesEnvironmentRoute
   '/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
+  '/$org/analytics/$project/$site/settings': typeof AppOrgAnalyticsProjectSiteSettingsRoute
   '/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
   '/$org/status-pages/$page/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   '/$org/$project/$environment/$service': typeof AppOrgProjectEnvironmentServiceIndexRoute
@@ -980,6 +989,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/settings/variables/$environment': typeof AppOrgProjectSettingsVariablesEnvironmentRoute
   '/_app/$org/analytics/$project/$site/errors': typeof AppOrgAnalyticsProjectSiteErrorsRoute
   '/_app/$org/analytics/$project/$site/funnels': typeof AppOrgAnalyticsProjectSiteFunnelsRoute
+  '/_app/$org/analytics/$project/$site/settings': typeof AppOrgAnalyticsProjectSiteSettingsRoute
   '/_app/$org/analytics/$project/$site/vitals': typeof AppOrgAnalyticsProjectSiteVitalsRoute
   '/_app/$org/status-pages/$page_/incidents/$incident': typeof AppOrgStatusPagesPageIncidentsIncidentRoute
   '/_app/$org/$project/$environment/$service/': typeof AppOrgProjectEnvironmentServiceIndexRoute
@@ -1088,6 +1098,7 @@ export interface FileRouteTypes {
     | '/$org/$project/settings/variables/$environment'
     | '/$org/analytics/$project/$site/errors'
     | '/$org/analytics/$project/$site/funnels'
+    | '/$org/analytics/$project/$site/settings'
     | '/$org/analytics/$project/$site/vitals'
     | '/$org/status-pages/$page/incidents/$incident'
     | '/$org/$project/$environment/$service/'
@@ -1185,6 +1196,7 @@ export interface FileRouteTypes {
     | '/$org/$project/settings/variables/$environment'
     | '/$org/analytics/$project/$site/errors'
     | '/$org/analytics/$project/$site/funnels'
+    | '/$org/analytics/$project/$site/settings'
     | '/$org/analytics/$project/$site/vitals'
     | '/$org/status-pages/$page/incidents/$incident'
     | '/$org/$project/$environment/$service'
@@ -1292,6 +1304,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/settings/variables/$environment'
     | '/_app/$org/analytics/$project/$site/errors'
     | '/_app/$org/analytics/$project/$site/funnels'
+    | '/_app/$org/analytics/$project/$site/settings'
     | '/_app/$org/analytics/$project/$site/vitals'
     | '/_app/$org/status-pages/$page_/incidents/$incident'
     | '/_app/$org/$project/$environment/$service/'
@@ -1954,6 +1967,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgAnalyticsProjectSiteFunnelsRouteImport
       parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
     }
+    '/_app/$org/analytics/$project/$site/settings': {
+      id: '/_app/$org/analytics/$project/$site/settings'
+      path: '/settings'
+      fullPath: '/$org/analytics/$project/$site/settings'
+      preLoaderRoute: typeof AppOrgAnalyticsProjectSiteSettingsRouteImport
+      parentRoute: typeof AppOrgAnalyticsProjectSiteRoute
+    }
     '/_app/$org/analytics/$project/$site/vitals': {
       id: '/_app/$org/analytics/$project/$site/vitals'
       path: '/vitals'
@@ -2261,6 +2281,7 @@ const AppOrgProjectEnvironmentServiceRouteWithChildren =
 interface AppOrgAnalyticsProjectSiteRouteChildren {
   AppOrgAnalyticsProjectSiteErrorsRoute: typeof AppOrgAnalyticsProjectSiteErrorsRoute
   AppOrgAnalyticsProjectSiteFunnelsRoute: typeof AppOrgAnalyticsProjectSiteFunnelsRoute
+  AppOrgAnalyticsProjectSiteSettingsRoute: typeof AppOrgAnalyticsProjectSiteSettingsRoute
   AppOrgAnalyticsProjectSiteVitalsRoute: typeof AppOrgAnalyticsProjectSiteVitalsRoute
   AppOrgAnalyticsProjectSiteIndexRoute: typeof AppOrgAnalyticsProjectSiteIndexRoute
   AppOrgAnalyticsProjectSiteReplaysReplayRoute: typeof AppOrgAnalyticsProjectSiteReplaysReplayRoute
@@ -2273,6 +2294,8 @@ const AppOrgAnalyticsProjectSiteRouteChildren: AppOrgAnalyticsProjectSiteRouteCh
       AppOrgAnalyticsProjectSiteErrorsRoute,
     AppOrgAnalyticsProjectSiteFunnelsRoute:
       AppOrgAnalyticsProjectSiteFunnelsRoute,
+    AppOrgAnalyticsProjectSiteSettingsRoute:
+      AppOrgAnalyticsProjectSiteSettingsRoute,
     AppOrgAnalyticsProjectSiteVitalsRoute:
       AppOrgAnalyticsProjectSiteVitalsRoute,
     AppOrgAnalyticsProjectSiteIndexRoute: AppOrgAnalyticsProjectSiteIndexRoute,

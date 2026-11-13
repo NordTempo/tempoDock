@@ -58,7 +58,6 @@ export function ReplaysView({
   device,
   onErrorsOnly,
   onDevice,
-  onSettings,
 }: {
   project: string;
   site: Site;
@@ -68,8 +67,6 @@ export function ReplaysView({
   device?: string;
   onErrorsOnly: (on: boolean) => void;
   onDevice: (d: string | undefined) => void;
-  /** Opens the site's settings, where session replay is turned on. */
-  onSettings?: () => void;
 }) {
   const skipped = filters.filter(
     (f) => !(replayDimensions as readonly string[]).includes(f.dimension),
@@ -101,11 +98,14 @@ export function ReplaysView({
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-warn-text">
           Session replay is off for this site. Inputs are always masked when
           it's on.
-          {onSettings && (
-            <button type="button" className="btn sm" onClick={onSettings}>
-              Turn on in settings
-            </button>
-          )}
+          <Link
+            to="/$org/analytics/$project/$site/settings"
+            params={{ org, project, site: site.name }}
+            hash="set-replay"
+            className="btn sm"
+          >
+            Turn on in settings
+          </Link>
         </p>
       )}
       {!data.store_online && (

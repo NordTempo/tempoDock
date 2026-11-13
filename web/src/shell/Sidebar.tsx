@@ -65,7 +65,19 @@ export const useShellMode = (): ShellMode =>
 export function Sidebar({ mode }: { mode: ShellMode }) {
   // Narrow screens fold the sidebar behind a button; moving on folds it.
   const [open, setOpen] = useState(false);
-  const [tree, toggleTree] = useTreeOpen();
+  const [saved, toggleSaved] = useTreeOpen();
+  // A page with a menu of its own shows the rail beside it whatever is
+  // saved (Saile's pick B, 2026-11-13); expanding there opens the tree
+  // until the next such page, and leaves the saved choice alone.
+  const ownMenu = useOwnMenu();
+  const [peek, setPeek] = useState(false);
+  const [wasOwn, setWasOwn] = useState(ownMenu);
+  if (wasOwn !== ownMenu) {
+    setWasOwn(ownMenu);
+    setPeek(false);
+  }
+  const tree = ownMenu ? peek : saved;
+  const toggleTree = ownMenu ? () => setPeek(!peek) : toggleSaved;
   useShortcuts(
     mode === "app"
       ? [{ key: "[", label: "project tree or rail", run: toggleTree }]
@@ -131,6 +143,14 @@ function NavLink({
 }
 
 const groupLabel = "px-2.5 pt-3 pb-1 text-2xs font-medium text-faint";
+
+/**
+ * Whether the page has a menu of its own down its left side (the route's
+ * `staticData.ownMenu`): an analytics site's views, Organization
+ * settings' sections. The project column is the rail beside it.
+ */
+const useOwnMenu = () =>
+  useMatches({ select: (ms) => ms.some((m) => m.staticData.ownMenu) });
 
 /**
  * Whether the left column shows the full project tree or only the project

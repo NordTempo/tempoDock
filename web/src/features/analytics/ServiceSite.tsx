@@ -78,7 +78,6 @@ export function ServiceSite({
         filters={filters}
         labels={{}}
         onSite={(name) => onChange({ site: name, filters: [] })}
-        onRenamed={(name) => onChange({ site: name })}
         onRange={(r) => onChange({ range: r })}
         onFilters={(f) => onChange({ filters: f })}
       />

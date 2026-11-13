@@ -94,6 +94,8 @@ export const useBreakdown = (
   filters: readonly Filter[],
   dimension: string,
   enabled: boolean,
+  /** How many values: a panel's 10, or every country for the globe. */
+  limit = 10,
 ) =>
   useQuery({
     queryKey: [
@@ -104,6 +106,7 @@ export const useBreakdown = (
       range,
       filters.map(filterParam),
       dimension,
+      limit,
     ],
     queryFn: () =>
       body(
@@ -113,7 +116,7 @@ export const useBreakdown = (
             query: {
               dimension,
               range,
-              limit: 10,
+              limit,
               filter: filters.map(filterParam),
             },
           },

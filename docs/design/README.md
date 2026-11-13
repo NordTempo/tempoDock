@@ -133,6 +133,8 @@ for everything.
   `/$org/help/guide/$page` give a topic and a guide page an address.
   On the left the projects: a rail of tiles (initials and a health dot)
   that expands into the tree and stays expanded until collapsed (`[`).
+  Pages with a menu of their own on the left (an analytics site,
+  Organization settings) show the rail beside it, never the tree too.
   Sticky bars sit under the top bar (`--shell-top`). There is no second
   command bar.
 - **Pages.** An organization's home is its Overview (what needs someone,
