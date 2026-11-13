@@ -14,12 +14,32 @@ const features = [
     ],
   },
   {
+    key: "DIAGNOSIS",
+    color: "text-deploys",
+    title: "Says why it failed.",
+    items: [
+      "Missing variables, wrong ports",
+      "Memory limits, crash loops",
+      "The evidence, kept",
+    ],
+  },
+  {
+    key: "SLEEP",
+    color: "text-deploys",
+    title: "Idle costs nothing.",
+    items: [
+      "Previews sleep when idle",
+      "Wake on the next request",
+      "Staging can sleep too",
+    ],
+  },
+  {
     key: "DOMAINS",
     color: "text-domains",
     title: "TLS without thinking.",
     items: [
       "Automatic certificates",
-      "Cloudflare DNS records",
+      "Cloudflare DNS and redirects",
       "Password or login in front",
     ],
   },
@@ -34,19 +54,35 @@ const features = [
     ],
   },
   {
+    key: "TRACES",
+    color: "text-traces",
+    title: "Every request, inside.",
+    items: ["OpenTelemetry in", "Latency per route", "App metric dashboards"],
+  },
+  {
     key: "ANALYTICS",
     color: "text-analytics",
     title: "Traffic, on your box.",
-    items: ["Visits, vitals, trends", "Uptime checks", "Requests per domain"],
+    items: ["Visits, vitals, trends", "Goals and funnels", "Uptime checks"],
+  },
+  {
+    key: "STATUS",
+    color: "text-status",
+    title: "Tell users first.",
+    items: [
+      "Incidents and maintenance",
+      "Uptime from Dock's checks",
+      "Your own hostname",
+    ],
   },
   {
     key: "DATA",
     color: "text-data",
     title: "Databases you can see.",
     items: [
-      "Browse and edit Postgres",
+      "Postgres, MySQL, Redis",
       "Reviewed changesets",
-      "Postgres and Redis templates",
+      "Health and slow queries",
     ],
   },
   {
@@ -54,10 +90,16 @@ const features = [
     color: "text-data",
     title: "Restores you have tried.",
     items: [
-      "Scheduled, to any S3 bucket",
+      "Daily, to any S3 bucket",
       "Volume snapshots",
       "Restores in one step",
     ],
+  },
+  {
+    key: "SECURITY",
+    color: "text-errors",
+    title: "Know what you ship.",
+    items: ["Live images scanned", "Fixes per base image", "SBOM export"],
   },
   {
     key: "JOBS",
@@ -82,7 +124,7 @@ const features = [
     items: [
       "Environments per server",
       "Moves without downtime",
-      "Where memory and disk go",
+      "Updates from the console",
     ],
   },
   {
@@ -97,20 +139,10 @@ const features = [
     title: "Teams, done right.",
     items: ["Organizations and roles", "SSO, passkeys, 2FA", "Audit log"],
   },
-  {
-    key: "UPKEEP",
-    color: "text-neutral-200",
-    title: "Dock looks after itself.",
-    items: [
-      "Updates from the console",
-      "Control plane backups",
-      "Move to a new server",
-    ],
-  },
 ];
 ---
 
-<Section id="features" title="Everything after git push." dim="Twelve things you stop building.">
+<Section id="features" title="Everything after git push." dim="Sixteen things you stop building.">
   <div class="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
     {features.map((f) => (
       <div class="border-b border-line py-6 pr-6 sm:[&:nth-child(2n)]:border-l sm:[&:nth-child(2n)]:pl-6 lg:[&:nth-child(2n)]:border-l-0 lg:[&:nth-child(2n)]:pl-0 lg:[&:not(:nth-child(4n+1))]:border-l lg:[&:not(:nth-child(4n+1))]:pl-6">

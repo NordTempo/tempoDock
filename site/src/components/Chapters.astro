@@ -1,0 +1,182 @@
+---
+import type { Line } from "../terminal";
+import { vulnLines } from "../vulns";
+import DataPanel from "./DataPanel.astro";
+import StatusMini from "./StatusMini.astro";
+import Terminal from "./Terminal.astro";
+import Waterfall from "./Waterfall.astro";
+
+/**
+ * What Dock does from a push to a happy user, one chapter per row: a claim,
+ * three facts and one illustration. Chapter 01 sets a hand-rolled deploy
+ * beside Dock's. Terminal lines are real commands and messages.
+ */
+
+const hope: Line[] = [
+  { text: "$ ssh prod", tone: "cmd" },
+  { text: "$ docker compose pull && docker compose up -d", tone: "cmd" },
+  { text: "  web  exited with code 1", tone: "bad" },
+  { text: "  502 Bad Gateway", tone: "bad" },
+  { text: "  ... rolling back by hand", tone: "meta" },
+];
+
+const dock: Line[] = [
+  { text: "$ dock deploy", tone: "cmd" },
+  { text: "  health check failed, traffic stays on v41", tone: "ok" },
+  { text: "$ dock diagnose -r 42", tone: "cmd" },
+  {
+    text: "  DATABASE_URL isn't set (removed since the last good release)",
+    tone: "bad",
+  },
+  { text: "  downtime 0s", tone: "ok" },
+];
+
+const delegate: Line[] = [
+  { text: "$ dock traces -s web --slowest", tone: "cmd" },
+  { text: "$ dock errors -s web", tone: "cmd" },
+  { text: "$ dock service archive postgres", tone: "cmd" },
+  { text: "  ✗ production is locked: waits for an admin", tone: "warn" },
+];
+
+type Show = "deploys" | "data" | "traces" | "status" | { lines: Line[] };
+
+const chapters: {
+  id: string;
+  n: string;
+  key: string;
+  color: string;
+  title: string;
+  items: string[];
+  show: Show;
+}[] = [
+  {
+    id: "ship",
+    n: "01",
+    key: "SHIP",
+    color: "text-deploys",
+    title: "A failed deploy never gets traffic.",
+    items: [
+      "Health-checked before traffic",
+      "A failed deploy says why",
+      "Previews that sleep when idle",
+    ],
+    show: "deploys",
+  },
+  {
+    id: "data",
+    n: "02",
+    key: "DATA",
+    color: "text-data",
+    title: "Your database, in the browser.",
+    items: [
+      "Browse and query Postgres, MySQL, Redis",
+      "Edit rows, review the SQL, commit",
+      "Health: slow queries and sessions",
+    ],
+    show: "data",
+  },
+  {
+    id: "watch",
+    n: "03",
+    key: "WATCH",
+    color: "text-traces",
+    title: "Errors, traces, analytics.",
+    items: [
+      "OpenTelemetry in, traces from the edge",
+      "Errors link to their trace",
+      "Cookieless analytics, uptime checks",
+    ],
+    show: "traces",
+  },
+  {
+    id: "tell",
+    n: "04",
+    key: "TELL",
+    color: "text-status",
+    title: "Status pages included.",
+    items: [
+      "Uptime from Dock's own checks",
+      "Incidents and maintenance",
+      "Slack, Discord, your hostname",
+    ],
+    show: "status",
+  },
+  {
+    id: "secure",
+    n: "05",
+    key: "SECURE",
+    color: "text-errors",
+    title: "Know what you ship.",
+    items: [
+      "Every live image scanned",
+      "The fix, per base image",
+      "SBOMs, SSO, passkeys, audit",
+    ],
+    show: { lines: vulnLines },
+  },
+  {
+    id: "agents",
+    n: "06",
+    key: "DELEGATE",
+    color: "text-agents",
+    title: "Agents do the rest.",
+    items: [
+      "MCP and --json everywhere",
+      "Scoped tokens",
+      "Production waits for a person",
+    ],
+    show: { lines: delegate },
+  },
+];
+
+const panels = [
+  {
+    label: "DEPLOY AND HOPE",
+    tag: "DOWN 3M 12S",
+    tagClass: "bg-[#3b1212] text-errors",
+    border: "border-[#222]",
+    lines: hope,
+  },
+  {
+    label: "TEMPO DOCK",
+    tag: "LIVE ON V41",
+    tagClass: "bg-[#0f2e1a] text-deploys",
+    border: "border-[#1f3a28]",
+    lines: dock,
+  },
+];
+---
+
+<section id="chapters" class="border-t border-line">
+  <div class="mx-auto max-w-[1200px] px-6 py-20 md:px-14 lg:py-[100px]">
+    <h2 class="heading">From git push<br /><span class="text-dim">to a happy user.</span></h2>
+    <div class="mt-14">
+      {chapters.map((c) => (
+        <div id={c.id} class="grid scroll-mt-6 gap-8 border-t border-line py-10 lg:grid-cols-[360px_1fr] lg:gap-14">
+          <div>
+            <p class:list={["eyebrow mb-4", c.color]}>{c.n} · {c.key}</p>
+            <h3 class="text-[28px] leading-tight font-semibold tracking-[-0.03em]">{c.title}</h3>
+            <ul class="mt-4 text-[15px] leading-[1.8] text-body">{c.items.map((i) => <li>{i}</li>)}</ul>
+          </div>
+          <div class="grid min-w-0 gap-4">
+            {c.show === "deploys" && panels.map((panel) => (
+              <div class:list={["min-w-0 border bg-panel px-4 py-5 sm:px-6", panel.border]}>
+                <div class="mb-4 flex items-center justify-between">
+                  <span class="eyebrow text-meta">{panel.label}</span>
+                  <span class:list={["eyebrow px-1.5 py-0.5", panel.tagClass]}>{panel.tag}</span>
+                </div>
+                <Terminal lines={panel.lines} />
+              </div>
+            ))}
+            {c.show === "data" && <DataPanel />}
+            {c.show === "traces" && <Waterfall />}
+            {c.show === "status" && <StatusMini />}
+            {typeof c.show === "object" && (
+              <div class="min-w-0 border border-[#222] bg-panel px-4 py-5 sm:px-6"><Terminal lines={c.show.lines} /></div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

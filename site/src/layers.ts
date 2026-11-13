@@ -32,7 +32,7 @@ export const layers: Layer[] = [
   {
     id: "deploys",
     name: "DEPLOYS",
-    detail: "releases, previews",
+    detail: "releases, diagnosis",
     color: "#4ade80",
     // Release rows, with the current one lit.
     pattern: (i, j) => (j === 4 && i < 9 ? 3 : j % 3 === 1 ? 2 : 0),
@@ -40,7 +40,7 @@ export const layers: Layer[] = [
   {
     id: "data",
     name: "DATA",
-    detail: "browse, edit, backups",
+    detail: "Postgres, MySQL, Redis",
     color: "#60a5fa",
     // A table: a lit header, columns, and one staged cell.
     pattern: (i, j) => {
@@ -53,7 +53,7 @@ export const layers: Layer[] = [
   {
     id: "domains",
     name: "DOMAINS",
-    detail: "automatic TLS, DNS",
+    detail: "TLS, DNS, redirects",
     color: "#fbbf24",
     // Rings around a lit centre.
     pattern: (i, j) => {
@@ -64,8 +64,8 @@ export const layers: Layer[] = [
   },
   {
     id: "errors",
-    name: "ERRORS",
-    detail: "frontend, logs, 5xx",
+    name: "ERRORS & TRACES",
+    detail: "logs, 5xx, OpenTelemetry",
     color: "#f87171",
     // Scattered noise and one cluster.
     pattern: (i, j) =>
@@ -81,6 +81,18 @@ export const layers: Layer[] = [
       const top = 11 - (bars[i] ?? 0);
       if (j === top) return 3;
       return j > top && i % 2 === 0 ? 2 : 0;
+    },
+  },
+  {
+    id: "status",
+    name: "STATUS PAGES",
+    detail: "uptime, incidents",
+    color: "#f472b6",
+    // Uptime bars, one day down.
+    pattern: (i, j) => {
+      if (j < 3 || j > 8) return 0;
+      if (i === 7 && j >= 5) return 3;
+      return i % 2 === 0 ? 2 : 1;
     },
   },
   {

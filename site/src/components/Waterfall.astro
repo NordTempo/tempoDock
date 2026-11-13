@@ -1,0 +1,46 @@
+---
+/** A trace as a waterfall: spans with their offset and duration, the slow one lit. */
+interface Props {
+  class?: string;
+}
+const { class: className } = Astro.props;
+const total = 212;
+const spans = [
+  { name: "GET /checkout", who: "edge", at: 0, ms: 212, depth: 0 },
+  { name: "checkout.render", who: "web", at: 4, ms: 205, depth: 1 },
+  { name: "SELECT orders", who: "postgres", at: 9, ms: 31, depth: 2 },
+  { name: "GET cart:4812", who: "redis", at: 42, ms: 2, depth: 2 },
+  {
+    name: "POST /v1/payment_intents",
+    who: "api.stripe.com",
+    at: 47,
+    ms: 148,
+    depth: 2,
+    slow: true,
+  },
+  { name: "INSERT order_events", who: "postgres", at: 197, ms: 8, depth: 2 },
+];
+---
+<div class:list={["min-w-0 border border-[#3a2412] bg-panel px-4 py-5 sm:px-6", className]}>
+  <div class="mb-4 flex items-center justify-between">
+    <span class="eyebrow text-meta">TRACE 4F2A9C · 212 MS · 6 SPANS</span>
+    <span class="eyebrow bg-[#2e1a0a] px-1.5 py-0.5 text-traces">SLOW, KEPT</span>
+  </div>
+  <div class="font-mono text-[12.5px]">
+    {spans.map((s) => (
+      <div class="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_52px] items-center gap-3 border-t border-line py-[7px]">
+        <div class="truncate" style={`padding-left:${s.depth * 12}px`}>
+          <span class:list={[s.slow ? "text-traces" : "text-sub"]}>{s.name}</span>
+          <span class="text-dim"> {s.who}</span>
+        </div>
+        <div class="relative h-[9px]">
+          <div
+            class:list={["absolute top-0 h-full", s.slow ? "bg-traces" : "bg-[#5a4a3a]"]}
+            style={`left:${(s.at / total) * 100}%;width:${Math.max((s.ms / total) * 100, 1)}%`}
+          ></div>
+        </div>
+        <span class="text-right text-[11.5px] text-dim">{s.ms} ms</span>
+      </div>
+    ))}
+  </div>
+</div>
