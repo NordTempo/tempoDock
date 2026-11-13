@@ -6,17 +6,13 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
-	"net/mail"
-	"net/smtp"
 	"net/url"
 	"strconv"
 	"strings"
@@ -24,6 +20,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/mail"
 	"github.com/NordTempo/tempoDock/internal/secrets"
 	"github.com/NordTempo/tempoDock/internal/store"
 	"github.com/NordTempo/tempoDock/internal/version"
@@ -436,89 +433,33 @@ func emailText(n apitypes.AlertNotification) (subject, text string) {
 	return "dock " + headline(n), b.String()
 }
 
-// sendMail sends one plain-text mail, never to an address g refuses. Port
-// 465 is TLS from the start; on other ports STARTTLS is used when
-// offered, and required before a password is sent.
+// sendMail sends one plain-text mail, never to an address g refuses,
+// with internal/mail's client: port 465 is TLS from the start; on other
+// ports STARTTLS is used when offered, and required before a password is
+// sent.
 func sendMail(ctx context.Context, g *egressGuard, s apitypes.SMTPSettings, subject, text string) error {
-	port := s.Port
-	if port == 0 {
-		port = 587
-	}
-	addr := net.JoinHostPort(s.Host, strconv.Itoa(port))
-	tlsCfg := &tls.Config{ServerName: s.Host, MinVersion: tls.VersionTLS12}
-	d := &net.Dialer{Control: g.control}
-	var conn net.Conn
-	var err error
-	if port == 465 {
-		conn, err = (&tls.Dialer{NetDialer: d, Config: tlsCfg}).DialContext(ctx, "tcp", addr)
-	} else {
-		conn, err = d.DialContext(ctx, "tcp", addr)
-	}
+	from, err := mail.ParseAddress(s.From)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", addr, err)
+		return err
 	}
-	if dl, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(dl)
-	}
-	cl, err := smtp.NewClient(conn, s.Host)
-	if err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("SMTP %s: %w", addr, err)
-	}
-	defer func() { _ = cl.Close() }()
-	if port != 465 {
-		if ok, _ := cl.Extension("STARTTLS"); ok {
-			if err := cl.StartTLS(tlsCfg); err != nil {
-				return fmt.Errorf("SMTP STARTTLS: %w", err)
-			}
-		} else if s.Username != "" {
-			return fmt.Errorf("%s doesn't offer STARTTLS; not sending the password unencrypted (use port 465 for TLS)", addr)
+	to := make([]mail.Address, 0, len(s.To))
+	for _, addr := range s.To {
+		a, err := mail.ParseAddress(addr)
+		if err != nil {
+			return err
 		}
+		to = append(to, *a)
 	}
-	if s.Username != "" {
-		if err := cl.Auth(smtp.PlainAuth("", s.Username, s.Password, s.Host)); err != nil {
-			return fmt.Errorf("SMTP login: %w", err)
-		}
+	srv := mail.Server{Host: s.Host, Port: s.Port, Security: mail.StartTLS, Username: s.Username, Password: s.Password}
+	if s.Port == 465 {
+		srv.Security = mail.TLS
 	}
-	// The envelope takes bare addresses; From and To may carry names
-	// ("Dock <dock@example.com>").
-	if err := cl.Mail(envelopeAddr(s.From)); err != nil {
-		return fmt.Errorf("SMTP sender: %w", err)
+	var sendErr error
+	msg := mail.Message{From: *from, To: to, Content: mail.Content{Subject: subject, Text: text}}
+	if err := mail.Send(ctx, (&net.Dialer{Control: g.control}).DialContext, srv, []mail.Message{msg}, func(_ int, err error) { sendErr = err }); err != nil {
+		return err
 	}
-	for _, to := range s.To {
-		if err := cl.Rcpt(envelopeAddr(to)); err != nil {
-			return fmt.Errorf("SMTP recipient %s: %w", to, err)
-		}
-	}
-	w, err := cl.Data()
-	if err != nil {
-		return fmt.Errorf("SMTP data: %w", err)
-	}
-	var msg strings.Builder
-	for _, h := range [][2]string{
-		{"From", s.From}, {"To", strings.Join(s.To, ", ")}, {"Subject", mime.QEncoding.Encode("utf-8", oneLine(subject))},
-		{"Date", time.Now().UTC().Format(time.RFC1123Z)}, {"MIME-Version", "1.0"},
-		{"Content-Type", "text/plain; charset=utf-8"},
-	} {
-		msg.WriteString(h[0] + ": " + h[1] + "\r\n")
-	}
-	msg.WriteString("\r\n" + strings.ReplaceAll(text, "\n", "\r\n"))
-	if _, err := io.WriteString(w, msg.String()); err != nil {
-		return fmt.Errorf("SMTP data: %w", err)
-	}
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("SMTP data: %w", err)
-	}
-	return cl.Quit()
-}
-
-// envelopeAddr is the bare address of a checked email address
-// (channelSettings parsed it when the channel was added).
-func envelopeAddr(addr string) string {
-	if a, err := mail.ParseAddress(addr); err == nil {
-		return a.Address
-	}
-	return addr
+	return sendErr
 }
 
 // oneLine keeps a header value on one line.

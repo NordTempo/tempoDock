@@ -52,6 +52,10 @@ var (
 	sealedUserFactor = secrets.Column{Table: "user_factors", Name: "secret", Key: []string{"user_id", "kind", "coalesce(hex(credential_id), '')"}}
 	// sealedSSOSecret is an identity provider's client secret (ADR 0065).
 	sealedSSOSecret = secrets.Column{Table: "sso_providers", Name: "client_secret", Key: []string{"name"}}
+	// sealedEmailPassword is the platform's SMTP password, and
+	// sealedEmailBody a queued mail, bound to its row's nonce (ADR 0079).
+	sealedEmailPassword = secrets.Column{Table: "email_settings", Name: "password"}
+	sealedEmailBody     = secrets.Column{Table: "email_outbox", Name: "body", Key: []string{"nonce"}}
 
 	sealedColumns = []secrets.Column{
 		sealedVariableValue, sealedVariablePending, sealedOrgVariable, sealedReleaseConfig,
@@ -59,7 +63,7 @@ var (
 		sealedCloudflareToken, sealedTunnelToken, sealedAnalyticsSalt, sealedBackupKeys,
 		sealedBackupPassword, sealedAnalyticsToken, sealedAppKey, sealedAppWebhookSecret, sealedAppClientSecret,
 		sealedDataReader, sealedDataWriter, sealedRequestArgs, sealedLogDrain, sealedRegistrySecret, sealedUserFactor,
-		sealedSSOSecret, sealedStatusHook,
+		sealedSSOSecret, sealedStatusHook, sealedEmailPassword, sealedEmailBody,
 	}
 )
 
@@ -71,6 +75,7 @@ var (
 	appKeyAAD           = sealedAppKey.AAD()
 	appWebhookSecretAAD = sealedAppWebhookSecret.AAD()
 	appClientSecretAAD  = sealedAppClientSecret.AAD()
+	emailPasswordAAD    = sealedEmailPassword.AAD()
 )
 
 // variableAAD binds a variable's live and staged value (serviceID nil:

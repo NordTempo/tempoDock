@@ -7,6 +7,7 @@ import type { components } from "../api/schema";
 import { applyAlertEvent } from "../features/alerts/data";
 import { backupSettingsKey } from "../features/backups/settings";
 import { applyRedirectEvent, cloudflareKey } from "../features/cloudflare/data";
+import { applyEmailEvent } from "../features/console/email";
 import { applyScanEvent } from "../features/images/data";
 import { applyJobEvent, applyJobRunEvent } from "../features/jobs/data";
 import { applyMoveEvent } from "../features/move/data";
@@ -73,6 +74,7 @@ const busEvents = [
   "cloudflare_redirect",
   "sleep",
   "scan",
+  "email",
 ] as const satisfies readonly Exclude<LiveEvent["type"], "build_log">[];
 
 const refOf = (e: LiveEvent): ServiceRef | null =>
@@ -395,6 +397,10 @@ export function applyLiveEvent(queryClient: QueryClient, event: LiveEvent) {
       applyScanEvent(queryClient, ref, scan);
       return;
     }
+    case "email":
+      // A mail moved on (ADR 0079): the console's list, an invite's row.
+      if (event.email) applyEmailEvent(queryClient, event.email);
+      return;
     case "project_renamed":
       return; // Navigation is handled by useLiveUpdates.
     case "build_log":

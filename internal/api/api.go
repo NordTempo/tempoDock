@@ -131,6 +131,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerCloudflare(s, a)
 	registerUpdate(s, a)
 	registerAddress(s, a)
+	registerEmail(s, a)
 	registerOperator(s, a)
 	registerAnalytics(s, a)
 	registerTracing(s, a)

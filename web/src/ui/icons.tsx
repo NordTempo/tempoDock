@@ -12,6 +12,8 @@ const paths = {
   users:
     "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.6",
   inbox: "M4 13h4l2 3h4l2-3h4M4 13l2.5-8h11L20 13v6H4Z",
+  // An envelope: Dock's email (ADR 0079).
+  mail: "M3 5h18v14H3ZM3 6l9 7 9-7",
   bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10 21h4",
   alert: "M12 3 2 20h20L12 3ZM12 10v4M12 17h.01",
   server: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",

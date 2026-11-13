@@ -223,6 +223,8 @@ type Core struct {
 	jobs jobState
 	// scans is the image scanner's state (scans.go, ADR 0074).
 	scans scanState
+	// email is the outbox's sender (email_send.go, ADR 0079).
+	email emailState
 	// moves holds the environment moves being driven (ADR 0053).
 	moves moveState
 	// fwd holds the listeners of moved services' forwards (ADR 0063).
@@ -309,6 +311,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 		runs:       runState{running: map[int64]int{}, ended: map[int64]chan struct{}{}},
 		jobs:       newJobState(),
 		scans:      newScanState(),
+		email:      newEmailState(),
 		moves:      newMoveState(),
 		fwd:        newForwardState(),
 		drains:     newServerDrainState(),
@@ -501,6 +504,8 @@ func (c *Core) Start(ctx context.Context) error {
 	c.kickJobs()
 	// Scans wait for a quiet minute; with nothing queued it exits.
 	c.startScans(ctx)
+	// Mail queued before a stop goes now; with none the sender exits.
+	c.kickEmail()
 	go c.runCloudflare()
 	// In the background: running the tunnel may pull an image.
 	go func() {

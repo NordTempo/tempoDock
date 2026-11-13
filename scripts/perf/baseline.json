@@ -268,7 +268,7 @@
     "core.BenchmarkRetentionPass": {
       "ns_op": 152505,
       "bytes_op": 5810,
-      "allocs_op": 190
+      "allocs_op": 224
     },
     "core.BenchmarkScanBusy": {
       "ns_op": 51.2,

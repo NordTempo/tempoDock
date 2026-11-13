@@ -2263,6 +2263,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show Dock's email settings
+         * @description The SMTP server Dock sends invites and other mail through, without its password, and how sending goes: the latest attempt's outcome and the outbox. Operators only.
+         */
+        get: operations["get-email"];
+        /**
+         * Set Dock's SMTP server
+         * @description Sets the SMTP server every mail Dock sends goes through. The password is stored encrypted and never returned; leave it out to keep the stored one. Mail waiting for a retry is tried again at once. Operators only, recently confirmed.
+         */
+        put: operations["set-email"];
+        post?: never;
+        /**
+         * Turn Dock's email off
+         * @description Removes the SMTP server; mail still queued is given up on, and invites show their link to copy instead. Operators only, recently confirmed.
+         */
+        delete: operations["remove-email"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/email/outbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The mail Dock sent
+         * @description The latest mails, newest first, without their bodies: what, to whom, and how it went. Operators only.
+         */
+        get: operations["list-email"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/email/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test email
+         * @description Sends a test mail now, to `to` or your own address, and says how it went. Operators only.
+         */
+        post: operations["test-email"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/security": {
         parameters: {
             query?: never;
@@ -7043,6 +7111,7 @@ export interface components {
         CreatedInvite: {
             code: string;
             invite: components["schemas"]["Invite"];
+            mail: components["schemas"]["InviteMail"];
             url?: string;
         };
         CreatedStatusHook: {
@@ -7942,6 +8011,73 @@ export interface components {
         EditIncidentUpdateRequest: {
             message: string;
         };
+        EmailDelivery: {
+            /** Format: int64 */
+            attempts: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            done_at?: string;
+            error?: string;
+            /** Format: int64 */
+            id: number;
+            /**
+             * Format: int64
+             * @description The invite it carries
+             */
+            invite?: number;
+            /** @enum {string} */
+            kind: "invite" | "test";
+            /** Format: date-time */
+            next_at?: string;
+            /** @description The org it is about; empty for the platform's */
+            org?: string;
+            /** @enum {string} */
+            status: "queued" | "sent" | "failed";
+            subject: string;
+            to: string;
+        };
+        EmailLog: {
+            deliveries: components["schemas"]["EmailDelivery"][] | null;
+        };
+        EmailSettings: {
+            configured: boolean;
+            /** @description The From address */
+            from?: string;
+            from_name?: string;
+            host?: string;
+            links_url?: string;
+            password_set?: boolean;
+            /** Format: int64 */
+            port?: number;
+            reply_to?: string;
+            /** @enum {string} */
+            security?: "starttls" | "tls";
+            status: components["schemas"]["EmailStatus"];
+            /** Format: date-time */
+            updated_at?: string;
+            updated_by?: string;
+            username?: string;
+        };
+        EmailStatus: {
+            /** Format: int64 */
+            failed_day: number;
+            last_error?: string;
+            /** Format: date-time */
+            last_error_at?: string;
+            /** Format: date-time */
+            last_ok_at?: string;
+            /** Format: date-time */
+            next_at?: string;
+            /** Format: int64 */
+            queued: number;
+        };
+        EmailTest: {
+            error?: string;
+            ok: boolean;
+            settings: components["schemas"]["EmailSettings"];
+            to: string;
+        };
         EnableAnalyticsRequest: {
             site?: string;
         };
@@ -8227,6 +8363,7 @@ export interface components {
             disk?: components["schemas"]["ServerDisk"];
             domain?: components["schemas"]["Domain"];
             drain?: components["schemas"]["ServerDrain"];
+            email?: components["schemas"]["EmailDelivery"];
             environment?: string;
             job?: components["schemas"]["Job"];
             lock?: components["schemas"]["EnvironmentLock"];
@@ -8247,7 +8384,7 @@ export interface components {
             time: string;
             traffic?: components["schemas"]["TrafficUpdate"];
             /** @enum {string} */
-            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan";
+            type: "release" | "release_event" | "build_log" | "service_status" | "domain" | "audit" | "drift" | "lagged" | "usage" | "traffic" | "server" | "alert" | "update" | "project_renamed" | "disk" | "analytics" | "environment_lock" | "access_request" | "run" | "uptime" | "job" | "environment_move" | "server_drain" | "cloudflare_redirect" | "sleep" | "scan" | "email";
             update?: components["schemas"]["UpdateStatus"];
             uptime?: components["schemas"]["UptimeUpdate"];
             usage?: components["schemas"]["UsageUpdate"];
@@ -8653,6 +8790,7 @@ export interface components {
             expires_at: string;
             /** Format: int64 */
             id: number;
+            mail?: components["schemas"]["InviteMail"];
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
         };
@@ -8666,6 +8804,15 @@ export interface components {
             org_name: string;
             /** @enum {string} */
             role: "read" | "deploy" | "admin";
+        };
+        InviteMail: {
+            /** Format: date-time */
+            at?: string;
+            error?: string;
+            /** Format: int64 */
+            id?: number;
+            /** @enum {string} */
+            status: "queued" | "sent" | "failed" | "not_set_up" | "no_address" | "refused";
         };
         InviteSignUpRequest: {
             name: string;
@@ -10130,6 +10277,26 @@ export interface components {
             /** @description Move even though the old analytics server is offline: the new store starts empty */
             start_empty?: boolean;
         };
+        SetEmailRequest: {
+            /** @description The From address */
+            from: string;
+            /** @description Default Tempo Dock */
+            from_name?: string;
+            host: string;
+            password?: string;
+            /**
+             * Format: int64
+             * @description Default 465 with tls, else 587
+             */
+            port?: number;
+            reply_to?: string;
+            /**
+             * @description Default tls on port 465, else starttls
+             * @enum {string}
+             */
+            security?: "starttls" | "tls";
+            username?: string;
+        };
         SetEnvironmentPreviewsRequest: {
             /** @description Shared variables whose literal values previews copy, by key */
             copy_shared?: string[] | null;
@@ -10774,6 +10941,9 @@ export interface components {
             mount_path: string;
             /** @enum {string} */
             name: "postgres" | "redis";
+        };
+        TestEmailRequest: {
+            to?: string;
         };
         TimelineItem: {
             /** Format: date-time */
@@ -23760,6 +23930,383 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-email": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-email": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-email": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSettings"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-email": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description Default 50 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailLog"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "test-email": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TestEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTest"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
