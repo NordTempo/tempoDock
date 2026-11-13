@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 )
 
 // manifestTypes are the manifest media types the registry is asked for, so
@@ -29,9 +30,20 @@ type Client struct {
 	// http://127.0.0.1:5000.
 	URL    string
 	Signer *Signer
-	// HTTP is the client to use; nil means http.DefaultClient.
+	// HTTP is the client to use; nil means one with requestTimeout.
 	HTTP *http.Client
 }
+
+// requestTimeout bounds one registry API call, its body included. The
+// calls are small (a HEAD, a DELETE, a page of the catalog), but the
+// registry answers only once its storage does: on 2026-11-13 one bucket
+// object made every HEAD for it hang. Without a limit, such a call keeps
+// a prune waiting for ever while it holds the lock every build and pull
+// takes. A minute is far above a healthy answer (milliseconds).
+const requestTimeout = time.Minute
+
+// defaultHTTP is the client a Client without HTTP uses.
+var defaultHTTP = &http.Client{Timeout: requestTimeout}
 
 // Manifest is one manifest in the registry and the tags that point at it.
 type Manifest struct {
@@ -212,7 +224,7 @@ func (c *Client) do(ctx context.Context, method, path, token string) (*http.Resp
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", manifestTypes)
-	return cmp.Or(c.HTTP, http.DefaultClient).Do(req)
+	return cmp.Or(c.HTTP, defaultHTTP).Do(req)
 }
 
 // errNotFound is a 404 from the registry.
