@@ -78,3 +78,19 @@ DELETE FROM git_deliveries WHERE created_at < +?;
 
 -- name: SetReleaseCommit :exec
 UPDATE releases SET commit_sha = ?, commit_message = ?, commit_author = ? WHERE id = +?;
+
+-- name: ListOrgGitServices :many
+-- The org's services that deploy from GitHub, with their repository and
+-- directory, for the repository and directory pickers' "used by".
+-- Archived ones and preview environments' are left out. Reached through
+-- projects' (org_id, name) index, then each table's own keys.
+SELECT git_connections.repo_id, git_connections.repo, git_connections.dir,
+       projects.name AS project, environments.name AS environment, services.name AS service
+FROM projects
+JOIN environments ON environments.project_id = projects.id
+JOIN services ON services.environment_id = environments.id
+JOIN git_connections ON git_connections.service_id = services.id
+WHERE projects.org_id = +? AND projects.archived_at IS NULL
+  AND environments.archived_at IS NULL AND services.archived_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = environments.id)
+ORDER BY projects.name, environments.name, services.name;

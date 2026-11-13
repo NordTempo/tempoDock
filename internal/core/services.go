@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -134,6 +135,29 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 	if req.Name == sharedScope || req.Name == orgScope {
 		return apitypes.Service{}, invalid("%q is reserved for variable references (${{%s.KEY}})", req.Name, req.Name)
 	}
+	// A service from a repository: the repository, branch and directory
+	// are checked through the App before anything is created.
+	var git *appRepoTarget
+	var gitReq apitypes.GitConnectRequest
+	if req.Git != nil {
+		if req.Template != apitypes.TemplateNone || req.Image != "" {
+			return apitypes.Service{}, invalid("a service from a repository is built from it; drop the image and the template")
+		}
+		branch := strings.TrimSpace(req.Git.Branch)
+		repo, _, dir, err := validGitTarget(req.Git.Repo, cmp.Or(branch, "main"), req.Git.Dir)
+		if err != nil {
+			return apitypes.Service{}, err
+		}
+		if branch != "" {
+			if _, branch, _, err = validGitTarget(repo, branch, dir); err != nil {
+				return apitypes.Service{}, err
+			}
+		}
+		if git, err = c.resolveAppTarget(ctx, es.project.OrgID, repo, branch, dir); err != nil {
+			return apitypes.Service{}, err
+		}
+		gitReq = apitypes.GitConnectRequest{Mode: apitypes.GitModeApp, Repo: git.repo.FullName, Branch: git.branch, Dir: dir}
+	}
 	if req.Template != apitypes.TemplateNone {
 		t, ok := templates[req.Template]
 		if !ok {
@@ -182,6 +206,16 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		return apitypes.Service{}, err
 	}
 	c.audit(ctx, a, "service.create", &es.project, &es.env, es.String()+"/"+s.Name, "created service")
+	if git != nil {
+		ss := svcScope{es, s}
+		where := fmt.Sprintf("-s %s -e %s -p %s", s.Name, es.env.Name, es.project.Name)
+		if _, err := c.connectGit(ctx, a, ss, gitReq, git); err != nil {
+			return apitypes.Service{}, fmt.Errorf("created service %s, but connecting it to %s failed (connect it with `dock git connect %s %s`): %w", ss, gitReq.Repo, gitReq.Repo, where, err)
+		}
+		if _, err := c.GitDeploy(ctx, a, ServiceRef{Project: ref.Project, Environment: ref.Environment, Service: s.Name}, apitypes.GitDeployRequest{}); err != nil {
+			return apitypes.Service{}, fmt.Errorf("created service %s from %s, but its first deploy didn't start (start it with `dock git deploy %s`): %w", ss, gitReq.Repo, where, err)
+		}
+	}
 	return c.toService(ctx, a, svcScope{es, s}, apitypes.PendingChanges{})
 }
 

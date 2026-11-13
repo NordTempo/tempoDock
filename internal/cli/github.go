@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,7 +20,7 @@ func newGitHubCmd(g *globals) *cobra.Command {
 	cmd := group(&cobra.Command{Use: "github", Short: "The GitHub App that deploys pushes without per-service webhooks or tokens"})
 	app := group(&cobra.Command{Use: "app", Short: "Create or remove Dock's GitHub App (operator)"})
 	app.AddCommand(newGitHubAppCreateCmd(g), newGitHubAppSecretCmd(g), newGitHubAppRemoveCmd(g))
-	cmd.AddCommand(newGitHubStatusCmd(g), app, newGitHubInstallationsCmd(g), newGitHubInstallCmd(g), newGitHubAssignCmd(g), newGitHubUnassignCmd(g), newGitHubReposCmd(g))
+	cmd.AddCommand(newGitHubStatusCmd(g), app, newGitHubInstallationsCmd(g), newGitHubInstallCmd(g), newGitHubAssignCmd(g), newGitHubUnassignCmd(g), newGitHubReposCmd(g), newGitHubBranchesCmd(g), newGitHubPathsCmd(g))
 	return cmd
 }
 
@@ -363,13 +364,17 @@ func newGitHubReposCmd(g *globals) *cobra.Command {
 					g.io.Successf("No repositories: the GitHub App isn't installed for this org; its admins install it with `dock github install`")
 					return nil
 				}
-				t := g.io.Table("repository", "default branch", "visibility")
+				t := g.io.Table("repository", "default branch", "visibility", "last push", "used by")
 				for _, r := range repos.Repos {
 					vis := "public"
 					if r.Private {
 						vis = "private"
 					}
-					t.Row(r.FullName, r.DefaultBranch, vis)
+					pushed := ""
+					if r.PushedAt != nil {
+						pushed = ago(*r.PushedAt)
+					}
+					t.Row(r.FullName, r.DefaultBranch, vis, pushed, strings.Join(r.UsedBy, ", "))
 				}
 				if err := t.Flush(); err != nil {
 					return err
@@ -381,6 +386,102 @@ func newGitHubReposCmd(g *globals) *cobra.Command {
 			})
 		},
 	}
+}
+
+// newGitHubBranchesCmd is `dock github branches <repo>`.
+func newGitHubBranchesCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "branches <owner/repo>",
+		Short: "List a repository's branches, for `dock service create --repo` and `dock git connect`",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			b, err := get[apitypes.GitHubBranches](cmd.Context(), s, apiPrefix+"/github/repos/"+repoPath(args[0])+"/branches")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(b, func() error {
+				t := g.io.Table("branch", "")
+				for _, name := range b.Branches {
+					note := ""
+					if name == b.DefaultBranch {
+						note = "default"
+					}
+					t.Row(name, note)
+				}
+				if err := t.Flush(); err != nil {
+					return err
+				}
+				if b.Truncated {
+					g.io.Warnf("Only the first %d are listed", len(b.Branches))
+				}
+				return nil
+			})
+		},
+	}
+}
+
+// newGitHubPathsCmd is `dock github paths <repo>`: the directories a
+// service could build, the ones that look like an app first.
+func newGitHubPathsCmd(g *globals) *cobra.Command {
+	var branch string
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "paths <owner/repo>",
+		Short: "List a repository's directories that look like an app (a Dockerfile, package.json, go.mod...)",
+		Long: `List the directories of a repository a service could build: the ones with a
+Dockerfile, package.json, go.mod and the like, with the services that already
+build them. --all lists every other directory too. Dependency and hidden
+directories are left out.`,
+		Example: `  dock github paths acme/shop
+  dock service create web --repo acme/shop --dir apps/web`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			path := apiPrefix + "/github/repos/" + repoPath(args[0]) + "/paths"
+			if branch != "" {
+				path += "?branch=" + url.QueryEscape(branch)
+			}
+			p, err := get[apitypes.GitHubPaths](cmd.Context(), s, path)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(p, func() error {
+				t := g.io.Table("directory", "files", "used by")
+				for _, r := range p.Roots {
+					t.Row(cmp.Or(r.Path, "(root)"), strings.Join(r.Markers, ", "), strings.Join(r.UsedBy, ", "))
+				}
+				if all {
+					for _, d := range p.Dirs {
+						t.Row(d, "", "")
+					}
+				}
+				if err := t.Flush(); err != nil {
+					return err
+				}
+				g.io.Detail(fmt.Sprintf("%s at %s (%s)", p.Repo, p.Branch, p.Commit[:min(7, len(p.Commit))]))
+				if p.Truncated {
+					g.io.Warnf("The repository is too big to list whole; some directories are missing")
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&branch, "branch", "", "the branch to list (default: the repository's default branch)")
+	cmd.Flags().BoolVar(&all, "all", false, "also list directories that don't look like an app")
+	return cmd
+}
+
+// repoPath checks an owner/name argument and escapes it for a URL path.
+func repoPath(repo string) string {
+	owner, name, _ := strings.Cut(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(repo), "https://github.com/"), ".git"), "/")
+	return url.PathEscape(owner) + "/" + url.PathEscape(name)
 }
 
 // installationID checks an installation ID argument.

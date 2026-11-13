@@ -182,17 +182,26 @@ func newServiceCreateCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var settings settingsFlags
 	var template string
+	var git apitypes.ServiceGitRequest
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Create a service (without deploying it), or a database from a template",
+		Short: "Create a service (without deploying it), a database from a template, or a service from a GitHub repository",
 		Long: `Create a service. Nothing is deployed until you deploy it.
 
 With --template (postgres or redis) it is a database: a pinned image, a volume,
 generated credentials and small-server defaults, deployed right away and
-backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
+backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.
+
+With --repo it deploys from a GitHub repository through the org's GitHub App:
+it is connected to the branch (the default one unless --branch) and the
+directory it builds (--dir; the root unless given), and the branch's head
+deploys right away. Every push that changes the directory deploys again.
+Find repositories with ` + "`dock github repos`" + ` and directories with
+` + "`dock github paths <repo>`" + `.`,
 		Example: `  dock service create api --image ghcr.io/acme/api:1.4
   dock service create db --template postgres
-  dock service create cache --template redis`,
+  dock service create cache --template redis
+  dock service create web --repo acme/shop --dir apps/web`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needEnvironment)
@@ -201,6 +210,11 @@ backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
 			}
 			req := settings.create(args[0])
 			req.Template = apitypes.Template(template)
+			if git.Repo != "" {
+				req.Git = &git
+			} else if git.Branch != "" || git.Dir != "" {
+				return usageError("--branch and --dir need --repo", "Name the repository: `dock service create web --repo acme/shop --dir apps/web`.")
+			}
 			svc, err := send[apitypes.Service](cmd.Context(), s, http.MethodPost, t.envPath()+"/services", req)
 			if err != nil {
 				return err
@@ -217,7 +231,13 @@ backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
 				}
 			}
 			return g.io.Print(svc, func() error {
-				if template == "" {
+				created := target{svc.Project, svc.Environment, svc.Name}
+				switch {
+				case req.Git != nil:
+					g.io.Successf("Created %s from %s in %s/%s; the branch's head is deploying", svc.Name, git.Repo, svc.Project, svc.Environment)
+					g.io.Detail(fmt.Sprintf("Follow it with `dock git status %s`; every push to the branch deploys again.", created.flags()))
+					return nil
+				case template == "":
 					g.io.Successf("Created service %s in %s/%s", svc.Name, svc.Project, svc.Environment)
 					return nil
 				}
@@ -225,7 +245,6 @@ backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
 				for _, e := range exports {
 					g.io.Detail(fmt.Sprintf("Other services use it with ${{%s.%s}}, e.g. `dock env set -s api %s='${{%s.%s}}'`", svc.Name, e, e, svc.Name, e))
 				}
-				created := target{svc.Project, svc.Environment, svc.Name}
 				g.io.Detail(fmt.Sprintf("Follow the deploy with `dock release wait %s`; backups run daily (`dock backup list %s`).", created.flags(), created.flags()))
 				return nil
 			})
@@ -234,6 +253,9 @@ backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.`,
 	f.add(cmd, needEnvironment)
 	settings.add(cmd.Flags())
 	cmd.Flags().StringVar(&template, "template", "", "create a database from a template: postgres or redis (other settings are ignored)")
+	cmd.Flags().StringVar(&git.Repo, "repo", "", "deploy from this GitHub repository (owner/name) through the org's GitHub App")
+	cmd.Flags().StringVar(&git.Branch, "branch", "", "with --repo: the branch every push to deploys (default: the repository's default branch)")
+	cmd.Flags().StringVar(&git.Dir, "dir", "", "with --repo: the subdirectory to build (default: the repository root)")
 	return cmd
 }
 

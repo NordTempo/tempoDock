@@ -686,7 +686,8 @@ func (c *Core) orgNamed(ctx context.Context, slug string) (store.Org, error) {
 }
 
 // GitHubRepos lists the repositories the caller's org can connect through
-// the App, by name. Scope: deploy.
+// the App, the newest push first, with the org's services that deploy
+// from each. Scope: deploy.
 func (c *Core) GitHubRepos(ctx context.Context, a Actor) (apitypes.GitHubRepos, error) {
 	if err := a.require(apitypes.ScopeDeploy, "listing GitHub repositories"); err != nil {
 		return apitypes.GitHubRepos{}, err
@@ -706,14 +707,30 @@ func (c *Core) GitHubRepos(ctx context.Context, a Actor) (apitypes.GitHubRepos, 
 			return out, err
 		}
 		for _, r := range repos {
-			out.Repos = append(out.Repos, apitypes.GitHubRepo{ID: r.ID, FullName: r.FullName, DefaultBranch: r.DefaultBranch, Private: r.Private})
+			out.Repos = append(out.Repos, apitypes.GitHubRepo{ID: r.ID, FullName: r.FullName, DefaultBranch: r.DefaultBranch, Private: r.Private, PushedAt: r.PushedAt})
 		}
 		if more || len(out.Repos) >= maxGitHubRepos {
 			out.Truncated = true
 			break
 		}
 	}
+	used, err := c.store.ListOrgGitServices(ctx, a.OrgID)
+	if err != nil {
+		return out, err
+	}
+	for i, r := range out.Repos {
+		out.Repos[i].UsedBy = usedBy(used, githubRepo{ID: r.ID, FullName: r.FullName}, nil)
+	}
 	slices.SortFunc(out.Repos, func(x, y apitypes.GitHubRepo) int {
+		switch {
+		case x.PushedAt != nil && y.PushedAt != nil && !x.PushedAt.Equal(*y.PushedAt):
+			return y.PushedAt.Compare(*x.PushedAt)
+		case (x.PushedAt == nil) != (y.PushedAt == nil):
+			if x.PushedAt == nil {
+				return 1
+			}
+			return -1
+		}
 		return strings.Compare(strings.ToLower(x.FullName), strings.ToLower(y.FullName))
 	})
 	return out, nil

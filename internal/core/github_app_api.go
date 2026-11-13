@@ -169,6 +169,8 @@ type githubRepo struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
 	Private       bool   `json:"private"`
+	// PushedAt is the newest push to any branch.
+	PushedAt *time.Time `json:"pushed_at"`
 }
 
 // repo looks up a repository: its ID and canonical name.

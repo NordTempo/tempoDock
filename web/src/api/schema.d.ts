@@ -1363,6 +1363,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/github/repos/{owner}/{name}/branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a repository's branches
+         * @description The branches of a repository the org's GitHub App reads, the default first, at most 100. Scope: deploy.
+         */
+        get: operations["list-github-branches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/github/repos/{owner}/{name}/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a repository's directories
+         * @description The directories of a repository the org's GitHub App reads, at a branch: the ones with a Dockerfile, package.json, go.mod and the like first (roots), then the rest. Dependency and hidden directories are left out. Scope: deploy.
+         */
+        get: operations["list-github-paths"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -6812,6 +6852,7 @@ export interface components {
             /** Format: double */
             cpus?: number;
             dockerfile_path?: string;
+            git?: components["schemas"]["ServiceGitRequest"];
             /** Format: int64 */
             health_check_interval_seconds?: number;
             health_check_path?: string;
@@ -8226,6 +8267,14 @@ export interface components {
             owner?: string;
             public?: boolean;
         };
+        GitHubBranches: {
+            /** @description The default branch first, then by name; at most 100 */
+            branches: string[] | null;
+            default_branch: string;
+            /** @description owner/name */
+            repo: string;
+            truncated?: boolean;
+        };
         GitHubClientSecretRequest: {
             client_secret: string;
         };
@@ -8267,6 +8316,23 @@ export interface components {
             /** @description The org's slug; empty for the caller's own. Only operators name another org. */
             org?: string;
         };
+        GitHubPath: {
+            /** @description e.g. Dockerfile, package.json, go.mod */
+            markers: string[] | null;
+            /** @description Relative to the repository root; "" is the root */
+            path: string;
+            used_by: string[] | null;
+        };
+        GitHubPaths: {
+            branch: string;
+            commit: string;
+            dirs: string[] | null;
+            /** @description owner/name */
+            repo: string;
+            /** @description Directories with a Dockerfile, package.json, go.mod and the like; the repository root is "" */
+            roots: components["schemas"]["GitHubPath"][] | null;
+            truncated?: boolean;
+        };
         GitHubRepo: {
             default_branch: string;
             /** @description owner/name */
@@ -8274,6 +8340,9 @@ export interface components {
             /** Format: int64 */
             id: number;
             private: boolean;
+            /** Format: date-time */
+            pushed_at?: string;
+            used_by: string[] | null;
         };
         GitHubRepos: {
             repos: components["schemas"]["GitHubRepo"][] | null;
@@ -9692,6 +9761,14 @@ export interface components {
             };
             variables?: string[] | null;
             volumes?: components["schemas"]["VolumeExport"][] | null;
+        };
+        ServiceGitRequest: {
+            /** @description Branch every push to deploys; the repository's default branch when omitted */
+            branch?: string;
+            /** @description Subdirectory to build; empty for the repository root */
+            dir?: string;
+            /** @description owner/name */
+            repo: string;
         };
         ServiceOverview: {
             active_release?: components["schemas"]["ReleaseSummary"];
@@ -18582,6 +18659,186 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-github-branches": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubBranches"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "list-github-paths": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+                /** @description The repository's default branch when omitted */
+                branch?: string;
+            };
+            header?: never;
+            path: {
+                owner: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitHubPaths"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

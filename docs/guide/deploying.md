@@ -662,6 +662,25 @@ dock github repos                     # what the org can connect
 The console does the same under **System → GitHub**, and **Settings →
 Source** suggests the org's repositories when connecting.
 
+### A new service from a repository
+
+With the App installed, a service can start from a repository: **New
+service › GitHub** lists the repositories the App can read (the newest
+push first), then the directories of one that look like an app (a
+`Dockerfile`, `package.json`, `go.mod` and the like) at a branch. Tick
+one or several: each becomes a service connected to its directory, and
+the branch's head deploys at once. In a monorepo, pushes that change
+nothing in a service's directory don't deploy it.
+
+```sh
+dock github paths acme/shop                       # directories that look like an app
+dock service create web --repo acme/shop --dir apps/web
+dock service create api --repo acme/shop --dir apps/api --branch staging
+```
+
+Connecting through the App checks that the branch exists and the
+directory is one on it, so a typo fails at once.
+
 The App is private by default: only the GitHub account that owns it
 (yours, or `--owner acme`) can install it. With `dock github app create
 --public`, any GitHub account can, so each org deploys from its own
