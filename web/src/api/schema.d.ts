@@ -4711,6 +4711,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project}/sites/{site}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a site's pages for its tracking script
+         * @description Fetches each of the site's hostnames' page (public addresses only, 5 seconds each), looks for the script tag and the Content-Security-Policy, and fetches /_dock/a/s.js to see that it is Dock's. At most once a minute per site; a newer check is returned as is. Scope: read.
+         */
+        post: operations["check-site-tracking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project}/sites/{site}/errors": {
         parameters: {
             query?: never;
@@ -4954,6 +4974,26 @@ export interface paths {
          * @description Visitors, page views, sessions, bounce rate and session length for a range and the one before it, the series, the top values of the dashboard's dimensions, and deploys and domain moves as markers. With the analytics server offline the numbers are empty and store_online is false.
          */
         get: operations["get-site-stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/sites/{site}/tracking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whether a site's tracking script works
+         * @description active when an event arrived in the last 24 hours; otherwise waiting, quiet or stopped from the last 30 days, or what the newest check of its pages found wrong (no_script, wrong_host, blocked). check_due asks for a check. Two store queries; nothing is fetched from the site.
+         */
+        get: operations["get-site-tracking"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10197,6 +10237,23 @@ export interface components {
             dimension: string;
             rows: components["schemas"]["AnalyticsRow"][] | null;
         };
+        SiteCheck: {
+            /** Format: date-time */
+            at: string;
+            hosts: components["schemas"]["SiteCheckHost"][] | null;
+        };
+        SiteCheckHost: {
+            hostname: string;
+            steps: components["schemas"]["SiteCheckStep"][] | null;
+        };
+        SiteCheckStep: {
+            fix?: string;
+            /** @enum {string} */
+            problem?: "" | "no_script" | "wrong_host" | "blocked";
+            /** @enum {string} */
+            result: "ok" | "fail" | "skip";
+            text: string;
+        };
         SiteError: {
             browsers: components["schemas"]["AnalyticsRow"][] | null;
             /** @enum {string} */
@@ -10390,6 +10447,15 @@ export interface components {
              * @description Unix ms
              */
             to: number;
+        };
+        SiteTracking: {
+            check?: components["schemas"]["SiteCheck"];
+            check_due: boolean;
+            /** Format: date-time */
+            last_event_at?: string;
+            /** @enum {string} */
+            state: "active" | "waiting" | "quiet" | "stopped" | "no_script" | "wrong_host" | "blocked" | "unknown";
+            store_error?: string;
         };
         SiteVitals: {
             all: components["schemas"]["VitalsRow"];
@@ -39074,6 +39140,109 @@ export interface operations {
             };
         };
     };
+    "check-site-tracking": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteTracking"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-site-errors": {
         parameters: {
             query?: {
@@ -40344,6 +40513,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SiteStats"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-site-tracking": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Site name */
+                site: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiteTracking"];
                 };
             };
             /** @description Bad Request */

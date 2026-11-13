@@ -148,6 +148,20 @@ func registerSites(s *Server, a huma.API) {
 		return reply(s.core.SiteStats(ctx, actor, in.Project, in.Site, q))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-site-tracking", Method: http.MethodGet, Path: sitesPath + "/{site}/tracking",
+		Summary: "Whether a site's tracking script works", Tags: tags,
+		Description: "active when an event arrived in the last 24 hours; otherwise waiting, quiet or stopped from the last 30 days, or what the newest check of its pages found wrong (no_script, wrong_host, blocked). check_due asks for a check. Two store queries; nothing is fetched from the site.",
+	}, func(ctx context.Context, actor core.Actor, in *SitePath) (*out[apitypes.SiteTracking], error) {
+		return reply(s.core.SiteTracking(ctx, actor, in.Project, in.Site))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "check-site-tracking", Method: http.MethodPost, Path: sitesPath + "/{site}/check",
+		Summary: "Check a site's pages for its tracking script", Tags: tags,
+		Description: "Fetches each of the site's hostnames' page (public addresses only, 5 seconds each), looks for the script tag and the Content-Security-Policy, and fetches /_dock/a/s.js to see that it is Dock's. At most once a minute per site; a newer check is returned as is. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, in *SitePath) (*out[apitypes.SiteTracking], error) {
+		return reply(s.core.CheckSiteTracking(ctx, actor, in.Project, in.Site))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-site-breakdown", Method: http.MethodGet, Path: sitesPath + "/{site}/breakdown",
 		Summary: "The top values of one dimension", Tags: tags,
 	}, func(ctx context.Context, actor core.Actor, in *struct {

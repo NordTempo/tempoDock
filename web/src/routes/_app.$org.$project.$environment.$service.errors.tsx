@@ -26,7 +26,6 @@ function ErrorsTab() {
   const navigate = Route.useNavigate();
   return (
     <ErrorsView
-      fixed
       filter={{ ...ref, all }}
       onFilter={(next) =>
         navigate({ search: { all: next.all || undefined }, replace: true })

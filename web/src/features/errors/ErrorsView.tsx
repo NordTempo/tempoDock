@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
-import { Button, ErrorText, SectionHead } from "../../ui/kit";
+import { Button, ErrorText, Menu, menuItem, SectionHead } from "../../ui/kit";
 import {
   byState,
   type ErrorFacet,
@@ -14,11 +14,10 @@ import {
 } from "./data";
 
 // The errors view (ADR 0062, mock B): error issues grouped by service, new
-// and regressed first. Open alerts are the Inbox's (ADR 0076), so they
-// aren't repeated here. On the org's
-// Errors page a tree of projects and services (with counts) picks what
-// the list shows; a service's Errors tab is the same view fixed to it,
-// without the tree.
+// and regressed first, the full width. Open alerts are the Inbox's (ADR
+// 0076), so they aren't repeated here. On the org's Errors page the
+// header's path picker (ErrorsPicker) picks what the list shows; a
+// service's Errors tab is the same view fixed to it.
 
 /** Issues the view renders per service before "Show all". */
 const PER_SERVICE = 20;
@@ -33,12 +32,9 @@ const stateChip: Record<ErrorIssue["state"], string> = {
 export function ErrorsView({
   filter,
   onFilter,
-  fixed,
 }: {
   filter: ErrorFilter;
   onFilter: (next: ErrorFilter) => void;
-  /** A service's tab: the filter is its service, and there is no tree. */
-  fixed?: boolean;
 }) {
   const list = useErrors(filter);
   const groups = groupByService(list.issues ?? []);
@@ -69,13 +65,7 @@ export function ErrorsView({
       </label>
     </div>
   );
-  if (fixed) return content;
-  return (
-    <div className="grid gap-x-8 gap-y-6 md:grid-cols-[220px_minmax(0,1fr)]">
-      <Facets facets={list.facets ?? []} filter={filter} onFilter={onFilter} />
-      {content}
-    </div>
-  );
+  return content;
 }
 
 type Group = {
@@ -111,108 +101,180 @@ function groupByService(issues: ErrorIssue[]): Group[] {
 }
 
 /**
- * The tree of where errors are: environments, then projects and their
- * services with open issues, each with its count (new ones in red).
+ * Where errors are, as a path in the page header (plan item 6, a combo
+ * of mocks A and B): All projects ▾ / All services ▾, and the
+ * environment when there are several. Each segment is a menu with the
+ * open issues of each choice (red when some are new); the services
+ * segment opens once a project is picked. The counts come from the
+ * errors API's facets, which ignore the project and service filter, so
+ * they stay put while you switch.
  */
-function Facets({
-  facets,
+export function ErrorsPicker({
   filter,
   onFilter,
 }: {
-  facets: ErrorFacet[];
   filter: ErrorFilter;
   onFilter: (next: ErrorFilter) => void;
 }) {
+  const facets = useErrors(filter).facets ?? [];
   const envs = [...new Set(facets.map((f) => f.environment))].sort();
-  const projects = new Map<string, ErrorFacet[]>();
-  for (const f of facets) {
-    if (filter.environment && f.environment !== filter.environment) continue;
-    projects.set(f.project, [...(projects.get(f.project) ?? []), f]);
-  }
+  const inEnv = facets.filter(
+    (f) => !filter.environment || f.environment === filter.environment,
+  );
+  const projects = [...new Set(inEnv.map((f) => f.project))].sort();
+  const services = inEnv
+    .filter((f) => f.project === filter.project)
+    .sort((a, b) => b.new - a.new || b.issues - a.issues);
+  const withEnv = envs.length > 1 && !filter.environment;
+  return (
+    <span className="flex flex-wrap items-center gap-1 font-mono text-xs">
+      <Segment
+        label="Project"
+        text={filter.project ?? "All projects"}
+        on={!!filter.project}
+        items={[
+          {
+            key: "",
+            text: "All projects",
+            facets: inEnv,
+            on: !filter.project,
+            next: { ...filter, project: undefined, service: undefined },
+          },
+          ...projects.map((p) => ({
+            key: p,
+            text: p,
+            facets: inEnv.filter((f) => f.project === p),
+            on: filter.project === p,
+            next: { ...filter, project: p, service: undefined },
+          })),
+        ]}
+        onPick={onFilter}
+      />
+      <span aria-hidden className="text-faint">
+        /
+      </span>
+      {filter.project ? (
+        <Segment
+          label="Service"
+          text={filter.service ?? "All services"}
+          on={!!filter.service}
+          items={[
+            {
+              key: "",
+              text: "All services",
+              facets: services,
+              on: !filter.service,
+              next: { ...filter, service: undefined },
+            },
+            ...services.map((f) => ({
+              key: `${f.environment}/${f.service}`,
+              text: withEnv ? `${f.service} · ${f.environment}` : f.service,
+              facets: [f],
+              on:
+                filter.service === f.service &&
+                (!filter.environment || filter.environment === f.environment),
+              next: {
+                ...filter,
+                service: f.service,
+                environment: filter.environment ?? f.environment,
+              },
+            })),
+          ]}
+          onPick={onFilter}
+        />
+      ) : (
+        <span className="btn sm text-faint" title="Pick a project first">
+          All services <span aria-hidden>▾</span>
+        </span>
+      )}
+      {envs.length > 1 && (
+        <Segment
+          label="Environment"
+          text={filter.environment ?? "All environments"}
+          on={!!filter.environment}
+          items={[
+            {
+              key: "",
+              text: "All environments",
+              facets,
+              on: !filter.environment,
+              next: { ...filter, environment: undefined },
+            },
+            ...envs.map((e) => ({
+              key: e,
+              text: e,
+              facets: facets.filter((f) => f.environment === e),
+              on: filter.environment === e,
+              next: { ...filter, environment: e, service: undefined },
+            })),
+          ]}
+          onPick={onFilter}
+        />
+      )}
+    </span>
+  );
+}
+
+/** One segment of the picker: its choice as a button, the choices in a menu. */
+function Segment({
+  label,
+  text,
+  on,
+  items,
+  onPick,
+}: {
+  label: string;
+  text: string;
+  on: boolean;
+  items: {
+    key: string;
+    text: string;
+    facets: ErrorFacet[];
+    on: boolean;
+    next: ErrorFilter;
+  }[];
+  onPick: (next: ErrorFilter) => void;
+}) {
   const total = (fs: ErrorFacet[]) => fs.reduce((n, f) => n + f.issues, 0);
   const fresh = (fs: ErrorFacet[]) => fs.reduce((n, f) => n + f.new, 0);
-  const row = (
-    label: string,
-    fs: ErrorFacet[],
-    on: boolean,
-    next: ErrorFilter,
-    sub?: boolean,
-  ) => (
-    <button
-      key={label + (sub ? "-s" : "")}
-      type="button"
-      aria-pressed={on}
-      onClick={() => onFilter(next)}
-      className={`flex w-full items-baseline gap-2 rounded-ctl px-2 py-1 text-left text-xs hover:bg-hover aria-pressed:bg-sel aria-pressed:text-fg ${sub ? "pl-5 text-sec" : ""}`}
-    >
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span
-        className={`font-mono text-xs tabular-nums ${fresh(fs) ? "text-fail" : "text-mut"}`}
-      >
-        {total(fs)}
-      </span>
-    </button>
-  );
   return (
-    <nav aria-label="Where errors are" className="flex flex-col gap-3">
-      {envs.length > 1 && (
-        <div>
-          <h2 className="mb-1 px-2 text-xs text-faint">Environment</h2>
-          {row("All", facets, !filter.environment, {
-            ...filter,
-            environment: undefined,
+    <Menu
+      label={label}
+      button={
+        <span className={`btn sm font-mono ${on ? "border-fg text-fg" : ""}`}>
+          {text} <span aria-hidden>▾</span>
+        </span>
+      }
+    >
+      {(close) => (
+        <div className="max-h-80 min-w-56 overflow-y-auto">
+          {items.map((it) => {
+            const n = fresh(it.facets);
+            return (
+              <button
+                key={it.key}
+                type="button"
+                role="menuitem"
+                aria-current={it.on ? "page" : undefined}
+                className={`${menuItem} w-full font-mono text-xs`}
+                onClick={() => {
+                  onPick(it.next);
+                  close();
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate">{it.text}</span>
+                <span
+                  className={`tabular-nums ${n ? "text-fail" : "text-mut"}`}
+                >
+                  {total(it.facets)}
+                  {n > 0 && ` · ${n} new`}
+                </span>
+              </button>
+            );
           })}
-          {envs.map((env) =>
-            row(
-              env,
-              facets.filter((f) => f.environment === env),
-              filter.environment === env,
-              { ...filter, environment: env, service: undefined },
-            ),
-          )}
         </div>
       )}
-      <div>
-        <h2 className="mb-1 px-2 text-xs text-faint">Project and service</h2>
-        {row("All", [...projects.values()].flat(), !filter.project, {
-          ...filter,
-          project: undefined,
-          service: undefined,
-        })}
-        {[...projects.entries()]
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([project, fs]) => (
-            <div key={project}>
-              {row(project, fs, filter.project === project && !filter.service, {
-                ...filter,
-                project,
-                service: undefined,
-              })}
-              {filter.project === project &&
-                fs
-                  .sort((a, b) => b.new - a.new || b.issues - a.issues)
-                  .map((f) =>
-                    row(
-                      envs.length > 1 && !filter.environment
-                        ? `${f.service} · ${f.environment}`
-                        : f.service,
-                      [f],
-                      filter.service === f.service &&
-                        (!filter.environment ||
-                          filter.environment === f.environment),
-                      {
-                        ...filter,
-                        project,
-                        service: f.service,
-                        environment: filter.environment ?? f.environment,
-                      },
-                      true,
-                    ),
-                  )}
-            </div>
-          ))}
-      </div>
-    </nav>
+    </Menu>
   );
 }
 

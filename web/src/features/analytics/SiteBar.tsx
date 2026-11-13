@@ -1,5 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useOrg } from "../../shell/location";
 import { RangeSwitch } from "../stats/parts";
 import {
@@ -8,14 +9,16 @@ import {
   type SiteStats,
   type StatsRange,
   siteStatsQuery,
+  siteTrackingQuery,
   statsRanges,
 } from "./data";
 import { shown } from "./parts";
+import { TrackingChecklist, TrackingChip, trackingOpens } from "./Tracking";
 
 // The bar above every analytics view (ADR 0037): the site (a choice of
-// sites on a service's Errors tab), the range and the filters they share.
-// The site's settings are a page in the Analytics area; a service's view
-// links to it.
+// sites on a service's Errors tab), whether its tracking works, the range
+// and the filters they share. The site's settings are a page in the
+// Analytics area; a service's view links to it.
 
 export function SiteBar({
   project,
@@ -54,6 +57,10 @@ export function SiteBar({
     siteStatsQuery(project, site.name, range, filters).queryKey,
   );
   const hostnames = site.hostnames ?? [];
+  // The checklist opens by itself when something is wrong, until toggled.
+  const tracking = useQuery(siteTrackingQuery(project, site.name)).data;
+  const [checklist, setChecklist] = useState<boolean | null>(null);
+  const showChecklist = checklist ?? trackingOpens(tracking);
   const services = new Set(hostnames.map((h) => h.service).filter(Boolean));
   return (
     <div className="flex flex-col gap-3">
@@ -78,6 +85,12 @@ export function SiteBar({
           {hostnames.length === 1 ? "hostname" : "hostnames"} · {services.size}{" "}
           {services.size === 1 ? "service" : "services"}
         </span>
+        <TrackingChip
+          project={project}
+          site={site.name}
+          open={showChecklist}
+          onToggle={() => setChecklist(!showChecklist)}
+        />
         {named && (
           <Link
             to="/$org/analytics/$project/$site/settings"
@@ -101,6 +114,9 @@ export function SiteBar({
           <RangeSwitch value={range} options={statsRanges} onChange={onRange} />
         </span>
       </div>
+      {showChecklist && (
+        <TrackingChecklist project={project} site={site.name} />
+      )}
       {filters.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           {filters.map((f) => (

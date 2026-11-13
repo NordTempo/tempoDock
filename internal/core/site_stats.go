@@ -190,12 +190,12 @@ func (c *Core) SiteStats(ctx context.Context, a Actor, project, name string, q S
 			out.Breakdowns[string(dim)] = c.toRows(ctx, dim, d.Breakdowns[dim])
 		}
 	}
-	return c.storeAnswer(out, err)
+	return storeAnswer(out, err)
 }
 
 // storeAnswer keeps a dashboard with an unreachable store as an answer
 // saying so; other errors are errors.
-func (c *Core) storeAnswer(out apitypes.SiteStats, err error) (apitypes.SiteStats, error) {
+func storeAnswer(out apitypes.SiteStats, err error) (apitypes.SiteStats, error) {
 	var se *analytics.StoreError
 	switch {
 	case err == nil:
