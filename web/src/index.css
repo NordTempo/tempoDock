@@ -365,14 +365,24 @@
   }
 
   /*
-   * The height of the org's sticky top bar (option 3), which every sticky
-   * page bar sits under; 0 where there is none (the console, sign-in).
+   * The height of the shell's sticky stack (Shell.tsx), which every
+   * sticky page bar and the sidebar sit under: the org's top bar (option
+   * 3) or the console's amber bar, plus the not-live strip under it while
+   * it shows (shell/NotLive.tsx); 0 where there is none (sign-in). Each
+   * has a fixed height so the offsets stay exact.
    */
   :root {
+    --not-live: 0px;
     --shell-top: 0px;
   }
+  html:has(.not-live) {
+    --not-live: 28px;
+  }
   html:has(.app-shell) {
-    --shell-top: 52px;
+    --shell-top: calc(52px + var(--not-live));
+  }
+  html:has(.console-shell) {
+    --shell-top: calc(32px + var(--not-live));
   }
 
   /*

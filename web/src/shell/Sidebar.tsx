@@ -92,12 +92,7 @@ export function Sidebar({ mode }: { mode: ShellMode }) {
   return (
     <nav
       aria-label={mode === "console" ? "Platform" : "Organization"}
-      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${mode === "app" && !tree ? "lg:w-[60px]" : "lg:w-[248px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 ${
-        // Under the console's sticky amber bar.
-        mode === "console"
-          ? "lg:top-8 lg:h-[calc(100vh-2rem)]"
-          : "lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]"
-      }`}
+      className={`flex flex-col gap-0.5 border-b border-line bg-side px-2 py-2.5 lg:sticky ${mode === "app" && !tree ? "lg:w-[60px]" : "lg:w-[248px]"} lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0 lg:top-(--shell-top) lg:h-[calc(100vh-var(--shell-top))]`}
     >
       <button
         type="button"
@@ -280,8 +275,9 @@ function ProjectRail() {
 export function TopBar() {
   const openPalette = usePalette();
   return (
-    // Sticky over every page; its height is --shell-top (index.css).
-    <header className="app-shell sticky top-0 z-30 flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap">
+    // Sticky over every page in the shell's top stack; its height is
+    // --shell-top (index.css).
+    <header className="app-shell flex h-[52px] items-center gap-1 border-b border-line bg-side px-3 whitespace-nowrap">
       <OrgSwitcher />
       <nav
         aria-label="Organization views"
