@@ -37,13 +37,17 @@ function OrgShell() {
       >
         Skip to content
       </a>
-      {mode === "console" && <ConsoleBar />}
+      {/* One sticky stack, so the not-live strip sits under the bars
+          instead of sticking over them (index.css counts it in --shell-top). */}
+      <div className="sticky top-0 z-30">
+        {mode === "console" && <ConsoleBar />}
+        {mode === "app" && <TopBar />}
+        <NotLive />
+      </div>
       {mode === "console" && <DrainStrip />}
-      {mode === "app" && <TopBar />}
       <div className="flex min-h-screen flex-col lg:flex-row">
         <Sidebar mode={mode} />
         <main id="main" className="flex min-w-0 flex-1 flex-col">
-          <NotLive />
           <TwoFactorNotice />
           <div className="flex flex-1 flex-col">
             <Outlet />
@@ -91,13 +95,17 @@ export function RoutePending() {
   );
 }
 
-/** The console's reminder that changes here reach every project. */
+/**
+ * The console's reminder that changes here reach every project. One line
+ * of a fixed 32px, which index.css counts in --shell-top (`console-shell`);
+ * narrow windows drop the sentence so it never wraps.
+ */
 function ConsoleBar() {
   return (
-    <div className="sticky top-0 z-30 flex min-h-8 flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-warn-edge bg-warn-bg px-4 py-1.5 text-xs">
+    <div className="console-shell flex h-[32px] items-center gap-x-2.5 overflow-hidden border-b border-warn-edge bg-warn-bg px-4 text-xs whitespace-nowrap">
       <Icon name="console" size={13} className="text-warn" />
       <span className="font-semibold text-warn">Platform console</span>
-      <span className="text-warn-text">
+      <span className="hidden text-warn-text sm:inline">
         Changes here affect every project on this Dock.
       </span>
       {/* No preload: it would read the org's projects from inside the

@@ -362,6 +362,7 @@ end) are not listed.
 | Git push retry | `internal/core/git.go` | once, 10 s | a queued push waits for a busy upload slot (ADR 0018) | one timer, then one worker step |
 | Health follow (browser) | `web/src/features/data/HealthView.tsx` | 5 s | a person turned on Follow in the Data panel's Health tab, Sessions view, and the page is visible; it stops after 10 minutes or on leaving the view (ADR 0069) | one insights request: a few catalog queries on the database as `dock_monitor`, 2 to 16 ms each; nothing in the daemon between requests |
 | Log stream reconnect (browser) | `web/src/api/events.ts` | once per lost connection, backing off 1 s to 30 s, at most 6 tries in a row | a followed log or build log lost its connection | one timer, then one EventSource that replays the backlog |
+| Not live delay (browser) | `web/src/shell/NotLive.tsx` | once per lost live connection, 2 s after it drops | the event stream is down; back before then, the timer is cleared | one timer, then one render of the strip |
 | Replay player clock (browser) | `web/src/features/analytics/ReplayPlayer.tsx` | 250 ms | a session replay is playing | one state update |
 | Session recorder flush (visitor's browser) | `web/src/recorder/recorder.ts` (`/_dock/a/r.js`) | 5 s | a sampled page load of a site that records is open (ADR 0037) | one POST of the recorded chunk, when there is one |
 | CLI deploy follow refetch | `internal/cli/follow.go` | 15 s | `dock deploy` is following releases | one GET per open release |

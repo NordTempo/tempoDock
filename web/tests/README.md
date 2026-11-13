@@ -28,3 +28,13 @@ analytics globe's arithmetic (`features/analytics/globe/sphere.ts`): the
 land decodes to its dot count, the globe opens facing the visitors and
 the generated country centres are where they should be. The title says
 `PASS: globe`.
+
+# Not live
+
+Open `/tests/not-live.html` under `pnpm dev` at 320, 390, 768 and 1280px;
+no backend. It runs the real shell over a fetch fixture and a fake live
+stream, in the org shell and the console, on a scrolled page: a drop
+shorter than two seconds shows nothing, a longer one shows the strip under
+the top bar (covering none of its controls, the page bar below it), and
+the stream coming back or Reconnect clears it. The title says
+`PASS: not live` or the failed assertion.
