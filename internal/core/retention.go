@@ -202,6 +202,7 @@ type retained struct {
 	quietErrors, errors int64
 	diagnoses           int64
 	scans               int
+	emails              int64
 }
 
 // retain runs one retention pass. Failures are logged; the next pass
@@ -235,11 +236,14 @@ func (c *Core) retain(ctx context.Context, now time.Time) retained {
 	if out.scans, err = c.trimScans(ctx); err != nil {
 		c.log.Warn("retention: image scans", "err", err)
 	}
+	if out.emails, err = c.pruneEmail(ctx, now); err != nil {
+		c.log.Warn("retention: email", "err", err)
+	}
 	c.kickScanRefresh()
 	took := time.Since(started).Round(time.Microsecond)
 	if out != (retained{}) {
 		c.log.Info("retention", "release_histories", out.releases, "audit_events", out.audit, "alerts", out.alerts, "access_requests", out.requests,
-			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "diagnoses", out.diagnoses, "image_scans", out.scans, "took", took)
+			"errors_resolved", out.quietErrors, "errors_deleted", out.errors, "diagnoses", out.diagnoses, "image_scans", out.scans, "emails", out.emails, "took", took)
 	} else {
 		c.log.Debug("retention: nothing to trim", "took", took)
 	}

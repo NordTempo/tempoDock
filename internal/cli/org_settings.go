@@ -118,6 +118,34 @@ func newOrgMemberCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
+// inviteMailNote says whether the link is being emailed, and what to do
+// with the printed one.
+func inviteMailNote(m apitypes.InviteMail) string {
+	const once = "it works once, for 7 days, and isn't shown again."
+	switch m.Status {
+	case apitypes.InviteMailQueued:
+		return "Emailing them the link (`dock org invites` shows how it went); " + once
+	case apitypes.InviteMailNoAddress:
+		return "Not emailed: Dock has no public address for the link (`dock address set`). Send them the link; " + once
+	case apitypes.InviteMailRefused:
+		return "Not emailed: " + m.Error + ". Send them the link; " + once
+	}
+	return "Dock's email isn't set up, so send them the link; " + once
+}
+
+// inviteMail is an invite's mail, as a cell.
+func inviteMail(m *apitypes.InviteMail) string {
+	switch {
+	case m == nil:
+		return "-"
+	case m.Status == apitypes.InviteMailFailed:
+		return "failed: " + m.Error
+	case m.At != nil:
+		return string(m.Status) + " " + ago(*m.At)
+	}
+	return string(m.Status)
+}
+
 // inviteView is an invite with its link, as `dock org invite` prints it.
 type inviteView struct {
 	apitypes.CreatedInvite
@@ -128,10 +156,11 @@ func newOrgInviteCmd(g *globals) *cobra.Command {
 	var role string
 	cmd := &cobra.Command{
 		Use:   "invite <email>",
-		Short: "Invite someone; prints the link to send them (admin)",
-		Long: `Invite an email address with a role. The link works once, for 7 days, and
-only for someone signed in with that email; they open it in the browser or
-run ` + "`dock org join <link>`" + `.`,
+		Short: "Invite someone; emails them the link, and prints it (admin)",
+		Long: `Invite an email address with a role. With Dock's email set up (` + "`dock email`" + `),
+the link is emailed to them; it is printed either way. The link works once,
+for 7 days, and only for someone signed in with that email; they open it in
+the browser or run ` + "`dock org join <link>`" + `.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
@@ -147,7 +176,7 @@ run ` + "`dock org join <link>`" + `.`,
 			return g.io.Print(v, func() error {
 				g.io.Successf("Invited %s as %s", created.Invite.Email, created.Invite.Role)
 				_, err := fmt.Fprintln(g.io.Out, v.URL)
-				g.io.Detail("Send them the link; it works once, for 7 days. It isn't shown again.")
+				g.io.Detail(inviteMailNote(created.Mail))
 				return err
 			})
 		},
@@ -171,13 +200,13 @@ func newOrgInvitesCmd(g *globals) *cobra.Command {
 				return err
 			}
 			return g.io.Print(invites, func() error {
-				t := g.io.Table("id", "email", "role", "invited by", "expires")
+				t := g.io.Table("id", "email", "role", "invited by", "expires", "mail")
 				for _, i := range invites {
 					expires := i.ExpiresAt.Local().Format("2006-01-02 15:04")
 					if i.Expired {
 						expires = "expired"
 					}
-					t.Row(itoa(i.ID), i.Email, string(i.Role), i.CreatedBy, expires)
+					t.Row(itoa(i.ID), i.Email, string(i.Role), i.CreatedBy, expires, inviteMail(i.Mail))
 				}
 				return t.Flush()
 			})

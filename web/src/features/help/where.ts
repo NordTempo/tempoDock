@@ -51,6 +51,7 @@ const helpAt = {
   "/_app/$org/settings/cloudflare": "domains",
   "/_app/account": "access",
   "/_app/console": "servers",
+  "/_app/console/email": "access",
 } as const satisfies Partial<Record<Prefixes<RouteId>, TopicId>>;
 
 const entries: Partial<Record<string, TopicId>> = helpAt;

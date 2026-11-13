@@ -1,0 +1,5 @@
+{{define "test.html"}}{{template "head" "Test email from Tempo Dock"}}
+<p style="margin:0 0 18px;font-size:20px;font-weight:600;color:#fafafa">Email works</p>
+<p style="margin:0 0 12px;color:#d0d0d6">This is a test email from Tempo Dock, sent by {{.SentBy}} through {{.Server}}.</p>
+<p style="margin:0;color:#d0d0d6">It arrived, so Dock can send invites and other email.</p>
+{{template "foot" .Site}}{{end}}

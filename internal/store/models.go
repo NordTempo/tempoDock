@@ -349,6 +349,40 @@ type Domain struct {
 	VerifiedAt   *time.Time
 }
 
+type EmailOutbox struct {
+	ID        int64
+	Kind      string
+	OrgID     *int64
+	Ref       string
+	ToAddr    string
+	Subject   string
+	Nonce     string
+	Body      []byte
+	Status    string
+	Attempts  int64
+	NextAt    int64
+	Error     string
+	CreatedAt int64
+	DoneAt    *int64
+}
+
+type EmailSetting struct {
+	ID          int64
+	Host        string
+	Port        int64
+	Security    string
+	Username    string
+	Password    []byte
+	FromAddr    string
+	FromName    string
+	ReplyTo     string
+	UpdatedBy   string
+	UpdatedAt   time.Time
+	LastOkAt    *time.Time
+	LastError   string
+	LastErrorAt *time.Time
+}
+
 type EnsureRunning struct {
 	ServiceID int64
 }

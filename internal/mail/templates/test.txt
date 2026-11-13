@@ -1,0 +1,7 @@
+{{define "test.subject"}}Test email from Tempo Dock{{end}}
+{{define "test.text"}}
+This is a test email from Tempo Dock at {{.Site}}, sent by {{.SentBy}}
+through {{.Server}}.
+
+It arrived, so Dock can send invites and other email.
+{{end}}

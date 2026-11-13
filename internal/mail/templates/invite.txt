@@ -1,0 +1,16 @@
+{{define "invite.subject"}}Join {{.Org}} on Tempo Dock{{end}}
+{{define "invite.text"}}
+{{.InvitedBy}} invited you to join {{.Org}} on Tempo Dock with the {{.Role}} role:
+{{.RoleMeans}}.
+
+Accept the invite:
+{{.URL}}
+
+The link works once, until {{.ExpiresText}}, and only for
+{{.Email}}. Without an account, you create one from the link.
+
+Not expecting this? Ignore it. Nothing happens unless the link is
+opened and accepted.
+
+Tempo Dock at {{.Site}}
+{{end}}

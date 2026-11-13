@@ -147,6 +147,9 @@ const words: Record<string, readonly [label: string, past: string]> = {
   ],
   "platform.address_removed": ["remove address", "removed the address"],
   "platform.address_set": ["set address", "set the address to"],
+  "platform.email_clear": ["turn email off", "turned off"],
+  "platform.email_set": ["set up email", "set"],
+  "platform.email_test": ["test email", "sent a test to"],
   "platform.invite_only": ["change sign-up", "changed"],
   "platform.operators_two_factor": [
     "change operator sign-in",

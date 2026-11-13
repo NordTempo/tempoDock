@@ -7,7 +7,7 @@ import type { Scope, User } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
 import { CliHint } from "../../ui/CliHint";
-import { day, plural } from "../../ui/format";
+import { ago, day, plural } from "../../ui/format";
 import {
   Act,
   Button,
@@ -32,6 +32,7 @@ import {
   InviteLink,
   type InviteLinkInfo,
   LocalLinkNote,
+  linkInfo,
   useInviteBase,
 } from "./inviteLink";
 import { Avatar, PersonCell, TwoFactorState } from "./people";
@@ -125,6 +126,7 @@ function Members() {
               {link && (
                 <InviteLink
                   link={link}
+                  live={invites.find((i) => i.id === link.id)?.mail}
                   url={`${invite.base}/invite/${link.code}`}
                   note={
                     invite.local && <LocalLinkNote operator={invite.operator} />
@@ -235,11 +237,7 @@ function InviteForm({
         create.mutate(
           { email: email.trim(), role },
           {
-            onSuccess: (c) =>
-              onCreated({
-                email: c.invite.email,
-                code: c.code,
-              }),
+            onSuccess: (c) => onCreated(linkInfo(c)),
           },
         );
       }}
@@ -422,6 +420,25 @@ function MemberRow({
   );
 }
 
+/** How an invite's latest mail went, after its state. */
+function MailNote({ mail }: { mail: Invite["mail"] }) {
+  if (!mail) return null;
+  if (mail.status === "failed")
+    return (
+      <span className="text-xs text-fail" title={mail.error}>
+        {" "}
+        · email failed
+      </span>
+    );
+  return (
+    <span className="text-xs text-faint">
+      {" "}
+      · {mail.status === "sent" ? "emailed" : "emailing"}
+      {mail.at && ` ${ago(mail.at)}`}
+    </span>
+  );
+}
+
 /**
  * An open invite. New link revokes it and invites them again, for a link
  * that was lost (it is shown only once); `onLink` shows the new one.
@@ -453,6 +470,7 @@ function InviteRow({
                     : { tone: "warn", label: "invited" }
                 }
               />
+              <MailNote mail={invite.mail} />
             </span>
           </span>
         </span>
@@ -508,7 +526,7 @@ function InviteRow({
                   {
                     onSuccess: (c) => {
                       setRenewing(false);
-                      onLink({ email: c.invite.email, code: c.code });
+                      onLink(linkInfo(c));
                     },
                   },
                 )

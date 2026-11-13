@@ -28,6 +28,7 @@ import {
   InviteLink,
   type InviteLinkInfo,
   LocalLinkNote,
+  linkInfo,
   useInviteBase,
 } from "../org/inviteLink";
 import {
@@ -528,6 +529,7 @@ function Members({ org, onClose }: DialogProps) {
         {link && (
           <InviteLink
             link={link}
+            live={invites.data?.find((i) => i.id === link.id)?.mail}
             url={`${base.base}/invite/${link.code}`}
             note={base.local && <LocalLinkNote operator />}
             again="revoke it and invite them again for another."
@@ -638,7 +640,7 @@ function Members({ org, onClose }: DialogProps) {
               {
                 onSuccess: (c) => {
                   setEmail("");
-                  setLink({ email: c.invite.email, code: c.code });
+                  setLink(linkInfo(c));
                 },
               },
             );

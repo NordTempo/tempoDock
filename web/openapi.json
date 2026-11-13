@@ -3389,13 +3389,17 @@
           "invite": {
             "$ref": "#/components/schemas/Invite"
           },
+          "mail": {
+            "$ref": "#/components/schemas/InviteMail"
+          },
           "url": {
             "type": "string"
           }
         },
         "required": [
           "invite",
-          "code"
+          "code",
+          "mail"
         ],
         "type": "object"
       },
@@ -6700,6 +6704,204 @@
         ],
         "type": "object"
       },
+      "EmailDelivery": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "done_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "invite": {
+            "description": "The invite it carries",
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "invite",
+              "test"
+            ],
+            "type": "string"
+          },
+          "next_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "org": {
+            "description": "The org it is about; empty for the platform's",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "sent",
+              "failed"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "to",
+          "subject",
+          "status",
+          "attempts",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "EmailLog": {
+        "additionalProperties": false,
+        "properties": {
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/EmailDelivery"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "deliveries"
+        ],
+        "type": "object"
+      },
+      "EmailSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "from": {
+            "description": "The From address",
+            "type": "string"
+          },
+          "from_name": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "links_url": {
+            "type": "string"
+          },
+          "password_set": {
+            "type": "boolean"
+          },
+          "port": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reply_to": {
+            "type": "string"
+          },
+          "security": {
+            "enum": [
+              "starttls",
+              "tls"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EmailStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured",
+          "status"
+        ],
+        "type": "object"
+      },
+      "EmailStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "failed_day": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_error_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "last_ok_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "next_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "queued": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued",
+          "failed_day"
+        ],
+        "type": "object"
+      },
+      "EmailTest": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/EmailSettings"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "ok",
+          "settings"
+        ],
+        "type": "object"
+      },
       "EnableAnalyticsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7622,6 +7824,9 @@
           "drain": {
             "$ref": "#/components/schemas/ServerDrain"
           },
+          "email": {
+            "$ref": "#/components/schemas/EmailDelivery"
+          },
           "environment": {
             "type": "string"
           },
@@ -7704,7 +7909,8 @@
               "server_drain",
               "cloudflare_redirect",
               "sleep",
-              "scan"
+              "scan",
+              "email"
             ],
             "type": "string"
           },
@@ -9114,6 +9320,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "mail": {
+            "$ref": "#/components/schemas/InviteMail"
+          },
           "role": {
             "enum": [
               "read",
@@ -9169,6 +9378,37 @@
           "role",
           "invited_by",
           "expires_at"
+        ],
+        "type": "object"
+      },
+      "InviteMail": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "sent",
+              "failed",
+              "not_set_up",
+              "no_address",
+              "refused"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
         ],
         "type": "object"
       },
@@ -14037,6 +14277,59 @@
         ],
         "type": "object"
       },
+      "SetEmailRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "description": "The From address",
+            "maxLength": 254,
+            "minLength": 3,
+            "type": "string"
+          },
+          "from_name": {
+            "description": "Default Tempo Dock",
+            "maxLength": 64,
+            "type": "string"
+          },
+          "host": {
+            "maxLength": 253,
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "port": {
+            "description": "Default 465 with tls, else 587",
+            "format": "int64",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reply_to": {
+            "maxLength": 254,
+            "type": "string"
+          },
+          "security": {
+            "description": "Default tls on port 465, else starttls",
+            "enum": [
+              "starttls",
+              "tls"
+            ],
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 256,
+            "type": "string"
+          }
+        },
+        "required": [
+          "host",
+          "from"
+        ],
+        "type": "object"
+      },
       "SetEnvironmentPreviewsRequest": {
         "additionalProperties": false,
         "properties": {
@@ -16203,6 +16496,16 @@
           "mount_path",
           "exports"
         ],
+        "type": "object"
+      },
+      "TestEmailRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "to": {
+            "maxLength": 254,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "TimelineItem": {
@@ -34977,6 +35280,514 @@
         "summary": "Create an organization",
         "tags": [
           "organizations"
+        ]
+      }
+    },
+    "/api/v1/platform/email": {
+      "delete": {
+        "description": "Removes the SMTP server; mail still queued is given up on, and invites show their link to copy instead. Operators only, recently confirmed.",
+        "operationId": "remove-email",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Turn Dock's email off",
+        "tags": [
+          "email"
+        ]
+      },
+      "get": {
+        "description": "The SMTP server Dock sends invites and other mail through, without its password, and how sending goes: the latest attempt's outcome and the outbox. Operators only.",
+        "operationId": "get-email",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Show Dock's email settings",
+        "tags": [
+          "email"
+        ]
+      },
+      "put": {
+        "description": "Sets the SMTP server every mail Dock sends goes through. The password is stored encrypted and never returned; leave it out to keep the stored one. Mail waiting for a retry is tried again at once. Operators only, recently confirmed.",
+        "operationId": "set-email",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSettings"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set Dock's SMTP server",
+        "tags": [
+          "email"
+        ]
+      }
+    },
+    "/api/v1/platform/email/outbox": {
+      "get": {
+        "description": "The latest mails, newest first, without their bodies: what, to whom, and how it went. Operators only.",
+        "operationId": "list-email",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Default 50",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Default 50",
+              "format": "int64",
+              "maximum": 200,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailLog"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "The mail Dock sent",
+        "tags": [
+          "email"
+        ]
+      }
+    },
+    "/api/v1/platform/email/test": {
+      "post": {
+        "description": "Sends a test mail now, to `to` or your own address, and says how it went. Operators only.",
+        "operationId": "test-email",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestEmailRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailTest"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Send a test email",
+        "tags": [
+          "email"
         ]
       }
     },

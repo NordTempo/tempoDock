@@ -702,6 +702,11 @@ export const topics: Record<TopicId, Topic> = {
         at: { account: true },
       },
       { what: "Require it for everyone", cli: "dock org two-factor on" },
+      {
+        what: "Email invites (operators set the server)",
+        cli: "dock email test",
+        at: { console: true },
+      },
     ],
     watch: [
       "Reading production data is set apart from the role: --data-production.",
@@ -709,7 +714,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["organizations", "agents", "alerts"],
     guide: "organizations#members-and-roles",
-    words: "member role invite token scope 2fa two-factor sso permission",
+    words:
+      "member role invite email smtp token scope 2fa two-factor sso permission",
   },
 
   organizations: {

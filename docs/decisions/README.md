@@ -91,6 +91,7 @@ line means a later record added to it without changing what it decided.
 | [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built |
 | [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted |
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
+| [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; invites built |
 
 ## Template
 

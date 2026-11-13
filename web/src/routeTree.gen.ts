@@ -36,6 +36,7 @@ import { Route as AppConsoleAuditRouteImport } from './routes/_app.console.audit
 import { Route as AppConsoleBackupsRouteImport } from './routes/_app.console.backups'
 import { Route as AppConsoleCloudflareRouteImport } from './routes/_app.console.cloudflare'
 import { Route as AppConsoleDataAccessRouteImport } from './routes/_app.console.data-access'
+import { Route as AppConsoleEmailRouteImport } from './routes/_app.console.email'
 import { Route as AppConsoleGithubRouteImport } from './routes/_app.console.github'
 import { Route as AppConsoleOrgsRouteImport } from './routes/_app.console.orgs'
 import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.registry'
@@ -248,6 +249,11 @@ const AppConsoleCloudflareRoute = AppConsoleCloudflareRouteImport.update({
 const AppConsoleDataAccessRoute = AppConsoleDataAccessRouteImport.update({
   id: '/data-access',
   path: '/data-access',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleEmailRoute = AppConsoleEmailRouteImport.update({
+  id: '/email',
+  path: '/email',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleGithubRoute = AppConsoleGithubRouteImport.update({
@@ -720,6 +726,7 @@ export interface FileRoutesByFullPath {
   '/console/backups': typeof AppConsoleBackupsRoute
   '/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
+  '/console/email': typeof AppConsoleEmailRoute
   '/console/github': typeof AppConsoleGithubRoute
   '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
@@ -823,6 +830,7 @@ export interface FileRoutesByTo {
   '/console/backups': typeof AppConsoleBackupsRoute
   '/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/console/data-access': typeof AppConsoleDataAccessRoute
+  '/console/email': typeof AppConsoleEmailRoute
   '/console/github': typeof AppConsoleGithubRoute
   '/console/orgs': typeof AppConsoleOrgsRoute
   '/console/registry': typeof AppConsoleRegistryRoute
@@ -927,6 +935,7 @@ export interface FileRoutesById {
   '/_app/console/backups': typeof AppConsoleBackupsRoute
   '/_app/console/cloudflare': typeof AppConsoleCloudflareRoute
   '/_app/console/data-access': typeof AppConsoleDataAccessRoute
+  '/_app/console/email': typeof AppConsoleEmailRoute
   '/_app/console/github': typeof AppConsoleGithubRoute
   '/_app/console/orgs': typeof AppConsoleOrgsRoute
   '/_app/console/registry': typeof AppConsoleRegistryRoute
@@ -1036,6 +1045,7 @@ export interface FileRouteTypes {
     | '/console/backups'
     | '/console/cloudflare'
     | '/console/data-access'
+    | '/console/email'
     | '/console/github'
     | '/console/orgs'
     | '/console/registry'
@@ -1139,6 +1149,7 @@ export interface FileRouteTypes {
     | '/console/backups'
     | '/console/cloudflare'
     | '/console/data-access'
+    | '/console/email'
     | '/console/github'
     | '/console/orgs'
     | '/console/registry'
@@ -1242,6 +1253,7 @@ export interface FileRouteTypes {
     | '/_app/console/backups'
     | '/_app/console/cloudflare'
     | '/_app/console/data-access'
+    | '/_app/console/email'
     | '/_app/console/github'
     | '/_app/console/orgs'
     | '/_app/console/registry'
@@ -1524,6 +1536,13 @@ declare module '@tanstack/react-router' {
       path: '/data-access'
       fullPath: '/console/data-access'
       preLoaderRoute: typeof AppConsoleDataAccessRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/email': {
+      id: '/_app/console/email'
+      path: '/email'
+      fullPath: '/console/email'
+      preLoaderRoute: typeof AppConsoleEmailRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/github': {
@@ -2374,6 +2393,7 @@ interface AppConsoleRouteChildren {
   AppConsoleBackupsRoute: typeof AppConsoleBackupsRoute
   AppConsoleCloudflareRoute: typeof AppConsoleCloudflareRoute
   AppConsoleDataAccessRoute: typeof AppConsoleDataAccessRoute
+  AppConsoleEmailRoute: typeof AppConsoleEmailRoute
   AppConsoleGithubRoute: typeof AppConsoleGithubRoute
   AppConsoleOrgsRoute: typeof AppConsoleOrgsRoute
   AppConsoleRegistryRoute: typeof AppConsoleRegistryRoute
@@ -2394,6 +2414,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleBackupsRoute: AppConsoleBackupsRoute,
   AppConsoleCloudflareRoute: AppConsoleCloudflareRoute,
   AppConsoleDataAccessRoute: AppConsoleDataAccessRoute,
+  AppConsoleEmailRoute: AppConsoleEmailRoute,
   AppConsoleGithubRoute: AppConsoleGithubRoute,
   AppConsoleOrgsRoute: AppConsoleOrgsRoute,
   AppConsoleRegistryRoute: AppConsoleRegistryRoute,

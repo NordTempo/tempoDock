@@ -1,14 +1,17 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/mail"
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
@@ -253,19 +256,83 @@ func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInv
 	}
 	code, hash := newSecret(invitePrefix)
 	n := now()
-	inv, err := c.store.CreateOrgInvite(ctx, store.CreateOrgInviteParams{
-		OrgID: a.OrgID, Email: email, Role: string(req.Role), Hash: hash, CreatedBy: a.Name, CreatedAt: n, ExpiresAt: n.Add(InviteTTL),
+	out := apitypes.CreatedInvite{Code: code}
+	if u := c.publicURL(); u != "" {
+		out.URL = u + "/invite/" + code
+	}
+	var mailRow store.EmailOutbox
+	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		inv, err := q.CreateOrgInvite(ctx, store.CreateOrgInviteParams{
+			OrgID: a.OrgID, Email: email, Role: string(req.Role), Hash: hash, CreatedBy: a.Name, CreatedAt: n, ExpiresAt: n.Add(InviteTTL),
+		})
+		if err != nil {
+			return err
+		}
+		out.Invite = toInvite(inv)
+		out.Mail, mailRow, err = c.queueInviteMail(ctx, q, a, inv, out.URL)
+		return err
 	})
 	if err != nil {
 		return apitypes.CreatedInvite{}, err
 	}
-	c.audit(ctx, a, "org.invite", nil, nil, email, fmt.Sprintf("invited %s as %s", email, req.Role))
-	out := apitypes.CreatedInvite{Invite: toInvite(inv), Code: code}
-	if u := c.publicURL(); u != "" {
-		out.URL = u + "/invite/" + code
+	summary := fmt.Sprintf("invited %s as %s", email, req.Role)
+	if mailRow.ID != 0 {
+		summary += " and emailed the link"
+		c.emailQueued(ctx, mailRow)
 	}
+	c.audit(ctx, a, "org.invite", nil, nil, email, summary)
 	return out, nil
 }
+
+// queueInviteMail queues an invite's mail in q, the invite's own
+// transaction, or says why it can't go: email isn't set up, Dock has no
+// public address for the link, or the outbox refused it. Only a store
+// error fails the invite.
+func (c *Core) queueInviteMail(ctx context.Context, q *store.Queries, a Actor, inv store.OrgInvite, link string) (apitypes.InviteMail, store.EmailOutbox, error) {
+	if _, err := q.GetEmailSettings(ctx); store.IsNotFound(err) {
+		return apitypes.InviteMail{Status: apitypes.InviteMailNotSetUp}, store.EmailOutbox{}, nil
+	} else if err != nil {
+		return apitypes.InviteMail{}, store.EmailOutbox{}, err
+	}
+	if link == "" {
+		return apitypes.InviteMail{Status: apitypes.InviteMailNoAddress}, store.EmailOutbox{}, nil
+	}
+	to, err := mail.ParseAddress(inv.Email)
+	if err != nil {
+		return apitypes.InviteMail{Status: apitypes.InviteMailRefused, Error: err.Error()}, store.EmailOutbox{}, nil
+	}
+	o, err := q.GetOrg(ctx, inv.OrgID)
+	if err != nil {
+		return apitypes.InviteMail{}, store.EmailOutbox{}, err
+	}
+	content, err := mail.InviteMail(mail.Invite{
+		Org: cmp.Or(o.Name, o.Slug), Role: inv.Role, InvitedBy: inviterName(a), Email: to.Address,
+		URL: link, Expires: inv.ExpiresAt, Site: c.siteName(),
+	})
+	if err != nil {
+		return apitypes.InviteMail{}, store.EmailOutbox{}, err
+	}
+	row, err := c.queueEmail(ctx, q, outgoing{kind: apitypes.EmailInvite, orgID: inv.OrgID, ref: inviteRef(inv.ID), to: to.Address, content: content})
+	if isRefused(err) {
+		return apitypes.InviteMail{Status: apitypes.InviteMailRefused, Error: err.Error()}, store.EmailOutbox{}, nil
+	}
+	if err != nil {
+		return apitypes.InviteMail{}, store.EmailOutbox{}, err
+	}
+	return apitypes.InviteMail{Status: apitypes.InviteMailQueued, ID: row.ID}, row, nil
+}
+
+// inviterName is who an invite's mail says invited them: a person's
+// name, or for a token (its name means nothing to them) "An admin".
+func inviterName(a Actor) string {
+	if a.Kind == "token" {
+		return "An admin"
+	}
+	return cmp.Or(a.DisplayName, a.Name)
+}
+
+// inviteRef is the outbox's ref of an invite's mail.
+func inviteRef(id int64) string { return "invite:" + strconv.FormatInt(id, 10) }
 
 // ListInvites returns the org's open invites, expired ones too.
 func (c *Core) ListInvites(ctx context.Context, a Actor) ([]apitypes.Invite, error) {
@@ -273,12 +340,32 @@ func (c *Core) ListInvites(ctx context.Context, a Actor) ([]apitypes.Invite, err
 		return nil, err
 	}
 	rows, err := c.store.ListOrgInvites(ctx, a.OrgID)
+	if err != nil || len(rows) == 0 {
+		return []apitypes.Invite{}, err
+	}
+	out := make([]apitypes.Invite, len(rows))
+	refs := make([]string, len(rows))
+	for i, r := range rows {
+		out[i] = toInvite(r)
+		refs[i] = inviteRef(r.ID)
+	}
+	// Each invite's latest mail, in one query.
+	mails, err := c.store.LatestEmailForRefs(ctx, refs)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]apitypes.Invite, len(rows))
-	for i, r := range rows {
-		out[i] = toInvite(r)
+	byRef := make(map[string]store.LatestEmailForRefsRow, len(mails))
+	for _, m := range mails {
+		byRef[m.Ref] = m
+	}
+	for i := range out {
+		if m, ok := byRef[refs[i]]; ok {
+			im := &apitypes.InviteMail{Status: apitypes.InviteMailStatus(m.Status), ID: m.ID, Error: m.Error}
+			if m.DoneAt != nil {
+				im.At = ptr(time.Unix(*m.DoneAt, 0).UTC())
+			}
+			out[i].Mail = im
+		}
 	}
 	return out, nil
 }

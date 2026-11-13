@@ -124,6 +124,8 @@ type Invite struct {
 	// Expired is set once the link no longer works; revoke to list it no
 	// more.
 	Expired bool `json:"expired,omitempty"`
+	// Mail is how its latest mail went; nil when it was never emailed.
+	Mail *InviteMail `json:"mail,omitempty"`
 }
 
 // CreateInviteRequest invites an email address with a role.
@@ -141,6 +143,8 @@ type CreatedInvite struct {
 	// URL is the invite link on Dock's public address (ADR 0029); empty
 	// without one, when clients build it from the address they use.
 	URL string `json:"url,omitempty"`
+	// Mail says whether the link is being emailed, or why not (ADR 0079).
+	Mail InviteMail `json:"mail"`
 }
 
 // InviteInfo is an open invite as the person invited sees it before
@@ -1714,11 +1718,15 @@ const (
 	EventSleep EventType = "sleep"
 	// EventScan: an image's vulnerability scan changed (ADR 0074).
 	EventScan EventType = "scan"
+	// EventEmail: a mail was queued, sent, retried or given up on (ADR
+	// 0079). An org's mail reaches its admins; every mail reaches
+	// operators.
+	EventEmail EventType = "email"
 )
 
 // Event is a live update. Exactly one payload field is set, matching Type.
 type Event struct {
-	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan"`
+	Type           EventType           `json:"type" enum:"release,release_event,build_log,service_status,domain,audit,drift,lagged,usage,traffic,server,alert,update,project_renamed,disk,analytics,environment_lock,access_request,run,uptime,job,environment_move,server_drain,cloudflare_redirect,sleep,scan,email"`
 	Time           time.Time           `json:"time"`
 	ProjectRenamed *ProjectRenamed     `json:"project_renamed,omitempty"`
 	Project        string              `json:"project,omitempty"`
@@ -1746,6 +1754,7 @@ type Event struct {
 	Redirect       *CloudflareRedirect `json:"redirect,omitempty"`
 	Sleep          *EnvironmentSleep   `json:"sleep,omitempty"`
 	Scan           *ImageScan          `json:"scan,omitempty"`
+	Email          *EmailDelivery      `json:"email,omitempty"`
 	Message        string              `json:"message,omitempty"`
 }
 

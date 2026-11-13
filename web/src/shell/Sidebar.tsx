@@ -1189,6 +1189,9 @@ function ConsoleNav() {
       <NavLink to="/console/sign-in" icon="key">
         Sign-in
       </NavLink>
+      <NavLink to="/console/email" icon="mail">
+        Email
+      </NavLink>
       <NavLink to="/console/data-access" icon="shield">
         Data access
       </NavLink>
