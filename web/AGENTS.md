@@ -33,6 +33,11 @@ tests/          dev-only browser fixtures (`*.html`, with `*.test.ts(x)`
   feature's data.ts). Mutations use `useAction`, naming the cache
   subtrees they touch. `src/data` is in the initial bundle, so a mutation
   only one screen uses lives in that screen's feature.
+- A route's `beforeLoad` also runs when a hovered link preloads it
+  (`defaultPreload: "intent"`). Change nothing global there (the org,
+  the console flag, the query cache) while `preload` is true: see
+  `routes/_app.$org.tsx`, whose org switch on a hover once dropped the
+  queries of the page being opened (`tests/org-switch.html`).
 - Every server action the CLI has is in the UI too (ADR 0026), and the
   button shows its CLI equivalent (`Act` with `cli`).
 - A new audit action gets its words in `features/audit/AuditTable.tsx`
