@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queries, useAuditLog } from "../../data/queries";
 import type { AuditEvent } from "../../data/types";
 import { Act, Button, Page, PageBar } from "../../ui/kit";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import { AuditTable } from "./AuditTable";
 import { type AuditSearch, MAX } from "./search";
 
@@ -76,14 +77,17 @@ function download(name: string, text: string) {
  * organization's (/audit, search.platform unset) or the platform's (the
  * console's /console/audit sets it; ADR 0062: the console shows platform
  * events only, an org's own activity is its members'). The route owns
- * the URL; onSearch replaces its search params.
+ * the URL; onSearch replaces its search params. inSettings puts it under
+ * Organization settings' heading instead of a page bar of its own.
  */
 export function AuditPage({
   search,
   onSearch,
+  inSettings = false,
 }: {
   search: AuditSearch;
   onSearch: (search: AuditSearch) => void;
+  inSettings?: boolean;
 }) {
   // The platform's log (the console) has no organization, so no projects.
   const projects = (
@@ -136,19 +140,19 @@ export function AuditPage({
     (e) => e.actor_kind === "user" && !e.action.startsWith("user.login"),
   ).length;
 
+  const exportCsv = (
+    <Button small onClick={() => download("dock-audit.csv", toCsv(shown))}>
+      Export CSV
+    </Button>
+  );
+
   return (
     <>
-      <PageBar
-        title="Activity"
-        actions={
-          <Button
-            small
-            onClick={() => download("dock-audit.csv", toCsv(shown))}
-          >
-            Export CSV
-          </Button>
-        }
-      />
+      {inSettings ? (
+        <OrgSettingsBar actions={exportCsv} />
+      ) : (
+        <PageBar title="Activity" actions={exportCsv} />
+      )}
       <Page gap="gap-4">
         <form
           aria-label="Filters"

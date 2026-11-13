@@ -102,7 +102,7 @@ export function Activity({
         id="activity"
         right={
           <Link
-            to="/$org/audit"
+            to="/$org/settings/activity"
             params={{ org }}
             search={{ project, environment }}
           >

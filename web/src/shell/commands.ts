@@ -404,7 +404,9 @@ export function useCommands({
     ["Vulnerability ignores", "/$org/images/ignores", "dock vulns ignores"],
     ["Organization variables", "/$org/settings/variables", "dock org env list"],
     ["Organization settings", "/$org/settings/general", "dock org list"],
-    ...(operator ? [] : ([["Activity", "/$org/audit", "dock audit"]] as const)),
+    ...(operator
+      ? []
+      : ([["Activity", "/$org/settings/activity", "dock audit"]] as const)),
   ] as const;
   for (const [label, to, cli] of orgPages) {
     add({

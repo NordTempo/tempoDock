@@ -405,7 +405,11 @@ function RecentDeploys() {
       <SectionHead
         id="deploys-head"
         right={
-          <Link to="/$org/audit" params={{ org }} className="hover:text-fg">
+          <Link
+            to="/$org/settings/activity"
+            params={{ org }}
+            className="hover:text-fg"
+          >
             All activity →
           </Link>
         }

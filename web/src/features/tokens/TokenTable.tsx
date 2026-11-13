@@ -99,7 +99,7 @@ function TokenRow({
       <tr className={`*:align-middle ${dead ? "text-faint" : ""}`}>
         <td className="py-2">
           <Link
-            to={operator ? "/console/audit" : "/$org/audit"}
+            to={operator ? "/console/audit" : "/$org/settings/activity"}
             params={{ org }}
             search={{ actor: token.name }}
             title={`What ${token.name} did`}
