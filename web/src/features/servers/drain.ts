@@ -4,13 +4,13 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { ApiError, api, body } from "../../api/client";
+import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 import { keys } from "../../data/queries";
 
 // A server's drain (ADR 0063): its running or latest drain with the ports
-// it forwards, null when it never drained and forwards nothing.
+// it forwards; one with id 0 and no status when it never drained.
 // server_drain events carry the whole drain and set it here
 // (data/live.ts); nothing polls. The server list carries each server's
 // drain progress for the console's strip, patched by server events.
@@ -26,18 +26,11 @@ const drainPath = "/api/v1/servers/{server}/drain" as const;
 export const drainQuery = (server: string) =>
   queryOptions({
     queryKey: drainKey(server),
-    queryFn: async (): Promise<ServerDrain | null> => {
-      try {
-        return await body(api.GET(drainPath, { params: { path: { server } } }));
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) return null;
-        throw err;
-      }
-    },
+    queryFn: () => body(api.GET(drainPath, { params: { path: { server } } })),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
-/** The server's running or latest drain; null while loading or never. */
+/** The server's running or latest drain; null while loading. */
 export const useDrain = (server: string) =>
   useQuery(drainQuery(server)).data ?? null;
 
@@ -65,7 +58,7 @@ export function usePlanDrain() {
 function useSetDrain() {
   const queryClient = useQueryClient();
   return (d: ServerDrain) => {
-    queryClient.setQueryData<ServerDrain | null>(drainKey(d.server), d);
+    queryClient.setQueryData<ServerDrain>(drainKey(d.server), d);
     return d;
   };
 }
@@ -126,11 +119,9 @@ export function useCancelDrain() {
  * refetch.
  */
 export function applyDrainEvent(queryClient: QueryClient, drain: ServerDrain) {
-  const before = queryClient.getQueryData<ServerDrain | null>(
-    drainKey(drain.server),
-  );
+  const before = queryClient.getQueryData<ServerDrain>(drainKey(drain.server));
   queryClient.setQueryData(drainKey(drain.server), drain);
-  const moved = (d: ServerDrain | null | undefined) =>
+  const moved = (d: ServerDrain | undefined) =>
     d?.items?.filter((i) => i.status === "moved").length ?? 0;
   if (moved(drain) !== moved(before) || drain.status !== before?.status) {
     queryClient.invalidateQueries({ queryKey: keys.server(drain.server) });

@@ -1,4 +1,5 @@
 import {
+  isCancelledError,
   useQueryClient,
   useQueryErrorResetBoundary,
 } from "@tanstack/react-query";
@@ -8,6 +9,7 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { liveStatus, reconnectLive } from "../data/liveStatus";
 import { ErrorBlock } from "./ErrorBlock";
 
@@ -116,11 +118,19 @@ export function NotFound() {
  * A route that failed to load, in place of the page so the sidebar stays
  * usable. Try again refetches the failed queries and reruns the loaders,
  * and reopens the live stream if it gave up meanwhile. A 404 from the API
- * is the same as an address with no page.
+ * is the same as an address with no page. A query dropped while the page
+ * loaded it (the cache is cleared when the organization changes) didn't
+ * fail: the page loads again at once.
  */
 export function RouteError({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
   const queries = useQueryErrorResetBoundary();
+  // Invalidating gives the match a new state, which resets this boundary.
+  const cancelled = isCancelledError(error);
+  useEffect(() => {
+    if (cancelled) void router.invalidate();
+  }, [cancelled, router]);
+  if (cancelled) return <Bar title="Loading…" />;
   if (
     typeof error === "object" &&
     error &&

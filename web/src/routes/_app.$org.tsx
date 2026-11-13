@@ -6,11 +6,25 @@ import { NotFound } from "../ui/RouteStates";
 
 // Everything in one organization (/$org/...): the API calls act in the
 // org in the URL. Moving to another org drops what was cached for the
-// last one, so no page shows another org's data. A slug the org had
-// before it changed it (ADR 0064) redirects to the same page at its new
-// one, so old links and bookmarks keep working.
+// last one, so no page shows another org's data. A hovered link's
+// preload runs this too: one into another org changes nothing and loads
+// nothing, since the cache holds one org at a time. Switching there would
+// drop the queries the page being opened is still loading, which then
+// fails with a CancelledError. A slug the org had before it changed it
+// (ADR 0064) redirects to the same page at its new one, so old links and
+// bookmarks keep working.
 export const Route = createFileRoute("/_app/$org")({
-  beforeLoad: async ({ context: { queryClient }, params, location }) => {
+  beforeLoad: async ({
+    context: { queryClient },
+    params,
+    location,
+    preload,
+    abortController,
+  }) => {
+    if (preload && params.org !== currentOrg()) {
+      abortController.abort();
+      return;
+    }
     const orgs = await queryClient.ensureQueryData(queries.orgs());
     if (!orgs.some((o) => o.slug === params.org)) {
       const moved = await movedOrg(params.org);

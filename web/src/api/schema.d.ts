@@ -5170,7 +5170,7 @@ export interface paths {
         };
         /**
          * A server's drain
-         * @description The running or latest drain: each environment, its target and how far its move got, and the ports the server forwards for services that moved away. 404 if it never drained and forwards nothing. Operators only.
+         * @description The running or latest drain: each environment, its target and how far its move got, and the ports the server forwards for services that moved away. A server that never drained answers a drain with id 0 and no status, items or forwards. Operators only.
          */
         get: operations["get-server-drain"];
         put?: never;

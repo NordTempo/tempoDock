@@ -268,8 +268,9 @@ func isBusy(err error) bool {
 }
 
 // ServerDrainStatus returns a server's running or latest drain, with the
-// ports it forwards; not found when it never drained and forwards
-// nothing. Operators only.
+// ports it forwards. A server that never drained has a drain with ID 0
+// and no status, items or forwards: its console page asks for it on
+// every visit, so that is an answer, not a not found. Operators only.
 func (c *Core) ServerDrainStatus(ctx context.Context, a Actor, name string) (apitypes.ServerDrain, error) {
 	if err := a.requireOperator("reading a server's drain"); err != nil {
 		return apitypes.ServerDrain{}, err
@@ -284,8 +285,8 @@ func (c *Core) ServerDrainStatus(ctx context.Context, a Actor, name string) (api
 		if out.Forwards, err = c.serverForwards(ctx, srv.ID); err != nil {
 			return out, err
 		}
-		if len(out.Forwards) == 0 {
-			return out, notFound("server %s never drained; drain it with `dock server drain %s`", srv.Name, srv.Name)
+		if out.Forwards == nil {
+			out.Forwards = []apitypes.ServerForward{}
 		}
 		return out, nil
 	}
