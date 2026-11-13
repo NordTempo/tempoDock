@@ -244,6 +244,11 @@ masking secret values in logs (`BenchmarkRedactLine`, `BenchmarkRedactBuildLog`)
   tmpfs and 38-54 µs on a shared disk (WAL writes, checkpoint fsyncs),
   and the same code read anywhere from 16 to 60 µs on CI. API latency budgets scale with the same factor on
   machines slower than the baseline's.
+- **Near the gate.** Allocations are deterministic, so a benchmark whose
+  count sits within 2% of its gate warns: the next change that adds a
+  little fails it, often a parallel PR that passed on its own (#307 and
+  #306 took `BenchmarkNewAPI` 38 allocations over after each passed).
+  Re-record it in the PR that brought it there, with the reason.
 - **Updating the baseline.** When a change makes something slower on
   purpose, or a new benchmark is added, run `make perf-baseline` on a quiet
   machine and commit `scripts/perf/baseline.json` with the change, saying why
