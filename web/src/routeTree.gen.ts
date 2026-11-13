@@ -52,6 +52,7 @@ import { Route as AppOrgImagesIndexRouteImport } from './routes/_app.$org.images
 import { Route as AppOrgImagesIdRouteImport } from './routes/_app.$org.images.$id'
 import { Route as AppOrgImagesIgnoresRouteImport } from './routes/_app.$org.images.ignores'
 import { Route as AppOrgSettingsIndexRouteImport } from './routes/_app.$org.settings.index'
+import { Route as AppOrgSettingsActivityRouteImport } from './routes/_app.$org.settings.activity'
 import { Route as AppOrgSettingsAlertsRouteImport } from './routes/_app.$org.settings.alerts'
 import { Route as AppOrgSettingsAnalyticsRouteImport } from './routes/_app.$org.settings.analytics'
 import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org.settings.cloudflare'
@@ -323,6 +324,11 @@ const AppOrgImagesIgnoresRoute = AppOrgImagesIgnoresRouteImport.update({
 const AppOrgSettingsIndexRoute = AppOrgSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppOrgSettingsRoute,
+} as any)
+const AppOrgSettingsActivityRoute = AppOrgSettingsActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
 const AppOrgSettingsAlertsRoute = AppOrgSettingsAlertsRouteImport.update({
@@ -703,6 +709,7 @@ export interface FileRoutesByFullPath {
   '/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
+  '/$org/settings/activity': typeof AppOrgSettingsActivityRoute
   '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
@@ -801,6 +808,7 @@ export interface FileRoutesByTo {
   '/$org/$project/compare': typeof AppOrgProjectCompareRoute
   '/$org/images/$id': typeof AppOrgImagesIdRoute
   '/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
+  '/$org/settings/activity': typeof AppOrgSettingsActivityRoute
   '/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
@@ -901,6 +909,7 @@ export interface FileRoutesById {
   '/_app/$org/$project/settings': typeof AppOrgProjectSettingsRouteWithChildren
   '/_app/$org/images/$id': typeof AppOrgImagesIdRoute
   '/_app/$org/images/ignores': typeof AppOrgImagesIgnoresRoute
+  '/_app/$org/settings/activity': typeof AppOrgSettingsActivityRoute
   '/_app/$org/settings/alerts': typeof AppOrgSettingsAlertsRoute
   '/_app/$org/settings/analytics': typeof AppOrgSettingsAnalyticsRoute
   '/_app/$org/settings/cloudflare': typeof AppOrgSettingsCloudflareRoute
@@ -1005,6 +1014,7 @@ export interface FileRouteTypes {
     | '/$org/$project/settings'
     | '/$org/images/$id'
     | '/$org/images/ignores'
+    | '/$org/settings/activity'
     | '/$org/settings/alerts'
     | '/$org/settings/analytics'
     | '/$org/settings/cloudflare'
@@ -1103,6 +1113,7 @@ export interface FileRouteTypes {
     | '/$org/$project/compare'
     | '/$org/images/$id'
     | '/$org/images/ignores'
+    | '/$org/settings/activity'
     | '/$org/settings/alerts'
     | '/$org/settings/analytics'
     | '/$org/settings/cloudflare'
@@ -1202,6 +1213,7 @@ export interface FileRouteTypes {
     | '/_app/$org/$project/settings'
     | '/_app/$org/images/$id'
     | '/_app/$org/images/ignores'
+    | '/_app/$org/settings/activity'
     | '/_app/$org/settings/alerts'
     | '/_app/$org/settings/analytics'
     | '/_app/$org/settings/cloudflare'
@@ -1577,6 +1589,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/$org/settings/'
       preLoaderRoute: typeof AppOrgSettingsIndexRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
+    '/_app/$org/settings/activity': {
+      id: '/_app/$org/settings/activity'
+      path: '/activity'
+      fullPath: '/$org/settings/activity'
+      preLoaderRoute: typeof AppOrgSettingsActivityRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
     '/_app/$org/settings/alerts': {
@@ -1989,6 +2008,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppOrgSettingsRouteChildren {
+  AppOrgSettingsActivityRoute: typeof AppOrgSettingsActivityRoute
   AppOrgSettingsAlertsRoute: typeof AppOrgSettingsAlertsRoute
   AppOrgSettingsAnalyticsRoute: typeof AppOrgSettingsAnalyticsRoute
   AppOrgSettingsCloudflareRoute: typeof AppOrgSettingsCloudflareRoute
@@ -2003,6 +2023,7 @@ interface AppOrgSettingsRouteChildren {
 }
 
 const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
+  AppOrgSettingsActivityRoute: AppOrgSettingsActivityRoute,
   AppOrgSettingsAlertsRoute: AppOrgSettingsAlertsRoute,
   AppOrgSettingsAnalyticsRoute: AppOrgSettingsAnalyticsRoute,
   AppOrgSettingsCloudflareRoute: AppOrgSettingsCloudflareRoute,
