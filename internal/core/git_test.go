@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"path"
@@ -32,6 +33,8 @@ type fakeGitHub struct {
 	mu  sync.Mutex
 	// files are the repository's files at every commit.
 	files map[string]string
+	// branches are the repository's branches besides main.
+	branches []string
 	// statuses are "<sha7> <state> <context> <target_url>" as posted.
 	statuses []string
 	// auth is the Authorization header of every request.
@@ -106,6 +109,58 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 		g.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 	})
+	// Branches, a branch's head, a path's kind and the recursive tree, from
+	// files: every branch has the same files, at shaC.
+	mux.HandleFunc("GET /repos/acme/shop/branches", func(w http.ResponseWriter, r *http.Request) {
+		var out []map[string]string
+		for _, b := range g.branchNames() {
+			out = append(out, map[string]string{"name": b})
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	})
+	mux.HandleFunc("GET /repos/acme/shop/branches/{branch...}", func(w http.ResponseWriter, r *http.Request) {
+		if !slices.Contains(g.branchNames(), r.PathValue("branch")) {
+			http.Error(w, `{"message":"Branch not found"}`, http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": r.PathValue("branch"), "commit": map[string]string{"sha": shaC}})
+	})
+	mux.HandleFunc("GET /repos/acme/shop/contents/{path...}", func(w http.ResponseWriter, r *http.Request) {
+		p := r.PathValue("path")
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		if _, ok := g.files[p]; ok {
+			_, _ = w.Write([]byte(`{"type":"file"}`))
+			return
+		}
+		for name := range g.files {
+			if strings.HasPrefix(name, p+"/") {
+				_, _ = w.Write([]byte(` [{"type":"file"}]`))
+				return
+			}
+		}
+		http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+	})
+	mux.HandleFunc("GET /repos/acme/shop/git/trees/{sha}", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("sha") != shaC || r.URL.Query().Get("recursive") != "1" {
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			return
+		}
+		g.mu.Lock()
+		entries := map[string]string{}
+		for name := range g.files {
+			entries[name] = "blob"
+			for d := path.Dir(name); d != "."; d = path.Dir(d) {
+				entries[d] = "tree"
+			}
+		}
+		g.mu.Unlock()
+		tree := []map[string]string{}
+		for _, p := range slices.Sorted(maps.Keys(entries)) {
+			tree = append(tree, map[string]string{"path": p, "type": entries[p], "mode": "100644", "sha": shaA})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"sha": shaC, "url": "https://api.github.com/x", "tree": tree, "truncated": false})
+	})
 	g.mux = mux
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		g.mu.Lock()
@@ -115,6 +170,14 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 	}))
 	t.Cleanup(g.Close)
 	return g
+}
+
+// branchNames are the repository's branches: main, then the ones a test
+// added.
+func (g *fakeGitHub) branchNames() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]string{"main"}, g.branches...)
 }
 
 func (g *fakeGitHub) seen() (statuses, auth []string, tarballs int) {

@@ -429,22 +429,36 @@ type Service struct {
 	ArchiveNotes []string `json:"archive_notes,omitempty" doc:"Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there)"`
 }
 
+// ServiceGitRequest is the repository a new service deploys from.
+type ServiceGitRequest struct {
+	Repo   string `json:"repo" minLength:"3" maxLength:"140" doc:"owner/name"`
+	Branch string `json:"branch,omitempty" maxLength:"255" doc:"Branch every push to deploys; the repository's default branch when omitted"`
+	Dir    string `json:"dir,omitempty" maxLength:"255" doc:"Subdirectory to build; empty for the repository root"`
+}
+
 // CreateServiceRequest creates a service. It doesn't deploy anything,
 // unless Template is set: a template service (ADR 0019) gets its image,
 // settings, volume and generated credentials from the template, ignores
-// the other settings here, and deploys right away.
+// the other settings here, and deploys right away. With Git, the service
+// is connected to the repository through the GitHub App and its
+// branch's head deploys.
 type CreateServiceRequest struct {
-	Name                      string   `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name, also the private hostname"`
-	Template                  Template `json:"template,omitempty" enum:"postgres,redis" doc:"Create a database from a template; other settings are ignored"`
-	Image                     string   `json:"image,omitempty"`
-	Port                      int      `json:"port,omitempty" minimum:"0" maximum:"65535"`
-	HealthCheckPath           string   `json:"health_check_path,omitempty"`
-	HealthCheckTimeoutSeconds int      `json:"health_check_timeout_seconds,omitempty" minimum:"0"`
-	StartCommand              string   `json:"start_command,omitempty"`
-	DockerfilePath            string   `json:"dockerfile_path,omitempty"`
-	BuildCommand              string   `json:"build_command,omitempty"`
-	MemoryMB                  int      `json:"memory_mb,omitempty" minimum:"0"`
-	CPUs                      float64  `json:"cpus,omitempty" minimum:"0"`
+	// Git connects the new service through the org's GitHub App and
+	// deploys the branch's head, as `dock git connect` then `dock git
+	// deploy` would. A webhook connection is made with `dock git connect`
+	// after creating the service.
+	Git                       *ServiceGitRequest `json:"git,omitempty"`
+	Name                      string             `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name, also the private hostname"`
+	Template                  Template           `json:"template,omitempty" enum:"postgres,redis" doc:"Create a database from a template; other settings are ignored"`
+	Image                     string             `json:"image,omitempty"`
+	Port                      int                `json:"port,omitempty" minimum:"0" maximum:"65535"`
+	HealthCheckPath           string             `json:"health_check_path,omitempty"`
+	HealthCheckTimeoutSeconds int                `json:"health_check_timeout_seconds,omitempty" minimum:"0"`
+	StartCommand              string             `json:"start_command,omitempty"`
+	DockerfilePath            string             `json:"dockerfile_path,omitempty"`
+	BuildCommand              string             `json:"build_command,omitempty"`
+	MemoryMB                  int                `json:"memory_mb,omitempty" minimum:"0"`
+	CPUs                      float64            `json:"cpus,omitempty" minimum:"0"`
 
 	HealthCheckIntervalSeconds     int    `json:"health_check_interval_seconds,omitempty" minimum:"-1" maximum:"3600"`
 	HealthCheckProbeTimeoutSeconds int    `json:"health_check_probe_timeout_seconds,omitempty" minimum:"0" maximum:"300"`

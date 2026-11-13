@@ -13,6 +13,8 @@ import type { EnvRef, Service, TemplateInfo } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
 import { Button, CopyButton, ErrorText } from "../../ui/kit";
+import { useGitHubRepos } from "../git/api";
+import { FromGitHub } from "./FromGitHub";
 import {
   autofocus,
   Choice,
@@ -143,6 +145,8 @@ function ServiceForm({
   const v = useValidation();
 
   const [source, setSource] = useState<ServiceSource>(initial);
+  // The org's repositories through its GitHub App, once GitHub is picked.
+  const repos = useGitHubRepos(source === "github");
   const [typed, setTyped] = useState<string | null>(null);
   const [image, setImage] = useState("");
   const [port, setPort] = useState("");
@@ -210,6 +214,48 @@ function ServiceForm({
 
   if (done) {
     return <Created env={env} done={done} onClose={onClose} />;
+  }
+
+  // Through the org's GitHub App, a repository and its directories are
+  // picked from lists instead of typed (FromGitHub).
+  const appRepos = repos.data?.repos ?? [];
+  if (source === "github" && appRepos.length > 0) {
+    return (
+      <FromGitHub
+        env={env}
+        repos={appRepos}
+        taken={services.map((s) => s.service.name)}
+        onClose={onClose}
+        head={
+          <Fields>
+            {choices.length > 1 && (
+              <Field label="Environment">
+                <select
+                  value={env.environment}
+                  onChange={(e) => onEnvironment(e.target.value)}
+                  className="w-fit font-mono"
+                >
+                  {choices.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <Group label="Source">
+              <Choice
+                label="Source"
+                name="source"
+                value={source}
+                options={sources}
+                onChange={setSource}
+              />
+            </Group>
+          </Fields>
+        }
+      />
+    );
   }
 
   // The request: template only for a database; build settings only when
@@ -372,8 +418,31 @@ function ServiceForm({
             .
           </span>
         )}
-        {source === "github" && (
+        {source === "github" && repos.isPending && (
+          <span className="col-start-2 text-mut text-xs">
+            Reading the repositories the GitHub App can see…
+          </span>
+        )}
+        {source === "github" && !repos.isPending && (
           <>
+            <span className="col-start-2 text-mut text-xs">
+              {repos.error ? (
+                <ErrorText error={repos.error} />
+              ) : (
+                <>
+                  The GitHub App isn't installed for this organization. With it,
+                  you pick a repository from a list and need no token:{" "}
+                  <Link
+                    to="/$org/settings/github"
+                    params={{ org }}
+                    onClick={onClose}
+                  >
+                    GitHub settings
+                  </Link>
+                  .
+                </>
+              )}
+            </span>
             <Field label="Repository" error={repoError}>
               <Text
                 value={repo}

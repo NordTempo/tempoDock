@@ -304,6 +304,62 @@ func (q *Queries) ListGitPendingServices(ctx context.Context) ([]int64, error) {
 	return items, nil
 }
 
+const listOrgGitServices = `-- name: ListOrgGitServices :many
+SELECT git_connections.repo_id, git_connections.repo, git_connections.dir,
+       projects.name AS project, environments.name AS environment, services.name AS service
+FROM projects
+JOIN environments ON environments.project_id = projects.id
+JOIN services ON services.environment_id = environments.id
+JOIN git_connections ON git_connections.service_id = services.id
+WHERE projects.org_id = +? AND projects.archived_at IS NULL
+  AND environments.archived_at IS NULL AND services.archived_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM previews WHERE previews.environment_id = environments.id)
+ORDER BY projects.name, environments.name, services.name
+`
+
+type ListOrgGitServicesRow struct {
+	RepoID      int64
+	Repo        string
+	Dir         string
+	Project     string
+	Environment string
+	Service     string
+}
+
+// The org's services that deploy from GitHub, with their repository and
+// directory, for the repository and directory pickers' "used by".
+// Archived ones and preview environments' are left out. Reached through
+// projects' (org_id, name) index, then each table's own keys.
+func (q *Queries) ListOrgGitServices(ctx context.Context, orgID int64) ([]ListOrgGitServicesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrgGitServices, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrgGitServicesRow
+	for rows.Next() {
+		var i ListOrgGitServicesRow
+		if err := rows.Scan(
+			&i.RepoID,
+			&i.Repo,
+			&i.Dir,
+			&i.Project,
+			&i.Environment,
+			&i.Service,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneGitDeliveries = `-- name: PruneGitDeliveries :exec
 DELETE FROM git_deliveries WHERE created_at < +?
 `

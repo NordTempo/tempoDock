@@ -101,6 +101,27 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.GitHubRepos], error) {
 		return reply(s.core.GitHubRepos(ctx, actor))
 	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-github-branches", Method: http.MethodGet, Path: Prefix + "/github/repos/{owner}/{name}/branches",
+		Summary: "List a repository's branches", Tags: tags,
+		Description: "The branches of a repository the org's GitHub App reads, the default first, at most 100. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Owner string `path:"owner" maxLength:"39"`
+		Name  string `path:"name" maxLength:"100"`
+	}) (*out[apitypes.GitHubBranches], error) {
+		return reply(s.core.GitHubBranches(ctx, actor, in.Owner+"/"+in.Name))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-github-paths", Method: http.MethodGet, Path: Prefix + "/github/repos/{owner}/{name}/paths",
+		Summary: "List a repository's directories", Tags: tags,
+		Description: "The directories of a repository the org's GitHub App reads, at a branch: the ones with a Dockerfile, package.json, go.mod and the like first (roots), then the rest. Dependency and hidden directories are left out. Scope: deploy.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Owner  string `path:"owner" maxLength:"39"`
+		Name   string `path:"name" maxLength:"100"`
+		Branch string `query:"branch" maxLength:"255" doc:"The repository's default branch when omitted"`
+	}) (*out[apitypes.GitHubPaths], error) {
+		return reply(s.core.GitHubPaths(ctx, actor, in.Owner+"/"+in.Name, in.Branch))
+	})
 	githubPages(s.core, s.opts.Logger, mux)
 }
 

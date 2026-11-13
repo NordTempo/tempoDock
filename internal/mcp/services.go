@@ -39,12 +39,15 @@ type SettingsInput struct {
 // tools (tools.go), snapshots in snapshots.go.
 func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "create_service", "Create a service",
-		"Create a service; deploy deploys its image at once and waits, otherwise nothing deploys until deploy_image. With template, a database (postgres, redis) that deploys at once.",
+		"Create a service; deploy deploys its image at once and waits, otherwise nothing deploys until deploy_image. With template, a database (postgres, redis) that deploys at once. With repo, it builds that GitHub repository's dir through the org's GitHub App and deploys the branch's head at once.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
 			EnvInput
 			Name     string            `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$"`
 			Template apitypes.Template `json:"template,omitempty" enum:"postgres,redis" doc:"A database; other settings are ignored."`
 			Deploy   bool              `json:"deploy,omitempty"`
+			Repo     string            `json:"repo,omitempty" doc:"owner/name on GitHub."`
+			Branch   string            `json:"branch,omitempty" doc:"With repo; its default branch if omitted."`
+			Dir      string            `json:"dir,omitempty" doc:"With repo: the subdirectory to build, e.g. apps/web."`
 			SettingsInput
 		}) (mcpkit.Reply, error) {
 			ref, err := envOf(c, in.EnvInput)
@@ -52,16 +55,25 @@ func (h *handler) addServiceTools(s *mcpkit.Server[core.Actor]) {
 				return mcpkit.Reply{}, err
 			}
 			set := in.SettingsInput
-			svc, err := h.core.CreateService(ctx, c.Actor, ref, apitypes.CreateServiceRequest{
+			req := apitypes.CreateServiceRequest{
 				Name: in.Name, Template: in.Template, Image: deref(set.Image), Port: deref(set.Port),
 				HealthCheckPath: deref(set.HealthCheckPath), HealthCheckTimeoutSeconds: deref(set.HealthCheckTimeoutSeconds),
 				StartCommand: deref(set.StartCommand), DockerfilePath: deref(set.DockerfilePath), BuildCommand: deref(set.BuildCommand),
 				MemoryMB: deref(set.MemoryMB), CPUs: deref(set.CPUs),
-			})
+			}
+			if in.Repo != "" {
+				req.Git = &apitypes.ServiceGitRequest{Repo: in.Repo, Branch: in.Branch, Dir: in.Dir}
+			} else if in.Branch != "" || in.Dir != "" {
+				return mcpkit.Reply{}, mcpkit.Invalid("branch and dir need repo (owner/name)")
+			}
+			svc, err := h.core.CreateService(ctx, c.Actor, ref, req)
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
 			summary := fmt.Sprintf("Created %s/%s/%s.", ref.Project, ref.Environment, svc.Name)
+			if req.Git != nil {
+				return mcpkit.Reply{Summary: summary + " Its first release builds the branch's head from " + in.Repo + ": follow it with list_releases; every push deploys again.", Data: svc}, nil
+			}
 			if in.Deploy && svc.Template == apitypes.TemplateNone && svc.Image != "" {
 				sref := core.ServiceRef{Project: ref.Project, Environment: ref.Environment, Service: svc.Name}
 				// The service exists either way: a deploy that didn't start

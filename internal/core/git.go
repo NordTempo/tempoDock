@@ -195,6 +195,23 @@ func (c *Core) GitConnect(ctx context.Context, a Actor, ref ServiceRef, req apit
 	if err != nil {
 		return apitypes.GitConnectResult{}, err
 	}
+	return c.connectGit(ctx, a, ss, req, nil)
+}
+
+// appRepoTarget is a repository already resolved and checked through the
+// App: the installation that reads it and the repository.
+type appRepoTarget struct {
+	installationID int64
+	repo           githubRepo
+	// branch is the branch checked: the one asked for, or the
+	// repository's default.
+	branch string
+}
+
+// connectGit is GitConnect for a loaded service. pre, when set, is the
+// App repository the caller resolved and checked already (creating a
+// service from a repository does that before it creates anything).
+func (c *Core) connectGit(ctx context.Context, a Actor, ss svcScope, req apitypes.GitConnectRequest, pre *appRepoTarget) (apitypes.GitConnectResult, error) {
 	if ss.svc.ArchivedAt != nil {
 		return apitypes.GitConnectResult{}, invalid("service %s is archived", ss)
 	}
@@ -214,7 +231,15 @@ func (c *Core) GitConnect(ctx context.Context, a Actor, ref ServiceRef, req apit
 	wasApp := exists && old.InstallationID != 0
 	t := gitTargetChange{token: old.Token, status: old.PostStatus, hookID: old.HookID, secret: old.Secret}
 	if mode == apitypes.GitModeApp {
-		err = c.appTarget(ctx, ss, req, &repo, &t, !wasApp)
+		switch {
+		case req.Token != nil && *req.Token != "":
+			err = invalid("the GitHub App reads the repository, so it needs no token; drop the token, or connect with --mode webhook")
+		case pre == nil:
+			pre, err = c.resolveAppTarget(ctx, ss.project.OrgID, repo, branch, dir)
+		}
+		if err == nil {
+			err = c.appTarget(ss, req, *pre, &repo, &t, !wasApp)
+		}
 	} else {
 		err = c.webhookTarget(ss.svc.ID, req, &t, !exists || wasApp)
 	}
@@ -289,21 +314,40 @@ type gitTargetChange struct {
 	newSecret, change string
 }
 
-// appTarget fills in an App connection: its installation and repository
-// ID, the canonical repository name, and no token. fresh is a new App
-// connection (new, or switched from a webhook): statuses default to on.
-func (c *Core) appTarget(ctx context.Context, ss svcScope, req apitypes.GitConnectRequest, repo *string, t *gitTargetChange, fresh bool) error {
-	if req.Token != nil && *req.Token != "" {
-		return invalid("the GitHub App reads the repository, so it needs no token; drop the token, or connect with --mode webhook")
-	}
-	org, err := c.store.GetOrg(ctx, ss.project.OrgID)
+// resolveAppTarget resolves a connection's repository through the org's
+// App and checks its branch (the default one when empty) and directory
+// exist there.
+func (c *Core) resolveAppTarget(ctx context.Context, orgID int64, repo, branch, dir string) (*appRepoTarget, error) {
+	org, err := c.store.GetOrg(ctx, orgID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	inst, r, err := c.appRepo(ctx, org, *repo)
+	inst, r, err := c.appRepo(ctx, org, repo)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	if branch == "" {
+		if _, branch, _, err = validGitTarget(r.FullName, r.DefaultBranch, dir); err != nil {
+			return nil, err
+		}
+	}
+	token, err := c.installationToken(ctx, inst)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.checkAppTarget(ctx, token, r.FullName, branch, dir); err != nil {
+		return nil, err
+	}
+	return &appRepoTarget{installationID: inst, repo: r, branch: branch}, nil
+}
+
+// appTarget fills in an App connection from its resolved repository: its
+// installation and repository ID, the canonical repository name, and no
+// token (asking for one is refused before). fresh is a new App connection
+// (new, or switched from a webhook): statuses default to on.
+func (c *Core) appTarget(ss svcScope, req apitypes.GitConnectRequest, target appRepoTarget, repo *string, t *gitTargetChange, fresh bool) error {
+	inst, r := target.installationID, target.repo
+	var err error
 	if t.hookID == "" {
 		// The webhook columns stay filled, unused, so switching to a
 		// webhook later is an update; the per-service hook refuses App

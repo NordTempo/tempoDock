@@ -129,4 +129,46 @@ type GitHubRepo struct {
 	FullName      string `json:"full_name" doc:"owner/name"`
 	DefaultBranch string `json:"default_branch"`
 	Private       bool   `json:"private"`
+	// PushedAt is GitHub's time of the newest push to any branch; repos
+	// are listed newest first.
+	PushedAt *time.Time `json:"pushed_at,omitempty"`
+	// UsedBy are the org's services that deploy from the repository, as
+	// project/environment/service, with their directory after a colon
+	// when they build one ("shop/production/web:apps/web").
+	UsedBy []string `json:"used_by"`
+}
+
+// GitHubBranches are a repository's branches, for picking the one a
+// service deploys.
+type GitHubBranches struct {
+	Repo          string   `json:"repo" doc:"owner/name"`
+	DefaultBranch string   `json:"default_branch"`
+	Branches      []string `json:"branches" doc:"The default branch first, then by name; at most 100"`
+	Truncated     bool     `json:"truncated,omitempty"`
+}
+
+// GitHubPaths are the directories of a repository at a branch, for
+// picking the one a service builds. Roots are the directories that look
+// like an app: they hold a file a builder starts from.
+type GitHubPaths struct {
+	Repo   string `json:"repo" doc:"owner/name"`
+	Branch string `json:"branch"`
+	// Commit is the branch's head the listing is of.
+	Commit string       `json:"commit"`
+	Roots  []GitHubPath `json:"roots" doc:"Directories with a Dockerfile, package.json, go.mod and the like; the repository root is \"\""`
+	// Dirs are every other directory, to type one that isn't a root.
+	Dirs []string `json:"dirs"`
+	// Truncated is set when the repository is too big to list whole:
+	// GitHub cut its tree short, or Dock stopped at its cap.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+// GitHubPath is a directory that looks like an app, and the files that
+// say so.
+type GitHubPath struct {
+	Path    string   `json:"path" doc:"Relative to the repository root; \"\" is the root"`
+	Markers []string `json:"markers" doc:"e.g. Dockerfile, package.json, go.mod"`
+	// UsedBy are the org's services that build this directory, as in
+	// GitHubRepo.
+	UsedBy []string `json:"used_by"`
 }

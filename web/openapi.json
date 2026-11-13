@@ -3125,6 +3125,9 @@
           "dockerfile_path": {
             "type": "string"
           },
+          "git": {
+            "$ref": "#/components/schemas/ServiceGitRequest"
+          },
           "health_check_interval_seconds": {
             "format": "int64",
             "maximum": 3600,
@@ -8131,6 +8134,37 @@
         },
         "type": "object"
       },
+      "GitHubBranches": {
+        "additionalProperties": false,
+        "properties": {
+          "branches": {
+            "description": "The default branch first, then by name; at most 100",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "default_branch": {
+            "type": "string"
+          },
+          "repo": {
+            "description": "owner/name",
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "default_branch",
+          "branches"
+        ],
+        "type": "object"
+      },
       "GitHubClientSecretRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8263,6 +8297,85 @@
         },
         "type": "object"
       },
+      "GitHubPath": {
+        "additionalProperties": false,
+        "properties": {
+          "markers": {
+            "description": "e.g. Dockerfile, package.json, go.mod",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Relative to the repository root; \"\" is the root",
+            "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "markers",
+          "used_by"
+        ],
+        "type": "object"
+      },
+      "GitHubPaths": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "dirs": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "owner/name",
+            "type": "string"
+          },
+          "roots": {
+            "description": "Directories with a Dockerfile, package.json, go.mod and the like; the repository root is \"\"",
+            "items": {
+              "$ref": "#/components/schemas/GitHubPath"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "repo",
+          "branch",
+          "commit",
+          "roots",
+          "dirs"
+        ],
+        "type": "object"
+      },
       "GitHubRepo": {
         "additionalProperties": false,
         "properties": {
@@ -8279,13 +8392,27 @@
           },
           "private": {
             "type": "boolean"
+          },
+          "pushed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "id",
           "full_name",
           "default_branch",
-          "private"
+          "private",
+          "used_by"
         ],
         "type": "object"
       },
@@ -13073,6 +13200,31 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "ServiceGitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "description": "Branch every push to deploys; the repository's default branch when omitted",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "dir": {
+            "description": "Subdirectory to build; empty for the repository root",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "repo": {
+            "description": "owner/name",
+            "maxLength": 140,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo"
         ],
         "type": "object"
       },
@@ -28026,6 +28178,273 @@
           }
         ],
         "summary": "List the GitHub repositories the org can connect",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/v1/github/repos/{owner}/{name}/branches": {
+      "get": {
+        "description": "The branches of a repository the org's GitHub App reads, the default first, at most 100. Scope: deploy.",
+        "operationId": "list-github-branches",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "maxLength": 39,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubBranches"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a repository's branches",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/api/v1/github/repos/{owner}/{name}/paths": {
+      "get": {
+        "description": "The directories of a repository the org's GitHub App reads, at a branch: the ones with a Dockerfile, package.json, go.mod and the like first (roots), then the rest. Dependency and hidden directories are left out. Scope: deploy.",
+        "operationId": "list-github-paths",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "owner",
+            "required": true,
+            "schema": {
+              "maxLength": 39,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The repository's default branch when omitted",
+            "explode": false,
+            "in": "query",
+            "name": "branch",
+            "schema": {
+              "description": "The repository's default branch when omitted",
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubPaths"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a repository's directories",
         "tags": [
           "github"
         ]
