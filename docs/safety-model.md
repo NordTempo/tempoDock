@@ -86,7 +86,7 @@ The UI controls production, so a password shouldn't be enough
   volumes and history, so it takes three things: the project must be
   archived first, its name typed again, and an unlimited admin with a
   recent sign-in. Its activity and its backups stay
-  ([0077](decisions/0077-deleting-archived-projects.md)).
+  ([0078](decisions/0078-deleting-archived-projects.md)).
 - **Staged changes:** variables, settings, volumes and domains are staged
   and shown (`dock changes`, the UI's bar) before they go live together.
 - Client flags like `--yes` skip confirmation prompts, never permission checks.

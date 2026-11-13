@@ -23,7 +23,7 @@ migrates it; `stmts.go` prepares each query on first use and reuses it.
 - A new table holding a project's, environment's, service's, release's
   or site's ID gets a statement in `projectDeletes`
   (`project_delete.go`), so deleting an archived project removes its
-  rows (ADR 0077). `TestProjectDeletesCoverForeignKeys` catches a
+  rows (ADR 0078). `TestProjectDeletesCoverForeignKeys` catches a
   missing one with a foreign key; one without needs you to remember.
 
 ## Queries

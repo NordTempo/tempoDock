@@ -1,5 +1,5 @@
 -- foreign_keys: off
--- Deleting an archived project (ADR 0077) removes its rows, and SQLite
+-- Deleting an archived project (ADR 0078) removes its rows, and SQLite
 -- hands a new row the highest ID in use plus one: a project, environment,
 -- service or site created after the newest one was deleted would get its
 -- ID, and with it what outlives the rows under that ID (analytics events

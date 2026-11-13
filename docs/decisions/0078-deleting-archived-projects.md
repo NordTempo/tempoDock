@@ -1,4 +1,4 @@
-# 0077: Renaming and deleting archived projects
+# 0078: Renaming and deleting archived projects
 
 Status: accepted (decided by the agent, on Saile's report, 2026-11-13).
 Amends the safety model's "non-destructive by default" and the archive of
@@ -76,7 +76,7 @@ There was no way to get either back.
     services, or a move of one of its environments, refuses the delete
     until it ends.
   - **Audit:** `project.delete`, with what went and the notes.
-- **IDs are never reused** (migration 0102). SQLite hands a new row the
+- **IDs are never reused** (migration 0103). SQLite hands a new row the
   highest ID plus one, so deleting the newest project would give the
   next one its ID, and with it what outlives the rows: analytics events
   by site, traces and metrics by service, trace tokens, Docker names and

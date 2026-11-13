@@ -1,4 +1,4 @@
--- What deleting an archived project (ADR 0077) removes outside the
+-- What deleting an archived project (ADR 0078) removes outside the
 -- database, read before its rows go.
 
 -- name: ListAllProjectEnvironments :many

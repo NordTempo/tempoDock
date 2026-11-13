@@ -116,7 +116,7 @@ func newProjectArchiveCmd(g *globals) *cobra.Command {
 	return cmd
 }
 
-// newProjectDeleteCmd deletes an archived project for good (ADR 0077).
+// newProjectDeleteCmd deletes an archived project for good (ADR 0078).
 // The name is required, never taken from the directory's link, and typed
 // again to confirm (--confirm without a terminal).
 func newProjectDeleteCmd(g *globals) *cobra.Command {

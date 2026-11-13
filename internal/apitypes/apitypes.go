@@ -237,7 +237,7 @@ type RenameProjectRequest struct {
 }
 
 // DeleteProjectRequest confirms deleting an archived project for good
-// (ADR 0077).
+// (ADR 0078).
 type DeleteProjectRequest struct {
 	Confirm string `json:"confirm" doc:"The project's name, typed again to confirm"`
 	ID      int64  `json:"id,omitempty" minimum:"1" doc:"Expected project ID; prevents deleting a project that took a reused name"`

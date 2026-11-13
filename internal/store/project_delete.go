@@ -16,12 +16,12 @@ const (
 	projMoves    = `(SELECT id FROM environment_moves WHERE environment_id IN ` + projEnvs + `)`
 )
 
-// projectDeletes deletes every row of a project (ADR 0077), children
+// projectDeletes deletes every row of a project (ADR 0078), children
 // before parents, so foreign keys hold after every statement. The audit
 // log is not in it: its events keep the project's ID and name their
 // target in words. Neither is service_stats, keyed by service ID without
 // an index that leads with it: its rows age out with the stats'
-// retention, and no new service gets the ID (migration 0102).
+// retention, and no new service gets the ID (migration 0103).
 //
 // A new table holding a project's, environment's, service's, release's
 // or site's ID gets a statement here; TestProjectDeletesCoverForeignKeys

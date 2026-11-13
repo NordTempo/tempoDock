@@ -500,7 +500,7 @@ func (c *Core) GetProjectByID(ctx context.Context, a Actor, id int64) (apitypes.
 
 // RenameProject changes only a project's name/address. IDs, running services,
 // domains and release snapshots stay unchanged, including during a deployment.
-// Archived projects can be renamed too, which frees their name (ADR 0077).
+// Archived projects can be renamed too, which frees their name (ADR 0078).
 func (c *Core) RenameProject(ctx context.Context, a Actor, name string, req apitypes.RenameProjectRequest) (apitypes.Project, error) {
 	p, err := c.projectFor(ctx, a, name, apitypes.ScopeAdmin, "renaming a project")
 	if err != nil {

@@ -123,7 +123,7 @@ func TestDeleteProject(t *testing.T) {
 	}
 }
 
-// Migration 0102 keeps every row of the tables it rebuilds, and IDs keep
+// Migration 0103 keeps every row of the tables it rebuilds, and IDs keep
 // counting from the highest one there was.
 func TestAutoincrementMigrationKeepsRows(t *testing.T) {
 	ctx := context.Background()

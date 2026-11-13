@@ -2413,7 +2413,7 @@ export interface paths {
         post?: never;
         /**
          * Delete an archived project
-         * @description Deletes an archived project for good (ADR 0077): its containers, networks, volumes and volume snapshots on its servers, its sites' analytics events, and everything Dock knows of it, which frees its name and its domains. Its activity stays in the audit log; its backups stay in their restic repositories (`notes` says where). `confirm` is the project's name. Every server it has something on must be online. Scope: admin, unlimited; a session needs a recent sign-in.
+         * @description Deletes an archived project for good (ADR 0078): its containers, networks, volumes and volume snapshots on its servers, its sites' analytics events, and everything Dock knows of it, which frees its name and its domains. Its activity stays in the audit log; its backups stay in their restic repositories (`notes` says where). `confirm` is the project's name. Every server it has something on must be online. Scope: admin, unlimited; a session needs a recent sign-in.
          */
         delete: operations["delete-project"];
         options?: never;

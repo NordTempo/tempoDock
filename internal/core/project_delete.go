@@ -22,7 +22,7 @@ import (
 // events from the analytics store, which may be slow or gone.
 const analyticsDeleteTimeout = 30 * time.Second
 
-// DeleteProject deletes an archived project for good (ADR 0077): on its
+// DeleteProject deletes an archived project for good (ADR 0078): on its
 // servers, its containers, networks, volumes and volume snapshots; in
 // the analytics store, its sites' events and replays; in Dock, every row
 // of it (store.DeleteProject), which frees its name, its domains'
@@ -296,7 +296,7 @@ func (c *Core) awaitRemovals(ctx context.Context, ctrs []node.Container) error {
 
 // deleteProjectAnalytics deletes the sites' raw events, errors, Web
 // Vitals and replays from the analytics store. Its daily totals stay
-// under the sites' IDs, which no new site gets (migration 0102). A store
+// under the sites' IDs, which no new site gets (migration 0103). A store
 // that can't be reached keeps the events; the note says so. Nothing
 // reads them once the sites are gone.
 func (c *Core) deleteProjectAnalytics(ctx context.Context, sites []int64) []string {

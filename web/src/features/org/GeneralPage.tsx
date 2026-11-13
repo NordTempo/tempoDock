@@ -448,7 +448,7 @@ function RequireTwoFactor({ on, admin }: { on: boolean; admin: boolean }) {
 
 /**
  * Archived projects (`dock project list --all`), each with Rename and
- * Delete permanently (ADR 0077): the way to free an archived project's
+ * Delete permanently (ADR 0078): the way to free an archived project's
  * name. Hidden while there are none.
  */
 function ArchivedProjects() {

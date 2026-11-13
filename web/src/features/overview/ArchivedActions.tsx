@@ -9,7 +9,7 @@ import { useOrg } from "../../shell/location";
 import { Act, Confirm } from "../../ui/kit";
 import { notify } from "../../ui/notice";
 
-// Rename and Delete permanently for an archived project (ADR 0077), on
+// Rename and Delete permanently for an archived project (ADR 0078), on
 // its page and in Organization settings. Both need an admin of the whole
 // org; the server checks again.
 

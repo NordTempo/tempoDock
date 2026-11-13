@@ -812,7 +812,7 @@ domains. Its activity stays in the audit log. Its backups stay in their
 restic repository: the answer names the repository and the tags that find
 them, should you want them gone too. Only an archived project can be
 deleted, by an admin of the whole organization, with every server it is on
-online. It can't be undone ([ADR 0077](../decisions/0077-deleting-archived-projects.md)).
+online. It can't be undone ([ADR 0078](../decisions/0078-deleting-archived-projects.md)).
 
 ## Rename a project
 
