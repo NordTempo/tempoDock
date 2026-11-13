@@ -91,7 +91,7 @@ export function EnvironmentTable({
     environment.sleep?.state !== "asleep" &&
     services.some((s) => s.service.status.state === "running");
   // When it sleeps on its own: admins of non-production environments;
-  // previews take their project's Previews setting (ADR 0070).
+  // previews take their base environment's preview setting (ADR 0070, 0077).
   const canSetSleep = admin && environment.kind === "non_production" && !pr;
   const [sleepForm, setSleepForm] = useState(false);
   const head = `env-head-${environment.id}`;

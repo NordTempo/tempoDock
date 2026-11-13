@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -132,7 +133,7 @@ func (c *Core) GitStatus(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	if err != nil {
 		return apitypes.GitSource{}, err
 	}
-	out := apitypes.GitSource{HooksReady: c.hooksHost() != "", HooksHint: c.hooksHint()}
+	out := apitypes.GitSource{HooksReady: c.hooksHost() != "", HooksHint: c.hooksHint(), SameRepo: []apitypes.GitSibling{}}
 	insts, err := c.store.ListOrgGitHubInstallations(ctx, ss.project.OrgID)
 	if err != nil {
 		return out, err
@@ -147,6 +148,21 @@ func (c *Core) GitStatus(ctx context.Context, a Actor, ref ServiceRef) (apitypes
 	}
 	gc := c.toGitConnection(conn)
 	out.Connection = &gc
+	conns, err := c.store.ListEnvGitConnections(ctx, ss.env.ID)
+	if err != nil {
+		return out, err
+	}
+	svcs, err := c.store.ListServices(ctx, ss.env.ID)
+	if err != nil {
+		return out, err
+	}
+	for _, other := range conns {
+		i := slices.IndexFunc(svcs, func(s store.Service) bool { return s.ID == other.ServiceID })
+		same := (conn.RepoID != 0 && other.RepoID == conn.RepoID) || strings.EqualFold(other.Repo, conn.Repo)
+		if other.ServiceID != conn.ServiceID && same && i >= 0 && svcs[i].ArchivedAt == nil {
+			out.SameRepo = append(out.SameRepo, apitypes.GitSibling{Service: svcs[i].Name, Branch: other.Branch, Dir: other.Dir})
+		}
+	}
 	return out, nil
 }
 
@@ -439,7 +455,14 @@ func (c *Core) GitDisconnect(ctx context.Context, a Actor, ref ServiceRef) error
 	if err != nil {
 		return err
 	}
-	if err := c.store.DeleteGitConnection(ctx, ss.svc.ID); err != nil {
+	// Its pull request builds stop too, so connecting it again later
+	// doesn't silently preview again (ADR 0077).
+	if err := c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.DeleteGitConnection(ctx, ss.svc.ID); err != nil {
+			return err
+		}
+		return q.StopServicePreviewBuilds(ctx, ss.svc.ID)
+	}); err != nil {
 		return err
 	}
 	c.kickGit(ss.svc.ID, true) // stops a fetch in progress

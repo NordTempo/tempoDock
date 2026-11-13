@@ -2,6 +2,9 @@
 
 Status: accepted (asked by Saile, 2026-11-03; decided by the agent)
 
+Amended by [0077](0077-previews-belong-to-services.md): previews are opted
+into per service, and the base is that service's environment.
+
 ## Context
 
 The roadmap had previews under "Later". The parts were there: cloning an

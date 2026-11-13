@@ -42,6 +42,7 @@ import {
   stepPhrase,
 } from "../../ui/status";
 import { openDeploy } from "../deploy/start";
+import { useGitSource } from "../git/api";
 import { sleepCli, useWakeEnvironment } from "../overview/EnvironmentSleep";
 import { EnvServer } from "../servers/parts";
 import { ApplyControl } from "../variables/ApplyBox";
@@ -96,10 +97,32 @@ export function ServiceBar({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               <span className="text-mut"> · archive staged</span>
             )}
           </span>
+          <SourceLine serviceRef={ref} />
         </>
       }
       actions={<Actions serviceRef={ref} />}
     />
+  );
+}
+
+/**
+ * Where a service deploys from, when GitHub: repository · branch · path,
+ * linking to that directory on GitHub. Hidden on narrow screens.
+ */
+function SourceLine({ serviceRef: ref }: { serviceRef: ServiceRef }) {
+  const conn = useGitSource(ref).data?.connection;
+  if (!conn) return null;
+  return (
+    <a
+      href={`https://github.com/${conn.repo}/tree/${conn.branch}${conn.dir ? `/${conn.dir}` : ""}`}
+      target="_blank"
+      rel="noreferrer"
+      title="The GitHub source: Settings › Source"
+      className="hidden truncate font-mono text-faint text-xs no-underline hover:text-sec md:inline"
+    >
+      {conn.repo} · {conn.branch}
+      {conn.dir && ` · ${conn.dir}`}
+    </a>
   );
 }
 

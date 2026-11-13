@@ -10,24 +10,27 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// newPreviewsCmd is `dock env previews` (ADR 0056), also registered as
-// `dock environment previews`: a project's preview settings and open
-// previews, with enable, disable and close below it.
+// newPreviewsCmd is `dock env previews` (ADR 0056, 0077), also registered
+// as `dock environment previews`: a project's previews (which services
+// build pull requests, each base's numbers, the open previews), with set
+// and close below it. A service's own switch is `dock service previews`.
 func newPreviewsCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	cmd := &cobra.Command{
 		Use:   "previews",
-		Short: "Preview environments per pull request: settings and open previews",
-		Long: `Show whether pull requests get preview environments, cloned from which
-environment, the limits, and the open previews with their pull request,
-status and address.
+		Short: "Preview environments per pull request: who builds them and the open previews",
+		Long: `Show which services build pull requests in preview environments, the
+numbers of each environment previews are cloned from, and the open previews
+with their pull request, status and address.
 
-A pull request to a repository the base environment's services deploy, into
-the branch they deploy, gets a non-production environment pr-<number>
-cloned from the base. It redeploys on new commits and is archived when the
+A pull request to a repository a service with previews on deploys
+(` + "`dock service previews on`" + `), into the branch it deploys, that changes its
+directory, gets a non-production environment pr-<number> cloned from the
+service's environment. It redeploys on new commits and is archived when the
 pull request closes.`,
 		Example: `  dock env previews
-  dock env previews enable staging --copy web.PUBLIC_API_URL
+  dock service previews on -s web -e staging --copy PUBLIC_API_URL
+  dock env previews set staging --max 5 --sleep-after 1h
   dock env previews close pr-12`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -43,99 +46,180 @@ pull request closes.`,
 		},
 	}
 	f.add(cmd, needProject)
-	cmd.AddCommand(newPreviewsEnableCmd(g), newPreviewsDisableCmd(g), newPreviewsCloseCmd(g))
+	cmd.AddCommand(newPreviewsSetCmd(g), newPreviewsCloseCmd(g))
 	return cmd
 }
 
-// newPreviewsEnableCmd turns previews on, or replaces their settings.
-func newPreviewsEnableCmd(g *globals) *cobra.Command {
+// newPreviewsSetCmd is `dock env previews set <environment>`: the numbers
+// of previews cloned from an environment.
+func newPreviewsSetCmd(g *globals) *cobra.Command {
 	var f targetFlags
-	var req apitypes.SetPreviewsRequest
+	var req apitypes.SetEnvironmentPreviewsRequest
 	cmd := &cobra.Command{
-		Use:   "enable <base-environment> [--max N] [--copy service.KEY ...] [--seed service ...] [--forks]",
-		Short: "Turn previews on, cloned from an environment, or change their settings",
-		Long: `Give pull requests preview environments cloned from <base-environment>
-(e.g. staging). The settings are replaced as a whole: when changing them,
-pass every setting again (--max, each --copy and --seed, --forks); one left
-out goes back to its default.
+		Use:   "set <environment> [--max N] [--sleep-after D] [--copy KEY ...]",
+		Short: "Set how many previews cloned from an environment may be open, when they sleep, and the shared values they copy",
+		Long: `Set the numbers of the previews cloned from <environment>: at most --max
+open at once (default 3), and they sleep after --sleep-after without
+requests (default 30m, or off): their services stop and the next request
+wakes it. Open previews take the new sleep setting at once.
 
-A preview's databases and other volumes start empty, unless --seed names
-the service: then each new preview's copy of it is filled from the base
-service's latest snapshot (dock volume snapshot) before it starts, and a
-template database keeps the base's credentials, which its copied data
-needs. Without a snapshot it starts empty.
-
-A preview sleeps after 30 minutes without requests (--sleep-after, or off):
-its services stop and the next request wakes it.
-
-Previews run a pull request's code, so no literal variable value of the
-base is copied unless --copy names it (web.PUBLIC_API_URL, or
-shared.SENTRY_DSN for a shared one). References are always copied and
-database templates get new credentials. Pull requests from forks get no
-preview unless --forks. Needs admin on the whole project.`,
-		Example: `  dock env previews enable staging
-  dock env previews enable staging --max 5 --copy web.PUBLIC_API_URL --copy shared.SENTRY_DSN
-  dock env previews enable staging --seed db
-  dock env previews enable staging --sleep-after 1h`,
+Previews run a pull request's code, so no literal value of a shared
+variable is copied unless --copy names it (SENTRY_DSN). The settings are
+replaced as a whole: pass every one again. Needs admin on the environment.`,
+		Example: `  dock env previews set staging --max 5
+  dock env previews set staging --sleep-after 1h --copy SENTRY_DSN`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, t, err := g.open(f, needProject)
 			if err != nil {
 				return err
 			}
-			req.Base = args[0]
-			set, err := send[apitypes.PreviewSettings](cmd.Context(), s, http.MethodPut, t.projectPath()+"/previews", req)
+			t.Environment = args[0]
+			ep, err := send[apitypes.EnvironmentPreviews](cmd.Context(), s, http.MethodPut, t.envPath()+"/previews", req)
 			if err != nil {
 				return err
 			}
-			return g.io.Print(set, func() error {
-				g.io.Successf("Previews of pull requests are on for %s: %s", t.Project, previewRules(set))
-				if len(set.CopyVariables) == 0 {
-					g.io.Progressf("No literal values are copied; name the ones previews need with --copy service.KEY.")
-				}
+			return g.io.Print(ep, func() error {
+				g.io.Successf("Previews cloned from %s: %s", t, envPreviewRules(ep))
 				return nil
 			})
 		},
 	}
 	f.add(cmd, needProject)
 	cmd.Flags().IntVar(&req.MaxPreviews, "max", 0, "most open previews at once, 1-20 (default 3)")
-	cmd.Flags().StringArrayVar(&req.CopyVariables, "copy", nil, "a base variable whose literal value previews copy, as service.KEY or shared.KEY (repeatable)")
-	cmd.Flags().StringArrayVar(&req.SeedFromSnapshot, "seed", nil, "a base service whose volumes each new preview fills from its latest snapshot, e.g. db (repeatable)")
-	cmd.Flags().BoolVar(&req.AllowForks, "forks", false, "also preview pull requests from forks")
+	cmd.Flags().StringArrayVar(&req.CopyShared, "copy", nil, "a shared variable whose literal value previews copy, by key (repeatable)")
 	cmd.Flags().Var(sleepFlag{&req.SleepAfterMinutes}, "sleep-after", "sleep a preview after this long without requests, 5m to 24h, or off (default 30m)")
 	return cmd
 }
 
-// newPreviewsDisableCmd turns previews off; open ones stay.
-func newPreviewsDisableCmd(g *globals) *cobra.Command {
+// newServicePreviewsCmd is `dock service previews [on|off]` (ADR 0077):
+// what a service does in previews. Without arguments it shows it; on and
+// off switch whether pull requests build it, and the flags change the
+// rest. What isn't passed stays as it is.
+func newServicePreviewsCmd(g *globals) *cobra.Command {
 	var f targetFlags
+	var forks, seed bool
+	var copies []string
 	cmd := &cobra.Command{
-		Use:   "disable",
-		Short: "Turn previews off; open previews stay until their pull requests close",
-		Long: `New pull requests get no preview. Open previews stay until their pull
-requests close; close one now with ` + "`dock env previews close <environment>`" + `.
-Needs admin on the whole project.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			s, t, err := g.open(f, needProject)
+		Use:   "previews [on|off]",
+		Short: "Whether pull requests build a service in a preview environment, and what previews copy from it",
+		Long: `Show or change what a service does in preview environments (ADR 0077).
+
+on: pull requests to the service's GitHub repository, into the branch it
+deploys, that change its directory, get a preview environment pr-<number>
+cloned from the service's environment, where it builds the pull request's
+code; the environment's other services run their current images. off:
+pull requests don't build it. One repository and branch previews from one
+environment of a project.
+
+Previews run a pull request's code, so none of the service's literal
+variable values is copied unless --copy names it (repeatable; the list is
+replaced). --seed fills a new preview's copy of the service's volumes from
+its newest snapshot; otherwise they start empty. --forks also previews pull
+requests from forks. Needs admin on the environment.`,
+		Example: `  dock service previews -s web
+  dock service previews on -s web --copy PUBLIC_API_URL
+  dock service previews -s db --seed
+  dock service previews off -s web`,
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"on", "off"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needService)
 			if err != nil {
 				return err
 			}
-			set, err := send[apitypes.PreviewSettings](cmd.Context(), s, http.MethodDelete, t.projectPath()+"/previews", nil)
+			path := t.servicePath() + "/previews"
+			cur, err := get[apitypes.ServicePreviews](cmd.Context(), s, path)
 			if err != nil {
 				return err
 			}
-			return g.io.Print(set, func() error {
-				g.io.Successf("Previews of pull requests are off for %s", t.Project)
-				if n := len(set.Previews); n > 0 {
-					g.io.Progressf("%s stay open until their pull requests close; close one with `dock env previews close <environment>`.", plural(n, "preview"))
+			changed := len(args) > 0 || cmd.Flags().Changed("forks") || cmd.Flags().Changed("copy") || cmd.Flags().Changed("seed")
+			if !changed {
+				return g.io.Print(cur, func() error { return g.printServicePreviews(t, cur) })
+			}
+			req := apitypes.SetServicePreviewsRequest{Build: cur.Build, AllowForks: cur.AllowForks, CopyVariables: cur.CopyVariables, Seed: cur.Seed}
+			if len(args) > 0 {
+				switch args[0] {
+				case "on":
+					req.Build = true
+				case "off":
+					req.Build, req.AllowForks = false, false
+				default:
+					return usageError(fmt.Sprintf("%q is not on or off", args[0]), "`dock service previews on -s web` or `dock service previews off -s web`.")
 				}
+			}
+			if cmd.Flags().Changed("forks") {
+				req.AllowForks = forks
+			}
+			if cmd.Flags().Changed("copy") {
+				req.CopyVariables = copies
+			}
+			if cmd.Flags().Changed("seed") {
+				req.Seed = seed
+			}
+			sp, err := send[apitypes.ServicePreviews](cmd.Context(), s, http.MethodPut, path, req)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(sp, func() error {
+				g.io.Successf("%s in previews: %s", t, servicePreviewRules(sp))
 				return nil
 			})
 		},
 	}
-	f.add(cmd, needProject)
+	f.add(cmd, needService)
+	cmd.Flags().BoolVar(&forks, "forks", false, "also build pull requests from forks")
+	cmd.Flags().StringArrayVar(&copies, "copy", nil, "a variable of the service whose literal value previews copy, by key (repeatable; replaces the list)")
+	cmd.Flags().BoolVar(&seed, "seed", false, "fill a new preview's volumes from the service's newest snapshot")
 	return cmd
+}
+
+// printServicePreviews is `dock service previews`' human output.
+func (g *globals) printServicePreviews(t target, sp apitypes.ServicePreviews) error {
+	updated := ""
+	if sp.UpdatedAt != nil {
+		updated = ago(*sp.UpdatedAt) + " by " + sp.UpdatedBy
+	}
+	return g.io.Fields(
+		"service", t.String(),
+		"pull requests", map[bool]string{true: "build it in a preview", false: "don't build it (`dock service previews on`)"}[sp.Build],
+		"forks", onOff(sp.AllowForks),
+		"copied", dash(strings.Join(sp.CopyVariables, ", ")),
+		"seeded", map[bool]string{true: "from its newest snapshot", false: "no, previews start empty"}[sp.Seed],
+		"updated", dash(updated),
+	)
+}
+
+// servicePreviewRules sums up a service's preview settings in one line.
+func servicePreviewRules(sp apitypes.ServicePreviews) string {
+	s := "pull requests don't build it"
+	if sp.Build {
+		s = "pull requests build it"
+		if sp.AllowForks {
+			s += ", forks too"
+		}
+	}
+	if len(sp.CopyVariables) > 0 {
+		s += ", copying " + strings.Join(sp.CopyVariables, ", ")
+	}
+	if sp.Seed {
+		s += ", seeded from its newest snapshot"
+	}
+	return s
+}
+
+// envPreviewRules sums up an environment's preview numbers in one line.
+func envPreviewRules(ep apitypes.EnvironmentPreviews) string {
+	s := fmt.Sprintf("at most %d open", ep.MaxPreviews)
+	if ep.SleepAfterMinutes > 0 {
+		s += ", sleeping after " + minutesText(ep.SleepAfterMinutes) + " without requests"
+	} else {
+		s += ", never sleeping"
+	}
+	if len(ep.CopyShared) > 0 {
+		s += ", copying shared " + strings.Join(ep.CopyShared, ", ")
+	}
+	return s
 }
 
 // newPreviewsCloseCmd closes a preview before its pull request does.
@@ -178,30 +262,36 @@ whole project.`,
 	return cmd
 }
 
-// printPreviews is `dock env previews`' human output: the settings, then
-// the open previews.
+// printPreviews is `dock env previews`' human output: the services that
+// build pull requests, each base's numbers, then the open previews.
 func (g *globals) printPreviews(project string, set apitypes.PreviewSettings) error {
-	if set.Enabled {
-		copied := "none"
-		if len(set.CopyVariables) > 0 {
-			copied = strings.Join(set.CopyVariables, ", ")
+	if !set.Enabled {
+		g.io.Successf("No service of %s builds pull requests. Turn previews on for one with `dock service previews on -s <service> -e <environment>`.", project)
+	} else {
+		tb := g.io.Table("service", "source", "pull requests", "copied", "seeded")
+		for _, sp := range set.Services {
+			source := ""
+			if sp.Repo != "" {
+				source = sp.Repo + "@" + sp.Branch
+				if sp.Dir != "" {
+					source += ":" + sp.Dir
+				}
+			}
+			build := "-"
+			if sp.Build {
+				build = "build"
+				if sp.AllowForks {
+					build += ", forks too"
+				}
+			}
+			tb.Row(sp.Environment+"/"+sp.Service, dash(source), build, dash(strings.Join(sp.CopyVariables, ", ")), map[bool]string{true: "yes", false: "-"}[sp.Seed])
 		}
-		updated := ""
-		if set.UpdatedAt != nil {
-			updated = ago(*set.UpdatedAt) + " by " + set.UpdatedBy
-		}
-		if err := g.io.Fields(
-			"previews", "on, cloned from "+set.Base,
-			"max open", fmt.Sprint(set.MaxPreviews),
-			"copied", copied,
-			"seeded", dash(strings.Join(set.SeedFromSnapshot, ", ")),
-			"forks", onOff(set.AllowForks),
-			"updated", updated,
-		); err != nil {
+		if err := tb.Flush(); err != nil {
 			return err
 		}
-	} else {
-		g.io.Successf("Previews of pull requests are off for %s. Turn them on with `dock env previews enable <base-environment>`.", project)
+		for _, e := range set.Environments {
+			g.io.Detail(fmt.Sprintf("Previews cloned from %s: %s", e.Environment, envPreviewRules(e.EnvironmentPreviews)))
+		}
 	}
 	if len(set.Previews) == 0 {
 		g.io.Progressf("No open previews.")
@@ -219,26 +309,6 @@ func (g *globals) printPreviews(project string, set apitypes.PreviewSettings) er
 		tb.Row(pv.Environment, cut(fmt.Sprintf("#%d %s", pv.Number, pv.Title), 40), string(pv.Status), dash(addr), pv.Commit[:min(7, len(pv.Commit))])
 	}
 	return tb.Flush()
-}
-
-// previewRules sums up preview settings in one line.
-func previewRules(set apitypes.PreviewSettings) string {
-	s := fmt.Sprintf("cloned from %s, at most %d open", set.Base, set.MaxPreviews)
-	if len(set.CopyVariables) > 0 {
-		s += ", copying " + strings.Join(set.CopyVariables, ", ")
-	}
-	if len(set.SeedFromSnapshot) > 0 {
-		s += ", seeding " + strings.Join(set.SeedFromSnapshot, ", ") + " from snapshots"
-	}
-	if set.AllowForks {
-		s += ", forks too"
-	}
-	if set.SleepAfterMinutes > 0 {
-		s += ", sleeping after " + minutesText(set.SleepAfterMinutes) + " without requests"
-	} else {
-		s += ", never sleeping"
-	}
-	return s
 }
 
 // pullRequestText names an environment's pull request in a table: "#12

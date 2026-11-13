@@ -192,16 +192,17 @@ func (q *Queries) SetEnvironmentSleepAfter(ctx context.Context, arg SetEnvironme
 
 const setPreviewsSleepAfter = `-- name: SetPreviewsSleepAfter :exec
 UPDATE environments SET sleep_after_minutes = ?
-WHERE archived_at IS NULL AND id IN (SELECT previews.environment_id FROM previews WHERE previews.project_id = +? AND previews.closed_at IS NULL)
+WHERE archived_at IS NULL AND id IN (SELECT previews.environment_id FROM previews
+                                     WHERE previews.base_environment_id = +?2 AND previews.closed_at IS NULL)
 `
 
 type SetPreviewsSleepAfterParams struct {
 	SleepAfterMinutes int64
-	ProjectID         int64
+	BaseEnvironmentID int64
 }
 
-// Gives a project's open previews its preview setting.
+// Gives the open previews cloned from a base environment its setting.
 func (q *Queries) SetPreviewsSleepAfter(ctx context.Context, arg SetPreviewsSleepAfterParams) error {
-	_, err := q.db.ExecContext(ctx, setPreviewsSleepAfter, arg.SleepAfterMinutes, arg.ProjectID)
+	_, err := q.db.ExecContext(ctx, setPreviewsSleepAfter, arg.SleepAfterMinutes, arg.BaseEnvironmentID)
 	return err
 }

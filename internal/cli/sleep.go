@@ -94,7 +94,7 @@ func newEnvironmentSleepAfterCmd(g *globals) *cobra.Command {
 without requests to its domains (5m to 24h, whole minutes); off turns it
 off. Open websockets and streams, deploys and runs keep it awake.
 Previews take their project's setting
-(` + "`dock env previews enable <base> --sleep-after 30m`" + `). Needs admin.`,
+(` + "`dock env previews set <base> --sleep-after 30m`" + `). Needs admin.`,
 		Example: `  dock env sleep-after staging 2h
   dock env sleep-after staging off`,
 		Args: cobra.RangeArgs(1, 2),
@@ -148,7 +148,7 @@ func parseSleepAfter(s string) (int, error) {
 	return int(d / time.Minute), nil
 }
 
-// sleepFlag is the --sleep-after of `dock env previews enable`.
+// sleepFlag is the --sleep-after of `dock env previews set`.
 type sleepFlag struct{ minutes *int }
 
 func (f sleepFlag) String() string { return "" }

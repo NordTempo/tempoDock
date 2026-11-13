@@ -11,34 +11,51 @@ import (
 )
 
 // registerPreviews serves preview environments per pull request (ADR
-// 0056): a project's settings and open previews, and one preview by its
-// environment.
+// 0056, 0077): a project's previews, a service's and an environment's
+// settings, and one preview by its environment.
 func registerPreviews(s *Server, a huma.API) {
 	tags := []string{"previews"}
 	authed(s, a, huma.Operation{
 		OperationID: "get-previews", Method: http.MethodGet, Path: projectPathT + "/previews",
-		Summary: "Preview settings and open previews", Tags: tags,
-		Description: "Whether pull requests get preview environments, cloned from which environment, the limits, and the open previews with their pull request, status and addresses. Scope: read.",
+		Summary: "A project's previews", Tags: tags,
+		Description: "Which services build pull requests (and where from), the numbers of each environment previews are cloned from, and the open previews with their pull request, status and addresses. Scope: read.",
 	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.PreviewSettings], error) {
 		return reply(s.core.GetPreviews(ctx, actor, in.Project))
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "set-previews", Method: http.MethodPut, Path: projectPathT + "/previews",
-		Summary: "Turn previews on or change them", Tags: tags,
-		Description: "Pull requests to a repository the base environment's services deploy, into the branch they deploy, get a non-production environment pr-<number> cloned from the base. " +
-			"Only the listed variables' literal values are copied; pull requests from forks only with `allow_forks`. Scope: admin, whole project.",
-	}, func(ctx context.Context, actor core.Actor, in *struct {
-		ProjectPath
-		Body apitypes.SetPreviewsRequest
-	}) (*out[apitypes.PreviewSettings], error) {
-		return reply(s.core.SetPreviews(ctx, actor, in.Project, in.Body))
+		OperationID: "get-service-previews", Method: http.MethodGet, Path: servicePathT + "/previews",
+		Summary: "What a service does in previews", Tags: tags,
+		Description: "Whether pull requests into its branch build it in a preview, forks too, which of its variables' literal values previews copy, and whether its volumes start from its newest snapshot (ADR 0077). Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, in *ServicePath) (*out[apitypes.ServicePreviews], error) {
+		return reply(s.core.GetServicePreviews(ctx, actor, in.ref()))
 	})
 	authed(s, a, huma.Operation{
-		OperationID: "disable-previews", Method: http.MethodDelete, Path: projectPathT + "/previews",
-		Summary: "Turn previews off", Tags: tags,
-		Description: "New pull requests get no preview. Open previews stay until their pull requests close. Scope: admin, whole project.",
-	}, func(ctx context.Context, actor core.Actor, in *ProjectPath) (*out[apitypes.PreviewSettings], error) {
-		return reply(s.core.DisablePreviews(ctx, actor, in.Project))
+		OperationID: "set-service-previews", Method: http.MethodPut, Path: servicePathT + "/previews",
+		Summary: "Set what a service does in previews", Tags: tags,
+		Description: "With build, pull requests to the service's repository, into the branch it deploys, that change its directory get a non-production environment pr-<number> cloned from its environment. " +
+			"Only the listed variables' literal values are copied; pull requests from forks only with `allow_forks`. Every field is replaced. Scope: admin.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ServicePath
+		Body apitypes.SetServicePreviewsRequest
+	}) (*out[apitypes.ServicePreviews], error) {
+		return reply(s.core.SetServicePreviews(ctx, actor, in.ref(), in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-environment-previews", Method: http.MethodGet, Path: envPathT + "/previews",
+		Summary: "The numbers of previews cloned from an environment", Tags: tags,
+		Description: "How many may be open at once, when they sleep, and which shared variables' literal values they copy. Scope: read.",
+	}, func(ctx context.Context, actor core.Actor, in *EnvPath) (*out[apitypes.EnvironmentPreviews], error) {
+		return reply(s.core.GetEnvironmentPreviews(ctx, actor, in.ref()))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-environment-previews", Method: http.MethodPut, Path: envPathT + "/previews",
+		Summary: "Set the numbers of previews cloned from an environment", Tags: tags,
+		Description: "Open previews take the new sleep setting at once. Every field is replaced. Scope: admin.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		EnvPath
+		Body apitypes.SetEnvironmentPreviewsRequest
+	}) (*out[apitypes.EnvironmentPreviews], error) {
+		return reply(s.core.SetEnvironmentPreviews(ctx, actor, in.ref(), in.Body))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "get-preview", Method: http.MethodGet, Path: envPathT + "/preview",

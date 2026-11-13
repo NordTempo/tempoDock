@@ -112,10 +112,19 @@ func previewHarness(t *testing.T) (*harness, *fakeGitHub, *prComments, string) {
 		t.Fatal(err)
 	}
 	h.set(staging, "web", map[string]string{"API_URL": "https://api.example.com", "TOKEN": "tok_live", "DB": "${{org.PROD_DB}}", "API": "${{api.PORT}}"}, true)
-	if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{Base: "staging", MaxPreviews: 2, CopyVariables: []string{"web.API_URL"}}); err != nil {
+	h.servicePreviews(web, apitypes.SetServicePreviewsRequest{Build: true, CopyVariables: []string{"API_URL"}})
+	if _, err := h.c.SetEnvironmentPreviews(h.ctx, testSystem, staging, apitypes.SetEnvironmentPreviewsRequest{MaxPreviews: 2}); err != nil {
 		t.Fatal(err)
 	}
 	return h, gh, pc, appHook
+}
+
+// servicePreviews sets what a service does in previews, as the system.
+func (h *harness) servicePreviews(ref ServiceRef, req apitypes.SetServicePreviewsRequest) {
+	h.t.Helper()
+	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, ref, req); err != nil {
+		h.t.Fatal(err)
+	}
 }
 
 // prEvent is a pull_request event of acme/shop (repository 42).
@@ -277,7 +286,7 @@ func TestPreviewRefusals(t *testing.T) {
 		st, _, _ := gh.seen()
 		return slices.ContainsFunc(st, func(s string) bool { return strings.HasPrefix(s, "aaaaaaa error dock/preview") })
 	})
-	if msg, _ := h.deliver(appHook, "b1", prEvent{action: "opened", number: 2, sha: shaA, updated: t0, base: "develop"}); !strings.Contains(msg, "merges into develop and staging deploys main") {
+	if msg, _ := h.deliver(appHook, "b1", prEvent{action: "opened", number: 2, sha: shaA, updated: t0, base: "develop"}); !strings.Contains(msg, "merges into develop and the services previewing acme/shop deploy main") {
 		t.Fatalf("other branch: %q", msg)
 	}
 	for i, n := range []int64{3, 4} {
@@ -285,7 +294,7 @@ func TestPreviewRefusals(t *testing.T) {
 			t.Fatalf("pull request %d: %q, %v", n, msg, err)
 		}
 	}
-	if msg, _ := h.deliver(appHook, "o3", prEvent{action: "opened", number: 5, sha: shaA, updated: t0}); !strings.Contains(msg, "2 are open, the most shop allows") {
+	if msg, _ := h.deliver(appHook, "o3", prEvent{action: "opened", number: 5, sha: shaA, updated: t0}); !strings.Contains(msg, "2 are open, the most shop/staging allows") {
 		t.Fatalf("over the cap: %q", msg)
 	}
 	h.waitReleases(ServiceRef{"shop", "pr-3", "web"}, 1)
@@ -306,9 +315,7 @@ func TestPreviewRefusals(t *testing.T) {
 	if _, err := h.c.ClosePreview(h.ctx, testSystem, EnvRef{"shop", "pr-4"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{Base: "staging", MaxPreviews: 2, AllowForks: true}); err != nil {
-		t.Fatal(err)
-	}
+	h.servicePreviews(ServiceRef{"shop", "staging", "web"}, apitypes.SetServicePreviewsRequest{Build: true, AllowForks: true})
 	if msg, _ := h.deliver(appHook, "f2", prEvent{action: "synchronize", number: 1, sha: shaB, updated: t0.Add(time.Minute), fork: true}); !strings.Contains(msg, "preview pr-1 created") {
 		t.Fatalf("fork allowed: %q", msg)
 	}
@@ -318,9 +325,7 @@ func TestPreviewRefusals(t *testing.T) {
 
 	// Turned off, new pull requests get nothing, and open previews still
 	// close with their pull requests.
-	if _, err := h.c.DisablePreviews(h.ctx, testSystem, "shop"); err != nil {
-		t.Fatal(err)
-	}
+	h.servicePreviews(ServiceRef{"shop", "staging", "web"}, apitypes.SetServicePreviewsRequest{})
 	if msg, _ := h.deliver(appHook, "x1", prEvent{action: "opened", number: 6, sha: shaA, updated: t0}); strings.Contains(msg, "created") {
 		t.Fatalf("previews off: %q", msg)
 	}
@@ -333,30 +338,34 @@ func TestPreviewRefusals(t *testing.T) {
 	}
 }
 
-// Only admins of the whole project set previews up, and the base can't
-// be a preview; deploy may close one, read may look.
+// Only admins of the environment set previews up, never in a preview;
+// deploy may close one, read may look.
 func TestPreviewPermissions(t *testing.T) {
 	h, _, _, appHook := previewHarness(t)
 	if _, err := h.deliver(appHook, "d1", prEvent{action: "opened", number: 9, sha: shaA, updated: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	req := apitypes.SetPreviewsRequest{Base: "staging"}
+	web, staging := ServiceRef{"shop", "staging", "web"}, EnvRef{"shop", "staging"}
 	for _, a := range []Actor{
 		{Kind: "token", OrgID: 1, Name: "deploy", Scope: apitypes.ScopeDeploy},
 		{Kind: "token", OrgID: 2, Name: "other-org", Scope: apitypes.ScopeAdmin},
 	} {
-		if _, err := h.c.SetPreviews(h.ctx, a, "shop", req); CodeOf(err) != apitypes.CodeForbidden && CodeOf(err) != apitypes.CodeNotFound {
-			t.Fatalf("%s set previews: %v", a.Name, err)
+		if _, err := h.c.SetServicePreviews(h.ctx, a, web, apitypes.SetServicePreviewsRequest{}); CodeOf(err) != apitypes.CodeForbidden && CodeOf(err) != apitypes.CodeNotFound {
+			t.Fatalf("%s set a service's previews: %v", a.Name, err)
 		}
-		if _, err := h.c.DisablePreviews(h.ctx, a, "shop"); CodeOf(err) != apitypes.CodeForbidden && CodeOf(err) != apitypes.CodeNotFound {
-			t.Fatalf("%s turned previews off: %v", a.Name, err)
+		if _, err := h.c.SetEnvironmentPreviews(h.ctx, a, staging, apitypes.SetEnvironmentPreviewsRequest{}); CodeOf(err) != apitypes.CodeForbidden && CodeOf(err) != apitypes.CodeNotFound {
+			t.Fatalf("%s set an environment's previews: %v", a.Name, err)
 		}
 	}
-	if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{Base: "pr-9"}); CodeOf(err) != apitypes.CodeValidation {
-		t.Fatalf("a preview as the base: %v", err)
+	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, ServiceRef{"shop", "pr-9", "web"}, apitypes.SetServicePreviewsRequest{Build: true}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("previews of a preview: %v", err)
 	}
-	if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{Base: "staging", CopyVariables: []string{"$(rm)"}}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, web, apitypes.SetServicePreviewsRequest{Build: true, CopyVariables: []string{"$(rm)"}}); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("a bad variable name: %v", err)
+	}
+	// Building pull requests needs a GitHub source.
+	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, ServiceRef{"shop", "staging", "api"}, apitypes.SetServicePreviewsRequest{Build: true}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("api built pull requests without a source: %v", err)
 	}
 	ro := Actor{Kind: "token", OrgID: 1, Name: "ro", Scope: apitypes.ScopeRead}
 	if s, err := h.c.GetPreviews(h.ctx, ro, "shop"); err != nil || !s.Enabled || s.Base != "staging" || len(s.Previews) != 1 {
@@ -389,9 +398,7 @@ func TestPreviewWebhookOnlyFromBase(t *testing.T) {
 	}
 	base := h.connect(ServiceRef{"shop", "staging", "web"}, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web"})
 	other := h.connect(ServiceRef{"shop", "dev", "web"}, apitypes.GitConnectRequest{Repo: "acme/shop", Branch: "main", Dir: "apps/web"})
-	if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{Base: "staging"}); err != nil {
-		t.Fatal(err)
-	}
+	h.servicePreviews(ServiceRef{"shop", "staging", "web"}, apitypes.SetServicePreviewsRequest{Build: true})
 	send := func(k *hook, id string, ev prEvent) string {
 		t.Helper()
 		body := prBody(ev)
@@ -406,7 +413,7 @@ func TestPreviewWebhookOnlyFromBase(t *testing.T) {
 		_, err := h.c.GetPreview(h.ctx, testSystem, EnvRef{"shop", "pr-8"})
 		return err == nil
 	}
-	if msg := send(other, "x1", prEvent{action: "opened", number: 8, sha: shaA, updated: t0}); !strings.Contains(msg, "isn't in the environment previews are cloned from") || preview() {
+	if msg := send(other, "x1", prEvent{action: "opened", number: 8, sha: shaA, updated: t0}); !strings.Contains(msg, "doesn't build pull requests") || preview() {
 		t.Fatalf("dev's webhook opened a preview: %q", msg)
 	}
 	if msg := send(base, "b1", prEvent{action: "opened", number: 8, sha: shaA, updated: t0}); !strings.Contains(msg, "preview pr-8 created") {
@@ -414,7 +421,7 @@ func TestPreviewWebhookOnlyFromBase(t *testing.T) {
 	}
 	h.waitReleases(ServiceRef{"shop", "pr-8", "web"}, 1)
 	for i, action := range []string{"synchronize", "closed"} {
-		if msg := send(other, fmt.Sprintf("x%d", i+2), prEvent{action: action, number: 8, sha: shaB, updated: t0.Add(time.Minute)}); !strings.Contains(msg, "isn't in the environment") {
+		if msg := send(other, fmt.Sprintf("x%d", i+2), prEvent{action: action, number: 8, sha: shaB, updated: t0.Add(time.Minute)}); !strings.Contains(msg, "doesn't build pull requests") {
 			t.Fatalf("dev's webhook sent %s: %q", action, msg)
 		}
 	}
@@ -422,9 +429,7 @@ func TestPreviewWebhookOnlyFromBase(t *testing.T) {
 		t.Fatalf("preview after dev's events: %+v, %v", pv, err)
 	}
 	// Turned off, the base's webhook still closes its open preview.
-	if _, err := h.c.DisablePreviews(h.ctx, testSystem, "shop"); err != nil {
-		t.Fatal(err)
-	}
+	h.servicePreviews(ServiceRef{"shop", "staging", "web"}, apitypes.SetServicePreviewsRequest{})
 	waitFor(t, func() bool {
 		pv, err := h.c.GetPreview(h.ctx, testSystem, EnvRef{"shop", "pr-8"})
 		return err == nil && pv.Status == apitypes.PreviewLive

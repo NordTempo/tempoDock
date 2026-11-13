@@ -25,11 +25,7 @@ func seedHarness(t *testing.T) (*harness, string, func() []node.JobSpec) {
 		}
 		return nil
 	})
-	if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{
-		Base: "staging", CopyVariables: []string{"web.API_URL"}, SeedFromSnapshot: []string{"db", "db"},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	h.servicePreviews(ServiceRef{"shop", "staging", "db"}, apitypes.SetServicePreviewsRequest{Seed: true})
 	return h, appHook, func() []node.JobSpec {
 		mu.Lock()
 		defer mu.Unlock()
@@ -125,13 +121,13 @@ func TestPreviewSeedSettings(t *testing.T) {
 		t.Fatalf("settings %+v, %v", set.SeedFromSnapshot, err)
 	}
 	deployer := Actor{Kind: "token", OrgID: 1, Name: "deploy", Scope: apitypes.ScopeDeploy}
-	if _, err := h.c.SetPreviews(h.ctx, deployer, "shop", apitypes.SetPreviewsRequest{Base: "staging", SeedFromSnapshot: []string{"db"}}); CodeOf(err) != apitypes.CodeForbidden {
+	db := ServiceRef{"shop", "staging", "db"}
+	if _, err := h.c.SetServicePreviews(h.ctx, deployer, db, apitypes.SetServicePreviewsRequest{Seed: true}); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("deploy scope set a seed: %v", err)
 	}
-	for _, name := range []string{"nope", "api"} {
-		if _, err := h.c.SetPreviews(h.ctx, testSystem, "shop", apitypes.SetPreviewsRequest{Base: "staging", SeedFromSnapshot: []string{name}}); CodeOf(err) != apitypes.CodeValidation {
-			t.Fatalf("seed %s: %v", name, err)
-		}
+	// api has no volume to seed.
+	if _, err := h.c.SetServicePreviews(h.ctx, testSystem, ServiceRef{"shop", "staging", "api"}, apitypes.SetServicePreviewsRequest{Seed: true}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("seed api: %v", err)
 	}
 }
 

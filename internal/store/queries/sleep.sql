@@ -21,9 +21,10 @@ WHERE id = +? AND asleep_at IS NOT NULL;
 UPDATE environments SET sleep_after_minutes = ? WHERE id = +? RETURNING *;
 
 -- name: SetPreviewsSleepAfter :exec
--- Gives a project's open previews its preview setting.
+-- Gives the open previews cloned from a base environment its setting.
 UPDATE environments SET sleep_after_minutes = ?
-WHERE archived_at IS NULL AND id IN (SELECT previews.environment_id FROM previews WHERE previews.project_id = +? AND previews.closed_at IS NULL);
+WHERE archived_at IS NULL AND id IN (SELECT previews.environment_id FROM previews
+                                     WHERE previews.base_environment_id = +sqlc.arg(base_environment_id) AND previews.closed_at IS NULL);
 
 -- name: ListEnvironmentServiceReleases :many
 -- The services of an environment with their active release's container,

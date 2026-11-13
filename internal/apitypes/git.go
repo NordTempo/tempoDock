@@ -22,6 +22,17 @@ type GitSource struct {
 	// AppReady says the org can connect through the GitHub App (ADR 0031):
 	// one of the App's installations is assigned to it.
 	AppReady bool `json:"app_ready"`
+	// SameRepo are the environment's other services that deploy from
+	// the same repository, by name, with the directory they build: one
+	// monorepo, several services.
+	SameRepo []GitSibling `json:"same_repo"`
+}
+
+// GitSibling is another service deploying from the same repository.
+type GitSibling struct {
+	Service string `json:"service"`
+	Branch  string `json:"branch"`
+	Dir     string `json:"dir,omitempty"`
 }
 
 // GitMode is how a service connects to GitHub (ADR 0031).

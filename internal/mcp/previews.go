@@ -25,7 +25,7 @@ type PreviewInput struct {
 // addPreviewTools registers get_previews and get_preview.
 func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 	mcpkit.AddTool(s, "get_previews", "Preview settings and open previews",
-		"A project's pull request preview settings and open previews.",
+		"Which services build pull requests in previews, and the open previews.",
 		mcpkit.ReadOnly, func(ctx context.Context, c *call, in ProjectInput) (mcpkit.Reply, error) {
 			p, err := projectOf(c, in)
 			if err != nil {
@@ -35,9 +35,15 @@ func (h *handler) addPreviewTools(s *mcpkit.Server[core.Actor]) {
 			if err != nil {
 				return mcpkit.Reply{}, err
 			}
-			summary := fmt.Sprintf("Previews of %s are off", p)
+			summary := fmt.Sprintf("No service of %s builds pull requests", p)
 			if set.Enabled {
-				summary = fmt.Sprintf("Previews of %s are on, cloned from %s, at most %d open", p, set.Base, set.MaxPreviews)
+				var builds []string
+				for _, sp := range set.Services {
+					if sp.Build {
+						builds = append(builds, sp.Environment+"/"+sp.Service)
+					}
+				}
+				summary = fmt.Sprintf("Pull requests build %s in previews cloned from %s, at most %d open", strings.Join(builds, ", "), set.Base, set.MaxPreviews)
 			}
 			lines := make([]string, len(set.Previews))
 			for i, pv := range set.Previews {

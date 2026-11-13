@@ -25,6 +25,7 @@ func newServiceCmd(g *globals) *cobra.Command {
 		newServiceStartCmd(g),
 		newServiceArchiveCmd(g),
 		newServiceSwitchReferencesCmd(g),
+		newServicePreviewsCmd(g),
 	)
 	return cmd
 }

@@ -7003,6 +7003,44 @@
         ],
         "type": "object"
       },
+      "EnvironmentPreviews": {
+        "additionalProperties": false,
+        "properties": {
+          "copy_shared": {
+            "description": "Shared variables whose literal values previews copy, by key",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "max_previews": {
+            "description": "Most open previews at once; a pull request beyond it gets no preview until one closes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sleep_after_minutes": {
+            "description": "Minutes without requests before a preview sleeps; 0 when previews never sleep",
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "max_previews",
+          "sleep_after_minutes",
+          "copy_shared"
+        ],
+        "type": "object"
+      },
       "EnvironmentSleep": {
         "additionalProperties": false,
         "properties": {
@@ -8481,6 +8519,25 @@
         ],
         "type": "object"
       },
+      "GitSibling": {
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "branch"
+        ],
+        "type": "object"
+      },
       "GitSource": {
         "additionalProperties": false,
         "properties": {
@@ -8495,11 +8552,21 @@
           },
           "hooks_ready": {
             "type": "boolean"
+          },
+          "same_repo": {
+            "items": {
+              "$ref": "#/components/schemas/GitSibling"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
           "hooks_ready",
-          "app_ready"
+          "app_ready",
+          "same_repo"
         ],
         "type": "object"
       },
@@ -10587,19 +10654,11 @@
         ],
         "type": "object"
       },
-      "PreviewSettings": {
+      "PreviewEnvironment": {
         "additionalProperties": false,
         "properties": {
-          "allow_forks": {
-            "description": "Also preview pull requests from forks (off by default)",
-            "type": "boolean"
-          },
-          "base": {
-            "description": "Environment previews are cloned from",
-            "type": "string"
-          },
-          "copy_variables": {
-            "description": "Base variables whose literal values previews copy, as web.KEY or shared.KEY; no other literal value is copied",
+          "copy_shared": {
+            "description": "Shared variables whose literal values previews copy, by key",
             "items": {
               "type": "string"
             },
@@ -10608,33 +10667,13 @@
               "null"
             ]
           },
-          "enabled": {
-            "type": "boolean"
+          "environment": {
+            "type": "string"
           },
           "max_previews": {
             "description": "Most open previews at once; a pull request beyond it gets no preview until one closes",
             "format": "int64",
             "type": "integer"
-          },
-          "previews": {
-            "description": "Open previews, newest first",
-            "items": {
-              "$ref": "#/components/schemas/Preview"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "seed_from_snapshot": {
-            "description": "Base services whose volumes a new preview fills from their latest snapshot, e.g. db; the rest start empty",
-            "items": {
-              "type": "string"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
           },
           "sleep_after_minutes": {
             "description": "Minutes without requests before a preview sleeps; 0 when previews never sleep",
@@ -10650,13 +10689,162 @@
           }
         },
         "required": [
+          "environment",
+          "max_previews",
+          "sleep_after_minutes",
+          "copy_shared"
+        ],
+        "type": "object"
+      },
+      "PreviewService": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_forks": {
+            "description": "Also pull requests from forks (anyone on GitHub)",
+            "type": "boolean"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "build": {
+            "description": "Pull requests into the service's branch get a preview that builds them",
+            "type": "boolean"
+          },
+          "copy_variables": {
+            "description": "The service's variables whose literal values previews copy, by key",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "dir": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "repo": {
+            "description": "owner/name",
+            "type": "string"
+          },
+          "seed": {
+            "description": "New previews fill the service's volumes from its newest snapshot",
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "environment",
+          "build",
+          "allow_forks",
+          "copy_variables",
+          "seed"
+        ],
+        "type": "object"
+      },
+      "PreviewSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_forks": {
+            "description": "Some service of the first base also builds pull requests from forks",
+            "type": "boolean"
+          },
+          "base": {
+            "description": "The first environment previews are cloned from",
+            "type": "string"
+          },
+          "copy_variables": {
+            "description": "The first base's variables whose literal values previews copy, as web.KEY or shared.KEY",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewEnvironment"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "max_previews": {
+            "description": "The first base's most open previews at once",
+            "format": "int64",
+            "type": "integer"
+          },
+          "previews": {
+            "description": "Open previews, newest first",
+            "items": {
+              "$ref": "#/components/schemas/Preview"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "seed_from_snapshot": {
+            "description": "The first base's services whose volumes a new preview fills from their latest snapshot",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "services": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewService"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "sleep_after_minutes": {
+            "description": "The first base's minutes without requests before a preview sleeps; 0 when previews never sleep",
+            "format": "int64",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "required": [
           "enabled",
+          "services",
+          "environments",
+          "previews",
           "max_previews",
           "copy_variables",
           "allow_forks",
           "seed_from_snapshot",
-          "sleep_after_minutes",
-          "previews"
+          "sleep_after_minutes"
         ],
         "type": "object"
       },
@@ -13290,6 +13478,47 @@
         ],
         "type": "object"
       },
+      "ServicePreviews": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_forks": {
+            "description": "Also pull requests from forks (anyone on GitHub)",
+            "type": "boolean"
+          },
+          "build": {
+            "description": "Pull requests into the service's branch get a preview that builds them",
+            "type": "boolean"
+          },
+          "copy_variables": {
+            "description": "The service's variables whose literal values previews copy, by key",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "seed": {
+            "description": "New previews fill the service's volumes from its newest snapshot",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build",
+          "allow_forks",
+          "copy_variables",
+          "seed"
+        ],
+        "type": "object"
+      },
       "ServiceRelease": {
         "additionalProperties": false,
         "properties": {
@@ -13751,6 +13980,37 @@
         ],
         "type": "object"
       },
+      "SetEnvironmentPreviewsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "copy_shared": {
+            "description": "Shared variables whose literal values previews copy, by key",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "max_previews": {
+            "description": "Most open previews at once (default 3)",
+            "format": "int64",
+            "maximum": 20,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sleep_after_minutes": {
+            "description": "Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never",
+            "format": "int64",
+            "maximum": 1440,
+            "minimum": -1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "SetJobEnabledRequest": {
         "additionalProperties": false,
         "properties": {
@@ -13869,60 +14129,6 @@
         ],
         "type": "object"
       },
-      "SetPreviewsRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "allow_forks": {
-            "description": "Also preview pull requests from forks",
-            "type": "boolean"
-          },
-          "base": {
-            "description": "Environment to clone previews from, e.g. staging",
-            "pattern": "^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$",
-            "type": "string"
-          },
-          "copy_variables": {
-            "description": "Base variables whose literal values previews copy, as web.KEY or shared.KEY",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 100,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "max_previews": {
-            "description": "Most open previews at once (default 3)",
-            "format": "int64",
-            "maximum": 20,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "seed_from_snapshot": {
-            "description": "Base services whose volumes a new preview fills from their latest snapshot, e.g. db",
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "type": [
-              "array",
-              "null"
-            ]
-          },
-          "sleep_after_minutes": {
-            "description": "Minutes without requests before a preview sleeps, 5 to 1440 (default 30); -1 never",
-            "format": "int64",
-            "maximum": 1440,
-            "minimum": -1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "base"
-        ],
-        "type": "object"
-      },
       "SetRegistryCredentialRequest": {
         "additionalProperties": false,
         "properties": {
@@ -13978,6 +14184,35 @@
         "required": [
           "patterns"
         ],
+        "type": "object"
+      },
+      "SetServicePreviewsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_forks": {
+            "description": "Also pull requests from forks",
+            "type": "boolean"
+          },
+          "build": {
+            "description": "Pull requests into the service's branch get a preview that builds them",
+            "type": "boolean"
+          },
+          "copy_variables": {
+            "description": "The service's variables whose literal values previews copy, by key",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "seed": {
+            "description": "New previews fill the service's volumes from its newest snapshot",
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "SetSleepRequest": {
@@ -39577,6 +39812,306 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/environments/{environment}/previews": {
+      "get": {
+        "description": "How many may be open at once, when they sleep, and which shared variables' literal values they copy. Scope: read.",
+        "operationId": "get-environment-previews",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentPreviews"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "The numbers of previews cloned from an environment",
+        "tags": [
+          "previews"
+        ]
+      },
+      "put": {
+        "description": "Open previews take the new sleep setting at once. Every field is replaced. Scope: admin.",
+        "operationId": "set-environment-previews",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetEnvironmentPreviewsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentPreviews"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set the numbers of previews cloned from an environment",
+        "tags": [
+          "previews"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/environments/{environment}/services": {
       "get": {
         "description": "Includes archived services.",
@@ -49764,6 +50299,326 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/environments/{environment}/services/{service}/previews": {
+      "get": {
+        "description": "Whether pull requests into its branch build it in a preview, forks too, which of its variables' literal values previews copy, and whether its volumes start from its newest snapshot (ADR 0077). Scope: read.",
+        "operationId": "get-service-previews",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePreviews"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "What a service does in previews",
+        "tags": [
+          "previews"
+        ]
+      },
+      "put": {
+        "description": "With build, pull requests to the service's repository, into the branch it deploys, that change its directory get a non-production environment pr-\u003cnumber\u003e cloned from its environment. Only the listed variables' literal values are copied; pull requests from forks only with `allow_forks`. Every field is replaced. Scope: admin.",
+        "operationId": "set-service-previews",
+        "parameters": [
+          {
+            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
+            "in": "query",
+            "name": "org",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Project name",
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "description": "Project name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Expected project identity for linked clients",
+            "in": "header",
+            "name": "Dock-Project-ID",
+            "schema": {
+              "description": "Expected project identity for linked clients",
+              "format": "int64",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Environment name",
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "description": "Environment name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Service name",
+            "in": "path",
+            "name": "service",
+            "required": true,
+            "schema": {
+              "description": "Service name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetServicePreviewsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServicePreviews"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "423": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Locked"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Set what a service does in previews",
+        "tags": [
+          "previews"
+        ]
+      }
+    },
     "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases": {
       "get": {
         "description": "Newest first.",
@@ -57460,147 +58315,8 @@
       }
     },
     "/api/v1/projects/{project}/previews": {
-      "delete": {
-        "description": "New pull requests get no preview. Open previews stay until their pull requests close. Scope: admin, whole project.",
-        "operationId": "disable-previews",
-        "parameters": [
-          {
-            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
-            "in": "query",
-            "name": "org",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Project name",
-            "in": "path",
-            "name": "project",
-            "required": true,
-            "schema": {
-              "description": "Project name",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Expected project identity for linked clients",
-            "in": "header",
-            "name": "Dock-Project-ID",
-            "schema": {
-              "description": "Expected project identity for linked clients",
-              "format": "int64",
-              "minimum": 1,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreviewSettings"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "423": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Locked"
-          },
-          "500": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "session": []
-          }
-        ],
-        "summary": "Turn previews off",
-        "tags": [
-          "previews"
-        ]
-      },
       "get": {
-        "description": "Whether pull requests get preview environments, cloned from which environment, the limits, and the open previews with their pull request, status and addresses. Scope: read.",
+        "description": "Which services build pull requests (and where from), the numbers of each environment previews are cloned from, and the open previews with their pull request, status and addresses. Scope: read.",
         "operationId": "get-previews",
         "parameters": [
           {
@@ -57723,156 +58439,7 @@
             "session": []
           }
         ],
-        "summary": "Preview settings and open previews",
-        "tags": [
-          "previews"
-        ]
-      },
-      "put": {
-        "description": "Pull requests to a repository the base environment's services deploy, into the branch they deploy, get a non-production environment pr-\u003cnumber\u003e cloned from the base. Only the listed variables' literal values are copied; pull requests from forks only with `allow_forks`. Scope: admin, whole project.",
-        "operationId": "set-previews",
-        "parameters": [
-          {
-            "description": "Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization.",
-            "in": "query",
-            "name": "org",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Project name",
-            "in": "path",
-            "name": "project",
-            "required": true,
-            "schema": {
-              "description": "Project name",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Expected project identity for linked clients",
-            "in": "header",
-            "name": "Dock-Project-ID",
-            "schema": {
-              "description": "Expected project identity for linked clients",
-              "format": "int64",
-              "minimum": 1,
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetPreviewsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreviewSettings"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "404": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
-          "409": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "423": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Locked"
-          },
-          "500": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          },
-          {
-            "session": []
-          }
-        ],
-        "summary": "Turn previews on or change them",
+        "summary": "A project's previews",
         "tags": [
           "previews"
         ]

@@ -13,7 +13,7 @@ import {
 // A preview environment's parts on the project overview (ADR 0056): its
 // pull request, status and addresses, and closing it.
 
-const previewStates: Record<Preview["status"], State> = {
+export const previewStates: Record<Preview["status"], State> = {
   waiting: { tone: "mut", glyph: "○", label: "waiting" },
   deploying: { tone: "prog", glyph: "◐", label: "deploying" },
   live: { tone: "ok", glyph: "●", label: "live" },
