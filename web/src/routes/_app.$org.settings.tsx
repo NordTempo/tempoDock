@@ -5,6 +5,7 @@ import { PageBar } from "../ui/kit";
 // Organization settings (ADR 0062, mock S2): the page bar, the grouped
 // column of sections, and the open section beside it.
 export const Route = createFileRoute("/_app/$org/settings")({
+  staticData: { ownMenu: true },
   component: OrgSettings,
 });
 
