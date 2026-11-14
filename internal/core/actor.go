@@ -163,6 +163,13 @@ func (a Actor) limited() bool { return a.ProjectID != 0 || a.EnvironmentID != 0 
 // require checks the actor's scope in its org. action completes "…
 // requires <scope>", e.g. "archiving a service".
 func (a Actor) require(need apitypes.Scope, action string) error {
+	a.shadow(need, action, 0, 0, rank(a.Scope) >= rank(need))
+	return a.requireOnly(need, action)
+}
+
+// requireOnly is require without the shadow, for checks that compare
+// their own final answer (requireUnlimited, checkProject).
+func (a Actor) requireOnly(need apitypes.Scope, action string) error {
 	if a.askFirst && rank(need) > rank(apitypes.ScopeRead) {
 		return invalid("only changes inside one environment can be asked for; %s isn't one", action)
 	}
@@ -232,7 +239,8 @@ func (a Actor) requireAccountManager(action string) error {
 // requireUnlimited is for operations outside any one project, like managing
 // tokens and users.
 func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
-	if err := a.require(need, action); err != nil {
+	a.shadow(need, action, 0, 0, rank(a.Scope) >= rank(need) && !a.limited())
+	if err := a.requireOnly(need, action); err != nil {
 		return err
 	}
 	if a.limited() {
@@ -301,7 +309,11 @@ func (a Actor) inOrg(p store.Project) error {
 // checkProject checks scope and limits for a project-level operation.
 // Environment-limited actors may read the project but not change it.
 func (a Actor) checkProject(need apitypes.Scope, action string, p store.Project) error {
-	if err := a.require(need, action); err != nil {
+	if p.OrgID == a.OrgID {
+		a.shadow(need, action, p.ID, 0, rank(a.Scope) >= rank(need) && (a.ProjectID == 0 || a.ProjectID == p.ID) &&
+			(a.EnvironmentID == 0 || rank(need) <= rank(apitypes.ScopeRead)))
+	}
+	if err := a.requireOnly(need, action); err != nil {
 		return err
 	}
 	if err := a.inOrg(p); err != nil {
@@ -334,6 +346,10 @@ func (a Actor) checkEnv(need apitypes.Scope, action string, p store.Project, e s
 // checkEnvAccess is checkEnv without the lock: scope and limits only.
 // Only operations that can't loosen a lock use it (locking itself).
 func (a Actor) checkEnvAccess(need apitypes.Scope, action string, p store.Project, e store.Environment) error {
+	if p.OrgID == a.OrgID {
+		a.shadow(need, action, p.ID, e.ID, rank(a.Scope) >= rank(need) && (a.ProjectID == 0 || a.ProjectID == p.ID) &&
+			(a.EnvironmentID == 0 || a.EnvironmentID == e.ID))
+	}
 	if err := a.requireScope(need, action); err != nil {
 		return err
 	}

@@ -120,6 +120,11 @@
       "bytes_op": 1886,
       "allocs_op": 5
     },
+    "core.BenchmarkCheckEnvShadowed": {
+      "ns_op": 38,
+      "bytes_op": 0,
+      "allocs_op": 0
+    },
     "core.BenchmarkCoreReads/Changes/services=20,staged": {
       "ns_op": 1421748,
       "bytes_op": 439681,

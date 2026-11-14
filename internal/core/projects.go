@@ -102,7 +102,9 @@ func (c *Core) loadService(ctx context.Context, orgID int64, ref ServiceRef) (sv
 
 // projectFor loads a project and checks the actor may do action on it.
 func (c *Core) projectFor(ctx context.Context, a Actor, name string, need apitypes.Scope, action string) (store.Project, error) {
-	if err := a.require(need, action); err != nil {
+	// Checked before loading, and compared with the model in
+	// checkProject, where the project is known.
+	if err := a.requireOnly(need, action); err != nil {
 		return store.Project{}, err
 	}
 	p, err := c.loadProject(ctx, a.OrgID, name)

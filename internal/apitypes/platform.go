@@ -36,3 +36,12 @@ type SplitTokenResult struct {
 	Token    Token        `json:"token"`
 	Platform CreatedToken `json:"platform"`
 }
+
+// AccessDisagreement is a kind of check where the permission model of ADR
+// 0080 answered differently from today's checks while it only watched
+// (phase 3): which check, both answers, and how often since the daemon
+// started.
+type AccessDisagreement struct {
+	Check string `json:"check" example:"token deploy: \"restarting\" at an environment: today allows, the model refuses (service.operate)"`
+	Count int64  `json:"count"`
+}

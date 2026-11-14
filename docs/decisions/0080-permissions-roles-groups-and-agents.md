@@ -110,8 +110,22 @@ one decides.
    domains skip TXT verification in their org login too (trust in the
    person, not running the platform), and the bootstrap token stays both
    so install scripts keep working with the one token they get.
-3. The model, shadowed: tables, area roles, default groups, migration,
-   both evaluators, the equivalence test.
+3. **The model, shadowed** (built): the permission list, area roles and
+   seeded groups in code (`perms.go`); `actionPerms` names the
+   permission each of today's checks means (until checks take one);
+   beside every check, the model's answer from today's state as the
+   migration will make it (`shadow.go`), with disagreements counted and
+   logged once, `dock platform access-diff` for operators. The
+   equivalence test is every core, API and CLI test: their `TestMain`
+   fails on any disagreement but the data policy's lowering rules, which
+   the migration's preflight stops on. `TestPermissionsFitScopes` checks
+   every entry against today's scopes, `TestEveryCheckHasAPermission`
+   that no literal check lacks one. Settled while building: Developers
+   also hold Analytics edit (goals, funnels, sites), Status pages post
+   and Logs edit (resolving errors), as today's deploy does; analytics
+   defaults are Org settings; a change to a project needs a grant on the
+   whole project, a read one anywhere in it. Tables and the migration
+   come with phase 4, from the same mapping.
 4. Groups decide: members and groups, the group editor, effective access.
 5. Custom roles; MCP tools declare their permission.
 6. Agents: personal agents and their settings, org agents, agent rules.

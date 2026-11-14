@@ -27,8 +27,43 @@ platform's until an operator splits them.`,
 	})
 	token := group(&cobra.Command{Use: "token", Short: "Platform tokens: list, create, revoke, split legacy ones"})
 	token.AddCommand(newPlatformTokenListCmd(g), newPlatformTokenCreateCmd(g), newPlatformTokenRevokeCmd(g), newPlatformTokenSplitCmd(g))
-	cmd.AddCommand(token)
+	cmd.AddCommand(token, newAccessDiffCmd(g))
 	return cmd
+}
+
+// newAccessDiffCmd is `dock platform access-diff` (ADR 0080, phase 3).
+func newAccessDiffCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "access-diff",
+		Short: "Where the new permission model disagreed with today's checks (platform.view)",
+		Long: `The permission model of ADR 0080 watches before it decides: beside every
+check it computes its own answer and counts where it differs, since the
+daemon started. No output means it agreed with every check. A data policy
+rule that gives less than a wider one shows as a lowering rule: the
+migration to the model stops on those until the rule is removed.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			list, err := get[[]apitypes.AccessDisagreement](cmd.Context(), s, apiPrefix+"/console/access-diff")
+			if err != nil {
+				return err
+			}
+			return g.io.Print(list, func() error {
+				if len(list) == 0 {
+					g.io.Successf("The permission model agreed with every check since the daemon started")
+					return nil
+				}
+				t := g.io.Table("count", "check")
+				for _, d := range list {
+					t.Row(itoa(d.Count), d.Check)
+				}
+				return t.Flush()
+			})
+		},
+	}
 }
 
 // platformTokenKind says what a token in the platform's list is.
