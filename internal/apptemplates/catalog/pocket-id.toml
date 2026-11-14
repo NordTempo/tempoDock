@@ -1,0 +1,24 @@
+name = "pocket-id"
+title = "Pocket ID"
+summary = "OIDC provider that signs in with passkeys"
+category = "security"
+website = "https://pocket-id.org"
+license = "BSD-2-Clause"
+revision = 1
+main = "app"
+domain = true
+notes = "Open /setup to create the admin account and its passkey."
+
+[[services]]
+  name = "app"
+  image = "ghcr.io/pocket-id/pocket-id:v2.19.2@sha256:3ee23895d6a3adb5dd5de801a4fd31fc31b960e6dfbea9b5200e33cf477695eb"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 1411
+  health_check_path = "/healthz"
+  memory_mb = 128
+  volumes = [{ name = "data", mount_path = "/app/data" }]
+  generate = { ENCRYPTION_KEY = "base64:32" }
+  [services.values]
+    APP_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    TRUST_PROXY = "true"
+    ANALYTICS_DISABLED = "true"

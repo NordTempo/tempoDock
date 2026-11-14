@@ -1,0 +1,18 @@
+name = "memos"
+title = "Memos"
+summary = "Quick notes with Markdown, like a private timeline"
+category = "docs"
+website = "https://usememos.com"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "The first account you register becomes the admin."
+
+[[services]]
+  name = "app"
+  image = "neosmemo/memos:26.11.0@sha256:087e7dc6b76b31fcd1107a5767398b2a310ced209adb791efd8760c745dc8034"
+  track = '^\d+\.\d+\.\d+$'
+  port = 5230
+  memory_mb = 128
+  volumes = [{ name = "data", mount_path = "/var/opt/memos" }]

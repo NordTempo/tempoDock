@@ -1,0 +1,34 @@
+name = "baserow"
+title = "Baserow"
+summary = "Spreadsheet-style databases, without code"
+category = "internal tools"
+website = "https://baserow.io"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and create the first account, which becomes the admin."
+
+[[services]]
+  name = "app"
+  image = "baserow/baserow:2.4.3@sha256:304bebe22bf4c66d96d11bb746727492fa91637bd6deb807b2ef464f071c215c"
+  track = '^\d+\.\d+\.\d+$'
+  port = 80
+  health_check_path = "/api/_health/"
+  health_check_timeout_seconds = 300
+  memory_mb = 1536
+  depends_on = ["db", "redis"]
+  volumes = [{ name = "data", mount_path = "/baserow/data" }]
+  generate = { SECRET_KEY = "hex:32", BASEROW_JWT_SIGNING_KEY = "hex:32" }
+  [services.values]
+    BASEROW_PUBLIC_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    DATABASE_URL = "${{db.DATABASE_URL}}"
+    REDIS_URL = "${{redis.REDIS_URL}}"
+
+[[services]]
+  name = "db"
+  template = "postgres"
+
+[[services]]
+  name = "redis"
+  template = "redis"

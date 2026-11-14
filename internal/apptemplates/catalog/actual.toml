@@ -1,0 +1,18 @@
+name = "actual"
+title = "Actual Budget"
+summary = "Envelope budgeting, synced across devices"
+category = "personal"
+website = "https://actualbudget.org"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and set the server password on the first screen."
+
+[[services]]
+  name = "app"
+  image = "actualbudget/actual-server:26.11.0@sha256:06cf186569cf58d93e12659ff1a517b65b5b0ebee7050a3991d4bd8a1d398da6"
+  track = '^\d+\.\d+\.\d+$'
+  port = 5006
+  memory_mb = 256
+  volumes = [{ name = "data", mount_path = "/data" }]

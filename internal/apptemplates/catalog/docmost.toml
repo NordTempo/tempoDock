@@ -1,0 +1,33 @@
+name = "docmost"
+title = "Docmost"
+summary = "Wiki and documents with real-time editing"
+category = "docs"
+website = "https://docmost.com"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and create the workspace and its admin."
+
+[[services]]
+  name = "app"
+  image = "docmost/docmost:0.97.0@sha256:40c454d74ffdd9ecb15833e4d96f3a630d59aad862a1869381ae6ee086454419"
+  track = '^\d+\.\d+\.\d+$'
+  port = 3000
+  health_check_path = "/api/health"
+  memory_mb = 512
+  depends_on = ["db", "redis"]
+  volumes = [{ name = "storage", mount_path = "/app/data/storage" }]
+  generate = { APP_SECRET = "hex:32" }
+  [services.values]
+    APP_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    DATABASE_URL = "${{db.DATABASE_URL}}"
+    REDIS_URL = "${{redis.REDIS_URL}}"
+
+[[services]]
+  name = "db"
+  template = "postgres"
+
+[[services]]
+  name = "redis"
+  template = "redis"

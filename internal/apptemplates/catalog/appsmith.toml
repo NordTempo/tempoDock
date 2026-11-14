@@ -1,0 +1,20 @@
+name = "appsmith"
+title = "Appsmith"
+summary = "Internal tools built from drag and drop widgets"
+category = "internal tools"
+website = "https://www.appsmith.com"
+license = "Apache-2.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and create the admin account. It runs its own MongoDB and Redis inside, so it needs 2 GB."
+
+[[services]]
+  name = "app"
+  image = "appsmith/appsmith-ce:v2.7.0@sha256:ba7e575a188f64aa83e646d532673304626825353dd47727e021f9b42bd53833"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 80
+  health_check_path = "/api/v1/health"
+  health_check_timeout_seconds = 300
+  memory_mb = 2048
+  volumes = [{ name = "stacks", mount_path = "/appsmith-stacks" }]

@@ -1,0 +1,44 @@
+name = "directus"
+title = "Directus"
+summary = "Data platform: an API and admin app over Postgres"
+category = "internal tools"
+website = "https://directus.io"
+license = "BSL 1.1 (source available)"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in with the admin email and password you chose."
+
+[[inputs]]
+  key = "ADMIN_EMAIL"
+  label = "Admin email"
+  kind = "email"
+
+[[inputs]]
+  key = "ADMIN_PASSWORD"
+  label = "Admin password"
+  kind = "secret"
+
+[[services]]
+  name = "app"
+  image = "directus/directus:12.6.1@sha256:e1561b5e526e8e7a2ac19b7bb6eab63611dd84a862a8c45b864118768a2baff4"
+  track = '^\d+\.\d+\.\d+$'
+  port = 8055
+  health_check_path = "/server/health"
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "uploads", mount_path = "/directus/uploads" }]
+  generate = { SECRET = "hex:32" }
+  [services.values]
+    PUBLIC_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    DB_CLIENT = "pg"
+    DB_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    DB_PORT = "5432"
+    DB_DATABASE = "${{db.POSTGRES_DB}}"
+    DB_USER = "${{db.POSTGRES_USER}}"
+    DB_PASSWORD = "${{db.POSTGRES_PASSWORD}}"
+    TELEMETRY = "false"
+
+[[services]]
+  name = "db"
+  template = "postgres"

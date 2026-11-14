@@ -1,0 +1,45 @@
+name = "n8n"
+title = "n8n"
+summary = "Workflow automation with a visual editor"
+category = "automation"
+website = "https://n8n.io"
+license = "Sustainable Use License (source available)"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and create the owner account on the first screen."
+
+[[inputs]]
+  key = "GENERIC_TIMEZONE"
+  label = "Time zone"
+  kind = "text"
+  default = "Europe/Oslo"
+  help = "For schedule triggers, an IANA name"
+
+[[services]]
+  name = "app"
+  image = "n8nio/n8n:3.2.2@sha256:c5d94cb443ff3d7b3abd65927fd8c9af1281f026ebfed9b208cf8d0f6b199a94"
+  track = '^\d+\.\d+\.\d+$'
+  port = 5678
+  health_check_path = "/healthz"
+  memory_mb = 768
+  depends_on = ["db"]
+  volumes = [{ name = "data", mount_path = "/home/node/.n8n" }]
+  generate = { N8N_ENCRYPTION_KEY = "hex:32" }
+  [services.values]
+    DB_TYPE = "postgresdb"
+    DB_POSTGRESDB_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    DB_POSTGRESDB_PORT = "5432"
+    DB_POSTGRESDB_DATABASE = "${{db.POSTGRES_DB}}"
+    DB_POSTGRESDB_USER = "${{db.POSTGRES_USER}}"
+    DB_POSTGRESDB_PASSWORD = "${{db.POSTGRES_PASSWORD}}"
+    N8N_HOST = "${{app.DOCK_PUBLIC_DOMAIN}}"
+    N8N_PROTOCOL = "https"
+    WEBHOOK_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}/"
+    N8N_PROXY_HOPS = "1"
+    N8N_RUNNERS_ENABLED = "true"
+    N8N_DIAGNOSTICS_ENABLED = "false"
+
+[[services]]
+  name = "db"
+  template = "postgres"

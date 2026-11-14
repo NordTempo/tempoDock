@@ -1,0 +1,29 @@
+name = "wikijs"
+title = "Wiki.js"
+summary = "Wiki with Markdown, a visual editor and search"
+category = "docs"
+website = "https://js.wiki"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and finish the setup screen, which creates the admin."
+
+[[services]]
+  name = "app"
+  image = "requarks/wiki:3.3.1@sha256:2bdfa19d02d3f0ce18020648cc38ca138c5467fe1cfc4765d4b5f2a59c8efcad"
+  track = '^3\.\d+\.\d+$'
+  port = 3000
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "data", mount_path = "/wiki/data/content" }]
+  [services.values]
+    DB_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    DB_PORT = "5432"
+    DB_USER = "${{db.POSTGRES_USER}}"
+    DB_PASS = "${{db.POSTGRES_PASSWORD}}"
+    DB_NAME = "${{db.POSTGRES_DB}}"
+
+[[services]]
+  name = "db"
+  template = "postgres"

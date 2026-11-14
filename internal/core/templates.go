@@ -19,8 +19,11 @@ import (
 // checks, backups, restores and data setup.
 type dbTemplate struct {
 	name        apitypes.Template
+	title       string
 	description string
-	image       string
+	// license is the database's, as the template catalog shows it.
+	license string
+	image   string
 	// port is where the database listens. It isn't published: health
 	// checks probe it on the environment network, as backups reach it.
 	port      int
@@ -45,6 +48,8 @@ const templateVolume = "data"
 var templates = map[apitypes.Template]dbTemplate{
 	apitypes.TemplatePostgres: {
 		name:        apitypes.TemplatePostgres,
+		title:       "PostgreSQL",
+		license:     "PostgreSQL",
 		description: "PostgreSQL 17, tuned for 512 MB",
 		image:       "postgres:17-alpine@sha256:1bcc18d81671b02906296aad470ec9778a6b71016ce953092024b680bad007b0",
 		port:        defaultPostgresPort,
@@ -70,6 +75,8 @@ var templates = map[apitypes.Template]dbTemplate{
 	},
 	apitypes.TemplateRedis: {
 		name:        apitypes.TemplateRedis,
+		title:       "Redis",
+		license:     "AGPL-3.0",
 		description: "Redis 8 with append-only persistence, 200 MB of data",
 		image:       "redis:8-alpine@sha256:615b4cedaff0c1437a1548acae4222572df8c021eeb7382d64cb8b5e3a13ac7a",
 		port:        6379,

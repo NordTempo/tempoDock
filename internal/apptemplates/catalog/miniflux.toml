@@ -1,0 +1,39 @@
+name = "miniflux"
+title = "Miniflux"
+summary = "Minimal feed reader"
+category = "personal"
+website = "https://miniflux.app"
+license = "Apache-2.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in with the admin user and password you chose."
+
+[[inputs]]
+  key = "ADMIN_USERNAME"
+  label = "Admin user"
+  kind = "text"
+  default = "admin"
+
+[[inputs]]
+  key = "ADMIN_PASSWORD"
+  label = "Admin password"
+  kind = "secret"
+
+[[services]]
+  name = "app"
+  image = "miniflux/miniflux:2.3.5@sha256:8fd6c3c434ecc3d4083306f83e03c0bb74c632e0f8378da5ead7e1773b0b89c9"
+  track = '^\d+\.\d+\.\d+$'
+  port = 8080
+  health_check_path = "/healthcheck"
+  memory_mb = 128
+  depends_on = ["db"]
+  [services.values]
+    DATABASE_URL = "${{db.DATABASE_URL}}?sslmode=disable"
+    RUN_MIGRATIONS = "1"
+    CREATE_ADMIN = "1"
+    BASE_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+
+[[services]]
+  name = "db"
+  template = "postgres"

@@ -1,0 +1,33 @@
+name = "metabase"
+title = "Metabase"
+summary = "Dashboards and questions over your databases"
+category = "internal tools"
+website = "https://www.metabase.com"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and create the admin account. Its first start takes a minute or two."
+
+[[services]]
+  name = "app"
+  image = "metabase/metabase:v0.65.4@sha256:a562492ba594acd71a2976a08dfcb4a67af7ad56a614048c7a10af18ec560e3c"
+  track = '^v0\.\d+\.\d+$'
+  port = 3000
+  health_check_path = "/api/health"
+  health_check_timeout_seconds = 300
+  memory_mb = 1536
+  depends_on = ["db"]
+  [services.values]
+    MB_DB_TYPE = "postgres"
+    MB_DB_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    MB_DB_PORT = "5432"
+    MB_DB_DBNAME = "${{db.POSTGRES_DB}}"
+    MB_DB_USER = "${{db.POSTGRES_USER}}"
+    MB_DB_PASS = "${{db.POSTGRES_PASSWORD}}"
+    MB_SITE_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    JAVA_OPTS = "-Xmx1g"
+
+[[services]]
+  name = "db"
+  template = "postgres"

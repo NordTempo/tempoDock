@@ -1,0 +1,23 @@
+name = "mailpit"
+title = "Mailpit"
+summary = "Catches outgoing email for testing"
+category = "dev"
+website = "https://mailpit.axllent.org"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "Other services send mail to this service on port 1025, without TLS. Turn on access protection for the inbox (Settings, Domains)."
+
+[[services]]
+  name = "app"
+  image = "axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 8025
+  health_check_path = "/livez"
+  memory_mb = 128
+  volumes = [{ name = "data", mount_path = "/data" }]
+  [services.values]
+    MP_DATABASE = "/data/mailpit.db"
+    MP_SMTP_AUTH_ACCEPT_ANY = "true"
+    MP_SMTP_AUTH_ALLOW_INSECURE = "true"

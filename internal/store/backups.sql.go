@@ -683,6 +683,22 @@ func (q *Queries) SaveBackupLog(ctx context.Context, arg SaveBackupLogParams) er
 	return err
 }
 
+const setServiceFromTemplate = `-- name: SetServiceFromTemplate :exec
+UPDATE services SET from_template = ?, from_template_revision = ? WHERE id = +?
+`
+
+type SetServiceFromTemplateParams struct {
+	FromTemplate         string
+	FromTemplateRevision int64
+	ID                   int64
+}
+
+// Records the app template (ADR 0081) a service was created from.
+func (q *Queries) SetServiceFromTemplate(ctx context.Context, arg SetServiceFromTemplateParams) error {
+	_, err := q.db.ExecContext(ctx, setServiceFromTemplate, arg.FromTemplate, arg.FromTemplateRevision, arg.ID)
+	return err
+}
+
 const setServiceTemplate = `-- name: SetServiceTemplate :exec
 UPDATE services SET template = ? WHERE id = +?
 `

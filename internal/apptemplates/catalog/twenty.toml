@@ -1,0 +1,51 @@
+name = "twenty"
+title = "Twenty"
+summary = "CRM for contacts, companies and deals"
+category = "crm"
+website = "https://twenty.com"
+license = "AGPL-3.0"
+revision = 1
+main = "server"
+domain = true
+notes = "Open it and create the workspace and its first user."
+
+[[services]]
+  name = "server"
+  image = "twentycrm/twenty:v2.58.2@sha256:cdf2da26925fd4f9a80eb6143f1815f74d93318b509dd20fe6b4f274f57a1c55"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 3000
+  health_check_path = "/healthz"
+  health_check_timeout_seconds = 300
+  memory_mb = 1024
+  depends_on = ["db", "redis"]
+  volumes = [{ name = "storage", mount_path = "/app/packages/twenty-server/.local-storage" }]
+  generate = { APP_SECRET = "hex:32" }
+  [services.values]
+    SERVER_URL = "https://${{server.DOCK_PUBLIC_DOMAIN}}"
+    PG_DATABASE_URL = "${{db.DATABASE_URL}}"
+    REDIS_URL = "${{redis.REDIS_URL}}"
+    STORAGE_TYPE = "local"
+
+[[services]]
+  name = "worker"
+  image = "twentycrm/twenty:v2.58.2@sha256:cdf2da26925fd4f9a80eb6143f1815f74d93318b509dd20fe6b4f274f57a1c55"
+  track = '^v\d+\.\d+\.\d+$'
+  start_command = "yarn worker:prod"
+  memory_mb = 1024
+  depends_on = ["server"]
+  [services.values]
+    SERVER_URL = "https://${{server.DOCK_PUBLIC_DOMAIN}}"
+    PG_DATABASE_URL = "${{db.DATABASE_URL}}"
+    REDIS_URL = "${{redis.REDIS_URL}}"
+    APP_SECRET = "${{server.APP_SECRET}}"
+    STORAGE_TYPE = "local"
+    DISABLE_DB_MIGRATIONS = "true"
+    DISABLE_CRON_JOBS_REGISTRATION = "true"
+
+[[services]]
+  name = "db"
+  template = "postgres"
+
+[[services]]
+  name = "redis"
+  template = "redis"

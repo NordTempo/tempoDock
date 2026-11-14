@@ -158,3 +158,7 @@ WHERE backup_logs.service_id = +sqlc.arg(service_id) AND backup_logs.backup_id <
     SELECT l.backup_id FROM backup_logs l WHERE l.service_id = +sqlc.arg(service_id)
     ORDER BY l.backup_id DESC LIMIT 1 OFFSET CAST(sqlc.arg(keep) AS INTEGER) - 1
 );
+
+-- name: SetServiceFromTemplate :exec
+-- Records the app template (ADR 0081) a service was created from.
+UPDATE services SET from_template = ?, from_template_revision = ? WHERE id = +?;
