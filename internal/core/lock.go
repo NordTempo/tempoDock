@@ -69,6 +69,8 @@ type LockedError struct {
 	// them.
 	askOwner *int64
 	owner    string
+	// rule: the org's agent rules ask an approver first here.
+	rule bool
 }
 
 func (e *LockedError) Error() string { return e.err.Msg }
@@ -79,6 +81,14 @@ func (e *LockedError) Unwrap() error { return e.err }
 // AccessRequest returns the request filed for the call (0 for none); the
 // MCP endpoint reads it through this method.
 func (e *LockedError) AccessRequest() int64 { return e.Request }
+
+// ruleAskErr is checkEnv's error when the org's agent rules ask an
+// approver first: a LockedError the approvers decide.
+func (a Actor) ruleAskErr(p store.Project, e store.Environment, action string) *LockedError {
+	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action, rule: true}
+	le.err = &Error{Code: apitypes.CodeEnvironmentLocked, Msg: le.message()}
+	return le
+}
 
 // askOwnerErr is checkEnv's error when a personal agent's change waits
 // for its person (asksOwner): a LockedError their approval lets through.
@@ -101,6 +111,10 @@ func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *L
 func (e *LockedError) message() string {
 	follow := fmt.Sprintf("An admin approves or rejects it in the UI (the Inbox); approved, it runs as you. Follow it with `dock request wait %d`", e.Request)
 	switch {
+	case e.rule && e.Request != 0:
+		return fmt.Sprintf("%s in %s/%s waits for an approver as access request #%d: the organization's agent rules ask first there. %s", e.Action, e.Project, e.Environment, e.Request, follow)
+	case e.rule:
+		return fmt.Sprintf("%s in %s/%s needs an approver first: the organization's agent rules ask there; give a reason and wait for the request", e.Action, e.Project, e.Environment)
 	case e.askOwner != nil && e.Request != 0:
 		return fmt.Sprintf("%s in %s/%s waits for %s's approval as access request #%d: they asked their agents to ask first. They approve or reject it in the UI (the Inbox); approved, it runs as you. Follow it with `dock request wait %d`", e.Action, e.Project, e.Environment, e.owner, e.Request, e.Request)
 	case e.askOwner != nil:

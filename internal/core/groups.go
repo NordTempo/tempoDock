@@ -229,8 +229,12 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 		if err != nil {
 			return a, err
 		}
-		cp := capOf(settings)
-		entries, a.agentAsk, a.agentData = cp.capEntries(entries), cp.ask, cp.data
+		rules, err := c.store.ListAgentRules(ctx, a.OrgID)
+		if err != nil {
+			return a, err
+		}
+		cp := capOf(settings, rules, true)
+		entries, a.agentAsk, a.agentRuleAsk, a.agentData = cp.capEntries(entries), cp.ask, cp.ruleAsk, cp.data
 	}
 	if !c.enforceGrants.Load() {
 		// Shadow (access_model.go): the role decides as before; the model

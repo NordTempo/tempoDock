@@ -21,6 +21,11 @@ const words: Record<string, readonly [label: string, past: string]> = {
     "shadow permission model",
     "switched the permission model to shadow",
   ],
+  "agents.bypass": [
+    "agent rules bypass",
+    "changed whether the agent rules apply to",
+  ],
+  "agents.rules": ["change agent rules", "changed"],
   "agents.settings": [
     "change agent settings",
     "changed what their agents may do:",

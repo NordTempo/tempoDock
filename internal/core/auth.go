@@ -159,7 +159,7 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 	}
 	if t.Granted {
 		// An org agent: its grants (org_agents.go).
-		return c.loadTokenAccess(ctx, a)
+		return c.loadTokenAccess(ctx, a, t.RulesBypass)
 	}
 	return a, nil
 }

@@ -54,6 +54,18 @@ dock grant revoke 42                                        # end a grant
 They decide while the platform's permission model does (`dock platform
 access-model enforce`); until then its scope and limit do.
 
+### The organization's agent rules
+
+Admins cap every agent of the organization, people's and its own, in
+Settings › Agent rules or with `dock agent rule`, and can make their
+changes somewhere wait for an approver:
+
+```sh
+dock agent rule data=propose --kinds production        # no agent writes production data
+dock agent rule deploy=all --kinds production --ask    # agents' production deploys wait for an approver
+dock token bypass ci on                                # but this CI token
+```
+
 ## 2. Give it to the agent
 
 ```sh

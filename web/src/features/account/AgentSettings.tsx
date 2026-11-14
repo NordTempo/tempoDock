@@ -3,8 +3,7 @@ import { useState } from "react";
 import { api, body } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
-import { Act, ErrorText } from "../../ui/kit";
-import { useRoles } from "../access/data";
+import { AgentMatrix } from "../access/AgentMatrix";
 import { useOwnTokens } from "../tokens/data";
 
 // Your agents (ADR 0080, phase 6): what your `dock login` tokens may use
@@ -13,7 +12,6 @@ import { useOwnTokens } from "../tokens/data";
 // narrowed further. An agent can tighten this itself; loosening is here.
 
 type Setting = components["schemas"]["AgentSetting"];
-const kinds = ["production", "other", "previews"] as const;
 
 const settingsKey = (agent: number) => ["access", "agent-settings", agent];
 
@@ -55,11 +53,9 @@ export function AgentSettings() {
   );
 }
 
-/** The editable matrix: an area per row, a kind per column. */
+/** The caller's setting for all their agents (0) or one, editable. */
 function Matrix({ agent }: { agent: number }) {
   const saved = useAgentSettings(agent);
-  const roles = useRoles();
-  const [cells, setCells] = useState<Setting[]>(saved.settings ?? []);
   const save = useAction(
     (settings: Setting[]) =>
       body(
@@ -70,91 +66,15 @@ function Matrix({ agent }: { agent: number }) {
     () => [["access", "agent-settings"]],
     () => "Saved what your agents may do",
   );
-  const levelsOf = (area: string) => {
-    const r = roles.find((x) => x.key === area);
-    return (r?.levels ?? []).map((l) => l.name || "yes").filter(Boolean);
-  };
-  const changed = cells.filter((c, i) => {
-    const s = saved.settings?.[i];
-    return s && (s.level !== c.level || !!s.ask !== !!c.ask);
-  });
-  const cli = changed
-    .map(
-      (c) =>
-        `dock agent set ${c.area}=${c.level} --kinds ${c.kind}${c.ask ? " --ask" : " --no-ask"}${agent ? ` --agent ${agent}` : ""}`,
-    )
-    .join("; ");
-  const update = (i: number, patch: Partial<Setting>) =>
-    setCells(cells.map((c, j) => (j === i ? { ...c, ...patch } : c)));
-  const areas = [...new Set(cells.map((c) => c.area))];
   return (
-    <>
-      <table>
-        <thead>
-          <tr>
-            <th>Area</th>
-            {kinds.map((k) => (
-              <th key={k}>{k}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {areas.map((area) => (
-            <tr key={area}>
-              <td className="py-1.5">
-                {roles.find((r) => r.key === area)?.name ?? area}
-              </td>
-              {kinds.map((k) => {
-                const i = cells.findIndex(
-                  (c) => c.area === area && c.kind === k,
-                );
-                const c = cells[i];
-                if (!c) return <td key={k} />;
-                return (
-                  <td key={k} className="py-1.5">
-                    <span className="flex items-center gap-2">
-                      <select
-                        className="field"
-                        aria-label={`${area} in ${k}`}
-                        value={c.level}
-                        onChange={(e) => update(i, { level: e.target.value })}
-                      >
-                        <option value="off">off</option>
-                        {levelsOf(area).map((l) => (
-                          <option key={l} value={l === "yes" ? "" : l}>
-                            {l}
-                          </option>
-                        ))}
-                        <option value="all">all</option>
-                      </select>
-                      <label className="flex items-center gap-1 text-mut">
-                        <input
-                          type="checkbox"
-                          className="accent-fg"
-                          checked={!!c.ask}
-                          onChange={(e) => update(i, { ask: e.target.checked })}
-                        />
-                        ask
-                      </label>
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div>
-        <Act
-          primary
-          cli={cli || "dock agent set AREA=LEVEL --kinds KIND"}
-          disabled={changed.length === 0 || save.isPending}
-          onClick={() => save.mutate(changed)}
-        >
-          Save
-        </Act>
-      </div>
-      {save.error && <ErrorText error={save.error} />}
-    </>
+    <AgentMatrix
+      saved={saved.settings ?? []}
+      pending={save.isPending}
+      error={save.error}
+      cli={(c) =>
+        `dock agent set ${c.area}=${c.level} --kinds ${c.kind}${c.ask ? " --ask" : " --no-ask"}${agent ? ` --agent ${agent}` : ""}`
+      }
+      onSave={(changed) => save.mutate(changed)}
+    />
   );
 }

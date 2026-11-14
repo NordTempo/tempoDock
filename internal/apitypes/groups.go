@@ -26,10 +26,12 @@ type GroupAgent struct {
 
 // AgentAccess is an org agent's grants and groups.
 type AgentAccess struct {
-	TokenID int64    `json:"token_id"`
-	Name    string   `json:"name"`
-	Groups  []string `json:"groups"`
-	Grants  []Grant  `json:"grants"`
+	TokenID int64  `json:"token_id"`
+	Name    string `json:"name"`
+	// RulesBypass: the organization's agent rules don't apply to it.
+	RulesBypass bool     `json:"rules_bypass,omitempty"`
+	Groups      []string `json:"groups"`
+	Grants      []Grant  `json:"grants"`
 }
 
 // GroupMember is a person in a group.

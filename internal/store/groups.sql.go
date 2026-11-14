@@ -791,7 +791,7 @@ func (q *Queries) ListTokenGrants(ctx context.Context, arg ListTokenGrantsParams
 }
 
 const listTokensToGrant = `-- name: ListTokensToGrant :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted FROM tokens
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, rules_bypass FROM tokens
 WHERE granted = 0 AND origin = 'manual' AND platform IS NULL AND org_id IS NOT NULL AND revoked_at IS NULL
 `
 
@@ -828,6 +828,7 @@ func (q *Queries) ListTokensToGrant(ctx context.Context) ([]Token, error) {
 			&i.TwoFactor,
 			&i.Platform,
 			&i.Granted,
+			&i.RulesBypass,
 		); err != nil {
 			return nil, err
 		}

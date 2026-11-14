@@ -97,7 +97,81 @@ you, signed in on the Account page. --agent narrows one agent only.`,
 	set.Flags().BoolVar(&noAsk, "no-ask", false, "stop asking you first there")
 	set.Flags().Int64Var(&agent, "agent", 0, "narrow one agent only (its token ID)")
 	set.MarkFlagsMutuallyExclusive("ask", "no-ask")
-	cmd.AddCommand(settings, set)
+	cmd.AddCommand(settings, set, newAgentRulesCmd(g), newAgentRuleCmd(g))
+	return cmd
+}
+
+// newAgentRulesCmd is `dock agent rules`: the organization's.
+func newAgentRulesCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use: "rules", Short: "The organization's agent rules: the most its agents may use, per area and kind, and where they ask an approver (admin)", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			cur, err := get[apitypes.AgentSettings](cmd.Context(), s, apiPrefix+"/agent-rules")
+			if err != nil {
+				return err
+			}
+			return printAgentSettings(g, cur)
+		},
+	}
+}
+
+// newAgentRuleCmd is `dock agent rule AREA=LEVEL...`.
+func newAgentRuleCmd(g *globals) *cobra.Command {
+	var kinds []string
+	var ask, noAsk bool
+	cmd := &cobra.Command{
+		Use:   "rule AREA=LEVEL...",
+		Short: "Set the organization's agent rules: the most every agent may use (admin)",
+		Long: `Caps every agent of the organization (people's dock login and its tokens,
+but those that bypass the rules) at a level of an area, for every
+environment kind or only --kinds; all is no rule. --ask makes their
+changes there wait for an approver.`,
+		Example: `  dock agent rule data=propose --kinds production
+  dock agent rule deploy=all --kinds production --ask`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(kinds) == 0 {
+				kinds = agentKinds
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			cur, err := get[apitypes.AgentSettings](cmd.Context(), s, apiPrefix+"/agent-rules")
+			if err != nil {
+				return err
+			}
+			var req apitypes.AgentSettings
+			for _, arg := range args {
+				area, level, ok := strings.Cut(arg, "=")
+				if !ok {
+					return usageError(fmt.Sprintf("write each as AREA=LEVEL, like data=propose, not %q", arg), "")
+				}
+				for _, c := range cur.Settings {
+					if c.Area == area && slices.Contains(kinds, c.Kind) {
+						c.Level = level
+						if ask || noAsk {
+							c.Ask = ask
+						}
+						req.Settings = append(req.Settings, c)
+					}
+				}
+			}
+			next, err := send[apitypes.AgentSettings](cmd.Context(), s, http.MethodPut, apiPrefix+"/agent-rules", req)
+			if err != nil {
+				return err
+			}
+			return printAgentSettings(g, next)
+		},
+	}
+	cmd.Flags().StringSliceVar(&kinds, "kinds", nil, "only these environment kinds: production, other, previews (default all)")
+	cmd.Flags().BoolVar(&ask, "ask", false, "agents' changes there wait for an approver")
+	cmd.Flags().BoolVar(&noAsk, "no-ask", false, "stop asking first there")
+	cmd.MarkFlagsMutuallyExclusive("ask", "no-ask")
 	return cmd
 }
 

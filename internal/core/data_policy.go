@@ -157,7 +157,7 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 	if a.lockedOut(es.env) {
 		perm = lockedData(perm, es)
 	}
-	if a.hasGrants && a.isPersonalAgent() {
+	if a.hasGrants && a.agentData != ([3]string{}) {
 		if i := kindIndex(envKind(es.env)); i >= 0 {
 			perm = capAgentData(perm, a.agentData[i])
 		}

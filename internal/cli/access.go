@@ -279,6 +279,9 @@ func newTokenAccessCmds(g *globals) []*cobra.Command {
 	printAccess := func(a apitypes.AgentAccess) error {
 		return g.io.Print(a, func() error {
 			g.io.Successf("token %s (%d), in %s", a.Name, a.TokenID, dash(strings.Join(a.Groups, ", ")))
+			if a.RulesBypass {
+				g.io.Detail("Bypasses the organization's agent rules")
+			}
 			t := g.io.Table("grant", "role", "on")
 			for _, x := range a.Grants {
 				t.Row(itoa(x.ID), x.Role, grantPlace(x))
@@ -321,7 +324,25 @@ func newTokenAccessCmds(g *globals) []*cobra.Command {
 		},
 	}
 	gf.add(grant)
-	return []*cobra.Command{access, grant}
+	bypass := &cobra.Command{
+		Use: "bypass <name|id> on|off", Short: "Exempt an org token from the agent rules, or stop (admin)", Args: cobra.ExactArgs(2),
+		ValidArgs: []string{"on", "off"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if args[1] != "on" && args[1] != "off" {
+				return usageError(fmt.Sprintf("say on or off, not %q", args[1]), "")
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			a, err := send[apitypes.AgentAccess](cmd.Context(), s, http.MethodPut, apiPrefix+"/tokens/"+url.PathEscape(args[0])+"/rules-bypass", map[string]bool{"bypass": args[1] == "on"})
+			if err != nil {
+				return err
+			}
+			return printAccess(a)
+		},
+	}
+	return []*cobra.Command{access, grant, bypass}
 }
 
 func newTokenRevokeCmd(g *globals) *cobra.Command {

@@ -216,7 +216,13 @@ one decides.
    and limit for what still speaks in them (the data policy's subject,
    MCP's implied project and environment); `dock token access|grant`,
    `dock group add --agent`, and Grants and groups in a token's menu.
-   6c: the org's agent rules.
+   6c, agent rules (built): the org's ceilings per area role and kind
+   (migration 0113, `agent_rules`: the most any agent may use, and ask),
+   read with every agent's request; an agent uses the lowest of its
+   person's setting, its narrowing and the rule. A rule's ask files a
+   request the environment's approvers decide (a person's ask goes to
+   them). `tokens.rules_bypass` exempts a trusted org agent. Settings ›
+   Agent rules, `dock agent rules|rule`, `dock token bypass`.
 7. Protection.
 
 ## Consequences

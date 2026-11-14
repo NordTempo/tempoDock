@@ -124,6 +124,32 @@ func registerGroups(s *Server, a huma.API) {
 		})
 	}
 	authed(s, a, huma.Operation{
+		OperationID: "get-agent-rules", Method: http.MethodGet, Path: Prefix + "/agent-rules",
+		Summary: "The organization's agent rules", Tags: tags,
+		Description: "ADR 0080: per area role and environment kind, the most any agent (a person's `dock login` or one of the organization's tokens) may use, and whether its changes there ask an approver first. all is no rule. Needs members.read.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.AgentRules(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-agent-rules", Method: http.MethodPut, Path: Prefix + "/agent-rules",
+		Summary: "Change the organization's agent rules", Tags: tags,
+		Description: "The cells given replace theirs; every agent's next request follows them, but tokens that bypass them. Needs agents.manage, with a recent sign-in in the browser.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AgentSettings }) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.SetAgentRules(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-agent-rules-bypass", Method: http.MethodPut, Path: Prefix + "/tokens/{token}/rules-bypass",
+		Summary: "Exempt an org agent from the agent rules, or stop", Tags: tags,
+		Description: "For a trusted token (CI). Needs agents.manage, with a recent sign-in in the browser.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Token string `path:"token" doc:"The token's name or ID"`
+		Body  struct {
+			Bypass bool `json:"bypass"`
+		}
+	}) (*out[apitypes.AgentAccess], error) {
+		return reply(s.core.SetAgentRulesBypass(ctx, actor, in.Token, in.Body.Bypass))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-groups", Method: http.MethodGet, Path: Prefix + "/groups",
 		Summary: "List groups", Tags: tags,
 		Description: "The organization's groups with their members and grants. Needs members.read.",

@@ -37,6 +37,14 @@ type AccessRequest struct {
 	AskUserID     *int64
 }
 
+type AgentRule struct {
+	OrgID int64
+	Area  string
+	Kind  int64
+	Level string
+	Ask   bool
+}
+
 type AgentSetting struct {
 	UserID  int64
 	OrgID   int64
@@ -1266,6 +1274,7 @@ type Token struct {
 	TwoFactor         bool
 	Platform          *string
 	Granted           bool
+	RulesBypass       bool
 }
 
 type TrafficPath struct {

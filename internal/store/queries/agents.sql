@@ -12,3 +12,17 @@ WHERE user_id = +sqlc.arg(user_id) AND org_id = +sqlc.arg(org_id) AND coalesce(t
 
 -- name: AddAgentSetting :exec
 INSERT INTO agent_settings (user_id, org_id, token_id, area, kind, level, ask) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- ListAgentRules is the organization's agent rules, read with every
+-- request of an agent.
+-- name: ListAgentRules :many
+SELECT * FROM agent_rules WHERE org_id = +?;
+
+-- name: DeleteAgentRules :exec
+DELETE FROM agent_rules WHERE org_id = +?;
+
+-- name: AddAgentRule :exec
+INSERT INTO agent_rules (org_id, area, kind, level, ask) VALUES (?, ?, ?, ?, ?);
+
+-- name: SetTokenRulesBypass :exec
+UPDATE tokens SET rules_bypass = ? WHERE id = +?;

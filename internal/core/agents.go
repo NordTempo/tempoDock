@@ -69,38 +69,51 @@ func agentDefault(area string) string {
 	return agentAll
 }
 
-// agentCap is what a personal agent may use of its person's access, per
-// environment kind, and what of that it asks them first for.
+// agentCap is what an agent may use of the access it acts with, per
+// environment kind, what of that asks its person first, and what asks
+// an approver first (the org's agent rules).
 type agentCap struct {
-	use, ask [3]Perms
+	use, ask, ruleAsk [3]Perms
 	// data is the Data panel's level per kind (data.go caps the data
 	// policy's answer with it while it decides data access).
 	data [3]string
 }
 
-// capOf works an agent's cap out of its person's setting (rows without a
-// token) and its own narrowing (rows with one), which can only lower a
-// level and add asking.
-func capOf(rows []store.AgentSetting) agentCap {
+// capOf works an agent's cap out of its person's setting (settings rows
+// without a token; personal agents only), its own narrowing (rows with
+// one) and the org's agent rules: the lowest level of the three, and
+// asking where any asks.
+func capOf(settings []store.AgentSetting, rules []store.AgentRule, personal bool) agentCap {
 	var c agentCap
 	for _, r := range agentAreas() {
 		for i, k := range agentKinds {
-			person, narrow := agentDefault(r.key), agentAll
-			ask := false
-			for _, row := range rows {
-				if row.Area != r.key || uint8(row.Kind) != k {
-					continue
-				}
-				if row.TokenID == nil {
-					person = row.Level
-				} else {
-					narrow = row.Level
-				}
-				ask = ask || row.Ask
+			level, ask, ruleAsk := agentAll, false, false
+			if personal {
+				level = agentDefault(r.key)
 			}
-			level := person
-			if levelRank(r, narrow) < levelRank(r, person) {
-				level = narrow
+			lower := func(l string) {
+				if levelRank(r, l) < levelRank(r, level) {
+					level = l
+				}
+			}
+			for _, row := range settings {
+				if row.Area == r.key && uint8(row.Kind) == k {
+					if row.TokenID == nil {
+						level = row.Level
+					}
+					ask = ask || row.Ask
+				}
+			}
+			for _, row := range settings {
+				if row.Area == r.key && uint8(row.Kind) == k && row.TokenID != nil {
+					lower(row.Level)
+				}
+			}
+			for _, row := range rules {
+				if row.Area == r.key && uint8(row.Kind) == k {
+					lower(row.Level)
+					ruleAsk = row.Ask
+				}
 			}
 			held := levelPerms(r, level)
 			c.use[i] |= held
@@ -109,6 +122,9 @@ func capOf(rows []store.AgentSetting) agentCap {
 			}
 			if ask {
 				c.ask[i] |= held &^ readPerms()
+			}
+			if ruleAsk {
+				c.ruleAsk[i] |= held &^ readPerms()
 			}
 		}
 	}
@@ -173,13 +189,24 @@ func (a Actor) isPersonalAgent() bool {
 // person: the check's permission is one they asked to approve first in
 // e's kind, and no approved request lets this call through.
 func (a Actor) asksOwner(need apitypes.Scope, action string, e store.Environment) bool {
+	return a.asks(a.agentAsk, need, action, e)
+}
+
+// asksApprover reports whether an agent's change in e waits for an
+// approver: the org's agent rules ask first for its permission there.
+func (a Actor) asksApprover(need apitypes.Scope, action string, e store.Environment) bool {
+	return a.asks(a.agentRuleAsk, need, action, e)
+}
+
+// asks reports whether a check's permission in e is in an ask set.
+func (a Actor) asks(set [3]Perms, need apitypes.Scope, action string, e store.Environment) bool {
 	// Only while grants decide: in shadow mode the role still does.
-	if !a.hasGrants || a.agentAsk == ([3]Perms{}) || a.granted == e.ID {
+	if !a.hasGrants || set == ([3]Perms{}) || a.granted == e.ID {
 		return false
 	}
 	p, ok := permFor(actionKey{need, action})
 	i := kindIndex(envKind(e))
-	return ok && i >= 0 && a.agentAsk[i].has(p)
+	return ok && i >= 0 && set[i].has(p)
 }
 
 // everyKind is what an agent's entries give on the whole org in every
@@ -222,7 +249,7 @@ func capAgentData(perm apitypes.DataPermission, level string) apitypes.DataPermi
 	}
 	perm.Why = append(perm.Why, apitypes.DataPermissionStep{
 		Source: apitypes.PermissionCap, Level: perm.Level, Sensitive: perm.Sensitive,
-		Detail: "your agent setting lets your agents use the Data panel at " + level + " here (Account › What your agents may do)",
+		Detail: "the agent setting or the organization's agent rules let agents use the Data panel at " + level + " here",
 	})
 	return perm
 }

@@ -139,3 +139,101 @@ func (c *Core) SetAgentSettings(ctx context.Context, a Actor, req apitypes.Agent
 	c.audit(ctx, a, "agents.settings", nil, nil, a.who(), "changed what "+which+" may do")
 	return c.AgentSettings(ctx, a, req.Agent)
 }
+
+// AgentRules is the organization's agent rules: for every area role and
+// environment kind the most its agents may use (all for no rule) and
+// whether their changes there ask an approver first.
+func (c *Core) AgentRules(ctx context.Context, a Actor) (apitypes.AgentSettings, error) {
+	if err := a.require(apitypes.ScopeAdmin, "reading agent rules"); err != nil {
+		return apitypes.AgentSettings{}, err
+	}
+	rows, err := c.store.ListAgentRules(ctx, a.OrgID)
+	if err != nil {
+		return apitypes.AgentSettings{}, err
+	}
+	out := apitypes.AgentSettings{Settings: []apitypes.AgentSetting{}}
+	for _, r := range agentAreas() {
+		for i, k := range agentKinds {
+			s := apitypes.AgentSetting{Area: r.key, Kind: agentKindNames[i], Level: agentAll}
+			for _, row := range rows {
+				if row.Area == r.key && uint8(row.Kind) == k {
+					s.Level, s.Ask = row.Level, row.Ask
+				}
+			}
+			out.Settings = append(out.Settings, s)
+		}
+	}
+	return out, nil
+}
+
+// SetAgentRules changes the organization's agent rules: the cells given
+// replace theirs. They apply to every agent's next request, personal and
+// the org's, but org agents that bypass them.
+func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSettings) (apitypes.AgentSettings, error) {
+	if err := a.require(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
+		return apitypes.AgentSettings{}, err
+	}
+	if err := a.requireRecent("managing agent rules"); err != nil {
+		return apitypes.AgentSettings{}, err
+	}
+	cur, err := c.AgentRules(ctx, a)
+	if err != nil {
+		return cur, err
+	}
+	areas := agentAreas()
+	next := slices.Clone(cur.Settings)
+	for _, s := range req.Settings {
+		ai := slices.IndexFunc(areas, func(r areaRole) bool { return r.key == s.Area })
+		ki := slices.Index(agentKindNames[:], s.Kind)
+		if ai < 0 || ki < 0 {
+			return cur, invalid("%s in %s isn't a rule: areas are the built-in roles' (`dock role list`), kinds production, other and previews", s.Area, s.Kind)
+		}
+		if s.Level != agentAll && s.Level != agentOff && levelRank(areas[ai], s.Level) <= 0 {
+			return cur, invalid("%s has no level %q; pick off, all or one of its own (`dock role list`)", s.Area, s.Level)
+		}
+		next[ai*3+ki] = s
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if err := q.DeleteAgentRules(ctx, a.OrgID); err != nil {
+			return err
+		}
+		for i, s := range next {
+			if s.Level == agentAll && !s.Ask {
+				continue
+			}
+			if err := q.AddAgentRule(ctx, store.AddAgentRuleParams{OrgID: a.OrgID, Area: s.Area, Kind: int64(agentKinds[i%3]), Level: s.Level, Ask: s.Ask}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return cur, err
+	}
+	c.audit(ctx, a, "agents.rules", nil, nil, "agent rules", "changed the organization's agent rules")
+	return c.AgentRules(ctx, a)
+}
+
+// SetAgentRulesBypass exempts one of the org's tokens from its agent
+// rules, or ends that.
+func (c *Core) SetAgentRulesBypass(ctx context.Context, a Actor, ref string, bypass bool) (apitypes.AgentAccess, error) {
+	t, err := c.agentToken(ctx, a, ref)
+	if err != nil {
+		return apitypes.AgentAccess{}, err
+	}
+	if err := a.require(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
+		return apitypes.AgentAccess{}, err
+	}
+	if err := a.requireRecent("managing agent rules"); err != nil {
+		return apitypes.AgentAccess{}, err
+	}
+	if err := c.store.SetTokenRulesBypass(ctx, store.SetTokenRulesBypassParams{RulesBypass: bypass, ID: t.ID}); err != nil {
+		return apitypes.AgentAccess{}, err
+	}
+	word := "no longer bypasses"
+	if bypass {
+		word = "bypasses"
+	}
+	c.audit(ctx, a, "agents.bypass", nil, nil, "token "+t.Name, fmt.Sprintf("token %s %s the agent rules", t.Name, word))
+	return c.AgentAccess(ctx, a, t.Name)
+}

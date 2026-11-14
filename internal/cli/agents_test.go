@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
 )
 
 // `dock agent settings` and `dock agent set` from a `dock login`: the
@@ -38,5 +39,26 @@ func TestAgentCommands(t *testing.T) {
 	}
 	if code, _, stderr := exec(t, "agent", "set", "deploy=edit", "--kinds", "production"); code == 0 || !strings.Contains(stderr, "Account page") {
 		t.Fatalf("an agent loosening: exit %d %s", code, stderr)
+	}
+}
+
+// `dock agent rules|rule` and `dock token bypass` as an admin.
+func TestAgentRuleCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	next := ok[apitypes.AgentSettings](t, "agent", "rule", "data=propose", "--kinds", "production", "--ask")
+	for _, s := range next.Settings {
+		if s.Area == "data" && s.Kind == "production" && (s.Level != "propose" || !s.Ask) {
+			t.Fatalf("data in production = %+v", s)
+		}
+	}
+	if cur := ok[apitypes.AgentSettings](t, "agent", "rules"); len(cur.Settings) != len(next.Settings) {
+		t.Fatalf("rules = %+v", cur)
+	}
+	ok[apitypes.CreatedToken](t, "token", "create", "ci", "--scope", "deploy")
+	if a := ok[apitypes.AgentAccess](t, "token", "bypass", "ci", "on"); !a.RulesBypass {
+		t.Fatalf("bypass = %+v", a)
 	}
 }

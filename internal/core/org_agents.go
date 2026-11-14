@@ -48,11 +48,12 @@ func (c *Core) grantTokens(ctx context.Context) error {
 	return nil
 }
 
-// loadTokenAccess reads what an org token holds (one query) and makes it
+// loadTokenAccess reads what an org token holds (one query), capped by
+// the org's agent rules unless it bypasses them (one more), and makes it
 // its access while grants decide; in shadow mode the shadow answers from
 // it. Its Scope stays the token's own, for what still speaks in scopes
 // (the data policy).
-func (c *Core) loadTokenAccess(ctx context.Context, a Actor) (Actor, error) {
+func (c *Core) loadTokenAccess(ctx context.Context, a Actor, bypass bool) (Actor, error) {
 	rows, err := c.store.ListTokenGrants(ctx, store.ListTokenGrantsParams{TokenID: &a.TokenID, Now: ptr(now().Unix())})
 	if err != nil {
 		return a, err
@@ -61,6 +62,17 @@ func (c *Core) loadTokenAccess(ctx context.Context, a Actor) (Actor, error) {
 	for _, r := range rows {
 		if perms, ok := grantPerms(r.Role, r.Parts); ok {
 			entries = append(entries, grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms})
+		}
+	}
+	if !bypass {
+		// The org's agent rules cap it.
+		rules, err := c.store.ListAgentRules(ctx, a.OrgID)
+		if err != nil {
+			return a, err
+		}
+		if len(rules) > 0 {
+			cp := capOf(nil, rules, false)
+			entries, a.agentRuleAsk, a.agentData = cp.capEntries(entries), cp.ruleAsk, cp.data
 		}
 	}
 	a.grants = entries
@@ -112,7 +124,7 @@ func (c *Core) AgentAccess(ctx context.Context, a Actor, ref string) (apitypes.A
 	if err != nil {
 		return apitypes.AgentAccess{}, err
 	}
-	out := apitypes.AgentAccess{TokenID: t.ID, Name: t.Name, Groups: []string{}, Grants: []apitypes.Grant{}}
+	out := apitypes.AgentAccess{TokenID: t.ID, Name: t.Name, RulesBypass: t.RulesBypass, Groups: []string{}, Grants: []apitypes.Grant{}}
 	for _, g := range grants {
 		if g.TokenID != nil && *g.TokenID == t.ID {
 			out.Grants = append(out.Grants, toGrant(g))
