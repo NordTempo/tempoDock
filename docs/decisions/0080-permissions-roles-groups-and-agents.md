@@ -167,7 +167,7 @@ one decides.
    scope pre-check; `TestPermissionsFitScopes` keeps the seeded groups
    from giving more.
 5. **Custom roles; MCP tools declare their permission** (built). An
-   org's own roles (migration 0109) are built-in roles and single
+   org's own roles (migration 0110) are built-in roles and single
    permissions under one name, stored as their names (`roles.parts`), so
    what a built-in role holds in a later Dock reaches the roles that
    include it; a grant names one by `role_id`, read with the person's
