@@ -53,3 +53,37 @@ export function useUseTemplate() {
       ),
   });
 }
+
+/** Saves an environment's services as the organization's template. */
+export function useSaveTemplateFrom() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      env,
+      ...req
+    }: { env: EnvRef } & Schemas["SaveTemplateFromRequest"]) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/app-templates",
+          { params: { path: envPath(env) }, body: req },
+        ),
+      ),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: appTemplates().queryKey }),
+  });
+}
+
+/** Removes an organization template; services made from it stay. */
+export function useRemoveTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (template: string) => {
+      const { error } = await api.DELETE("/api/v1/app-templates/{template}", {
+        params: { path: { template } },
+      });
+      if (error) throw error;
+    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: appTemplates().queryKey }),
+  });
+}
