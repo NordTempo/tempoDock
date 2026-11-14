@@ -64,6 +64,7 @@ import { Route as AppOrgSettingsCloudflareRouteImport } from './routes/_app.$org
 import { Route as AppOrgSettingsDataAccessRouteImport } from './routes/_app.$org.settings.data-access'
 import { Route as AppOrgSettingsGeneralRouteImport } from './routes/_app.$org.settings.general'
 import { Route as AppOrgSettingsGithubRouteImport } from './routes/_app.$org.settings.github'
+import { Route as AppOrgSettingsGroupsRouteImport } from './routes/_app.$org.settings.groups'
 import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.settings.members'
 import { Route as AppOrgSettingsRegistriesRouteImport } from './routes/_app.$org.settings.registries'
 import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
@@ -393,6 +394,11 @@ const AppOrgSettingsGeneralRoute = AppOrgSettingsGeneralRouteImport.update({
 const AppOrgSettingsGithubRoute = AppOrgSettingsGithubRouteImport.update({
   id: '/github',
   path: '/github',
+  getParentRoute: () => AppOrgSettingsRoute,
+} as any)
+const AppOrgSettingsGroupsRoute = AppOrgSettingsGroupsRouteImport.update({
+  id: '/groups',
+  path: '/groups',
   getParentRoute: () => AppOrgSettingsRoute,
 } as any)
 const AppOrgSettingsMembersRoute = AppOrgSettingsMembersRouteImport.update({
@@ -763,6 +769,7 @@ export interface FileRoutesByFullPath {
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/$org/settings/github': typeof AppOrgSettingsGithubRoute
+  '/$org/settings/groups': typeof AppOrgSettingsGroupsRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
@@ -868,6 +875,7 @@ export interface FileRoutesByTo {
   '/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/$org/settings/github': typeof AppOrgSettingsGithubRoute
+  '/$org/settings/groups': typeof AppOrgSettingsGroupsRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
@@ -976,6 +984,7 @@ export interface FileRoutesById {
   '/_app/$org/settings/data-access': typeof AppOrgSettingsDataAccessRoute
   '/_app/$org/settings/general': typeof AppOrgSettingsGeneralRoute
   '/_app/$org/settings/github': typeof AppOrgSettingsGithubRoute
+  '/_app/$org/settings/groups': typeof AppOrgSettingsGroupsRoute
   '/_app/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/_app/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
   '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
@@ -1088,6 +1097,7 @@ export interface FileRouteTypes {
     | '/$org/settings/data-access'
     | '/$org/settings/general'
     | '/$org/settings/github'
+    | '/$org/settings/groups'
     | '/$org/settings/members'
     | '/$org/settings/registries'
     | '/$org/settings/tokens'
@@ -1193,6 +1203,7 @@ export interface FileRouteTypes {
     | '/$org/settings/data-access'
     | '/$org/settings/general'
     | '/$org/settings/github'
+    | '/$org/settings/groups'
     | '/$org/settings/members'
     | '/$org/settings/registries'
     | '/$org/settings/tokens'
@@ -1300,6 +1311,7 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/data-access'
     | '/_app/$org/settings/general'
     | '/_app/$org/settings/github'
+    | '/_app/$org/settings/groups'
     | '/_app/$org/settings/members'
     | '/_app/$org/settings/registries'
     | '/_app/$org/settings/tokens'
@@ -1759,6 +1771,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSettingsGithubRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
+    '/_app/$org/settings/groups': {
+      id: '/_app/$org/settings/groups'
+      path: '/groups'
+      fullPath: '/$org/settings/groups'
+      preLoaderRoute: typeof AppOrgSettingsGroupsRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
     '/_app/$org/settings/members': {
       id: '/_app/$org/settings/members'
       path: '/members'
@@ -2164,6 +2183,7 @@ interface AppOrgSettingsRouteChildren {
   AppOrgSettingsDataAccessRoute: typeof AppOrgSettingsDataAccessRoute
   AppOrgSettingsGeneralRoute: typeof AppOrgSettingsGeneralRoute
   AppOrgSettingsGithubRoute: typeof AppOrgSettingsGithubRoute
+  AppOrgSettingsGroupsRoute: typeof AppOrgSettingsGroupsRoute
   AppOrgSettingsMembersRoute: typeof AppOrgSettingsMembersRoute
   AppOrgSettingsRegistriesRoute: typeof AppOrgSettingsRegistriesRoute
   AppOrgSettingsTokensRoute: typeof AppOrgSettingsTokensRoute
@@ -2179,6 +2199,7 @@ const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
   AppOrgSettingsDataAccessRoute: AppOrgSettingsDataAccessRoute,
   AppOrgSettingsGeneralRoute: AppOrgSettingsGeneralRoute,
   AppOrgSettingsGithubRoute: AppOrgSettingsGithubRoute,
+  AppOrgSettingsGroupsRoute: AppOrgSettingsGroupsRoute,
   AppOrgSettingsMembersRoute: AppOrgSettingsMembersRoute,
   AppOrgSettingsRegistriesRoute: AppOrgSettingsRegistriesRoute,
   AppOrgSettingsTokensRoute: AppOrgSettingsTokensRoute,

@@ -121,12 +121,22 @@ func (a Actor) platform() Actor {
 // Me describes the actor for the API.
 func (a Actor) Me() apitypes.Me {
 	return apitypes.Me{
-		Kind: a.Kind, Name: a.Name, Email: a.Email, DisplayName: a.DisplayName, Scope: a.Scope, Org: a.OrgSlug, Operator: a.Operator,
+		Kind: a.Kind, Name: a.Name, Email: a.Email, DisplayName: a.DisplayName, Scope: a.Scope, Org: a.orgShown(), Operator: a.Operator,
 		Platform: a.Platform, PlatformLogin: a.platformOnly,
 		Project: a.ProjectName, Environment: a.EnvironmentName,
 		TwoFactor: a.Factor, TwoFactorRequired: a.twoFactorRequired(),
 		SSO: a.SSOProvider, SSOLabel: a.SSOLabel,
 	}
+}
+
+// orgShown is the org the actor acts in, as Me says it: none for a
+// platform credential, which acts on an org's resources only for the
+// platform (platformIn) and never acts in one.
+func (a Actor) orgShown() string {
+	if a.platformOnly {
+		return ""
+	}
+	return a.OrgSlug
 }
 
 // twoFactorRequired says what a second factor the actor didn't use would

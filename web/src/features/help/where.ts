@@ -44,6 +44,7 @@ const helpAt = {
   "/_app/$org/settings": "organizations",
   "/_app/$org/settings/alerts": "alerts",
   "/_app/$org/settings/members": "access",
+  "/_app/$org/settings/groups": "access",
   "/_app/$org/settings/tokens": "access",
   "/_app/$org/settings/data-access": "data",
   "/_app/$org/settings/variables": "variables",

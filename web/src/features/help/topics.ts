@@ -674,7 +674,7 @@ export const topics: Record<TopicId, Topic> = {
   access: {
     title: "Access and tokens",
     group: "Organization",
-    what: "Members and tokens act with a role, read, deploy or admin, optionally for one project or environment.",
+    what: "Groups give members roles in areas like Deploy or Data, on the organization, a project or an environment; tokens act with a role.",
     do: [
       {
         what: "Invite someone",
@@ -682,8 +682,18 @@ export const topics: Record<TopicId, Topic> = {
         at: { o: "members" },
       },
       {
-        what: "Change a role",
-        cli: "dock org member role ana@example.com admin",
+        what: "Put someone in a group",
+        cli: "dock group add Developers ana@example.com",
+        at: { o: "groups" },
+      },
+      {
+        what: "Give a group a role on staging",
+        cli: "dock group grant Contractors deploy:edit -p {project} -e staging",
+        at: { o: "groups" },
+      },
+      {
+        what: "What someone can do",
+        cli: "dock can ana@example.com",
         at: { o: "members" },
       },
       {
@@ -715,7 +725,7 @@ export const topics: Record<TopicId, Topic> = {
     related: ["organizations", "agents", "alerts"],
     guide: "organizations#members-and-roles",
     words:
-      "member role invite email smtp token scope 2fa two-factor sso permission",
+      "member role group grant invite email smtp token scope 2fa two-factor sso permission",
   },
 
   organizations: {

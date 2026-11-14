@@ -329,11 +329,16 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 				); err != nil {
 					return err
 				}
-				if p := v.PlatformCredential; p != nil {
+				switch p := v.PlatformCredential; {
+				case p != nil:
 					if err := g.io.Fields("platform login", p.Name+" ("+describeMe(*p)+")"); err != nil {
 						return err
 					}
-				} else if !me.PlatformLogin {
+				case me.PlatformLogin:
+				case me.Platform != "":
+					// A legacy token: the org's and the platform's (ADR 0080).
+					g.io.Detail("This token also runs the platform, as tokens from before platform logins do, until it is split (`dock platform token split`) or expires.")
+				default:
 					g.io.Detail("No platform login here: platform commands (dock update, dock server, dock user) take one, from `dock login --platform`.")
 				}
 				if me.TwoFactorRequired != "" {

@@ -1,11 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, Suspense, useState } from "react";
 import { api, done } from "../../api/client";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useOrgs, useSession } from "../../data/queries";
 import { useOrg } from "../../shell/location";
 import { Act, ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
+import { AccessView } from "../access/AccessView";
 import { useValidation } from "../create/form";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
@@ -102,6 +103,7 @@ export function AccountPage() {
         {me.kind === "user" ? (
           <>
             <TwoFactorSection />
+            <MyAccess />
             <OwnTokens />
             <ChangePassword />
             <EmailSection />
@@ -113,8 +115,8 @@ export function AccountPage() {
         )}
         {/* The page's CLI equivalents, in the usual mono footer. */}
         <p className="font-mono text-2xs text-mut">
-          dock whoami · dock me password · dock me two-factor · dock me email ·
-          dock token list --mine
+          dock whoami · dock can · dock me password · dock me two-factor · dock
+          me email · dock token list --mine
         </p>
       </Page>
     </>
@@ -172,6 +174,23 @@ function NameField({ name }: { name: string }) {
       )}
       <ErrorText error={update.error} />
     </form>
+  );
+}
+
+/**
+ * What the caller may do in the current organization, from their groups
+ * and one-off grants (ADR 0080): the members page's view of them.
+ */
+function MyAccess() {
+  const org = useOrg();
+  const name = useOrgs().find((o) => o.slug === org)?.name ?? org;
+  return (
+    <section aria-labelledby="my-access" className="flex flex-col gap-3">
+      <SectionHead id="my-access">Your access in {name}</SectionHead>
+      <Suspense fallback={<p className="text-faint">Loading</p>}>
+        <AccessView who="" />
+      </Suspense>
+    </section>
   );
 }
 

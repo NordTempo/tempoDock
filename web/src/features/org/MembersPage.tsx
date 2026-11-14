@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import type { components } from "../../api/schema";
 import { useIsAdmin, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
@@ -17,6 +17,8 @@ import {
   Panel,
   StateText,
 } from "../../ui/kit";
+import { useGroups } from "../access/data";
+import { PersonAccess } from "../access/PersonAccess";
 import { Saved, useValidation } from "../create/form";
 import {
   orgQueries,
@@ -74,6 +76,13 @@ function Members() {
   const slug = useOrg();
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<InviteLinkInfo>();
+  const groups = useGroups();
+  // The person whose grants and effective access show beside the table.
+  const [person, setPerson] = useState<string>();
+  const groupsOf = (id: number) =>
+    groups
+      .filter((g) => (g.members ?? []).some((m) => m.user_id === id))
+      .map((g) => g.name);
   const invite = useInviteBase(inviting || !!link);
   useShortcuts([
     { key: "n", label: "invite people", run: () => setInviting(true) },
@@ -140,6 +149,7 @@ function Members() {
                     <tr>
                       <th>Person</th>
                       <th>Role</th>
+                      <th>Groups</th>
                       <th title="Whether they sign in with a second factor">
                         Two-factor
                       </th>
@@ -155,6 +165,11 @@ function Members() {
                         member={u}
                         required={required}
                         you={me?.email === u.email}
+                        groups={groupsOf(u.id)}
+                        selected={person === u.email}
+                        onSelect={() =>
+                          setPerson(person === u.email ? undefined : u.email)
+                        }
                       />
                     ))}
                     {invites.map((i) => (
@@ -172,7 +187,16 @@ function Members() {
                 account stays. Leave the organization from General.
               </p>
             </div>
-            <Roles />
+            {person ? (
+              <Suspense fallback={<p className="text-faint">Loading.</p>}>
+                <PersonAccess
+                  email={person}
+                  onClose={() => setPerson(undefined)}
+                />
+              </Suspense>
+            ) : (
+              <Roles />
+            )}
           </div>
         </div>
       </Page>
@@ -334,11 +358,19 @@ function MemberRow({
   member,
   required,
   you,
+  groups,
+  selected,
+  onSelect,
 }: {
   member: User;
   /** The org requires a second factor (ADR 0057): those without can't act here. */
   required: boolean;
   you: boolean;
+  /** The groups they are in (ADR 0080). */
+  groups: string[];
+  selected: boolean;
+  /** Shows their grants and effective access beside the table. */
+  onSelect: () => void;
 }) {
   const { id, email, name, role } = member;
   const setRole = useSetMemberRole();
@@ -375,6 +407,16 @@ function MemberRow({
             <ErrorText error={setRole.error} />
           </>
         )}
+      </td>
+      <td className="py-2 whitespace-normal">
+        <button
+          type="button"
+          className={selected ? "text-fg underline" : "text-sec hover:text-fg"}
+          title="Their grants and what they can do"
+          onClick={onSelect}
+        >
+          {groups.length ? groups.join(", ") : "no group"}
+        </button>
       </td>
       <td className="py-2">
         <TwoFactorState

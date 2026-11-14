@@ -40,6 +40,9 @@ func (g *globals) connect() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkTokens(r); err != nil {
+		return nil, err
+	}
 	if r.Token == "" && r.PlatformToken != "" {
 		// Only a platform login here: it runs the platform's commands.
 		r.Token = r.PlatformToken
@@ -68,6 +71,27 @@ func (g *globals) connect() (*session, error) {
 		api.BeforeChange = func() { _, _ = fmt.Fprintln(g.io.Err, "→", to) }
 	}
 	return &session{api: api, cfg: cfg, server: r, link: link}, nil
+}
+
+// checkTokens refuses a token with whitespace or control characters in
+// it (a pasted newline, say), which HTTP can't send: it says which token
+// and where it came from, instead of failing to reach the server.
+func checkTokens(r clientconfig.Resolved) error {
+	from := "the token of context " + r.Name + " (dock login stores it in the config file)"
+	platformFrom := "the platform login of context " + r.Name
+	if r.Source == clientconfig.SourceEnvURL {
+		from, platformFrom = clientconfig.EnvToken, clientconfig.EnvPlatformToken
+	}
+	for _, t := range []struct{ token, from string }{{r.Token, from}, {r.PlatformToken, platformFrom}} {
+		if strings.IndexFunc(t.token, func(c rune) bool { return c <= ' ' || c == 0x7f }) >= 0 {
+			return &output.Error{
+				Exit:    output.ExitUsage,
+				Message: "malformed token in " + t.from + ": it has a space, newline or control character",
+				Hint:    "Set it again without them, like `printf %s \"$TOKEN\" | dock login <url> --token-stdin`, or fix the environment variable.",
+			}
+		}
+	}
+	return nil
 }
 
 // get decodes a GET response into a T.
