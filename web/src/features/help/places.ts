@@ -70,6 +70,7 @@ export const orgPlaces = {
   inbox: { to: "/$org/inbox", label: "Inbox" },
   alerts: { to: "/$org/settings/alerts", label: "Alert channels" },
   members: { to: "/$org/settings/members", label: "Members" },
+  groups: { to: "/$org/settings/groups", label: "Groups" },
   tokens: { to: "/$org/settings/tokens", label: "Tokens" },
   variables: { to: "/$org/settings/variables", label: "Variables" },
   github: { to: "/$org/settings/github", label: "GitHub" },

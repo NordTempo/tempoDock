@@ -17,6 +17,7 @@ type Section = {
     | "/$org/settings/general"
     | "/$org/settings/variables"
     | "/$org/settings/members"
+    | "/$org/settings/groups"
     | "/$org/settings/tokens"
     | "/$org/settings/registries"
     | "/$org/settings/github"
@@ -45,6 +46,7 @@ export const settingsGroups: { label: string; sections: Section[] }[] = [
     label: "People and access",
     sections: [
       { to: "/$org/settings/members", label: "Members", admin: true },
+      { to: "/$org/settings/groups", label: "Groups", admin: true },
       { to: "/$org/settings/tokens", label: "Tokens", admin: true },
       { to: "/$org/settings/alerts", label: "Alerts", admin: false },
     ],
