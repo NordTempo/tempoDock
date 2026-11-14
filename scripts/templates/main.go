@@ -205,7 +205,7 @@ func (r *registry) index(ctx context.Context, tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var idx struct {
 		Manifests []struct {
 			Platform struct{ OS, Architecture string }
@@ -241,7 +241,7 @@ func (r *registry) tags(ctx context.Context) ([]string, error) {
 		}
 		var page struct{ Tags []string }
 		err = json.NewDecoder(resp.Body).Decode(&page)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +276,7 @@ func (r *registry) get(ctx context.Context, path, accept string) (*http.Response
 		}
 		if resp.StatusCode == http.StatusUnauthorized && r.token == "" {
 			challenge := resp.Header.Get("WWW-Authenticate")
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if err := r.login(ctx, challenge); err != nil {
 				return nil, err
 			}
@@ -284,7 +284,7 @@ func (r *registry) get(ctx context.Context, path, accept string) (*http.Response
 		}
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, fmt.Errorf("%s: %s %s", path, resp.Status, strings.TrimSpace(string(body)))
 		}
 		return resp, nil
@@ -313,7 +313,7 @@ func (r *registry) login(ctx context.Context, challenge string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var tok struct{ Token, AccessToken string }
 	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
 		return err

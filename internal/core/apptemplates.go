@@ -73,7 +73,9 @@ func (c *Core) ListAppTemplates(context.Context, Actor) ([]apitypes.AppTemplate,
 	for _, t := range cat {
 		out = append(out, appTemplateInfo(t))
 	}
-	slices.SortFunc(out, func(x, y apitypes.AppTemplate) int { return cmp.Compare(strings.ToLower(x.Title), strings.ToLower(y.Title)) })
+	slices.SortFunc(out, func(x, y apitypes.AppTemplate) int {
+		return cmp.Compare(strings.ToLower(x.Title), strings.ToLower(y.Title))
+	})
 	for _, name := range slices.Sorted(maps.Keys(templates)) {
 		out = append(out, appTemplateInfo(dbAppTemplate(templates[name])))
 	}
