@@ -272,6 +272,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
+	shadowLog.Store(o.Logger)
 	for _, dir := range []string{"builds", "uploads", "requests", "sboms"} {
 		if err := os.MkdirAll(filepath.Join(o.Config.DataDir, dir), 0o700); err != nil {
 			return nil, err

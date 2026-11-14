@@ -9,6 +9,7 @@ import {
 } from "../data/mutations";
 import { useSession } from "../data/queries";
 import type { Scope } from "../data/types";
+import { AccessDiff } from "../features/console/AccessDiff";
 import {
   type Account,
   accountsQuery,
@@ -155,6 +156,7 @@ function Users() {
               ; an organization's are in its settings.
             </p>
             <OperatorsTwoFactor />
+            <AccessDiff />
           </div>
         </div>
       </Page>

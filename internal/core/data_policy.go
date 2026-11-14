@@ -153,6 +153,7 @@ func (c *Core) dataPermission(ctx context.Context, a Actor, es envScope) (apityp
 		in.rules = rules
 	}
 	perm := decidePermission(in)
+	shadowData(in, perm)
 	if a.lockedOut(es.env) {
 		perm = lockedData(perm, es)
 	}

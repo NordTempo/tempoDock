@@ -92,6 +92,13 @@ func registerOperator(s *Server, a huma.API) {
 		return reply(s.core.SplitToken(ctx, actor, in.ID))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "access-diff", Method: http.MethodGet, Path: Prefix + "/console/access-diff",
+		Summary: "Where the permission model disagreed with today's checks", Tags: tags,
+		Description: "ADR 0080 phase 3: the permission model computes its own answer beside every check and counts where it differs, since the daemon started. Empty means it agreed with everything; a lowering data rule shows here and stops the migration. Needs platform.view.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.AccessDisagreement], error) {
+		return reply(s.core.AccessDisagreements(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-platform-data-policy", Method: http.MethodGet, Path: Prefix + "/console/data-policy",
 		Summary: "The platform's data access default and ceiling", Tags: tags,
 		Description: "What applies where an organization set nothing (in place of Dock's built-in rules), and the most any organization's rule or token gives a subject in an environment kind. Organizations set their own rules within it. Operators only.",
