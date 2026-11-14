@@ -7166,6 +7166,7 @@ export interface components {
             website?: string;
         };
         AppTemplateService: {
+            generated?: string[] | null;
             image?: string;
             main?: boolean;
             /** Format: int64 */
@@ -7175,6 +7176,7 @@ export interface components {
             port?: number;
             /** @enum {string} */
             template?: "postgres" | "redis";
+            volumes?: string[] | null;
         };
         AppliedChanges: {
             failed?: string[] | null;

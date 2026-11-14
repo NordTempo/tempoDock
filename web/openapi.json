@@ -1386,6 +1386,15 @@
       "AppTemplateService": {
         "additionalProperties": false,
         "properties": {
+          "generated": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "image": {
             "type": "string"
           },
@@ -1409,6 +1418,15 @@
               "redis"
             ],
             "type": "string"
+          },
+          "volumes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [

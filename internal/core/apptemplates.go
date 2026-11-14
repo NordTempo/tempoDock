@@ -55,6 +55,7 @@ func appTemplateInfo(t apptemplates.Template) apitypes.AppTemplate {
 		if db, ok := templates[s.Template]; ok {
 			info.Services[i].Image = cmp.Or(s.Image, db.image)
 			info.Services[i].MemoryMB = cmp.Or(s.MemoryMB, db.memoryMB)
+			info.Services[i].Volumes = append(info.Services[i].Volumes, db.mountPath)
 		}
 		info.MemoryMB += info.Services[i].MemoryMB
 	}

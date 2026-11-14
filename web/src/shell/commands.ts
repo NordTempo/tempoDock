@@ -197,7 +197,12 @@ export function useCommands({
           cli: `dock service create --template postgres -e ${environment}${pFlag}`,
           weight: weight - 0.1,
           run: () =>
-            openCreate({ kind: "service", env: ref, source: "database" }),
+            openCreate({
+              kind: "service",
+              env: ref,
+              source: "template",
+              template: "postgres",
+            }),
         });
       }
       // Lock: the environment's lock form on the project page (admins).

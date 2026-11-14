@@ -1,15 +1,21 @@
 import { lazy, Suspense, useSyncExternalStore } from "react";
 import type { EnvRef } from "../../data/types";
 
-/** Where a new service's code comes from; database means a template. */
-export type ServiceSource = "image" | "source" | "github" | "database";
+/** Where a new service comes from; a template is an app or a database. */
+export type ServiceSource = "image" | "source" | "github" | "template";
 
 /** Which create dialog is open, and for what. */
 export type CreateRequest =
   | { kind: "org" }
   | { kind: "project" }
   | { kind: "environment"; project: string; cloneFrom?: string }
-  | { kind: "service"; env: EnvRef; source?: ServiceSource };
+  | {
+      kind: "service";
+      env: EnvRef;
+      source?: ServiceSource;
+      /** The template picked first, with source template. */
+      template?: string;
+    };
 
 // The open dialog lives outside React so the sidebar, the palette and pages
 // can all open one without a provider of their own.

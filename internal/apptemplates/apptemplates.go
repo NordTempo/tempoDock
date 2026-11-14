@@ -245,9 +245,14 @@ func (t Template) Info() apitypes.AppTemplate {
 		out.Inputs = []apitypes.TemplateInput{}
 	}
 	for _, s := range t.Services {
-		out.Services = append(out.Services, apitypes.AppTemplateService{
+		svc := apitypes.AppTemplateService{
 			Name: s.Name, Main: s.Name == t.Main, Image: s.Image, Template: s.Template, Port: s.Port, MemoryMB: s.MemoryMB,
-		})
+			Generated: slices.Sorted(maps.Keys(s.Generate)),
+		}
+		for _, v := range s.Volumes {
+			svc.Volumes = append(svc.Volumes, v.MountPath)
+		}
+		out.Services = append(out.Services, svc)
 	}
 	// Main first, then as the file lists them.
 	slices.SortStableFunc(out.Services, func(x, y apitypes.AppTemplateService) int { return boolInt(y.Main) - boolInt(x.Main) })

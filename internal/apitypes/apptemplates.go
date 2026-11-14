@@ -64,6 +64,10 @@ type AppTemplateService struct {
 	Template Template `json:"template,omitempty" enum:"postgres,redis"`
 	Port     int      `json:"port,omitempty"`
 	MemoryMB int      `json:"memory_mb"`
+	// Generated are the variables Dock generates for it (secrets).
+	Generated []string `json:"generated,omitempty"`
+	// Volumes are its volumes' mount paths.
+	Volumes []string `json:"volumes,omitempty"`
 }
 
 // UseTemplateRequest uses an app template in an environment.
