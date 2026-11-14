@@ -222,9 +222,9 @@ edit and apply with ` + "`dock apply`" + `.`,
 	f.add(cmd, needEnvironment)
 	cmd.Flags().StringVar(&req.Name, "name", "", "the main service's name; the others are NAME-<part> (default: the template's name)")
 	cmd.Flags().StringVar(&req.Domain, "domain", "", "the main service's hostname (default: a generated one)")
-	cmd.Flags().StringArrayVar(&sets, "set", nil, "an input, KEY=VALUE (repeat for each; see `dock template show`)")
+	cmd.Flags().StringArrayVar(&sets, "set", nil, "an input, KEY=VALUE (repeat for each; dock template show lists them)")
 	cmd.Flags().BoolVar(&req.Plan, "plan", false, "only say what it would create")
-	cmd.Flags().BoolVar(&file, "file", false, "print the project file it would create, to edit and `dock apply`")
+	cmd.Flags().BoolVar(&file, "file", false, "print the project file it would create, to edit and apply with dock apply")
 	cmd.Flags().BoolVarP(&detach, "detach", "d", false, "don't wait for the first deploys")
 	return cmd
 }
