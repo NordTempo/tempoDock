@@ -322,3 +322,41 @@ func TestRunStreams(t *testing.T) {
 		t.Fatalf("run = %+v, out %q", run, out.String())
 	}
 }
+
+// TestRunOutputMasksSecrets: a command's output (live and kept) shows the
+// service's secret values only to callers who may reveal them, as logs
+// do: `dock run printenv` with deploy doesn't print them.
+func TestRunOutputMasksSecrets(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"API_KEY": "sk-live-123456"}}); err != nil {
+		t.Fatal(err)
+	}
+	h.deploy(web, "app:1")
+	const printed = "API_KEY=sk-live-123456\n"
+	h.rt.OnJob(func(spec node.JobSpec) (node.JobResult, error) {
+		if st := spec.Stream; st != nil && st.Stdout != nil {
+			// Split inside the value, as a stream may.
+			_, _ = st.Stdout.Write([]byte(printed[:14]))
+			_, _ = st.Stdout.Write([]byte(printed[14:]))
+		}
+		return node.JobResult{Output: printed}, nil
+	})
+	deployer := Actor{Kind: "token", OrgID: 1, Name: "ci", TokenID: 2, Scope: apitypes.ScopeDeploy}
+	r, err := h.c.OpenRun(h.ctx, deployer, web, apitypes.RunCommandRequest{Command: "printenv"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var live strings.Builder
+	run := r.Wait(h.ctx, &node.JobStream{Stdout: &live})
+	const masked = "API_KEY=*****\n"
+	if live.String() != masked || run.Output != masked {
+		t.Fatalf("live %q, kept %q", live.String(), run.Output)
+	}
+	if got, err := h.c.GetRun(h.ctx, deployer, web, run.ID); err != nil || got.Output != masked {
+		t.Fatalf("deploy reads %q, %v", got.Output, err)
+	}
+	if got, err := h.c.GetRun(h.ctx, testSystem, web, run.ID); err != nil || got.Output != printed {
+		t.Fatalf("admin reads %q, %v", got.Output, err)
+	}
+}

@@ -331,7 +331,23 @@ func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 	stop := context.AfterFunc(c.ctx, cancel)
 	defer stop()
 
+	flush := func() error { return nil }
+	if red, rerr := c.logRedactor(r.actor, r.rel); rerr == nil && red != nil && stream != nil {
+		// Its output can print the service's variables (`printenv`):
+		// masked live, as logs are, for whoever can't reveal them.
+		masked := *stream
+		var flushOut, flushErr func() error
+		masked.Stdout, flushOut = red.writer(stream.Stdout)
+		flushErr = func() error { return nil }
+		if stream.Stderr != nil {
+			masked.Stderr, flushErr = red.writer(stream.Stderr)
+		}
+		stream, flush = &masked, func() error { return errors.Join(flushOut(), flushErr()) }
+	}
 	res, err := r.runJob(jctx, stream)
+	if ferr := flush(); ferr != nil && err == nil {
+		c.log.Debug("run: write held output", "run", r.row.ID, "err", ferr)
+	}
 	// Recording the end outlives the run's own context.
 	fctx, fcancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer fcancel()
@@ -397,7 +413,9 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 	if status == apitypes.RunFailed && exit != nil && !r.row.Tty {
 		// Why, by the deploy diagnosis's rules (ADR 0071); a terminal
 		// session keeps no output to judge.
-		cause = runCause(r.row.Command, r.cfg, *exit, output)
+		// Everyone who reads the service sees it (ListRuns), so it is
+		// masked for all, like a log line.
+		cause, _ = newRedactor(r.cfg.Env).line(runCause(r.row.Command, r.cfg, *exit, output))
 	}
 	if err := c.store.FinishServiceRun(ctx, store.FinishServiceRunParams{
 		Status: string(status), ExitCode: code, Error: msg, Output: output, Cause: cause, FinishedAt: &at, ID: r.row.ID,
@@ -423,7 +441,26 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 	}
 	out := c.toRun(r.ss, r.rel, r.row)
 	out.Job = r.jobName()
+	c.maskRunOutput(r.actor, r.rel, &out)
 	return out
+}
+
+// maskRunOutput masks the service's secret values in a run's output for
+// a caller who can't reveal them, as logs are (logRedactor): `dock run
+// printenv` needs deploy, revealing needs admin. It stops a command that
+// prints them, not one that encodes them first, so running stays a
+// permission that reaches secrets. Output it can't mask is dropped.
+func (c *Core) maskRunOutput(a Actor, rel store.Release, run *apitypes.CommandRun) {
+	if run.Output == "" {
+		return
+	}
+	red, err := c.logRedactor(a, rel)
+	if err != nil {
+		c.log.Error("mask a run's output", "run", run.ID, "err", err)
+		run.Output = ""
+		return
+	}
+	run.Output, _ = red.line(run.Output)
 }
 
 // runSummary is a finished run's audit summary: the command and how it
@@ -529,7 +566,8 @@ func (c *Core) ListRuns(ctx context.Context, a Actor, ref ServiceRef) ([]apitype
 
 // GetRun returns one of a service's runs with its output's tail. Its
 // output is whatever the command printed, which can be its variables, so
-// it takes the scope running one does: deploy.
+// it takes the scope running one does (deploy), and secret values are
+// masked for callers who can't reveal them (maskRunOutput).
 func (c *Core) GetRun(ctx context.Context, a Actor, ref ServiceRef, id int64) (apitypes.CommandRun, error) {
 	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeDeploy, "reading a run's output")
 	if err != nil {
@@ -552,6 +590,7 @@ func (c *Core) GetRun(ctx context.Context, a Actor, ref ServiceRef, id int64) (a
 			out.Job = job.Name
 		}
 	}
+	c.maskRunOutput(a, rel, &out)
 	return out, nil
 }
 

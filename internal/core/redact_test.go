@@ -246,3 +246,34 @@ func TestRedactReaderAcrossReads(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// A live writer masks a secret written a byte at a time or split across
+// writes, and holds back only a tail that could start one: a prompt
+// shows as soon as it is written.
+func TestRedactWriter(t *testing.T) {
+	red := newRedactor(map[string]string{"A": "s3cr3t-value", "B": "s3cr3t-value-longer", "C": "tiny"})
+	in := "start s3cr3t-value mid s3cr3t-value-longer x\ntiny s3cr3t-value"
+	want := "start ***** mid ***** x\ntiny *****"
+	for name, chunk := range map[string]int{"one byte": 1, "sevens": 7, "whole": len(in)} {
+		var out strings.Builder
+		w, flush := red.writer(&out)
+		for i := 0; i < len(in); i += chunk {
+			if _, err := w.Write([]byte(in[i:min(len(in), i+chunk)])); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := flush(); err != nil || out.String() != want {
+			t.Errorf("%s: %q, %v", name, out.String(), err)
+		}
+	}
+	var out strings.Builder
+	w, _ := red.writer(&out)
+	_, _ = w.Write([]byte("$ "))
+	if out.String() != "$ " {
+		t.Errorf("prompt held back: %q", out.String())
+	}
+	_, _ = w.Write([]byte("echo s3cr"))
+	if out.String() != "$ echo " {
+		t.Errorf("held %q, want only the secret's start back", out.String())
+	}
+}
