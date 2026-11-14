@@ -40,6 +40,17 @@ func templateCases() []Case {
 					expect(ok && v.Value != nil && *v.Value == "false", "SIGNUPS_ALLOWED isn't false"))
 			},
 		},
+		{
+			// An app on MySQL: the template brings the database.
+			Name:   "template-with-database",
+			Prompt: "Put a WordPress site in staging.",
+			Setup:  (*World).seedShop,
+			Check: func(w *World, _ Transcript) error {
+				db, err := w.service("staging", "wordpress-db")
+				return firstErr(err, fromTemplate(w, "staging", "wordpress", "wordpress"),
+					expect(err == nil && db.Template == apitypes.TemplateMariaDB, "wordpress-db isn't the mariadb template"))
+			},
+		},
 	}
 }
 
