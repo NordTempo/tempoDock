@@ -66,6 +66,7 @@ export function FromTemplate({
   head,
   initial,
   before,
+  beforeCli = [],
   missing,
   onClose,
 }: {
@@ -75,6 +76,8 @@ export function FromTemplate({
   head: ReactNode;
   initial?: string;
   before?: () => Promise<void>;
+  /** The commands `before` amounts to, for the footer. */
+  beforeCli?: readonly string[];
   missing?: string | false;
   onClose: () => void;
 }) {
@@ -190,6 +193,7 @@ export function FromTemplate({
     )
     .join("");
   const cli = [
+    ...beforeCli,
     `dock template use ${t?.name ?? "<template>"}${typed && typed !== t?.name ? ` --name ${typed}` : ""}${domain.trim() ? ` --domain ${domain.trim()}` : ""}${sets} -e ${env.environment} -p ${env.project || "<project>"}`,
   ];
 
@@ -390,8 +394,10 @@ export function FromTemplate({
               {(t.services ?? []).map((s, i) => (
                 <li key={s.name} className="flex gap-2">
                   <span className="text-ok">+</span>
-                  <span className="text-fg">{names[i] || "<name>"}</span>
-                  <span className="min-w-0 truncate text-faint">
+                  <span className="flex-none whitespace-nowrap text-fg">
+                    {names[i] || "<name>"}
+                  </span>
+                  <span className="min-w-0 text-faint">
                     {[
                       s.template
                         ? `${s.template} template`

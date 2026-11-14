@@ -98,6 +98,7 @@ export function NewProject({ onClose }: { onClose: () => void }) {
           taken={[]}
           head={fields}
           missing={(!name || !!problem) && "a project name"}
+          beforeCli={[`dock project create ${name || "<name>"}`]}
           before={async () => {
             if (created.current === name) return;
             await create.mutateAsync(name);

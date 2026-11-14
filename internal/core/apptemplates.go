@@ -138,6 +138,9 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 			}
 		}
 		ep, err := c.planEnv(a, fe, le, values, false)
+		// A template only adds: the environment's other services aren't
+		// "kept", they are just not its concern.
+		ep.kept = nil
 		for _, m := range ep.manual {
 			if m.Kind == apitypes.PlanDomain && m.Name == "" {
 				// The template's references to its domain would break the
