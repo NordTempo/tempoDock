@@ -104,6 +104,7 @@ func main() {
 		noCost   = flag.Bool("no-cost", false, "skip measuring the tool list's token cost")
 		tools    = flag.Bool("tools", false, "print each MCP tool's description and schema size, largest first, and exit; with -out also save tools/list there")
 	)
+	flag.BoolVar(&enforce, "enforce", false, "run each daemon with the permission model enforcing (ADR 0080: grants decide) instead of shadowing")
 	flag.Parse()
 	re := regexp.MustCompile(*pattern)
 	cases := slices.DeleteFunc(allCases(), func(c Case) bool { return !re.MatchString(c.Name) })
@@ -202,6 +203,10 @@ func main() {
 }
 
 // runCase sets a case's world up, runs the agent and checks the result.
+// enforce is -enforce: every case's daemon lets grants decide (ADR
+// 0080), so its tokens act as org agents with grants.
+var enforce bool
+
 func runCase(ctx context.Context, c Case, m Mode, model, bin, log string, dry bool) Result {
 	res := Result{Case: c.Name, Mode: m, Model: model}
 	fail := func(err error) Result {
@@ -228,6 +233,12 @@ func runCase(ctx context.Context, c Case, m Mode, model, bin, log string, dry bo
 	d, err := startDaemon(bin, env)
 	if err != nil {
 		return fail(err)
+	}
+	if enforce {
+		if _, err := d.dock("platform", "access-model", "enforce"); err != nil {
+			d.stop()
+			return fail(err)
+		}
 	}
 	defer func() {
 		// The daemon's log goes next to the agent's, for failures.
