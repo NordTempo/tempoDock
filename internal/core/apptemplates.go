@@ -201,6 +201,12 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 	}
 	c.audit(ctx, a, "template.use", &es.project, &es.env, es.String()+"/"+ex.Main,
 		fmt.Sprintf("created %s from the %s template (revision %d)", strings.Join(out.Services, ", "), t.Title, t.Revision))
+	// Jobs are set on live services, so after they exist (jobs_apply.go).
+	chs, err := c.applyCreatedJobs(ctx, a, es, fe, false)
+	if err != nil {
+		out.Failed = append(out.Failed, fmt.Sprintf("couldn't set the scheduled jobs: %v. Set them with `dock job set`", err))
+	}
+	out.Plan.Changes = append(out.Plan.Changes, chs...)
 
 	domains, err := c.store.ListEnvironmentStagedDomains(ctx, es.env.ID)
 	if err != nil {
