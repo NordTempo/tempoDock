@@ -93,10 +93,10 @@ func TestRecheckVulnAlertsFixedQueries(t *testing.T) {
 			}
 		}
 		// Once uncounted first: the test raised the alerts over every high
-		// finding, and the scans' own evaluation (the org's level) may land
-		// before or after that; a recheck brings each alert to the state a
-		// recheck leaves, so the counted one reads its steady path, whatever
-		// the scans did meanwhile.
+		// finding, the scans' own evaluation (done before their scan event,
+		// which waitScan waited for) used the org's level; a recheck brings
+		// each alert to the state a recheck leaves, so the counted one reads
+		// its steady path.
 		h.c.recheckVulnAlerts(h.ctx, 1)
 		before := db.n.Load()
 		h.c.recheckVulnAlerts(countCalls(h.ctx), 1)

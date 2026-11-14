@@ -210,7 +210,11 @@ func (c *Core) raiseVulnAlert(ctx context.Context, key string, scan int64, u sto
 	}
 	switch {
 	case len(keep) == 0:
-		c.resolveAlert(ctx, key, time.Now())
+		// Only the alert read above: one opened since then (another
+		// scan's evaluation, a recheck) is not this one's to close.
+		if isOpen {
+			c.resolveAlertID(ctx, key, open.ID, time.Now())
+		}
 		return
 	case !isOpen && !added:
 		return
