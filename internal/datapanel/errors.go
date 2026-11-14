@@ -17,6 +17,9 @@ type Error struct {
 	// Release is the release a deploy_in_progress error is about (the
 	// one deploying), so callers can wait for it; 0 when unknown.
 	Release int64
+	// Refusal explains a forbidden error: why, and how it could be
+	// allowed (ADR 0080). Only Dock's core sets it.
+	Refusal *apitypes.Refusal
 }
 
 func (e *Error) Error() string { return e.Msg }

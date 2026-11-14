@@ -8276,6 +8276,8 @@ export interface components {
             /** @example this token has scope deploy; archiving a service requires admin */
             detail: string;
             errors?: components["schemas"]["ErrorDetail"][] | null;
+            /** @description With forbidden: why the call was refused, and who or what can allow it */
+            refusal?: components["schemas"]["Refusal"];
             /**
              * Format: int64
              * @description With deploy_in_progress: the release that is deploying; wait for it, then retry
@@ -9460,6 +9462,21 @@ export interface components {
         };
         RecoveryCodes: {
             codes: string[] | null;
+        };
+        Refusal: {
+            action: string;
+            actor: string;
+            ask?: string[] | null;
+            /** @enum {string} */
+            decided_by: "role" | "scope" | "limit" | "operator" | "person";
+            fix: string;
+            has?: string;
+            /** @example shop/staging */
+            limit?: string;
+            need: string;
+            /** @example shop/production */
+            place?: string;
+            reason: string;
         };
         Registry: {
             collect_pending: boolean;

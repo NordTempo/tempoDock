@@ -2387,6 +2387,10 @@
               "null"
             ]
           },
+          "refusal": {
+            "$ref": "#/components/schemas/Refusal",
+            "description": "With forbidden: why the call was refused, and who or what can allow it"
+          },
           "release": {
             "description": "With deploy_in_progress: the release that is deploying; wait for it, then retry",
             "format": "int64",
@@ -2597,6 +2601,69 @@
           "email",
           "role",
           "token_connections"
+        ],
+        "type": "object"
+      },
+      "Refusal": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "ask": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "decided_by": {
+            "enum": [
+              "role",
+              "scope",
+              "limit",
+              "operator",
+              "person"
+            ],
+            "type": "string"
+          },
+          "fix": {
+            "type": "string"
+          },
+          "has": {
+            "type": "string"
+          },
+          "limit": {
+            "examples": [
+              "shop/staging"
+            ],
+            "type": "string"
+          },
+          "need": {
+            "type": "string"
+          },
+          "place": {
+            "examples": [
+              "shop/production"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "decided_by",
+          "action",
+          "need",
+          "actor",
+          "reason",
+          "fix"
         ],
         "type": "object"
       },

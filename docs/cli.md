@@ -25,6 +25,10 @@ What scripts, CI and agents can rely on. The goals behind these are in
 
   `code` is the server's machine-readable reason when it gave one (e.g.
   `health_check_failed`), otherwise the exit code's name from the table below.
+  A refused call (`forbidden`, exit code 3) says why in `message` and what
+  would allow it in `hint`: the role, scope or limit to change, or the
+  credential the platform needs, and the org's admins to ask when the
+  caller is a person (ADR 0080).
 - Human output uses aligned columns and plain status glyphs (`✓ ✗ ! ·`).
   Color only when the stream is a terminal and `NO_COLOR` is unset.
 - The CLI only prompts when stdin is a terminal. Otherwise missing input is a

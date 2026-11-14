@@ -179,3 +179,13 @@ DELETE FROM registry_credentials WHERE org_id = +? AND host = +?;
 
 -- name: DeleteOrgRegistryCredentials :exec
 DELETE FROM registry_credentials WHERE org_id = +?;
+
+-- ListAdminNames is an org's own admins (not operators who joined), first
+-- admin first, for a refusal's "ask" (ADR 0080). org_members' key leads
+-- with org_id.
+-- name: ListAdminNames :many
+SELECT users.email, users.name FROM org_members JOIN users ON users.id = org_members.user_id
+WHERE org_members.org_id = +? AND org_members.role = 'admin' AND org_members.expires_at IS NULL
+  AND users.disabled_at IS NULL
+ORDER BY org_members.created_at
+LIMIT 10;

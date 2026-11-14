@@ -15,6 +15,7 @@ import {
   useIsAdmin,
   useReleases,
   useService,
+  useWhyNot,
 } from "../../data/queries";
 import type { ServiceRef, ServiceView } from "../../data/types";
 import { EnvSwitch } from "../../shell/context";
@@ -601,7 +602,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const { service, deploying, latest_release: latest } = useService(ref);
   const production = useEnvironment(ref).environment.kind === "production";
   const releases = useReleases(ref);
-  const mayDeploy = useCanDeploy(ref);
+  const denied = useWhyNot("deploy", ref);
+  const mayDeploy = denied === undefined;
   // One primary per view: while changes wait, the header's Apply is it.
   const waiting = useChanges(ref).count > 0;
   const restart = useRestartService();
@@ -721,8 +723,36 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   ];
   useShortcuts(mayDeploy ? shortcuts : []);
 
-  // Read-only callers see the state, not buttons they can't use.
-  if (!mayDeploy) return wakeButton || null;
+  // Callers who can't change the service see its actions disabled, each
+  // saying why and what would allow it (ADR 0080).
+  if (denied) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        {wakeButton}
+        {/* Said, not only a tooltip: a disabled button shows none. */}
+        <span className="max-w-[26rem] text-right text-xs text-mut">
+          {denied}
+        </span>
+        {!stopped && service.active_release && (
+          <Act cli={`dock restart ${flags}`} disabled title={denied}>
+            Restart
+          </Act>
+        )}
+        {target && (
+          <Act
+            cli={`dock rollback ${target.number} ${flags}`}
+            disabled
+            title={denied}
+          >
+            Roll back
+          </Act>
+        )}
+        <Act cli={`dock deploy ${flags}`} disabled title={denied}>
+          Deploy
+        </Act>
+      </div>
+    );
+  }
 
   const close = () => setConfirming(null);
   // The question in a modal over the page; the buttons stay where they are.
@@ -847,11 +877,9 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         disabled={!canDeploy}
         title={
           blocked ??
-          (!mayDeploy
-            ? "Needs the deploy scope"
-            : waiting
-              ? "Apply is the next step; a deploy also takes the changes waiting to apply live"
-              : "A folder, an image or the GitHub branch; or drop a folder here")
+          (waiting
+            ? "Apply is the next step; a deploy also takes the changes waiting to apply live"
+            : "A folder, an image or the GitHub branch; or drop a folder here")
         }
         onClick={onDeploy}
       >

@@ -18,12 +18,13 @@ import (
 // (replay), and three tools ask first, wait and list.
 
 // refused files an access request for a tool call a locked environment
-// refused; other errors pass through.
+// refused, and completes any refusal with who can change it
+// (core.Explain); other errors pass through.
 func (h *handler) refused(ctx context.Context, a core.Actor, t *mcpkit.ToolInfo, args json.RawMessage, err error) error {
-	if t.Annotations.ReadOnly {
-		return err
+	if !t.Annotations.ReadOnly {
+		err = h.core.FileRequest(ctx, a, err, core.Call{Via: "mcp", Op: t.Name, Title: t.Title, Args: args})
 	}
-	return h.core.FileRequest(ctx, a, err, core.Call{Via: "mcp", Op: t.Name, Title: t.Title, Args: args})
+	return h.core.Explain(ctx, a, err)
 }
 
 // replay is MCP's core.Replayer: it runs the tool again and returns its

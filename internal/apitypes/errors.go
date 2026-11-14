@@ -67,6 +67,55 @@ type Error struct {
 	// Release is the release a deploy_in_progress error is about: the
 	// one deploying, to wait for before retrying.
 	Release int64 `json:"release,omitempty" doc:"With deploy_in_progress: the release that is deploying; wait for it, then retry"`
+	// Refusal says why a forbidden call was refused and how it could be
+	// allowed (ADR 0080).
+	Refusal *Refusal `json:"refusal,omitempty" doc:"With forbidden: why the call was refused, and who or what can allow it"`
+}
+
+// RefusalCause is what refused a call: the thing to change to allow it.
+type RefusalCause string
+
+// Refusal causes. More come with the permission model of ADR 0080.
+const (
+	// RefusedRole: the person's role in the org is too low.
+	RefusedRole RefusalCause = "role"
+	// RefusedScope: the token's scope is too low; scopes don't change.
+	RefusedScope RefusalCause = "scope"
+	// RefusedLimit: the token is limited to another project or
+	// environment, or to one where the call needs more.
+	RefusedLimit RefusalCause = "limit"
+	// RefusedOperator: the call runs the platform, and the caller isn't
+	// a platform operator.
+	RefusedOperator RefusalCause = "operator"
+	// RefusedPerson: only a person in a signed-in browser session may do
+	// it, never a token.
+	RefusedPerson RefusalCause = "person"
+)
+
+// Refusal explains a forbidden error (ADR 0080): what was asked, what
+// the caller has, what decided it, and what to do next. Reason and Fix
+// are full sentences for people; the rest is for programs and agents.
+type Refusal struct {
+	DecidedBy RefusalCause `json:"decided_by" enum:"role,scope,limit,operator,person"`
+	// Action is what was refused, as the check names it ("archiving a service").
+	Action string `json:"action"`
+	// Need is what the action needs: a scope (read, deploy, admin),
+	// "operator" or "person".
+	Need string `json:"need"`
+	// Actor is who was refused: `user "ola@example.com"` or `token "ci"`.
+	Actor string `json:"actor"`
+	// Has is the caller's scope (a person's role) in the org.
+	Has Scope `json:"has,omitempty"`
+	// Limit is the project or environment a token is limited to.
+	Limit string `json:"limit,omitempty" example:"shop/staging"`
+	// Place is where the action was asked for, when it is in a project.
+	Place string `json:"place,omitempty" example:"shop/production"`
+	// Reason says why, Fix what would allow it, and how.
+	Reason string `json:"reason"`
+	Fix    string `json:"fix"`
+	// Ask names the people who can change it, for callers acting for a
+	// person: the org's admins.
+	Ask []string `json:"ask,omitempty"`
 }
 
 // ErrorDetail points at one invalid input.

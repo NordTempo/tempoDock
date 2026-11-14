@@ -27,6 +27,7 @@ import type {
   EnvRef,
   PendingChanges,
   ProjectOverview,
+  Scope,
   Server,
   ServerDetail,
   ServerStats,
@@ -609,15 +610,43 @@ export function deployBlock(env: Environment | undefined) {
 export const useDeployBlock = (env: EnvRef) =>
   deployBlock(useEnvironment(env).environment);
 
+const rank = { read: 1, deploy: 2, admin: 3 } as const;
+
+/**
+ * Why the caller can't do what needs `need` (in `env`, for an
+ * environment's actions), in the words the API's refusals use (ADR
+ * 0080); undefined when it can. Disabled actions show it.
+ */
+export function whyNot(
+  session: Session | null,
+  need: Scope,
+  env?: EnvRef,
+): string | undefined {
+  if (!session) return undefined;
+  const has = session.scope ?? "read";
+  if (rank[has] < rank[need]) {
+    return session.kind === "user"
+      ? `Needs ${need}; you have ${has} in ${session.org ?? "this organization"}. An admin can change it in Settings › Members.`
+      : `Needs ${need}; this token has ${has}.`;
+  }
+  if (env && session.project && session.project !== env.project) {
+    return `Needs ${need} in ${env.project}; this token is limited to ${session.project}.`;
+  }
+  if (env && session.environment && session.environment !== env.environment) {
+    return `Needs ${need} in ${env.environment}; this token is limited to ${session.environment}.`;
+  }
+  return undefined;
+}
+
+export const useWhyNot = (need: Scope, env?: EnvRef) =>
+  whyNot(useSession(), need, env);
+
 /**
  * Whether the caller may deploy to an environment: scope deploy or admin,
  * and not limited to another project or environment.
  */
-export function canDeploy(session: Session | null, env: EnvRef) {
-  if (!session || session.scope === "read") return false;
-  if (session.project && session.project !== env.project) return false;
-  return !session.environment || session.environment === env.environment;
-}
+export const canDeploy = (session: Session | null, env: EnvRef) =>
+  whyNot(session, "deploy", env) === undefined;
 
 export const useCanDeploy = (env: EnvRef) => canDeploy(useSession(), env);
 export const usePlacements = (project: string) =>

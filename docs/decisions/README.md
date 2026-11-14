@@ -92,6 +92,7 @@ line means a later record added to it without changing what it decided.
 | [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted |
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
 | [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; invites built |
+| [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phase 1 built |
 
 ## Template
 

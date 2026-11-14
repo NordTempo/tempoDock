@@ -467,6 +467,45 @@ func (q *Queries) GetRegistryCredential(ctx context.Context, arg GetRegistryCred
 	return i, err
 }
 
+const listAdminNames = `-- name: ListAdminNames :many
+SELECT users.email, users.name FROM org_members JOIN users ON users.id = org_members.user_id
+WHERE org_members.org_id = +? AND org_members.role = 'admin' AND org_members.expires_at IS NULL
+  AND users.disabled_at IS NULL
+ORDER BY org_members.created_at
+LIMIT 10
+`
+
+type ListAdminNamesRow struct {
+	Email string
+	Name  string
+}
+
+// ListAdminNames is an org's own admins (not operators who joined), first
+// admin first, for a refusal's "ask" (ADR 0080). org_members' key leads
+// with org_id.
+func (q *Queries) ListAdminNames(ctx context.Context, orgID int64) ([]ListAdminNamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAdminNames, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAdminNamesRow
+	for rows.Next() {
+		var i ListAdminNamesRow
+		if err := rows.Scan(&i.Email, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrgInvites = `-- name: ListOrgInvites :many
 SELECT id, org_id, email, role, hash, created_by, created_at, expires_at, accepted_at, revoked_at FROM org_invites
 WHERE org_id = +? AND accepted_at IS NULL AND revoked_at IS NULL

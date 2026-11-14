@@ -160,7 +160,7 @@ const instructions = `Tempo Dock deploys Docker apps to your own servers. You ac
 
 // hints tell the model what to do next where the message doesn't.
 var hints = map[apitypes.ErrorCode]string{
-	apitypes.CodeForbidden:        "The token can't do this. Stop and report it; don't look for another credential.",
+	apitypes.CodeForbidden:        "The token can't do this. Stop and tell the user what refusal says (why, and who or what can allow it); don't look for another credential or a workaround.",
 	apitypes.CodeDeployInProgress: "Another release of this service is deploying (its number is in release). Call wait_for_release, then retry.",
 	apitypes.CodeNotFound:         "Check names with list_projects and project_overview. Don't create things to make it pass unless asked.",
 	apitypes.CodeServerOffline:    "The server the environment runs on is offline. Retry later, then report it.",

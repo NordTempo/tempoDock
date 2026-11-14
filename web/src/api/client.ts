@@ -122,14 +122,24 @@ export const noPrompt: Middleware = {
   },
 };
 
-/** A failed API call: the problem document's status, code and message. */
+/**
+ * A failed API call: the problem document's status, code and message,
+ * and for a forbidden one why and what would allow it (ADR 0080).
+ */
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  readonly refusal?: components["schemas"]["Refusal"];
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    refusal?: components["schemas"]["Refusal"],
+  ) {
     super(message);
     this.status = status;
     this.code = code;
+    this.refusal = refusal;
   }
 }
 
@@ -151,6 +161,7 @@ function toError(response: Response, body: unknown) {
     body.status,
     body.code,
     details ? `${body.detail}: ${details}` : body.detail,
+    body.refusal,
   );
 }
 

@@ -89,7 +89,7 @@ them when `DOCK_URL` is set; only its context (server) is ignored.
 | 0 | `ok` | Continue (verify the deploy, below) |
 | 1 | `error` | Stop and report the message |
 | 2 | `usage` | Fix the command using `hint`. Nothing was done |
-| 3 | `auth` | Stop. Missing token or the token lacks the scope. Don't look for another credential |
+| 3 | `auth` | Stop. Missing token or the token lacks the scope: `message` says why, `hint` what would allow it and whom to ask. Report both. Don't look for another credential |
 | 4 | `not_found` | Check names with `dock project list`, `dock service list`. Don't create things to make it pass unless asked |
 | 5 | `conflict` | `deploy_in_progress`: run `dock release wait`, which follows the running release until it is done, then retry. `environment_locked`: tell the user, then `dock request wait <id>` ([below](#locked-environments-and-access-requests)). `hostname_taken`: stop and report |
 | 6 | `deploy_failed` | Build or health check failed. **Traffic was not switched; don't roll back.** Read logs, fix, deploy again |
@@ -238,7 +238,7 @@ $ dock request wait 12
 | Can | Can't |
 |---|---|
 | Deploy source or images, roll back, restart | Archive services (`admin`) |
-| Run one-off commands in a service's image (`dock run`, MCP `run_command`) with its variables, audited with the exit code | Run anything on the host itself |
+| Run one-off commands in a service's image (`dock run`, MCP `run_command`) with its variables, audited with the exit code; secret values in their output are masked | Run anything on the host itself |
 | Create services in its environment | Create projects (needs an unlimited token); create environments when limited to one |
 | Set, unset and apply variables | Read secret values, even in the staged-changes diff |
 | Add, generate and remove domains | Manage tokens or users |
@@ -248,7 +248,10 @@ $ dock request wait 12
 | | Reach Docker, BuildKit, Caddy or the host. Deploy over the platform itself |
 
 Within its environment a `deploy` token can still do harm that passes a
-health check: remove a domain, or set a wrong variable. So:
+health check: remove a domain, or set a wrong variable. And the code it
+deploys or runs reads the service's variables: masking stops `dock run
+printenv`, not a command that encodes them first, so deploying and running
+reach the secrets of the environments a token may deploy to. So:
 
 - Limit agents to non-production environments; promote or deploy production
   yourself.

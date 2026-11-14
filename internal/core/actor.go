@@ -173,7 +173,7 @@ func (a Actor) requireScope(need apitypes.Scope, action string) error {
 	if rank(a.Scope) >= rank(need) {
 		return nil
 	}
-	return errf(apitypes.CodeForbidden, "%s has scope %s; %s requires %s", a, a.Scope, action, need)
+	return a.refuseScope(need, action)
 }
 
 // errSuspended is why nothing changes in a suspended org.
@@ -201,7 +201,7 @@ func (a Actor) requireOperator(action string) error {
 	if a.operatorNeeds2FA {
 		return errf(apitypes.CodeTwoFactorRequired, "%s requires two-factor sign-in: %s", action, a.twoFactorRequired())
 	}
-	return errf(apitypes.CodeForbidden, "%s is not a platform operator; %s requires one", a, action)
+	return a.refuseOperator(action)
 }
 
 // requireAccountManager guards creating, resetting, enabling, disabling and
@@ -213,7 +213,11 @@ func (a Actor) requireAccountManager(action string) error {
 		return err
 	}
 	if a.Kind == "token" {
-		return errf(apitypes.CodeForbidden, "%s is for a person, not %s; ask a person to do it from a signed-in session in the web UI", action, a)
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedPerson, Action: action, Need: "person",
+			Reason: fmt.Sprintf("%s is for a person, not %s", action, a),
+			Fix:    "ask a person to do it from a signed-in session in the web UI",
+		})
 	}
 	return nil
 }
@@ -225,7 +229,7 @@ func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
 		return err
 	}
 	if a.limited() {
-		return errf(apitypes.CodeForbidden, "%s is limited to %s; %s requires an unlimited %s token", a, a.limitName(), action, need)
+		return a.refuseLimit(need, action, "", fmt.Sprintf("%s is limited to %s; %s requires an unlimited %s token", a, a.limitName(), action, need))
 	}
 	return nil
 }
@@ -297,10 +301,10 @@ func (a Actor) checkProject(need apitypes.Scope, action string, p store.Project)
 		return err
 	}
 	if a.ProjectID != 0 && a.ProjectID != p.ID {
-		return errf(apitypes.CodeForbidden, "%s is limited to project %s; it cannot access project %s", a, a.ProjectName, p.Name)
+		return a.refuseLimit(need, action, p.Name, fmt.Sprintf("%s is limited to project %s; it cannot access project %s", a, a.ProjectName, p.Name))
 	}
 	if a.EnvironmentID != 0 && rank(need) > rank(apitypes.ScopeRead) {
-		return errf(apitypes.CodeForbidden, "%s is limited to environment %s/%s; %s needs access to the whole project", a, a.ProjectName, a.EnvironmentName, action)
+		return a.refuseLimit(need, action, p.Name, fmt.Sprintf("%s is limited to environment %s/%s; %s needs access to the whole project", a, a.ProjectName, a.EnvironmentName, action))
 	}
 	return nil
 }
@@ -330,10 +334,10 @@ func (a Actor) checkEnvAccess(need apitypes.Scope, action string, p store.Projec
 		return err
 	}
 	if a.ProjectID != 0 && a.ProjectID != p.ID {
-		return errf(apitypes.CodeForbidden, "%s is limited to project %s; it cannot access project %s", a, a.ProjectName, p.Name)
+		return a.refuseLimit(need, action, p.Name+"/"+e.Name, fmt.Sprintf("%s is limited to project %s; it cannot access project %s", a, a.ProjectName, p.Name))
 	}
 	if a.EnvironmentID != 0 && a.EnvironmentID != e.ID {
-		return errf(apitypes.CodeForbidden, "%s is limited to environment %s/%s; it cannot access %s/%s", a, a.ProjectName, a.EnvironmentName, p.Name, e.Name)
+		return a.refuseLimit(need, action, p.Name+"/"+e.Name, fmt.Sprintf("%s is limited to environment %s/%s; it cannot access %s/%s", a, a.ProjectName, a.EnvironmentName, p.Name, e.Name))
 	}
 	return nil
 }
