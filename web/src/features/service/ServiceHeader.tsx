@@ -97,6 +97,13 @@ export function ServiceBar({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             {view.service.staged === "archive" && (
               <span className="text-mut"> · archive staged</span>
             )}
+            {view.service.from_template && (
+              <span className="text-faint">
+                {" "}
+                · from the {view.service.from_template.name} template r
+                {view.service.from_template.revision}
+              </span>
+            )}
           </span>
           <SourceLine serviceRef={ref} />
         </>

@@ -12,6 +12,7 @@ reasons behind it, see the [docs index](../../README.md#docs).
 | [Domains](domains.md) | Custom and generated domains, DNS, TLS, redirects |
 | [Previews](previews.md) | An environment per pull request, cloned from staging, archived when it closes |
 | [Data](data.md) | Browsing, querying and changing database data; the data access policy |
+| [Templates](templates.md) | Apps (Umami, n8n, Forgejo, ...) and databases in one step: their services, secrets and a domain |
 | [Databases and backups](databases.md) | Postgres and Redis templates, daily backups, off-box repository, restore into a new service and switch to it |
 | [Two-factor sign-in](two-factor.md) | Authenticator apps, recovery codes, confirming sensitive actions, requiring it, getting back in |
 | [Single sign-on](sso.md) | Continue with Google, GitHub or any OpenID Connect provider, set up by operators; who gets an account, invite only, turning passwords off |

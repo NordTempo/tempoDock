@@ -95,6 +95,7 @@ line means a later record added to it without changing what it decided.
 | [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phases 1 to 3 built |
 | [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
 | [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo; going public is v1.0.0 | accepted; not yet public |
+| [0082](0082-app-templates.md) | App templates: a catalog of apps as project file fragments with inputs, embedded and pinned | accepted; first catalog built |
 
 ## Template
 
