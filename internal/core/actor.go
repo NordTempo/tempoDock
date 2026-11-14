@@ -34,8 +34,13 @@ type Actor struct {
 	// platformOnly marks a platform credential, which acts in no org;
 	// userPlatform is the platform role of the person an org login acts
 	// for, which it doesn't have, to say why in a refusal.
-	Platform     apitypes.PlatformRole
-	Operator     bool
+	Platform apitypes.PlatformRole
+	Operator bool
+	// grants are what a person holds in the org (ADR 0080), and
+	// hasGrants says they decide: checks ask them, and Scope is only their
+	// summary (loadAccess). Tokens and the system have none yet.
+	grants       []grantEntry
+	hasGrants    bool
 	platformOnly bool
 	userPlatform apitypes.PlatformRole
 	// ProjectID and EnvironmentID limit a token to one project or one
@@ -164,7 +169,20 @@ func (a Actor) limited() bool { return a.ProjectID != 0 || a.EnvironmentID != 0 
 // requires <scope>", e.g. "archiving a service".
 func (a Actor) require(need apitypes.Scope, action string) error {
 	a.shadow(need, action, 0, 0, rank(a.Scope) >= rank(need))
-	return a.requireOnly(need, action)
+	if err := a.requireOnly(need, action); err != nil {
+		return err
+	}
+	return a.requireAtOrg(need, action)
+}
+
+// requireAtOrg is a person's check of an org-wide action against their
+// grants at the org (requireOnly checked only that they hold it
+// somewhere); nothing more for others.
+func (a Actor) requireAtOrg(need apitypes.Scope, action string) error {
+	if a.hasGrants && !a.grantAllows(need, action, 0, 0, 0) {
+		return a.refuseGrant(need, action, a.orgName())
+	}
+	return nil
 }
 
 // requireOnly is require without the shadow, for checks that compare
@@ -184,6 +202,12 @@ func (a Actor) requireScope(need apitypes.Scope, action string) error {
 	}
 	if a.suspended && rank(need) > rank(apitypes.ScopeRead) {
 		return errSuspended(a.OrgSlug, action)
+	}
+	if a.hasGrants {
+		if a.holdsAnywhere(need, action) {
+			return nil
+		}
+		return a.refuseGrant(need, action, "")
 	}
 	if rank(a.Scope) >= rank(need) {
 		return nil
@@ -243,6 +267,9 @@ func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
 	if err := a.requireOnly(need, action); err != nil {
 		return err
 	}
+	if err := a.requireAtOrg(need, action); err != nil {
+		return err
+	}
 	if a.limited() {
 		return a.refuseLimit(need, action, "", fmt.Sprintf("%s is limited to %s; %s requires an unlimited %s token", a, a.limitName(), action, need))
 	}
@@ -285,13 +312,15 @@ func (a Actor) canSee(orgID, projectID, envID int64) bool {
 	if a.Kind != "system" && a.OrgID != orgID {
 		return false
 	}
-	if a.ProjectID != 0 && a.ProjectID != projectID {
-		return false
+	switch {
+	case a.Kind == "system":
+		return true
+	case !a.hasGrants:
+		return (a.ProjectID == 0 || a.ProjectID == projectID) && (a.EnvironmentID == 0 || a.EnvironmentID == envID)
+	case envID != 0:
+		return a.seesEnv(projectID, envID)
 	}
-	if a.EnvironmentID != 0 && a.EnvironmentID != envID {
-		return false
-	}
-	return true
+	return projectID == 0 || a.seesProject(projectID)
 }
 
 // inOrg checks the project is in the actor's org. Lookups by name only
@@ -318,6 +347,12 @@ func (a Actor) checkProject(need apitypes.Scope, action string, p store.Project)
 	}
 	if err := a.inOrg(p); err != nil {
 		return err
+	}
+	if a.hasGrants {
+		if !a.grantAllows(need, action, p.ID, 0, 0) {
+			return a.refuseGrant(need, action, p.Name)
+		}
+		return nil
 	}
 	if a.ProjectID != 0 && a.ProjectID != p.ID {
 		return a.refuseLimit(need, action, p.Name, fmt.Sprintf("%s is limited to project %s; it cannot access project %s", a, a.ProjectName, p.Name))
@@ -355,6 +390,12 @@ func (a Actor) checkEnvAccess(need apitypes.Scope, action string, p store.Projec
 	}
 	if err := a.inOrg(p); err != nil {
 		return err
+	}
+	if a.hasGrants {
+		if !a.grantAllows(need, action, p.ID, e.ID, envKind(e)) {
+			return a.refuseGrant(need, action, p.Name+"/"+e.Name)
+		}
+		return nil
 	}
 	if a.ProjectID != 0 && a.ProjectID != p.ID {
 		return a.refuseLimit(need, action, p.Name+"/"+e.Name, fmt.Sprintf("%s is limited to project %s; it cannot access project %s", a, a.ProjectName, p.Name))

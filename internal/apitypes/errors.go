@@ -90,13 +90,16 @@ const (
 	// RefusedPerson: only a person in a signed-in browser session may do
 	// it, never a token.
 	RefusedPerson RefusalCause = "person"
+	// RefusedGrants: none of the person's groups or grants gives the
+	// permission there (ADR 0080).
+	RefusedGrants RefusalCause = "grants"
 )
 
 // Refusal explains a forbidden error (ADR 0080): what was asked, what
 // the caller has, what decided it, and what to do next. Reason and Fix
 // are full sentences for people; the rest is for programs and agents.
 type Refusal struct {
-	DecidedBy RefusalCause `json:"decided_by" enum:"role,scope,limit,platform,person"`
+	DecidedBy RefusalCause `json:"decided_by" enum:"role,scope,limit,platform,person,grants"`
 	// Action is what was refused, as the check names it ("archiving a service").
 	Action string `json:"action"`
 	// Need is what the action needs: a scope (read, deploy, admin), a

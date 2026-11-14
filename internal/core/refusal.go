@@ -108,7 +108,7 @@ func (c *Core) Explain(ctx context.Context, a Actor, err error) error {
 		return err
 	}
 	switch ce.Refusal.DecidedBy {
-	case apitypes.RefusedRole, apitypes.RefusedScope, apitypes.RefusedLimit:
+	case apitypes.RefusedRole, apitypes.RefusedScope, apitypes.RefusedLimit, apitypes.RefusedGrants:
 	default:
 		return err
 	}

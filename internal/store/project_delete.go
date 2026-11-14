@@ -34,6 +34,9 @@ var projectDeletes = []struct{ table, where string }{
 	// Tokens limited to the project: without it they could do nothing,
 	// and dropping the limit would widen them to the whole org.
 	{"tokens", `project_id = +?1 OR environment_id IN ` + projEnvs},
+	// Grants on the project or its environments (ADR 0080): what they
+	// gave there is gone with it.
+	{"grants", `project_id = +?1 OR environment_id IN ` + projEnvs},
 	{"data_policy_rules", `project_id = +?1 OR environment_id IN ` + projEnvs},
 	{"previews", `project_id = +?1`},
 	{"service_previews", `service_id IN ` + projServices},

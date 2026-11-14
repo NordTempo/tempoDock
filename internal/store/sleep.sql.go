@@ -155,7 +155,7 @@ func (q *Queries) SetEnvironmentAwake(ctx context.Context, arg SetEnvironmentAwa
 }
 
 const setEnvironmentSleepAfter = `-- name: SetEnvironmentSleepAfter :one
-UPDATE environments SET sleep_after_minutes = ? WHERE id = +? RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by
+UPDATE environments SET sleep_after_minutes = ? WHERE id = +? RETURNING id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by, preview
 `
 
 type SetEnvironmentSleepAfterParams struct {
@@ -186,6 +186,7 @@ func (q *Queries) SetEnvironmentSleepAfter(ctx context.Context, arg SetEnvironme
 		&i.FreedBytes,
 		&i.WokeAt,
 		&i.WokeBy,
+		&i.Preview,
 	)
 	return i, err
 }

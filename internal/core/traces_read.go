@@ -189,7 +189,7 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 		if sp.Parent != 0 {
 			ts.Parent = sp.Parent.String()
 		}
-		if (a.ProjectID != 0 && a.ProjectID != sp.Project) || (a.EnvironmentID != 0 && a.EnvironmentID != sp.Env) {
+		if !a.seesEnv(sp.Project, sp.Env) {
 			ts.Hidden = true
 			out.Spans = append(out.Spans, ts)
 			continue

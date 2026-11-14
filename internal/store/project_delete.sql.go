@@ -11,7 +11,7 @@ import (
 
 const listAllProjectEnvironments = `-- name: ListAllProjectEnvironments :many
 
-SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by FROM environments WHERE project_id = +? ORDER BY id
+SELECT id, project_id, name, server_id, created_at, network, apply_error, kind, locked_at, locked_by, lock_reason, open_until, archived_at, sleep_after_minutes, asleep_at, slept_by, freed_bytes, woke_at, woke_by, preview FROM environments WHERE project_id = +? ORDER BY id
 `
 
 // What deleting an archived project (ADR 0078) removes outside the
@@ -47,6 +47,7 @@ func (q *Queries) ListAllProjectEnvironments(ctx context.Context, projectID int6
 			&i.FreedBytes,
 			&i.WokeAt,
 			&i.WokeBy,
+			&i.Preview,
 		); err != nil {
 			return nil, err
 		}

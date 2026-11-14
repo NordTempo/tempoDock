@@ -408,6 +408,7 @@ type Environment struct {
 	FreedBytes        int64
 	WokeAt            *time.Time
 	WokeBy            string
+	Preview           bool
 }
 
 type EnvironmentMove struct {
@@ -530,6 +531,34 @@ type GithubInstallation struct {
 	Account        string
 	AssignedBy     string
 	AssignedAt     time.Time
+}
+
+type Grant struct {
+	ID            int64
+	OrgID         int64
+	GroupID       *int64
+	UserID        *int64
+	Role          string
+	ProjectID     *int64
+	EnvironmentID *int64
+	Kinds         int64
+	ExpiresAt     *int64
+	Via           *string
+	GrantedBy     string
+	CreatedAt     time.Time
+}
+
+type Group struct {
+	ID        int64
+	OrgID     int64
+	Name      string
+	Seeded    *string
+	CreatedAt time.Time
+}
+
+type GroupMember struct {
+	GroupID int64
+	UserID  int64
 }
 
 type ImageFinding struct {

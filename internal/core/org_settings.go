@@ -145,7 +145,7 @@ func (c *Core) LeaveOrg(ctx context.Context, a Actor) error {
 	if err := c.keepAnAdmin(ctx, a.OrgID, a.UserID, ""); err != nil {
 		return err
 	}
-	if _, err := c.store.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: a.OrgID, UserID: a.UserID}); err != nil {
+	if err := c.leaveOrgMember(ctx, a.OrgID, a.UserID); err != nil {
 		return err
 	}
 	c.audit(ctx, a, "org.leave", nil, nil, a.Email, a.Email+" left the organization")
@@ -167,7 +167,15 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 	if err := c.keepAnAdmin(ctx, a.OrgID, userID, req.Role); err != nil {
 		return apitypes.User{}, err
 	}
-	if _, err := c.store.SetMemberRole(ctx, store.SetMemberRoleParams{Role: string(req.Role), OrgID: a.OrgID, UserID: userID}); err != nil {
+	// The role is the member's seeded group (ADR 0080): Admins,
+	// Developers or Viewers.
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if _, err := q.SetMemberRole(ctx, store.SetMemberRoleParams{Role: string(req.Role), OrgID: a.OrgID, UserID: userID}); err != nil {
+			return err
+		}
+		return placeInRoleGroup(ctx, q, a.OrgID, userID, req.Role, a.Name)
+	})
+	if err != nil {
 		return apitypes.User{}, err
 	}
 	c.audit(ctx, a, "org.member_role", nil, nil, u.Email, fmt.Sprintf("made %s %s", u.Email, req.Role))
@@ -184,7 +192,7 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	if userID == a.UserID {
 		return invalid("to take yourself out of the organization, leave it")
 	}
-	if _, err := c.store.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: a.OrgID, UserID: userID}); err != nil {
+	if err := c.leaveOrgMember(ctx, a.OrgID, userID); err != nil {
 		return err
 	}
 	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization")
@@ -474,7 +482,7 @@ func joinTx(ctx context.Context, q *store.Queries, org store.Org, inv *store.Org
 			return errf(apitypes.CodeExpired, "this invite was used or revoked; ask an admin of %s for a new one", org.Name)
 		}
 	}
-	return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: org.ID, UserID: userID, Role: role})
+	return joinOrgMember(ctx, q, org.ID, userID, apitypes.Scope(role))
 }
 
 // invite loads an invite by its code, for a signed-in user accepting it.

@@ -30,8 +30,9 @@ type busEvent struct {
 	// (publishBuildLog): as written for subscribers that may reveal them,
 	// masked for the rest.
 	secrets secretsView
-	// adminsOnly limits the event to admins and, when set, the token with
-	// ID requester (access requests).
+	// adminsOnly limits the event to those who approve there (admins
+	// before ADR 0080) and, when set, the token with ID requester (access
+	// requests).
 	adminsOnly bool
 	requester  int64
 }
@@ -47,7 +48,7 @@ const (
 
 // seenBy reports whether the event's audience includes a, beyond canSee.
 func (e busEvent) seenBy(a Actor) bool {
-	return !e.adminsOnly || rank(a.Scope) >= rank(apitypes.ScopeAdmin) || (e.requester != 0 && a.TokenID == e.requester)
+	return !e.adminsOnly || a.approves(e.projectID, e.envID) || (e.requester != 0 && a.TokenID == e.requester)
 }
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that

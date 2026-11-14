@@ -218,14 +218,14 @@ func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Sc
 		if err != nil {
 			return Actor{}, err
 		}
-		return a.gatedMember(m.Org, m.Role, most), nil
+		return c.withAccess(ctx, a.gatedMember(m.Org, m.Role, most))
 	}
 	orgs, err := c.store.ListUserOrgs(ctx, a.UserID)
 	if err != nil {
 		return Actor{}, err
 	}
 	if len(orgs) == 1 {
-		return a.gatedMember(orgs[0].Org, orgs[0].Role, most), nil
+		return c.withAccess(ctx, a.gatedMember(orgs[0].Org, orgs[0].Role, most))
 	}
 	a.orgs = len(orgs)
 	return a, nil
@@ -234,6 +234,15 @@ func (c *Core) actIn(ctx context.Context, a Actor, slug string, most apitypes.Sc
 // gatedMember is member, unless org requires a second factor the actor
 // didn't use: then it acts in no org and says why. A sign-in through an
 // identity provider counts as one (ADR 0065).
+// withAccess loads what a person in an org holds there (loadAccess): their
+// grants decide their checks from now on (ADR 0080).
+func (c *Core) withAccess(ctx context.Context, a Actor) (Actor, error) {
+	if a.OrgID == 0 || a.UserID == 0 {
+		return a, nil
+	}
+	return c.loadAccess(ctx, a)
+}
+
 func (a Actor) gatedMember(org store.Org, role string, most apitypes.Scope) Actor {
 	if org.RequireTwoFactor && a.Factor == "" {
 		a.needs2FAOrg, a.orgs = org.Slug, 1
@@ -945,7 +954,7 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, o
 		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), PlatformRole: operatorRole(req.Operator)}); err != nil {
 			return err
 		}
-		return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: orgID, UserID: u.ID, Role: string(req.Role)})
+		return joinOrgMember(ctx, q, orgID, u.ID, req.Role)
 	})
 	if store.IsUnique(err) {
 		return store.User{}, conflict("a user with email %s already exists", req.Email)

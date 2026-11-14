@@ -2628,7 +2628,8 @@
               "scope",
               "limit",
               "platform",
-              "person"
+              "person",
+              "grants"
             ],
             "type": "string"
           },

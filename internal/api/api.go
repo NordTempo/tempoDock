@@ -114,6 +114,7 @@ func newAPI(mux *http.ServeMux, s *Server) huma.API {
 	registerUptime(s, a)
 	registerAdmin(s, a)
 	registerOrgSettings(s, a)
+	registerGroups(s, a)
 	registerServers(s, a)
 	registerAlerts(s, a)
 	registerErrors(s, a)

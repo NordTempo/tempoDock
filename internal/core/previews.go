@@ -586,6 +586,11 @@ func (c *Core) createPreview(ctx context.Context, a Actor, base envScope, setup 
 		}); err != nil {
 			return err
 		}
+		// Grants for previews name their kind on the row (ADR 0080).
+		if err := q.SetEnvironmentPreview(ctx, e.ID); err != nil {
+			return err
+		}
+		e.Preview = true
 		clones, err := q.ListServices(ctx, e.ID)
 		if err != nil {
 			return err
