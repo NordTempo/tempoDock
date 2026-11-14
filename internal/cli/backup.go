@@ -102,6 +102,7 @@ the service's newest 20 runs keep their log. Needs deploy access.`,
 var backupMethod = map[apitypes.BackupKind]string{
 	apitypes.BackupPostgres: "pg_dump",
 	apitypes.BackupRedis:    "Redis snapshot",
+	apitypes.BackupMySQL:    "mysqldump",
 	apitypes.BackupVolume:   "volume files",
 }
 

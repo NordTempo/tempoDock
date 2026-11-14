@@ -615,7 +615,7 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 	if fs.Template != apitypes.TemplateNone {
 		t, ok := templates[fs.Template]
 		if !ok {
-			return invalid("service %s: unknown template %q; the templates are postgres and redis", name, fs.Template)
+			return invalid("service %s: unknown template %q; the templates are %s", name, fs.Template, templateNames())
 		}
 		tmpl = &t
 	}

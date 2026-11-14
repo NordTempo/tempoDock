@@ -444,7 +444,7 @@ type Service struct {
 	// it is set.
 	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres,mysql,redis"`
 	// Template is the database template the service was created from.
-	Template Template `json:"template,omitempty" enum:"postgres,redis"`
+	Template Template `json:"template,omitempty" enum:"postgres,redis,mysql,mariadb,valkey,pgvector"`
 	// FromTemplate is the app template (ADR 0083) that created it, if one did.
 	FromTemplate *FromTemplate `json:"from_template,omitempty"`
 	// ActiveRelease is the number of the release serving traffic, if any.
@@ -494,7 +494,7 @@ type CreateServiceRequest struct {
 	// after creating the service.
 	Git                       *ServiceGitRequest `json:"git,omitempty"`
 	Name                      string             `json:"name" pattern:"^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$" doc:"DNS-safe name, also the private hostname"`
-	Template                  Template           `json:"template,omitempty" enum:"postgres,redis" doc:"Create a database from a template; other settings are ignored"`
+	Template                  Template           `json:"template,omitempty" enum:"postgres,redis,mysql,mariadb,valkey,pgvector" doc:"Create a database from a template; other settings are ignored"`
 	Image                     string             `json:"image,omitempty"`
 	Port                      int                `json:"port,omitempty" minimum:"0" maximum:"65535"`
 	HealthCheckPath           string             `json:"health_check_path,omitempty"`

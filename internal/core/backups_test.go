@@ -95,7 +95,7 @@ func TestTemplatePostgres(t *testing.T) {
 		t.Error("two databases share a password")
 	}
 
-	if _, err := h.c.CreateService(h.ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "x", Template: "mysql"}); CodeOf(err) != apitypes.CodeValidation {
+	if _, err := h.c.CreateService(h.ctx, testSystem, db.Env(), apitypes.CreateServiceRequest{Name: "x", Template: "mongodb"}); CodeOf(err) != apitypes.CodeValidation {
 		t.Errorf("unknown template: %v", err)
 	}
 }
@@ -519,5 +519,42 @@ func TestRestartFailsRunningBackups(t *testing.T) {
 	h.restart()
 	if got := h.waitRun(db, run.ID); got.Status != apitypes.BackupFailed || !strings.Contains(got.Error, "restarted") {
 		t.Fatalf("run = %+v", got)
+	}
+}
+
+// A MySQL template backs up with the dump tools of its own image as root,
+// and restores into a new MySQL with its own root password.
+func TestTemplateMySQLBackupAndRestore(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplateMySQL)
+	vars := h.revealed(db)
+	if vars["MYSQL_DATABASE"] != "app" || len(vars["MYSQL_ROOT_PASSWORD"]) != 32 || !strings.HasPrefix(vars["DATABASE_URL"], "mysql://root:${{db.MYSQL_ROOT_PASSWORD}}@db:3306/") {
+		t.Fatalf("variables = %v", vars)
+	}
+	snap := "eeee5555eeee5555"
+	h.rt.OnJob(func(node.JobSpec) (node.JobResult, error) {
+		return node.JobResult{Output: resticOutput(snap, 100, snap)}, nil
+	})
+	if run := h.runBackup(db); run.Status != apitypes.BackupSucceeded || run.Kind != apitypes.BackupMySQL {
+		t.Fatalf("backup = %+v", run)
+	}
+	jobs := h.rt.Jobs()
+	job := jobs[len(jobs)-1]
+	if !strings.HasPrefix(job.Image, "mysql:8.4") || job.Env["MYSQL_PWD"] != vars["MYSQL_ROOT_PASSWORD"] || job.Env["DOCK_DB_HOST"] != "db" || job.Env["DOCK_DB_PORT"] != "3306" {
+		t.Fatalf("backup job = %+v", job)
+	}
+
+	res, err := h.c.RestoreBackup(h.ctx, testSystem, db, apitypes.RestoreBackupRequest{Snapshot: snap[:8], As: "db-old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done := h.waitRun(db, res.Restore.ID); done.Status != apitypes.BackupSucceeded {
+		t.Fatalf("restore = %+v", done)
+	}
+	jobs = h.rt.Jobs()
+	job = jobs[len(jobs)-1]
+	newPw := h.revealed(ServiceRef{"shop", "production", "db-old"})["MYSQL_ROOT_PASSWORD"]
+	if !strings.Contains(job.Name, "_restore") || job.Env["DOCK_DB_HOST"] != "db-old" || job.Env["MYSQL_PWD"] != newPw || newPw == vars["MYSQL_ROOT_PASSWORD"] {
+		t.Fatalf("restore job = %+v", job)
 	}
 }

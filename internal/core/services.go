@@ -183,7 +183,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 	if req.Template != apitypes.TemplateNone {
 		t, ok := templates[req.Template]
 		if !ok {
-			return apitypes.Service{}, invalid("unknown template %q; the templates are postgres and redis", req.Template)
+			return apitypes.Service{}, invalid("unknown template %q; the templates are %s", req.Template, templateNames())
 		}
 		ss, err := c.createFromTemplate(ctx, a, es, req.Name, t, templateOptions{})
 		if ss.svc.ID == 0 {
