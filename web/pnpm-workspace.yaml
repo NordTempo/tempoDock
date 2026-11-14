@@ -7,3 +7,9 @@ peerDependencyRules:
     openapi-typescript>typescript: '6'
     '@glideapps/glide-data-grid>react': '19'
     '@glideapps/glide-data-grid>react-dom': '19'
+# Linaria (pulled in by Glide Data Grid) pins minimatch 9, which has a
+# denial-of-service advisory (GHSA-g3hv-75wg-m249) fixed only in 11. Linaria
+# only calls minimatch at build time, and 11 keeps the same named export.
+overrides:
+  '@linaria/react>minimatch': ^11.0.1
+  '@linaria/utils>minimatch': ^11.0.1

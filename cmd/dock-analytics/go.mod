@@ -3,7 +3,7 @@
 // module's go.mod, so `go build ./cmd/dock` can't link them.
 module github.com/NordTempo/tempoDock/cmd/dock-analytics
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/NordTempo/tempoDock v0.0.0
@@ -34,8 +34,8 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/telemetry v0.0.0-20261009151841-97e8ea77aa2a // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
