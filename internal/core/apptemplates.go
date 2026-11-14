@@ -135,6 +135,13 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 			}
 		}
 		ep, err := c.planEnv(a, fe, le, values, false)
+		for _, m := range ep.manual {
+			if m.Kind == apitypes.PlanDomain && m.Name == "" {
+				// The template's references to its domain would break the
+				// first deploy.
+				return nil, ep, invalid("%s's server has no base domain to generate a hostname for %s from; give it a hostname (--domain)", es, ex.Main)
+			}
+		}
 		return le, ep, err
 	}
 	if req.Plan {
