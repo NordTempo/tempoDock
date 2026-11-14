@@ -43,7 +43,13 @@ func (h *harness) ssoBegin(provider string) (string, SSOCallback) {
 // token's claims first.
 func (h *harness) ssoSignIn(idp *oidctest.Provider, subject, email string, edit func(map[string]any)) (SSOResult, error) {
 	h.t.Helper()
-	authURL, cb := h.ssoBegin("corp")
+	return h.ssoSignInVia("corp", idp, subject, email, edit)
+}
+
+// ssoSignInVia is ssoSignIn through the provider named.
+func (h *harness) ssoSignInVia(provider string, idp *oidctest.Provider, subject, email string, edit func(map[string]any)) (SSOResult, error) {
+	h.t.Helper()
+	authURL, cb := h.ssoBegin(provider)
 	req := oidctest.Read(h.t, authURL)
 	if req.RedirectURI != h.c.ssoRedirectURL() {
 		h.t.Fatalf("redirect URI %s", req.RedirectURI)

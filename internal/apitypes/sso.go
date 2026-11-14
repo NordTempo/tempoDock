@@ -5,27 +5,60 @@ import "time"
 // Single sign-on (ADR 0058, 0065): the platform's identity providers, its
 // sign-in switches, and signing in through a provider.
 
-// SSOKind is the protocol a provider speaks: google and oidc are OpenID
-// Connect (google's issuer is fixed), github is GitHub's OAuth, reading
-// the account's primary verified email from its API.
+// SSOKind is what a provider is. github is GitHub's OAuth, reading the
+// account's primary verified email from its API; every other kind speaks
+// OpenID Connect. oidc takes any issuer; the named ones (ADR 0081) know
+// theirs: google's is fixed, microsoft's comes from a tenant, keycloak's
+// and authentik's from a domain and a realm, the rest from a domain.
 type SSOKind string
 
 const (
-	SSOGoogle SSOKind = "google"
-	SSOGitHub SSOKind = "github"
-	SSOOIDC   SSOKind = "oidc"
+	SSOGoogle    SSOKind = "google"
+	SSOGitHub    SSOKind = "github"
+	SSOOIDC      SSOKind = "oidc"
+	SSOMicrosoft SSOKind = "microsoft"
+	SSOGitLab    SSOKind = "gitlab"
+	SSOOkta      SSOKind = "okta"
+	SSOAuth0     SSOKind = "auth0"
+	SSOKeycloak  SSOKind = "keycloak"
+	SSOAuthentik SSOKind = "authentik"
 )
+
+// SSOKindNames names every kind: the default label of its button, except
+// oidc's, whose providers name their own.
+var SSOKindNames = map[SSOKind]string{
+	SSOGoogle: "Google", SSOGitHub: "GitHub", SSOOIDC: "OpenID Connect",
+	SSOMicrosoft: "Microsoft", SSOGitLab: "GitLab", SSOOkta: "Okta",
+	SSOAuth0: "Auth0", SSOKeycloak: "Keycloak", SSOAuthentik: "Authentik",
+}
+
+// SSOWhere is where a named provider is, instead of an issuer: which
+// fields a kind takes is in the doc of each.
+type SSOWhere struct {
+	// Tenant is microsoft's directory: its ID or one of its domains. Not
+	// common, organizations or consumers: Dock signs in one tenant's
+	// people (ADR 0081).
+	Tenant string `json:"tenant,omitempty" example:"contoso.onmicrosoft.com" doc:"microsoft only: the tenant ID or a domain of it"`
+	// Domain is a hosted provider's domain (okta, auth0) or where a
+	// self-hosted one runs (keycloak, authentik, gitlab; gitlab.com when
+	// left out), with or without https://.
+	Domain string `json:"domain,omitempty" example:"acme.okta.com" doc:"okta, auth0: the domain; keycloak, authentik, gitlab: the base URL (gitlab.com by default)"`
+	// Realm is keycloak's realm or authentik's application slug.
+	Realm string `json:"realm,omitempty" example:"staff" doc:"keycloak: the realm; authentik: the application's slug"`
+}
 
 // SSOProvider is one of the platform's identity providers. Its client
 // secret is never returned.
 type SSOProvider struct {
 	// Name addresses the provider in the API and CLI.
 	Name string  `json:"name" example:"google"`
-	Kind SSOKind `json:"kind" enum:"google,github,oidc"`
+	Kind SSOKind `json:"kind" enum:"google,github,oidc,microsoft,gitlab,okta,auth0,keycloak,authentik"`
 	// Label is what the sign-in page's button names: "Continue with <label>".
 	Label string `json:"label" example:"Google"`
 	// Issuer is the OpenID Connect issuer; empty for github.
-	Issuer   string `json:"issuer,omitempty" example:"https://accounts.google.com"`
+	Issuer string `json:"issuer,omitempty" example:"https://accounts.google.com"`
+	// SSOWhere is what a named kind's issuer was built from.
+	SSOWhere
 	ClientID string `json:"client_id"`
 	// Linked is how many people are linked through the provider.
 	Linked    int64     `json:"linked"`
@@ -43,11 +76,12 @@ type SSOProviders struct {
 // CreateSSOProviderRequest adds an identity provider to the platform.
 type CreateSSOProviderRequest struct {
 	Name string  `json:"name" minLength:"1" maxLength:"32" doc:"Lowercase letters, digits and dashes"`
-	Kind SSOKind `json:"kind" enum:"google,github,oidc"`
-	// Label defaults to Google or GitHub for those kinds; a custom
-	// provider needs one.
+	Kind SSOKind `json:"kind" enum:"google,github,oidc,microsoft,gitlab,okta,auth0,keycloak,authentik"`
+	// Label defaults to the kind's name (Google, Microsoft, ...); a
+	// custom provider needs one.
 	Label  string `json:"label,omitempty" maxLength:"40"`
 	Issuer string `json:"issuer,omitempty" doc:"oidc only: the issuer URL; https, or http on localhost"`
+	SSOWhere
 	// ClientID and ClientSecret are the app registered for Dock at the
 	// provider; the secret is write-only.
 	ClientID     string `json:"client_id" minLength:"1"`
@@ -58,6 +92,9 @@ type CreateSSOProviderRequest struct {
 type UpdateSSOProviderRequest struct {
 	Label        *string `json:"label,omitempty" maxLength:"40"`
 	Issuer       *string `json:"issuer,omitempty" doc:"oidc only"`
+	Tenant       *string `json:"tenant,omitempty" doc:"microsoft only"`
+	Domain       *string `json:"domain,omitempty" doc:"okta, auth0, keycloak, authentik, gitlab"`
+	Realm        *string `json:"realm,omitempty" doc:"keycloak, authentik"`
 	ClientID     *string `json:"client_id,omitempty"`
 	ClientSecret *string `json:"client_secret,omitempty"`
 }
@@ -94,7 +131,7 @@ type SignInMethods struct {
 // SignInButton is a provider on the sign-in page.
 type SignInButton struct {
 	Name  string  `json:"name"`
-	Kind  SSOKind `json:"kind" enum:"google,github,oidc"`
+	Kind  SSOKind `json:"kind" enum:"google,github,oidc,microsoft,gitlab,okta,auth0,keycloak,authentik"`
 	Label string  `json:"label"`
 }
 

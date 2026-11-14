@@ -7452,13 +7452,28 @@ export interface components {
         CreateSSOProviderRequest: {
             client_id: string;
             client_secret: string;
+            /**
+             * @description okta, auth0: the domain; keycloak, authentik, gitlab: the base URL (gitlab.com by default)
+             * @example acme.okta.com
+             */
+            domain?: string;
             /** @description oidc only: the issuer URL; https, or http on localhost */
             issuer?: string;
             /** @enum {string} */
-            kind: "google" | "github" | "oidc";
+            kind: "google" | "github" | "oidc" | "microsoft" | "gitlab" | "okta" | "auth0" | "keycloak" | "authentik";
             label?: string;
             /** @description Lowercase letters, digits and dashes */
             name: string;
+            /**
+             * @description keycloak: the realm; authentik: the application's slug
+             * @example staff
+             */
+            realm?: string;
+            /**
+             * @description microsoft only: the tenant ID or a domain of it
+             * @example contoso.onmicrosoft.com
+             */
+            tenant?: string;
         };
         CreateServiceRequest: {
             build_command?: string;
@@ -10222,16 +10237,31 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             created_by: string;
+            /**
+             * @description okta, auth0: the domain; keycloak, authentik, gitlab: the base URL (gitlab.com by default)
+             * @example acme.okta.com
+             */
+            domain?: string;
             /** @example https://accounts.google.com */
             issuer?: string;
             /** @enum {string} */
-            kind: "google" | "github" | "oidc";
+            kind: "google" | "github" | "oidc" | "microsoft" | "gitlab" | "okta" | "auth0" | "keycloak" | "authentik";
             /** @example Google */
             label: string;
             /** Format: int64 */
             linked: number;
             /** @example google */
             name: string;
+            /**
+             * @description keycloak: the realm; authentik: the application's slug
+             * @example staff
+             */
+            realm?: string;
+            /**
+             * @description microsoft only: the tenant ID or a domain of it
+             * @example contoso.onmicrosoft.com
+             */
+            tenant?: string;
         };
         SSOProviders: {
             providers: components["schemas"]["SSOProvider"][] | null;
@@ -10943,7 +10973,7 @@ export interface components {
         };
         SignInButton: {
             /** @enum {string} */
-            kind: "google" | "github" | "oidc";
+            kind: "google" | "github" | "oidc" | "microsoft" | "gitlab" | "okta" | "auth0" | "keycloak" | "authentik";
             label: string;
             name: string;
         };
@@ -11809,9 +11839,15 @@ export interface components {
         UpdateSSOProviderRequest: {
             client_id?: string;
             client_secret?: string;
+            /** @description okta, auth0, keycloak, authentik, gitlab */
+            domain?: string;
             /** @description oidc only */
             issuer?: string;
             label?: string;
+            /** @description keycloak, authentik */
+            realm?: string;
+            /** @description microsoft only */
+            tenant?: string;
         };
         UpdateServer: {
             behind: boolean;

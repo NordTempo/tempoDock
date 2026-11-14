@@ -43,7 +43,7 @@ func (c *Core) ListSSOProviders(ctx context.Context, a Actor) (apitypes.SSOProvi
 	}
 	out := apitypes.SSOProviders{Providers: make([]apitypes.SSOProvider, len(rows)), RedirectURL: c.ssoRedirectURL()}
 	for i, r := range rows {
-		out.Providers[i] = toSSOProvider(r.SsoProvider, r.Linked)
+		out.Providers[i] = c.toSSOProvider(r.SsoProvider, r.Linked)
 	}
 	return out, nil
 }
@@ -58,25 +58,32 @@ func (c *Core) CreateSSOProvider(ctx context.Context, a Actor, req apitypes.Crea
 	if err := validName("provider", req.Name); err != nil {
 		return apitypes.SSOProvider{}, err
 	}
-	var issuer, label string
-	switch req.Kind {
-	case apitypes.SSOGoogle:
-		issuer, label = googleIssuer, "Google"
-	case apitypes.SSOGitHub:
-		label = "GitHub"
-	case apitypes.SSOOIDC:
-		var err error
-		if issuer, err = validIssuer(req.Issuer); err != nil {
-			return apitypes.SSOProvider{}, err
-		}
-	default:
-		return apitypes.SSOProvider{}, invalid("kind must be google, github or oidc (any other OpenID Connect provider, by its issuer)")
+	label, known := apitypes.SSOKindNames[req.Kind]
+	if !known {
+		return apitypes.SSOProvider{}, invalid("kind must be google, github, microsoft, gitlab, okta, auth0, keycloak, authentik or oidc (any other OpenID Connect provider, by its issuer)")
 	}
 	if req.Issuer != "" && req.Kind != apitypes.SSOOIDC {
 		return apitypes.SSOProvider{}, invalid("only an oidc provider takes an issuer; %s's is built in", label)
 	}
+	var issuer string
+	var err error
+	switch {
+	case req.Kind == apitypes.SSOGoogle:
+		issuer = googleIssuer
+	case req.Kind == apitypes.SSOOIDC:
+		issuer, err = validIssuer(req.Issuer)
+	case namedKind(req.Kind):
+		if issuer, err = c.sso.presetIssuer(req.Kind, req.SSOWhere); err == nil {
+			issuer, err = c.sso.resolveIssuer(ctx, c.log, req.Kind, issuer)
+		}
+	}
+	if err != nil {
+		return apitypes.SSOProvider{}, err
+	}
+	if !namedKind(req.Kind) && req.SSOWhere != (apitypes.SSOWhere{}) {
+		return apitypes.SSOProvider{}, invalid("only microsoft takes a tenant, and okta, auth0, keycloak, authentik and gitlab a domain or realm; %s takes neither", req.Kind)
+	}
 	if req.Label != "" || req.Kind == apitypes.SSOOIDC {
-		var err error
 		if label, err = validLabel(req.Label); err != nil {
 			return apitypes.SSOProvider{}, err
 		}
@@ -106,7 +113,7 @@ func (c *Core) CreateSSOProvider(ctx context.Context, a Actor, req apitypes.Crea
 	}
 	c.audit(ctx, a.platform(), "platform.sso_provider_add", nil, nil, "sso "+p.Name,
 		fmt.Sprintf("added identity provider %s (%s%s): Continue with %s", p.Name, p.Kind, issuerNote(p.Issuer), p.Label))
-	return toSSOProvider(p, 0), nil
+	return c.toSSOProvider(p, 0), nil
 }
 
 // UpdateSSOProvider changes provider name; fields left out of req stay.
@@ -133,12 +140,34 @@ func (c *Core) UpdateSSOProvider(ctx context.Context, a Actor, name string, req 
 		if params.Issuer, err = validIssuer(*req.Issuer); err != nil {
 			return apitypes.SSOProvider{}, err
 		}
-		if params.Issuer != p.Issuer {
-			if _, err := c.sso.discover(ctx, c.log, params.Issuer); err != nil {
-				return apitypes.SSOProvider{}, err
-			}
-			changed = append(changed, "issuer "+params.Issuer)
+	}
+	if req.Tenant != nil || req.Domain != nil || req.Realm != nil {
+		kind := apitypes.SSOKind(p.Kind)
+		if !namedKind(kind) {
+			return apitypes.SSOProvider{}, invalid("%s takes no tenant, domain or realm; only microsoft, gitlab, okta, auth0, keycloak and authentik do", p.Name)
 		}
+		w := c.sso.ssoWhere(kind, p.Issuer)
+		if req.Tenant != nil {
+			w.Tenant = *req.Tenant
+		}
+		if req.Domain != nil {
+			w.Domain = *req.Domain
+		}
+		if req.Realm != nil {
+			w.Realm = *req.Realm
+		}
+		if params.Issuer, err = c.sso.presetIssuer(kind, w); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
+		if params.Issuer, err = c.sso.resolveIssuer(ctx, c.log, kind, params.Issuer); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
+	}
+	if params.Issuer != p.Issuer {
+		if _, err := c.sso.discover(ctx, c.log, params.Issuer); err != nil {
+			return apitypes.SSOProvider{}, err
+		}
+		changed = append(changed, "issuer "+params.Issuer)
 	}
 	if req.ClientID != nil {
 		if params.ClientID = strings.TrimSpace(*req.ClientID); params.ClientID == "" {
@@ -162,7 +191,7 @@ func (c *Core) UpdateSSOProvider(ctx context.Context, a Actor, name string, req 
 	if len(changed) > 0 {
 		c.audit(ctx, a.platform(), "platform.sso_provider_update", nil, nil, "sso "+p.Name, fmt.Sprintf("changed identity provider %s: %s", p.Name, strings.Join(changed, "; ")))
 	}
-	return toSSOProvider(p, 0), nil
+	return c.toSSOProvider(p, 0), nil
 }
 
 // DeleteSSOProvider removes provider name, the identities linked through
@@ -344,9 +373,12 @@ func (c *Core) ssoProviderNamed(ctx context.Context, name string) (store.SsoProv
 	return p, err
 }
 
-func toSSOProvider(p store.SsoProvider, linked int64) apitypes.SSOProvider {
+// toSSOProvider is provider p for the API, with what a named kind's
+// issuer was built from.
+func (c *Core) toSSOProvider(p store.SsoProvider, linked int64) apitypes.SSOProvider {
 	return apitypes.SSOProvider{
-		Name: p.Name, Kind: apitypes.SSOKind(p.Kind), Label: p.Label, Issuer: p.Issuer, ClientID: p.ClientID,
+		Name: p.Name, Kind: apitypes.SSOKind(p.Kind), Label: p.Label, Issuer: p.Issuer,
+		SSOWhere: c.sso.ssoWhere(apitypes.SSOKind(p.Kind), p.Issuer), ClientID: p.ClientID,
 		Linked: linked, CreatedAt: p.CreatedAt, CreatedBy: p.CreatedBy,
 	}
 }

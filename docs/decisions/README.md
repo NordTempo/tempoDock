@@ -77,7 +77,7 @@ line means a later record added to it without changing what it decided.
 | [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | superseded in part by [0065](0065-sign-in-is-the-platforms.md), [0066](0066-github-apps-for-many-orgs.md), [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
-| [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's | accepted |
+| [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's | accepted; amended by [0081](0081-named-identity-providers.md) (named providers) |
 | [0066](0066-github-apps-for-many-orgs.md) | GitHub Apps for many orgs | accepted |
 | [0067](0067-landing-site-and-console-address.md) | The landing site, and the console's address | accepted |
 | [0068](0068-redirects-on-cloudflare-zones.md) | Redirects on Cloudflare zones | accepted |
@@ -93,6 +93,7 @@ line means a later record added to it without changing what it decided.
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
 | [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; invites built |
 | [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phases 1 to 3 built |
+| [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
 
 ## Template
 
