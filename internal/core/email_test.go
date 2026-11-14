@@ -159,7 +159,7 @@ func TestQueuedEmailSurvivesRestart(t *testing.T) {
 func TestEmailSettingsAccess(t *testing.T) {
 	h := newHarness(t)
 	member := testSystem
-	member.Operator = false
+	member = member.withPlatform("")
 	if _, err := h.c.EmailSettings(h.ctx, member); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("member read: %v", err)
 	}

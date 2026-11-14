@@ -21,7 +21,7 @@ import (
 // Operators only: servers are the platform's (seesServers), and org
 // members get their environment's server status on the environment.
 func (c *Core) ListServers(ctx context.Context, a Actor) ([]apitypes.Server, error) {
-	if err := a.requireOperator("listing servers"); err != nil {
+	if err := a.requirePlatform(PlatformView, "listing servers"); err != nil {
 		return nil, err
 	}
 	return c.listServers(ctx, true)
@@ -93,7 +93,7 @@ func (c *Core) serverByID(ctx context.Context, id int64) (apitypes.Server, bool,
 // placed on it and its services with their usage. A joining server has
 // nothing placed yet.
 func (c *Core) GetServer(ctx context.Context, a Actor, name string) (apitypes.ServerDetail, error) {
-	if err := a.requireOperator("managing servers"); err != nil {
+	if err := a.requirePlatform(ServersManage, "managing servers"); err != nil {
 		return apitypes.ServerDetail{}, err
 	}
 	all, err := c.listServers(ctx, true)
@@ -178,7 +178,7 @@ func (c *Core) serverServices(ctx context.Context, serverID int64, link serverLi
 // enabled on every start, and its base domain falls back to the config's
 // base_domain while unset.
 func (c *Core) UpdateServer(ctx context.Context, a Actor, name string, req apitypes.UpdateServerRequest) (apitypes.Server, error) {
-	if err := a.requireOperator("managing servers"); err != nil {
+	if err := a.requirePlatform(ServersManage, "managing servers"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -323,7 +323,7 @@ func (c *Core) serverDetail(ctx context.Context, id int64) (apitypes.Server, err
 // Tunnel, it installs in tunnel mode and Dock creates its Cloudflare
 // tunnel once it joins (ADR 0036). Admin only.
 func (c *Core) AddServer(ctx context.Context, a Actor, req apitypes.AddServerRequest) (apitypes.AddedServer, error) {
-	if err := a.requireOperator("adding a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "adding a server"); err != nil {
 		return apitypes.AddedServer{}, err
 	}
 	if err := validName("server", req.Name); err != nil {
@@ -425,7 +425,7 @@ func (c *Core) remoteServer(ctx context.Context, name, action string) (store.Ser
 // under the same name). Its environments stay placed there, and their
 // apps keep running on that machine. Operators only.
 func (c *Core) RevokeServer(ctx context.Context, a Actor, name string) (apitypes.Server, error) {
-	if err := a.requireOperator("revoking a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "revoking a server"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.remoteServer(ctx, name, "revoking")
@@ -452,7 +452,7 @@ func (c *Core) RevokeServer(ctx context.Context, a Actor, name string) (apitypes
 // RotateServerKey has an online remote server switch to a new link key
 // (ADR 0014 section 2); it reconnects with it at once. Operators only.
 func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apitypes.Server, error) {
-	if err := a.requireOperator("rotating a server's key"); err != nil {
+	if err := a.requirePlatform(ServersManage, "rotating a server's key"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.remoteServer(ctx, name, "rotating keys")
@@ -477,7 +477,7 @@ func (c *Core) RotateServerKey(ctx context.Context, a Actor, name string) (apity
 // server still had are left to it). Dock deletes the Cloudflare tunnel it
 // made for the server. Operators only.
 func (c *Core) RemoveServer(ctx context.Context, a Actor, name string) error {
-	if err := a.requireOperator("removing a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "removing a server"); err != nil {
 		return err
 	}
 	srv, err := c.loadServer(ctx, name)

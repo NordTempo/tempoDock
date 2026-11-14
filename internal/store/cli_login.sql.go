@@ -22,9 +22,9 @@ func (q *Queries) CountPendingCLILogins(ctx context.Context, expiresAt time.Time
 }
 
 const createCLILogin = `-- name: CreateCLILogin :one
-INSERT INTO cli_logins (device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id, two_factor
+INSERT INTO cli_logins (device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, platform)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id, two_factor, platform
 `
 
 type CreateCLILoginParams struct {
@@ -36,6 +36,7 @@ type CreateCLILoginParams struct {
 	Ip         string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
+	Platform   bool
 }
 
 func (q *Queries) CreateCLILogin(ctx context.Context, arg CreateCLILoginParams) (CliLogin, error) {
@@ -48,6 +49,7 @@ func (q *Queries) CreateCLILogin(ctx context.Context, arg CreateCLILoginParams) 
 		arg.Ip,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.Platform,
 	)
 	var i CliLogin
 	err := row.Scan(
@@ -63,14 +65,15 @@ func (q *Queries) CreateCLILogin(ctx context.Context, arg CreateCLILoginParams) 
 		&i.Status,
 		&i.UserID,
 		&i.TwoFactor,
+		&i.Platform,
 	)
 	return i, err
 }
 
 const createCLILoginToken = `-- name: CreateCLILoginToken :one
-INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, two_factor, origin)
-VALUES (?, ?, ?, ?, ?, ?, ?, 'cli_login')
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor
+INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, two_factor, platform, origin)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cli_login')
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform
 `
 
 type CreateCLILoginTokenParams struct {
@@ -81,6 +84,7 @@ type CreateCLILoginTokenParams struct {
 	UserID    *int64
 	ExpiresAt *time.Time
 	TwoFactor bool
+	Platform  *string
 }
 
 func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTokenParams) (Token, error) {
@@ -92,6 +96,7 @@ func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTok
 		arg.UserID,
 		arg.ExpiresAt,
 		arg.TwoFactor,
+		arg.Platform,
 	)
 	var i Token
 	err := row.Scan(
@@ -114,6 +119,7 @@ func (q *Queries) CreateCLILoginToken(ctx context.Context, arg CreateCLILoginTok
 		&i.OrgID,
 		&i.Operator,
 		&i.TwoFactor,
+		&i.Platform,
 	)
 	return i, err
 }
@@ -172,7 +178,7 @@ func (q *Queries) DeleteExpiredCLILogins(ctx context.Context, expiresAt time.Tim
 }
 
 const getCLILoginByDeviceHash = `-- name: GetCLILoginByDeviceHash :one
-SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id, two_factor FROM cli_logins WHERE device_hash = +?
+SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id, two_factor, platform FROM cli_logins WHERE device_hash = +?
 `
 
 func (q *Queries) GetCLILoginByDeviceHash(ctx context.Context, deviceHash string) (CliLogin, error) {
@@ -191,12 +197,13 @@ func (q *Queries) GetCLILoginByDeviceHash(ctx context.Context, deviceHash string
 		&i.Status,
 		&i.UserID,
 		&i.TwoFactor,
+		&i.Platform,
 	)
 	return i, err
 }
 
 const getCLILoginByUserCode = `-- name: GetCLILoginByUserCode :one
-SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id, two_factor FROM cli_logins WHERE user_code = +?
+SELECT id, device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, status, user_id, two_factor, platform FROM cli_logins WHERE user_code = +?
 `
 
 func (q *Queries) GetCLILoginByUserCode(ctx context.Context, userCode string) (CliLogin, error) {
@@ -215,6 +222,7 @@ func (q *Queries) GetCLILoginByUserCode(ctx context.Context, userCode string) (C
 		&i.Status,
 		&i.UserID,
 		&i.TwoFactor,
+		&i.Platform,
 	)
 	return i, err
 }

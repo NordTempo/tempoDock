@@ -31,7 +31,7 @@ var errJobEnded = errors.New("the backup job ended before the archive was writte
 // background; the answer is the running backup. Operators only:
 // the archive holds every secret.
 func (c *Core) RunControlPlaneBackup(ctx context.Context, a Actor) (apitypes.ControlPlaneBackupRun, error) {
-	if err := a.requireOperator("backing up the control plane"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "backing up the control plane"); err != nil {
 		return apitypes.ControlPlaneBackupRun{}, err
 	}
 	row, err := c.startControlPlaneBackup(ctx, a, "manual")

@@ -258,7 +258,7 @@ func toGitHubApp(app store.GithubApp) *apitypes.GitHubApp {
 // installations: GitHub's list merged with Dock's assignments. Operators
 // only.
 func (c *Core) GitHubStatus(ctx context.Context, a Actor) (apitypes.GitHubStatus, error) {
-	if err := a.requireOperator("reading the GitHub App"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the GitHub App"); err != nil {
 		return apitypes.GitHubStatus{}, err
 	}
 	out := apitypes.GitHubStatus{HooksHint: c.hooksHint(), Installations: []apitypes.GitHubInstallation{}}
@@ -324,7 +324,7 @@ var githubLoginRe = regexp.MustCompile(`^[A-Za-z0-9](-?[A-Za-z0-9]){0,38}$`)
 // page that posts the manifest to GitHub (GitHubManifest). Needs a public
 // address, since GitHub delivers pushes there. Operators only.
 func (c *Core) StartGitHubApp(ctx context.Context, a Actor, req apitypes.GitHubAppRequest) (string, error) {
-	if err := a.requireOperator("creating the GitHub App"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "creating the GitHub App"); err != nil {
 		return "", err
 	}
 	owner := strings.TrimSpace(req.Owner)
@@ -475,7 +475,7 @@ var manifestCodeRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 // a push or pull request for their repository (adoptAppConnections). The App itself stays on GitHub; delete it there. Operators
 // only.
 func (c *Core) RemoveGitHubApp(ctx context.Context, a Actor) error {
-	if err := a.requireOperator("removing the GitHub App"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "removing the GitHub App"); err != nil {
 		return err
 	}
 	app, err := c.githubApp(ctx)
@@ -544,7 +544,7 @@ func (c *Core) installOrg(ctx context.Context, a Actor, slug string) (store.Org,
 // repositories, moving it from another org if needed (that org's
 // services stop fetching from it). Operators only.
 func (c *Core) AssignGitHubInstallation(ctx context.Context, a Actor, id int64, req apitypes.GitHubOrgRequest) error {
-	if err := a.requireOperator("assigning a GitHub App installation"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "assigning a GitHub App installation"); err != nil {
 		return err
 	}
 	if strings.TrimSpace(req.Org) == "" {

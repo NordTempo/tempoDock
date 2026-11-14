@@ -298,7 +298,7 @@ func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 func TestTokensCantManageAccounts(t *testing.T) {
 	h := newHarness(t)
 	session := h.cliUser("op@example.com", apitypes.ScopeAdmin)
-	session.Operator = true
+	session = session.withPlatform(apitypes.PlatformOperator)
 	other := h.cliUser("other@example.com", apitypes.ScopeAdmin)
 	token := session
 	token.Kind = "token"

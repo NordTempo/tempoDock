@@ -48,6 +48,50 @@ func registerOperator(s *Server, a huma.API) {
 		return reply(s.core.SetOperator(ctx, actor, in.ID, in.Body.Operator))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "set-platform-role", Method: http.MethodPut, Path: Prefix + "/console/users/{id}/platform-role",
+		Summary: "Give a user a platform role, or take it away", Tags: tags,
+		Description: "operator runs the platform, viewer reads the console, none is neither (ADR 0080). The platform keeps at least one operator who can sign in. A person signed in recently, not a token. Needs accounts.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID   int64 `path:"id"`
+		Body apitypes.SetPlatformRoleRequest
+	}) (*out[apitypes.Account], error) {
+		return reply(s.core.SetPlatformRole(ctx, actor, in.ID, in.Body.Role))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-platform-tokens", Method: http.MethodGet, Path: Prefix + "/console/tokens",
+		Summary: "List the platform's tokens", Tags: tags,
+		Description: "Platform tokens, platform logins (`dock login --platform`) and legacy tokens that are both an organization's and the platform's, newest first (ADR 0080). Needs platform.view.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Token], error) {
+		return reply(s.core.ListPlatformTokens(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "create-platform-token", Method: http.MethodPost, Path: Prefix + "/console/tokens",
+		Summary: "Create a platform token", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "A token that runs the platform with a platform role and never acts in an organization; its secret starts with dock_p_ and is shown once. A person signed in recently. Needs accounts.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.CreatePlatformTokenRequest
+	}) (*out[apitypes.CreatedToken], error) {
+		return reply(s.core.CreatePlatformToken(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "revoke-platform-token", Method: http.MethodDelete, Path: Prefix + "/console/tokens/{id}",
+		Summary: "Revoke a platform token", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "A platform token, platform login or legacy token. A person. Needs accounts.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID int64 `path:"id"`
+	}) (*struct{}, error) {
+		return nil, s.core.RevokePlatformToken(ctx, actor, in.ID)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "split-token", Method: http.MethodPost, Path: Prefix + "/console/tokens/{id}/split",
+		Summary: "Split a legacy token", Tags: tags,
+		Description: "A legacy organization token that also runs the platform stays the organization's and stops running the platform; a new platform token with the operator role takes that over, its secret shown once. A legacy `dock login` just stops: its person runs `dock login --platform`. A person signed in recently. Needs accounts.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		ID int64 `path:"id"`
+	}) (*out[apitypes.SplitTokenResult], error) {
+		return reply(s.core.SplitToken(ctx, actor, in.ID))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-platform-data-policy", Method: http.MethodGet, Path: Prefix + "/console/data-policy",
 		Summary: "The platform's data access default and ceiling", Tags: tags,
 		Description: "What applies where an organization set nothing (in place of Dock's built-in rules), and the most any organization's rule or token gives a subject in an environment kind. Organizations set their own rules within it. Operators only.",

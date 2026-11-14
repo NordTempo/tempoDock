@@ -97,23 +97,6 @@ func (a Actor) limitPlace() string {
 	return a.ProjectName
 }
 
-// refuseOperator is the refusal when a platform action meets an actor
-// that isn't an operator. An org's token is the usual surprise (a
-// context holding an org admin token runs `dock update`), so it says
-// which credential the platform needs.
-func (a Actor) refuseOperator(action string) error {
-	r := apitypes.Refusal{DecidedBy: apitypes.RefusedOperator, Action: action, Need: "operator"}
-	switch {
-	case a.Kind == "token" && a.UserID == 0:
-		r.Reason = fmt.Sprintf("%s is a token of organization %s, not a platform operator token; %s runs the platform, which org tokens never do", a, a.orgName(), action)
-		r.Fix = "platform commands need an operator's own `dock login` or an operator token; `dock whoami` shows what this context holds"
-	default:
-		r.Reason = fmt.Sprintf("%s is not a platform operator; %s requires one", a, action)
-		r.Fix = "an operator makes others operators in the console (Console › Users); `dock whoami` shows whether this login is one"
-	}
-	return a.refuse(r)
-}
-
 // Explain completes a refusal in err with who can change it: the org's
 // admins, by name, for callers acting for a person (a person may ask
 // them; a manual token's refusal goes to whoever runs it, who knows the

@@ -4,7 +4,7 @@ import type { components } from "../../api/schema";
 import { useAction } from "../../data/mutations";
 
 // User accounts as the platform's (ADR 0062): every account with the orgs
-// it belongs to and owns, and who operates the platform. Roles in an org
+// it belongs to and owns, and its platform role (ADR 0080). Roles in an org
 // are that org's, on its Members page.
 
 export type Account = components["schemas"]["Account"];
@@ -19,18 +19,21 @@ export const accountsQuery = () =>
 
 export const useAccounts = () => useSuspenseQuery(accountsQuery()).data;
 
-export const useSetOperator = () =>
+/** A platform role to give, or "none" to take one away (ADR 0080). */
+export type PlatformRoleChoice = "operator" | "viewer" | "none";
+
+export const useSetPlatformRole = () =>
   useAction(
-    ({ id, operator }: { id: number; operator: boolean }) =>
+    ({ id, role }: { id: number; role: PlatformRoleChoice }) =>
       body(
-        api.PUT("/api/v1/console/users/{id}/operator", {
+        api.PUT("/api/v1/console/users/{id}/platform-role", {
           params: { path: { id } },
-          body: { operator },
+          body: { role },
         }),
       ),
     () => [accountsKey, ["audit"]],
     (_v, a) =>
-      a.operator
-        ? `${a.email} operates the platform`
-        : `${a.email} no longer operates the platform`,
+      a.platform_role
+        ? `${a.email} is a platform ${a.platform_role}`
+        : `${a.email} has no platform role`,
   );

@@ -10,9 +10,8 @@ import (
 func (h *harness) operator(email string) Actor {
 	h.t.Helper()
 	a := h.member(email, nil)
-	h.exec(`UPDATE users SET operator = 1 WHERE id = ?`, a.UserID)
-	a.Operator = true
-	return a
+	h.exec(`UPDATE users SET platform_role = 'operator' WHERE id = ?`, a.UserID)
+	return a.withPlatform(apitypes.PlatformOperator)
 }
 
 // consoleOrg finds an org on the operator's list.

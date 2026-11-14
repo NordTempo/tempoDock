@@ -64,6 +64,11 @@ type Me struct {
 	Scope Scope  `json:"scope,omitempty" enum:"read,deploy,admin"`
 	// Operator runs the platform: servers, backups, user accounts.
 	Operator bool `json:"operator"`
+	// Platform is the caller's platform role here (ADR 0080); empty for
+	// none. PlatformLogin marks a platform credential (`dock login
+	// --platform`, a platform token), which acts in no organization.
+	Platform      PlatformRole `json:"platform,omitempty" enum:"operator,viewer"`
+	PlatformLogin bool         `json:"platform_login,omitempty"`
 	// Project and Environment are set when a token is limited to them.
 	Project     string `json:"project,omitempty"`
 	Environment string `json:"environment,omitempty"`
@@ -1055,8 +1060,16 @@ type Token struct {
 	// Origin is "cli_login" for tokens created by approving `dock login`
 	// in the browser, else "manual".
 	Origin string `json:"origin" enum:"manual,cli_login"`
-	// Operator tokens may run the platform, like operator users.
+	// Operator marks a legacy token that is both an org's and the
+	// platform's (ADR 0080): it keeps working until it is split.
 	Operator bool `json:"operator,omitempty"`
+	// Platform marks a platform token: its role (operator, viewer), or
+	// login for a `dock login --platform`. It acts in no organization.
+	Platform string `json:"platform,omitempty" enum:"operator,viewer,login"`
+	// Org is the organization of a legacy token, in the platform's list.
+	Org string `json:"org,omitempty"`
+	// User is the person a `dock login` acts for, in the platform's list.
+	User string `json:"user,omitempty"`
 	// Data is the token's own database access; without it the token
 	// follows the data policy's tokens rule (ADR 0016).
 	Data *DataTokenAccess `json:"data,omitempty"`
@@ -1070,9 +1083,9 @@ type CreateTokenRequest struct {
 	Project       string `json:"project,omitempty"`
 	Environment   string `json:"environment,omitempty" doc:"Requires project"`
 	ExpiresInDays int    `json:"expires_in_days,omitempty" minimum:"0" doc:"0 means never"`
-	// Operator makes a platform operator token (operators only): admin
-	// scope, no project or environment limit.
-	Operator bool `json:"operator,omitempty"`
+	// Operator is refused since ADR 0080: an operator makes a platform
+	// token in the console (CreatePlatformTokenRequest).
+	Operator bool `json:"operator,omitempty" doc:"Refused: platform tokens are made in the console (dock platform token create)"`
 	// Data overrides the data policy's tokens rule for this token.
 	Data *DataTokenAccess `json:"data,omitempty"`
 }

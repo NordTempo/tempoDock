@@ -189,3 +189,9 @@ WHERE org_members.org_id = +? AND org_members.role = 'admin' AND org_members.exp
   AND users.disabled_at IS NULL
 ORDER BY org_members.created_at
 LIMIT 10;
+
+-- FirstLiveOrgs is at most two live orgs, by ID: a platform credential
+-- without an org acts on the install's only one (core.platformIn), and
+-- two say there are several.
+-- name: FirstLiveOrgs :many
+SELECT id, slug FROM orgs WHERE deleted_at IS NULL ORDER BY id LIMIT 2;

@@ -128,7 +128,7 @@ func (c *Core) claimInstallation(ctx context.Context, f githubFlow, id int64) (s
 // client, so installs are checked: Dock reads the client ID from GitHub
 // and checks the pair before storing the secret, sealed. Operators only.
 func (c *Core) SetGitHubAppClientSecret(ctx context.Context, a Actor, req apitypes.GitHubClientSecretRequest) error {
-	if err := a.requireOperator("setting the GitHub App's client secret"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "setting the GitHub App's client secret"); err != nil {
 		return err
 	}
 	secret := strings.TrimSpace(req.ClientSecret)

@@ -100,7 +100,7 @@ func (c *Core) loadPlatformPolicy(ctx context.Context) error {
 // PlatformDataPolicy returns the platform's default and ceiling.
 // Operators only.
 func (c *Core) PlatformDataPolicy(ctx context.Context, a Actor) (apitypes.PlatformDataPolicy, error) {
-	if err := a.requireOperator("reading the platform's data policy"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the platform's data policy"); err != nil {
 		return apitypes.PlatformDataPolicy{}, err
 	}
 	return c.platformPolicyView(), nil
@@ -137,7 +137,7 @@ func allRuleKeys() []ruleKey {
 // default above its ceiling is refused. Org rules already above a new
 // ceiling stay, and are capped when they apply. Operators only.
 func (c *Core) SetPlatformDataPolicy(ctx context.Context, a Actor, req apitypes.PlatformDataPolicy) (apitypes.PlatformDataPolicy, error) {
-	if err := a.requireOperator("changing the platform's data policy"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "changing the platform's data policy"); err != nil {
 		return apitypes.PlatformDataPolicy{}, err
 	}
 	if err := datapanel.ValidateRules(req.Defaults, "", "the platform's default"); err != nil {

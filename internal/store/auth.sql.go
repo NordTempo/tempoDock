@@ -52,9 +52,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (i
 }
 
 const createToken = `-- name: CreateToken :one
-INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, user_id, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor
+INSERT INTO tokens (name, hash, scope, org_id, operator, platform, project_id, environment_id, created_by, user_id, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform
 `
 
 type CreateTokenParams struct {
@@ -63,6 +63,7 @@ type CreateTokenParams struct {
 	Scope         string
 	OrgID         *int64
 	Operator      bool
+	Platform      *string
 	ProjectID     *int64
 	EnvironmentID *int64
 	CreatedBy     string
@@ -77,6 +78,7 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		arg.Scope,
 		arg.OrgID,
 		arg.Operator,
+		arg.Platform,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.CreatedBy,
@@ -104,21 +106,22 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.OrgID,
 		&i.Operator,
 		&i.TwoFactor,
+		&i.Platform,
 	)
 	return i, err
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, name, password_hash, operator)
+INSERT INTO users (email, name, password_hash, platform_role)
 VALUES (?, ?, ?, ?)
-RETURNING id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at, email_requests
+RETURNING id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role
 `
 
 type CreateUserParams struct {
 	Email        string
 	Name         string
 	PasswordHash string
-	Operator     bool
+	PlatformRole *string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -126,7 +129,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Email,
 		arg.Name,
 		arg.PasswordHash,
-		arg.Operator,
+		arg.PlatformRole,
 	)
 	var i User
 	err := row.Scan(
@@ -136,10 +139,10 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.DisabledAt,
-		&i.Operator,
 		&i.FactorFailures,
 		&i.FactorFailedAt,
 		&i.EmailRequests,
+		&i.PlatformRole,
 	)
 	return i, err
 }
@@ -196,7 +199,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, users.email_requests, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sso_providers.name AS sso_name, sso_providers.label AS sso_label
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sso_providers.name AS sso_name, sso_providers.label AS sso_label
 FROM sessions JOIN users ON users.id = sessions.user_id
 LEFT JOIN sso_providers ON sso_providers.id = sessions.sso_provider_id
 WHERE sessions.hash = +?
@@ -221,10 +224,10 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.User.PasswordHash,
 		&i.User.CreatedAt,
 		&i.User.DisabledAt,
-		&i.User.Operator,
 		&i.User.FactorFailures,
 		&i.User.FactorFailedAt,
 		&i.User.EmailRequests,
+		&i.User.PlatformRole,
 		&i.Session.ID,
 		&i.Session.UserID,
 		&i.Session.Hash,
@@ -242,7 +245,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 }
 
 const getToken = `-- name: GetToken :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor FROM tokens WHERE id = +?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform FROM tokens WHERE id = +?
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
@@ -268,24 +271,25 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 		&i.OrgID,
 		&i.Operator,
 		&i.TwoFactor,
+		&i.Platform,
 	)
 	return i, err
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, users.email AS user_email, users.operator AS user_operator,
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, users.email AS user_email, users.platform_role AS user_platform_role,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.hash = +?
 `
 
 type GetTokenByHashRow struct {
-	Token          Token
-	UserEmail      *string
-	UserOperator   *bool
-	UserDisabledAt *time.Time
-	OrgSlug        *string
-	OrgSuspendedAt *time.Time
+	Token            Token
+	UserEmail        *string
+	UserPlatformRole *string
+	UserDisabledAt   *time.Time
+	OrgSlug          *string
+	OrgSuspendedAt   *time.Time
 }
 
 // GetTokenByHash also returns the user a `dock login` token acts for and
@@ -314,8 +318,9 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 		&i.Token.OrgID,
 		&i.Token.Operator,
 		&i.Token.TwoFactor,
+		&i.Token.Platform,
 		&i.UserEmail,
-		&i.UserOperator,
+		&i.UserPlatformRole,
 		&i.UserDisabledAt,
 		&i.OrgSlug,
 		&i.OrgSuspendedAt,
@@ -324,19 +329,19 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 }
 
 const getTokenByIDWithOwner = `-- name: GetTokenByIDWithOwner :one
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, users.email AS user_email, users.operator AS user_operator,
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, users.email AS user_email, users.platform_role AS user_platform_role,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.id = +?
 `
 
 type GetTokenByIDWithOwnerRow struct {
-	Token          Token
-	UserEmail      *string
-	UserOperator   *bool
-	UserDisabledAt *time.Time
-	OrgSlug        *string
-	OrgSuspendedAt *time.Time
+	Token            Token
+	UserEmail        *string
+	UserPlatformRole *string
+	UserDisabledAt   *time.Time
+	OrgSlug          *string
+	OrgSuspendedAt   *time.Time
 }
 
 // GetTokenByIDWithOwner is GetTokenByHash by ID: an approved access
@@ -364,8 +369,9 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 		&i.Token.OrgID,
 		&i.Token.Operator,
 		&i.Token.TwoFactor,
+		&i.Token.Platform,
 		&i.UserEmail,
-		&i.UserOperator,
+		&i.UserPlatformRole,
 		&i.UserDisabledAt,
 		&i.OrgSlug,
 		&i.OrgSuspendedAt,
@@ -374,7 +380,7 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at, email_requests FROM users WHERE id = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role FROM users WHERE id = +?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -387,16 +393,16 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.DisabledAt,
-		&i.Operator,
 		&i.FactorFailures,
 		&i.FactorFailedAt,
 		&i.EmailRequests,
+		&i.PlatformRole,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at, email_requests FROM users WHERE email = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role FROM users WHERE email = +?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -409,16 +415,16 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.DisabledAt,
-		&i.Operator,
 		&i.FactorFailures,
 		&i.FactorFailedAt,
 		&i.EmailRequests,
+		&i.PlatformRole,
 	)
 	return i, err
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, users.email_requests, org_members.role, org_members.expires_at,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, org_members.role, org_members.expires_at,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1 AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens,
@@ -462,10 +468,10 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 			&i.User.PasswordHash,
 			&i.User.CreatedAt,
 			&i.User.DisabledAt,
-			&i.User.Operator,
 			&i.User.FactorFailures,
 			&i.User.FactorFailedAt,
 			&i.User.EmailRequests,
+			&i.User.PlatformRole,
 			&i.Role,
 			&i.ExpiresAt,
 			&i.Sessions,
@@ -486,10 +492,10 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 }
 
 const listOrgTokens = `-- name: ListOrgTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor FROM tokens WHERE tokens.org_id = +?1
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform FROM tokens WHERE tokens.org_id = +?1
 UNION ALL
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
-WHERE org_members.org_id = +?1 AND tokens.origin = 'cli_login'
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
+WHERE org_members.org_id = +?1 AND tokens.origin = 'cli_login' AND tokens.platform IS NULL
 `
 
 // ListOrgTokens is an org's manual tokens, then its members' `dock
@@ -523,6 +529,70 @@ func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, err
 			&i.OrgID,
 			&i.Operator,
 			&i.TwoFactor,
+			&i.Platform,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPlatformTokens = `-- name: ListPlatformTokens :many
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, users.email AS user_email, orgs.slug AS org_slug
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
+WHERE (tokens.platform IS NOT NULL OR tokens.operator) AND tokens.revoked_at IS NULL
+ORDER BY tokens.id DESC
+`
+
+type ListPlatformTokensRow struct {
+	Token     Token
+	UserEmail *string
+	OrgSlug   *string
+}
+
+// ListPlatformTokens is the platform's tokens (ADR 0080): the ones
+// operators made, platform logins, and the legacy tokens that are both an
+// org's and the platform's (operator), newest first, through
+// tokens_platform.
+func (q *Queries) ListPlatformTokens(ctx context.Context) ([]ListPlatformTokensRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPlatformTokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPlatformTokensRow
+	for rows.Next() {
+		var i ListPlatformTokensRow
+		if err := rows.Scan(
+			&i.Token.ID,
+			&i.Token.Name,
+			&i.Token.Hash,
+			&i.Token.Scope,
+			&i.Token.ProjectID,
+			&i.Token.EnvironmentID,
+			&i.Token.CreatedBy,
+			&i.Token.CreatedAt,
+			&i.Token.ExpiresAt,
+			&i.Token.LastUsedAt,
+			&i.Token.RevokedAt,
+			&i.Token.Origin,
+			&i.Token.DataProduction,
+			&i.Token.DataNonProduction,
+			&i.Token.DataSensitive,
+			&i.Token.UserID,
+			&i.Token.OrgID,
+			&i.Token.Operator,
+			&i.Token.TwoFactor,
+			&i.Token.Platform,
+			&i.UserEmail,
+			&i.OrgSlug,
 		); err != nil {
 			return nil, err
 		}
@@ -538,7 +608,7 @@ func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, err
 }
 
 const listUserTokens = `-- name: ListUserTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor FROM tokens WHERE user_id = +?1
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform FROM tokens WHERE user_id = +?1
     AND (origin = 'cli_login' OR org_id = +?2)
 ORDER BY id
 `
@@ -579,6 +649,7 @@ func (q *Queries) ListUserTokens(ctx context.Context, arg ListUserTokensParams) 
 			&i.OrgID,
 			&i.Operator,
 			&i.TwoFactor,
+			&i.Platform,
 		); err != nil {
 			return nil, err
 		}
@@ -628,6 +699,22 @@ func (q *Queries) RevokeUserLoginTokens(ctx context.Context, arg RevokeUserLogin
 	return result.RowsAffected()
 }
 
+const setTokenOperator = `-- name: SetTokenOperator :exec
+UPDATE tokens SET operator = ? WHERE id = +?
+`
+
+type SetTokenOperatorParams struct {
+	Operator bool
+	ID       int64
+}
+
+// SetTokenOperator ends or sets a token's legacy platform power, for
+// splitting it (core.SplitToken).
+func (q *Queries) SetTokenOperator(ctx context.Context, arg SetTokenOperatorParams) error {
+	_, err := q.db.ExecContext(ctx, setTokenOperator, arg.Operator, arg.ID)
+	return err
+}
+
 const setUserDisabled = `-- name: SetUserDisabled :exec
 UPDATE users SET disabled_at = ? WHERE id = +?
 `
@@ -643,7 +730,7 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 }
 
 const setUserName = `-- name: SetUserName :one
-UPDATE users SET name = ? WHERE id = +? RETURNING id, email, name, password_hash, created_at, disabled_at, operator, factor_failures, factor_failed_at, email_requests
+UPDATE users SET name = ? WHERE id = +? RETURNING id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role
 `
 
 type SetUserNameParams struct {
@@ -662,10 +749,10 @@ func (q *Queries) SetUserName(ctx context.Context, arg SetUserNameParams) (User,
 		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.DisabledAt,
-		&i.Operator,
 		&i.FactorFailures,
 		&i.FactorFailedAt,
 		&i.EmailRequests,
+		&i.PlatformRole,
 	)
 	return i, err
 }

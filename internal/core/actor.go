@@ -29,8 +29,15 @@ type Actor struct {
 	// the actor may read in it, nothing more.
 	suspended bool
 	Scope     apitypes.Scope
-	// Operator may run the platform: servers, backups, user accounts.
-	Operator bool
+	// Platform is the actor's platform role (ADR 0080), "" for none, and
+	// Operator is true for the operator role (withPlatform sets both).
+	// platformOnly marks a platform credential, which acts in no org;
+	// userPlatform is the platform role of the person an org login acts
+	// for, which it doesn't have, to say why in a refusal.
+	Platform     apitypes.PlatformRole
+	Operator     bool
+	platformOnly bool
+	userPlatform apitypes.PlatformRole
 	// ProjectID and EnvironmentID limit a token to one project or one
 	// environment. Zero means unlimited.
 	ProjectID     int64
@@ -91,7 +98,7 @@ func (a Actor) AskFirst() Actor {
 // System is the actor for the daemon's own actions and for trusted local
 // callers (tests, admin commands). It is in no org; InOrg gives it one for
 // operations that look projects up by name.
-var System = Actor{Kind: "system", Name: "system", Scope: apitypes.ScopeAdmin, Operator: true}
+var System = Actor{Kind: "system", Name: "system", Scope: apitypes.ScopeAdmin, Platform: apitypes.PlatformOperator, Operator: true}
 
 // InOrg returns the system actor acting in the org with ID id.
 func (a Actor) InOrg(id int64) Actor {
@@ -110,6 +117,7 @@ func (a Actor) platform() Actor {
 func (a Actor) Me() apitypes.Me {
 	return apitypes.Me{
 		Kind: a.Kind, Name: a.Name, Email: a.Email, DisplayName: a.DisplayName, Scope: a.Scope, Org: a.OrgSlug, Operator: a.Operator,
+		Platform: a.Platform, PlatformLogin: a.platformOnly,
 		Project: a.ProjectName, Environment: a.EnvironmentName,
 		TwoFactor: a.Factor, TwoFactorRequired: a.twoFactorRequired(),
 		SSO: a.SSOProvider, SSOLabel: a.SSOLabel,
@@ -164,7 +172,7 @@ func (a Actor) require(need apitypes.Scope, action string) error {
 // requireScope is require without askFirst's refusal, for the checks of
 // operations inside an environment, where checkEnv files the request.
 func (a Actor) requireScope(need apitypes.Scope, action string) error {
-	if a.OrgID == 0 && a.Kind != "system" {
+	if a.platformOnly || a.OrgID == 0 && a.Kind != "system" {
 		return a.noOrg(action)
 	}
 	if a.suspended && rank(need) > rank(apitypes.ScopeRead) {
@@ -183,6 +191,16 @@ func errSuspended(org, action string) error {
 
 // noOrg explains why an actor without an org can't do action.
 func (a Actor) noOrg(action string) error {
+	if a.platformOnly && a.OrgID == 0 && a.orgs > 1 {
+		return errf(apitypes.CodeValidation, "%s acts on the platform's %d organizations; %s is in one: pass --org (or ?org=) with its slug", a, a.orgs, action)
+	}
+	if a.platformOnly {
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedPlatform, Action: action, Need: "org",
+			Reason: fmt.Sprintf("%s is a platform credential: it runs the platform and never acts in an organization, so it can't do %s", a, action),
+			Fix:    "org commands use your org login (`dock login`) or an org's token",
+		})
+	}
 	if a.needs2FAOrg != "" {
 		return errf(apitypes.CodeTwoFactorRequired, "%s", a.twoFactorRequired())
 	}
@@ -192,24 +210,13 @@ func (a Actor) noOrg(action string) error {
 	return errf(apitypes.CodeForbidden, "%s doesn't belong to any organization; %s needs one: ask an organization's admin to add you", a, action)
 }
 
-// requireOperator checks the actor may run the platform: servers, backups,
-// user accounts. Operator tokens are always unlimited admin tokens.
-func (a Actor) requireOperator(action string) error {
-	if a.Operator {
-		return nil
-	}
-	if a.operatorNeeds2FA {
-		return errf(apitypes.CodeTwoFactorRequired, "%s requires two-factor sign-in: %s", action, a.twoFactorRequired())
-	}
-	return a.refuseOperator(action)
-}
-
 // requireAccountManager guards creating, resetting, enabling, disabling and
-// deleting user accounts: an operator, but never a token. A token that could
-// mint or reset an admin account could sign in as it and get around
-// environment locks and access-request approvals, which only bind tokens.
+// deleting user accounts, platform roles and platform tokens: accounts.manage,
+// and never a token. A token that could mint or reset an admin account
+// could sign in as it and get around environment locks and access-request
+// approvals, which only bind tokens.
 func (a Actor) requireAccountManager(action string) error {
-	if err := a.requireOperator(action); err != nil {
+	if err := a.requirePlatform(AccountsManage, action); err != nil {
 		return err
 	}
 	if a.Kind == "token" {
@@ -235,14 +242,14 @@ func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
 }
 
 // readsServerStats reports whether the actor may read server-wide
-// statistics and platform events: operators, as requireOperator checks.
-func (a Actor) readsServerStats() bool { return a.Operator }
+// statistics and platform events: the platform's viewers and operators.
+func (a Actor) readsServerStats() bool { return a.readsPlatform() }
 
 // seesServers reports whether the actor may see which servers exist:
 // their names, addresses and facts. Servers are the platform's, so only
 // operators do (ADR 0062); org members see whether their environment's
 // server is reachable, never which one it is.
-func (a Actor) seesServers() bool { return a.Operator }
+func (a Actor) seesServers() bool { return a.readsPlatform() }
 
 // serverName is a server's name as the actor may see it: the name for
 // operators, "" for everyone else (seesServers).
@@ -265,7 +272,7 @@ func (a Actor) limitName() string {
 // the platform's, for operators.
 func (a Actor) canSee(orgID, projectID, envID int64) bool {
 	if orgID == 0 {
-		return a.Operator
+		return a.readsPlatform()
 	}
 	if a.Kind != "system" && a.OrgID != orgID {
 		return false

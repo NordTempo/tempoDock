@@ -456,7 +456,7 @@ func (c *Core) addReleaseScan(ctx context.Context, ss svcScope, r store.Release)
 
 // ScanningStatus is scanning on the platform, for operators.
 func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningStatus, error) {
-	if err := a.requireOperator("reading the scanning status"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the scanning status"); err != nil {
 		return apitypes.ScanningStatus{}, err
 	}
 	counts, err := c.store.CountImageScans(ctx)
@@ -499,7 +499,7 @@ func (c *Core) ScanningStatus(ctx context.Context, a Actor) (apitypes.ScanningSt
 // SetScanning turns scanning on or off for the platform. Off stops a
 // running scan at once; findings already made stay. Operators only.
 func (c *Core) SetScanning(ctx context.Context, a Actor, on bool) (apitypes.ScanningStatus, error) {
-	if err := a.requireOperator("turning scanning on or off"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "turning scanning on or off"); err != nil {
 		return apitypes.ScanningStatus{}, err
 	}
 	if err := c.store.SetScanning(ctx, store.SetScanningParams{Scanning: boolInt(on), UpdatedBy: a.String(), UpdatedAt: now()}); err != nil {

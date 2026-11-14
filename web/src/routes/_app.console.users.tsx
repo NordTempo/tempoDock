@@ -12,8 +12,9 @@ import type { Scope } from "../data/types";
 import {
   type Account,
   accountsQuery,
+  type PlatformRoleChoice,
   useAccounts,
-  useSetOperator,
+  useSetPlatformRole,
 } from "../features/console/accounts";
 import {
   platformSecurityQuery,
@@ -144,8 +145,14 @@ function Users() {
               >
                 your account
               </Link>
-              . Tokens for agents, CI and scripts belong to each organization,
-              in its settings.
+              . The platform's tokens are on{" "}
+              <Link
+                to="/console/tokens"
+                className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
+              >
+                Tokens
+              </Link>
+              ; an organization's are in its settings.
             </p>
             <OperatorsTwoFactor />
           </div>
@@ -172,7 +179,7 @@ function OperatorsTwoFactor() {
           className="act"
         >
           <Check
-            label="Require two-factor for operators"
+            label="Require two-factor for the console"
             checked={on}
             disabled={set.isPending}
             onChange={(require) => set.mutate(require)}
@@ -181,14 +188,15 @@ function OperatorsTwoFactor() {
         <Saved ok={set.isSuccess} />
       </span>
       <span className="text-xs text-mut">
-        Without one, operators keep their organizations but not the console.
+        Without one, operators and platform viewers keep their organizations but
+        not the console.
       </span>
       <ErrorText error={set.error} />
     </div>
   );
 }
 
-type Asking = "disable" | "delete" | "reset" | "operator" | null;
+type Asking = "disable" | "delete" | "reset" | PlatformRoleChoice | null;
 
 const UserRow = memo(function UserRow({
   user: u,
@@ -199,7 +207,8 @@ const UserRow = memo(function UserRow({
   you: boolean;
   onReset: (reset: Reset) => void;
 }) {
-  const setOperator = useSetOperator();
+  const setRole = useSetPlatformRole();
+  const role = u.platform_role;
   const setDisabled = useSetUserDisabled();
   const remove = useDeleteUser();
   const resetPassword = useResetPassword();
@@ -218,6 +227,33 @@ const UserRow = memo(function UserRow({
   const tokens =
     "Their dock login tokens are revoked; tokens they created by hand keep working until revoked in their organization's Tokens.";
 
+  // Giving or taking away a platform role (ADR 0080), confirmed.
+  const roleConfirm = (next: PlatformRoleChoice) => (
+    <Confirm
+      danger={next === "none" || (role === "operator" && next === "viewer")}
+      action={
+        next === "none" ? "Remove platform role" : `Make platform ${next}`
+      }
+      title={
+        next === "none"
+          ? `Take the console from ${u.email}?`
+          : `Make ${u.email} a platform ${next}?`
+      }
+      cli={`dock user platform-role ${u.email} ${next}`}
+      pending={setRole.isPending}
+      error={setRole.error}
+      onConfirm={() =>
+        setRole.mutate({ id: u.id, role: next }, { onSuccess: close })
+      }
+      onCancel={close}
+    >
+      {next === "operator"
+        ? "They run this console too: servers, users, every organization's administration, backups and updates, with their platform login. Their organizations' content stays theirs to join."
+        : next === "viewer"
+          ? "They read this console (servers, organizations, settings, alerts) and change nothing."
+          : "They keep their organizations, but no longer see or run the console."}
+    </Confirm>
+  );
   const confirms: Record<Exclude<Asking, null>, ReactNode> = {
     disable: (
       <Confirm
@@ -264,30 +300,9 @@ const UserRow = memo(function UserRow({
         {sessions} Their audit history stays. {tokens}
       </Confirm>
     ),
-    operator: (
-      <Confirm
-        danger={u.operator}
-        action={u.operator ? "Stop operating" : "Make operator"}
-        title={
-          u.operator
-            ? `Take the console from ${u.email}?`
-            : `Make ${u.email} a platform operator?`
-        }
-        pending={setOperator.isPending}
-        error={setOperator.error}
-        onConfirm={() =>
-          setOperator.mutate(
-            { id: u.id, operator: !u.operator },
-            { onSuccess: close },
-          )
-        }
-        onCancel={close}
-      >
-        {u.operator
-          ? "They keep their organizations, but no longer run the console: servers, users, backups and updates."
-          : "They run this console too: servers, users, every organization's administration, backups and updates. Their organizations' content stays theirs to join."}
-      </Confirm>
-    ),
+    operator: roleConfirm("operator"),
+    viewer: roleConfirm("viewer"),
+    none: roleConfirm("none"),
     reset: (
       <Confirm
         action="Reset password"
@@ -338,10 +353,10 @@ const UserRow = memo(function UserRow({
         <PersonCell name={u.name} email={u.email} you={you} />
       </td>
       <td className="py-2.5 whitespace-normal">
-        {u.operator && (
-          <span className="block text-2xs text-warn">platform operator</span>
+        {role && (
+          <span className="block text-2xs text-warn">platform {role}</span>
         )}
-        {(u.orgs ?? []).length === 0 && !u.operator && (
+        {(u.orgs ?? []).length === 0 && !role && (
           <span className="text-faint">none</span>
         )}
         {(u.orgs ?? []).map((o) => (
@@ -410,19 +425,25 @@ const UserRow = memo(function UserRow({
             >
               {(close) => (
                 <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItem}
-                    onClick={() => {
-                      close();
-                      setAsking("operator");
-                    }}
-                  >
-                    {u.operator
-                      ? "Stop operating the platform"
-                      : "Make platform operator"}
-                  </button>
+                  {(["operator", "viewer", "none"] as const)
+                    .filter((next) => (role ?? "none") !== next)
+                    .map((next) => (
+                      <button
+                        key={next}
+                        type="button"
+                        role="menuitem"
+                        className={menuItem}
+                        title={`dock user platform-role ${u.email} ${next}`}
+                        onClick={() => {
+                          close();
+                          setAsking(next);
+                        }}
+                      >
+                        {next === "none"
+                          ? "Remove platform role"
+                          : `Make platform ${next}`}
+                      </button>
+                    ))}
                   <button
                     type="button"
                     role="menuitem"

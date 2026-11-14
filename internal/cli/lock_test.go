@@ -26,10 +26,10 @@ func TestEnvironmentLock(t *testing.T) {
 	if e.Lock == nil || e.Lock.Reason != "live" {
 		t.Fatalf("lock: %+v", e)
 	}
-	if _, out, _ := exec(t, "status", "-p", "shop", "-e", "production"); !strings.Contains(out, "locked by admin (live)") {
+	if _, out, _ := exec(t, "status", "-p", "shop", "-e", "production"); !strings.Contains(out, "locked by bootstrap (live)") {
 		t.Fatalf("status: %s", out)
 	}
-	if _, out, _ := exec(t, "environment", "list", "-p", "shop"); !strings.Contains(out, "locked by admin") {
+	if _, out, _ := exec(t, "environment", "list", "-p", "shop"); !strings.Contains(out, "locked by bootstrap") {
 		t.Fatalf("list: %s", out)
 	}
 

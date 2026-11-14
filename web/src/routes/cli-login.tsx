@@ -119,10 +119,22 @@ function CliLogin() {
             {ago(l.created_at)}, code expires {clock(l.expires_at)}
           </span>
         </Prop>
-        <Prop label="Access">
-          <b className="font-semibold">{l.scope}</b>{" "}
-          <span className="text-mut">same as you, {session?.name}</span>
-        </Prop>
+        {l.platform ? (
+          <Prop label="Access">
+            <b className="font-semibold text-warn">
+              platform {session?.platform ?? "(you have no platform role)"}
+            </b>{" "}
+            <span className="text-mut">
+              a platform login: it runs the platform as you, and acts in no
+              organization
+            </span>
+          </Prop>
+        ) : (
+          <Prop label="Access">
+            <b className="font-semibold">{l.scope}</b>{" "}
+            <span className="text-mut">same as you, {session?.name}</span>
+          </Prop>
+        )}
         <Prop label="Token">
           <span className="font-mono">{l.token_name}</span>{" "}
           <span className="text-mut">expires in {l.token_days} days</span>
@@ -135,7 +147,9 @@ function CliLogin() {
   return (
     <Shell
       title={
-        decidable && l ? `Approve dock login from ${l.hostname}?` : undefined
+        decidable && l
+          ? `Approve ${l.platform ? "a platform " : "dock "}login from ${l.hostname}?`
+          : undefined
       }
     >
       <label className="flex flex-col gap-1.5">

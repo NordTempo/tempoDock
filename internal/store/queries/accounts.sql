@@ -19,9 +19,11 @@ WHERE orgs.deleted_at IS NULL
   AND (org_members.expires_at IS NULL OR org_members.expires_at > unixepoch())
 ORDER BY org_members.user_id, orgs.slug;
 
--- name: SetUserOperator :exec
-UPDATE users SET operator = ? WHERE id = +?;
+-- SetUserPlatformRole gives a user a platform role ('operator',
+-- 'viewer') or takes it away (NULL); ADR 0080.
+-- name: SetUserPlatformRole :exec
+UPDATE users SET platform_role = ? WHERE id = +?;
 
 -- name: CountOtherOperators :one
 -- Operators who can sign in, other than user_id: the platform keeps one.
-SELECT count(*) FROM users WHERE operator AND disabled_at IS NULL AND id != +?;
+SELECT count(*) FROM users WHERE platform_role = 'operator' AND disabled_at IS NULL AND id != +?;

@@ -12,10 +12,10 @@ import {
   canDeploy,
   queries,
   serviceRef,
-  useIsOperator,
   useOrgs,
   useProjects,
   useProjectTree,
+  useSeesPlatform,
   useServers,
   useSession,
 } from "../data/queries";
@@ -424,7 +424,7 @@ function OrgBadge({ org }: { org: Org }) {
  * others with your role in each, a new one, and signing out.
  */
 function OrgSwitcher() {
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   const orgs = useOrgs();
   const slug = useOrg();
   const navigate = useNavigate();
@@ -1181,6 +1181,9 @@ function ConsoleNav() {
       <div className={groupLabel}>Access</div>
       <NavLink to="/console/users" icon="users">
         Users
+      </NavLink>
+      <NavLink to="/console/tokens" icon="key">
+        Tokens
       </NavLink>
       <NavLink to="/console/sign-in" icon="key">
         Sign-in

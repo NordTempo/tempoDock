@@ -87,14 +87,17 @@ type StoppedOrgServices struct {
 // it: the account itself (the platform's) and the orgs it belongs to
 // (each org's own business, shown here so operators see who owns what).
 type Account struct {
-	ID         int64        `json:"id"`
-	Email      string       `json:"email"`
-	Name       string       `json:"name"`
-	Operator   bool         `json:"operator"`
-	TwoFactor  bool         `json:"two_factor"`
-	CreatedAt  time.Time    `json:"created_at"`
-	DisabledAt *time.Time   `json:"disabled_at,omitempty"`
-	Orgs       []AccountOrg `json:"orgs"`
+	ID       int64  `json:"id"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Operator bool   `json:"operator"`
+	// PlatformRole is the account's platform role (ADR 0080); Operator
+	// is true for operator.
+	PlatformRole PlatformRole `json:"platform_role,omitempty" enum:"operator,viewer"`
+	TwoFactor    bool         `json:"two_factor"`
+	CreatedAt    time.Time    `json:"created_at"`
+	DisabledAt   *time.Time   `json:"disabled_at,omitempty"`
+	Orgs         []AccountOrg `json:"orgs"`
 }
 
 // AccountOrg is one org an account belongs to.

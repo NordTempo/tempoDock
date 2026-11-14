@@ -6,8 +6,8 @@ import {
   deployBlock,
   queries,
   serviceRef,
-  useIsOperator,
   useProjectTreeIf,
+  useSeesPlatform,
   useServersIfOperator,
   useSession,
 } from "../data/queries";
@@ -62,7 +62,7 @@ export function useCommands({
   const org = useOrg();
   const navigate = useNavigate();
   const logout = useLogout();
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   const session = useSession();
   const servers = useServersIfOperator();
 

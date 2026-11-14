@@ -785,7 +785,7 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 // SiteDefaults returns the platform's site defaults (operators): what
 // every site gets unless its org or the site itself sets otherwise.
 func (c *Core) SiteDefaults(ctx context.Context, a Actor) (apitypes.SiteSettings, error) {
-	if err := a.requireOperator("reading the analytics defaults"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the analytics defaults"); err != nil {
 		return apitypes.SiteSettings{}, err
 	}
 	return c.siteDefaults(ctx)
@@ -794,7 +794,7 @@ func (c *Core) SiteDefaults(ctx context.Context, a Actor) (apitypes.SiteSettings
 // SetSiteDefaults changes the install's site defaults (operators); reset
 // names settings to set back to the built-in default.
 func (c *Core) SetSiteDefaults(ctx context.Context, a Actor, set apitypes.SiteSettings, reset []string) (apitypes.SiteSettings, error) {
-	if err := a.requireOperator("changing the analytics defaults"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "changing the analytics defaults"); err != nil {
 		return apitypes.SiteSettings{}, err
 	}
 	var cur apitypes.SiteSettings

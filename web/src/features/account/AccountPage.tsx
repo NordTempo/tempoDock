@@ -75,13 +75,16 @@ export function AccountPage() {
               <dd>{me.sso_label ?? "password"}</dd>
             </>
           )}
-          {me.operator && (
+          {me.platform && (
             <>
               <dt>Platform</dt>
               <dd>
-                <b className="font-medium">operator</b>{" "}
+                <b className="font-medium">{me.platform}</b>{" "}
                 <span className="text-mut">
-                  Runs servers, backups and accounts in the console.
+                  {me.platform === "operator"
+                    ? "Runs servers, backups and accounts in the console."
+                    : "Reads the console."}{" "}
+                  From the CLI: <code>dock login --platform</code>.
                 </span>
               </dd>
             </>

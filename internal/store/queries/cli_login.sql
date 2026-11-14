@@ -1,6 +1,6 @@
 -- name: CreateCLILogin :one
-INSERT INTO cli_logins (device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO cli_logins (device_hash, user_code, client_name, hostname, os, ip, created_at, expires_at, platform)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetCLILoginByUserCode :one
@@ -23,6 +23,6 @@ DELETE FROM cli_logins WHERE id = +? AND status = +?;
 DELETE FROM cli_logins WHERE expires_at < +?;
 
 -- name: CreateCLILoginToken :one
-INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, two_factor, origin)
-VALUES (?, ?, ?, ?, ?, ?, ?, 'cli_login')
+INSERT INTO tokens (name, hash, scope, created_by, user_id, expires_at, two_factor, platform, origin)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'cli_login')
 RETURNING *;

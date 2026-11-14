@@ -91,7 +91,7 @@ func newUpdates(o Options) updates {
 // finished. The release check is reused for 15 minutes unless refresh.
 // Operators only.
 func (c *Core) UpdateStatus(ctx context.Context, a Actor, refresh bool) (apitypes.UpdateStatus, error) {
-	if err := a.requireOperator("checking for updates"); err != nil {
+	if err := a.requirePlatform(PlatformView, "checking for updates"); err != nil {
 		return apitypes.UpdateStatus{}, err
 	}
 	c.checkReleases(ctx, refresh)
@@ -242,7 +242,7 @@ func fileExists(path string) bool {
 // follows it, and platform.updated or platform.update_failed ends it.
 // Operators only.
 func (c *Core) StartUpdate(ctx context.Context, a Actor, req apitypes.StartUpdateRequest) (apitypes.UpdateStatus, error) {
-	if err := a.requireOperator("updating Dock"); err != nil {
+	if err := a.requirePlatform(UpdatesApply, "updating Dock"); err != nil {
 		return apitypes.UpdateStatus{}, err
 	}
 	if !update.IsRelease(version.Version) {

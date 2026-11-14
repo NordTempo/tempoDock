@@ -617,7 +617,7 @@ func newAnalyticsToken() string {
 // the analytics server and every server's spool is forwarded to it. It is
 // idempotent; sites call it when the first one is created.
 func (c *Core) EnableAnalytics(ctx context.Context, a Actor) error {
-	if err := a.requireOperator("turning analytics on"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "turning analytics on"); err != nil {
 		return err
 	}
 	return c.enableAnalytics(ctx, a.Name, nil)

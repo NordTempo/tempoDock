@@ -44,6 +44,7 @@ import { Route as AppConsoleRegistryRouteImport } from './routes/_app.console.re
 import { Route as AppConsoleServersRouteImport } from './routes/_app.console.servers'
 import { Route as AppConsoleSignInRouteImport } from './routes/_app.console.sign-in'
 import { Route as AppConsoleStorageRouteImport } from './routes/_app.console.storage'
+import { Route as AppConsoleTokensRouteImport } from './routes/_app.console.tokens'
 import { Route as AppConsoleUpdatesRouteImport } from './routes/_app.console.updates'
 import { Route as AppConsoleUsersRouteImport } from './routes/_app.console.users'
 import { Route as AppOrgProjectIndexRouteImport } from './routes/_app.$org.$project.index'
@@ -290,6 +291,11 @@ const AppConsoleSignInRoute = AppConsoleSignInRouteImport.update({
 const AppConsoleStorageRoute = AppConsoleStorageRouteImport.update({
   id: '/storage',
   path: '/storage',
+  getParentRoute: () => AppConsoleRoute,
+} as any)
+const AppConsoleTokensRoute = AppConsoleTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
   getParentRoute: () => AppConsoleRoute,
 } as any)
 const AppConsoleUpdatesRoute = AppConsoleUpdatesRouteImport.update({
@@ -740,6 +746,7 @@ export interface FileRoutesByFullPath {
   '/console/servers': typeof AppConsoleServersRoute
   '/console/sign-in': typeof AppConsoleSignInRoute
   '/console/storage': typeof AppConsoleStorageRoute
+  '/console/tokens': typeof AppConsoleTokensRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
   '/$org/': typeof AppOrgIndexRoute
@@ -845,6 +852,7 @@ export interface FileRoutesByTo {
   '/console/servers': typeof AppConsoleServersRoute
   '/console/sign-in': typeof AppConsoleSignInRoute
   '/console/storage': typeof AppConsoleStorageRoute
+  '/console/tokens': typeof AppConsoleTokensRoute
   '/console/updates': typeof AppConsoleUpdatesRoute
   '/console/users': typeof AppConsoleUsersRoute
   '/$org': typeof AppOrgIndexRoute
@@ -951,6 +959,7 @@ export interface FileRoutesById {
   '/_app/console/servers': typeof AppConsoleServersRoute
   '/_app/console/sign-in': typeof AppConsoleSignInRoute
   '/_app/console/storage': typeof AppConsoleStorageRoute
+  '/_app/console/tokens': typeof AppConsoleTokensRoute
   '/_app/console/updates': typeof AppConsoleUpdatesRoute
   '/_app/console/users': typeof AppConsoleUsersRoute
   '/_app/$org/': typeof AppOrgIndexRoute
@@ -1062,6 +1071,7 @@ export interface FileRouteTypes {
     | '/console/servers'
     | '/console/sign-in'
     | '/console/storage'
+    | '/console/tokens'
     | '/console/updates'
     | '/console/users'
     | '/$org/'
@@ -1167,6 +1177,7 @@ export interface FileRouteTypes {
     | '/console/servers'
     | '/console/sign-in'
     | '/console/storage'
+    | '/console/tokens'
     | '/console/updates'
     | '/console/users'
     | '/$org'
@@ -1272,6 +1283,7 @@ export interface FileRouteTypes {
     | '/_app/console/servers'
     | '/_app/console/sign-in'
     | '/_app/console/storage'
+    | '/_app/console/tokens'
     | '/_app/console/updates'
     | '/_app/console/users'
     | '/_app/$org/'
@@ -1605,6 +1617,13 @@ declare module '@tanstack/react-router' {
       path: '/storage'
       fullPath: '/console/storage'
       preLoaderRoute: typeof AppConsoleStorageRouteImport
+      parentRoute: typeof AppConsoleRoute
+    }
+    '/_app/console/tokens': {
+      id: '/_app/console/tokens'
+      path: '/tokens'
+      fullPath: '/console/tokens'
+      preLoaderRoute: typeof AppConsoleTokensRouteImport
       parentRoute: typeof AppConsoleRoute
     }
     '/_app/console/updates': {
@@ -2420,6 +2439,7 @@ interface AppConsoleRouteChildren {
   AppConsoleServersRoute: typeof AppConsoleServersRoute
   AppConsoleSignInRoute: typeof AppConsoleSignInRoute
   AppConsoleStorageRoute: typeof AppConsoleStorageRoute
+  AppConsoleTokensRoute: typeof AppConsoleTokensRoute
   AppConsoleUpdatesRoute: typeof AppConsoleUpdatesRoute
   AppConsoleUsersRoute: typeof AppConsoleUsersRoute
   AppConsoleIndexRoute: typeof AppConsoleIndexRoute
@@ -2441,6 +2461,7 @@ const AppConsoleRouteChildren: AppConsoleRouteChildren = {
   AppConsoleServersRoute: AppConsoleServersRoute,
   AppConsoleSignInRoute: AppConsoleSignInRoute,
   AppConsoleStorageRoute: AppConsoleStorageRoute,
+  AppConsoleTokensRoute: AppConsoleTokensRoute,
   AppConsoleUpdatesRoute: AppConsoleUpdatesRoute,
   AppConsoleUsersRoute: AppConsoleUsersRoute,
   AppConsoleIndexRoute: AppConsoleIndexRoute,

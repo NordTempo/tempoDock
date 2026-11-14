@@ -30,7 +30,7 @@ type loginView struct {
 
 func newLoginCmd(g *globals) *cobra.Command {
 	var token, name string
-	var tokenStdin, noBrowser bool
+	var tokenStdin, noBrowser, platform bool
 	cmd := &cobra.Command{
 		Use:   "login [server-url]",
 		Short: "Log in to a server in the browser, or with an API token",
@@ -47,12 +47,20 @@ changes, and never has more access than your current role. ` + "`dock logout`" +
 revokes it. --no-browser only prints the link, for when
 the browser is on another machine; it also works without a terminal.
 
+--platform logs in to the platform instead (ADR 0080): a platform login
+runs the platform with your platform role (dock update, dock server, dock
+user, ...) and never acts in an organization. It is kept beside the
+context's org login, and used where the server says a call runs the
+platform. A platform token (dock_p_...) given with --token-stdin is kept
+the same way.
+
 Agents, CI and scripts use API tokens instead: pipe one in with
 --token-stdin. --token works too, but leaves the token in shell history and
 the process list. Create the first token on the server with
 ` + "`dock admin bootstrap`" + `.`,
 		Example: `  dock login https://dock.example.com
   dock login https://dock.example.com --no-browser
+  dock login --platform
   dock admin bootstrap | dock login http://127.0.0.1:7070 --token-stdin`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -107,7 +115,7 @@ the process list. Create the first token on the server with
 			}
 			var approved apitypes.CLILoginWait
 			if browser {
-				if approved, err = g.browserLogin(ctx, server, !noBrowser); err != nil {
+				if approved, err = g.browserLogin(ctx, server, !noBrowser, platform); err != nil {
 					return err
 				}
 				token = approved.Token
@@ -124,21 +132,38 @@ the process list. Create the first token on the server with
 				return err
 			}
 
+			// A platform credential is kept beside the org login, an org one
+			// beside the platform login, on the same server (ADR 0080).
+			old := cfg.Contexts[name]
+			if old.Server != server {
+				old = clientconfig.Context{Server: server}
+			}
+			next := old
+			isPlatform := me.PlatformLogin
+			oldToken, oldLogin := old.Token, old.LoginToken
+			if isPlatform {
+				oldToken, oldLogin = old.PlatformToken, old.PlatformLoginToken
+				next.PlatformToken, next.PlatformLoginToken = token, browser
+			} else {
+				next.Token, next.LoginToken = token, browser
+			}
 			// A token from an earlier browser login here is replaced: revoke
 			// it rather than leave it valid for months.
-			if old := cfg.Contexts[name]; old.LoginToken && old.Token != "" && old.Token != token && old.Server == server {
-				if err := revokeOwnToken(ctx, server, old.Token); err != nil {
+			if oldLogin && oldToken != "" && oldToken != token {
+				if err := revokeOwnToken(ctx, server, oldToken); err != nil {
 					g.io.Warnf("Could not revoke the previous login's token: %v", err)
 				}
 			}
-			cfg.Contexts[name] = clientconfig.Context{Server: server, Token: token, LoginToken: browser}
+			cfg.Contexts[name] = next
 			cfg.CurrentContext = name
 			if err := cfg.save(); err != nil {
 				return err
 			}
 			v := loginView{Context: name, Server: server, Me: me, User: approved.User, ServerVersion: ver}
 			return g.io.Print(v, func() error {
-				if browser {
+				if browser && isPlatform {
+					g.io.Successf("Logged in to the platform of %s as %s (%s); your org login stays beside it", server, approved.User, approved.Platform)
+				} else if browser {
 					g.io.Successf("Logged in as %s (%s) on %s", approved.User, approved.Scope, server)
 				} else {
 					g.io.Successf("Logged in to %s as %s (%s)", server, me.Name, describeMe(me))
@@ -158,6 +183,7 @@ the process list. Create the first token on the server with
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the API token from stdin (preferred for scripts)")
 	cmd.Flags().StringVar(&token, "token", "", "API token; prefer --token-stdin, this ends up in shell history")
 	cmd.Flags().StringVar(&name, "name", "", "context name (default: the server's host)")
+	cmd.Flags().BoolVar(&platform, "platform", false, "log in to the platform (operators, platform viewers): kept beside the org login")
 	return cmd
 }
 
@@ -218,8 +244,14 @@ func describeMe(me apitypes.Me) string {
 	if me.Scope == "" {
 		s = me.Kind + ", no organization chosen (see `dock org list`)"
 	}
-	if me.Operator {
-		s += ", platform operator"
+	switch {
+	case me.PlatformLogin:
+		s = me.Kind + ", platform login (acts in no organization)"
+		if me.Platform != "" {
+			s += ", platform " + string(me.Platform)
+		}
+	case me.Platform != "":
+		s += ", platform " + string(me.Platform)
 	}
 	if me.Project != "" {
 		s += ", limited to " + me.Project
@@ -264,7 +296,23 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return g.io.Print(me, func() error {
+			// The context's platform login, beside its org login (ADR 0080).
+			v := struct {
+				apitypes.Me
+				PlatformCredential *apitypes.Me `json:"platform_credential,omitempty"`
+			}{Me: me}
+			if pt := s.server.PlatformToken; pt != "" && !me.PlatformLogin {
+				papi, err := apiclient.New(s.server.Server, pt)
+				if err != nil {
+					return err
+				}
+				pme, err := apiclient.Get[apitypes.Me](cmd.Context(), papi, apiPrefix+"/me")
+				if err != nil {
+					return err
+				}
+				v.PlatformCredential = &pme
+			}
+			return g.io.Print(v, func() error {
 				ctxName := s.server.Name
 				if ctxName == "" {
 					ctxName = "(" + clientconfig.EnvURL + ")"
@@ -281,6 +329,13 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 				); err != nil {
 					return err
 				}
+				if p := v.PlatformCredential; p != nil {
+					if err := g.io.Fields("platform login", p.Name+" ("+describeMe(*p)+")"); err != nil {
+						return err
+					}
+				} else if !me.PlatformLogin {
+					g.io.Detail("No platform login here: platform commands (dock update, dock server, dock user) take one, from `dock login --platform`.")
+				}
 				if me.TwoFactorRequired != "" {
 					g.io.Warnf("%s", me.TwoFactorRequired)
 				}
@@ -291,14 +346,16 @@ func newWhoamiCmd(g *globals) *cobra.Command {
 }
 
 func newLogoutCmd(g *globals) *cobra.Command {
-	return &cobra.Command{
+	var platformOnly bool
+	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Remove the token of the context in use from this machine",
 		Long: `Remove the token of the context in use (see ` + "`dock context current`" + `)
 from the config file. A token from a browser login is also revoked on the
 server; tokens given with --token or --token-stdin stay valid, since they
-may be in use elsewhere. The context itself is kept. Logging out again is
-not an error.`,
+may be in use elsewhere. The context's platform login goes too; with
+--platform only it does. The context itself is kept. Logging out again
+is not an error.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadConfig()
@@ -317,16 +374,24 @@ not an error.`,
 				}
 			}
 			ctx := cfg.Contexts[r.Name]
-			hadToken := ctx.Token != ""
+			hadToken := ctx.PlatformToken != "" || !platformOnly && ctx.Token != ""
 			revoked := false
-			if hadToken && ctx.LoginToken {
-				if err := revokeOwnToken(cmd.Context(), ctx.Server, ctx.Token); err != nil {
+			drop := func(token string, login bool) {
+				if token == "" || !login {
+					return
+				}
+				if err := revokeOwnToken(cmd.Context(), ctx.Server, token); err != nil {
 					g.io.Warnf("Could not revoke the token on %s (%v). It expires on its own; revoke it on your account page.", ctx.Server, err)
 				} else {
 					revoked = true
 				}
 			}
-			ctx.Token, ctx.LoginToken = "", false
+			drop(ctx.PlatformToken, ctx.PlatformLoginToken)
+			ctx.PlatformToken, ctx.PlatformLoginToken = "", false
+			if !platformOnly {
+				drop(ctx.Token, ctx.LoginToken)
+				ctx.Token, ctx.LoginToken = "", false
+			}
 			cfg.Contexts[r.Name] = ctx
 			if err := cfg.save(); err != nil {
 				return err
@@ -349,4 +414,6 @@ not an error.`,
 			})
 		},
 	}
+	cmd.Flags().BoolVar(&platformOnly, "platform", false, "only log out of the platform: keep the org login")
+	return cmd
 }

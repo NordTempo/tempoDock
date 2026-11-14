@@ -53,7 +53,7 @@ type diskState struct {
 // that is older than diskFresh, marks it refreshing and reads again in
 // the background. Operators only.
 func (c *Core) ServerDisk(ctx context.Context, a Actor, name string) (apitypes.ServerDisk, error) {
-	if err := a.requireOperator("managing servers"); err != nil {
+	if err := a.requirePlatform(ServersManage, "managing servers"); err != nil {
 		return apitypes.ServerDisk{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -268,7 +268,7 @@ func (c *Core) diskParts(srv store.Server, du node.DiskUsage, host node.HostStat
 // answers with what it freed and the error in the result. Refused while
 // the server is being pruned. Operators only.
 func (c *Core) PruneServer(ctx context.Context, a Actor, name string) (apitypes.ServerPruneResult, error) {
-	if err := a.requireOperator("managing servers"); err != nil {
+	if err := a.requirePlatform(ServersManage, "managing servers"); err != nil {
 		return apitypes.ServerPruneResult{}, err
 	}
 	srv, err := c.loadServer(ctx, name)

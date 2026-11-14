@@ -160,10 +160,10 @@ func (c *Core) placeEnvironment(ctx context.Context, q *store.Queries, p store.P
 // ListPlacements returns which server a project's environments of each
 // kind live on. Operators only, as servers are (seesServers).
 func (c *Core) ListPlacements(ctx context.Context, a Actor, project string) ([]apitypes.Placement, error) {
-	if err := a.requireOperator("reading placements"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading placements"); err != nil {
 		return nil, err
 	}
-	p, err := c.projectFor(ctx, a, project, apitypes.ScopeRead, "reading placements")
+	p, err := c.loadProject(ctx, a.OrgID, project)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (c *Core) ListPlacements(ctx context.Context, a Actor, project string) ([]a
 // environments (and their volumes) is a later feature. The server must
 // accept the kind; being disabled for placement doesn't stop a pin.
 func (c *Core) PinPlacement(ctx context.Context, a Actor, project string, kind apitypes.EnvironmentKind, server string) (apitypes.Placement, error) {
-	if err := a.requireOperator("pinning a project to a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "pinning a project to a server"); err != nil {
 		return apitypes.Placement{}, err
 	}
 	if !validKind(kind) {

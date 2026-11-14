@@ -39,7 +39,7 @@ line means a later record added to it without changing what it decided.
 | [0024](0024-tempobase-standalone.md) | tempoBase, a standalone build of the Data panel | accepted |
 | [0025](0025-platform-console.md) | The platform console is Dock's admin panel | superseded in part by [0027](0027-organizations.md), [0038](0038-own-tokens.md), [0062](0062-org-alerts-and-operators.md) |
 | [0026](0026-ui-cli-parity.md) | Everything the CLI does, the UI does | accepted |
-| [0027](0027-organizations.md) | Organizations and the platform operator | superseded in part by [0062](0062-org-alerts-and-operators.md), [0064](0064-changing-an-org-slug.md), [0065](0065-sign-in-is-the-platforms.md) |
+| [0027](0027-organizations.md) | Organizations and the platform operator | superseded in part by [0062](0062-org-alerts-and-operators.md), [0064](0064-changing-an-org-slug.md), [0065](0065-sign-in-is-the-platforms.md), [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0028](0028-updates-from-the-console.md) | Updating Dock from the console | accepted |
 | [0029](0029-public-address.md) | Dock's public address | accepted |
 | [0030](0030-access-protection.md) | Access protection for a service's domains | accepted |
@@ -74,7 +74,7 @@ line means a later record added to it without changing what it decided.
 | [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up | accepted |
 | [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted |
 | [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
-| [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | superseded in part by [0065](0065-sign-in-is-the-platforms.md), [0066](0066-github-apps-for-many-orgs.md) |
+| [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | superseded in part by [0065](0065-sign-in-is-the-platforms.md), [0066](0066-github-apps-for-many-orgs.md), [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
 | [0064](0064-changing-an-org-slug.md) | Changing an organization's slug | accepted |
 | [0065](0065-sign-in-is-the-platforms.md) | Sign-in is the platform's | accepted |
@@ -92,7 +92,7 @@ line means a later record added to it without changing what it decided.
 | [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted |
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
 | [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; invites built |
-| [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phase 1 built |
+| [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phases 1 and 2 built |
 
 ## Template
 

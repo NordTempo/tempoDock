@@ -88,20 +88,47 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 	if t.RevokedAt != nil || (t.ExpiresAt != nil && n.After(*t.ExpiresAt)) {
 		return Actor{}, errUnauthenticated
 	}
-	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope), Operator: t.Operator}
+	a := Actor{Kind: "token", Name: t.Name, TokenID: t.ID, Scope: apitypes.Scope(t.Scope)}
+	userRole := apitypes.PlatformRole(deref(row.UserPlatformRole))
+	// A platform token runs the platform and acts in no org (ADR 0080):
+	// one an operator made has its role; a `dock login --platform` has
+	// its user's platform role as it is now.
+	if t.Platform != nil {
+		a.platformOnly, a.Scope = true, ""
+		role := apitypes.PlatformRole(*t.Platform)
+		if *t.Platform == "login" {
+			if row.UserEmail == nil || row.UserDisabledAt != nil || t.UserID == nil {
+				return Actor{}, errUnauthenticated
+			}
+			a.Email, a.UserID, role = *row.UserEmail, *t.UserID, userRole
+			if t.TwoFactor {
+				a.Factor = factorLogin
+			}
+		}
+		return c.platformIn(ctx, c.gateOperator(a.withPlatform(role)), org)
+	}
 	// A `dock login` token acts for the user who approved it, so it is only
 	// as good as that user now: gone or disabled refuses it, and in each
 	// org their role caps it. Acting for them lets them change their
-	// password from the CLI.
+	// password from the CLI. It doesn't run the platform (their platform
+	// login does), unless it is a legacy one from before ADR 0080
+	// (t.Operator), which keeps their platform role until it expires.
 	if t.Origin == "cli_login" {
-		if row.UserEmail == nil || row.UserOperator == nil || row.UserDisabledAt != nil || t.UserID == nil {
+		if row.UserEmail == nil || row.UserDisabledAt != nil || t.UserID == nil {
 			return Actor{}, errUnauthenticated
 		}
-		a.Email, a.UserID, a.Operator = *row.UserEmail, *t.UserID, *row.UserOperator
+		a.Email, a.UserID, a.userPlatform = *row.UserEmail, *t.UserID, userRole
+		if t.Operator {
+			a = a.withPlatform(userRole)
+		}
 		if t.TwoFactor {
 			a.Factor = factorLogin
 		}
 		return c.actIn(ctx, c.gateOperator(a), org, apitypes.Scope(t.Scope))
+	}
+	if t.Operator {
+		// A legacy org token that also runs the platform, until split.
+		a = a.withPlatform(apitypes.PlatformOperator)
 	}
 	if t.OrgID == nil || row.OrgSlug == nil { // manual tokens always have one
 		return Actor{}, errUnauthenticated
@@ -163,7 +190,8 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Act
 
 // userActor is a user in no org yet; actIn picks one.
 func userActor(u store.User) Actor {
-	return Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, Operator: u.Operator, DisplayName: u.Name}
+	a := Actor{Kind: "user", Name: u.Email, Email: u.Email, UserID: u.ID, DisplayName: u.Name}
+	return a.withPlatform(apitypes.PlatformRole(deref(u.PlatformRole)))
 }
 
 // actIn puts a user's actor (a session or a `dock login` token) in the org
@@ -508,7 +536,11 @@ func (c *Core) CreateToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	if err := a.requireRecent("creating a token"); err != nil {
 		return apitypes.CreatedToken{}, err
 	}
-	if req.Scope == apitypes.ScopeAdmin || req.Operator {
+	if req.Operator {
+		// An org's token never runs the platform (ADR 0080).
+		return apitypes.CreatedToken{}, invalid("an org's token can't run the platform; an operator makes a platform token in Console › Tokens (`dock platform token create <name>`)")
+	}
+	if req.Scope == apitypes.ScopeAdmin {
 		if err := c.checkAccountLock(ctx, a, "creating admin tokens", req.Operator); err != nil {
 			return apitypes.CreatedToken{}, err
 		}
@@ -528,7 +560,7 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 		return apitypes.CreatedToken{}, err
 	}
 	if req.Operator {
-		if err := a.requireOperator("creating an operator token"); err != nil {
+		if err := a.requirePlatform(AccountsManage, "creating an operator token"); err != nil {
 			return apitypes.CreatedToken{}, err
 		}
 		if req.Scope != apitypes.ScopeAdmin || req.Project != "" {
@@ -765,7 +797,7 @@ func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserR
 		return apitypes.User{}, err
 	}
 	kind := "user"
-	if u.Operator {
+	if isOperator(u) {
 		kind = "operator"
 	}
 	c.audit(ctx, a.platform(), "user.create", nil, nil, u.Email, fmt.Sprintf("created %s %s with role %s in %s", kind, u.Email, req.Role, slug))
@@ -775,7 +807,7 @@ func (c *Core) CreateUser(ctx context.Context, a Actor, req apitypes.CreateUserR
 // ListAccounts lists every user account with the orgs it belongs to and
 // which it owns, in two queries. Operators only.
 func (c *Core) ListAccounts(ctx context.Context, a Actor) ([]apitypes.Account, error) {
-	if err := a.requireOperator("listing user accounts"); err != nil {
+	if err := a.requirePlatform(PlatformView, "listing user accounts"); err != nil {
 		return nil, err
 	}
 	users, err := c.store.ListAccounts(ctx)
@@ -798,7 +830,7 @@ func (c *Core) ListAccounts(ctx context.Context, a Actor) ([]apitypes.Account, e
 	for i, r := range users {
 		u := r.User
 		out[i] = apitypes.Account{
-			ID: u.ID, Email: u.Email, Name: u.Name, Operator: u.Operator, TwoFactor: r.TwoFactor,
+			ID: u.ID, Email: u.Email, Name: u.Name, Operator: isOperator(u), PlatformRole: apitypes.PlatformRole(deref(u.PlatformRole)), TwoFactor: r.TwoFactor,
 			CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt, Orgs: orgs[u.ID],
 		}
 		if out[i].Orgs == nil {
@@ -808,15 +840,33 @@ func (c *Core) ListAccounts(ctx context.Context, a Actor) ([]apitypes.Account, e
 	return out, nil
 }
 
-// SetOperator makes a user a platform operator or takes it away. The
-// platform keeps at least one operator who can sign in. A person, not a
-// token, and recently signed in.
+// SetOperator makes a user a platform operator or takes their platform
+// role away; SetPlatformRole with the operator role or none.
 func (c *Core) SetOperator(ctx context.Context, a Actor, id int64, operator bool) (apitypes.Account, error) {
-	if err := a.requireAccountManager("choosing platform operators"); err != nil {
+	role := ""
+	if operator {
+		role = string(apitypes.PlatformOperator)
+	}
+	return c.SetPlatformRole(ctx, a, id, role)
+}
+
+// SetPlatformRole gives a user a platform role (operator, viewer) or
+// takes it away ("" or "none"), ADR 0080. The platform keeps at least
+// one operator who can sign in. A person, not a token, and recently
+// signed in.
+func (c *Core) SetPlatformRole(ctx context.Context, a Actor, id int64, role string) (apitypes.Account, error) {
+	const action = "choosing the platform's operators and viewers"
+	if err := a.requireAccountManager(action); err != nil {
 		return apitypes.Account{}, err
 	}
-	if err := a.requireRecent("choosing platform operators"); err != nil {
+	if err := a.requireRecent(action); err != nil {
 		return apitypes.Account{}, err
+	}
+	if role == "none" {
+		role = ""
+	}
+	if role != "" && !validPlatformRole(apitypes.PlatformRole(role)) {
+		return apitypes.Account{}, invalid("platform role %q isn't one; use operator, viewer or none", role)
 	}
 	u, err := c.store.GetUser(ctx, id)
 	if store.IsNotFound(err) {
@@ -825,8 +875,8 @@ func (c *Core) SetOperator(ctx context.Context, a Actor, id int64, operator bool
 	if err != nil {
 		return apitypes.Account{}, err
 	}
-	if u.Operator != operator {
-		if !operator {
+	if was := deref(u.PlatformRole); was != role {
+		if isOperator(u) {
 			n, err := c.store.CountOtherOperators(ctx, id)
 			if err != nil {
 				return apitypes.Account{}, err
@@ -835,12 +885,16 @@ func (c *Core) SetOperator(ctx context.Context, a Actor, id int64, operator bool
 				return apitypes.Account{}, conflict("%s is the platform's last operator who can sign in; make someone else one first", u.Email)
 			}
 		}
-		if err := c.store.SetUserOperator(ctx, store.SetUserOperatorParams{Operator: operator, ID: id}); err != nil {
+		var next *string
+		if role != "" {
+			next = &role
+		}
+		if err := c.store.SetUserPlatformRole(ctx, store.SetUserPlatformRoleParams{PlatformRole: next, ID: id}); err != nil {
 			return apitypes.Account{}, err
 		}
-		what := "made " + u.Email + " a platform operator"
-		if !operator {
-			what = u.Email + " is no longer a platform operator"
+		what := fmt.Sprintf("made %s a platform %s", u.Email, role)
+		if role == "" {
+			what = fmt.Sprintf("%s no longer has a platform role (was %s)", u.Email, was)
 		}
 		c.audit(ctx, a.platform(), "user.operator", nil, nil, u.Email, what)
 	}
@@ -854,6 +908,20 @@ func (c *Core) SetOperator(ctx context.Context, a Actor, id int64, operator bool
 		}
 	}
 	return apitypes.Account{}, notFound("user %d not found", id)
+}
+
+// isOperator reports whether u has the platform's operator role.
+func isOperator(u store.User) bool {
+	return deref(u.PlatformRole) == string(apitypes.PlatformOperator)
+}
+
+// operatorRole is the platform role column for a new user who is an
+// operator or not.
+func operatorRole(operator bool) *string {
+	if !operator {
+		return nil
+	}
+	return ptr(string(apitypes.PlatformOperator))
 }
 
 // createUser creates a user and makes them a member of org with req.Role.
@@ -874,7 +942,7 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, o
 	var u store.User
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), Operator: req.Operator}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), PlatformRole: operatorRole(req.Operator)}); err != nil {
 			return err
 		}
 		return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: orgID, UserID: u.ID, Role: string(req.Role)})
@@ -913,6 +981,10 @@ func (c *Core) Bootstrap(ctx context.Context, email string) (b Bootstrapped, ok 
 	if err != nil {
 		return b, false, err
 	}
+	// The bootstrap token stays both the org's and the platform's (a
+	// legacy token, ADR 0080): install scripts set up servers and projects
+	// with the one token stdout gives them. The console shows it as legacy
+	// for an operator to split.
 	a := userActor(u).member(org, string(apitypes.ScopeAdmin), apitypes.ScopeAdmin)
 	created, err := c.createToken(ctx, a, apitypes.CreateTokenRequest{Name: "bootstrap", Scope: apitypes.ScopeAdmin, Operator: true})
 	if err != nil {
@@ -931,14 +1003,14 @@ func (c *Core) userIn(ctx context.Context, a Actor, u store.User) apitypes.User 
 }
 
 func toUser(u store.User, role string) apitypes.User {
-	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(role), Operator: u.Operator, CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt}
+	return apitypes.User{ID: u.ID, Email: u.Email, Name: u.Name, Role: apitypes.Scope(role), Operator: isOperator(u), CreatedAt: u.CreatedAt, DisabledAt: u.DisabledAt}
 }
 
 func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {
 	out := apitypes.Token{
 		ID: t.ID, Name: t.Name, Scope: apitypes.Scope(t.Scope), CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
 		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt, Origin: t.Origin,
-		Operator: t.Operator, Data: tokenData(t),
+		Operator: t.Operator, Platform: deref(t.Platform), Data: tokenData(t),
 	}
 	if t.ProjectID != nil {
 		out.Project = names.project(ctx, *t.ProjectID)

@@ -34,6 +34,8 @@ type testServer struct {
 	rt     *fake.Runtime
 	core   *core.Core
 	tokens map[apitypes.Scope]string
+	// platform is a platform token with the operator role (ADR 0080).
+	platform string
 }
 
 // sys is the system actor in the test org, the first one created.
@@ -85,9 +87,22 @@ func newTestServerWith(t *testing.T, opts func(*core.Options)) *testServer {
 		_ = st.Close()
 	})
 	ts := &testServer{url: srv.URL, rt: rt, core: c, tokens: map[apitypes.Scope]string{}}
-	// The admin token is the install's, like bootstrap's: an operator's.
-	for _, scope := range []apitypes.Scope{apitypes.ScopeRead, apitypes.ScopeDeploy, apitypes.ScopeAdmin} {
-		tok, err := c.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: string(scope), Scope: scope, Operator: scope == apitypes.ScopeAdmin})
+	// A platform token with the operator role (ADR 0080), for tests of
+	// the platform's own credentials.
+	pt, err := c.CreatePlatformToken(ctx, sys, apitypes.CreatePlatformTokenRequest{Name: "platform", Role: apitypes.PlatformOperator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.platform = pt.Secret
+	// The admin token is the install's, bootstrap's: a legacy token that
+	// is both the org's and the platform's, as installs start with.
+	b, _, err := c.Bootstrap(ctx, "admin@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.tokens[apitypes.ScopeAdmin] = b.Token
+	for _, scope := range []apitypes.Scope{apitypes.ScopeRead, apitypes.ScopeDeploy} {
+		tok, err := c.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: string(scope), Scope: scope})
 		if err != nil {
 			t.Fatal(err)
 		}

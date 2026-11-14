@@ -2627,7 +2627,7 @@
               "role",
               "scope",
               "limit",
-              "operator",
+              "platform",
               "person"
             ],
             "type": "string"

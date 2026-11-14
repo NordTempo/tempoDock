@@ -109,6 +109,11 @@ func newFixture(t testing.TB) *fixture {
 		}
 		f.tokens[name] = tok.Secret
 	}
+	pt, err := c.CreatePlatformToken(ctx, sys, apitypes.CreatePlatformTokenRequest{Name: "platform", Role: apitypes.PlatformViewer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.tokens["platform"] = pt.Secret
 	return f
 }
 
@@ -916,5 +921,30 @@ func TestInstructionsNameEnvironments(t *testing.T) {
 	s := f.connect("shop-all", nil)
 	if got := s.InitializeResult().Instructions; !strings.Contains(got, "Its environments: ") || !strings.Contains(got, "staging (non_production)") {
 		t.Errorf("instructions end %q", got[max(0, len(got)-200):])
+	}
+}
+
+// A platform credential acts in no org (ADR 0080): its tools/list is the
+// platform's few, and an org tool says it needs an org's credential.
+func TestPlatformTokenTools(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect("platform", nil)
+	tools, err := s.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tl := range tools.Tools {
+		names = append(names, tl.Name)
+	}
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"list_alerts", "list_servers", "whoami"}) {
+		t.Fatalf("tools/list = %v", names)
+	}
+	if c := call(t, s, "list_servers", nil); c.isError {
+		t.Fatalf("list_servers: %s", c.summary)
+	}
+	if code := call(t, s, "list_projects", nil).errorCode(t); code != apitypes.CodeForbidden {
+		t.Fatalf("list_projects: %s", code)
 	}
 }

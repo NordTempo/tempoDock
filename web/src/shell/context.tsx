@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import type { components } from "../api/schema";
 import {
-  useIsOperator,
   useProjectOverview,
   useProjectTree,
+  useSeesPlatform,
 } from "../data/queries";
 import type { ServerStatus, ServiceView } from "../data/types";
 import { Icon } from "../ui/icons";
@@ -195,7 +195,7 @@ export function EnvSwitch({
  */
 export function ServerDots({ project }: { project: string }) {
   const tree = useProjectTree();
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   const environments =
     tree.find((p) => p.project.name === project)?.environments ?? [];
   const shown = new Map<string, ServerStatus>();

@@ -477,7 +477,7 @@ func toChannel(ch store.AlertChannel) apitypes.AlertChannel {
 // unlimited admins.
 func channelsIn(a Actor, platform bool, action string) (int64, error) {
 	if platform {
-		return 0, a.requireOperator(action)
+		return 0, a.requirePlatform(PlatformAlerts, action)
 	}
 	return a.OrgID, a.requireUnlimited(apitypes.ScopeAdmin, action)
 }

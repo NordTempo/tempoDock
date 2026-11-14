@@ -76,8 +76,8 @@ func TestRefusalsExplainThemselves(t *testing.T) {
 	orgAdmin := Actor{Kind: "token", OrgID: 1, OrgSlug: "default", Name: "vm", TokenID: 11, Scope: apitypes.ScopeAdmin}
 	_, err = h.c.ListServers(h.ctx, orgAdmin)
 	r = refusalOf(t, err)
-	if r.DecidedBy != apitypes.RefusedOperator || !strings.Contains(r.Reason, "token of organization default") ||
-		!strings.Contains(r.Fix, "operator") {
-		t.Fatalf("operator refusal = %+v", r)
+	if r.DecidedBy != apitypes.RefusedPlatform || r.Need != string(PlatformView) || !strings.Contains(r.Reason, "token of organization default") ||
+		!strings.Contains(r.Fix, "dock login --platform") {
+		t.Fatalf("platform refusal = %+v", r)
 	}
 }

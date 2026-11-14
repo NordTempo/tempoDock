@@ -39,8 +39,9 @@ func TestOrgsMigrationMovesAnInstallIntoOneOrg(t *testing.T) {
 	}{1: {"admin", true}, 2: {"deploy", false}} {
 		u, _ := s.GetUser(ctx, id)
 		role, err := s.GetMemberRole(ctx, GetMemberRoleParams{OrgID: 1, UserID: id})
-		if err != nil || role != want.role || u.Operator != want.operator {
-			t.Errorf("user %d: role %q operator %v, %v; want %+v", id, role, u.Operator, err, want)
+		op := u.PlatformRole != nil && *u.PlatformRole == "operator"
+		if err != nil || role != want.role || op != want.operator {
+			t.Errorf("user %d: role %q operator %v, %v; want %+v", id, role, op, err, want)
 		}
 	}
 	if p, err := s.GetProjectByName(ctx, GetProjectByNameParams{OrgID: 1, Name: "shop"}); err != nil || p.ID != 1 {

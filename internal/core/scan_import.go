@@ -32,7 +32,7 @@ func (c *Core) scanImportPath() string {
 // builder to import at the next quiet minute, replacing one imported
 // before. Operators only.
 func (c *Core) ImportScanDatabase(ctx context.Context, a Actor, archive io.Reader) (apitypes.ScanningStatus, error) {
-	if err := a.requireOperator("importing a vulnerability database"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "importing a vulnerability database"); err != nil {
 		return apitypes.ScanningStatus{}, err
 	}
 	path := c.scanImportPath()

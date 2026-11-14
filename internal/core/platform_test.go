@@ -1,6 +1,7 @@
 package core
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -145,5 +146,121 @@ func TestOrgSiteDefaults(t *testing.T) {
 	}
 	if got := newSite("after"); got.EventRetentionDays == nil || *got.EventRetentionDays != 30 {
 		t.Fatalf("a new site = %+v; want the org's 30 days", got)
+	}
+}
+
+// loginToken makes a `dock login` token for user a (platform: a
+// platform login), as approving one in the browser does, and returns its
+// secret.
+func (h *harness) loginToken(a Actor, platform bool) string {
+	h.t.Helper()
+	var kind *string
+	prefix := tokenPrefix
+	if platform {
+		kind, prefix = ptr("login"), platformTokenPrefix
+	}
+	secret, hash := newSecret(prefix)
+	if _, err := h.store.CreateCLILoginToken(h.ctx, store.CreateCLILoginTokenParams{
+		Name: "cli: test", Hash: hash, Scope: string(apitypes.ScopeAdmin), CreatedBy: a.Email, UserID: &a.UserID, Platform: kind,
+	}); err != nil {
+		h.t.Fatal(err)
+	}
+	return secret
+}
+
+// auth authenticates a token's secret, failing the test on an error.
+func (h *harness) auth(secret string) Actor {
+	h.t.Helper()
+	a, err := h.c.AuthenticateToken(h.ctx, secret, "")
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	return a
+}
+
+// TestPlatformApart: running the platform takes a platform credential
+// (ADR 0080). A platform token runs it with its role and never acts in an
+// org; a viewer only reads; an operator's org login doesn't run it and
+// says to log in to the platform; a platform login follows its person's
+// role as it is now; org tokens can't be made operators; and a legacy
+// token, once split, is the org's only, with a platform token beside it.
+func TestPlatformApart(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	op := h.operator("op@example.com")
+	h.exec(`INSERT INTO org_members (org_id, user_id, role) VALUES (1, ?, 'admin')`, op.UserID)
+	op.Email = "op@example.com"
+
+	opTok, err := h.c.CreatePlatformToken(h.ctx, testSystem, apitypes.CreatePlatformTokenRequest{Name: "ops", Role: apitypes.PlatformOperator})
+	if err != nil || !strings.HasPrefix(opTok.Secret, platformTokenPrefix) || opTok.Token.Platform != "operator" {
+		t.Fatalf("platform token = %+v, %v", opTok, err)
+	}
+	platform := h.auth(opTok.Secret)
+	if _, err := h.c.ListServers(h.ctx, platform); err != nil {
+		t.Fatalf("platform token lists servers: %v", err)
+	}
+	if _, err := h.c.ListPlacements(h.ctx, platform, "shop"); err != nil {
+		t.Fatalf("platform token reads the only org's placements: %v", err)
+	}
+	_, err = h.c.CreateProject(h.ctx, platform, apitypes.CreateProjectRequest{Name: "blog"})
+	if r := refusalOf(t, err); r.DecidedBy != apitypes.RefusedPlatform || r.Need != "org" {
+		t.Fatalf("platform token creates a project: %+v", r)
+	}
+
+	viewTok, err := h.c.CreatePlatformToken(h.ctx, testSystem, apitypes.CreatePlatformTokenRequest{Name: "watch", Role: apitypes.PlatformViewer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewer := h.auth(viewTok.Secret)
+	if _, err := h.c.ListServers(h.ctx, viewer); err != nil {
+		t.Fatalf("viewer lists servers: %v", err)
+	}
+	_, err = h.c.AddServer(h.ctx, viewer, apitypes.AddServerRequest{Name: "homelab", AcceptsNonProduction: true})
+	if r := refusalOf(t, err); r.Need != string(ServersManage) || !strings.Contains(r.Reason, "platform role viewer") {
+		t.Fatalf("viewer adds a server: %+v", r)
+	}
+
+	// An operator's org login runs no platform; their platform login does.
+	orgLogin := h.auth(h.loginToken(op, false))
+	_, err = h.c.ListServers(h.ctx, orgLogin)
+	if r := refusalOf(t, err); !strings.Contains(r.Fix, "dock login --platform") {
+		t.Fatalf("org login lists servers: %+v", r)
+	}
+	if _, err := h.c.CreateProject(h.ctx, orgLogin, apitypes.CreateProjectRequest{Name: "blog"}); err != nil {
+		t.Fatalf("org login creates a project: %v", err)
+	}
+	platformSecret := h.loginToken(op, true)
+	if a := h.auth(platformSecret); !a.Me().PlatformLogin || a.Platform != apitypes.PlatformOperator {
+		t.Fatalf("platform login = %+v", a.Me())
+	}
+	h.exec(`UPDATE users SET platform_role = 'viewer' WHERE id = ?`, op.UserID)
+	if _, err := h.c.AddServer(h.ctx, h.auth(platformSecret), apitypes.AddServerRequest{Name: "homelab", AcceptsNonProduction: true}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("platform login of a viewer now adds a server: %v", err)
+	}
+	h.exec(`UPDATE users SET platform_role = 'operator' WHERE id = ?`, op.UserID)
+
+	// No new org token runs the platform; a legacy one does until split.
+	if _, err := h.c.CreateToken(h.ctx, testSystem, apitypes.CreateTokenRequest{Name: "both", Scope: apitypes.ScopeAdmin, Operator: true}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("operator org token: %v", err)
+	}
+	legacy, err := h.c.createToken(h.ctx, testSystem, apitypes.CreateTokenRequest{Name: "bootstrap", Scope: apitypes.ScopeAdmin, Operator: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.ListServers(h.ctx, h.auth(legacy.Secret)); err != nil {
+		t.Fatalf("legacy token lists servers: %v", err)
+	}
+	split, err := h.c.SplitToken(h.ctx, testSystem, legacy.Token.ID)
+	if err != nil || split.Token.Operator || split.Platform.Token.Platform != "operator" {
+		t.Fatalf("split = %+v, %v", split, err)
+	}
+	if _, err := h.c.ListServers(h.ctx, h.auth(legacy.Secret)); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("split org token lists servers: %v", err)
+	}
+	if _, err := h.c.ListServers(h.ctx, h.auth(split.Platform.Secret)); err != nil {
+		t.Fatalf("split's platform token lists servers: %v", err)
+	}
+	if list, err := h.c.ListPlatformTokens(h.ctx, viewer); err != nil || len(list) != 4 {
+		t.Fatalf("platform tokens = %+v, %v", list, err)
 	}
 }

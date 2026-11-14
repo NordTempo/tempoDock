@@ -59,12 +59,19 @@ func TestNodeJoinAndRun(t *testing.T) {
 	go func() { _ = hub.Serve(ctx, ln) }()
 	srv := httptest.NewServer(api.New(c, api.Options{Logger: quiet}))
 	defer srv.Close()
-	tok, err := c.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "admin", Scope: apitypes.ScopeAdmin, Operator: true})
+	// An org's admin token and a platform token beside it (ADR 0080):
+	// server commands go to the platform's, project ones to the org's.
+	ptok, err := c.CreatePlatformToken(ctx, sys, apitypes.CreatePlatformTokenRequest{Name: "operator", Role: apitypes.PlatformOperator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := c.CreateToken(ctx, sys, apitypes.CreateTokenRequest{Name: "admin", Scope: apitypes.ScopeAdmin})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv(clientconfig.EnvURL, srv.URL)
 	t.Setenv(clientconfig.EnvToken, tok.Secret)
+	t.Setenv(clientconfig.EnvPlatformToken, ptok.Secret)
 
 	if code, _, stderr := exec(t, "server", "add", "homelab"); code != int(output.ExitUsage) || !strings.Contains(stderr, "--non-production") {
 		t.Fatalf("add without a kind: exit %d %s", code, stderr)

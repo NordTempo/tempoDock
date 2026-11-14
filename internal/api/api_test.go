@@ -78,8 +78,16 @@ func newFixture(t *testing.T) *fixture {
 			t.Fatal(err)
 		}
 	}
+	// operator and platform-viewer are platform tokens (ADR 0080): they
+	// run the platform and act in no org.
+	for name, role := range map[string]apitypes.PlatformRole{"operator": apitypes.PlatformOperator, "platform-viewer": apitypes.PlatformViewer} {
+		tok, err := c.CreatePlatformToken(ctx, sys, apitypes.CreatePlatformTokenRequest{Name: name, Role: role})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.tokens[name] = tok.Secret
+	}
 	for name, req := range map[string]apitypes.CreateTokenRequest{
-		"operator":    {Scope: apitypes.ScopeAdmin, Operator: true},
 		"admin":       {Scope: apitypes.ScopeAdmin},
 		"deploy":      {Scope: apitypes.ScopeDeploy},
 		"read":        {Scope: apitypes.ScopeRead},
@@ -240,8 +248,10 @@ func TestCaddyAsk(t *testing.T) {
 		_ = resp.Body.Close()
 		return resp.StatusCode
 	}
-	// An operator's domain needs no TXT record (ADR 0042).
-	if resp, body := f.do("operator", "POST", shopProd+"/services/web/domains", apitypes.AddDomainRequest{Hostname: "shop.example.com"}); resp.StatusCode != 201 {
+	// An operator's domain needs no TXT record (ADR 0042): a person who
+	// runs the platform, adding it in their org (a platform token acts in
+	// none, ADR 0080).
+	if resp, body := f.as(f.login(), "POST", shopProd+"/services/web/domains", apitypes.AddDomainRequest{Hostname: "shop.example.com"}); resp.StatusCode != 201 {
 		t.Fatalf("add domain: %d %s", resp.StatusCode, body)
 	}
 	if got := check("shop.example.com"); got != 200 {

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/version"
 )
@@ -42,7 +44,10 @@ type Client struct {
 
 	base  *url.URL
 	token string
-	http  *http.Client
+	// platformToken, when set, retries a call the server refused because
+	// it runs the platform (ADR 0080): the context's platform login.
+	platformToken string
+	http          *http.Client
 	// upgrades is the HTTP/1.1-only client of Upgrade, made on first use.
 	upgrades     *http.Client
 	upgradesOnce sync.Once
@@ -150,7 +155,41 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		return nil, redirectError(req, resp)
 	}
-	return nil, problemError(resp)
+	perr := problemError(resp)
+	if retry := c.asPlatform(req, perr); retry != nil {
+		_ = resp.Body.Close()
+		return c.Do(retry)
+	}
+	return nil, perr
+}
+
+// SetPlatformToken gives the client the context's platform token: a
+// call the server refuses because it runs the platform is sent again
+// with it, once (ADR 0080). Org calls never use it.
+func (c *Client) SetPlatformToken(token string) { c.platformToken = token }
+
+// asPlatform is req again with the platform token, when err is the
+// server's refusal of a platform call made with another credential and
+// the body can be sent again; nil otherwise.
+func (c *Client) asPlatform(req *http.Request, err error) *http.Request {
+	p, ok := errors.AsType[*Problem](err)
+	if !ok || p.Refusal == nil || p.Refusal.DecidedBy != apitypes.RefusedPlatform || p.Refusal.Need == "org" ||
+		c.platformToken == "" || req.Header.Get("Authorization") == "Bearer "+c.platformToken {
+		return nil
+	}
+	retry := req.Clone(req.Context())
+	if req.Body != nil && req.Body != http.NoBody {
+		if req.GetBody == nil {
+			return nil
+		}
+		body, err := req.GetBody()
+		if err != nil {
+			return nil
+		}
+		retry.Body = body
+	}
+	retry.Header.Set("Authorization", "Bearer "+c.platformToken)
+	return retry
 }
 
 // redirectError reports a redirect, which the client never follows.

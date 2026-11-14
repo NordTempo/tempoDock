@@ -52,10 +52,13 @@ func (c *Core) scheduleOf(ctx context.Context, ss svcScope, set store.BackupSett
 // moves them to another hour.
 func (c *Core) UpdateBackupSchedule(ctx context.Context, a Actor, ref ServiceRef, req apitypes.UpdateBackupScheduleRequest) (apitypes.ServiceBackups, error) {
 	// Backups are the platform's (ADR 0027): operators set schedules.
-	if err := a.requireOperator("changing a backup schedule"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "changing a backup schedule"); err != nil {
 		return apitypes.ServiceBackups{}, err
 	}
-	ss, err := c.serviceFor(ctx, a, ref, apitypes.ScopeRead, "changing a backup schedule")
+	// A platform action on an org's service: loaded in the actor's org
+	// without an org scope (a platform credential has none), and the
+	// environment's lock still applies.
+	ss, err := c.loadService(ctx, a.OrgID, ref)
 	if err != nil {
 		return apitypes.ServiceBackups{}, err
 	}

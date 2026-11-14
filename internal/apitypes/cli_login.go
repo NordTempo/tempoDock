@@ -8,6 +8,10 @@ type CLILoginStartRequest struct {
 	ClientName string `json:"client_name" minLength:"1" maxLength:"64" example:"dock CLI"`
 	Hostname   string `json:"hostname" maxLength:"255" example:"ada-laptop"`
 	OS         string `json:"os" maxLength:"64" example:"darwin/arm64"`
+	// Platform asks for a platform login (`dock login --platform`, ADR
+	// 0080): it runs the platform with the user's platform role and acts
+	// in no organization.
+	Platform bool `json:"platform,omitempty"`
 }
 
 // CLILoginStart is a pending browser login. The user opens VerificationURL,
@@ -32,6 +36,10 @@ type CLILoginWait struct {
 	Token  string `json:"token,omitempty" doc:"The new API token's secret; only when approved"`
 	User   string `json:"user,omitempty" doc:"Email of the user who approved"`
 	Scope  Scope  `json:"scope,omitempty"`
+	// Platform is the user's platform role when the login is a platform
+	// one (`dock login --platform`, ADR 0080): the CLI keeps it as the
+	// context's platform token, beside its org login.
+	Platform PlatformRole `json:"platform,omitempty" enum:"operator,viewer"`
 }
 
 // CLILogin is a browser login as the approval page shows it.
@@ -47,7 +55,10 @@ type CLILogin struct {
 	// Scope is what the CLI gets when the caller approves: their own role.
 	Scope     Scope  `json:"scope" enum:"read,deploy,admin"`
 	TokenName string `json:"token_name" example:"cli: ada-laptop"`
-	TokenDays int    `json:"token_days" doc:"Days until the token expires"`
+	// Platform: approving gives a platform login (ADR 0080), with the
+	// approver's platform role, acting in no organization.
+	Platform  bool `json:"platform,omitempty"`
+	TokenDays int  `json:"token_days" doc:"Days until the token expires"`
 }
 
 // CLILoginDecision approves or denies a browser login by its user code.

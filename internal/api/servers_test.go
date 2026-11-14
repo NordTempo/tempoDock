@@ -63,7 +63,7 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	}
 	for _, c := range platform {
 		for _, token := range []string{"deploy", "shop-admin", "admin"} {
-			refused(token, c.method, c.path, c.body, "not a platform operator")
+			refused(token, c.method, c.path, c.body, "runs the platform")
 		}
 	}
 	// In order: delete comes last.
@@ -85,7 +85,7 @@ func TestPlatformEndpointsNeedOperator(t *testing.T) {
 	// Servers and placements are the operator's (ADR 0062); a service's
 	// statistics only need read.
 	for _, path := range []string{"/api/v1/servers", "/api/v1/projects/shop/placements"} {
-		refused("read", "GET", path, nil, "not a platform operator")
+		refused("read", "GET", path, nil, "runs the platform")
 	}
 	for _, path := range []string{shopProd + "/services/web/stats?range=7d"} {
 		if resp, body := f.do("read", "GET", path, nil); resp.StatusCode != 200 {
@@ -193,7 +193,7 @@ func TestServerLinkEndpointsNeedOperator(t *testing.T) {
 			resp, body := f.do(token, c.method, c.path, c.body)
 			var p apitypes.Error
 			_ = json.Unmarshal(body, &p)
-			if resp.StatusCode != 403 || !strings.Contains(p.Detail, "not a platform operator") {
+			if resp.StatusCode != 403 || !strings.Contains(p.Detail, "runs the platform") {
 				t.Errorf("%s %s as %s: %d %s", c.method, c.path, token, resp.StatusCode, body)
 			}
 		}
