@@ -36,6 +36,10 @@ type Config struct {
 	// InternalListen serves loopback-only endpoints such as Caddy's
 	// on-demand TLS `ask` check.
 	InternalListen string `toml:"internal_listen"`
+	// Pprof serves Go's runtime profiles on InternalListen at
+	// /debug/pprof/. Off by default: any local user can reach that
+	// listener, and a CPU profile or trace costs CPU while it runs.
+	Pprof bool `toml:"pprof"`
 	// PublicListen is the loopback address the control plane's Caddy
 	// proxies Dock's public address to (ADR 0029): the API and UI, for
 	// requests that came through Caddy. It is served even while no

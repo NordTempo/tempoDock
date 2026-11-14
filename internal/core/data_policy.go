@@ -357,7 +357,8 @@ func tokenDataParams(id int64, d *apitypes.DataTokenAccess) (store.SetTokenDataA
 	return params, nil
 }
 
-// UpdateToken changes a token's data access override; null follows the
+// UpdateToken changes the data access override of one of the org's tokens
+// (orgToken: another org's token is not found); null follows the
 // policy again. Admin only (unlimited). The override is stored as given
 // and capped when it is used, by what users of the token's scope and its
 // creator's current role get then.
@@ -365,10 +366,7 @@ func (c *Core) UpdateToken(ctx context.Context, a Actor, id int64, req apitypes.
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
 		return apitypes.Token{}, err
 	}
-	t, err := c.store.GetToken(ctx, id)
-	if store.IsNotFound(err) {
-		return apitypes.Token{}, notFound("token %d not found", id)
-	}
+	t, err := c.orgToken(ctx, a, id)
 	if err != nil {
 		return apitypes.Token{}, err
 	}

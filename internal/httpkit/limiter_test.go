@@ -24,6 +24,13 @@ func TestLimiter(t *testing.T) {
 	if len(l.buckets) > maxBuckets {
 		t.Fatalf("limiter holds %d buckets", len(l.buckets))
 	}
+	// A flood of new keys at one instant, none refilled: still bounded.
+	for i := range maxBuckets + 10 {
+		l.Allow("flood"+strconv.Itoa(i), at)
+	}
+	if len(l.buckets) > maxBuckets {
+		t.Fatalf("limiter holds %d buckets after a flood", len(l.buckets))
+	}
 }
 
 // TestLoginLimiter: a guesser on one address is stopped without locking

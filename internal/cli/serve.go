@@ -140,7 +140,7 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		{Addr: cfg.PublicListen, Handler: api.Public(handler, hooks), ReadHeaderTimeout: 10 * time.Second},
 		{
 			Addr:              cfg.InternalListen,
-			Handler:           api.Internal(c, log, registryToken, caddy.AccessHandler(), caddy.WakeHandler(c.RequestWaker())),
+			Handler:           api.Internal(c, log, registryToken, caddy.AccessHandler(), caddy.WakeHandler(c.RequestWaker()), cfg.Pprof),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 	}

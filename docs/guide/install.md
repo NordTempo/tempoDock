@@ -171,6 +171,7 @@ running).
 | `data_dir` | `/var/lib/dock` | SQLite DB, secrets key, build logs, uploads |
 | `listen` | `127.0.0.1:7070` | API and UI. Tailscale IP or loopback; not meant to be public |
 | `internal_listen` | `127.0.0.1:7071` | Loopback-only endpoints (Caddy's TLS `ask`). Must be loopback or the daemon refuses to start |
+| `pprof` | `false` | Serve Go's runtime profiles on `internal_listen` at `/debug/pprof/`, for debugging. Any local user can reach them |
 | `public_listen` | `127.0.0.1:7073` | Where Caddy proxies Dock's [public address](#public-address): the API and UI again, trusting the client address Caddy sends. Must be loopback |
 | `public_ip` | empty | Address shown in DNS instructions and used to check domains |
 | `base_domain` | empty | Enables generated hostnames under it. Needs `*.<base>` pointing at `public_ip` |

@@ -139,7 +139,7 @@ type Invite struct {
 
 // CreateInviteRequest invites an email address with a role.
 type CreateInviteRequest struct {
-	Email string `json:"email" format:"email"`
+	Email string `json:"email" format:"email" maxLength:"254"`
 	Role  Scope  `json:"role" enum:"read,deploy,admin"`
 }
 
@@ -226,8 +226,8 @@ type RolloutService struct {
 
 // LoginRequest starts a UI session.
 type LoginRequest struct {
-	Email    string `json:"email" format:"email"`
-	Password string `json:"password" minLength:"1"`
+	Email    string `json:"email" format:"email" maxLength:"254"`
+	Password string `json:"password" minLength:"1" maxLength:"1024"`
 }
 
 // Project groups environments.
@@ -1147,7 +1147,7 @@ type ChangePasswordRequest struct {
 // CreateUserRequest creates a user account (operators only) and adds it
 // to the caller's org with Role.
 type CreateUserRequest struct {
-	Email    string `json:"email" format:"email"`
+	Email    string `json:"email" format:"email" maxLength:"254"`
 	Name     string `json:"name" minLength:"1"`
 	Password string `json:"password" minLength:"12"`
 	// Org is the org the account joins with Role; the caller's current

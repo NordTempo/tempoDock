@@ -34,8 +34,9 @@ const WakePath = "/internal/caddy/wake"
 //	POST /internal/update             The updater wrote its result (ADR 0028):
 //	                                  read and audit it.
 //	GET /debug/pprof/...              Go runtime profiles (net/http/pprof), e.g.
-//	                                  curl 127.0.0.1:7071/debug/pprof/heap.
-func Internal(c *core.Core, log *slog.Logger, registryToken, accessCheck, wakeCheck http.Handler) http.Handler {
+//	                                  curl 127.0.0.1:7071/debug/pprof/heap,
+//	                                  only with pprof = true in the config.
+func Internal(c *core.Core, log *slog.Logger, registryToken, accessCheck, wakeCheck http.Handler, pprofOn bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /internal/caddy/ask", func(w http.ResponseWriter, r *http.Request) {
 		ok, err := c.AllowCertificate(r.Context(), r.URL.Query().Get("domain"))
@@ -60,10 +61,12 @@ func Internal(c *core.Core, log *slog.Logger, registryToken, accessCheck, wakeCh
 		c.UpdateFinished(r.Context())
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("GET /debug/pprof/", pprof.Index) // also serves heap, goroutine, allocs, ...
-	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+	if pprofOn {
+		mux.HandleFunc("GET /debug/pprof/", pprof.Index) // also serves heap, goroutine, allocs, ...
+		mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+	}
 	return mux
 }

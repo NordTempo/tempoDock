@@ -3127,6 +3127,7 @@
         "properties": {
           "email": {
             "format": "email",
+            "maxLength": 254,
             "type": "string"
           },
           "role": {
@@ -3496,6 +3497,7 @@
         "properties": {
           "email": {
             "format": "email",
+            "maxLength": 254,
             "type": "string"
           },
           "name": {
@@ -10132,9 +10134,11 @@
         "properties": {
           "email": {
             "format": "email",
+            "maxLength": 254,
             "type": "string"
           },
           "password": {
+            "maxLength": 1024,
             "minLength": 1,
             "type": "string"
           }
