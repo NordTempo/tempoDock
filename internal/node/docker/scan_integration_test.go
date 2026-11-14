@@ -3,10 +3,12 @@
 package docker
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -51,6 +53,42 @@ func TestSBOM(t *testing.T) {
 		t.Fatalf("SBOM: %d artifacts, %v", len(doc.Artifacts), err)
 	}
 	e.noScanJobs(ctx)
+}
+
+// Syft reads files that only their owner may, as app images often have
+// (a 0700 app directory of a non-root user): the job's one capability
+// lets root past file permissions.
+func TestSBOMReadsPrivateFiles(t *testing.T) {
+	e := newEnv(t)
+	e.DataDir = t.TempDir()
+	ctx := ctxTimeout(t, 5*time.Minute)
+	pkg := `{"name": "dock-private-pkg", "version": "1.2.3"}`
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, d := range []string{"app/", "app/node_modules/", "app/node_modules/dock-private-pkg/"} {
+		_ = tw.WriteHeader(&tar.Header{Name: d, Typeflag: tar.TypeDir, Mode: 0o700, Uid: 1234, Gid: 1234})
+	}
+	_ = tw.WriteHeader(&tar.Header{Name: "app/node_modules/dock-private-pkg/package.json", Mode: 0o600, Uid: 1234, Gid: 1234, Size: int64(len(pkg))})
+	_, _ = tw.Write([]byte(pkg))
+	_ = tw.Close()
+	tag := e.name("private") + ":1"
+	res, err := e.cli.ImageImport(ctx, client.ImageImportSource{Source: &buf, SourceName: "-"}, tag, client.ImageImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, res)
+	_ = res.Close()
+	t.Cleanup(func() { _, _ = e.cli.ImageRemove(context.Background(), tag, client.ImageRemoveOptions{}) })
+	var out bytes.Buffer
+	if _, err := e.SBOM(ctx, node.SBOMRequest{
+		Images: scanImages(), Image: tag, Labels: node.Labels{ControlPlane: e.prefix},
+		Limits: node.ScanLimits{MemoryBytes: 512 << 20, Timeout: 5 * time.Minute},
+	}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "dock-private-pkg") {
+		t.Fatalf("the private package isn't in the SBOM (%d bytes)", out.Len())
+	}
 }
 
 // A scan's ctx ending (a build or deploy starting) kills its job at once

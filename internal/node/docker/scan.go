@@ -30,8 +30,8 @@ import (
 //   - SBOM: a container of the scanned image itself, its entrypoint
 //     replaced by Syft, bind-mounted read-only from the data dir (copied
 //     out of the pinned Syft image once). No network, read-only root, no
-//     capabilities but reading every file, CPU weight 2 (normal is
-//     1024). Running inside the image needs no Docker socket and no copy
+//     capabilities but DAC_OVERRIDE (to read every file), CPU weight 2
+//     (normal is 1024). Running inside the image needs no Docker socket and no copy
 //     of the image, and works on both of Docker's image stores and on
 //     images without a shell.
 //   - Match: the pinned Grype image with the database volume read-only
@@ -110,7 +110,13 @@ func (r *Runtime) SBOM(ctx context.Context, req node.SBOMRequest, out io.Writer)
 		AttachStdout: true, AttachStderr: true,
 	}
 	host := scanHost(req.Limits)
-	host.CapAdd = []string{"DAC_READ_SEARCH"}
+	// Root reads every file through DAC_OVERRIDE, not DAC_READ_SEARCH:
+	// with that one Docker's default seccomp profile allows
+	// open_by_handle_at, which opens host files through the bind mount
+	// below (the "Shocker" escape) for a Syft an image's files exploited.
+	// DAC_OVERRIDE also lets it write anywhere, but the root and the
+	// mount are read-only.
+	host.CapAdd = []string{"DAC_OVERRIDE"}
 	host.Tmpfs = map[string]string{scanTmp: "size=256m"}
 	host.Mounts = []mount.Mount{{Type: mount.TypeBind, Source: syft, Target: scanBin, ReadOnly: true}}
 	var stats sbomStats
