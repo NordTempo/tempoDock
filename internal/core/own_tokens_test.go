@@ -31,8 +31,16 @@ func TestOwnTokens(t *testing.T) {
 		t.Fatalf("bob revoking ada's token: %v, want forbidden", err)
 	}
 
-	demoted := ada
-	demoted.Scope = apitypes.ScopeRead
+	// Ada becomes a reader (Bob takes over as the admin).
+	for _, m := range []struct {
+		id   int64
+		role apitypes.Scope
+	}{{bob.UserID, apitypes.ScopeAdmin}, {ada.UserID, apitypes.ScopeRead}} {
+		if _, err := h.c.SetMemberRole(h.ctx, testSystem, m.id, apitypes.SetMemberRoleRequest{Role: m.role}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	demoted := h.in(userActor(h.userRow(ada.UserID)), "")
 	if err := h.c.RevokeToken(h.ctx, demoted, ci.Token.ID); err != nil {
 		t.Fatalf("ada revoking her own token as a reader: %v", err)
 	}

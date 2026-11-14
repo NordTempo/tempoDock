@@ -435,7 +435,11 @@ func placeOf(project, env int64) string {
 }
 
 // shadow compares today's answer to a check with the model's.
-func (a Actor) shadow(need apitypes.Scope, action string, project, env int64, old bool) {
+// A person's model answer comes from their real groups and grants while
+// the model only watches (shadow mode); a token's, which has none yet,
+// from today's scope and limit as the migration will make them. kind is
+// the environment's (envKind), 0 at the org or a project.
+func (a Actor) shadow(need apitypes.Scope, action string, project, env int64, kind uint8, old bool) {
 	if !a.shadowed() {
 		return
 	}
@@ -445,7 +449,18 @@ func (a Actor) shadow(need apitypes.Scope, action string, project, env int64, ol
 	if !ok {
 		return
 	}
-	if model := modelAllows(a.modelAccess(), perm, project, env, kindOther); model != old {
+	model := false
+	if a.watchGrants {
+		for _, g := range a.grants {
+			if modelAllows(g, perm, project, env, kind) {
+				model = true
+				break
+			}
+		}
+	} else {
+		model = modelAllows(a.modelAccess(), perm, project, env, kindOther)
+	}
+	if model != old {
 		recordShadow(a, key, place, old, model, " ("+perm.String()+")")
 	}
 }

@@ -155,6 +155,17 @@ one decides.
    logs an error and fails the test suites' gates. Replays have their own
    permission (`analytics.replays`, in Analytics view) so a role may leave
    them out.
+   So that prod reads a clean diff with the full mapping before groups
+   decide, the platform has a switch, `dock platform access-model
+   shadow|enforce` (Console › Users; `platform_settings.access_model`,
+   migration 0108). Shadow, the default: people's roles decide as before
+   groups, and the shadow answers beside each check from their real
+   groups and grants (the tests' gates too); enforce: grants decide. An
+   operator switches once the diff is clean; a later release makes
+   enforce the default. The shadow compares final answers, so a grant
+   that gives more than a role shows only where the role passes the
+   scope pre-check; `TestPermissionsFitScopes` keeps the seeded groups
+   from giving more.
 5. Custom roles; MCP tools declare their permission.
 6. Agents: personal agents and their settings, org agents, agent rules.
 7. Protection.

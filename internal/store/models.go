@@ -733,6 +733,7 @@ type PlatformSetting struct {
 	InviteOnly         bool
 	Scanning           int64
 	ScanDbImport       string
+	AccessModel        string
 }
 
 type Preview struct {

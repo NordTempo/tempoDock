@@ -1,18 +1,41 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, list } from "../../api/client";
+import { api, body, list } from "../../api/client";
+import { useAction } from "../../data/mutations";
+import { keys, useSession } from "../../data/queries";
 import { CliHint } from "../../ui/CliHint";
+import { Act, ErrorText } from "../../ui/kit";
 
-// The permission model of ADR 0080 watching before it decides (phase 3):
-// where it answered differently from today's checks since the daemon
-// started. Read when the page opens; nothing polls.
+// The permission model of ADR 0080: whether groups and grants decide
+// people's checks (enforce) or only watch beside their roles (shadow),
+// and where the model answered differently from today's checks since the
+// daemon started. Read when the page opens; nothing polls.
 
-/** A line, and the disagreements when there are any. */
+type Mode = "shadow" | "enforce";
+const modelKey = ["console", "access-model"];
+
+/** The mode with its switch, and the disagreements when there are any. */
 export function AccessDiff() {
   const { data } = useQuery({
     queryKey: ["console", "access-diff"],
     queryFn: () => list(api.GET("/api/v1/console/access-diff")),
   });
-  if (!data) return null;
+  const model = useQuery({
+    queryKey: modelKey,
+    queryFn: () => body(api.GET("/api/v1/console/access-model")),
+  });
+  const operator = useSession()?.platform === "operator";
+  const set = useAction(
+    (mode: Mode) =>
+      body(api.PUT("/api/v1/console/access-model", { body: { mode } })),
+    () => [modelKey, keys.session],
+    (mode) =>
+      mode === "enforce"
+        ? "Groups and grants decide now"
+        : "Roles decide again; the model watches",
+  );
+  if (!data || !model.data) return null;
+  const mode = model.data.mode;
+  const next: Mode = mode === "enforce" ? "shadow" : "enforce";
   return (
     <section aria-labelledby="access-diff" className="flex flex-col gap-1.5">
       <h2 id="access-diff" className="font-semibold">
@@ -20,6 +43,23 @@ export function AccessDiff() {
           <span>Permission model</span>
         </CliHint>
       </h2>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <span>
+          {mode === "enforce"
+            ? "Enforce: groups and grants decide people's checks."
+            : "Shadow: roles decide; the model watches beside them."}
+        </span>
+        <Act
+          small
+          cli={`dock platform access-model ${next}`}
+          disabled={!operator || set.isPending}
+          reason={operator ? undefined : "operators switch it"}
+          onClick={() => set.mutate(next)}
+        >
+          {next === "enforce" ? "Enforce" : "Back to shadow"}
+        </Act>
+      </div>
+      {set.error && <ErrorText error={set.error} />}
       {data.length === 0 ? (
         <p>Agreed with every check since Dock started.</p>
       ) : (

@@ -200,7 +200,9 @@ func envKind(e store.Environment) uint8 {
 // makes it the actor's access, with Scope as its summary: the role whose
 // seeded group the person holds all of on the whole org (read when none),
 // for what still speaks in roles (the data policy's subjects, the web
-// UI). An org not seeded yet keeps deciding by role.
+// UI). An org not seeded yet keeps deciding by role, and so does everyone
+// while the model only watches (shadow): then the grants are kept for the
+// shadow to answer from.
 func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 	rows, err := c.store.ListUserGrants(ctx, store.ListUserGrantsParams{UserID: &a.UserID, OrgID: a.OrgID, Now: ptr(now().Unix())})
 	if err != nil {
@@ -225,6 +227,12 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 			org |= perms
 		}
 		entries = append(entries, g)
+	}
+	if !c.enforceGrants.Load() {
+		// Shadow (access_model.go): the role decides as before; the model
+		// answers beside it from these grants.
+		a.grants, a.watchGrants = entries, true
+		return a, nil
 	}
 	summary := apitypes.ScopeRead
 	switch {

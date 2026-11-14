@@ -39,8 +39,11 @@ type Actor struct {
 	// grants are what a person holds in the org (ADR 0080), and
 	// hasGrants says they decide: checks ask them, and Scope is only their
 	// summary (loadAccess). Tokens and the system have none yet.
+	// watchGrants says they are loaded for the shadow only (ADR 0080's
+	// shadow mode): the role decides and the model answers from them.
 	grants       []grantEntry
 	hasGrants    bool
+	watchGrants  bool
 	platformOnly bool
 	userPlatform apitypes.PlatformRole
 	// ProjectID and EnvironmentID limit a token to one project or one
@@ -125,8 +128,19 @@ func (a Actor) Me() apitypes.Me {
 		Platform: a.Platform, PlatformLogin: a.platformOnly,
 		Project: a.ProjectName, Environment: a.EnvironmentName,
 		TwoFactor: a.Factor, TwoFactorRequired: a.twoFactorRequired(),
-		SSO: a.SSOProvider, SSOLabel: a.SSOLabel,
+		SSO: a.SSOProvider, SSOLabel: a.SSOLabel, AccessModel: a.accessModel(),
 	}
+}
+
+// accessModel is how the actor's grants count (Me.AccessModel).
+func (a Actor) accessModel() apitypes.AccessModelMode {
+	switch {
+	case a.hasGrants:
+		return apitypes.AccessModelEnforce
+	case a.watchGrants:
+		return apitypes.AccessModelShadow
+	}
+	return ""
 }
 
 // orgShown is the org the actor acts in, as Me says it: none for a
@@ -178,7 +192,7 @@ func (a Actor) limited() bool { return a.ProjectID != 0 || a.EnvironmentID != 0 
 // require checks the actor's scope in its org. action completes "…
 // requires <scope>", e.g. "archiving a service".
 func (a Actor) require(need apitypes.Scope, action string) error {
-	a.shadow(need, action, 0, 0, rank(a.Scope) >= rank(need))
+	a.shadow(need, action, 0, 0, 0, rank(a.Scope) >= rank(need))
 	if err := a.requireOnly(need, action); err != nil {
 		return err
 	}
@@ -273,7 +287,7 @@ func (a Actor) requireAccountManager(action string) error {
 // requireUnlimited is for operations outside any one project, like managing
 // tokens and users.
 func (a Actor) requireUnlimited(need apitypes.Scope, action string) error {
-	a.shadow(need, action, 0, 0, rank(a.Scope) >= rank(need) && !a.limited())
+	a.shadow(need, action, 0, 0, 0, rank(a.Scope) >= rank(need) && !a.limited())
 	if err := a.requireOnly(need, action); err != nil {
 		return err
 	}
@@ -349,7 +363,7 @@ func (a Actor) inOrg(p store.Project) error {
 // Environment-limited actors may read the project but not change it.
 func (a Actor) checkProject(need apitypes.Scope, action string, p store.Project) error {
 	if p.OrgID == a.OrgID {
-		a.shadow(need, action, p.ID, 0, rank(a.Scope) >= rank(need) && (a.ProjectID == 0 || a.ProjectID == p.ID) &&
+		a.shadow(need, action, p.ID, 0, 0, rank(a.Scope) >= rank(need) && (a.ProjectID == 0 || a.ProjectID == p.ID) &&
 			(a.EnvironmentID == 0 || rank(need) <= rank(apitypes.ScopeRead)))
 	}
 	if err := a.requireOnly(need, action); err != nil {
@@ -392,7 +406,7 @@ func (a Actor) checkEnv(need apitypes.Scope, action string, p store.Project, e s
 // Only operations that can't loosen a lock use it (locking itself).
 func (a Actor) checkEnvAccess(need apitypes.Scope, action string, p store.Project, e store.Environment) error {
 	if p.OrgID == a.OrgID {
-		a.shadow(need, action, p.ID, e.ID, rank(a.Scope) >= rank(need) && (a.ProjectID == 0 || a.ProjectID == p.ID) &&
+		a.shadow(need, action, p.ID, e.ID, envKind(e), rank(a.Scope) >= rank(need) && (a.ProjectID == 0 || a.ProjectID == p.ID) &&
 			(a.EnvironmentID == 0 || a.EnvironmentID == e.ID))
 	}
 	if err := a.requireScope(need, action); err != nil {
