@@ -114,3 +114,32 @@ func TestStartCommandExecForm(t *testing.T) {
 		t.Fatalf("malformed: %v", err)
 	}
 }
+
+// A template's scheduled jobs are set on its new services, and a start
+// command in exec form reaches the container as arguments.
+func TestUseAppTemplateJobsAndExecForm(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "web:1"})
+	env := EnvRef{"shop", "production"}
+	if _, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "nextcloud", apitypes.UseTemplateRequest{
+		Domain: "cloud.example.com", Inputs: map[string]string{"NEXTCLOUD_ADMIN_PASSWORD": "pw"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := h.c.ListJobs(h.ctx, testSystem, ServiceRef{"shop", "production", "nextcloud"})
+	if err != nil || len(jobs) != 1 || jobs[0].Name != "cron" || jobs[0].Schedule != "*/5 * * * *" {
+		t.Fatalf("jobs: %v %+v", err, jobs)
+	}
+
+	res, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "authentik", apitypes.UseTemplateRequest{
+		Domain: "id.example.com", Inputs: map[string]string{"AUTHENTIK_BOOTSTRAP_EMAIL": "me@example.com", "AUTHENTIK_BOOTSTRAP_PASSWORD": "pw"},
+	})
+	if err != nil || len(res.Failed) != 0 {
+		t.Fatalf("authentik: %v %+v", err, res.Failed)
+	}
+	worker := ServiceRef{"shop", "production", "authentik-worker"}
+	h.wait(worker, 1)
+	if spec, _ := h.rt.Spec(h.ctr(worker, 1)); strings.Join(spec.Args, " ") != "worker" {
+		t.Fatalf("worker args %q", spec.Args)
+	}
+}

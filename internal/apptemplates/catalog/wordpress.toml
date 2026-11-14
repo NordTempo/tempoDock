@@ -1,0 +1,31 @@
+name = "wordpress"
+title = "WordPress"
+summary = "Websites and blogs with themes and plugins"
+category = "content"
+website = "https://wordpress.org"
+license = "GPL-2.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it to choose the site's title and create the admin account."
+
+[[services]]
+  name = "app"
+  image = "wordpress:7.1.4-apache@sha256:8b64037bb2a3bdc41bebccb165f20ad5e4c786b684ae4a2bd5981f98aa1eb107"
+  track = '^\d+\.\d+\.\d+-apache$'
+  port = 80
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "html", mount_path = "/var/www/html" }]
+  [services.values]
+    WORDPRESS_DB_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}:3306"
+    WORDPRESS_DB_USER = "root"
+    WORDPRESS_DB_PASSWORD = "${{db.MARIADB_ROOT_PASSWORD}}"
+    WORDPRESS_DB_NAME = "${{db.MARIADB_DATABASE}}"
+    # Requests arrive from Dock's proxy over HTTP: trust its header so
+    # WordPress builds https links.
+    WORDPRESS_CONFIG_EXTRA = "if (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') { $_SERVER['HTTPS'] = 'on'; }"
+
+[[services]]
+  name = "db"
+  template = "mariadb"

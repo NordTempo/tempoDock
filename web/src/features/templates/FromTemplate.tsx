@@ -26,6 +26,7 @@ import { Mark } from "./Mark";
 /** Categories in the order the list shows them; others follow. */
 const order = [
   "analytics",
+  "content",
   "automation",
   "monitoring",
   "dev",

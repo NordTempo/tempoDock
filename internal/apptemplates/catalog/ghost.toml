@@ -1,0 +1,32 @@
+name = "ghost"
+title = "Ghost"
+summary = "Publishing platform for blogs and newsletters"
+category = "content"
+website = "https://ghost.org"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "Open /ghost to create the owner account. Set up email (mail__ variables) before sending newsletters."
+
+[[services]]
+  name = "app"
+  image = "ghost:6.77.0-alpine@sha256:a1c2adb3ab81b6d3fcae4d33bebe56a94a57c3e76c2f0b7b3d213726b2ca8922"
+  track = '^\d+\.\d+\.\d+-alpine$'
+  port = 2368
+  health_check_timeout_seconds = 300
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "content", mount_path = "/var/lib/ghost/content" }]
+  [services.values]
+    url = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    database__client = "mysql"
+    database__connection__host = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    database__connection__user = "root"
+    database__connection__password = "${{db.MYSQL_ROOT_PASSWORD}}"
+    database__connection__database = "${{db.MYSQL_DATABASE}}"
+    NODE_ENV = "production"
+
+[[services]]
+  name = "db"
+  template = "mysql"
