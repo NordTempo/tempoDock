@@ -29,16 +29,20 @@ core, proprietary enterprise folder).
 
 ## Decision
 
+NordTempo is a brand, not a company. The legal party (copyright holder of
+the code, licensee under the CLA, owner of the names) is Elias Skauge
+Eriksen's sole proprietorship (ENK); "the maintainer" below.
+
 1. **AGPL-3.0-only** ([LICENSE](../../LICENSE)) for everything in the
    repository. Running modified Dock for others over a network means
    publishing the changes. Apps deployed on Dock are separate programs and
    are not covered.
 2. **Trademarks** ([TRADEMARKS.md](../../TRADEMARKS.md)): Tempo Dock,
-   Dock, tempoBase and NordTempo, and their logos, stay NordTempo's. A fork
+   Dock, tempoBase and NordTempo, and their logos, stay the maintainer's. A fork
    or a hosted service needs a name of its own.
 3. **A CLA** ([CLA.md](../../CLA.md)), based on Apache's ICLA and checked
    on every pull request (`.github/workflows/cla.yml`). Contributors keep
-   their copyright and license it to NordTempo under any terms. This keeps
+   their copyright and license it to the maintainer under any terms. This keeps
    a hosted version, commercial licenses, an open core or a later license
    change possible without asking every contributor.
 4. **Protection against a hosted competitor is not the license's job.**

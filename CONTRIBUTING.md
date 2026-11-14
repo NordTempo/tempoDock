@@ -17,7 +17,7 @@ Thanks for helping. Issues and pull requests are welcome.
   it.
 - **CLA:** on your first pull request a bot asks you to accept the
   [Contributor License Agreement](CLA.md) with a comment. You keep your
-  copyright; the agreement lets NordTempo offer Tempo Dock under other terms
+  copyright; the agreement lets the maintainer offer Tempo Dock under other terms
   too, such as the hosted version.
 
 By contributing you agree your work is published under the

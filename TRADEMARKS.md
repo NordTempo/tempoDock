@@ -2,8 +2,9 @@
 
 The code is open source under the [AGPL-3.0](LICENSE). The names
 **Tempo Dock**, **Dock** (as the name of this software), **tempoBase** and
-**NordTempo**, and their logos, are NordTempo's trademarks. The license
-covers the code, not the names.
+**NordTempo**, and their logos, are trademarks of Elias Skauge Eriksen
+(ENK), who publishes Tempo Dock as NordTempo ("we"). The license covers the
+code, not the names.
 
 You may, without asking:
 
@@ -18,6 +19,6 @@ Ask us first before you:
   under any of these names or logos. A fork is welcome under a name of its
   own; say it is based on Tempo Dock.
 - Use the names or logos in a product, company or domain name, or in a way
-  that suggests NordTempo made or endorses something it didn't.
+  that suggests we made or endorse something it didn't.
 
 Questions and requests: open an issue, or use the contact on the website.

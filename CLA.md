@@ -1,7 +1,8 @@
 # Contributor License Agreement
 
 Thank you for contributing to Tempo Dock. This agreement is between you and
-NordTempo ("we"), the maintainer of Tempo Dock. It is based on the Apache
+Elias Skauge Eriksen, a Norwegian sole proprietorship (ENK) that maintains
+Tempo Dock under the NordTempo name ("we"). It is based on the Apache
 Software Foundation's Individual Contributor License Agreement. You accept it
 by commenting on your pull request as the CLA bot asks; you only do this once.
 
@@ -44,6 +45,6 @@ by commenting on your pull request as the CLA bot asks; you only do this once.
    any Contribution.
 
 Why we ask: Tempo Dock is published under the AGPL-3.0. This agreement lets
-NordTempo also offer Tempo Dock under other terms, for example a hosted
+us also offer Tempo Dock under other terms, for example a hosted
 service or a commercial license, without having to find and ask every
 contributor. Your contribution stays available to everyone under the AGPL.

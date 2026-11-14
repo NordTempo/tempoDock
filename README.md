@@ -70,7 +70,8 @@ with `install-cli.sh` ([install guide](docs/guide/install.md#install)).
 
 ## License
 
-[AGPL-3.0](LICENSE). Apps you deploy on Dock are your own programs, not
+Copyright Elias Skauge Eriksen (ENK), publishing as NordTempo. Licensed
+under the [AGPL-3.0](LICENSE). Apps you deploy on Dock are your own programs, not
 covered by it. The names and logos are covered by
 [TRADEMARKS.md](TRADEMARKS.md); contributions by the [CLA](CLA.md)
 ([CONTRIBUTING.md](CONTRIBUTING.md)). Security issues:
