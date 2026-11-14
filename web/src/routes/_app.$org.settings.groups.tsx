@@ -11,6 +11,7 @@ export const Route = createFileRoute("/_app/$org/settings/groups")({
     Promise.all([
       queryClient.ensureQueryData(accessQueries.groups()),
       queryClient.ensureQueryData(accessQueries.roles()),
+      queryClient.ensureQueryData(accessQueries.customRoles()),
       queryClient.ensureQueryData(orgQueries.members()),
     ]),
   component: Groups,

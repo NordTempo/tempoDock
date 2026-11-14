@@ -166,7 +166,19 @@ one decides.
    that gives more than a role shows only where the role passes the
    scope pre-check; `TestPermissionsFitScopes` keeps the seeded groups
    from giving more.
-5. Custom roles; MCP tools declare their permission.
+5. **Custom roles; MCP tools declare their permission** (built). An
+   org's own roles (migration 0109) are built-in roles and single
+   permissions under one name, stored as their names (`roles.parts`), so
+   what a built-in role holds in a later Dock reaches the roles that
+   include it; a grant names one by `role_id`, read with the person's
+   grants in the same query. Settled while building: a role doesn't
+   include another custom role or Full access (grant full instead); a
+   role a grant names can't be removed; `dock role list --own` lists
+   them, so `role list --json` keeps its shape. Every MCP tool names the
+   permission its work needs (`internal/mcp/perms.go`), and tools/list
+   leaves out what the caller holds nowhere: for tokens that is what
+   their scope already hid, so their tool lists don't change until agents
+   get grants (phase 6), when `make agent-eval` runs on them.
 6. Agents: personal agents and their settings, org agents, agent rules.
 7. Protection.
 

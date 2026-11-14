@@ -56,12 +56,14 @@ WHERE groups.org_id = +?
 ORDER BY users.email;
 
 -- name: CreateGrant :one
-INSERT INTO grants (org_id, group_id, user_id, role, project_id, environment_id, kinds, expires_at, via, granted_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO grants (org_id, group_id, user_id, role, role_id, project_id, environment_id, kinds, expires_at, via, granted_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetGrant :one
-SELECT * FROM grants WHERE id = +? AND org_id = +?;
+SELECT grants.*, coalesce(roles.name, grants.role) AS role_name FROM grants
+LEFT JOIN roles ON roles.id = grants.role_id
+WHERE grants.id = +sqlc.arg(id) AND grants.org_id = +sqlc.arg(org_id);
 
 -- name: DeleteGrant :exec
 DELETE FROM grants WHERE id = +? AND org_id = +?;
@@ -70,22 +72,27 @@ DELETE FROM grants WHERE id = +? AND org_id = +?;
 -- names of their places, for the groups and members pages. Expired ones
 -- are left out (they end when read; no timer removes them).
 -- name: ListOrgGrants :many
-SELECT grants.*, projects.name AS project_name, environments.name AS environment_name FROM grants
+SELECT grants.*, projects.name AS project_name, environments.name AS environment_name,
+       roles.name AS custom_role, roles.parts AS custom_parts FROM grants
 LEFT JOIN projects ON projects.id = grants.project_id
 LEFT JOIN environments ON environments.id = grants.environment_id
+LEFT JOIN roles ON roles.id = grants.role_id
 WHERE grants.org_id = +sqlc.arg(org_id) AND (grants.expires_at IS NULL OR grants.expires_at > +sqlc.arg(now))
 ORDER BY grants.id;
 
 -- ListUserGrants is what a person holds in an org: their one-off grants
 -- and their groups' grants, through grants_user, group_members_user and
--- grants_group. Authentication runs it on every request.
+-- grants_group, with a custom role's parts by its key. Authentication
+-- runs it on every request.
 -- name: ListUserGrants :many
-SELECT grants.role, grants.project_id, grants.environment_id, grants.kinds FROM grants
+SELECT grants.role, roles.parts, grants.project_id, grants.environment_id, grants.kinds FROM grants
+LEFT JOIN roles ON roles.id = grants.role_id
 WHERE grants.user_id = +sqlc.arg(user_id) AND grants.org_id = +sqlc.arg(org_id)
   AND (grants.expires_at IS NULL OR grants.expires_at > +sqlc.arg(now))
 UNION ALL
-SELECT grants.role, grants.project_id, grants.environment_id, grants.kinds FROM group_members
+SELECT grants.role, roles.parts, grants.project_id, grants.environment_id, grants.kinds FROM group_members
 JOIN grants ON grants.group_id = group_members.group_id
+LEFT JOIN roles ON roles.id = grants.role_id
 WHERE group_members.user_id = +sqlc.arg(user_id) AND grants.org_id = +sqlc.arg(org_id)
   AND (grants.expires_at IS NULL OR grants.expires_at > +sqlc.arg(now));
 
@@ -126,3 +133,27 @@ SELECT environments.id, environments.name, environments.kind, environments.previ
 JOIN environments ON environments.project_id = projects.id
 WHERE projects.org_id = +? AND projects.archived_at IS NULL AND environments.archived_at IS NULL
 ORDER BY projects.name, environments.name;
+
+-- name: CreateRole :one
+INSERT INTO roles (org_id, name, description, parts, created_by) VALUES (?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: GetRoleByName :one
+SELECT * FROM roles WHERE org_id = +? AND name = ? COLLATE NOCASE;
+
+-- name: ListRoles :many
+SELECT * FROM roles WHERE org_id = +? ORDER BY name;
+
+-- name: UpdateRole :exec
+UPDATE roles SET name = ?, description = ?, parts = ? WHERE id = +? AND org_id = +?;
+
+-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = +? AND org_id = +?;
+
+-- RoleUses is who holds a custom role: the groups and people its grants
+-- go to, for the role editor and refusing to remove one in use.
+-- name: RoleUses :many
+SELECT grants.role_id, groups.name AS group_name, users.email AS user_email FROM grants
+LEFT JOIN groups ON groups.id = grants.group_id
+LEFT JOIN users ON users.id = grants.user_id
+WHERE grants.org_id = +sqlc.arg(org_id) AND grants.role_id IS NOT NULL;

@@ -47,6 +47,8 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeAdmin, "adding alert channels"}:                                  PermAlertsManage,
 	{apitypes.ScopeAdmin, "adding redirects"}:                                       PermConnectionsManage,
 	{apitypes.ScopeAdmin, "changing Cloudflare connections"}:                        PermConnectionsManage,
+	{apitypes.ScopeAdmin, "managing roles"}:                                         PermRolesManage,
+	{apitypes.ScopeAdmin, "reading roles"}:                                          PermMembersRead,
 	{apitypes.ScopeAdmin, "changing redirects"}:                                     PermConnectionsManage,
 	{apitypes.ScopeAdmin, "retrying redirects"}:                                     PermConnectionsManage,
 	{apitypes.ScopeAdmin, "removing an ignore in the whole organization"}:           PermOrgSettings,

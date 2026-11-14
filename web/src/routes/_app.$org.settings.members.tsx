@@ -15,6 +15,7 @@ export const Route = createFileRoute("/_app/$org/settings/members")({
         queryClient.ensureQueryData(accessQueries.groups()),
         queryClient.ensureQueryData(accessQueries.grants()),
         queryClient.ensureQueryData(accessQueries.roles()),
+        queryClient.ensureQueryData(accessQueries.customRoles()),
       ]);
     }
   },

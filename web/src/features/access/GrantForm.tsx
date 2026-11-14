@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { useProjects, useProjectTree } from "../../data/queries";
 import { Act, ErrorText } from "../../ui/kit";
-import { type GrantRequest, grantFlags, useRoles } from "./data";
+import {
+  type GrantRequest,
+  grantFlags,
+  useCustomRoles,
+  useRoles,
+} from "./data";
 
 // A role at a place (ADR 0080): a built-in role, the org or a project or
 // one environment, optionally some environment kinds or a while. The
@@ -30,6 +35,7 @@ export function GrantForm({
   onGrant: (g: GrantRequest) => void;
 }) {
   const roles = useRoles();
+  const own = useCustomRoles();
   const projects = useProjects();
   const tree = useProjectTree();
   const [role, setRole] = useState("");
@@ -66,6 +72,19 @@ export function GrantForm({
           onChange={(e) => setRole(e.target.value)}
         >
           <option value="">Pick a role</option>
+          {own.length > 0 && (
+            <optgroup label="The organization's">
+              {own.map((r) => (
+                <option
+                  key={r.id}
+                  value={r.name}
+                  title={(r.holds ?? []).join(" ")}
+                >
+                  {r.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
           {roles.map((r) => (
             <optgroup key={r.key} label={r.name}>
               {(r.levels ?? []).map((l) => (
@@ -159,7 +178,7 @@ export function GrantForm({
         primary
         type="submit"
         disabled={!role || pending}
-        cli={`${cli} ${role || "<role>"} ${grantFlags(grant)}`.trim()}
+        cli={`${cli} ${role.includes(" ") ? `"${role}"` : role || "<role>"} ${grantFlags(grant)}`.trim()}
       >
         Grant
       </Act>

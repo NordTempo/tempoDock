@@ -130,7 +130,8 @@ there: `internal/core`, `internal/store`, `internal/node`, `internal/cli`,
   `migrations`, run `go generate ./internal/store`, commit the output.
 - Changing MCP tools (names, descriptions, schemas, errors): run
   `make agent-eval` and keep every case passing; a misuse an agent
-  makes is a new case in `scripts/agenteval`.
+  makes is a new case in `scripts/agenteval`. A new tool names the
+  permission its work needs in `internal/mcp/perms.go`.
 - Changing the API: types in `internal/apitypes`, handlers in
   `internal/api`, then `make generate` so `web/openapi.json` and
   `web/src/api/schema.d.ts` stay in sync (CI checks).

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -363,13 +364,31 @@ func newGrantCmd(g *globals) *cobra.Command {
 }
 
 func newRoleCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "role", Short: "The built-in roles groups and grants give"})
-	cmd.AddCommand(&cobra.Command{
-		Use: "list", Aliases: []string{"ls"}, Short: "Every area role, its levels and their permissions", Args: cobra.NoArgs,
+	cmd := group(&cobra.Command{Use: "role", Short: "The built-in roles, and the organization's own"})
+	var own bool
+	list := &cobra.Command{
+		Use: "list", Aliases: []string{"ls"}, Short: "Every area role, its levels and their permissions; --own for the organization's roles", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
 			if err != nil {
 				return err
+			}
+			if own {
+				roles, err := get[[]apitypes.Role](cmd.Context(), s, apiPrefix+"/custom-roles")
+				if err != nil {
+					return err
+				}
+				return g.io.Print(roles, func() error {
+					if len(roles) == 0 {
+						g.io.Successf("No roles of the organization's own yet; make one with `dock role create`")
+						return nil
+					}
+					t := g.io.Table("role", "includes", "plus", "held by")
+					for _, r := range roles {
+						t.Row(r.Name, strings.Join(r.Includes, " "), strings.Join(r.Permissions, " "), strings.Join(append(r.Groups, r.People...), ", "))
+					}
+					return t.Flush()
+				})
 			}
 			roles, err := get[[]apitypes.AreaRole](cmd.Context(), s, apiPrefix+"/roles")
 			if err != nil {
@@ -385,6 +404,110 @@ func newRoleCmd(g *globals) *cobra.Command {
 				return t.Flush()
 			})
 		},
-	})
+	}
+	list.Flags().BoolVar(&own, "own", false, "list the organization's own roles")
+
+	var req apitypes.RoleRequest
+	addFlags := func(c *cobra.Command) {
+		c.Flags().StringSliceVar(&req.Includes, "include", nil, "built-in roles it includes, like deploy:edit,variables:edit")
+		c.Flags().StringSliceVar(&req.Permissions, "permission", nil, "single permissions it adds, like errors.manage")
+		c.Flags().StringVar(&req.Description, "description", "", "what it is for")
+	}
+	create := &cobra.Command{
+		Use: "create <name>", Short: "Make a role of built-in roles and permissions (admin)", Args: cobra.ExactArgs(1),
+		Example: `  dock role create "Release manager" --include deploy:edit,variables:edit --permission errors.manage`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			req.Name = args[0]
+			r, err := send[apitypes.Role](cmd.Context(), s, http.MethodPost, apiPrefix+"/custom-roles", req)
+			if err != nil {
+				return err
+			}
+			return printRole(g, r)
+		},
+	}
+	addFlags(create)
+	show := &cobra.Command{
+		Use: "show <name>", Short: "One of the organization's roles: its parts, what they hold, who has it", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			r, err := get[apitypes.Role](cmd.Context(), s, apiPrefix+"/custom-roles/"+url.PathEscape(args[0]))
+			if err != nil {
+				return err
+			}
+			return printRole(g, r)
+		},
+	}
+	var rename string
+	edit := &cobra.Command{
+		Use: "edit <name>", Short: "Change a role: the flags given replace what it has (admin)", Args: cobra.ExactArgs(1),
+		Example: `  dock role edit "Release manager" --permission errors.manage,status_pages.post
+  dock role edit "Release manager" --name "Releases"`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			path := apiPrefix + "/custom-roles/" + url.PathEscape(args[0])
+			cur, err := get[apitypes.Role](cmd.Context(), s, path)
+			if err != nil {
+				return err
+			}
+			next := apitypes.RoleRequest{Name: cmp.Or(rename, cur.Name), Description: cur.Description, Includes: cur.Includes, Permissions: cur.Permissions}
+			if cmd.Flags().Changed("include") {
+				next.Includes = req.Includes
+			}
+			if cmd.Flags().Changed("permission") {
+				next.Permissions = req.Permissions
+			}
+			if cmd.Flags().Changed("description") {
+				next.Description = req.Description
+			}
+			r, err := send[apitypes.Role](cmd.Context(), s, http.MethodPut, path, next)
+			if err != nil {
+				return err
+			}
+			return printRole(g, r)
+		},
+	}
+	addFlags(edit)
+	edit.Flags().StringVar(&rename, "name", "", "a new name")
+	remove := &cobra.Command{
+		Use: "delete <name>", Short: "Remove a role no grant names (admin)", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			if err := del(cmd.Context(), s, apiPrefix+"/custom-roles/"+url.PathEscape(args[0])); err != nil {
+				return err
+			}
+			return g.io.Print(map[string]any{"role": args[0], "removed": true}, func() error {
+				g.io.Successf("Removed role %s", args[0])
+				return nil
+			})
+		},
+	}
+	cmd.AddCommand(list, create, show, edit, remove)
 	return cmd
+}
+
+// printRole shows one of the organization's roles.
+func printRole(g *globals, r apitypes.Role) error {
+	return g.io.Print(r, func() error {
+		return g.io.Fields(
+			"role", r.Name,
+			"description", orDash(r.Description),
+			"includes", orDash(strings.Join(r.Includes, " ")),
+			"plus", orDash(strings.Join(r.Permissions, " ")),
+			"holds", strings.Join(r.Holds, " "),
+			"held by", orDash(strings.Join(append(r.Groups, r.People...), ", ")),
+		)
+	})
 }

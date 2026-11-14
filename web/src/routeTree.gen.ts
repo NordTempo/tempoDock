@@ -67,6 +67,7 @@ import { Route as AppOrgSettingsGithubRouteImport } from './routes/_app.$org.set
 import { Route as AppOrgSettingsGroupsRouteImport } from './routes/_app.$org.settings.groups'
 import { Route as AppOrgSettingsMembersRouteImport } from './routes/_app.$org.settings.members'
 import { Route as AppOrgSettingsRegistriesRouteImport } from './routes/_app.$org.settings.registries'
+import { Route as AppOrgSettingsRolesRouteImport } from './routes/_app.$org.settings.roles'
 import { Route as AppOrgSettingsTokensRouteImport } from './routes/_app.$org.settings.tokens'
 import { Route as AppOrgSettingsVariablesRouteImport } from './routes/_app.$org.settings.variables'
 import { Route as AppOrgStatusPagesIndexRouteImport } from './routes/_app.$org.status-pages.index'
@@ -412,6 +413,11 @@ const AppOrgSettingsRegistriesRoute =
     path: '/registries',
     getParentRoute: () => AppOrgSettingsRoute,
   } as any)
+const AppOrgSettingsRolesRoute = AppOrgSettingsRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => AppOrgSettingsRoute,
+} as any)
 const AppOrgSettingsTokensRoute = AppOrgSettingsTokensRouteImport.update({
   id: '/tokens',
   path: '/tokens',
@@ -772,6 +778,7 @@ export interface FileRoutesByFullPath {
   '/$org/settings/groups': typeof AppOrgSettingsGroupsRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
+  '/$org/settings/roles': typeof AppOrgSettingsRolesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
@@ -878,6 +885,7 @@ export interface FileRoutesByTo {
   '/$org/settings/groups': typeof AppOrgSettingsGroupsRoute
   '/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
+  '/$org/settings/roles': typeof AppOrgSettingsRolesRoute
   '/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
@@ -987,6 +995,7 @@ export interface FileRoutesById {
   '/_app/$org/settings/groups': typeof AppOrgSettingsGroupsRoute
   '/_app/$org/settings/members': typeof AppOrgSettingsMembersRoute
   '/_app/$org/settings/registries': typeof AppOrgSettingsRegistriesRoute
+  '/_app/$org/settings/roles': typeof AppOrgSettingsRolesRoute
   '/_app/$org/settings/tokens': typeof AppOrgSettingsTokensRoute
   '/_app/$org/settings/variables': typeof AppOrgSettingsVariablesRoute
   '/_app/$org/status-pages/$page': typeof AppOrgStatusPagesPageRoute
@@ -1100,6 +1109,7 @@ export interface FileRouteTypes {
     | '/$org/settings/groups'
     | '/$org/settings/members'
     | '/$org/settings/registries'
+    | '/$org/settings/roles'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/$org/status-pages/$page'
@@ -1206,6 +1216,7 @@ export interface FileRouteTypes {
     | '/$org/settings/groups'
     | '/$org/settings/members'
     | '/$org/settings/registries'
+    | '/$org/settings/roles'
     | '/$org/settings/tokens'
     | '/$org/settings/variables'
     | '/$org/status-pages/$page'
@@ -1314,6 +1325,7 @@ export interface FileRouteTypes {
     | '/_app/$org/settings/groups'
     | '/_app/$org/settings/members'
     | '/_app/$org/settings/registries'
+    | '/_app/$org/settings/roles'
     | '/_app/$org/settings/tokens'
     | '/_app/$org/settings/variables'
     | '/_app/$org/status-pages/$page'
@@ -1792,6 +1804,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrgSettingsRegistriesRouteImport
       parentRoute: typeof AppOrgSettingsRoute
     }
+    '/_app/$org/settings/roles': {
+      id: '/_app/$org/settings/roles'
+      path: '/roles'
+      fullPath: '/$org/settings/roles'
+      preLoaderRoute: typeof AppOrgSettingsRolesRouteImport
+      parentRoute: typeof AppOrgSettingsRoute
+    }
     '/_app/$org/settings/tokens': {
       id: '/_app/$org/settings/tokens'
       path: '/tokens'
@@ -2186,6 +2205,7 @@ interface AppOrgSettingsRouteChildren {
   AppOrgSettingsGroupsRoute: typeof AppOrgSettingsGroupsRoute
   AppOrgSettingsMembersRoute: typeof AppOrgSettingsMembersRoute
   AppOrgSettingsRegistriesRoute: typeof AppOrgSettingsRegistriesRoute
+  AppOrgSettingsRolesRoute: typeof AppOrgSettingsRolesRoute
   AppOrgSettingsTokensRoute: typeof AppOrgSettingsTokensRoute
   AppOrgSettingsVariablesRoute: typeof AppOrgSettingsVariablesRoute
   AppOrgSettingsIndexRoute: typeof AppOrgSettingsIndexRoute
@@ -2202,6 +2222,7 @@ const AppOrgSettingsRouteChildren: AppOrgSettingsRouteChildren = {
   AppOrgSettingsGroupsRoute: AppOrgSettingsGroupsRoute,
   AppOrgSettingsMembersRoute: AppOrgSettingsMembersRoute,
   AppOrgSettingsRegistriesRoute: AppOrgSettingsRegistriesRoute,
+  AppOrgSettingsRolesRoute: AppOrgSettingsRolesRoute,
   AppOrgSettingsTokensRoute: AppOrgSettingsTokensRoute,
   AppOrgSettingsVariablesRoute: AppOrgSettingsVariablesRoute,
   AppOrgSettingsIndexRoute: AppOrgSettingsIndexRoute,

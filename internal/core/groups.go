@@ -217,7 +217,7 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 	entries := make([]grantEntry, 0, len(rows))
 	var org Perms
 	for _, r := range rows {
-		perms, ok := rolePerms(r.Role)
+		perms, ok := grantPerms(r.Role, r.Parts)
 		if !ok {
 			c.log.Warn("a grant names no built-in role; it gives nothing", "role", r.Role, "org", a.OrgID)
 			continue
@@ -348,3 +348,27 @@ func (a Actor) approves(projectID, envID int64) bool {
 	}
 	return false
 }
+
+// Holds reports whether the actor holds p anywhere in its org: a person
+// whose grants decide, from them; anyone else (tokens, a person while the
+// model only watches), from their scope's seeded group. The Data panel's
+// permissions follow the data policy, not this. For listing what an actor
+// could do (MCP's tools/list); each check still decides at its place.
+func (a Actor) Holds(p Perm) bool {
+	if dataPerms.has(p) && !a.hasGrants {
+		return true
+	}
+	if !a.hasGrants {
+		return seededPerms(a.Scope).has(p)
+	}
+	for _, g := range a.grants {
+		if g.perms.has(p) {
+			return true
+		}
+	}
+	return false
+}
+
+// ScopeHolds reports whether a scope's seeded group holds p: what a token
+// of that scope may do, for checks of what tools declare.
+func ScopeHolds(s apitypes.Scope, p Perm) bool { return seededPerms(s).has(p) }
