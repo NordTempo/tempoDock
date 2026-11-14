@@ -143,7 +143,12 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 			return out, err
 		}
 		addPlan(&out.Plan, ep)
-		return out, nil
+		file, err := apitypes.ProjectExport{Version: apitypes.ExportVersion, Project: ref.Project, Environments: []apitypes.EnvironmentExport{fe}}.TOMLWith(
+			fmt.Sprintf("The %s template (revision %d) for %s, as a project file.\n", t.Title, t.Revision, es) +
+				"Its generated secrets are listed in variables without values: set them before deploying.\n" +
+				"Plan it with `dock apply FILE --plan`.\n")
+		out.File = string(file)
+		return out, err
 	}
 
 	var created []store.Service

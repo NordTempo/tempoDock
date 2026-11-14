@@ -82,6 +82,10 @@ type UseTemplateResult struct {
 	// Services are the services created (or planned), main first.
 	Services []string  `json:"services"`
 	Releases []Release `json:"releases"`
+	// File is the project file the template expands to, for a plan: edit
+	// it and `dock apply` it for what the inputs don't cover. Generated
+	// secrets are names in it, never values.
+	File string `json:"file,omitempty"`
 	// Failed lists what didn't work after the services were created (a
 	// domain, a first deploy), each with what to do.
 	Failed []string `json:"failed"`
