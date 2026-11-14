@@ -378,12 +378,13 @@ func (c *Core) syncScans(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		// Open Images pages and overviews learn of the live image, and an
-		// image already scanned may bring the service new vulnerabilities.
-		c.publishScan(ctx, attached)
+		// An image already scanned may bring the service new
+		// vulnerabilities; then open Images pages and overviews learn of
+		// the live image, its alerts settled.
 		if attached.MatchedAt != nil {
 			c.vulnAlerts(ctx, attached, vulnNewImage, nil, r.ServiceID)
 		}
+		c.publishScan(ctx, attached)
 	}
 	return nil
 }
@@ -739,12 +740,13 @@ func (c *Core) matchSBOM(ctx context.Context, row store.ImageScan, rt node.Runti
 		return err
 	}
 	if scan, err := c.store.GetImageScan(ctx, row.ID); err == nil {
-		c.publishScan(ctx, scan)
 		check := vulnRematched
 		if row.MatchedAt == nil {
 			check = vulnNewImage // its first match: new to every service running it
 		}
+		// Alerts first, so whoever the scan event wakes sees them settled.
 		c.vulnAlerts(ctx, scan, check, fresh, 0)
+		c.publishScan(ctx, scan)
 	}
 	return nil
 }

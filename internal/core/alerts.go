@@ -970,6 +970,13 @@ func (c *Core) resolveServiceAlerts(ctx context.Context, serviceID int64, hostna
 // resolveAlert closes the open alert for key, if there is one, and tells
 // the channels that were told about it.
 func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {
+	c.resolveAlertID(ctx, key, 0, now)
+}
+
+// resolveAlertID is resolveAlert for the open alert with row ID id only
+// (0: whichever is open), for a caller that decided on an alert it read
+// earlier and must not close one opened since.
+func (c *Core) resolveAlertID(ctx context.Context, key string, id int64, now time.Time) {
 	e := c.alerts
 	release, ok := e.hold(ctx, key) // as raiseAlert: no write under mu
 	if !ok {
@@ -978,8 +985,13 @@ func (c *Core) resolveAlert(ctx context.Context, key string, now time.Time) {
 	defer release()
 	e.writes.RLock()
 	e.mu.Lock()
-	delete(e.causes, key) // the next occurrence is diagnosed again
 	a, ok := e.open[key]
+	if id != 0 && ok && a.ID != id {
+		e.mu.Unlock()
+		e.writes.RUnlock()
+		return // a newer alert under the key: not this caller's
+	}
+	delete(e.causes, key) // the next occurrence is diagnosed again
 	e.mu.Unlock()
 	if !ok {
 		e.writes.RUnlock()
