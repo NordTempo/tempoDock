@@ -154,6 +154,18 @@ export const useGroupMember = () =>
         : `Took ${v.member} out of ${v.group}`,
   );
 
+export const useRemoveGroupAgent = () =>
+  useAction(
+    ({ group: g, token }: { group: string; token: string }) =>
+      body(
+        api.DELETE("/api/v1/groups/{group}/agents/{token}", {
+          params: { path: { group: g, token } },
+        }),
+      ),
+    touched,
+    (v) => `Took ${v.token} out of ${v.group}`,
+  );
+
 export const useGrantGroup = () =>
   useAction(
     ({ group: g, grant }: { group: string; grant: GrantRequest }) =>

@@ -10,6 +10,7 @@ import {
   useGrantGroup,
   useGroupMember,
   useGroups,
+  useRemoveGroupAgent,
   useRenameGroup,
   useRevokeGrant,
   useRoleName,
@@ -118,6 +119,7 @@ function GroupEditor({
   const grant = useGrantGroup();
   const revoke = useRevokeGrant();
   const member = useGroupMember();
+  const agent = useRemoveGroupAgent();
   const rename = useRenameGroup();
   const remove = useDeleteGroup();
   const roleName = useRoleName();
@@ -247,6 +249,30 @@ function GroupEditor({
                     member: m.email,
                     add: false,
                   })
+                }
+              >
+                Take out
+              </Act>
+            </li>
+          ))}
+        </ul>
+      )}
+      {(group.agents ?? []).length > 0 && (
+        <ul className="flex flex-col">
+          {(group.agents ?? []).map((ag) => (
+            <li
+              key={ag.token_id}
+              className="flex items-center justify-between gap-2 border-b border-line py-1.5"
+            >
+              <span>
+                {ag.name} <span className="text-mut">token</span>
+              </span>
+              <Act
+                small
+                cli={`dock group remove "${group.name}" ${ag.name} --agent`}
+                disabled={agent.isPending}
+                onClick={() =>
+                  agent.mutate({ group: group.name, token: ag.name })
                 }
               >
                 Take out

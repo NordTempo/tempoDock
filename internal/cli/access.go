@@ -28,6 +28,7 @@ database access follows the data policy's tokens rule unless it has its own
 (--data-* on create or update).`,
 	})
 	cmd.AddCommand(newTokenListCmd(g), newTokenCreateCmd(g), newTokenUpdateCmd(g), newTokenRevokeCmd(g))
+	cmd.AddCommand(newTokenAccessCmds(g)...)
 	return cmd
 }
 
@@ -270,6 +271,57 @@ func parseExpiry(s string) (int, error) {
 		return int(math.Ceil(d.Hours() / 24)), nil
 	}
 	return 0, usageError(fmt.Sprintf("invalid --expires %q", s), "Use days like 90d, or a duration like 720h.")
+}
+
+// newTokenAccessCmds are `dock token access` and `dock token grant`: an
+// org agent's grants and groups (ADR 0080, 6b).
+func newTokenAccessCmds(g *globals) []*cobra.Command {
+	printAccess := func(a apitypes.AgentAccess) error {
+		return g.io.Print(a, func() error {
+			g.io.Successf("token %s (%d), in %s", a.Name, a.TokenID, dash(strings.Join(a.Groups, ", ")))
+			t := g.io.Table("grant", "role", "on")
+			for _, x := range a.Grants {
+				t.Row(itoa(x.ID), x.Role, grantPlace(x))
+			}
+			return t.Flush()
+		})
+	}
+	access := &cobra.Command{
+		Use: "access <name|id>", Short: "An org token's grants and groups: what it may do (admin)", Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			a, err := get[apitypes.AgentAccess](cmd.Context(), s, apiPrefix+"/tokens/"+url.PathEscape(args[0])+"/access")
+			if err != nil {
+				return err
+			}
+			return printAccess(a)
+		},
+	}
+	var gf grantFlags
+	grant := &cobra.Command{
+		Use: "grant <name|id> <role>", Short: "Give an org token a role at a place, beside its groups' (admin)", Args: cobra.ExactArgs(2),
+		Example: "  dock token grant ci deploy:operate -p shop -e production\n  dock token grant ci logs:view --for 4h",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			req, err := gf.request(args[1])
+			if err != nil {
+				return err
+			}
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			a, err := send[apitypes.AgentAccess](cmd.Context(), s, http.MethodPost, apiPrefix+"/tokens/"+url.PathEscape(args[0])+"/grants", req)
+			if err != nil {
+				return err
+			}
+			return printAccess(a)
+		},
+	}
+	gf.add(grant)
+	return []*cobra.Command{access, grant}
 }
 
 func newTokenRevokeCmd(g *globals) *cobra.Command {

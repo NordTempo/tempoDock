@@ -85,3 +85,29 @@ func TestRoleCommands(t *testing.T) {
 		t.Fatalf("deleting a role in use: exit %d %s", code, stderr)
 	}
 }
+
+// An org token's grants and groups from the CLI (ADR 0080, org agents):
+// its scope and limit are grants, `dock token grant` adds one, and
+// `dock group add --agent` puts it in a group.
+func TestTokenAccessCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	exec(t, "project", "create", "shop")
+	ok[apitypes.CreatedToken](t, "token", "create", "ci", "--scope", "deploy", "--project", "shop")
+	acc := ok[apitypes.AgentAccess](t, "token", "access", "ci")
+	if len(acc.Grants) < 5 || acc.Grants[0].Project != "shop" {
+		t.Fatalf("ci's grants = %+v", acc)
+	}
+	acc = ok[apitypes.AgentAccess](t, "token", "grant", "ci", "logs:view")
+	if !slices.ContainsFunc(acc.Grants, func(g apitypes.Grant) bool { return g.Role == "logs:view" && g.Project == "" }) {
+		t.Fatalf("after grant = %+v", acc)
+	}
+	if g := ok[apitypes.Group](t, "group", "add", "Viewers", "ci", "--agent"); len(g.Agents) != 1 {
+		t.Fatalf("group add --agent = %+v", g)
+	}
+	if acc := ok[apitypes.AgentAccess](t, "token", "access", "ci"); !slices.Equal(acc.Groups, []string{"Viewers"}) {
+		t.Fatalf("groups = %+v", acc.Groups)
+	}
+}

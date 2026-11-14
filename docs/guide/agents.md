@@ -40,6 +40,20 @@ is shown once. Pick the narrowest fit:
 Tokens are stored hashed, show `last_used_at`, and can be revoked any time:
 `dock token list`, `dock token revoke <id>`.
 
+A token is an agent of the organization: its scope and limit are grants
+(its scope's roles at its limit's place), which an admin can widen, end
+or add to by putting it in groups, like a person:
+
+```sh
+dock token access claude-shop-staging                       # its grants and groups
+dock token grant claude-shop-staging logs:view -p shop      # read shop's logs too
+dock group add Triage claude-shop-staging --agent           # what Triage gives
+dock grant revoke 42                                        # end a grant
+```
+
+They decide while the platform's permission model does (`dock platform
+access-model enforce`); until then its scope and limit do.
+
 ## 2. Give it to the agent
 
 ```sh

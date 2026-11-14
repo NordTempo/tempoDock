@@ -549,7 +549,9 @@ type Grant struct {
 	OrgID         int64
 	GroupID       *int64
 	UserID        *int64
+	TokenID       *int64
 	Role          string
+	RoleID        *int64
 	ProjectID     *int64
 	EnvironmentID *int64
 	Kinds         int64
@@ -557,7 +559,6 @@ type Grant struct {
 	Via           *string
 	GrantedBy     string
 	CreatedAt     time.Time
-	RoleID        *int64
 }
 
 type Group struct {
@@ -566,6 +567,11 @@ type Group struct {
 	Name      string
 	Seeded    *string
 	CreatedAt time.Time
+}
+
+type GroupAgent struct {
+	GroupID int64
+	TokenID int64
 }
 
 type GroupMember struct {
@@ -1259,6 +1265,7 @@ type Token struct {
 	Operator          bool
 	TwoFactor         bool
 	Platform          *string
+	Granted           bool
 }
 
 type TrafficPath struct {

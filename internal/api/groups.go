@@ -88,6 +88,42 @@ func registerGroups(s *Server, a huma.API) {
 		return reply(s.core.SetAgentSettings(ctx, actor, in.Body))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "agent-access", Method: http.MethodGet, Path: Prefix + "/tokens/{token}/access",
+		Summary: "An org agent's grants and groups", Tags: tags,
+		Description: "ADR 0080: an organization's token is an org agent; its scope and limit became grants, and admins add more or put it in groups. token is its name or ID. Needs agents.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Token string `path:"token" doc:"The token's name or ID"`
+	}) (*out[apitypes.AgentAccess], error) {
+		return reply(s.core.AgentAccess(ctx, actor, in.Token))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "grant-agent", Method: http.MethodPost, Path: Prefix + "/tokens/{token}/grants",
+		Summary: "Give an org agent a role at a place", Tags: tags,
+		Description: "Beside what its groups give. End it like any grant (DELETE /grants/{id}). Needs agents.manage, with a recent sign-in in the browser.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Token string `path:"token" doc:"The token's name or ID"`
+		Body  apitypes.GrantRequest
+	}) (*out[apitypes.AgentAccess], error) {
+		return reply(s.core.GrantAgent(ctx, actor, in.Token, in.Body))
+	})
+	for _, op := range []struct {
+		id, method, summary string
+		in                  bool
+	}{
+		{"add-group-agent", http.MethodPut, "Put an org agent in a group", true},
+		{"remove-group-agent", http.MethodDelete, "Take an org agent out of a group", false},
+	} {
+		authed(s, a, huma.Operation{
+			OperationID: op.id, Method: op.method, Path: Prefix + "/groups/{group}/agents/{token}",
+			Summary: op.summary, Tags: tags, Description: "token is the agent's name or ID. Needs members.manage.",
+		}, func(ctx context.Context, actor core.Actor, in *struct {
+			GroupPath
+			Token string `path:"token" doc:"The token's name or ID"`
+		}) (*out[apitypes.Group], error) {
+			return reply(s.core.SetGroupAgent(ctx, actor, in.Group, in.Token, op.in))
+		})
+	}
+	authed(s, a, huma.Operation{
 		OperationID: "list-groups", Method: http.MethodGet, Path: Prefix + "/groups",
 		Summary: "List groups", Tags: tags,
 		Description: "The organization's groups with their members and grants. Needs members.read.",

@@ -13,7 +13,23 @@ type Group struct {
 	// developers, viewers, approvers.
 	Seeded  string        `json:"seeded,omitempty" enum:"admins,developers,viewers,approvers"`
 	Members []GroupMember `json:"members"`
-	Grants  []Grant       `json:"grants"`
+	// Agents are the org's tokens in it (ADR 0080, org agents).
+	Agents []GroupAgent `json:"agents"`
+	Grants []Grant      `json:"grants"`
+}
+
+// GroupAgent is an org agent (a token of the organization's) in a group.
+type GroupAgent struct {
+	TokenID int64  `json:"token_id"`
+	Name    string `json:"name"`
+}
+
+// AgentAccess is an org agent's grants and groups.
+type AgentAccess struct {
+	TokenID int64    `json:"token_id"`
+	Name    string   `json:"name"`
+	Groups  []string `json:"groups"`
+	Grants  []Grant  `json:"grants"`
 }
 
 // GroupMember is a person in a group.

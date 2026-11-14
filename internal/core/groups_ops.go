@@ -61,9 +61,18 @@ func (c *Core) ListGroups(ctx context.Context, a Actor) ([]apitypes.Group, error
 	if err != nil {
 		return nil, err
 	}
+	agents, err := c.store.ListGroupAgents(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]apitypes.Group, len(groups))
 	for i, g := range groups {
-		out[i] = apitypes.Group{ID: g.ID, Name: g.Name, Seeded: deref(g.Seeded), Members: []apitypes.GroupMember{}, Grants: []apitypes.Grant{}}
+		out[i] = apitypes.Group{ID: g.ID, Name: g.Name, Seeded: deref(g.Seeded), Members: []apitypes.GroupMember{}, Agents: []apitypes.GroupAgent{}, Grants: []apitypes.Grant{}}
+		for _, ag := range agents {
+			if ag.GroupID == g.ID {
+				out[i].Agents = append(out[i].Agents, apitypes.GroupAgent{TokenID: ag.TokenID, Name: ag.Name})
+			}
+		}
 		for _, m := range members {
 			if m.GroupID == g.ID {
 				out[i].Members = append(out[i].Members, apitypes.GroupMember{UserID: m.UserID, Email: m.Email, Name: m.Name})

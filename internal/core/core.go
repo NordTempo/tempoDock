@@ -454,6 +454,10 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.seedAccess(ctx); err != nil {
 		return fmt.Errorf("seed groups: %w", err)
 	}
+	// Org tokens from before org agents get their grants (ADR 0080, 6b).
+	if err := c.grantTokens(ctx); err != nil {
+		return fmt.Errorf("grant tokens: %w", err)
+	}
 	c.loadAccessModel(ctx)
 	c.applyRegistryStorage(ctx)
 	if err := c.convertBackupRepository(ctx); err != nil {

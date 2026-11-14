@@ -207,8 +207,16 @@ one decides.
    approvers). Settled while building: an agent may tighten its setting
    (the CLI is usually the agent's own login) but loosening needs the
    person signed in, recently; settings apply while grants decide
-   (enforce), and the shadow compares with them. 6b: org agents and the
-   org's agent rules.
+   (enforce), and the shadow compares with them. 6b, org agents
+   (built): an organization's tokens hold grants (`grants.token_id`,
+   migration 0112 rebuilds grants for the third holder) and join groups
+   (`group_agents`); a token's scope and limit become grants when it is
+   made, older tokens' once at start (`tokens.granted`), so each does
+   exactly what it did. Settled while building: a token keeps its scope
+   and limit for what still speaks in them (the data policy's subject,
+   MCP's implied project and environment); `dock token access|grant`,
+   `dock group add --agent`, and Grants and groups in a token's menu.
+   6c: the org's agent rules.
 7. Protection.
 
 ## Consequences
