@@ -8,5 +8,6 @@ import (
 )
 
 func main() {
+	withoutTHP()
 	os.Exit(cli.Execute())
 }

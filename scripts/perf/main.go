@@ -38,10 +38,11 @@ const (
 	// Anonymous RSS of the idle daemon, plus each open SSE stream's share:
 	// mostly its handler goroutine's stack, about 0.11 MB, which the
 	// runtime keeps after the handshake. The idle reading is the median of
-	// idleStarts daemons: one start can read 4 MB more than another (what
-	// start-up left in SQLite's C heap, not GC timing), docs/performance.md.
-	// With four SQLite connections (#272) single starts on CI read
-	// 27.9-32.4 MB; the budget keeps 2 MB above main's typical median.
+	// idleStarts daemons. Starts used to differ by up to 7 MB, mostly
+	// transparent huge pages, which serve now turns off (cmd/dock
+	// withoutTHP), and about 1 MB of what start-up leaves in SQLite's C
+	// heap (docs/performance.md). The budget keeps 2 MB above main's
+	// typical median.
 	idleAnonBudget      = 32 << 20
 	sseClientAnonBudget = 150 << 10
 	idleTicksBudget     = 2 // clock ticks (usually 10 ms each) per idle window

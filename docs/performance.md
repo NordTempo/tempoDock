@@ -54,18 +54,33 @@ Memory is anonymous RSS (`RssAnon`): what the process really costs, without
 the mapped binary. The daemon runs with `GOMEMLIMIT=64MiB` as in
 `deploy/systemd/dock.service`.
 
+**Transparent huge pages.** On a kernel with THP set to `always` (as on
+this project's dev VM and CI runners, Debian 13), the daemon's memory used
+to sit partly on 2 MB pages it fills sparsely: 16 to 20 MB of a ~30 MB
+RSS was huge pages, more or less depending on how fragmented the
+kernel's free memory was at that moment. That is why idle RSS swung
+between about 25 and 32 MB for the same binary, in no order of code or
+load (a side-by-side or one-after-another median read the same). `dock
+serve` and `dock node` turn THP off for their own process
+(`PR_SET_THP_DISABLE`) and execute themselves again, so every page is
+small from package init on (cmd/dock, `withoutTHP`): 25.3-26.5 MB with
+no huge pages where main read 30.5-30.9 MB, at about 15 ms of
+start-up. The flag is inherited, but what the daemon starts on the host
+is short-lived (the build plan child, dock-probe's check, iptables);
+Caddy, cloudflared and the stores run under systemd or Docker. A reading
+past the budget with `AnonHugePages` above 0 in `/proc/<pid>/smaps_rollup`
+means that start-over didn't happen.
+
 The idle reading is the median of three daemons started side by side
-(`idleStarts`). One daemon's RssAnon is flat through its window and
-through a forced GC, but it differs between starts by up to 4 MB on CI:
-it isn't GC timing but what start-up left in SQLite's C heap (each pool
-connection's schema copy, page cache and prepared statements), which
-modernc never gives back. Keeping four connections (#272) shrank that
-spread; the median takes out the rest. The budget keeps 2 MB above
-main's typical median; raise it (and say why) only after main has failed
-it on several runs. Of the rest, the Go heap is about 15 MB of spans for
-a 10 MB live heap, mostly Huma's schemas of the API types (validation
-needs them) and compiled regexps, and the Go runtime's own metadata is
-about 6 MB.
+(`idleStarts`). Without huge pages one daemon's RssAnon is flat through
+its window and through a forced GC; what is left between starts (about
+1 MB) is what start-up left in SQLite's C heap (each pool connection's
+schema copy, page cache and prepared statements), which modernc never
+gives back. The budget keeps 2 MB above main's typical median; raise it
+(and say why) only after main has failed it on several runs. Of the
+rest, the Go heap is about 15 MB of spans for a 10 MB live heap, mostly
+Huma's schemas of the API types (validation needs them) and compiled
+regexps, and the Go runtime's own metadata is about 6 MB.
 
 ### tempoBase
 
