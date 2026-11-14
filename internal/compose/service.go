@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"path"
@@ -670,16 +671,46 @@ func httpCheck(words []string) (checkPath string, port int, ok bool) {
 	return checkPath, port, true
 }
 
-// command maps command and entrypoint to the start command, which Dock
-// runs with `sh -c` after the image's own entrypoint.
+// command maps command and entrypoint to the start command. Compose
+// passes command to the image's entrypoint as arguments, without a shell,
+// and so does a start command in exec form (`["worker"]`, ADR 0082): that
+// is what a command alone becomes, so images whose entrypoint takes its
+// mode as arguments keep working. Dock keeps the image's entrypoint, so
+// with an entrypoint the two become one shell line, run with `sh -c`
+// after the image's own entrypoint.
 func (c *converter) command(s *svc) {
-	cmd := c.commandLine(s, "command", s.def.Command)
-	if s.def.Entrypoint.set {
-		entry := c.commandLine(s, "entrypoint", s.def.Entrypoint)
-		cmd = strings.TrimSpace(entry + " " + cmd)
-		c.warn(s, "entrypoint", "Dock keeps the image's own entrypoint and runs the start command after it, so this entrypoint runs inside it instead of replacing it. Check that the image's entrypoint runs its arguments as a command.")
+	if !s.def.Entrypoint.set {
+		if words := c.commandWords(s, "command", s.def.Command); len(words) > 0 {
+			var b strings.Builder
+			enc := json.NewEncoder(&b)
+			enc.SetEscapeHTML(false) // && reads as && in the file
+			_ = enc.Encode(words)
+			s.out.StartCommand = strings.TrimSpace(b.String())
+		}
+		return
 	}
-	s.out.StartCommand = cmd
+	cmd := c.commandLine(s, "command", s.def.Command)
+	entry := c.commandLine(s, "entrypoint", s.def.Entrypoint)
+	s.out.StartCommand = strings.TrimSpace(entry + " " + cmd)
+	c.warn(s, "entrypoint", "Dock keeps the image's own entrypoint and runs the start command after it, so this entrypoint runs inside it instead of replacing it. Check that the image's entrypoint runs its arguments as a command.")
+}
+
+// commandWords splits a command into its arguments, as Compose does with
+// a string, interpolating each.
+func (c *converter) commandWords(s *svc, key string, cmd command) []string {
+	if !cmd.set {
+		return nil
+	}
+	list := cmd.list
+	if !cmd.isList {
+		list = shellWords(c.str(s, key, scalar{text: cmd.text, set: true}))
+		return list
+	}
+	words := make([]string, len(list))
+	for i, w := range list {
+		words[i] = c.str(s, key, scalar{text: w, set: true})
+	}
+	return words
 }
 
 // commandLine renders a command or entrypoint as one shell line.

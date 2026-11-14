@@ -526,7 +526,10 @@ func createOptions(spec node.ContainerSpec, probe string, anon []string) client.
 		Labels: spec.Labels.Map(),
 		Env:    envList(spec.Env),
 	}
-	if spec.Cmd != "" {
+	switch {
+	case len(spec.Args) > 0:
+		cfg.Cmd = spec.Args
+	case spec.Cmd != "":
 		cfg.Cmd = []string{"sh", "-c", spec.Cmd}
 	}
 

@@ -403,11 +403,13 @@ type wireSpec struct {
 	Health *wireLivenessCheck `json:"health,omitempty"`
 	// ExtraHosts is new in protocol 26 (TraceAppsProtocol).
 	ExtraHosts []string `json:"extra_hosts,omitempty"`
+	// Args is new in protocol 29 (ExecFormProtocol).
+	Args []string `json:"args,omitempty"`
 }
 
 func toWireSpec(s node.ContainerSpec) wireSpec {
 	w := wireSpec{
-		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Cmd: s.Cmd,
+		Name: s.Name, Image: s.Image, Labels: toWireLabels(s.Labels), Env: s.Env, Cmd: s.Cmd, Args: s.Args,
 		Network: s.Network, Aliases: s.Aliases, Port: s.Port, HostPort: s.HostPort,
 		MemoryBytes: s.Resources.MemoryBytes, NanoCPUs: s.Resources.NanoCPUs, Mounts: toWireMounts(s.Mounts),
 		ExtraHosts: s.ExtraHosts,
@@ -423,7 +425,7 @@ func toWireSpec(s node.ContainerSpec) wireSpec {
 
 func (w wireSpec) node() node.ContainerSpec {
 	s := node.ContainerSpec{
-		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Cmd: w.Cmd,
+		Name: w.Name, Image: w.Image, Labels: w.Labels.node(), Env: w.Env, Cmd: w.Cmd, Args: w.Args,
 		Network: w.Network, Aliases: w.Aliases, Port: w.Port, HostPort: w.HostPort,
 		Resources: node.Resources{MemoryBytes: w.MemoryBytes, NanoCPUs: w.NanoCPUs}, Mounts: fromWireMounts(w.Mounts),
 		ExtraHosts: w.ExtraHosts,

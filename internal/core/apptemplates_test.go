@@ -98,3 +98,19 @@ func TestUseAppTemplateInputsAndScopes(t *testing.T) {
 		t.Fatalf("postgres: %v %+v", err, res)
 	}
 }
+
+// A start command in exec form starts the container with its arguments
+// and no shell; a malformed one is refused when set.
+func TestStartCommandExecForm(t *testing.T) {
+	h := newHarness(t)
+	w := h.service("worker", apitypes.CreateServiceRequest{Image: "ak:1", StartCommand: `["worker", "--queue", "mail"]`})
+	h.deploy(w, "ak:1")
+	spec, _ := h.rt.Spec(h.ctr(w, 1))
+	if strings.Join(spec.Args, " ") != "worker --queue mail" || spec.Cmd != "" {
+		t.Fatalf("args %q, cmd %q", spec.Args, spec.Cmd)
+	}
+	bad := `["worker"`
+	if _, err := h.c.UpdateService(h.ctx, testSystem, w, apitypes.UpdateServiceRequest{StartCommand: &bad}); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "exec form") {
+		t.Fatalf("malformed: %v", err)
+	}
+}

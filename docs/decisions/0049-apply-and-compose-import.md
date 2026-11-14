@@ -161,7 +161,7 @@ confirmation. The UI does the same in New project.
 | Named volumes | `volumes`. An anonymous volume becomes a named volume after its path (Dock never makes anonymous volumes: they leak one per container). Bind mounts and tmpfs: warning, not mounted |
 | `depends_on` | `depends_on` (order hint) |
 | `healthcheck` | `health_check_path` when the test is an HTTP GET (curl, wget) of localhost; otherwise a warning. `start_period` sets the timeout |
-| `command`, `entrypoint` | `start_command` (run with `sh -c` after the image's entrypoint) |
+| `command`, `entrypoint` | `start_command`: `command` alone in exec form (`["worker"]`, passed to the image's entrypoint as arguments, as Compose does; amended by [0082](0082-app-templates.md)); with `entrypoint`, both as one shell line run with `sh -c` after the image's entrypoint |
 | `deploy.resources.limits`, `mem_limit`, `cpus` | `memory_mb`, `cpus` |
 | `postgres`, `redis` images | The `postgres` / `redis` templates (backups, data panel). Other services' values pointing at them (a URL with the service's host, or the compose password) become references (`${{db.DATABASE_URL}}`, `${{db.POSTGRES_PASSWORD}}`); a warning says the template generates its own credentials |
 | `privileged`, `network_mode: host`, `cap_add`, `devices`, `pid`, `ipc`, `user`, `secrets`, `configs`, replicas > 1, ... | Warning: unsupported, not applied |

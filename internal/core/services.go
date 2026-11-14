@@ -66,7 +66,29 @@ func validateSettings(s apitypes.ServiceSettings, registry string, pulls *egress
 	case s.PreDeployCommand != "" && strings.TrimSpace(s.PreDeployCommand) == "":
 		return invalid("pre-deploy command is blank; set it to an empty string to remove it")
 	}
+	if strings.HasPrefix(strings.TrimSpace(s.StartCommand), "[") {
+		if _, ok := execForm(s.StartCommand); !ok {
+			return invalid(`a start command starting with [ is in exec form: a JSON array of strings, like ["worker", "--queue", "mail"]`)
+		}
+	}
 	return nil
+}
+
+// execForm reads a start command in exec form, a JSON array of strings
+// like a Dockerfile's CMD ["worker"]: its arguments replace the image's
+// command as they are, without a shell, for images whose entrypoint takes
+// its mode as arguments (ADR 0082). Any other start command runs with
+// `sh -c`.
+func execForm(cmd string) ([]string, bool) {
+	cmd = strings.TrimSpace(cmd)
+	if !strings.HasPrefix(cmd, "[") {
+		return nil, false
+	}
+	var args []string
+	if err := json.Unmarshal([]byte(cmd), &args); err != nil || len(args) == 0 {
+		return nil, false
+	}
+	return args, true
 }
 
 // ListServices returns an environment's services, including archived ones.

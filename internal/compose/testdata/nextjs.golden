@@ -11,7 +11,7 @@ project = 'app'
 
   [[environments.services]]
     name = 'migrate'
-    start_command = 'npx prisma migrate deploy'
+    start_command = '["npx","prisma","migrate","deploy"]'
     variables = ['RESEND_API_KEY']
     depends_on = ['postgres']
 
@@ -48,7 +48,7 @@ project = 'app'
 
   [[environments.services]]
     name = 'worker'
-    start_command = "node dist/worker.js --queue 'default emails'"
+    start_command = '["node","dist/worker.js","--queue","default emails"]'
     memory_mb = 1024
     variables = ['RESEND_API_KEY']
     depends_on = ['postgres']

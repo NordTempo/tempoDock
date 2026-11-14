@@ -713,6 +713,10 @@ type ContainerSpec struct {
 	Env    map[string]string
 	// Cmd overrides the image's command when non-empty (run via `sh -c`).
 	Cmd string
+	// Args, when set instead, override the image's command as they are,
+	// without a shell: a start command in exec form (`["worker"]`), for
+	// images whose entrypoint takes its mode as arguments.
+	Args []string
 	// Network is joined with Aliases, so services reach each other by name.
 	Network string
 	Aliases []string

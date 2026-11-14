@@ -176,8 +176,18 @@ func (c *Client) RemoveVolume(ctx context.Context, name string, labels node.Labe
 	return err
 }
 
-// Start implements node.Containers.
+// ExecFormProtocol is the first node protocol that starts a container
+// with args instead of a shell command (ADR 0082).
+const ExecFormProtocol = 29
+
+// Start implements node.Containers. An older node would run the image's
+// own command instead of args, so a spec with args needs a newer one.
 func (c *Client) Start(ctx context.Context, spec node.ContainerSpec) (node.Container, error) {
+	if len(spec.Args) > 0 {
+		if err := c.needProtocol(ctx, ExecFormProtocol, "run a start command in exec form"); err != nil {
+			return node.Container{}, err
+		}
+	}
 	r, err := unaryCall[containerResult](ctx, c, opStart, startRequest{Spec: toWireSpec(spec)})
 	return r.Container.node(), err
 }

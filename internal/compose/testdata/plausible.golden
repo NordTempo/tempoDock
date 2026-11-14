@@ -13,7 +13,7 @@ project = 'app'
     name = 'plausible'
     image = 'ghcr.io/plausible/community-edition:v2.1.4'
     port = 8000
-    start_command = 'sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"'
+    start_command = '["sh","-c","/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"]'
     variables = ['BASE_URL', 'SECRET_KEY_BASE']
     depends_on = ['plausible-db', 'plausible-events-db']
     volumes = [{name = 'plausible-data', mount_path = '/var/lib/plausible'}]

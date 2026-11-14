@@ -32,12 +32,12 @@ project = 'app'
   [[environments.services]]
     name = 'debug'
     image = 'nicolaka/netshoot'
-    start_command = 'sleep infinity'
+    start_command = '["sleep","infinity"]'
 
   [[environments.services]]
     name = 'worker'
     image = 'ghcr.io/acme/api:2.3.1'
-    start_command = 'worker --concurrency 4'
+    start_command = '["worker","--concurrency","4"]'
     depends_on = ['api']
 
 # warnings
