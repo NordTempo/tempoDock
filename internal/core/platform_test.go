@@ -232,7 +232,7 @@ func TestPlatformApart(t *testing.T) {
 		t.Fatalf("org login creates a project: %v", err)
 	}
 	platformSecret := h.loginToken(op, true)
-	if a := h.auth(platformSecret); !a.Me().PlatformLogin || a.Platform != apitypes.PlatformOperator {
+	if a := h.auth(platformSecret); !a.Me().PlatformLogin || a.Platform != apitypes.PlatformOperator || a.Me().Org != "" {
 		t.Fatalf("platform login = %+v", a.Me())
 	}
 	h.exec(`UPDATE users SET platform_role = 'viewer' WHERE id = ?`, op.UserID)

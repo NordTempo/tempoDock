@@ -7,6 +7,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
+	"github.com/NordTempo/tempoDock/internal/clientconfig"
 )
 
 // A context keeps a platform login beside its org login (ADR 0080): org
@@ -44,4 +45,22 @@ func TestPlatformLoginBesideOrgLogin(t *testing.T) {
 		t.Fatalf("server list without a platform login: exit %d %s", code, stderr)
 	}
 	ok[apitypes.Project](t, "project", "create", "docs")
+}
+
+// whoami on a legacy token says it also runs the platform, not that a
+// platform login is missing; a token with a newline in it is refused as
+// malformed, naming where it came from, not as an unreachable server.
+func TestWhoamiLegacyAndMalformedTokens(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin]) // bootstrap's: legacy
+	if code, _, notes := exec(t, "whoami"); code != 0 || !strings.Contains(notes, "also runs the platform") || strings.Contains(notes, "No platform login") {
+		t.Fatalf("whoami on a legacy token: exit %d\n%s", code, notes)
+	}
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin]+"\n")
+	code, _, stderr := exec(t, "whoami")
+	if code != int(output.ExitUsage) || !strings.Contains(stderr, "malformed token in "+clientconfig.EnvToken) {
+		t.Fatalf("a token with a newline: exit %d %s", code, stderr)
+	}
 }
