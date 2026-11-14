@@ -1,12 +1,13 @@
 # Single sign-on
 
-People can sign in to Dock with Google, GitHub, or any identity provider
-that speaks OpenID Connect (Microsoft Entra ID, Okta, Keycloak,
-Authentik). The sign-in page shows a **Continue with** button for each,
+People can sign in to Dock with Google, GitHub, Microsoft Entra ID,
+GitLab, Okta, Auth0, Keycloak, Authentik, or any other identity provider
+that speaks OpenID Connect. The sign-in page shows a **Continue with** button for each,
 next to the email and password form. Providers are the platform's:
 operators set them up once for the whole Dock, and organizations still
 decide who is a member. The design is [ADR 0065](../decisions/0065-sign-in-is-the-platforms.md),
-amending [ADR 0058](../decisions/0058-sso-oidc.md).
+amending [ADR 0058](../decisions/0058-sso-oidc.md); the named providers
+are [ADR 0081](../decisions/0081-named-identity-providers.md).
 
 ## Adding a provider
 
@@ -21,7 +22,13 @@ page and `dock sso list` show it). Register it at the provider:
 |---|---|---|
 | Google | Google Cloud, APIs & Services, Credentials, Create OAuth client ID, Web application, Authorized redirect URI | Client ID and secret |
 | GitHub | Settings, Developer settings, OAuth Apps, New OAuth App, Authorization callback URL | Client ID and secret. Dock reads the account's primary verified email |
-| Any OpenID Connect provider | A web application ("OAuth client", "OIDC app") with the scopes `openid email profile` and the authorization code grant (Dock uses PKCE) | Issuer URL, client ID and secret, and a label for its button |
+| Microsoft Entra ID | App registrations, New registration (single tenant), Web redirect URI; Certificates & secrets; Token configuration, the optional ID token claims `email` and `xms_edov` | Tenant (its ID or a domain of it), client ID and secret |
+| GitLab | User settings (or a group's, or Admin area), Applications, scopes `openid email profile` | Client ID and secret; a self-hosted GitLab's URL |
+| Okta | Applications, Create App Integration, OIDC, Web Application, Sign-in redirect URI | Okta domain, client ID and secret |
+| Auth0 | Applications, Create Application, Regular Web Application, Allowed Callback URLs | Auth0 domain, client ID and secret |
+| Keycloak | The realm's Clients, Create client, OpenID Connect, Client authentication on, Valid redirect URI | Keycloak URL, realm, client ID and secret |
+| Authentik | Applications, Create with provider, OAuth2/OpenID, Confidential, Redirect URI | authentik URL, the application's slug (as `--realm`), client ID and secret |
+| Any other OpenID Connect provider | A web application ("OAuth client", "OIDC app") with the scopes `openid email profile` and the authorization code grant (Dock uses PKCE) | Issuer URL, client ID and secret, and a label for its button |
 
 ```
 $ printf %s "$CLIENT_SECRET" | dock sso add google --client-id 1234.apps.googleusercontent.com --client-secret-stdin
@@ -30,28 +37,40 @@ $ printf %s "$CLIENT_SECRET" | dock sso add google --client-id 1234.apps.googleu
 
 $ printf %s "$CLIENT_SECRET" | dock sso add github --client-id Ov23li... --client-secret-stdin
 
+$ printf %s "$CLIENT_SECRET" | dock sso add microsoft --tenant contoso.onmicrosoft.com \
+    --client-id 0f1e2d3c-... --client-secret-stdin
+
+$ printf %s "$CLIENT_SECRET" | dock sso add staff --kind keycloak \
+    --domain id.example.com --realm staff --label "Example ID" \
+    --client-id dock --client-secret-stdin
+
 $ printf %s "$CLIENT_SECRET" | dock sso add corp --kind oidc \
-    --issuer https://id.example.com/realms/staff --label "Example ID" \
+    --issuer https://id.example.com/oauth2/default --label "Example ID" \
     --client-id dock --client-secret-stdin
 ```
 
-Named `google` or `github`, a provider is that kind; any other name needs
-`--kind`. Dock reads an OpenID Connect issuer's discovery document
-(`<issuer>/.well-known/openid-configuration`) right away, so a wrong URL
-fails here. The client secret is stored encrypted and never shown again;
-replace it with `dock sso set <name> --client-secret-stdin`.
+Named after a kind (`google`, `microsoft`, `okta`, ...), a provider is
+that kind; any other name needs `--kind`. Dock builds the issuer from the
+tenant, domain or realm and reads its discovery document
+(`<issuer>/.well-known/openid-configuration`) right away, so a wrong
+domain fails here. The client secret is stored encrypted and never shown
+again; replace it with `dock sso set <name> --client-secret-stdin`.
 
-### Issuer URLs
+### Microsoft Entra ID
 
-| Provider | Issuer |
-|---|---|
-| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant ID>/v2.0` |
-| Okta | `https://<your org>.okta.com` (or an authorization server's URL) |
-| Keycloak | `https://<host>/realms/<realm>` |
-| Authentik | `https://<host>/application/o/<application slug>/` (with the trailing slash) |
+- Dock signs in one tenant's people. `common`, `organizations` and
+  `consumers` are refused: they would let any tenant's owner decide which
+  email their users have. A tenant given by its domain is stored by its
+  ID.
+- Entra ID doesn't verify the `email` claim. Dock signs someone in only
+  when the optional claim `xms_edov` says the email's domain is verified,
+  so add `email` and `xms_edov` to the ID token in Token configuration.
+  Without them, sign-ins are refused with a message saying so.
 
-The issuer must match what the provider puts in its tokens exactly,
-trailing slash included.
+### Issuers of other providers
+
+With `--kind oidc`, the issuer must match what the provider puts in its
+tokens exactly, trailing slash included.
 
 ## Who gets in
 

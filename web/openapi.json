@@ -3217,6 +3217,13 @@
             "minLength": 1,
             "type": "string"
           },
+          "domain": {
+            "description": "okta, auth0: the domain; keycloak, authentik, gitlab: the base URL (gitlab.com by default)",
+            "examples": [
+              "acme.okta.com"
+            ],
+            "type": "string"
+          },
           "issuer": {
             "description": "oidc only: the issuer URL; https, or http on localhost",
             "type": "string"
@@ -3225,7 +3232,13 @@
             "enum": [
               "google",
               "github",
-              "oidc"
+              "oidc",
+              "microsoft",
+              "gitlab",
+              "okta",
+              "auth0",
+              "keycloak",
+              "authentik"
             ],
             "type": "string"
           },
@@ -3237,6 +3250,20 @@
             "description": "Lowercase letters, digits and dashes",
             "maxLength": 32,
             "minLength": 1,
+            "type": "string"
+          },
+          "realm": {
+            "description": "keycloak: the realm; authentik: the application's slug",
+            "examples": [
+              "staff"
+            ],
+            "type": "string"
+          },
+          "tenant": {
+            "description": "microsoft only: the tenant ID or a domain of it",
+            "examples": [
+              "contoso.onmicrosoft.com"
+            ],
             "type": "string"
           }
         },
@@ -12948,6 +12975,13 @@
           "created_by": {
             "type": "string"
           },
+          "domain": {
+            "description": "okta, auth0: the domain; keycloak, authentik, gitlab: the base URL (gitlab.com by default)",
+            "examples": [
+              "acme.okta.com"
+            ],
+            "type": "string"
+          },
           "issuer": {
             "examples": [
               "https://accounts.google.com"
@@ -12958,7 +12992,13 @@
             "enum": [
               "google",
               "github",
-              "oidc"
+              "oidc",
+              "microsoft",
+              "gitlab",
+              "okta",
+              "auth0",
+              "keycloak",
+              "authentik"
             ],
             "type": "string"
           },
@@ -12975,6 +13015,20 @@
           "name": {
             "examples": [
               "google"
+            ],
+            "type": "string"
+          },
+          "realm": {
+            "description": "keycloak: the realm; authentik: the application's slug",
+            "examples": [
+              "staff"
+            ],
+            "type": "string"
+          },
+          "tenant": {
+            "description": "microsoft only: the tenant ID or a domain of it",
+            "examples": [
+              "contoso.onmicrosoft.com"
             ],
             "type": "string"
           }
@@ -15243,7 +15297,13 @@
             "enum": [
               "google",
               "github",
-              "oidc"
+              "oidc",
+              "microsoft",
+              "gitlab",
+              "okta",
+              "auth0",
+              "keycloak",
+              "authentik"
             ],
             "type": "string"
           },
@@ -18171,12 +18231,24 @@
           "client_secret": {
             "type": "string"
           },
+          "domain": {
+            "description": "okta, auth0, keycloak, authentik, gitlab",
+            "type": "string"
+          },
           "issuer": {
             "description": "oidc only",
             "type": "string"
           },
           "label": {
             "maxLength": 40,
+            "type": "string"
+          },
+          "realm": {
+            "description": "keycloak, authentik",
+            "type": "string"
+          },
+          "tenant": {
+            "description": "microsoft only",
             "type": "string"
           }
         },

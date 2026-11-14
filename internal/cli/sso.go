@@ -23,8 +23,8 @@ func newSSOCmd(g *globals) *cobra.Command {
 		Use:   "sso",
 		Short: "Single sign-on: the platform's identity providers (operator)",
 		Long: `The sign-in page shows a "Continue with" button for each provider: Google,
-GitHub, or any OpenID Connect provider (Microsoft Entra ID, Okta, Keycloak,
-Authentik) by its issuer.
+GitHub, Microsoft Entra ID, GitLab, Okta, Auth0, Keycloak, Authentik, or any
+other OpenID Connect provider by its issuer.
 
 Register Dock at the provider as a web application with the redirect URL
 ` + "`dock sso list`" + ` shows. A provider signs in people with a Dock account (by their
@@ -82,13 +82,10 @@ func newSSOListCmd(g *globals) *cobra.Command {
 
 // kindWord names a provider's kind, with its issuer for a custom one.
 func kindWord(p apitypes.SSOProvider) string {
-	switch p.Kind {
-	case apitypes.SSOGoogle:
-		return "Google"
-	case apitypes.SSOGitHub:
-		return "GitHub"
+	if p.Kind == apitypes.SSOOIDC {
+		return p.Issuer
 	}
-	return p.Issuer
+	return apitypes.SSOKindNames[p.Kind]
 }
 
 // onWord is on or off.
@@ -102,15 +99,19 @@ func onWord(on bool) string {
 // ssoFlags are the provider settings add and set take.
 type ssoFlags struct {
 	kind, issuer, label, clientID string
+	tenant, domain, realm         string
 	secretStdin                   bool
 }
 
 func (f *ssoFlags) register(cmd *cobra.Command, add bool) {
 	if add {
-		cmd.Flags().StringVar(&f.kind, "kind", "", "google, github or oidc (default: the name, when it is google or github)")
+		cmd.Flags().StringVar(&f.kind, "kind", "", "google, github, microsoft, gitlab, okta, auth0, keycloak, authentik or oidc (default: the name, when it is one of them)")
 	}
 	cmd.Flags().StringVar(&f.issuer, "issuer", "", "oidc only: the provider's issuer URL")
-	cmd.Flags().StringVar(&f.label, "label", "", `the button's "Continue with <label>" (default: Google or GitHub)`)
+	cmd.Flags().StringVar(&f.tenant, "tenant", "", "microsoft only: the tenant ID or a domain of it")
+	cmd.Flags().StringVar(&f.domain, "domain", "", "okta, auth0: the domain; keycloak, authentik, gitlab: the base URL (gitlab.com by default)")
+	cmd.Flags().StringVar(&f.realm, "realm", "", "keycloak: the realm; authentik: the application's slug")
+	cmd.Flags().StringVar(&f.label, "label", "", `the button's "Continue with <label>" (default: the kind's name)`)
 	cmd.Flags().StringVar(&f.clientID, "client-id", "", "client ID of the app registered for Dock at the provider")
 	cmd.Flags().BoolVar(&f.secretStdin, "client-secret-stdin", false, "read its client secret from stdin")
 }
@@ -131,32 +132,39 @@ func readClientSecret(g *globals, cmdline string) (string, error) {
 func newSSOAddCmd(g *globals) *cobra.Command {
 	var f ssoFlags
 	cmd := &cobra.Command{
-		Use:   "add <name> --client-id <id> --client-secret-stdin [--kind oidc --issuer <url> --label <label>]",
+		Use:   "add <name> --client-id <id> --client-secret-stdin [--kind <kind> --tenant|--domain|--realm|--issuer ...]",
 		Short: "Add an identity provider (operator)",
-		Long: `Add Google, GitHub or another OpenID Connect provider. Named google or github,
-the kind is that one; anything else needs --kind (oidc takes --issuer and
---label). Dock reads an OpenID Connect issuer's discovery document now, so a
-wrong URL fails here. The client secret is read from stdin and never shown
-again.
+		Long: `Add an identity provider. Named after a kind (google, microsoft, okta, ...),
+it is that kind; anything else needs --kind. Each kind takes only what it
+needs to find the provider:
 
-At Google: an OAuth client ID of type Web application in Google Cloud's
-Credentials. At GitHub: an OAuth App in Developer settings (Dock reads the
-account's primary verified email). Either way, the redirect URL is the one
-` + "`dock sso list`" + ` shows.`,
+  google, github   nothing
+  microsoft        --tenant: the tenant ID or a domain of it (not common or
+                   organizations: Dock signs in one tenant's people)
+  gitlab           --domain for a self-hosted GitLab (gitlab.com by default)
+  okta, auth0      --domain: acme.okta.com, acme.eu.auth0.com
+  keycloak         --domain (its base URL) and --realm
+  authentik        --domain (its base URL) and --realm (the application's slug)
+  oidc             --issuer and --label: any other OpenID Connect provider
+
+Dock reads an OpenID Connect provider's discovery document now, so a wrong
+URL fails here. The client secret is read from stdin and never shown again.
+Register Dock at the provider with the redirect URL ` + "`dock sso list`" + ` shows.`,
 		Example: `  printf %s "$CLIENT_SECRET" | dock sso add google --client-id 123.apps.googleusercontent.com --client-secret-stdin
   printf %s "$CLIENT_SECRET" | dock sso add github --client-id Ov23li... --client-secret-stdin
+  printf %s "$CLIENT_SECRET" | dock sso add microsoft --tenant contoso.onmicrosoft.com --client-id 0f1e... --client-secret-stdin
+  printf %s "$CLIENT_SECRET" | dock sso add staff --kind keycloak --domain id.example.com --realm staff \
+    --label "Example ID" --client-id dock --client-secret-stdin
   printf %s "$CLIENT_SECRET" | dock sso add corp --kind oidc --issuer https://id.example.com --label "Example ID" \
     --client-id dock --client-secret-stdin`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kind := apitypes.SSOKind(f.kind)
+			if _, named := apitypes.SSOKindNames[apitypes.SSOKind(args[0])]; kind == "" && named && args[0] != string(apitypes.SSOOIDC) {
+				kind = apitypes.SSOKind(args[0])
+			}
 			if kind == "" {
-				switch apitypes.SSOKind(args[0]) {
-				case apitypes.SSOGoogle, apitypes.SSOGitHub:
-					kind = apitypes.SSOKind(args[0])
-				default:
-					return usageError("--kind is required for a provider not named google or github", "Pass --kind oidc --issuer <url> --label <label>, or --kind google|github.")
-				}
+				return usageError("--kind is required for a provider not named after one", "Pass --kind google|github|microsoft|gitlab|okta|auth0|keycloak|authentik, or --kind oidc --issuer <url> --label <label>.")
 			}
 			if f.clientID == "" || !f.secretStdin {
 				return usageError("--client-id and --client-secret-stdin are required", "See `dock sso add --help`.")
@@ -171,6 +179,7 @@ account's primary verified email). Either way, the redirect URL is the one
 			}
 			p, err := send[apitypes.SSOProvider](cmd.Context(), s, http.MethodPost, apiPrefix+"/platform/sso-providers", apitypes.CreateSSOProviderRequest{
 				Name: args[0], Kind: kind, Label: f.label, Issuer: f.issuer, ClientID: f.clientID, ClientSecret: secret,
+				SSOWhere: apitypes.SSOWhere{Tenant: f.tenant, Domain: f.domain, Realm: f.realm},
 			})
 			if err != nil {
 				return err
@@ -187,8 +196,9 @@ func newSSOSetCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <name> [flags]",
 		Short: "Change an identity provider (operator)",
-		Long:  `Change a provider's label, issuer (oidc only), client ID or client secret; what you leave out stays.`,
+		Long:  `Change a provider's label, where it is (--issuer, --tenant, --domain, --realm, as its kind takes), client ID or client secret; what you leave out stays.`,
 		Example: `  dock sso set corp --label "Example ID"
+  dock sso set staff --realm employees
   printf %s "$NEW_SECRET" | dock sso set google --client-secret-stdin`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -200,6 +210,15 @@ func newSSOSetCmd(g *globals) *cobra.Command {
 			if fl.Changed("issuer") {
 				req.Issuer = &f.issuer
 			}
+			if fl.Changed("tenant") {
+				req.Tenant = &f.tenant
+			}
+			if fl.Changed("domain") {
+				req.Domain = &f.domain
+			}
+			if fl.Changed("realm") {
+				req.Realm = &f.realm
+			}
 			if fl.Changed("client-id") {
 				req.ClientID = &f.clientID
 			}
@@ -210,8 +229,8 @@ func newSSOSetCmd(g *globals) *cobra.Command {
 				}
 				req.ClientSecret = &secret
 			}
-			if req.Label == nil && req.Issuer == nil && req.ClientID == nil && req.ClientSecret == nil {
-				return usageError("nothing to change", "Pass --label, --issuer, --client-id or --client-secret-stdin.")
+			if req.Label == nil && req.Issuer == nil && req.Tenant == nil && req.Domain == nil && req.Realm == nil && req.ClientID == nil && req.ClientSecret == nil {
+				return usageError("nothing to change", "Pass --label, --issuer, --tenant, --domain, --realm, --client-id or --client-secret-stdin.")
 			}
 			s, err := g.connect()
 			if err != nil {

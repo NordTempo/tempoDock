@@ -2,7 +2,8 @@
 
 Status: accepted (asked by Saile, 2026-11-07; designed by the agent).
 Amends [0058](0058-sso-oidc.md); [0057](0057-two-factor-sign-in.md) and
-[0060](0060-invite-links-signed-out.md) as noted.
+[0060](0060-invite-links-signed-out.md) as noted. Amended by
+[0081](0081-named-identity-providers.md): more kinds of provider.
 
 ## Context
 

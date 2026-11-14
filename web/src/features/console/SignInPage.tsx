@@ -270,16 +270,24 @@ function OnOff({ on }: { on: boolean }) {
 }
 
 /** Where to register Dock at each kind of provider. */
-function setupHint(kind: Kind) {
-  switch (kind) {
-    case "google":
-      return "In Google Cloud: APIs & Services, Credentials, Create credentials, OAuth client ID, Web application. Add the redirect URL as an authorized redirect URI.";
-    case "github":
-      return "At GitHub: Settings, Developer settings, OAuth Apps, New OAuth App. The redirect URL is its authorization callback URL. Dock signs people in with the account's primary verified email.";
-    case "oidc":
-      return "Register a web application with the scopes openid, email and profile and the redirect URL. The issuer must match the provider's tokens exactly, trailing slash included.";
-  }
-}
+const setupHint: Record<Kind, string> = {
+  google:
+    "In Google Cloud: APIs & Services, Credentials, Create credentials, OAuth client ID, Web application. Add the redirect URL as an authorized redirect URI.",
+  github:
+    "At GitHub: Settings, Developer settings, OAuth Apps, New OAuth App. The redirect URL is its authorization callback URL. Dock signs people in with the account's primary verified email.",
+  microsoft:
+    "In Entra ID: App registrations, New registration, single tenant, with the redirect URL as a Web redirect URI; then a client secret, and in Token configuration the optional ID token claims email and xms_edov. Dock signs in only people whose email xms_edov vouches for.",
+  gitlab:
+    "In GitLab: Edit profile (or a group, or the instance's Admin area), Applications, with the scopes openid, email and profile and the redirect URL.",
+  okta: "In Okta: Applications, Create App Integration, OIDC, Web Application, with the redirect URL as a sign-in redirect URI.",
+  auth0:
+    "In Auth0: Applications, Create Application, Regular Web Application. Add the redirect URL to its Allowed Callback URLs.",
+  keycloak:
+    "In the realm: Clients, Create client, OpenID Connect, Client authentication on, with the redirect URL as a valid redirect URI.",
+  authentik:
+    "In authentik: Applications, Create with provider, OAuth2/OpenID, Confidential, with the redirect URL. The realm is the application's slug.",
+  oidc: "Register a web application with the scopes openid, email and profile and the redirect URL. The issuer must match the provider's tokens exactly, trailing slash included.",
+};
 
 /** The open provider: its facts, its button, Edit and Remove. */
 function ProviderView({
@@ -325,7 +333,7 @@ function ProviderView({
         <dd>{kindName[p.kind]}</dd>
         <dt>Name</dt>
         <dd className="font-mono">{p.name}</dd>
-        {p.kind === "oidc" && (
+        {p.kind !== "google" && p.issuer && (
           <>
             <dt>Issuer</dt>
             <dd className="font-mono [overflow-wrap:anywhere]">{p.issuer}</dd>
@@ -350,7 +358,7 @@ function ProviderView({
         </span>
       </div>
       <p className="max-w-[760px] text-xs text-mut">
-        {setupHint(p.kind)} Redirect URL:{" "}
+        {setupHint[p.kind]} Redirect URL:{" "}
         <code className="font-mono text-sec">{redirect}</code>
       </p>
       {asking && (
@@ -376,9 +384,16 @@ function ProviderView({
   );
 }
 
+/** The kinds to pick from, in the add form's order. */
 const kinds: { kind: Kind; label: string }[] = [
   { kind: "google", label: "Google" },
   { kind: "github", label: "GitHub" },
+  { kind: "microsoft", label: "Microsoft" },
+  { kind: "gitlab", label: "GitLab" },
+  { kind: "okta", label: "Okta" },
+  { kind: "auth0", label: "Auth0" },
+  { kind: "keycloak", label: "Keycloak" },
+  { kind: "authentik", label: "Authentik" },
   { kind: "oidc", label: "Custom" },
 ];
 
@@ -386,7 +401,70 @@ const kinds: { kind: Kind; label: string }[] = [
 const defaultLabel: Record<Kind, string> = {
   google: "Google",
   github: "GitHub",
+  microsoft: "Microsoft",
+  gitlab: "GitLab",
+  okta: "Okta",
+  auth0: "Auth0",
+  keycloak: "Keycloak",
+  authentik: "Authentik",
   oidc: "",
+};
+
+/** What a kind asks for to find its provider (ADR 0081). */
+type WhereKey = "tenant" | "domain" | "realm" | "issuer";
+type WhereField = {
+  key: WhereKey;
+  label: string;
+  placeholder: string;
+  /** Left blank, the kind's default (gitlab.com). */
+  optional?: boolean;
+};
+
+const whereFields: Record<Kind, WhereField[]> = {
+  google: [],
+  github: [],
+  microsoft: [
+    {
+      key: "tenant",
+      label: "Tenant",
+      placeholder: "contoso.onmicrosoft.com or its tenant ID",
+    },
+  ],
+  gitlab: [
+    {
+      key: "domain",
+      label: "GitLab URL",
+      placeholder: "gitlab.com",
+      optional: true,
+    },
+  ],
+  okta: [{ key: "domain", label: "Okta domain", placeholder: "acme.okta.com" }],
+  auth0: [
+    { key: "domain", label: "Auth0 domain", placeholder: "acme.eu.auth0.com" },
+  ],
+  keycloak: [
+    { key: "domain", label: "Keycloak URL", placeholder: "id.example.com" },
+    { key: "realm", label: "Realm", placeholder: "staff" },
+  ],
+  authentik: [
+    { key: "domain", label: "authentik URL", placeholder: "auth.example.com" },
+    { key: "realm", label: "Application slug", placeholder: "dock" },
+  ],
+  oidc: [
+    {
+      key: "issuer",
+      label: "Issuer URL",
+      placeholder: "https://id.example.com/realms/staff",
+    },
+  ],
+};
+
+/** The CLI flag of each field. */
+const whereFlag: Record<WhereKey, string> = {
+  tenant: "--tenant",
+  domain: "--domain",
+  realm: "--realm",
+  issuer: "--issuer",
 };
 
 /**
@@ -411,36 +489,56 @@ function ProviderForm({
   const [kind, setKind] = useState<Kind>(provider?.kind ?? "google");
   const [name, setName] = useState("");
   const [label, setLabel] = useState(provider?.label ?? "");
-  const [issuer, setIssuer] = useState(provider?.issuer ?? "");
+  const stored: Record<WhereKey, string> = {
+    tenant: provider?.tenant ?? "",
+    domain: provider?.domain ?? "",
+    realm: provider?.realm ?? "",
+    issuer: provider?.issuer ?? "",
+  };
+  const [where, setWhere] = useState(stored);
   const [clientID, setClientID] = useState(provider?.client_id ?? "");
   const [secret, setSecret] = useState("");
   const custom = kind === "oidc";
+  const fields = whereFields[kind];
   const finalName = name.trim() || (custom ? "" : kind);
+  const whereChanged = fields.filter(
+    (f) => where[f.key].trim() !== stored[f.key],
+  );
+  const whereSet = fields.filter((f) => where[f.key].trim());
 
   const changed: components["schemas"]["UpdateSSOProviderRequest"] = provider
     ? {
         ...(label.trim() !== provider.label && { label: label.trim() }),
-        ...(custom &&
-          issuer.trim() !== (provider.issuer ?? "") && {
-            issuer: issuer.trim(),
-          }),
+        ...Object.fromEntries(
+          whereChanged.map((f) => [f.key, where[f.key].trim()]),
+        ),
         ...(clientID.trim() !== provider.client_id && {
           client_id: clientID.trim(),
         }),
         ...(secret && { client_secret: secret }),
       }
     : {};
+  const whereReady = fields.every((f) => f.optional || where[f.key].trim());
   const ready = provider
-    ? Object.keys(changed).length > 0 && !!label.trim() && !!clientID.trim()
+    ? Object.keys(changed).length > 0 &&
+      !!label.trim() &&
+      !!clientID.trim() &&
+      whereReady
     : !!finalName &&
       !!clientID.trim() &&
       !!secret &&
-      (!custom || (!!issuer.trim() && !!label.trim()));
+      whereReady &&
+      (!custom || !!label.trim());
   const flags = [
-    !provider && custom && "--kind oidc",
-    custom &&
-      (!provider || changed.issuer !== undefined) &&
-      `--issuer ${issuer.trim() || "<url>"}`,
+    !provider && (custom || finalName !== kind) && `--kind ${kind}`,
+    ...(provider ? whereChanged : whereSet).map(
+      (f) => `${whereFlag[f.key]} ${where[f.key].trim()}`,
+    ),
+    !provider &&
+      fields
+        .filter((f) => !f.optional && !where[f.key].trim())
+        .map((f) => `${whereFlag[f.key]} <${f.key}>`)
+        .join(" "),
     ((!provider && label.trim()) || changed.label !== undefined) &&
       `--label "${label.trim()}"`,
     (!provider || changed.client_id !== undefined) &&
@@ -472,7 +570,9 @@ function ProviderForm({
             name: finalName,
             kind,
             ...(label.trim() && { label: label.trim() }),
-            ...(custom && { issuer: issuer.trim() }),
+            ...Object.fromEntries(
+              whereSet.map((f) => [f.key, where[f.key].trim()]),
+            ),
             client_id: clientID.trim(),
             client_secret: secret,
           },
@@ -484,7 +584,11 @@ function ProviderForm({
         {provider ? `Change ${provider.label}` : "Add a provider"}
       </h2>
       {!provider && (
-        <div role="radiogroup" aria-label="Kind" className="flex gap-5">
+        <div
+          role="radiogroup"
+          aria-label="Kind"
+          className="flex flex-wrap gap-x-5 gap-y-2"
+        >
           {kinds.map((k) => (
             <label
               key={k.kind}
@@ -498,6 +602,7 @@ function ProviderForm({
                 onChange={() => {
                   setKind(k.kind);
                   setLabel("");
+                  setWhere(stored);
                 }}
               />
               <ProviderMark kind={k.kind} />
@@ -507,7 +612,7 @@ function ProviderForm({
         </div>
       )}
       <p className="text-xs text-mut">
-        {setupHint(kind)} Redirect URL:{" "}
+        {setupHint[kind]} Redirect URL:{" "}
         <code className="font-mono text-sec [overflow-wrap:anywhere]">
           {redirect}
         </code>
@@ -522,17 +627,20 @@ function ProviderForm({
           />
         </Field>
       )}
-      {custom && (
-        <Field label="Issuer URL">
+      {fields.map((f) => (
+        <Field
+          key={f.key}
+          label={f.label}
+          note={f.optional ? "blank for gitlab.com" : undefined}
+        >
           <input
-            type="url"
-            value={issuer}
-            onChange={(e) => setIssuer(e.target.value)}
-            placeholder="https://id.example.com/realms/staff"
+            value={where[f.key]}
+            onChange={(e) => setWhere({ ...where, [f.key]: e.target.value })}
+            placeholder={f.placeholder}
             className="field font-mono"
           />
         </Field>
-      )}
+      ))}
       <Field label="Button" note="Continue with ...">
         <input
           value={label}

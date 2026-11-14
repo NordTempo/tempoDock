@@ -30,10 +30,11 @@ const (
 	ClientSecret = "dock-client-secret"
 )
 
-// Provider is a running fake provider; Issuer is its URL.
+// Provider is a running fake provider: URL is where it runs, Issuer its
+// issuer there.
 type Provider struct {
-	Issuer string
-	key    *rsa.PrivateKey
+	URL, Issuer string
+	key         *rsa.PrivateKey
 
 	mu    sync.Mutex
 	codes map[string]grant
@@ -46,7 +47,13 @@ type grant struct {
 }
 
 // New starts a provider for the test's lifetime.
-func New(t testing.TB) *Provider {
+func New(t testing.TB) *Provider { return NewAt(t, "") }
+
+// NewAt starts a provider whose issuer is its URL with path (like
+// "/realms/staff", or "/" for an issuer with a trailing slash). Each of
+// aliases (like "/contoso.com/v2.0") serves the same discovery document,
+// as Microsoft does for a tenant's domains.
+func NewAt(t testing.TB, path string, aliases ...string) *Provider {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -54,23 +61,29 @@ func New(t testing.TB) *Provider {
 	}
 	p := &Provider{key: key, codes: map[string]grant{}}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+	discovery := func(w http.ResponseWriter, _ *http.Request) {
+		base := strings.TrimSuffix(p.Issuer, "/")
 		writeJSON(w, map[string]any{
-			"issuer": p.Issuer, "authorization_endpoint": p.Issuer + "/authorize", "token_endpoint": p.Issuer + "/token",
-			"jwks_uri": p.Issuer + "/jwks", "response_types_supported": []string{"code"},
+			"issuer": p.Issuer, "authorization_endpoint": base + "/authorize", "token_endpoint": base + "/token",
+			"jwks_uri": base + "/jwks", "response_types_supported": []string{"code"},
 			"subject_types_supported": []string{"public"}, "id_token_signing_alg_values_supported": []string{"RS256"},
 		})
-	})
-	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+	}
+	base := strings.TrimSuffix(path, "/")
+	for _, at := range append([]string{base}, aliases...) {
+		mux.HandleFunc("GET "+at+"/.well-known/openid-configuration", discovery)
+	}
+	mux.HandleFunc("GET "+base+"/jwks", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]any{"keys": []map[string]string{{
 			"kty": "RSA", "kid": "k1", "use": "sig", "alg": "RS256",
 			"n": b64(key.N.Bytes()), "e": b64(big.NewInt(int64(key.E)).Bytes()),
 		}}})
 	})
-	mux.HandleFunc("POST /token", p.token)
+	mux.HandleFunc("POST "+base+"/token", p.token)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	p.Issuer = srv.URL
+	p.URL = srv.URL
+	p.Issuer = srv.URL + path
 	return p
 }
 

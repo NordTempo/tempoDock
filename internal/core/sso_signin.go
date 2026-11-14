@@ -51,18 +51,20 @@ const (
 
 // ssoState is single sign-on's in-memory side: the flows waiting for a
 // provider's answer, the client that talks to providers, and where GitHub
-// is (tests point it at a fake).
+// and Microsoft are (tests point them at fakes).
 type ssoState struct {
-	flows  *ceremonies
-	client *http.Client
-	github githubEndpoints
+	flows     *ceremonies
+	client    *http.Client
+	github    githubEndpoints
+	microsoft string
 }
 
 func newSSOState() ssoState {
 	return ssoState{
-		flows:  newCeremonies(),
-		client: &http.Client{Timeout: ssoTimeout, Transport: limitedTransport{http.DefaultTransport}},
-		github: githubDotCom,
+		flows:     newCeremonies(),
+		client:    &http.Client{Timeout: ssoTimeout, Transport: limitedTransport{http.DefaultTransport}},
+		github:    githubDotCom,
+		microsoft: microsoftDotCom,
 	}
 }
 
@@ -345,10 +347,13 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 		return ssoPerson{}, errSSOAnswer(p.Label)
 	}
 	var claims struct {
-		Email             string `json:"email"`
-		EmailVerified     any    `json:"email_verified"`
-		Name              string `json:"name"`
-		PreferredUsername string `json:"preferred_username"`
+		Email         string `json:"email"`
+		EmailVerified any    `json:"email_verified"`
+		// EmailDomainVerified is Microsoft's xms_edov, an optional claim:
+		// the email's domain is verified by the tenant that owns it.
+		EmailDomainVerified any    `json:"xms_edov"`
+		Name                string `json:"name"`
+		PreferredUsername   string `json:"preferred_username"`
 	}
 	if err := idt.Claims(&claims); err != nil {
 		log.Warn("sso: ID token claims", "err", err)
@@ -358,7 +363,14 @@ func oidcPerson(ctx context.Context, log *slog.Logger, p store.SsoProvider, f *s
 	if who.email == "" {
 		return who, errf(apitypes.CodeForbidden, "%s sent no email address; ask an operator to let Dock read it (the email scope)", p.Label)
 	}
-	if !emailVerified(claims.EmailVerified) {
+	switch {
+	case p.Kind == string(apitypes.SSOMicrosoft):
+		// Entra ID sends no email_verified, and a tenant's admins may set
+		// any address; only xms_edov vouches for it (ADR 0081).
+		if !emailVerified(claims.EmailDomainVerified) && !emailVerified(claims.EmailVerified) {
+			return who, errf(apitypes.CodeForbidden, "Microsoft didn't say %s is verified; ask an operator to add the optional claims email and xms_edov to the ID token of Dock's app registration (Token configuration)", who.email)
+		}
+	case !emailVerified(claims.EmailVerified):
 		return who, errf(apitypes.CodeForbidden, "%s hasn't verified %s; verify it there and try again", p.Label, who.email)
 	}
 	who.name = cmp.Or(strings.TrimSpace(claims.Name), strings.TrimSpace(claims.PreferredUsername))
@@ -532,8 +544,8 @@ func landingPath(to string) (string, error) {
 	return to, nil
 }
 
-// emailVerified reads the email_verified claim: a boolean, or the string
-// "true" some providers send.
+// emailVerified reads the email_verified claim (or Microsoft's xms_edov):
+// a boolean, or the string "true" some providers send.
 func emailVerified(v any) bool {
 	switch v := v.(type) {
 	case bool:
