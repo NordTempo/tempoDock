@@ -11,7 +11,7 @@ import (
 )
 
 // registerAppTemplates registers the app template catalog and using a
-// template in an environment (ADR 0081).
+// template in an environment (ADR 0082).
 func registerAppTemplates(s *Server, a huma.API) {
 	tags := []string{"templates"}
 	authed(s, a, huma.Operation{

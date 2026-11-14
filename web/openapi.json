@@ -19293,6 +19293,9 @@
               "null"
             ]
           },
+          "file": {
+            "type": "string"
+          },
           "plan": {
             "$ref": "#/components/schemas/ApplyPlan"
           },

@@ -160,5 +160,5 @@ WHERE backup_logs.service_id = +sqlc.arg(service_id) AND backup_logs.backup_id <
 );
 
 -- name: SetServiceFromTemplate :exec
--- Records the app template (ADR 0081) a service was created from.
+-- Records the app template (ADR 0082) a service was created from.
 UPDATE services SET from_template = ?, from_template_revision = ? WHERE id = +?;

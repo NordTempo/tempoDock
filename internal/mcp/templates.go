@@ -10,7 +10,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/mcpkit"
 )
 
-// App templates for agents (ADR 0081): find a template and use it.
+// App templates for agents (ADR 0082): find a template and use it.
 
 // addTemplateTools registers the template tools.
 func (h *handler) addTemplateTools(s *mcpkit.Server[core.Actor]) {

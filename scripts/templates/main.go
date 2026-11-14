@@ -1,5 +1,5 @@
 // Command templates pins and bumps the images of the app templates
-// (internal/apptemplates/catalog, ADR 0081).
+// (internal/apptemplates/catalog, ADR 0082).
 //
 //	go run ./scripts/templates pin [name...]   pin each image's tag to its current digest
 //	go run ./scripts/templates bump [name...]  move each image to the newest tag on its track, then pin

@@ -12385,6 +12385,7 @@ export interface components {
         };
         UseTemplateResult: {
             failed: string[] | null;
+            file?: string;
             plan: components["schemas"]["ApplyPlan"];
             releases: components["schemas"]["Release"][] | null;
             services: string[] | null;

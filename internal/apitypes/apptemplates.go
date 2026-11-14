@@ -1,6 +1,6 @@
 package apitypes
 
-// App templates (ADR 0081): an app's services as a project file fragment
+// App templates (ADR 0082): an app's services as a project file fragment
 // with the inputs its form asks for. Using one creates ordinary services.
 
 // TemplateInputKind is what a template input asks for, and how the form

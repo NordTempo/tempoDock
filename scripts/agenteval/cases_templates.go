@@ -4,7 +4,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// templateCases set up apps from templates (ADR 0081): find one, fill its
+// templateCases set up apps from templates (ADR 0082): find one, fill its
 // inputs, and use it instead of building the services by hand.
 func templateCases() []Case {
 	return []Case{
