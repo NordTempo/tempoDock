@@ -6,6 +6,7 @@ type Kind = ServiceBackups["kind"];
 export const backupWhat: Record<Kind, string> = {
   postgres: "Database dumps",
   redis: "Redis snapshots",
+  mysql: "Database dumps",
   volume: "Copies of its volumes' files",
 };
 

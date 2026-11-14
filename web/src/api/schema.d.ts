@@ -7175,7 +7175,7 @@ export interface components {
             /** Format: int64 */
             port?: number;
             /** @enum {string} */
-            template?: "postgres" | "redis";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
             volumes?: string[] | null;
         };
         AppliedChanges: {
@@ -7285,7 +7285,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "postgres" | "redis" | "volume";
+            kind: "postgres" | "redis" | "mysql" | "volume";
             not_restorable?: string;
             off_box: boolean;
             /** @enum {string} */
@@ -7805,7 +7805,7 @@ export interface components {
              * @description Create a database from a template; other settings are ignored
              * @enum {string}
              */
-            template?: "postgres" | "redis";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
         };
         CreateSnapshotRequest: {
             note?: string;
@@ -9662,6 +9662,17 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        JobExport: {
+            command: string;
+            enabled?: boolean;
+            name: string;
+            /** @enum {string} */
+            overlap?: "skip" | "allow";
+            schedule: string;
+            /** Format: int64 */
+            timeout_seconds?: number;
+            timezone?: string;
+        };
         JoinOrgRequest: {
             /**
              * Format: int64
@@ -10019,7 +10030,7 @@ export interface components {
             action: "add" | "update" | "remove";
             environment?: string;
             /** @enum {string} */
-            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database" | "log_drain" | "registry_credential";
+            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database" | "log_drain" | "registry_credential" | "job";
             name?: string;
             new?: string;
             note?: string;
@@ -10939,12 +10950,12 @@ export interface components {
             stopped_at?: string;
             stopped_by?: string;
             /** @enum {string} */
-            template?: "postgres" | "redis";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
             usage?: components["schemas"]["ServiceUsage"];
         };
         ServiceBackups: {
             /** @enum {string} */
-            kind: "postgres" | "redis" | "volume";
+            kind: "postgres" | "redis" | "mysql" | "volume";
             off_box: boolean;
             restorable: boolean;
             runs: components["schemas"]["BackupRun"][] | null;
@@ -10974,6 +10985,7 @@ export interface components {
             /** Format: int64 */
             health_check_timeout_seconds?: number;
             image?: string;
+            jobs?: components["schemas"]["JobExport"][] | null;
             /** Format: int64 */
             memory_mb?: number;
             name: string;
@@ -11849,7 +11861,7 @@ export interface components {
             memory_mb: number;
             mount_path: string;
             /** @enum {string} */
-            name: "postgres" | "redis";
+            name: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
         };
         TemplateInput: {
             choices?: string[] | null;

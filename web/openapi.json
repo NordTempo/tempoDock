@@ -1415,7 +1415,11 @@
           "template": {
             "enum": [
               "postgres",
-              "redis"
+              "redis",
+              "mysql",
+              "mariadb",
+              "valkey",
+              "pgvector"
             ],
             "type": "string"
           },
@@ -1854,6 +1858,7 @@
             "enum": [
               "postgres",
               "redis",
+              "mysql",
               "volume"
             ],
             "type": "string"
@@ -3585,7 +3590,11 @@
             "description": "Create a database from a template; other settings are ignored",
             "enum": [
               "postgres",
-              "redis"
+              "redis",
+              "mysql",
+              "mariadb",
+              "valkey",
+              "pgvector"
             ],
             "type": "string"
           }
@@ -10179,6 +10188,43 @@
         ],
         "type": "object"
       },
+      "JobExport": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overlap": {
+            "enum": [
+              "skip",
+              "allow"
+            ],
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "schedule",
+          "command"
+        ],
+        "type": "object"
+      },
       "JoinOrgRequest": {
         "additionalProperties": false,
         "properties": {
@@ -11468,7 +11514,8 @@
               "git",
               "database",
               "log_drain",
-              "registry_credential"
+              "registry_credential",
+              "job"
             ],
             "type": "string"
           },
@@ -14471,7 +14518,11 @@
           "template": {
             "enum": [
               "postgres",
-              "redis"
+              "redis",
+              "mysql",
+              "mariadb",
+              "valkey",
+              "pgvector"
             ],
             "type": "string"
           },
@@ -14520,6 +14571,7 @@
             "enum": [
               "postgres",
               "redis",
+              "mysql",
               "volume"
             ],
             "type": "string"
@@ -14624,6 +14676,15 @@
           },
           "image": {
             "type": "string"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobExport"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "memory_mb": {
             "format": "int64",
@@ -17635,7 +17696,11 @@
           "name": {
             "enum": [
               "postgres",
-              "redis"
+              "redis",
+              "mysql",
+              "mariadb",
+              "valkey",
+              "pgvector"
             ],
             "type": "string"
           }
