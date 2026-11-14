@@ -39,8 +39,17 @@ func TestStatusMaintenance(t *testing.T) {
 	h, checks, page := incidentPage(t)
 	k := newReceiver(h)
 	h.channel(apitypes.CreateAlertChannelRequest{Name: "hook", Kind: apitypes.ChannelWebhook, URL: k.srv.URL})
+	// The window is in the future (it starts scheduled) and the page's
+	// last day, today in UTC, must hold all of it: steps of 10 s, the ticks
+	// taking explicit times, and a start a minute before UTC midnight
+	// waits for the new day. Hours from now crossed midnight from 22:00 UTC.
+	const step = 10 * time.Second
 	t0 := time.Now().UTC()
-	start, end := t0.Add(time.Hour), t0.Add(2*time.Hour)
+	if left := t0.Truncate(24 * time.Hour).Add(24 * time.Hour).Sub(t0); left < 6*step {
+		time.Sleep(left + time.Second)
+		t0 = time.Now().UTC()
+	}
+	start, end := t0.Add(step), t0.Add(2*step)
 
 	if _, err := h.c.ScheduleMaintenance(h.ctx, testSystem, "acme", apitypes.ScheduleMaintenanceRequest{Title: "Upgrade", Components: []string{"api"},
 		StartsAt: start, EndsAt: start}); CodeOf(err) != apitypes.CodeValidation {
@@ -97,14 +106,14 @@ func TestStatusMaintenance(t *testing.T) {
 		t.Errorf("a held alert drafted an incident: %+v", p.Incidents)
 	}
 
-	if _, err := h.c.UpdateIncident(h.ctx, testSystem, w.ID, apitypes.UpdateIncidentRequest{EndsAt: new(end.Add(time.Hour))}); err != nil {
+	if _, err := h.c.UpdateIncident(h.ctx, testSystem, w.ID, apitypes.UpdateIncidentRequest{EndsAt: new(end.Add(step))}); err != nil {
 		t.Fatal(err)
 	}
 	h.c.maintenanceTick(h.ctx, end.Add(time.Second))
 	if got := h.componentStatuses(t); got[0] != apitypes.StatusMaintenance {
 		t.Errorf("an extended window ended at its old end: %v", got)
 	}
-	h.c.maintenanceTick(h.ctx, end.Add(time.Hour+time.Second))
+	h.c.maintenanceTick(h.ctx, end.Add(step+time.Second))
 	if evs := k.events(t, 1); evs[0] != "opened" {
 		t.Errorf("the held alert at the window's end: %v", evs)
 	}
