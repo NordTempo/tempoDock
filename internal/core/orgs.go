@@ -51,7 +51,7 @@ func (c *Core) CreateOrg(ctx context.Context, a Actor, req apitypes.CreateOrgReq
 		if org, err = createOrgTx(ctx, q, req.Slug, req.Name); err != nil {
 			return err
 		}
-		return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: org.ID, UserID: a.UserID, Role: string(apitypes.ScopeAdmin)})
+		return joinOrgMember(ctx, q, org.ID, a.UserID, apitypes.ScopeAdmin)
 	})
 	if store.IsUnique(err) {
 		return apitypes.Org{}, conflict("organization %q already exists; pick another slug", req.Slug)
@@ -72,7 +72,11 @@ func createOrgTx(ctx context.Context, q *store.Queries, slug, name string) (stor
 	if err := q.ReleaseOrgOldSlug(ctx, slug); err != nil {
 		return store.Org{}, err
 	}
-	return q.CreateOrg(ctx, store.CreateOrgParams{Slug: slug, Name: name})
+	org, err := q.CreateOrg(ctx, store.CreateOrgParams{Slug: slug, Name: name})
+	if err != nil {
+		return org, err
+	}
+	return org, seedGroups(ctx, q, org.ID)
 }
 
 // validOrgSlug checks a new org slug: the name rules, and not the

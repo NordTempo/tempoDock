@@ -288,13 +288,14 @@ func (c *Core) publishRequest(r store.AccessRequest, project, env string) {
 	})
 }
 
-// seesRequest reports whether the actor may see a request: the org's
-// admins who can see its environment, and the token that asked.
+// seesRequest reports whether the actor may see a request: whoever may
+// approve in its environment (ADR 0080; the org's admins before), and the
+// token that asked.
 func (a Actor) seesRequest(r store.AccessRequest) bool {
 	if a.Kind == "token" && r.TokenID != nil && a.TokenID == *r.TokenID {
 		return true
 	}
-	return rank(a.Scope) >= rank(apitypes.ScopeAdmin) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
+	return a.approves(r.ProjectID, r.EnvironmentID) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
 }
 
 // RequestFilter narrows ListRequests.
@@ -326,12 +327,15 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 		for _, g := range got {
 			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
 		}
-	case rank(a.Scope) >= rank(apitypes.ScopeAdmin):
+	case a.approves(0, 0):
 		got, err := c.store.ListOrgAccessRequests(ctx, store.ListOrgAccessRequestsParams{OrgID: a.OrgID, Limit: limit})
 		if err != nil {
 			return nil, err
 		}
 		for _, g := range got {
+			if !a.seesRequest(g.AccessRequest) {
+				continue // an approver of other environments only
+			}
 			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
 		}
 	default:
@@ -399,7 +403,7 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 	if err != nil {
 		return apitypes.AccessRequest{}, err
 	}
-	admin := rank(a.Scope) >= rank(apitypes.ScopeAdmin)
+	admin := a.approves(r.ProjectID, r.EnvironmentID)
 	out := c.toRequest(r, es, admin)
 	if admin {
 		n, err := c.store.CountEnvironmentAuditSince(ctx, store.CountEnvironmentAuditSinceParams{EnvironmentID: &r.EnvironmentID, ID: r.AuditMark})

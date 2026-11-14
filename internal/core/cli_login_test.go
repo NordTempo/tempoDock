@@ -237,11 +237,17 @@ func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 	// Scope is capped at the user's current role, and checked without
 	// waiting for a revocation.
 	tok := h.cliToken(ada)
-	sql("UPDATE org_members SET role = 'read' WHERE user_id = ?", ada.UserID)
+	setRole := func(role apitypes.Scope) {
+		t.Helper()
+		if err := placeInRoleGroup(h.ctx, h.store.Queries, 1, ada.UserID, role, "test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setRole(apitypes.ScopeRead)
 	if a, err := authAs(tok); err != nil || a.Scope != apitypes.ScopeRead {
 		t.Fatalf("after demotion to read: %+v, %v", a, err)
 	}
-	sql("UPDATE org_members SET role = 'admin' WHERE user_id = ?", ada.UserID)
+	setRole(apitypes.ScopeAdmin)
 	sql("UPDATE users SET disabled_at = ? WHERE id = ?", now(), ada.UserID)
 	refused("user disabled behind core's back", tok)
 	sql("UPDATE users SET disabled_at = NULL WHERE id = ?", ada.UserID)

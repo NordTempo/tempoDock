@@ -312,6 +312,9 @@ func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitype
 	out := make([]apitypes.AuditEvent, 0, len(rows))
 	for _, r := range rows {
 		e := r.AuditEvent
+		if a.hasGrants && !a.canSee(a.OrgID, deref(e.ProjectID), deref(e.EnvironmentID)) {
+			continue // a person whose grants don't reach it (ADR 0080)
+		}
 		out = append(out, apitypes.AuditEvent{
 			ID: e.ID, Actor: e.Actor, ActorKind: e.ActorKind, Action: e.Action,
 			Project: r.ProjectName, Environment: r.EnvironmentName,

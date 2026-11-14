@@ -152,7 +152,7 @@ func (c *Core) ListProjects(ctx context.Context, a Actor, archived bool) ([]apit
 	}
 	out := []apitypes.Project{}
 	for _, p := range rows {
-		if (a.ProjectID == 0 || a.ProjectID == p.ID) && (archived || p.ArchivedAt == nil) {
+		if a.seesProject(p.ID) && (archived || p.ArchivedAt == nil) {
 			out = append(out, toProject(p))
 		}
 	}

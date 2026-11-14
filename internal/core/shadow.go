@@ -31,6 +31,9 @@ type actionKey struct {
 // missing from it counts as a disagreement ("unmapped"), and
 // TestEveryCheckHasAPermission fails for a literal one.
 var actionPerms = map[actionKey]Perm{
+	{apitypes.ScopeAdmin, "reading groups"}:                                         PermMembersRead,
+	{apitypes.ScopeAdmin, "managing groups"}:                                        PermMembersManage,
+	{apitypes.ScopeRead, "reading your access"}:                                     PermEnvView,
 	{apitypes.ScopeAdmin, "removing alert channels"}:                                PermAlertsManage,
 	{apitypes.ScopeAdmin, "testing alert channels"}:                                 PermAlertsManage,
 	{apitypes.ScopeDeploy, "editing an incident update"}:                            PermStatusPagesPost,
@@ -326,7 +329,9 @@ func ShadowReport() []apitypes.AccessDisagreement {
 // env 0 mean every one.
 type grantEntry struct {
 	project, env int64
-	perms        Perms
+	// kinds are the environment kinds it covers (kindProduction, ...).
+	kinds uint8
+	perms Perms
 }
 
 // seededPerms is a scope's seeded group outside the Data panel.
@@ -347,14 +352,14 @@ func seededPerms(s apitypes.Scope) Perms {
 // as its seeded group's permissions, at its limit's place. It needs no
 // query: everything is on the actor.
 func (a Actor) modelAccess() grantEntry {
-	return grantEntry{project: a.ProjectID, env: a.EnvironmentID, perms: seededPerms(a.Scope)}
+	return grantEntry{project: a.ProjectID, env: a.EnvironmentID, kinds: uint8(allKinds), perms: seededPerms(a.Scope)}
 }
 
 // shadowed reports whether the actor's checks are compared: people and
 // tokens acting in an org. The system and platform credentials have no
 // org access to model.
 func (a Actor) shadowed() bool {
-	return a.Kind != "system" && !a.platformOnly && a.OrgID != 0
+	return a.Kind != "system" && !a.platformOnly && a.OrgID != 0 && !a.hasGrants
 }
 
 // modelAllows is the model's answer for perm: at the org (project and env
@@ -364,23 +369,27 @@ func (a Actor) shadowed() bool {
 // permission asked of the org is held anywhere (a list filters what it
 // shows); asked of a project, one that only reads is held anywhere in it,
 // and one that changes needs the whole project.
-func modelAllows(g grantEntry, perm Perm, project, env int64) bool {
+// A grant for some environment kinds only (kinds) covers environments of
+// those kinds; org and project permissions, and changes to a project,
+// need one for every kind.
+func modelAllows(g grantEntry, perm Perm, project, env int64, kind uint8) bool {
 	if !g.perms.has(perm) {
 		return false
 	}
 	info := permTable[perm]
 	inProject := g.project == 0 || g.project == project
+	every := g.kinds == uint8(allKinds)
 	switch {
 	case info.level == PermOrg || info.level == PermProject && project == 0:
-		return g.project == 0 && g.env == 0
+		return g.project == 0 && g.env == 0 && every
 	case info.level == PermProject:
-		return inProject && g.env == 0
+		return inProject && g.env == 0 && every
 	case project == 0:
 		return true
 	case env == 0:
-		return inProject && (info.read || g.env == 0)
+		return inProject && (info.read || g.env == 0 && every)
 	}
-	return inProject && (g.env == 0 || g.env == env)
+	return inProject && (g.env == 0 || g.env == env) && g.kinds&kind != 0
 }
 
 // shadow compares today's answer to a check with the model's.
@@ -401,7 +410,7 @@ func (a Actor) shadow(need apitypes.Scope, action string, project, env int64, ol
 		recordShadow(a, key, place, old, false, " (unmapped: no permission for this check)")
 		return
 	}
-	if model := modelAllows(a.modelAccess(), perm, project, env); model != old {
+	if model := modelAllows(a.modelAccess(), perm, project, env, kindOther); model != old {
 		recordShadow(a, key, place, old, model, " ("+perm.String()+")")
 	}
 }
@@ -417,7 +426,9 @@ func (a Actor) shadow(need apitypes.Scope, action string, project, env int64, ol
 // it into their grants.
 func shadowData(in permissionInput, got apitypes.DataPermission) {
 	a := in.actor
-	if !a.shadowed() || isAgent(a) || rank(a.Scope) >= rank(apitypes.ScopeAdmin) {
+	// People's data access stays on the data policy until it moves into
+	// grants; this keeps finding the rules that can't.
+	if a.Kind == "system" || a.platformOnly || a.OrgID == 0 || isAgent(a) || rank(a.Scope) >= rank(apitypes.ScopeAdmin) {
 		return
 	}
 	subject := subjectOf(a.Scope)

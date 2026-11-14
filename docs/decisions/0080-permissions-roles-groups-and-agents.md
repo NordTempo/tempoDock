@@ -126,7 +126,21 @@ one decides.
    defaults are Org settings; a change to a project needs a grant on the
    whole project, a read one anywhere in it. Tables and the migration
    come with phase 4, from the same mapping.
-4. Groups decide: members and groups, the group editor, effective access.
+4. **Groups decide** (4a built: the back end and the CLI; 4b: the web
+   pages). Groups, their members and grants (migration 0107) decide a
+   person's checks; the core seeds every org's four groups at start and
+   puts members in them by role, and a role change (`dock org role`, an
+   invite) is a move between Admins, Developers and Viewers. A person's
+   `Scope` is now a summary of their grants (admin with all of Admins on
+   the org, deploy with all of Developers), for what still speaks in
+   roles: the data policy, which keeps deciding data access until
+   agents' phase, and the web UI. Approving follows `approve`, so the
+   Approvers group approves without being admins. Tokens keep their
+   scope and limits until phase 6. A grant names environment kinds;
+   previews are marked on the environment's row (`environments.preview`)
+   so a check needs no query. Settled while building: `dock access` was
+   already a service's access protection (ADR 0030), so effective access
+   is `dock can [email]` and one-off grants `dock grant`.
 5. Custom roles; MCP tools declare their permission.
 6. Agents: personal agents and their settings, org agents, agent rules.
 7. Protection.

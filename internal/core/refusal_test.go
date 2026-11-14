@@ -38,9 +38,11 @@ func TestRefusalsExplainThemselves(t *testing.T) {
 	_, err := h.c.Restart(h.ctx, viewer, web)
 	err = h.c.Explain(h.ctx, viewer, err)
 	r := refusalOf(t, err)
-	if r.DecidedBy != apitypes.RefusedRole || r.Need != "deploy" || r.Has != apitypes.ScopeRead || r.Action != "restarting" ||
-		!strings.Contains(r.Fix, "dock org role ola@example.com deploy") || !slices.Equal(r.Ask, []string{"Ada"}) {
-		t.Fatalf("role refusal = %+v", r)
+	// A person's groups decide (ADR 0080): the refusal names the
+	// permission, and the fix is a group that has it.
+	if r.DecidedBy != apitypes.RefusedGrants || r.Need != "service.operate" || r.Has != apitypes.ScopeRead || r.Action != "restarting" ||
+		!strings.Contains(r.Fix, "dock group add <group> ola@example.com") || !slices.Equal(r.Ask, []string{"Ada"}) {
+		t.Fatalf("grants refusal = %+v", r)
 	}
 	if !strings.Contains(err.Error(), r.Reason+"; "+r.Fix) {
 		t.Fatalf("message %q doesn't say why and what to do", err)

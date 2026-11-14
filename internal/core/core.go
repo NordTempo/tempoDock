@@ -443,6 +443,10 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.interruptRuns(ctx); err != nil {
 		return fmt.Errorf("recover runs: %w", err)
 	}
+	// Orgs from before ADR 0080's groups get theirs before anyone acts.
+	if err := c.seedAccess(ctx); err != nil {
+		return fmt.Errorf("seed groups: %w", err)
+	}
 	c.applyRegistryStorage(ctx)
 	if err := c.convertBackupRepository(ctx); err != nil {
 		// Backups keep using the URL as before; the next start tries again.

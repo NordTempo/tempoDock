@@ -65,7 +65,7 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 	}
 	out.SourceKind = apitypes.EnvironmentKind(src.env.Kind)
 	cross := out.SourceKind != kind
-	copyLiterals := rank(a.Scope) >= rank(apitypes.ScopeAdmin) && (!cross || req.CopyValues)
+	copyLiterals := a.revealsSecrets() && (!cross || req.CopyValues)
 	rules := cloneRules{literal: func(apitypes.VariableRef) bool { return copyLiterals }}
 
 	var dst envScope

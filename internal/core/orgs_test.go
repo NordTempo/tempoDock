@@ -25,13 +25,14 @@ func (h *harness) member(email string, orgs map[string]apitypes.Scope) Actor {
 		err := h.store.DB.QueryRowContext(h.ctx, "SELECT id FROM orgs WHERE slug = ?", slug).Scan(&id)
 		if errors.Is(err, sql.ErrNoRows) {
 			var o store.Org
-			o, err = h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: slug, Name: slug})
+			o, err = createOrgTx(h.ctx, h.store.Queries, slug, slug)
 			id = o.ID
 		}
 		if err != nil {
 			h.t.Fatal(err)
 		}
-		if err := h.store.AddOrgMember(h.ctx, store.AddOrgMemberParams{OrgID: id, UserID: u.ID, Role: string(role)}); err != nil {
+		// In the seeded group of their role, as a role change puts them.
+		if err := joinOrgMember(h.ctx, h.store.Queries, id, u.ID, role); err != nil {
 			h.t.Fatal(err)
 		}
 	}

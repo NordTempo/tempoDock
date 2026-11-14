@@ -263,7 +263,10 @@ func (c *Core) OperatorAddMember(ctx context.Context, a Actor, slug string, req 
 		if err := q.DeleteOrgMember(ctx, store.DeleteOrgMemberParams{OrgID: o.ID, UserID: u.ID}); err != nil {
 			return err
 		}
-		return q.AddOrgMember(ctx, store.AddOrgMemberParams{OrgID: o.ID, UserID: u.ID, Role: string(req.Role)})
+		if err := leaveOrgAccess(ctx, q, o.ID, u.ID); err != nil {
+			return err
+		}
+		return joinOrgMember(ctx, q, o.ID, u.ID, req.Role)
 	})
 	if err != nil {
 		return apitypes.User{}, err
@@ -302,7 +305,7 @@ func (c *Core) OperatorRemoveMember(ctx context.Context, a Actor, slug string, u
 	if err != nil {
 		return err
 	}
-	if _, err := c.store.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: o.ID, UserID: userID}); err != nil {
+	if err := c.leaveOrgMember(ctx, o.ID, userID); err != nil {
 		return err
 	}
 	c.auditBoth(ctx, a, o, "org.member_remove", "the platform's operator removed "+u.Email+" from the organization")
@@ -539,7 +542,16 @@ func (c *Core) JoinOrgAsOperator(ctx context.Context, a Actor, slug string, req 
 		if err := q.DeleteOrgMember(ctx, store.DeleteOrgMemberParams{OrgID: o.ID, UserID: a.UserID}); err != nil {
 			return err // a lapsed one, not removed yet
 		}
-		return q.AddExpiringOrgMember(ctx, store.AddExpiringOrgMemberParams{OrgID: o.ID, UserID: a.UserID, ExpiresAt: ptr(until.Unix())})
+		if err := leaveOrgAccess(ctx, q, o.ID, a.UserID); err != nil {
+			return err
+		}
+		if err := q.AddExpiringOrgMember(ctx, store.AddExpiringOrgMemberParams{OrgID: o.ID, UserID: a.UserID, ExpiresAt: ptr(until.Unix())}); err != nil {
+			return err
+		}
+		// Full access until then, theirs alone (ADR 0080).
+		_, err := q.CreateGrant(ctx, store.CreateGrantParams{OrgID: o.ID, UserID: &a.UserID, Role: "full", Kinds: allKinds,
+			ExpiresAt: ptr(until.Unix()), Via: ptr("operator"), GrantedBy: a.Name})
+		return err
 	})
 	if err != nil {
 		return apitypes.OrgMembershipGrant{}, err
@@ -557,7 +569,13 @@ func (c *Core) expireOperatorMembers(ctx context.Context) {
 		return
 	}
 	for _, r := range rows {
-		if err := c.store.DeleteOrgMember(ctx, store.DeleteOrgMemberParams{OrgID: r.OrgID, UserID: r.UserID}); err != nil {
+		err := c.store.Tx(ctx, func(q *store.Queries) error {
+			if err := q.DeleteOrgMember(ctx, store.DeleteOrgMemberParams{OrgID: r.OrgID, UserID: r.UserID}); err != nil {
+				return err
+			}
+			return leaveOrgAccess(ctx, q, r.OrgID, r.UserID)
+		})
+		if err != nil {
 			c.log.Error("expire an operator's membership", "org", r.OrgID, "err", err)
 			continue
 		}

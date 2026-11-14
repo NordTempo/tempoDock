@@ -188,7 +188,9 @@ func TestPlatformApart(t *testing.T) {
 	h := newHarness(t)
 	h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
 	op := h.operator("op@example.com")
-	h.exec(`INSERT INTO org_members (org_id, user_id, role) VALUES (1, ?, 'admin')`, op.UserID)
+	if err := joinOrgMember(h.ctx, h.store.Queries, 1, op.UserID, apitypes.ScopeAdmin); err != nil {
+		t.Fatal(err)
+	}
 	op.Email = "op@example.com"
 
 	opTok, err := h.c.CreatePlatformToken(h.ctx, testSystem, apitypes.CreatePlatformTokenRequest{Name: "ops", Role: apitypes.PlatformOperator})
