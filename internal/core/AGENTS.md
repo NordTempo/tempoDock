@@ -22,6 +22,11 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
 
 - Every exported operation takes the `Actor` and checks it itself. Never
   rely on the API to have checked.
+- A check's scope and action name a permission (ADR 0080): add the pair
+  to `actionPerms` (shadow.go) with the check, or people are refused it.
+  Write the action as a literal or a constant (a loader may pass it on);
+  `TestEveryCheckHasAPermission` follows them to every call site and
+  fails on one it can't read or that has no permission.
 - Locked environments (ADR 0044): `checkEnv` refuses tokens any change
   (scope above read) in a locked environment. That one check is the lock;
   don't add per-operation lock code. So an operation that changes

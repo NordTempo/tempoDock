@@ -278,13 +278,12 @@ func incidentsIn(a Actor, action string) error {
 // loadIncidentFor is the org's incident with public ID id, for an actor
 // with need, and its page.
 func (c *Core) loadIncidentFor(ctx context.Context, a Actor, id string, need apitypes.Scope, action string) (store.StatusIncident, store.StatusPage, error) {
+	// Admin as statusPagesIn asks, deploy as incidentsIn; the scope is
+	// passed on so each check names its own permission.
 	var err error
-	switch need {
-	case apitypes.ScopeAdmin:
-		err = statusPagesIn(a, action)
-	case apitypes.ScopeDeploy:
-		err = incidentsIn(a, action)
-	default:
+	if need == apitypes.ScopeAdmin {
+		err = a.requireUnlimited(need, action)
+	} else {
 		err = a.require(need, action)
 	}
 	if err != nil {

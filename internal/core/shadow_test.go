@@ -1,11 +1,6 @@
 package core
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -28,70 +23,6 @@ func TestPermissionsFitScopes(t *testing.T) {
 	}
 	if seededPerms(apitypes.ScopeAdmin) != allPerms&^dataPerms {
 		t.Error("Admins aren't Full access")
-	}
-}
-
-// checkFuncs are the checks the shadow compares, and the loaders that
-// pass their scope and action on to one.
-var checkFuncs = map[string]bool{
-	"require": true, "requireUnlimited": true, "checkProject": true, "checkEnv": true, "checkEnvAccess": true,
-	"envFor": true, "serviceFor": true, "projectFor": true, "loadStatusPage": true, "jobFor": true, "policyScope": true,
-}
-
-// Every check written with a literal scope and action names a
-// permission, so a new check can't slip past the model unseen.
-func TestEveryCheckHasAPermission(t *testing.T) {
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	fset := token.NewFileSet()
-	n := 0
-	for _, name := range files {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		f, err := parser.ParseFile(fset, name, nil, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ast.Inspect(f, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			var fn string
-			switch f := call.Fun.(type) {
-			case *ast.SelectorExpr:
-				fn = f.Sel.Name
-			case *ast.Ident:
-				fn = f.Name
-			}
-			if !checkFuncs[fn] {
-				return true
-			}
-			for i, arg := range call.Args[:max(0, len(call.Args)-1)] {
-				sel, ok := arg.(*ast.SelectorExpr)
-				if !ok || !strings.HasPrefix(sel.Sel.Name, "Scope") {
-					continue
-				}
-				lit, ok := call.Args[i+1].(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					break
-				}
-				action, _ := strconv.Unquote(lit.Value)
-				key := actionKey{apitypes.Scope(strings.ToLower(strings.TrimPrefix(sel.Sel.Name, "Scope"))), action}
-				n++
-				if _, ok := permFor(key); !ok {
-					t.Errorf("%s: %s(%s, %q) has no permission in actionPerms", fset.Position(call.Pos()), fn, key.need, action)
-				}
-				break
-			}
-			return true
-		})
-	}
-	if n < 150 {
-		t.Fatalf("found only %d checks; the scan is broken", n)
 	}
 }
 

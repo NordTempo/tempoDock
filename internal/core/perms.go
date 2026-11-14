@@ -51,6 +51,7 @@ const (
 	PermDomainsWrite
 	// Analytics
 	PermAnalyticsRead
+	PermAnalyticsReplays
 	PermAnalyticsWrite
 	PermAnalyticsManage
 	// Status pages
@@ -120,28 +121,31 @@ var permTable = [permCount]permInfo{
 	PermDomainsRead:         {"domains.read", PermEnv, false, true},
 	PermDomainsWrite:        {"domains.write", PermEnv, false, false},
 	PermAnalyticsRead:       {"analytics.read", PermEnv, false, true},
-	PermAnalyticsWrite:      {"analytics.write", PermEnv, false, false},
-	PermAnalyticsManage:     {"analytics.manage", PermOrg, false, false},
-	PermStatusPagesRead:     {"status_pages.read", PermEnv, false, true},
-	PermStatusPagesPost:     {"status_pages.post", PermEnv, false, false},
-	PermStatusPagesManage:   {"status_pages.manage", PermOrg, false, false},
-	PermAlertsRead:          {"alerts.read", PermEnv, false, true},
-	PermAlertsResolve:       {"alerts.resolve", PermEnv, false, false},
-	PermAlertsManage:        {"alerts.manage", PermOrg, false, false},
-	PermUptimeManage:        {"uptime.manage", PermEnv, false, false},
-	PermRequestsRead:        {"requests.read", PermEnv, false, true},
-	PermApprove:             {"approve", PermEnv, false, false},
-	PermProjectManage:       {"project.manage", PermProject, false, false},
-	PermEnvManage:           {"env.manage", PermEnv, false, false},
-	PermOrgSettings:         {"org.settings", PermOrg, false, false},
-	PermConnectionsManage:   {"connections.manage", PermOrg, false, false},
-	PermOrgVariables:        {"org.variables", PermOrg, false, false},
-	PermMembersRead:         {"members.read", PermOrg, false, true},
-	PermMembersManage:       {"members.manage", PermOrg, false, false},
-	PermRolesManage:         {"roles.manage", PermOrg, false, false},
-	PermAgentsManage:        {"agents.manage", PermOrg, false, false},
-	PermUsageRead:           {"usage.read", PermOrg, false, true},
-	PermActivityRead:        {"activity.read", PermEnv, false, true},
+	// Replays show what visitors saw and did: the pages' text unless the
+	// site masks it (inputs always are), so a role may leave them out.
+	PermAnalyticsReplays:  {"analytics.replays", PermEnv, false, true},
+	PermAnalyticsWrite:    {"analytics.write", PermEnv, false, false},
+	PermAnalyticsManage:   {"analytics.manage", PermOrg, false, false},
+	PermStatusPagesRead:   {"status_pages.read", PermEnv, false, true},
+	PermStatusPagesPost:   {"status_pages.post", PermEnv, false, false},
+	PermStatusPagesManage: {"status_pages.manage", PermOrg, false, false},
+	PermAlertsRead:        {"alerts.read", PermEnv, false, true},
+	PermAlertsResolve:     {"alerts.resolve", PermEnv, false, false},
+	PermAlertsManage:      {"alerts.manage", PermOrg, false, false},
+	PermUptimeManage:      {"uptime.manage", PermEnv, false, false},
+	PermRequestsRead:      {"requests.read", PermEnv, false, true},
+	PermApprove:           {"approve", PermEnv, false, false},
+	PermProjectManage:     {"project.manage", PermProject, false, false},
+	PermEnvManage:         {"env.manage", PermEnv, false, false},
+	PermOrgSettings:       {"org.settings", PermOrg, false, false},
+	PermConnectionsManage: {"connections.manage", PermOrg, false, false},
+	PermOrgVariables:      {"org.variables", PermOrg, false, false},
+	PermMembersRead:       {"members.read", PermOrg, false, true},
+	PermMembersManage:     {"members.manage", PermOrg, false, false},
+	PermRolesManage:       {"roles.manage", PermOrg, false, false},
+	PermAgentsManage:      {"agents.manage", PermOrg, false, false},
+	PermUsageRead:         {"usage.read", PermOrg, false, true},
+	PermActivityRead:      {"activity.read", PermEnv, false, true},
 }
 
 // String is the permission's name.
@@ -206,7 +210,7 @@ var areaRoles = []areaRole{
 		{"edit", permsOf(PermDomainsWrite)},
 	}},
 	{"analytics", "Analytics", []roleLevel{
-		{"view", permsOf(PermAnalyticsRead)},
+		{"view", permsOf(PermAnalyticsRead, PermAnalyticsReplays)},
 		{"edit", permsOf(PermAnalyticsWrite)},
 	}},
 	{"status_pages", "Status pages", []roleLevel{
