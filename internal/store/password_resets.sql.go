@@ -55,7 +55,7 @@ func (q *Queries) DeleteUnusedPasswordResets(ctx context.Context, userID int64) 
 }
 
 const getPasswordReset = `-- name: GetPasswordReset :one
-SELECT password_resets.id, password_resets.user_id, password_resets.hash, password_resets.created_at, password_resets.expires_at, password_resets.used_at, users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role
+SELECT password_resets.id, password_resets.user_id, password_resets.hash, password_resets.created_at, password_resets.expires_at, password_resets.used_at, users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven
 FROM password_resets JOIN users ON users.id = password_resets.user_id
 WHERE password_resets.hash = +?
 `
@@ -86,6 +86,7 @@ func (q *Queries) GetPasswordReset(ctx context.Context, hash string) (GetPasswor
 		&i.User.FactorFailedAt,
 		&i.User.EmailRequests,
 		&i.User.PlatformRole,
+		&i.User.EmailProven,
 	)
 	return i, err
 }

@@ -24,6 +24,9 @@ import (
 // is off (sign in through an identity provider: a new account's open
 // invites are accepted then, ADR 0065). Attempts are rate limited like
 // logins: per client IP, and per IP and email once the code is known.
+// The account's email is not proven: whoever holds the code chose its
+// password, so a single sign-on with the email later takes it over
+// rather than joining it (ssoUser).
 func (c *Core) SignUpWithInvite(ctx context.Context, code string, req apitypes.InviteSignUpRequest, clientIP string) (LoginResult, error) {
 	t := now()
 	row, err := c.openInvite(ctx, code)
@@ -68,7 +71,7 @@ func (c *Core) SignUpWithInvite(ctx context.Context, code string, req apitypes.I
 	var u store.User
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: inv.Email, Name: name, PasswordHash: hash}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: inv.Email, Name: name, PasswordHash: hash, EmailProven: false}); err != nil {
 			return err
 		}
 		return joinTx(ctx, q, org, &inv, u.ID, inv.Role)

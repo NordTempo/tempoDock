@@ -1,9 +1,11 @@
 -- name: CountUsers :one
 SELECT count(*) FROM users;
 
+-- CreateUser makes an account; email_proven says whether its email is
+-- known to reach the person (an invite sign-up's isn't).
 -- name: CreateUser :one
-INSERT INTO users (email, name, password_hash, platform_role)
-VALUES (?, ?, ?, ?)
+INSERT INTO users (email, name, password_hash, platform_role, email_proven)
+VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetUser :one
@@ -107,6 +109,16 @@ UPDATE users SET name = ? WHERE id = +? RETURNING *;
 -- SetUserPassword also lifts a lock from wrong second factors (ADR 0057).
 -- name: SetUserPassword :exec
 UPDATE users SET password_hash = ?, factor_failures = 0, factor_failed_at = NULL WHERE id = +?;
+
+-- ProveUserEmail records that the account's email reaches its owner; 1
+-- row when it wasn't proven before.
+-- name: ProveUserEmail :execrows
+UPDATE users SET email_proven = 1 WHERE id = +? AND NOT email_proven;
+
+-- RevokeUserTokens revokes every token a user holds or made by hand.
+-- name: RevokeUserTokens :execrows
+UPDATE tokens SET revoked_at = +sqlc.arg(now)
+WHERE user_id = +sqlc.arg(user_id) AND revoked_at IS NULL;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = +?;

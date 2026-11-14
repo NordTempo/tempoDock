@@ -79,6 +79,10 @@ The provider must say the email is verified.
 - **Someone with a Dock account** signs in: the first time Dock finds
   the account by its email and links it to the provider's identity;
   after that the identity finds it, whatever email the provider sends.
+  An account made from an invite link never proved its email (whoever
+  held the link chose its password), so that first sign-in takes it over
+  instead: its sessions and tokens end, its password stops working and
+  its second factors are removed.
 - **Someone with an open invite** gets an account on their first sign-in,
   and their invites are accepted.
 - **Anyone else**, while sign-up is **invite only** (the default), gets

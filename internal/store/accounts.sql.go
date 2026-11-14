@@ -73,7 +73,7 @@ func (q *Queries) ListAccountMemberships(ctx context.Context) ([]ListAccountMemb
 
 const listAccounts = `-- name: ListAccounts :many
 
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven,
     EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
 FROM users ORDER BY users.email
 `
@@ -106,6 +106,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]ListAccountsRow, error) {
 			&i.User.FactorFailedAt,
 			&i.User.EmailRequests,
 			&i.User.PlatformRole,
+			&i.User.EmailProven,
 			&i.TwoFactor,
 		); err != nil {
 			return nil, err

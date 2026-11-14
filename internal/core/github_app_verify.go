@@ -20,13 +20,24 @@ import (
 // on GitHub with a new single-use state, exchanges the code GitHub comes
 // back with for the person's token, and claims the installation only if
 // GET /user/installations lists it. The token answers that one question
-// and is dropped.
+// and is dropped. Every step checks the browser binding the start page
+// set (BindGitHubInstall), and the claim waits for the person to confirm
+// the org on Dock's page (ConfirmGitHubInstall).
 
-// GitHubInstallStep is where GitHub's install redirect goes next: on to
-// Redirect (GitHub's authorize page), or a page saying Message.
+// GitHubInstallStep is where an install goes next: on to Redirect
+// (GitHub's authorize page), to Confirm (Dock's page asking to assign
+// the installation), or a page saying Message.
 type GitHubInstallStep struct {
 	Redirect string
+	Confirm  *GitHubInstallConfirm
 	Message  string
+}
+
+// GitHubInstallConfirm is what the confirm page asks: may org Org deploy
+// from GitHub account Account's repositories? State goes back with the
+// answer.
+type GitHubInstallConfirm struct {
+	State, Org, Account string
 }
 
 // errNoAppClient refuses what needs the App's OAuth client while it has
@@ -37,16 +48,19 @@ func errNoAppClient() error {
 
 // CompleteGitHubInstall handles GitHub's redirect after the App was
 // installed or its repositories changed, for a state from
-// StartGitHubInstall. An App with its OAuth client goes on to GitHub's
-// authorize page (CompleteGitHubVerify claims the installation); one
-// without claims the installation for an operator's link and refuses an
-// org admin's. origin is the Dock URL the browser has open, which the
-// App's callback URL was registered under unless Dock has a public
-// address.
-func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, setupAction, state, origin string) (GitHubInstallStep, error) {
+// StartGitHubInstall, in the browser binding names. An App with its
+// OAuth client goes on to GitHub's authorize page (CompleteGitHubVerify
+// checks the installer); one without asks to confirm the installation
+// for an operator's link and refuses an org admin's. origin is the Dock
+// URL the browser has open, which the App's callback URL was registered
+// under unless Dock has a public address.
+func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, setupAction, state, binding, origin string) (GitHubInstallStep, error) {
 	f, err := c.git.app.flow(state, flowInstall, true)
 	if err != nil {
 		return GitHubInstallStep{}, err
+	}
+	if !f.boundTo(binding) {
+		return GitHubInstallStep{}, errGitHubUnbound()
 	}
 	if setupAction == "request" {
 		return GitHubInstallStep{Message: fmt.Sprintf("The installation was requested. Once an owner of the GitHub account approves it, open the install link again from Dock, or an operator assigns it with `dock github assign <id> %s`.", f.org.Slug)}, nil
@@ -62,9 +76,9 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 		if !f.actor.Operator {
 			return GitHubInstallStep{}, errNoAppClient()
 		}
-		// Operators are trusted with the platform (ADR 0031): claim it.
-		msg, err := c.claimInstallation(ctx, f, installationID)
-		return GitHubInstallStep{Message: msg}, err
+		// Operators are trusted with the platform (ADR 0031): no check
+		// of who installed it, but they confirm the org.
+		return c.confirmStep(ctx, f, installationID)
 	}
 	f.kind, f.installation = flowVerify, installationID
 	f.verifier = oauth2.GenerateVerifier()
@@ -75,41 +89,85 @@ func (c *Core) CompleteGitHubInstall(ctx context.Context, installationID int64, 
 }
 
 // CompleteGitHubVerify handles GitHub's redirect back from the App's
-// authorize page: it exchanges code for the person's token and claims the
-// installation the verify state carries for its org, if the person can
-// access it on GitHub. Returns what happened, for the page the browser
-// lands on.
-func (c *Core) CompleteGitHubVerify(ctx context.Context, code, state string) (string, error) {
+// authorize page, in the browser binding names: it exchanges code for
+// the person's token and, if the person can access the installation the
+// verify state carries on GitHub, asks them to confirm it for its org.
+func (c *Core) CompleteGitHubVerify(ctx context.Context, code, state, binding string) (GitHubInstallStep, error) {
+	f, err := c.verifyInstaller(ctx, code, state, binding)
+	if err != nil {
+		return GitHubInstallStep{}, err
+	}
+	return c.confirmStep(ctx, f, f.installation)
+}
+
+// verifyInstaller is CompleteGitHubVerify's check: the verify flow of
+// state, once GitHub says its person can access the installation.
+func (c *Core) verifyInstaller(ctx context.Context, code, state, binding string) (githubFlow, error) {
 	f, err := c.git.app.flow(state, flowVerify, true)
 	if err != nil {
-		return "", err
+		return f, err
+	}
+	if !f.boundTo(binding) {
+		return f, errGitHubUnbound()
 	}
 	if code == "" {
-		return "", errf(apitypes.CodeForbidden, "GitHub didn't confirm who you are, so Dock can't tell the installation is yours; start again with `dock github install` and authorize the App when GitHub asks")
+		return f, errf(apitypes.CodeForbidden, "GitHub didn't confirm who you are, so Dock can't tell the installation is yours; start again with `dock github install` and authorize the App when GitHub asks")
 	}
 	app, err := c.githubApp(ctx)
 	if err != nil {
-		return "", err
+		return f, err
 	}
 	if app.ClientSecret == nil {
-		return "", errNoAppClient()
+		return f, errNoAppClient()
 	}
 	secret, err := c.box.Open(app.ClientSecret, appClientSecretAAD)
 	if err != nil {
-		return "", fmt.Errorf("open the GitHub App's client secret: %w", err)
+		return f, fmt.Errorf("open the GitHub App's client secret: %w", err)
 	}
 	cfg := c.git.github.userOAuth(app.ClientID, string(secret), f.redirect)
 	tok, err := cfg.Exchange(context.WithValue(ctx, oauth2.HTTPClient, c.git.github.client), code, oauth2.VerifierOption(f.verifier))
 	if err != nil {
 		c.log.Warn("github: user code exchange", "err", err)
-		return "", invalid("GitHub didn't accept the App's sign-in code; start again with `dock github install`. If it keeps failing, an operator checks the App's client secret (`dock github app secret`) and that its callback URL is %s", f.redirect)
+		return f, invalid("GitHub didn't accept the App's sign-in code; start again with `dock github install`. If it keeps failing, an operator checks the App's client secret (`dock github app secret`) and that its callback URL is %s", f.redirect)
 	}
 	ids, err := c.git.github.userInstallations(ctx, tok.AccessToken)
 	if err != nil {
-		return "", err
+		return f, err
 	}
 	if !slices.Contains(ids, f.installation) {
-		return "", errf(apitypes.CodeForbidden, "your GitHub account can't access installation %d of the GitHub App, so Dock didn't give it to org %s; install the App from Dock with an account that can", f.installation, f.org.Slug)
+		return f, errf(apitypes.CodeForbidden, "your GitHub account can't access installation %d of the GitHub App, so Dock didn't give it to org %s; install the App from Dock with an account that can", f.installation, f.org.Slug)
+	}
+	return f, nil
+}
+
+// confirmStep asks the person of install flow f to confirm org f.org may
+// deploy from installation id, naming its GitHub account (read with the
+// App's own credentials, not from the redirect).
+func (c *Core) confirmStep(ctx context.Context, f githubFlow, id int64) (GitHubInstallStep, error) {
+	jwt, err := c.appJWT(ctx)
+	if err != nil {
+		return GitHubInstallStep{}, err
+	}
+	inst, err := c.git.github.installation(ctx, jwt, id)
+	if err != nil {
+		return GitHubInstallStep{}, err
+	}
+	f.kind, f.installation, f.account = flowConfirm, id, cleanLine(inst.Account.Login, 39)
+	state := c.git.app.startFlow(f)
+	return GitHubInstallStep{Confirm: &GitHubInstallConfirm{State: state, Org: f.org.Slug, Account: f.account}}, nil
+}
+
+// ConfirmGitHubInstall assigns the installation the confirm page asked
+// about (state) to its org, from the browser binding names, unless
+// another org has it (conflict). Returns what happened, for the page the
+// browser lands on.
+func (c *Core) ConfirmGitHubInstall(ctx context.Context, state, binding string) (string, error) {
+	f, err := c.git.app.flow(state, flowConfirm, true)
+	if err != nil {
+		return "", err
+	}
+	if !f.boundTo(binding) {
+		return "", errGitHubUnbound()
 	}
 	return c.claimInstallation(ctx, f, f.installation)
 }

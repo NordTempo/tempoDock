@@ -33,14 +33,14 @@ func NewLoginLimiter() *LoginLimiter {
 }
 
 // Allow spends an attempt to sign in as email (any case) from ip at t,
-// reporting false when it must wait.
+// reporting false when it must wait. IPs count by ClientKey.
 func (l *LoginLimiter) Allow(email, ip string, t time.Time) bool {
-	email = strings.ToLower(email)
+	email, ip = strings.ToLower(email), ClientKey(ip)
 	return l.ip.Allow(ip, t) && l.pair.Allow(email+"\x00"+ip, t) && l.email.Allow(email, t)
 }
 
 // AllowIP spends an attempt from ip that names no account (a setup code,
 // a sign-in link), reporting false when it must wait.
 func (l *LoginLimiter) AllowIP(ip string, t time.Time) bool {
-	return l.ip.Allow(ip, t)
+	return l.ip.Allow(ClientKey(ip), t)
 }

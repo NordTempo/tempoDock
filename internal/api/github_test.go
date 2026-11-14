@@ -161,12 +161,28 @@ func TestGitHubAppPages(t *testing.T) {
 	}
 	res, body = f.do("", http.MethodGet, link.URL, nil)
 	page := string(body)
-	if res.StatusCode != http.StatusOK || !strings.Contains(res.Header.Get("Content-Security-Policy"), "form-action https://github.com;") ||
+	if res.StatusCode != http.StatusOK || !strings.Contains(res.Header.Get("Content-Security-Policy"), "form-action https://github.com 'self';") ||
 		!strings.Contains(page, `action="https://github.com/settings/apps/new?state=`) ||
 		!strings.Contains(page, "https://dock.example.com/hooks/github/") || !strings.Contains(page, `&#34;redirect_url&#34;:&#34;https://dock.example.com/api/v1/github/app/callback&#34;`) {
 		t.Fatalf("manifest page: %d %s", res.StatusCode, page)
 	}
 	if res, body := f.do("", http.MethodGet, "/api/v1/github/app/callback?code=x&state=forged", nil); res.StatusCode != http.StatusUnauthorized || !bytes.Contains(body, []byte("expired or was already used")) {
 		t.Fatalf("forged callback: %d %s", res.StatusCode, body)
+	}
+	// An install link opens only in a browser signed in to Dock, and its
+	// confirm form gets past the CSRF guard as a same-origin form.
+	if res, body := f.do("", http.MethodGet, "/api/v1/github/install/start?state=x", nil); res.StatusCode != http.StatusUnauthorized || !bytes.Contains(body, []byte("Sign in")) {
+		t.Fatalf("install link signed out: %d %s", res.StatusCode, body)
+	}
+	req, _ := http.NewRequest(http.MethodPost, f.srv.URL+"/api/v1/github/install/confirm", strings.NewReader("state=forged"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("forged confirm: %d", resp.StatusCode)
 	}
 }

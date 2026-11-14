@@ -119,3 +119,29 @@ Memory: the verify links share the 16 slots of 0031's pending links.
   org with access) can claim it for a Dock org they administer, if no
   other org has it. That matches what GitHub lets them do with the App
   itself.
+
+## Amendment (2026-11-15): an install link is its starter's
+
+The state proved which org a redirect was for, not who followed it, and
+the install pages needed no session. An admin of any org (anyone may
+create one) could send their install link to a GitHub account's owner:
+GitHub's redirects came back with the admin's state, `/user/installations`
+showed the owner could access the installation, and Dock gave it to the
+admin's org, which could then deploy, and so read, the owner's
+repositories.
+
+- `POST /github/installations` returns Dock's start page
+  (`/api/v1/github/install/start?state=`), not GitHub's. The page needs
+  the session of the person who asked for the link (the session cookie is
+  `SameSite=Strict`, so it can't be read on GitHub's cross-site redirect
+  back) and binds the flow to that browser with a cookie,
+  `__Host-dock_github` over HTTPS (`SameSite=Lax`, an hour), then goes on
+  to GitHub. Someone else's session, or none, gets no further.
+- GitHub's install and authorize redirects and the confirm step each
+  check the cookie: in another browser they claim nothing.
+- After the check with GitHub, Dock shows "Assign to org X?", naming the
+  installation's account as the App reads it, and claims the installation
+  only when the person submits that form. Operators' links to an App
+  without its client secret confirm the same way.
+- Install links are a person's: a token with no user is refused, since
+  it has no browser to finish in.

@@ -255,10 +255,11 @@ func newGitHubInstallCmd(g *globals) *cobra.Command {
 		Use:   "install [<org>]",
 		Short: "Install the GitHub App for the organization (admin; another org: operator)",
 		Long: `Print the GitHub App's install link for the organization (valid for an hour).
+It is yours alone: open it in the browser you are signed in to Dock with.
 On GitHub, choose the account and repositories, then authorize the App:
-Dock checks with GitHub that you can access the installation and lets the
-organization deploy from it, unless another organization has it. An
-operator may name any org.`,
+Dock checks with GitHub that you can access the installation and, once you
+confirm the organization, lets it deploy from it, unless another
+organization has it. An operator may name any org.`,
 		Example: `  dock github install
   dock github install default`,
 		Args: cobra.MaximumNArgs(1),

@@ -158,7 +158,7 @@ func (c *Core) StartSSO(ctx context.Context, req apitypes.SSOStartRequest, clien
 	nonce, _ := newSecret("")
 	binding, bindingHash := newSecret("")
 	verifier := oauth2.GenerateVerifier()
-	state, err := c.sso.flows.put(&ceremony{purpose: ceremonySSO, sso: &ssoFlow{
+	state, err := c.sso.flows.put(&ceremony{purpose: ceremonySSO, client: clientIP, sso: &ssoFlow{
 		providerID: p.ID, kind: p.Kind, issuer: p.Issuer, provider: prov, nonce: nonce, verifier: verifier, binding: bindingHash, to: to,
 	}})
 	if err != nil {
@@ -436,7 +436,8 @@ func (c *Core) githubGet(ctx context.Context, tok *oauth2.Token, path string, v 
 // ssoUser maps the person provider p vouched for to a Dock account:
 //
 //  1. by their identity (provider, subject), linked on an earlier sign-in;
-//  2. else by their verified email to an existing account, linked now;
+//  2. else by their verified email to an existing account, linked now
+//     (taken over first if its email was never proven: takeOver);
 //  3. else a new account, in no org, when they have open invites (all
 //     accepted now) or the platform isn't invite only.
 //
@@ -463,11 +464,73 @@ func (c *Core) ssoUser(ctx context.Context, p store.SsoProvider, who ssoPerson) 
 	if linked {
 		return u, nil
 	}
+	if !u.EmailProven {
+		return c.takeOver(ctx, p, who, u)
+	}
 	err = c.store.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()})
 	if err != nil && !store.IsUnique(err) { // a concurrent sign-in linked it
 		return store.User{}, err
 	}
 	c.audit(ctx, userActor(u), "user.sso_link", nil, nil, u.Email, fmt.Sprintf("linked %s to their %s identity (%s)", u.Email, p.Label, p.Name))
+	return u, nil
+}
+
+// takeOver gives an account whose email was never proven (an invite
+// sign-up's, whose password whoever held the invite code chose) to the
+// person p just vouched for as its email's owner, and links their
+// identity. Whoever set it up loses every way in: sessions and tokens
+// end, the password becomes an unknown random one and the second factors
+// and recovery codes go. The account keeps its orgs and roles, which
+// were the invite's for this email. Audited, with what was removed.
+func (c *Core) takeOver(ctx context.Context, p store.SsoProvider, who ssoPerson, u store.User) (store.User, error) {
+	hash, err := c.hashPassword(ctx, generatePassword())
+	if err != nil {
+		return store.User{}, err
+	}
+	var factors, logins, tokens int64
+	took := false
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		// Proven once: a concurrent sign-in that got here first took it.
+		n, err := q.ProveUserEmail(ctx, u.ID)
+		if err != nil || n == 0 {
+			return err
+		}
+		took = true
+		if err := q.SetUserPassword(ctx, store.SetUserPasswordParams{PasswordHash: hash, ID: u.ID}); err != nil {
+			return err
+		}
+		if factors, err = q.DeleteUserFactors(ctx, u.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteRecoveryCodes(ctx, u.ID); err != nil {
+			return err
+		}
+		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
+			return err
+		}
+		if logins, err = endUserAccess(ctx, q, u.ID, 0); err != nil {
+			return err
+		}
+		if tokens, err = q.RevokeUserTokens(ctx, store.RevokeUserTokensParams{Now: ptr(now()), UserID: &u.ID}); err != nil {
+			return err
+		}
+		err = q.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()})
+		if store.IsUnique(err) {
+			return nil // a concurrent sign-in linked it
+		}
+		return err
+	})
+	if err != nil {
+		return store.User{}, err
+	}
+	if !took {
+		return c.ssoUser(ctx, p, who)
+	}
+	u.EmailProven = true
+	c.endOrphanedRequests(ctx)
+	c.audit(ctx, userActor(u), "user.sso_takeover", nil, nil, u.Email, fmt.Sprintf(
+		"gave %s to the owner of its email, who signed in through %s (%s): the account was made from an invite and its email never proven, so its sessions ended, its password was replaced, %d second factors and its recovery codes were removed and %d tokens revoked%s",
+		u.Email, p.Label, p.Name, factors, tokens, revokedNote(logins)))
 	return u, nil
 }
 
@@ -498,7 +561,7 @@ func (c *Core) ssoNewUser(ctx context.Context, p store.SsoProvider, who ssoPerso
 	var joined []store.ListOpenInvitesByEmailRow
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: who.email, Name: name, PasswordHash: string(hash)}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: who.email, Name: name, PasswordHash: string(hash), EmailProven: true}); err != nil {
 			return err
 		}
 		if err := q.CreateSSOIdentity(ctx, store.CreateSSOIdentityParams{ProviderID: p.ID, Subject: who.subject, UserID: u.ID, Email: who.email, CreatedAt: now()}); err != nil {

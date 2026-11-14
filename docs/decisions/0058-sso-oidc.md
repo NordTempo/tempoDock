@@ -163,3 +163,21 @@ would vouch for the whole instance.
   out of its org gets the account page with the way back in, and an SSO
   session's step-up without a Dock second factor signs in through the
   provider again.
+
+## Amendment (2026-11-15): cookies locked to Dock's host
+
+Dock's cookies were host-only, but nothing stopped an app on a sibling
+hostname (Dock at `dock.example.com`, apps at `*.example.com`) from
+setting `dock_session=...; Domain=example.com; Path=/api/v1`: the longer
+path is sent first and Dock read the first. Over HTTPS the session, the
+pending sign-in, `dock_sso` and the GitHub install's binding are now
+`__Host-` cookies (Secure, `Path=/`, no Domain), which browsers refuse to
+take from another host. Plain HTTP keeps the bare names. A session signed
+in before the change (`sessions.legacy_cookie`, migration 0111) still
+authenticates from `dock_session` over HTTPS until it expires; a newer one
+under the bare name doesn't, so a tossed cookie can't carry one.
+
+Unauthenticated ceremonies (a passkey sign-in, a single sign-on) are
+held at most 20 per client, an IPv4 address or an IPv6 /64, and a full
+store drops its oldest one instead of refusing everyone. The sign-in rate
+limits count IPv6 clients by /64 too.

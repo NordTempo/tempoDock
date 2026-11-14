@@ -22793,15 +22793,6 @@
       "post": {
         "description": "Finishes the sign-in POST /auth/login left pending (its cookie) with a passkey, an authenticator app code or a recovery code, and sets the session cookie. A few wrong factors end the pending sign-in.",
         "operationId": "login-verify",
-        "parameters": [
-          {
-            "in": "cookie",
-            "name": "dock_login",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -22908,13 +22899,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "in": "cookie",
-            "name": "dock_session",
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -22977,16 +22961,6 @@
               }
             },
             "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
           },
           "423": {
             "content": {
@@ -23149,13 +23123,6 @@
         "description": "Purpose login signs in with a passkey alone (POST /auth/passkey); second answers a pending sign-in's second factor (POST /auth/login/verify). Passkeys work on Dock's public address and on localhost.",
         "operationId": "passkey-options",
         "parameters": [
-          {
-            "in": "cookie",
-            "name": "dock_login",
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "in": "header",
             "name": "Origin",
@@ -23499,13 +23466,6 @@
             "explode": false,
             "in": "query",
             "name": "error",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "cookie",
-            "name": "dock_sso",
             "schema": {
               "type": "string"
             }
@@ -31143,7 +31103,7 @@
     },
     "/api/v1/github/installations": {
       "post": {
-        "description": "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and assigns it to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any.",
+        "description": "Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.",
         "operationId": "install-github-app",
         "parameters": [
           {

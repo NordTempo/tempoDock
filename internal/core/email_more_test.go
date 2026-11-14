@@ -62,8 +62,13 @@ func TestPasswordResetByEmail(t *testing.T) {
 	if err := h.c.ResetPasswordWithLink(h.ctx, code[1], apitypes.PasswordResetRequest{Password: "short"}, "198.51.100.1"); CodeOf(err) != apitypes.CodeValidation {
 		t.Fatalf("short password: %v", err)
 	}
+	// The link proves the email of an account that hadn't (ssoUser).
+	h.exec(`UPDATE users SET email_proven = 0 WHERE email = 'ada@example.com'`)
 	if err := h.c.ResetPasswordWithLink(h.ctx, code[1], apitypes.PasswordResetRequest{Password: "a brand new password"}, "198.51.100.1"); err != nil {
 		t.Fatal(err)
+	}
+	if u, err := h.store.GetUserByEmail(h.ctx, "ada@example.com"); err != nil || !u.EmailProven {
+		t.Fatalf("email not proven by the reset: %+v, %v", u.EmailProven, err)
 	}
 	if err := h.c.ResetPasswordWithLink(h.ctx, code[1], apitypes.PasswordResetRequest{Password: "another new password"}, "198.51.100.1"); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("second use: %v", err)

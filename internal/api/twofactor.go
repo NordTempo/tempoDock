@@ -14,29 +14,31 @@ import (
 
 // verifyInput finishes a pending sign-in, from its cookie.
 type verifyInput struct {
-	Pending string `cookie:"dock_login"`
 	Body    apitypes.Verification
+	pending string
 	client  client
 }
 
-// Resolve records how the request arrived.
+// Resolve records how the request arrived, with its pending sign-in.
 func (in *verifyInput) Resolve(ctx huma.Context) []error {
 	in.client = clientOf(ctx)
+	in.pending = in.client.read(humaCookies(ctx), pendingCookie)
 	return nil
 }
 
 // passkeyOptionsInput starts a passkey sign-in. Origin is the page's,
 // which the passkey is bound to.
 type passkeyOptionsInput struct {
-	Pending string `cookie:"dock_login"`
 	Origin  string `header:"Origin"`
 	Body    apitypes.PasskeyOptionsRequest
+	pending string
 	client  client
 }
 
-// Resolve records how the request arrived.
+// Resolve records how the request arrived, with its pending sign-in.
 func (in *passkeyOptionsInput) Resolve(ctx huma.Context) []error {
 	in.client = clientOf(ctx)
+	in.pending = in.client.read(humaCookies(ctx), pendingCookie)
 	return nil
 }
 
@@ -76,7 +78,7 @@ func registerTwoFactor(s *Server, a huma.API) {
 			"A few wrong factors end the pending sign-in.",
 		Tags: []string{"auth"}, Errors: []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusGone, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *verifyInput) (*loginOutput, error) {
-		res, err := s.core.LoginSecondFactor(ctx, in.Pending, in.Body, in.client.ip)
+		res, err := s.core.LoginSecondFactor(ctx, in.pending, in.Body, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
@@ -89,7 +91,7 @@ func registerTwoFactor(s *Server, a huma.API) {
 			"Passkeys work on Dock's public address and on localhost.",
 		Tags: []string{"auth"}, Errors: []int{http.StatusBadRequest, http.StatusGone, http.StatusTooManyRequests},
 	}, func(ctx context.Context, in *passkeyOptionsInput) (*out[apitypes.PasskeyChallenge], error) {
-		res, err := s.core.PasskeyOptions(ctx, in.Body, in.Pending, in.Origin, in.client.ip)
+		res, err := s.core.PasskeyOptions(ctx, in.Body, in.pending, in.Origin, in.client.ip)
 		if err != nil {
 			return nil, s.problem(err)
 		}
