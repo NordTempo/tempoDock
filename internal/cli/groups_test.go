@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -53,5 +55,33 @@ func TestGroupCommands(t *testing.T) {
 	}
 	if deploy != "edit" {
 		t.Fatalf("deploy level = %q in %+v", deploy, acc.Environments[0].Roles)
+	}
+}
+
+// The organization's own roles from the CLI: made, granted by name,
+// edited with only the flags given, listed with --own, and kept while a
+// grant names them.
+func TestRoleCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	r := ok[apitypes.Role](t, "role", "create", "Release manager", "--include", "deploy:edit", "--permission", "errors.manage", "--description", "ships")
+	if !slices.Contains(r.Holds, "errors.manage") || r.Description != "ships" {
+		t.Fatalf("create = %+v", r)
+	}
+	ok[apitypes.Group](t, "group", "create", "Leads")
+	if g := ok[apitypes.Group](t, "group", "grant", "Leads", "Release manager"); len(g.Grants) != 1 || !g.Grants[0].Custom {
+		t.Fatalf("grant = %+v", g)
+	}
+	r = ok[apitypes.Role](t, "role", "edit", "Release manager", "--permission", "status_pages.post")
+	if !slices.Equal(r.Includes, []string{"deploy:edit"}) || !slices.Equal(r.Permissions, []string{"status_pages.post"}) || r.Description != "ships" {
+		t.Fatalf("edit = %+v", r)
+	}
+	if own := ok[[]apitypes.Role](t, "role", "list", "--own"); len(own) != 1 || !slices.Equal(own[0].Groups, []string{"Leads"}) {
+		t.Fatalf("list --own = %+v", own)
+	}
+	if code, _, stderr := exec(t, "role", "delete", "Release manager"); code == 0 || !strings.Contains(stderr, "Leads") {
+		t.Fatalf("deleting a role in use: exit %d %s", code, stderr)
 	}
 }

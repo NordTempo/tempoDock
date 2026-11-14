@@ -81,6 +81,9 @@ func (c *Core) ListGroups(ctx context.Context, a Actor) ([]apitypes.Group, error
 // toGrant converts a grant row with its places' names.
 func toGrant(r store.ListOrgGrantsRow) apitypes.Grant {
 	g := apitypes.Grant{ID: r.ID, Role: r.Role, Project: deref(r.ProjectName), Environment: deref(r.EnvironmentName), Kinds: grantKindNames(uint8(r.Kinds)), Via: deref(r.Via)}
+	if r.CustomRole != nil {
+		g.Role, g.Custom = *r.CustomRole, true
+	}
 	if r.ExpiresAt != nil {
 		g.ExpiresAt = ptr(time.Unix(*r.ExpiresAt, 0).UTC())
 	}
@@ -319,12 +322,20 @@ func (c *Core) RemoveGroupMember(ctx context.Context, a Actor, ref, who string) 
 	return c.group(ctx, a, g.ID)
 }
 
-// grantParams checks a grant request: a built-in role, a place in the
-// org, kinds only for a grant wider than one environment.
+// grantParams checks a grant request: a built-in role or one of the
+// org's (by name), a place in the org, kinds only for a grant wider than
+// one environment.
 func (c *Core) grantParams(ctx context.Context, a Actor, req apitypes.GrantRequest) (store.CreateGrantParams, string, error) {
 	p := store.CreateGrantParams{OrgID: a.OrgID, Role: strings.TrimSpace(req.Role), GrantedBy: a.Name}
 	if _, ok := rolePerms(p.Role); !ok {
-		return p, "", invalid("role %q isn't a built-in one; `dock role list` lists them, like deploy:edit", req.Role)
+		r, err := c.store.GetRoleByName(ctx, store.GetRoleByNameParams{OrgID: a.OrgID, Name: p.Role})
+		if store.IsNotFound(err) {
+			return p, "", invalid("role %q is neither built in nor %s's; `dock role list` lists them, like deploy:edit", req.Role, a.orgName())
+		}
+		if err != nil {
+			return p, "", err
+		}
+		p.Role, p.RoleID = "", &r.ID
 	}
 	kinds, err := kindBits(req.Kinds)
 	if err != nil {
@@ -377,7 +388,7 @@ func (c *Core) GrantGroup(ctx context.Context, a Actor, ref string, req apitypes
 	if _, err := c.store.CreateGrant(ctx, p); err != nil {
 		return apitypes.Group{}, err
 	}
-	c.audit(ctx, a, "group.grant", nil, nil, "group "+g.Name, fmt.Sprintf("gave group %s %s on %s", g.Name, p.Role, place))
+	c.audit(ctx, a, "group.grant", nil, nil, "group "+g.Name, fmt.Sprintf("gave group %s %s on %s", g.Name, strings.TrimSpace(req.Role), place))
 	return c.group(ctx, a, g.ID)
 }
 
@@ -405,7 +416,7 @@ func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
 	if err != nil {
 		return err
 	}
-	c.audit(ctx, a, "access.revoke", nil, nil, "grant "+fmt.Sprint(id), fmt.Sprintf("ended grant %d (%s)", id, g.Role))
+	c.audit(ctx, a, "access.revoke", nil, nil, "grant "+fmt.Sprint(id), fmt.Sprintf("ended grant %d (%s)", id, g.RoleName))
 	return nil
 }
 
@@ -433,8 +444,9 @@ func (c *Core) GrantMember(ctx context.Context, a Actor, who string, req apitype
 	if err != nil {
 		return apitypes.Grant{}, err
 	}
-	c.audit(ctx, a, "access.grant", nil, nil, u.Email, fmt.Sprintf("gave %s %s on %s", u.Email, p.Role, place))
-	out := apitypes.Grant{ID: row.ID, Role: row.Role, Project: req.Project, Environment: req.Environment, Kinds: grantKindNames(uint8(row.Kinds)), User: u.Email}
+	role := strings.TrimSpace(req.Role)
+	c.audit(ctx, a, "access.grant", nil, nil, u.Email, fmt.Sprintf("gave %s %s on %s", u.Email, role, place))
+	out := apitypes.Grant{ID: row.ID, Role: role, Custom: row.RoleID != nil, Project: req.Project, Environment: req.Environment, Kinds: grantKindNames(uint8(row.Kinds)), User: u.Email}
 	if row.ExpiresAt != nil {
 		out.ExpiresAt = ptr(time.Unix(*row.ExpiresAt, 0).UTC())
 	}
@@ -534,10 +546,11 @@ func (c *Core) EffectiveAccess(ctx context.Context, a Actor, who string) (apityp
 		default:
 			continue
 		}
-		perms, ok := rolePerms(r.Role)
+		perms, ok := grantPerms(r.Role, r.CustomParts)
 		if !ok {
 			continue
 		}
+		role := toGrant(r).Role
 		on := "the org"
 		if gr := toGrant(r); gr.Environment != "" {
 			on = gr.Project + "/" + gr.Environment
@@ -545,7 +558,7 @@ func (c *Core) EffectiveAccess(ctx context.Context, a Actor, who string) (apityp
 			on = gr.Project
 		}
 		mine = append(mine, held{grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms},
-			fmt.Sprintf("%s: %s on %s", who, r.Role, on)})
+			fmt.Sprintf("%s: %s on %s", who, role, on)})
 	}
 	// levels says each area role's level for what a place holds.
 	levels := func(covers func(grantEntry) bool, orgOnly bool) []apitypes.RoleAt {

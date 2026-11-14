@@ -57,9 +57,9 @@ func (q *Queries) CountGroups(ctx context.Context, orgID int64) (int64, error) {
 }
 
 const createGrant = `-- name: CreateGrant :one
-INSERT INTO grants (org_id, group_id, user_id, role, project_id, environment_id, kinds, expires_at, via, granted_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, org_id, group_id, user_id, role, project_id, environment_id, kinds, expires_at, via, granted_by, created_at
+INSERT INTO grants (org_id, group_id, user_id, role, role_id, project_id, environment_id, kinds, expires_at, via, granted_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, org_id, group_id, user_id, role, project_id, environment_id, kinds, expires_at, via, granted_by, created_at, role_id
 `
 
 type CreateGrantParams struct {
@@ -67,6 +67,7 @@ type CreateGrantParams struct {
 	GroupID       *int64
 	UserID        *int64
 	Role          string
+	RoleID        *int64
 	ProjectID     *int64
 	EnvironmentID *int64
 	Kinds         int64
@@ -81,6 +82,7 @@ func (q *Queries) CreateGrant(ctx context.Context, arg CreateGrantParams) (Grant
 		arg.GroupID,
 		arg.UserID,
 		arg.Role,
+		arg.RoleID,
 		arg.ProjectID,
 		arg.EnvironmentID,
 		arg.Kinds,
@@ -102,6 +104,7 @@ func (q *Queries) CreateGrant(ctx context.Context, arg CreateGrantParams) (Grant
 		&i.Via,
 		&i.GrantedBy,
 		&i.CreatedAt,
+		&i.RoleID,
 	)
 	return i, err
 }
@@ -126,6 +129,40 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		&i.OrgID,
 		&i.Name,
 		&i.Seeded,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createRole = `-- name: CreateRole :one
+INSERT INTO roles (org_id, name, description, parts, created_by) VALUES (?, ?, ?, ?, ?)
+RETURNING id, org_id, name, description, parts, created_by, created_at
+`
+
+type CreateRoleParams struct {
+	OrgID       int64
+	Name        string
+	Description string
+	Parts       string
+	CreatedBy   string
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, createRole,
+		arg.OrgID,
+		arg.Name,
+		arg.Description,
+		arg.Parts,
+		arg.CreatedBy,
+	)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.Description,
+		&i.Parts,
+		&i.CreatedBy,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -159,6 +196,20 @@ func (q *Queries) DeleteGroup(ctx context.Context, arg DeleteGroupParams) error 
 	return err
 }
 
+const deleteRole = `-- name: DeleteRole :exec
+DELETE FROM roles WHERE id = +? AND org_id = +?
+`
+
+type DeleteRoleParams struct {
+	ID    int64
+	OrgID int64
+}
+
+func (q *Queries) DeleteRole(ctx context.Context, arg DeleteRoleParams) error {
+	_, err := q.db.ExecContext(ctx, deleteRole, arg.ID, arg.OrgID)
+	return err
+}
+
 const deleteUserGrants = `-- name: DeleteUserGrants :exec
 DELETE FROM grants WHERE user_id = +?1 AND org_id = +?2
 `
@@ -174,7 +225,9 @@ func (q *Queries) DeleteUserGrants(ctx context.Context, arg DeleteUserGrantsPara
 }
 
 const getGrant = `-- name: GetGrant :one
-SELECT id, org_id, group_id, user_id, role, project_id, environment_id, kinds, expires_at, via, granted_by, created_at FROM grants WHERE id = +? AND org_id = +?
+SELECT grants.id, grants.org_id, grants.group_id, grants.user_id, grants.role, grants.project_id, grants.environment_id, grants.kinds, grants.expires_at, grants.via, grants.granted_by, grants.created_at, grants.role_id, coalesce(roles.name, grants.role) AS role_name FROM grants
+LEFT JOIN roles ON roles.id = grants.role_id
+WHERE grants.id = +?1 AND grants.org_id = +?2
 `
 
 type GetGrantParams struct {
@@ -182,9 +235,26 @@ type GetGrantParams struct {
 	OrgID int64
 }
 
-func (q *Queries) GetGrant(ctx context.Context, arg GetGrantParams) (Grant, error) {
+type GetGrantRow struct {
+	ID            int64
+	OrgID         int64
+	GroupID       *int64
+	UserID        *int64
+	Role          string
+	ProjectID     *int64
+	EnvironmentID *int64
+	Kinds         int64
+	ExpiresAt     *int64
+	Via           *string
+	GrantedBy     string
+	CreatedAt     time.Time
+	RoleID        *int64
+	RoleName      string
+}
+
+func (q *Queries) GetGrant(ctx context.Context, arg GetGrantParams) (GetGrantRow, error) {
 	row := q.db.QueryRowContext(ctx, getGrant, arg.ID, arg.OrgID)
-	var i Grant
+	var i GetGrantRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,
@@ -198,6 +268,8 @@ func (q *Queries) GetGrant(ctx context.Context, arg GetGrantParams) (Grant, erro
 		&i.Via,
 		&i.GrantedBy,
 		&i.CreatedAt,
+		&i.RoleID,
+		&i.RoleName,
 	)
 	return i, err
 }
@@ -241,6 +313,30 @@ func (q *Queries) GetGroupByName(ctx context.Context, arg GetGroupByNameParams) 
 		&i.OrgID,
 		&i.Name,
 		&i.Seeded,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getRoleByName = `-- name: GetRoleByName :one
+SELECT id, org_id, name, description, parts, created_by, created_at FROM roles WHERE org_id = +? AND name = ? COLLATE NOCASE
+`
+
+type GetRoleByNameParams struct {
+	OrgID int64
+	Name  string
+}
+
+func (q *Queries) GetRoleByName(ctx context.Context, arg GetRoleByNameParams) (Role, error) {
+	row := q.db.QueryRowContext(ctx, getRoleByName, arg.OrgID, arg.Name)
+	var i Role
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.Name,
+		&i.Description,
+		&i.Parts,
+		&i.CreatedBy,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -398,9 +494,11 @@ func (q *Queries) ListOrgEnvironments(ctx context.Context, orgID int64) ([]ListO
 }
 
 const listOrgGrants = `-- name: ListOrgGrants :many
-SELECT grants.id, grants.org_id, grants.group_id, grants.user_id, grants.role, grants.project_id, grants.environment_id, grants.kinds, grants.expires_at, grants.via, grants.granted_by, grants.created_at, projects.name AS project_name, environments.name AS environment_name FROM grants
+SELECT grants.id, grants.org_id, grants.group_id, grants.user_id, grants.role, grants.project_id, grants.environment_id, grants.kinds, grants.expires_at, grants.via, grants.granted_by, grants.created_at, grants.role_id, projects.name AS project_name, environments.name AS environment_name,
+       roles.name AS custom_role, roles.parts AS custom_parts FROM grants
 LEFT JOIN projects ON projects.id = grants.project_id
 LEFT JOIN environments ON environments.id = grants.environment_id
+LEFT JOIN roles ON roles.id = grants.role_id
 WHERE grants.org_id = +?1 AND (grants.expires_at IS NULL OR grants.expires_at > +?2)
 ORDER BY grants.id
 `
@@ -423,8 +521,11 @@ type ListOrgGrantsRow struct {
 	Via             *string
 	GrantedBy       string
 	CreatedAt       time.Time
+	RoleID          *int64
 	ProjectName     *string
 	EnvironmentName *string
+	CustomRole      *string
+	CustomParts     *string
 }
 
 // ListOrgGrants is every grant of the org, groups' and one-offs, with the
@@ -452,8 +553,11 @@ func (q *Queries) ListOrgGrants(ctx context.Context, arg ListOrgGrantsParams) ([
 			&i.Via,
 			&i.GrantedBy,
 			&i.CreatedAt,
+			&i.RoleID,
 			&i.ProjectName,
 			&i.EnvironmentName,
+			&i.CustomRole,
+			&i.CustomParts,
 		); err != nil {
 			return nil, err
 		}
@@ -534,13 +638,50 @@ func (q *Queries) ListOrgsWithoutGroups(ctx context.Context) ([]int64, error) {
 	return items, nil
 }
 
+const listRoles = `-- name: ListRoles :many
+SELECT id, org_id, name, description, parts, created_by, created_at FROM roles WHERE org_id = +? ORDER BY name
+`
+
+func (q *Queries) ListRoles(ctx context.Context, orgID int64) ([]Role, error) {
+	rows, err := q.db.QueryContext(ctx, listRoles, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Role
+	for rows.Next() {
+		var i Role
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.Name,
+			&i.Description,
+			&i.Parts,
+			&i.CreatedBy,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserGrants = `-- name: ListUserGrants :many
-SELECT grants.role, grants.project_id, grants.environment_id, grants.kinds FROM grants
+SELECT grants.role, roles.parts, grants.project_id, grants.environment_id, grants.kinds FROM grants
+LEFT JOIN roles ON roles.id = grants.role_id
 WHERE grants.user_id = +?1 AND grants.org_id = +?2
   AND (grants.expires_at IS NULL OR grants.expires_at > +?3)
 UNION ALL
-SELECT grants.role, grants.project_id, grants.environment_id, grants.kinds FROM group_members
+SELECT grants.role, roles.parts, grants.project_id, grants.environment_id, grants.kinds FROM group_members
 JOIN grants ON grants.group_id = group_members.group_id
+LEFT JOIN roles ON roles.id = grants.role_id
 WHERE group_members.user_id = +?1 AND grants.org_id = +?2
   AND (grants.expires_at IS NULL OR grants.expires_at > +?3)
 `
@@ -553,6 +694,7 @@ type ListUserGrantsParams struct {
 
 type ListUserGrantsRow struct {
 	Role          string
+	Parts         *string
 	ProjectID     *int64
 	EnvironmentID *int64
 	Kinds         int64
@@ -560,7 +702,8 @@ type ListUserGrantsRow struct {
 
 // ListUserGrants is what a person holds in an org: their one-off grants
 // and their groups' grants, through grants_user, group_members_user and
-// grants_group. Authentication runs it on every request.
+// grants_group, with a custom role's parts by its key. Authentication
+// runs it on every request.
 func (q *Queries) ListUserGrants(ctx context.Context, arg ListUserGrantsParams) ([]ListUserGrantsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUserGrants, arg.UserID, arg.OrgID, arg.Now)
 	if err != nil {
@@ -572,6 +715,7 @@ func (q *Queries) ListUserGrants(ctx context.Context, arg ListUserGrantsParams) 
 		var i ListUserGrantsRow
 		if err := rows.Scan(
 			&i.Role,
+			&i.Parts,
 			&i.ProjectID,
 			&i.EnvironmentID,
 			&i.Kinds,
@@ -655,11 +799,72 @@ func (q *Queries) RenameGroup(ctx context.Context, arg RenameGroupParams) error 
 	return err
 }
 
+const roleUses = `-- name: RoleUses :many
+SELECT grants.role_id, groups.name AS group_name, users.email AS user_email FROM grants
+LEFT JOIN groups ON groups.id = grants.group_id
+LEFT JOIN users ON users.id = grants.user_id
+WHERE grants.org_id = +?1 AND grants.role_id IS NOT NULL
+`
+
+type RoleUsesRow struct {
+	RoleID    *int64
+	GroupName *string
+	UserEmail *string
+}
+
+// RoleUses is who holds a custom role: the groups and people its grants
+// go to, for the role editor and refusing to remove one in use.
+func (q *Queries) RoleUses(ctx context.Context, orgID int64) ([]RoleUsesRow, error) {
+	rows, err := q.db.QueryContext(ctx, roleUses, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoleUsesRow
+	for rows.Next() {
+		var i RoleUsesRow
+		if err := rows.Scan(&i.RoleID, &i.GroupName, &i.UserEmail); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setEnvironmentPreview = `-- name: SetEnvironmentPreview :exec
 UPDATE environments SET preview = 1 WHERE id = +?
 `
 
 func (q *Queries) SetEnvironmentPreview(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, setEnvironmentPreview, id)
+	return err
+}
+
+const updateRole = `-- name: UpdateRole :exec
+UPDATE roles SET name = ?, description = ?, parts = ? WHERE id = +? AND org_id = +?
+`
+
+type UpdateRoleParams struct {
+	Name        string
+	Description string
+	Parts       string
+	ID          int64
+	OrgID       int64
+}
+
+func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateRole,
+		arg.Name,
+		arg.Description,
+		arg.Parts,
+		arg.ID,
+		arg.OrgID,
+	)
 	return err
 }

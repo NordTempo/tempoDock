@@ -12,11 +12,14 @@ export type Grant = components["schemas"]["Grant"];
 export type GrantRequest = components["schemas"]["GrantRequest"];
 export type AreaRole = components["schemas"]["AreaRole"];
 export type EffectiveAccess = components["schemas"]["EffectiveAccess"];
+export type Role = components["schemas"]["Role"];
+export type RoleRequest = components["schemas"]["RoleRequest"];
 
 const keys = {
   groups: ["access", "groups"] as const,
   grants: ["access", "grants"] as const,
   roles: ["access", "roles"] as const,
+  customRoles: ["access", "custom-roles"] as const,
   access: (who: string) => ["access", "effective", who] as const,
 };
 /** Every query a change to groups or grants can make stale. */
@@ -39,6 +42,12 @@ export const accessQueries = {
       queryFn: () => list(api.GET("/api/v1/roles")),
       staleTime: Number.POSITIVE_INFINITY, // built in: they change with Dock
     }),
+  /** The org's own roles. */
+  customRoles: () =>
+    queryOptions({
+      queryKey: keys.customRoles,
+      queryFn: () => list(api.GET("/api/v1/custom-roles")),
+    }),
   /** who "" is the caller. */
   access: (who: string) =>
     queryOptions({
@@ -57,6 +66,8 @@ export const accessQueries = {
 export const useGroups = () => useSuspenseQuery(accessQueries.groups()).data;
 export const useGrants = () => useSuspenseQuery(accessQueries.grants()).data;
 export const useRoles = () => useSuspenseQuery(accessQueries.roles()).data;
+export const useCustomRoles = () =>
+  useSuspenseQuery(accessQueries.customRoles()).data;
 
 /** A role key's display name, like "Deploy edit" for deploy:edit. */
 export function useRoleName() {
@@ -70,6 +81,28 @@ export function useRoleName() {
 }
 
 const group = (name: string) => ({ params: { path: { group: name } } });
+const role = (name: string) => ({ params: { path: { role: name } } });
+
+/** Makes a role, or changes the one named was. */
+export const useSaveRole = () =>
+  useAction(
+    ({ was, role: r }: { was?: string; role: RoleRequest }) =>
+      body(
+        was
+          ? api.PUT("/api/v1/custom-roles/{role}", { ...role(was), body: r })
+          : api.POST("/api/v1/custom-roles", { body: r }),
+      ),
+    touched,
+    (v) => (v.was ? `Saved role ${v.role.name}` : `Made role ${v.role.name}`),
+  );
+
+export const useDeleteRole = () =>
+  useAction(
+    (name: string) =>
+      done(api.DELETE("/api/v1/custom-roles/{role}", role(name))),
+    touched,
+    (name) => `Removed role ${name}`,
+  );
 
 export const useCreateGroup = () =>
   useAction(

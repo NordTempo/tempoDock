@@ -546,6 +546,7 @@ type Grant struct {
 	Via           *string
 	GrantedBy     string
 	CreatedAt     time.Time
+	RoleID        *int64
 }
 
 type Group struct {
@@ -827,6 +828,16 @@ type ReleaseEvent struct {
 	ReleaseID int64
 	Message   string
 	CreatedAt time.Time
+}
+
+type Role struct {
+	ID          int64
+	OrgID       int64
+	Name        string
+	Description string
+	Parts       string
+	CreatedBy   string
+	CreatedAt   time.Time
 }
 
 type SavedQuery struct {

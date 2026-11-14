@@ -27,8 +27,10 @@ type GroupMember struct {
 // one environment, for some environment kinds.
 type Grant struct {
 	ID int64 `json:"id"`
-	// Role is an area role at a level ("deploy:edit"), "approver" or "full".
+	// Role is an area role at a level ("deploy:edit"), "approver", "full",
+	// or the name of one of the org's own roles (Custom).
 	Role        string `json:"role" example:"deploy:edit"`
+	Custom      bool   `json:"custom,omitempty"`
 	Project     string `json:"project,omitempty"`
 	Environment string `json:"environment,omitempty"`
 	// Kinds are the environment kinds it covers; all three when empty.
@@ -97,4 +99,30 @@ type RoleAt struct {
 	Level string `json:"level" example:"edit"`
 	// From are the grants that give it: "Developers: deploy:edit on the org".
 	From []string `json:"from"`
+}
+
+// Role is one of an org's own roles (ADR 0080): built-in roles it
+// includes and single permissions, under one name, and who holds it.
+type Role struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name" example:"Release manager"`
+	Description string `json:"description,omitempty"`
+	// Includes are built-in roles ("deploy:edit"), Permissions single
+	// permissions ("errors.manage"); Holds is every permission they add
+	// up to.
+	Includes    []string `json:"includes"`
+	Permissions []string `json:"permissions"`
+	Holds       []string `json:"holds"`
+	// Groups and People are who it is granted to.
+	Groups []string `json:"groups"`
+	People []string `json:"people"`
+}
+
+// RoleRequest makes or changes one of an org's own roles: every field as
+// it should be.
+type RoleRequest struct {
+	Name        string   `json:"name" maxLength:"64"`
+	Description string   `json:"description,omitempty" maxLength:"200"`
+	Includes    []string `json:"includes,omitempty"`
+	Permissions []string `json:"permissions,omitempty"`
 }

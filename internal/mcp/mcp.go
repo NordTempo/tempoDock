@@ -123,7 +123,8 @@ var platformTools = []string{"whoami", "list_servers", "list_alerts"}
 // A token limited to one environment can't promote, clone or see other
 // projects, and without data access there (the default for tokens) has
 // data_status only; only the platform's operators and viewers list servers, only admins registry
-// credentials; read tokens change nothing. A client lists tools once per
+// credentials (connections.manage), and nobody a tool whose permission
+// they hold nowhere (toolPerms); read tokens change nothing. A client lists tools once per
 // session: access granted later shows in a new one (the tools answer
 // calls either way).
 func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
@@ -148,8 +149,11 @@ func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
 	if a.Platform == "" {
 		v.Hide = append(v.Hide, "list_servers")
 	}
-	if a.Scope != apitypes.ScopeAdmin {
-		v.Hide = append(v.Hide, "list_registry_credentials")
+	// What the caller holds nowhere can't work for it (toolPerms).
+	for name, p := range toolPerms {
+		if !a.Holds(p) {
+			v.Hide = append(v.Hide, name)
+		}
 	}
 	v.ReadOnly = a.Scope == apitypes.ScopeRead
 	return v

@@ -34,6 +34,38 @@ policy ([Data](data.md#who-may-do-what)). An admin can require two-factor
 sign-in for every member (`dock org two-factor on`, see
 [Two-factor sign-in](two-factor.md)).
 
+## Groups, roles and grants
+
+A member's role puts them in one of the groups every organization starts
+with: Admins, Developers and Viewers (Approvers is a fourth, for people
+who decide access requests). A group gives built-in roles, an area at a
+level like `deploy:edit` or `logs:view` (`dock role list`), on the whole
+organization, one project or one environment, optionally only for some
+environment kinds (production, other, previews) or a while. Make your own
+groups for job functions, like contractors on one project's staging:
+
+```sh
+dock group create Contractors
+dock group grant Contractors deploy:edit -p shop -e staging
+dock group grant Contractors logs:view -p shop
+dock group add Contractors ola@example.com
+dock grant ola@example.com data:read -p shop --for 4h   # a one-off
+dock can ola@example.com                                # what adds up
+```
+
+An organization's own roles bundle built-in roles and single permissions
+under one name, granted like a built-in one:
+
+```sh
+dock role create "Release manager" --include deploy:edit,variables:edit --permission errors.manage
+dock group grant Leads "Release manager"
+```
+
+The same is in Settings › Members, Groups and Roles. Until the platform's
+operator switches the permission model to enforce (`dock platform
+access-model enforce`), roles still decide and groups only show what
+would change.
+
 ## Tokens
 
 Tokens act for CI, scripts and agents. Each has a role of its own and can

@@ -13,6 +13,11 @@ import (
 // Groups and grants (ADR 0080): an org's groups, their members and role
 // grants, one person's one-off grants, and a person's effective access.
 
+// RolePath addresses one of an org's own roles by name.
+type RolePath struct {
+	Role string `path:"role" doc:"The role's name"`
+}
+
 // GroupPath addresses a group by name or ID.
 type GroupPath struct {
 	Group string `path:"group" doc:"The group's name or ID"`
@@ -26,6 +31,45 @@ func registerGroups(s *Server, a huma.API) {
 		Description: "Every area role with its levels and the permissions each level holds, the same in every organization. Grants name them as area:level (deploy:edit), approver or full.",
 	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.AreaRole], error) {
 		return reply(core.AreaRoles(), nil)
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "list-custom-roles", Method: http.MethodGet, Path: Prefix + "/custom-roles",
+		Summary: "The organization's own roles", Tags: tags,
+		Description: "Roles made of built-in roles and single permissions under one name, with what they add up to and who holds them. Grants name them by name. Needs members.read.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[[]apitypes.Role], error) {
+		return reply(s.core.Roles(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "create-custom-role", Method: http.MethodPost, Path: Prefix + "/custom-roles",
+		Summary: "Make a role", Tags: tags, DefaultStatus: http.StatusCreated,
+		Description: "Built-in roles (includes, like deploy:edit) and permissions (like errors.manage) under a name no built-in role has. Needs roles.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Body apitypes.RoleRequest
+	}) (*out[apitypes.Role], error) {
+		return reply(s.core.CreateRole(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "get-custom-role", Method: http.MethodGet, Path: Prefix + "/custom-roles/{role}",
+		Summary: "One of the organization's roles", Tags: tags, Description: "Needs members.read.",
+	}, func(ctx context.Context, actor core.Actor, in *RolePath) (*out[apitypes.Role], error) {
+		return reply(s.core.Role(ctx, actor, in.Role))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "update-custom-role", Method: http.MethodPut, Path: Prefix + "/custom-roles/{role}",
+		Summary: "Change a role", Tags: tags,
+		Description: "Its name, description and parts, all as given; who holds it holds the new parts from their next request. Needs roles.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		RolePath
+		Body apitypes.RoleRequest
+	}) (*out[apitypes.Role], error) {
+		return reply(s.core.UpdateRole(ctx, actor, in.Role, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "delete-custom-role", Method: http.MethodDelete, Path: Prefix + "/custom-roles/{role}",
+		Summary: "Remove a role", Tags: tags, DefaultStatus: http.StatusNoContent,
+		Description: "Refused while a grant names it. Needs roles.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *RolePath) (*struct{}, error) {
+		return nil, s.core.DeleteRole(ctx, actor, in.Role)
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "list-groups", Method: http.MethodGet, Path: Prefix + "/groups",
