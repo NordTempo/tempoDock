@@ -72,6 +72,22 @@ func registerGroups(s *Server, a huma.API) {
 		return nil, s.core.DeleteRole(ctx, actor, in.Role)
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-agent-settings", Method: http.MethodGet, Path: Prefix + "/me/agent-settings",
+		Summary: "What your agents may do", Tags: tags,
+		Description: "ADR 0080: what your `dock login` tokens may use of your access in this organization, per area role and environment kind, and where they ask you first. agent 0 is all of them; an agent's ID its own narrowing.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Agent int64 `query:"agent" doc:"One agent's narrowing; 0 or none for all your agents"`
+	}) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.AgentSettings(ctx, actor, in.Agent))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-agent-settings", Method: http.MethodPut, Path: Prefix + "/me/agent-settings",
+		Summary: "Change what your agents may do", Tags: tags,
+		Description: "The cells given replace theirs. An agent may tighten its setting; loosening needs you signed in, recently.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AgentSettings }) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.SetAgentSettings(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-groups", Method: http.MethodGet, Path: Prefix + "/groups",
 		Summary: "List groups", Tags: tags,
 		Description: "The organization's groups with their members and grants. Needs members.read.",

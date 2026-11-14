@@ -38,6 +38,9 @@ type busEvent struct {
 	// envKind is envID's kind (envKind), where the publisher knows it:
 	// what a person's grants for some kinds see of it (streams.go).
 	envKind uint8
+	// asker, when set, sends an adminsOnly event to that person instead of
+	// the approvers: a request their agent asked them first.
+	asker int64
 }
 
 // secretsView says which subscribers get an event (busEvent.secrets).
@@ -51,7 +54,13 @@ const (
 
 // seenBy reports whether the event's audience includes a, beyond canSee.
 func (e busEvent) seenBy(a Actor) bool {
-	return !e.adminsOnly || a.approves(e.projectID, e.envID, e.envKind) || (e.requester != 0 && a.TokenID == e.requester)
+	switch {
+	case !e.adminsOnly, e.requester != 0 && a.TokenID == e.requester:
+		return true
+	case e.asker != 0:
+		return a.Kind != "token" && a.UserID == e.asker
+	}
+	return a.approves(e.projectID, e.envID, e.envKind)
 }
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that

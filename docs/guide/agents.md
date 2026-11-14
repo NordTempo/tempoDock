@@ -5,8 +5,9 @@ without being able to break or destroy things.
 
 The model: the agent gets a **scoped API token**, never SSH or Docker access.
 `dock login` in the browser is for people at a terminal; it gives the CLI
-your own, unlimited access. Agents get their own token, limited to what
-they deploy.
+your own access, as much of it as your agent setting lets your agents use
+(see [Your agents](#your-agents)). Agents of the organization get their
+own token, limited to what they deploy.
 Every rule is enforced by the daemon, not by the agent behaving. The worst
 outcome of a bad deploy is a failed release that never got traffic.
 
@@ -232,6 +233,32 @@ $ dock request wait 12
   An admin can also open the environment for a while instead.
 - Data panel changes in a locked environment are changesets for an admin
   to approve, as on production.
+
+## Your agents
+
+An agent that runs with your `dock login` (Claude Code at your terminal)
+acts for you: it can do what you can, as you are now, and no more. On
+your Account page, or with `dock agent`, you decide how much of that your
+agents may use, per area role and environment kind, and where they ask
+you first:
+
+```sh
+dock agent settings                                   # each area's level per kind
+dock agent set deploy=view --kinds production         # look, don't touch, in production
+dock agent set deploy=edit --kinds production --ask   # or: ask me first
+dock agent set data=off                               # no Data panel at all
+dock agent set logs=view --agent 42                   # narrow one agent only
+```
+
+- With no setting, agents may use everything you have but approving.
+- An agent may tighten its setting itself; loosening it takes you, signed
+  in on the Account page.
+- A change where you asked to be asked becomes an access request that
+  only you decide, in the Inbox: `setting variables in shop/production
+  waits for ada@example.com's approval as access request #12`. Approved,
+  it runs as the agent.
+- This applies while the platform's permission model decides
+  (`dock platform access-model enforce`); until then your role does.
 
 ## What a `deploy` token can and can't do
 

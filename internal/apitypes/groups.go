@@ -126,3 +126,20 @@ type RoleRequest struct {
 	Includes    []string `json:"includes,omitempty"`
 	Permissions []string `json:"permissions,omitempty"`
 }
+
+// AgentSetting is what a person's agents may use of their access in one
+// area role and environment kind (ADR 0080): one of the area's levels,
+// all of it, or off; Ask makes its changes wait for the person.
+type AgentSetting struct {
+	Area  string `json:"area" example:"deploy"`
+	Kind  string `json:"kind" enum:"production,other,previews"`
+	Level string `json:"level" example:"edit"`
+	Ask   bool   `json:"ask,omitempty"`
+}
+
+// AgentSettings is a person's setting for all their agents in an org
+// (Agent 0), or one agent's narrowing of it: every area role and kind.
+type AgentSettings struct {
+	Agent    int64          `json:"agent,omitempty"`
+	Settings []AgentSetting `json:"settings"`
+}

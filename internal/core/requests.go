@@ -170,7 +170,7 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 			Nonce: nonce, OrgID: le.OrgID, ProjectID: le.ProjectID, EnvironmentID: le.EnvID,
 			Via: call.Via, Operation: call.Op, Title: call.Title, Action: le.Action, Args: sealed,
 			Fingerprint: fingerprint, Reason: call.Reason, TokenID: tokenID, RequestedBy: a.Name,
-			AuditMark: mark, CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), Upload: call.Upload,
+			AuditMark: mark, CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), Upload: call.Upload, AskUserID: le.askOwner,
 		})
 		return err
 	})
@@ -283,19 +283,29 @@ func (c *Core) toRequest(r store.AccessRequest, es envScope, args bool) apitypes
 func (c *Core) publishRequest(r store.AccessRequest, project, env string, kind uint8) {
 	view := c.toRequest(r, envScope{store.Project{Name: project}, store.Environment{Name: env}}, false)
 	c.bus.publish(busEvent{
-		orgID: r.OrgID, projectID: r.ProjectID, envID: r.EnvironmentID, envKind: kind, requester: derefOr(r.TokenID), adminsOnly: true,
+		orgID: r.OrgID, projectID: r.ProjectID, envID: r.EnvironmentID, envKind: kind, requester: derefOr(r.TokenID), adminsOnly: true, asker: derefOr(r.AskUserID),
 		ev: apitypes.Event{Type: apitypes.EventAccessRequest, Project: project, Environment: env, AccessRequest: &view},
 	})
 }
 
-// seesRequest reports whether the actor may see a request: whoever may
-// approve in its environment, of kind (ADR 0080; the org's admins
-// before), and the token that asked.
+// seesRequest reports whether the actor may see a request in an
+// environment of kind: whoever decides it (decides), and the token that
+// asked.
 func (a Actor) seesRequest(r store.AccessRequest, kind uint8) bool {
 	if a.Kind == "token" && r.TokenID != nil && a.TokenID == *r.TokenID {
 		return true
 	}
-	return a.approves(r.ProjectID, r.EnvironmentID, kind) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
+	return a.decides(r, kind) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
+}
+
+// decides reports whether the actor decides a request in an environment
+// of kind: the person whose agent asked them first (ADR 0080, their agent
+// setting), signed in themselves; otherwise whoever may approve there.
+func (a Actor) decides(r store.AccessRequest, kind uint8) bool {
+	if r.AskUserID != nil {
+		return a.Kind != "token" && a.UserID == *r.AskUserID
+	}
+	return a.approves(r.ProjectID, r.EnvironmentID, kind)
 }
 
 // RequestFilter narrows ListRequests.
@@ -342,6 +352,15 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 			}
 			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
 		}
+	case a.Kind != "token" && a.UserID != 0:
+		// What their agents asked them first.
+		got, err := c.store.ListAskedAccessRequests(ctx, store.ListAskedAccessRequestsParams{AskUserID: &a.UserID, OrgID: a.OrgID, Limit: limit})
+		if err != nil {
+			return nil, err
+		}
+		for _, g := range got {
+			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
+		}
 	default:
 		return nil, errf(apitypes.CodeForbidden, "%s has scope %s; access requests are for admins", a, a.Scope)
 	}
@@ -351,6 +370,7 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 			continue
 		}
 		v := c.toRequest(r.r, envScope{store.Project{Name: r.project}, store.Environment{Name: r.env}}, false)
+		v.Decide = a.Kind != "token" && a.decides(r.r, kinds[r.r.EnvironmentID])
 		if f.Status == "" || v.Status == f.Status {
 			out = append(out, v)
 		}
@@ -415,8 +435,9 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 	if err != nil {
 		return apitypes.AccessRequest{}, err
 	}
-	admin := a.approves(r.ProjectID, r.EnvironmentID, envKind(es.env))
+	admin := a.decides(r, envKind(es.env))
 	out := c.toRequest(r, es, admin)
+	out.Decide = admin && a.Kind != "token"
 	if admin {
 		n, err := c.store.CountEnvironmentAuditSince(ctx, store.CountEnvironmentAuditSinceParams{EnvironmentID: &r.EnvironmentID, ID: r.AuditMark})
 		if err != nil {
@@ -507,11 +528,9 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 	if a.Kind == "token" {
 		return apitypes.AccessRequest{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, in the Inbox", a)
 	}
-	if err := a.require(apitypes.ScopeAdmin, verb+" access requests"); err != nil {
-		return apitypes.AccessRequest{}, err
-	}
-	// Approving lets a token change a locked environment: a step-up
-	// (ADR 0057). Rejecting only takes power away.
+	// Approving lets a token change what it couldn't alone: a step-up
+	// (ADR 0057), before anything about the request is told. Rejecting
+	// only takes power away.
 	if approve {
 		if err := a.requireRecent("approving an access request"); err != nil {
 			return apitypes.AccessRequest{}, err
@@ -521,8 +540,16 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 	if err != nil {
 		return apitypes.AccessRequest{}, err
 	}
-	if err := a.checkEnvAccess(apitypes.ScopeAdmin, verb+" access requests", es.project, es.env); err != nil {
-		return apitypes.AccessRequest{}, err
+	if r.AskUserID == nil {
+		if err := a.require(apitypes.ScopeAdmin, verb+" access requests"); err != nil {
+			return apitypes.AccessRequest{}, err
+		}
+		if err := a.checkEnvAccess(apitypes.ScopeAdmin, verb+" access requests", es.project, es.env); err != nil {
+			return apitypes.AccessRequest{}, err
+		}
+	} else if !a.decides(r, envKind(es.env)) {
+		// loadRequest only finds it for its person and the asking agent.
+		return apitypes.AccessRequest{}, errf(apitypes.CodeForbidden, "access request #%d waits for the person whose agent asked them first", id)
 	}
 	status := apitypes.RequestRejected
 	if approve {
@@ -614,15 +641,19 @@ func (c *Core) CheckRequest(ctx context.Context, a Actor, id int64) (apitypes.Ac
 	if a.Kind == "token" {
 		return apitypes.AccessRequestCheck{}, errf(apitypes.CodeForbidden, "%s can't decide access requests: an admin decides them in the UI, in the Inbox", a)
 	}
-	if err := a.require(apitypes.ScopeAdmin, "checking access requests"); err != nil {
-		return apitypes.AccessRequestCheck{}, err
-	}
 	r, es, err := c.loadRequest(ctx, a, id)
 	if err != nil {
 		return apitypes.AccessRequestCheck{}, err
 	}
-	if err := a.checkEnvAccess(apitypes.ScopeAdmin, "checking access requests", es.project, es.env); err != nil {
-		return apitypes.AccessRequestCheck{}, err
+	if r.AskUserID == nil {
+		if err := a.require(apitypes.ScopeAdmin, "checking access requests"); err != nil {
+			return apitypes.AccessRequestCheck{}, err
+		}
+		if err := a.checkEnvAccess(apitypes.ScopeAdmin, "checking access requests", es.project, es.env); err != nil {
+			return apitypes.AccessRequestCheck{}, err
+		}
+	} else if !a.decides(r, envKind(es.env)) {
+		return apitypes.AccessRequestCheck{}, errf(apitypes.CodeForbidden, "access request #%d waits for the person whose agent asked them first", id)
 	}
 	if st := c.toRequest(r, es, false).Status; st != apitypes.RequestPending {
 		return apitypes.AccessRequestCheck{Reason: fmt.Sprintf("access request #%d is %s; only a pending one is approved", id, st)}, nil

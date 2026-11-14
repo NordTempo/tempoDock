@@ -194,7 +194,21 @@ one decides.
    leaves out what the caller holds nowhere: for tokens that is what
    their scope already hid, so their tool lists don't change until agents
    get grants (phase 6), when `make agent-eval` runs on them.
-6. Agents: personal agents and their settings, org agents, agent rules.
+6. **Agents.** 6a, personal agents (built): a person's `dock login`
+   tokens act for them with their grants as they are now, capped by
+   their agent setting (migration 0111, `agent_settings`: per area role
+   and environment kind a level, `all` or `off`, and ask) and by the
+   agent's own narrowing (the same rows with its token), which only
+   lowers. No setting: everything but approving, as `dock login` was.
+   Environment permissions are capped per kind; org and project ones by
+   what every kind allows. A change in a cell marked ask is a
+   LockedError that files an access request with `ask_user_id`: only that
+   person decides it, in the browser (a lock still goes to the
+   approvers). Settled while building: an agent may tighten its setting
+   (the CLI is usually the agent's own login) but loosening needs the
+   person signed in, recently; settings apply while grants decide
+   (enforce), and the shadow compares with them. 6b: org agents and the
+   org's agent rules.
 7. Protection.
 
 ## Consequences

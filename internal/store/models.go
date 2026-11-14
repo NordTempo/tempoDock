@@ -34,6 +34,17 @@ type AccessRequest struct {
 	Result        string
 	Error         string
 	FinishedAt    *time.Time
+	AskUserID     *int64
+}
+
+type AgentSetting struct {
+	UserID  int64
+	OrgID   int64
+	TokenID *int64
+	Area    string
+	Kind    int64
+	Level   string
+	Ask     bool
 }
 
 type Alert struct {

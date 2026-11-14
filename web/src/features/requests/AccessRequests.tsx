@@ -415,8 +415,8 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
  * Reject, or Approve and run (the primary, on the right like every
  * confirm), with an optional comment. When the pre-check says the run
  * would fail, Approve is disabled with the reason, and the service to fix
- * is a link away. Only admins in a UI session decide; tokens never can,
- * so there is no CLI equivalent.
+ * is a link away. Only whoever decides it (r.decide), in a UI session,
+ * decides; tokens never can, so there is no CLI equivalent.
  */
 function Decide({ request: r }: { request: AccessRequest }) {
   const id = r.id;
@@ -425,16 +425,14 @@ function Decide({ request: r }: { request: AccessRequest }) {
   const decide = useDecideRequest();
   const [comment, setComment] = useState("");
   const [asking, setAsking] = useState(false);
-  const admin = session?.kind === "user" && session.scope === "admin";
+  // The server says who decides: an approver there, or the person whose
+  // agent asked them first.
+  const admin = session?.kind === "user" && !!r.decide;
   // The server's dry run of this request, asked when it is shown.
   const check = useQuery({ ...requestQueries.check(id), enabled: admin }).data;
   const doomed = check && !check.ok ? check : undefined;
   if (!admin) {
-    return (
-      <p className="text-faint">
-        An admin of the organization decides in the UI.
-      </p>
-    );
+    return <p className="text-faint">Its approvers decide in the UI.</p>;
   }
   const run = (approve: boolean) =>
     decide.mutate({ id, approve, comment: comment.trim() });

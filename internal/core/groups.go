@@ -215,18 +215,22 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 		}
 	}
 	entries := make([]grantEntry, 0, len(rows))
-	var org Perms
 	for _, r := range rows {
 		perms, ok := grantPerms(r.Role, r.Parts)
 		if !ok {
 			c.log.Warn("a grant names no built-in role; it gives nothing", "role", r.Role, "org", a.OrgID)
 			continue
 		}
-		g := grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms}
-		if g.project == 0 && g.env == 0 && g.kinds == uint8(allKinds) {
-			org |= perms
+		entries = append(entries, grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms})
+	}
+	if a.isPersonalAgent() {
+		// A personal agent uses what its setting lets it of this.
+		settings, err := c.store.ListAgentSettings(ctx, store.ListAgentSettingsParams{UserID: a.UserID, OrgID: a.OrgID, TokenID: &a.TokenID})
+		if err != nil {
+			return a, err
 		}
-		entries = append(entries, g)
+		cp := capOf(settings)
+		entries, a.agentAsk, a.agentData = cp.capEntries(entries), cp.ask, cp.data
 	}
 	if !c.enforceGrants.Load() {
 		// Shadow (access_model.go): the role decides as before; the model
@@ -234,11 +238,23 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 		a.grants, a.watchGrants = entries, true
 		return a, nil
 	}
+	var org Perms
+	for _, g := range entries {
+		if g.project == 0 && g.env == 0 && g.kinds == uint8(allKinds) {
+			org |= g.perms
+		}
+	}
+	// An agent's environment permissions held in every kind count too.
+	if a.isPersonalAgent() {
+		org |= everyKind(entries)
+	}
+	// The Data panel's permissions don't count: the data policy decides
+	// them (and an agent's setting caps them there).
 	summary := apitypes.ScopeRead
-	switch {
-	case org&seedPerms("admins") == seedPerms("admins"):
+	switch admins, devs := seedPerms("admins")&^dataPerms, seedPerms("developers")&^dataPerms; {
+	case org&admins == admins:
 		summary = apitypes.ScopeAdmin
-	case org&seedPerms("developers") == seedPerms("developers"):
+	case org&devs == devs:
 		summary = apitypes.ScopeDeploy
 	}
 	// The role column is what role-setting APIs last wrote; groups changed
