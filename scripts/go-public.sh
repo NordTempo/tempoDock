@@ -2,7 +2,7 @@
 # go-public.sh makes the repository public and turns on what GitHub's free
 # plan only offers public repositories. Run it once, by hand, as a repo
 # admin (gh auth status), on launch day: after the v1.0.0 release, with
-# the launch checklist in ADR 0081 done. Every step is idempotent, so a
+# the launch checklist in ADR 0082 done. Every step is idempotent, so a
 # failed run can simply be run again.
 #
 #   scripts/go-public.sh            asks before changing anything

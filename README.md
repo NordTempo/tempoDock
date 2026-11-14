@@ -67,3 +67,11 @@ with `install-cli.sh` ([install guide](docs/guide/install.md#install)).
 | [Roadmap](docs/roadmap.md) | Status, what is left, the backlog |
 | [Decisions](docs/decisions/README.md) | Architecture decision records (the "why") |
 | [Open questions](docs/open-questions.md) | What we still need to decide |
+
+## License
+
+[AGPL-3.0](LICENSE). Apps you deploy on Dock are your own programs, not
+covered by it. The names and logos are covered by
+[TRADEMARKS.md](TRADEMARKS.md); contributions by the [CLA](CLA.md)
+([CONTRIBUTING.md](CONTRIBUTING.md)). Security issues:
+[SECURITY.md](SECURITY.md). Why: [ADR 0082](docs/decisions/0082-open-source-license.md).

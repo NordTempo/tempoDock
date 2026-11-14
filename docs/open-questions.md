@@ -3,8 +3,5 @@
 Each question has a current leaning. When answered, record it as a decision in
 [decisions](decisions/README.md) and remove it here.
 
-## License
-
-Not needed while the repo is private. To keep options open, only take
-dependencies with permissive licenses (MIT, Apache-2.0, BSD). See
-[ADR 0008](decisions/0008-keep-doors-open.md).
+None right now. The license was the last one: AGPL-3.0
+([ADR 0082](decisions/0082-open-source-license.md)).

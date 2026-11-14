@@ -20,7 +20,7 @@ line means a later record added to it without changing what it decided.
 | [0005](0005-openapi-api-with-generated-clients.md) | OpenAPI API with generated clients | accepted |
 | [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted |
 | [0007](0007-config-db-plus-repo-file.md) | Config in the platform DB plus an optional repo file | accepted |
-| [0008](0008-keep-doors-open.md) | Keep open source and hosting possible, cheaply | superseded in part by [0027](0027-organizations.md) |
+| [0008](0008-keep-doors-open.md) | Keep open source and hosting possible, cheaply | superseded in part by [0027](0027-organizations.md), [0082](0082-open-source-license.md) |
 | [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md) |
 | [0010](0010-environments-on-servers.md) | Environments are placed on servers | superseded in part by [0015](0015-server-pools-and-placement.md) |
 | [0011](0011-stateful-services-and-databases.md) | Stateful services and databases | superseded in part by [0047](0047-volume-snapshots.md) |
@@ -94,6 +94,7 @@ line means a later record added to it without changing what it decided.
 | [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; invites built |
 | [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phases 1 to 3 built |
 | [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
+| [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo; going public is v1.0.0 | accepted; not yet public |
 
 ## Template
 
