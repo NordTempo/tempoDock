@@ -7,6 +7,7 @@ import { useIsAdmin, useOrgs, useSession } from "../../data/queries";
 import { useOrg } from "../../shell/location";
 import { Act, ErrorText, Page, PageBar, SectionHead } from "../../ui/kit";
 import { AccessView } from "../access/AccessView";
+import { ShadowNote } from "../access/ShadowNote";
 import { useValidation } from "../create/form";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
@@ -187,6 +188,7 @@ function MyAccess() {
   return (
     <section aria-labelledby="my-access" className="flex flex-col gap-3">
       <SectionHead id="my-access">Your access in {name}</SectionHead>
+      <ShadowNote />
       <Suspense fallback={<p className="text-faint">Loading</p>}>
         <AccessView who="" />
       </Suspense>

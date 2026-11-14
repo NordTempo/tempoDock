@@ -17,6 +17,7 @@ import (
 // approve without being admins; the org keeps someone with Full access.
 func TestGroupsDecide(t *testing.T) {
 	h := newHarness(t)
+	h.enforce()
 	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
 	h.deploy(web, "app:1")
 	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, web.Project, apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
@@ -93,6 +94,7 @@ func TestGroupsDecide(t *testing.T) {
 // their role.
 func TestSeedAccessForOlderOrgs(t *testing.T) {
 	h := newHarness(t)
+	h.enforce()
 	o, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "older", Name: "Older"})
 	if err != nil {
 		t.Fatal(err)
@@ -144,6 +146,7 @@ func (h *harness) userRow(id int64) store.User {
 // permission, and people fell back to their role, wherever it held.
 func TestSiteReadsFollowGrants(t *testing.T) {
 	h := newHarness(t)
+	h.enforce()
 	countingSite(h)
 	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
 	viewer := h.user("vi@example.com", apitypes.ScopeRead)
@@ -177,6 +180,7 @@ func TestSiteReadsFollowGrants(t *testing.T) {
 // it can't say where they would hold it.
 func TestUnmappedCheckRefusesPeople(t *testing.T) {
 	h := newHarness(t)
+	h.enforce()
 	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
 	const action = "doing something no permission names"
 	defer forgetShadow(action)
@@ -201,5 +205,61 @@ func forgetShadow(action string) {
 		if strings.Contains(k, strconv.Quote(action)) {
 			delete(shadowRecord.counts, k)
 		}
+	}
+}
+
+// enforce makes groups and grants decide people's checks (ADR 0080's
+// enforce mode), for tests of what they decide; it lasts across restarts.
+func (h *harness) enforce() {
+	h.t.Helper()
+	if _, err := h.c.SetAccessModel(h.ctx, System, apitypes.AccessModel{Mode: apitypes.AccessModelEnforce}); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
+// In shadow mode (the default) a person's role decides and the model
+// answers beside it from their real groups and grants: a deploy member
+// moved to a group that only views still restarts, and the disagreement
+// is counted for the operator. Switching to enforce lets the grants
+// decide from the next request.
+func TestAccessModelShadowsThenEnforces(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.deploy(web, "app:1")
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	ola := h.user("ola@example.com", apitypes.ScopeDeploy)
+	if ola.Me().AccessModel != apitypes.AccessModelShadow {
+		t.Fatalf("Me = %+v", ola.Me())
+	}
+	if _, err := h.c.RemoveGroupMember(h.ctx, admin, "Developers", ola.Email); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.AddGroupMember(h.ctx, admin, "Viewers", ola.Email); err != nil {
+		t.Fatal(err)
+	}
+	defer forgetShadow("restarting")
+	ola = h.in(userActor(h.userRow(ola.UserID)), "")
+	if _, err := h.c.Restart(h.ctx, ola, web); err != nil {
+		t.Fatalf("shadow: the deploy role didn't decide: %v", err)
+	}
+	if !slices.ContainsFunc(ShadowReport(), func(d apitypes.AccessDisagreement) bool {
+		return strings.Contains(d.Check, `"restarting"`) && strings.Contains(d.Check, "today allows, the model refuses")
+	}) {
+		t.Fatalf("the disagreement isn't counted: %+v", ShadowReport())
+	}
+
+	if _, err := h.c.SetAccessModel(h.ctx, admin, apitypes.AccessModel{Mode: apitypes.AccessModelEnforce}); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("an org admin switched the platform's model: %v", err)
+	}
+	if _, err := h.c.SetAccessModel(h.ctx, System, apitypes.AccessModel{Mode: "both"}); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("mode both: %v", err)
+	}
+	h.enforce()
+	ola = h.in(userActor(h.userRow(ola.UserID)), "")
+	if _, err := h.c.Restart(h.ctx, ola, web); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("enforce: Viewers restarted: %v", err)
+	}
+	if ola.Me().AccessModel != apitypes.AccessModelEnforce {
+		t.Fatalf("Me = %+v", ola.Me())
 	}
 }

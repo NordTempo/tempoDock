@@ -99,6 +99,20 @@ func registerOperator(s *Server, a huma.API) {
 		return reply(s.core.AccessDisagreements(ctx, actor))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-access-model", Method: http.MethodGet, Path: Prefix + "/console/access-model",
+		Summary: "Whether the permission model decides", Tags: tags,
+		Description: "ADR 0080: shadow (the default) keeps people's roles deciding while the model answers beside them from their groups and grants, counting disagreements (access-diff); enforce lets groups and grants decide. Needs platform.view.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.AccessModel], error) {
+		return reply(s.core.AccessModel(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-access-model", Method: http.MethodPut, Path: Prefix + "/console/access-model",
+		Summary: "Switch the permission model between shadow and enforce", Tags: tags,
+		Description: "Applies from each person's next request. Read a clean access-diff in shadow before switching to enforce. Needs platform.settings.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AccessModel }) (*out[apitypes.AccessModel], error) {
+		return reply(s.core.SetAccessModel(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "get-platform-data-policy", Method: http.MethodGet, Path: Prefix + "/console/data-policy",
 		Summary: "The platform's data access default and ceiling", Tags: tags,
 		Description: "What applies where an organization set nothing (in place of Dock's built-in rules), and the most any organization's rule or token gives a subject in an environment kind. Organizations set their own rules within it. Operators only.",

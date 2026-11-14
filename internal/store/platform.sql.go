@@ -10,6 +10,19 @@ import (
 	"time"
 )
 
+const getAccessModel = `-- name: GetAccessModel :one
+SELECT access_model FROM platform_settings WHERE id = 1
+`
+
+// Whether the permission model decides (ADR 0080); no row until a
+// platform setting was first changed, which means shadow.
+func (q *Queries) GetAccessModel(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAccessModel)
+	var access_model string
+	err := row.Scan(&access_model)
+	return access_model, err
+}
+
 const getPublicHost = `-- name: GetPublicHost :one
 SELECT public_host FROM platform_settings WHERE id = 1
 `
@@ -20,6 +33,22 @@ func (q *Queries) GetPublicHost(ctx context.Context) (string, error) {
 	var public_host string
 	err := row.Scan(&public_host)
 	return public_host, err
+}
+
+const setAccessModel = `-- name: SetAccessModel :exec
+INSERT INTO platform_settings (id, access_model, updated_by, updated_at) VALUES (1, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET access_model = excluded.access_model, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+`
+
+type SetAccessModelParams struct {
+	AccessModel string
+	UpdatedBy   string
+	UpdatedAt   time.Time
+}
+
+func (q *Queries) SetAccessModel(ctx context.Context, arg SetAccessModelParams) error {
+	_, err := q.db.ExecContext(ctx, setAccessModel, arg.AccessModel, arg.UpdatedBy, arg.UpdatedAt)
+	return err
 }
 
 const setPublicHost = `-- name: SetPublicHost :exec

@@ -84,6 +84,10 @@ type Me struct {
 	// a password. Its step-ups sign in through it again.
 	SSO      string `json:"sso,omitempty"`
 	SSOLabel string `json:"sso_label,omitempty"`
+	// AccessModel is how a person's groups and grants count here (ADR
+	// 0080): enforce when they decide, shadow when their role still
+	// does and the model only watches; empty for tokens and the platform.
+	AccessModel AccessModelMode `json:"access_model,omitempty" enum:"shadow,enforce"`
 }
 
 // Org is an organization the caller belongs to (ADR 0027). It owns

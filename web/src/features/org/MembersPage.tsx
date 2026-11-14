@@ -19,6 +19,7 @@ import {
 } from "../../ui/kit";
 import { useGroups } from "../access/data";
 import { PersonAccess } from "../access/PersonAccess";
+import { ShadowNote } from "../access/ShadowNote";
 import { Saved, useValidation } from "../create/form";
 import {
   orgQueries,
@@ -105,6 +106,7 @@ function Members() {
         <div className="@container">
           <div className="grid items-start gap-8 @min-[1080px]:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex min-w-0 flex-col gap-5">
+              <ShadowNote />
               {without > 0 && (
                 <p className="text-warn-text">
                   {plural(without, "person", "people")} without two-factor

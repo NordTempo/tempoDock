@@ -223,6 +223,9 @@ type Core struct {
 	jobs jobState
 	// scans is the image scanner's state (scans.go, ADR 0074).
 	scans scanState
+	// enforceGrants: people's groups and grants decide their checks (ADR
+	// 0080's enforce); false, their roles do and the model watches.
+	enforceGrants atomic.Bool
 	// email is the outbox's sender (email_send.go, ADR 0079).
 	email emailState
 	// moves holds the environment moves being driven (ADR 0053).
@@ -447,6 +450,7 @@ func (c *Core) Start(ctx context.Context) error {
 	if err := c.seedAccess(ctx); err != nil {
 		return fmt.Errorf("seed groups: %w", err)
 	}
+	c.loadAccessModel(ctx)
 	c.applyRegistryStorage(ctx)
 	if err := c.convertBackupRepository(ctx); err != nil {
 		// Backups keep using the URL as before; the next start tries again.

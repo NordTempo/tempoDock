@@ -13,6 +13,14 @@ import { AuditLogLink } from "./LogLink";
  * it out. Actions not listed show their raw key.
  */
 const words: Record<string, readonly [label: string, past: string]> = {
+  "access_model.enforce": [
+    "enforce permission model",
+    "switched the permission model to enforce",
+  ],
+  "access_model.shadow": [
+    "shadow permission model",
+    "switched the permission model to shadow",
+  ],
   "alert.channel_add": ["add alert channel", "added"],
   "alert.channel_remove": ["remove alert channel", "removed"],
   "alert.resolve": ["resolve alert", "resolved"],

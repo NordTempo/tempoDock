@@ -219,6 +219,7 @@ func (h *harness) cliToken(a Actor) string {
 // tokens are separate credentials and stay.
 func TestCLILoginTokenFollowsItsUser(t *testing.T) {
 	h := newHarness(t)
+	h.enforce()
 	ada := h.cliUser("ada@example.com", apitypes.ScopeAdmin)
 	authAs := func(secret string) (Actor, error) { return h.c.AuthenticateToken(h.ctx, secret, "") }
 	refused := func(what, secret string) {

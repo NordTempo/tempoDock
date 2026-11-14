@@ -64,3 +64,22 @@ func TestWhoamiLegacyAndMalformedTokens(t *testing.T) {
 		t.Fatalf("a token with a newline: exit %d %s", code, stderr)
 	}
 }
+
+// `dock platform access-model` shows the permission model's mode, shadow
+// until switched, and switches it with a platform login.
+func TestAccessModelCommand(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	if code, _, stderr := execStdin(t, srv.platform+"\n", "login", srv.url, "--token-stdin"); code != 0 {
+		t.Fatal(stderr)
+	}
+	if m := ok[apitypes.AccessModel](t, "platform", "access-model"); m.Mode != apitypes.AccessModelShadow {
+		t.Fatalf("default mode = %s", m.Mode)
+	}
+	if m := ok[apitypes.AccessModel](t, "platform", "access-model", "enforce"); m.Mode != apitypes.AccessModelEnforce {
+		t.Fatalf("after switching: %s", m.Mode)
+	}
+	if code, _, stderr := exec(t, "platform", "access-model", "both"); code == 0 || !strings.Contains(stderr, "shadow") {
+		t.Fatalf("mode both: exit %d %s", code, stderr)
+	}
+}

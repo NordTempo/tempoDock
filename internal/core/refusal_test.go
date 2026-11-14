@@ -27,6 +27,7 @@ func refusalOf(t *testing.T, err error) apitypes.Refusal {
 // admins for a person, never for a manual token.
 func TestRefusalsExplainThemselves(t *testing.T) {
 	h := newHarness(t)
+	h.enforce()
 	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
 	admin := h.cliUser("ada@example.com", apitypes.ScopeAdmin)
 	if _, err := h.c.UpdateMe(h.ctx, admin, apitypes.UpdateMeRequest{Name: "Ada"}); err != nil {

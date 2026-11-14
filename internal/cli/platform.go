@@ -27,7 +27,7 @@ platform's until an operator splits them.`,
 	})
 	token := group(&cobra.Command{Use: "token", Short: "Platform tokens: list, create, revoke, split legacy ones"})
 	token.AddCommand(newPlatformTokenListCmd(g), newPlatformTokenCreateCmd(g), newPlatformTokenRevokeCmd(g), newPlatformTokenSplitCmd(g))
-	cmd.AddCommand(token, newAccessDiffCmd(g))
+	cmd.AddCommand(token, newAccessDiffCmd(g), newAccessModelCmd(g))
 	return cmd
 }
 
@@ -61,6 +61,46 @@ migration to the model stops on those until the rule is removed.`,
 					t.Row(itoa(d.Count), d.Check)
 				}
 				return t.Flush()
+			})
+		},
+	}
+}
+
+// newAccessModelCmd is `dock platform access-model [shadow|enforce]` (ADR
+// 0080): shows the mode, or switches it.
+func newAccessModelCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "access-model [shadow|enforce]",
+		Short: "Show or switch whether groups and grants decide people's checks",
+		Long: `In shadow (the default) people's roles decide, and the permission model
+answers beside every check from their groups and grants, counting where it
+differs (dock platform access-diff). In enforce, groups and grants decide.
+Switch to enforce once the diff is clean; it applies from each person's
+next request. Switching needs platform.settings, showing platform.view.`,
+		Example:   "  dock platform access-model\n  dock platform access-model enforce",
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{string(apitypes.AccessModelShadow), string(apitypes.AccessModelEnforce)},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := g.connect()
+			if err != nil {
+				return err
+			}
+			var m apitypes.AccessModel
+			if len(args) == 0 {
+				m, err = get[apitypes.AccessModel](cmd.Context(), s, apiPrefix+"/console/access-model")
+			} else {
+				m, err = send[apitypes.AccessModel](cmd.Context(), s, http.MethodPut, apiPrefix+"/console/access-model", apitypes.AccessModel{Mode: apitypes.AccessModelMode(args[0])})
+			}
+			if err != nil {
+				return err
+			}
+			return g.io.Print(m, func() error {
+				if m.Mode == apitypes.AccessModelEnforce {
+					g.io.Successf("enforce: groups and grants decide people's checks")
+				} else {
+					g.io.Successf("shadow: roles decide; the model watches (dock platform access-diff)")
+				}
+				return nil
 			})
 		},
 	}

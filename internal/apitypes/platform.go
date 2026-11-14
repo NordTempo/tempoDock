@@ -37,6 +37,23 @@ type SplitTokenResult struct {
 	Platform CreatedToken `json:"platform"`
 }
 
+// AccessModelMode says whether ADR 0080's permission model decides
+// people's checks.
+type AccessModelMode string
+
+// Permission model modes: in shadow, roles decide and the model watches
+// beside them (the default until an operator switches); in enforce,
+// groups and grants decide.
+const (
+	AccessModelShadow  AccessModelMode = "shadow"
+	AccessModelEnforce AccessModelMode = "enforce"
+)
+
+// AccessModel is the permission model's mode on this platform.
+type AccessModel struct {
+	Mode AccessModelMode `json:"mode" enum:"shadow,enforce"`
+}
+
 // AccessDisagreement is a kind of check where the permission model of ADR
 // 0080 answered differently from today's checks while it only watched
 // (phase 3): which check, both answers, and how often since the daemon

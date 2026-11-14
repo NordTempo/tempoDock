@@ -15,6 +15,7 @@ import {
   useRoleName,
 } from "./data";
 import { GrantForm } from "./GrantForm";
+import { ShadowNote } from "./ShadowNote";
 
 // Settings › Groups (ADR 0080): the org's job functions. On the left the
 // groups with who is in them and what they give; beside it the selected
@@ -34,6 +35,7 @@ export function GroupsPage({
   const current = groups.find((g) => g.name === selected) ?? groups[0];
   return (
     <Page>
+      <ShadowNote />
       <div className="flex flex-col gap-6 lg:flex-row">
         <section
           aria-label="Groups"
