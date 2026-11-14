@@ -52,9 +52,9 @@ before deploying, or apply the file and set them on the staged services.
 MCP `list_templates` (with `name`: its inputs) and `use_template` (with
 `plan` to only see what it creates).
 
-## What isn't a template yet
+## What isn't a template
 
 Apps that need the Docker socket, host networking, UDP or other TCP ports
-from outside, host folders or GPUs don't run on Dock. MySQL-based apps
-(Ghost, WordPress), Plausible, Authentik and Keycloak are next. For
-anything else, `dock import compose` converts its compose file.
+from outside, host folders or GPUs don't run on Dock, nor do pairs of
+services sharing one volume. For anything else, `dock import compose`
+converts its compose file.

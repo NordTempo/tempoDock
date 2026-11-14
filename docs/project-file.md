@@ -52,7 +52,7 @@ project = "shop"
 | `shared_variables` | environment | Names of shared variables whose values are set separately |
 | `shared_values` | environment | Shared variables with their value in the file |
 | `name` | service | Lower case letters, digits and dashes |
-| `template` | service | `postgres` or `redis`. Its settings, volume and credentials come from the template; a setting in the file overrides the template's |
+| `template` | service | `postgres`, `pgvector`, `mysql`, `mariadb`, `redis` or `valkey`. Its settings, volume and credentials come from the template; a setting in the file overrides the template's |
 | `image`, `port`, `start_command`, `dockerfile_path`, `build_command`, `memory_mb`, `cpus`, `health_check_path`, `health_check_timeout_seconds`, `health_check_interval_seconds`, `health_check_probe_timeout_seconds`, `health_check_retries`, `health_check_start_period_seconds`, `pre_deploy_command`, `pre_deploy_timeout_seconds`, `pre_deploy_snapshot` | service | The service's settings, as `dock service update` names them. Left out means not set |
 | `database`, `database_url_variable` | service | Data panel settings; compared, but changed with `dock db settings` |
 | `variables` | service | Names of the service's variables whose values are set separately (secrets) |
@@ -61,11 +61,12 @@ project = "shop"
 | `volumes` | service | `{ name, mount_path }` |
 | `domains` | service | `{ hostname }`, `{ hostname, redirect_to }` or `{ generated = true }` (any generated domain of the service matches) |
 | `git` | service | `{ repository, branch, directory, statuses }`; compared, connected with `dock git connect` |
+| `jobs` | service | `{ name, schedule, command, timezone, timeout_seconds, overlap, enabled }`: scheduled jobs ([ADR 0054](decisions/0054-scheduled-jobs.md)), set at once rather than staged, like `dock job set`. A service the apply creates gets them once it exists (with `--deploy`, or by applying again). Jobs the file leaves out are kept, and removed with `--prune`; a service's dock.toml jobs are never changed by a file |
 | `stopped` | service | `true` for a service stopped on purpose. Compared, but stopping and starting act at once: the plan names `dock service stop` / `start` |
 | `log_drains` | environment | `{ name, kind, target }`: where its logs go, without the URL's credentials. Compared; a missing drain is added with `dock logs drain add`, since its URL holds the secret |
 | `registry_credentials` | top | Private registry hosts the project's images pull from with an organization credential. Only the host: the plan says which the organization lacks, and an admin adds them with `dock registry login` |
 
-Scheduled jobs, uptime checks, previews, alert channels, access settings
+Uptime checks, previews, alert channels, access settings
 and analytics sites are not part of a project file.
 
 Parsing is strict (`internal/projectfile`): an unknown key, a key in both `variables` and
