@@ -119,3 +119,8 @@ type FromTemplate struct {
 	Name     string `json:"name"`
 	Revision int    `json:"revision"`
 }
+
+// TemplateFile is a template's file, TOML.
+type TemplateFile struct {
+	File string `json:"file"`
+}
