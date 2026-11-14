@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -166,9 +167,49 @@ func TestImageRefValidation(t *testing.T) {
 		// Tailscale addresses, and the platform registry under any address.
 		"100.100.1.2:5000/app": false, "100.64.0.1/app": false, "100.128.0.1/app": true,
 		"registry.example.org/dock/p1_e2_s3@sha256:abc": false, "Registry.Example.Org/x": false,
+		// The operator's allow_private lets pulls reach the LAN too.
+		"192.168.50.2:5000/app": true, "[fd00::ec2:254]/app": false,
 	} {
-		if err := validateImageRef(ref, "registry.example.org"); (err == nil) != ok {
+		g := &egressGuard{private: true, allow: []netip.Prefix{netip.MustParsePrefix("192.168.50.0/24")}}
+		if err := validateImageRef(ref, "registry.example.org", g); (err == nil) != ok {
 			t.Errorf("validateImageRef(%q) err = %v, want ok %v", ref, err, ok)
+		}
+	}
+}
+
+// TestPullChecksRegistryAddress checks that an image deploy resolves its
+// registry's name before the pull and refuses one that points at this
+// server, cloud metadata or the LAN, or that doesn't resolve.
+func TestPullChecksRegistryAddress(t *testing.T) {
+	h := newHarness(t)
+	ss := h.service("web", apitypes.CreateServiceRequest{Image: "nginx"})
+	h.dns.setIP("registry.example.com", "203.0.113.20")
+	h.dns.setIP("127-0-0-1.nip.example", "127.0.0.1")
+	h.dns.setIP("metadata.nip.example", "169.254.169.254")
+	h.dns.setIP("nas.nip.example", "192.168.1.10")
+	for image, want := range map[string]string{
+		"registry.example.com/app:1":       "",
+		"127-0-0-1.nip.example:7070/x:y":   "loopback, link-local or cloud metadata",
+		"metadata.nip.example/latest:x":    "loopback, link-local or cloud metadata",
+		"nas.nip.example:5000/app:1":       "private address (192.168.1.10)",
+		"only-on-the-lan.example:5000/a:1": "look up registry only-on-the-lan.example:5000",
+	} {
+		rel, err := h.c.DeployImage(h.ctx, testSystem, ss, apitypes.DeployImageRequest{Image: image})
+		if err != nil {
+			t.Fatalf("deploy %s: %v", image, err)
+		}
+		got := h.wait(ss, rel.Number)
+		if want == "" {
+			if got.Status != apitypes.ReleaseActive {
+				t.Errorf("%s: status %s (%s), want active", image, got.Status, got.Error)
+			}
+			continue
+		}
+		if got.Status != apitypes.ReleaseFailed || !strings.Contains(got.Error, want) {
+			t.Errorf("%s: status %s, error %q; want failed with %q", image, got.Status, got.Error, want)
+		}
+		if slices.Contains(h.rt.Ops(), "pull "+image) {
+			t.Errorf("%s was pulled", image)
 		}
 	}
 }

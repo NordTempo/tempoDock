@@ -78,6 +78,11 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h := &harness{t: t, ctx: ctx, rt: fake.New(), store: st, dns: &fakeDNS{}}
+	// The registries tests pull from are public: servers may pull only
+	// from registries that resolve to public addresses (checkRegistry).
+	for _, registry := range []string{"ghcr.io", "quay.io", "registry.example.com"} {
+		h.dns.setIP(registry, "203.0.113.20")
+	}
 	h.opts = Options{Config: cfg, Store: st, Secrets: box, Runtime: h.rt, Logger: slog.New(slog.DiscardHandler), CutoverDrain: time.Nanosecond, PasswordCost: bcrypt.MinCost, LookupTXT: h.dns.lookupTXT, LookupIP: h.dns.lookupIP}
 	h.c = h.start()
 	t.Cleanup(func() {

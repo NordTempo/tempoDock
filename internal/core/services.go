@@ -42,8 +42,8 @@ func pendingSettings(s store.Service) (*apitypes.ServiceSettings, error) {
 	return &p, nil
 }
 
-func validateSettings(s apitypes.ServiceSettings, registry string) error {
-	if err := validateImageRef(s.Image, registry); err != nil {
+func validateSettings(s apitypes.ServiceSettings, registry string, pulls *egressGuard) error {
+	if err := validateImageRef(s.Image, registry, pulls); err != nil {
 		return err
 	}
 	switch {
@@ -184,7 +184,7 @@ func (c *Core) CreateService(ctx context.Context, a Actor, ref EnvRef, req apity
 		PreDeployCommand:               req.PreDeployCommand, PreDeployTimeoutSeconds: req.PreDeployTimeoutSeconds,
 		PreDeploySnapshot: req.PreDeploySnapshot,
 	}
-	if err := validateSettings(set, c.registryHost()); err != nil {
+	if err := validateSettings(set, c.registryHost(), &c.pulls); err != nil {
 		return apitypes.Service{}, err
 	}
 	s, err := c.store.CreateService(ctx, store.CreateServiceParams{
@@ -252,7 +252,7 @@ func (c *Core) UpdateService(ctx context.Context, a Actor, ref ServiceRef, req a
 	patch(&next.PreDeployCommand, req.PreDeployCommand)
 	patch(&next.PreDeployTimeoutSeconds, req.PreDeployTimeoutSeconds)
 	patch(&next.PreDeploySnapshot, req.PreDeploySnapshot)
-	if err := validateSettings(next, c.registryHost()); err != nil {
+	if err := validateSettings(next, c.registryHost(), &c.pulls); err != nil {
 		return apitypes.ChangeResult{}, err
 	}
 	var staged *string

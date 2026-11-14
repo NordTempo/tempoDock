@@ -591,7 +591,7 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 		tmpl = &t
 	}
 	want := desiredSettings(fs, tmpl)
-	if err := validateSettings(want, c.registryHost()); err != nil {
+	if err := validateSettings(want, c.registryHost(), &c.pulls); err != nil {
 		return invalid("service %s: %v", name, err)
 	}
 	svc := func(ch apitypes.PlanChange) apitypes.PlanChange { ch.Service = name; return ch }

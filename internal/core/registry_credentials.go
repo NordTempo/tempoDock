@@ -154,10 +154,15 @@ func (c *Core) DeleteRegistryCredential(ctx context.Context, a Actor, host strin
 // registryLogin returns the pull options for an image outside Dock's own
 // registry, and the image's registry host: the org's credential for that
 // host, or empty options (no Username) to pull anonymously. One query.
+// Every such pull asks it first, so it also refuses a registry servers
+// may not pull from (checkRegistry).
 func (c *Core) registryLogin(ctx context.Context, orgID int64, ref string) (node.PullOptions, string, error) {
 	host := imageRegistry(ref)
 	if host == "" {
 		return node.PullOptions{}, "", nil
+	}
+	if err := c.checkRegistry(ctx, ref, host); err != nil {
+		return node.PullOptions{}, host, err
 	}
 	row, err := c.store.GetRegistryCredential(ctx, store.GetRegistryCredentialParams{OrgID: orgID, Host: host})
 	if store.IsNotFound(err) {
