@@ -31,7 +31,9 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 # sat CMD: CMD (a string, pipes allowed) succeeds; for check and wait_for.
-sat() { eval "$1"; }
+# Without pipefail: `dk ... | grep -q X` stops reading at the first match,
+# and a long listing then dies of SIGPIPE (141), failing a check that matched.
+sat() { (set +o pipefail; eval "$1"); }
 
 # web_host prints web's generated hostname, generating it once.
 web_host() { generate_domain "$P" web; }
@@ -56,7 +58,7 @@ scenario_traces() {
 	for path in / /slow /fail; do http_code "$h" "$path" >/dev/null; done
 	# Spans reach the store a few seconds after the request (spool, forwarder).
 	if wait_for 60 sat "dk traces ${PE[*]} -s web --errors | grep -q /fail" &&
-		dk traces "${PE[@]}" -s web | grep -q "GET /slow"; then
+		dk traces "${PE[@]}" -s web | grep "GET /slow" >/dev/null; then
 		pass "dock traces lists the app's requests, and --errors its 500"
 	else
 		fail "no traces: $(dk traces "${PE[@]}" -s web 2>&1 | head -5)"
@@ -78,7 +80,7 @@ scenario_status() {
 	dk incident update "$id" --state identified -m "A processor outage." >/dev/null
 	out=$(http_get "$h" /)
 	if grep -q "Card payments failing" <<<"$out" && grep -q "Partial outage" <<<"$out" &&
-		! grep "$(date -u '+%-d %b')</span>" <<<"$out" | grep -q "No incidents"; then
+		! grep "$(date -u '+%-d %b')</span>" <<<"$out" | grep "No incidents" >/dev/null; then
 		pass "the public page shows the open incident, today's row included"
 	else
 		fail "public page: $(head -c 400 <<<"$out")"
