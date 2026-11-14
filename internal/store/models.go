@@ -206,6 +206,7 @@ type CliLogin struct {
 	Status     string
 	UserID     *int64
 	TwoFactor  bool
+	Platform   bool
 }
 
 type CloudflareConnection struct {
@@ -1204,6 +1205,7 @@ type Token struct {
 	OrgID             *int64
 	Operator          bool
 	TwoFactor         bool
+	Platform          *string
 }
 
 type TrafficPath struct {
@@ -1266,10 +1268,10 @@ type User struct {
 	PasswordHash   string
 	CreatedAt      time.Time
 	DisabledAt     *time.Time
-	Operator       bool
 	FactorFailures int64
 	FactorFailedAt *time.Time
 	EmailRequests  bool
+	PlatformRole   *string
 }
 
 type UserFactor struct {

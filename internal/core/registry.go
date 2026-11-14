@@ -55,7 +55,7 @@ type Registry interface {
 // how pruning went since the daemon started, and the services keeping
 // images in it, in one query. Operators only.
 func (c *Core) GetRegistry(ctx context.Context, a Actor) (apitypes.Registry, error) {
-	if err := a.requireOperator("reading the registry"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the registry"); err != nil {
 		return apitypes.Registry{}, err
 	}
 	return c.registryInfo(ctx)
@@ -119,7 +119,7 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 // pruning; registry.pruned or registry.prune_failed is audited when it
 // ends. Refused while builds or pulls use the registry. Operators only.
 func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, error) {
-	if err := a.requireOperator("pruning the registry"); err != nil {
+	if err := a.requirePlatform(RegistryManage, "pruning the registry"); err != nil {
 		return apitypes.Registry{}, err
 	}
 	if c.reg == nil {
@@ -167,7 +167,7 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 // on the new one. Refused while builds or pulls use the registry.
 // Operators only.
 func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.MigrateRegistryRequest) (apitypes.Registry, error) {
-	if err := a.requireOperator("moving the registry's images"); err != nil {
+	if err := a.requirePlatform(RegistryManage, "moving the registry's images"); err != nil {
 		return apitypes.Registry{}, err
 	}
 	if c.reg == nil {
@@ -401,7 +401,7 @@ func (c *Core) applyRegistryStorage(ctx context.Context) {
 // registry already using another connection is refused. The daemon
 // applies it when it starts.
 func (c *Core) InstallRegistryStorage(ctx context.Context, a Actor, req apitypes.CreateStorageRequest) (apitypes.Storage, error) {
-	if err := a.requireOperator("setting the registry's storage"); err != nil {
+	if err := a.requirePlatform(RegistryManage, "setting the registry's storage"); err != nil {
 		return apitypes.Storage{}, err
 	}
 	regID, err := c.registryStorageID(ctx)

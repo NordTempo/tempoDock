@@ -44,7 +44,7 @@ export const Route = createFileRoute("/_app")({
     // Only operators can list servers (the move and placement controls).
     const [projects] = await Promise.all([
       queryClient.ensureQueryData(queries.projects()),
-      session?.operator && queryClient.ensureQueryData(queries.servers()),
+      session?.platform && queryClient.ensureQueryData(queries.servers()),
       queryClient.ensureQueryData(queries.orgs()),
     ]);
     for (const p of projects) {

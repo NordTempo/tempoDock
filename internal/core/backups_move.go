@@ -52,7 +52,7 @@ type moveSource struct {
 // restores run. From a bucket it needs the same endpoint and keys (restic
 // copies with one set). Operators only.
 func (c *Core) MoveBackups(ctx context.Context, a Actor, req apitypes.MoveBackupsRequest) (apitypes.BackupSettings, error) {
-	if err := a.requireOperator("moving backups"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "moving backups"); err != nil {
 		return apitypes.BackupSettings{}, err
 	}
 	path := strings.Trim(strings.TrimSpace(req.Path), "/")

@@ -456,7 +456,7 @@ func (c *Core) runServerTunnel(ctx context.Context, serverID int64, rt node.Runt
 // the one the server runs already (at once, so a problem shows here).
 // Operators only.
 func (c *Core) SetServerTunnel(ctx context.Context, a Actor, name string, req apitypes.ServerTunnelRequest) (apitypes.Server, error) {
-	if err := a.requireOperator("managing server tunnels"); err != nil {
+	if err := a.requirePlatform(ServersManage, "managing server tunnels"); err != nil {
 		return apitypes.Server{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -675,7 +675,7 @@ func (c *Core) tunnelConnectors(ctx context.Context, serverID int64) []apitypes.
 // RetryCloudflare has Dock try every failed record, tunnel and redirect
 // again. Operators only.
 func (c *Core) RetryCloudflare(ctx context.Context, a Actor) (apitypes.CloudflareRetried, error) {
-	if err := a.requireOperator("retrying Cloudflare changes"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "retrying Cloudflare changes"); err != nil {
 		return apitypes.CloudflareRetried{}, err
 	}
 	t := now()

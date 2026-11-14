@@ -143,7 +143,8 @@ the platform: servers, backups, accounts.`,
 	cmd.Flags().StringVarP(&project, "project", "p", "", "limit the token to this project")
 	cmd.Flags().StringVarP(&env, "environment", "e", "", "limit the token to this environment of --project")
 	cmd.Flags().StringVar(&expires, "expires", "", "lifetime: days like 90d, or a duration like 720h (default: never)")
-	cmd.Flags().BoolVar(&operator, "operator", false, "a platform operator token (operators only; needs --scope admin)")
+	cmd.Flags().BoolVar(&operator, "operator", false, "refused since ADR 0080: make a platform token with dock platform token create")
+	_ = cmd.Flags().MarkHidden("operator")
 	data.add(cmd)
 	return cmd
 }
@@ -386,7 +387,7 @@ func newUserCmd(g *globals) *cobra.Command {
 	cmd.AddCommand(list, create,
 		newUserStateCmd(g, "disable", "Disable a user: they can't log in, their sessions and dock login tokens end", "disable", "Disabled"),
 		newUserStateCmd(g, "enable", "Let a disabled user log in again", "enable", "Enabled"),
-		newUserDeleteCmd(g), newUserResetPasswordCmd(g))
+		newUserDeleteCmd(g), newUserResetPasswordCmd(g), newUserPlatformRoleCmd(g))
 	return cmd
 }
 

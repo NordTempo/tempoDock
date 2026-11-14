@@ -40,6 +40,10 @@ func (g *globals) connect() (*session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if r.Token == "" && r.PlatformToken != "" {
+		// Only a platform login here: it runs the platform's commands.
+		r.Token = r.PlatformToken
+	}
 	if r.Token == "" {
 		return nil, &output.Error{
 			Exit:    output.ExitAuth,
@@ -55,6 +59,7 @@ func (g *globals) connect() (*session, error) {
 		return nil, err
 	}
 	api.Org, api.Reason = r.Org, g.reason
+	api.SetPlatformToken(r.PlatformToken)
 	if api.Remote() && !g.io.JSON { // warnings are silent with --json
 		to := r.Server + " (" + clientconfig.EnvURL + ")"
 		if r.Name != "" {

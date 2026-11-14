@@ -144,6 +144,7 @@ func (c *Core) StartCLILogin(ctx context.Context, req apitypes.CLILoginStartRequ
 		Ip:         clientIP,
 		CreatedAt:  t,
 		ExpiresAt:  t.Add(cliLoginTTL),
+		Platform:   req.Platform,
 	}
 	for range 3 { // 20^8 codes: a clash with a live one is very unlikely
 		params.UserCode = newUserCode()
@@ -245,7 +246,13 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 	if err != nil {
 		return apitypes.CLILoginWait{}, err
 	}
-	secret, hash := newSecret(tokenPrefix)
+	// A platform login (ADR 0080) runs the platform with the user's
+	// platform role and acts in no org; an org login acts in their orgs.
+	prefix, name, platform := tokenPrefix, cliTokenName(l.Hostname), (*string)(nil)
+	if l.Platform {
+		prefix, name, platform = platformTokenPrefix, name+" (platform)", ptr("login")
+	}
+	secret, hash := newSecret(prefix)
 	var tok store.Token
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		// Deleting first makes the token single use: a concurrent wait
@@ -258,8 +265,8 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 			return errCLILoginExpired
 		}
 		tok, err = q.CreateCLILoginToken(ctx, store.CreateCLILoginTokenParams{
-			Name: cliTokenName(l.Hostname), Hash: hash, Scope: string(apitypes.ScopeAdmin), CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
-			TwoFactor: l.TwoFactor,
+			Name: name, Hash: hash, Scope: string(apitypes.ScopeAdmin), CreatedBy: u.Email, UserID: &u.ID, ExpiresAt: ptr(now().Add(cliTokenTTL)),
+			TwoFactor: l.TwoFactor, Platform: platform,
 		})
 		return err
 	})
@@ -269,6 +276,10 @@ func (c *Core) issueCLIToken(ctx context.Context, l store.CliLogin) (apitypes.CL
 	c.audit(ctx, userActor(u), "token.cli_login", nil, nil, "token "+tok.Name,
 		fmt.Sprintf("approved dock login from %s (%s, %s); created %s token %q (id %d)", l.Ip, l.Hostname, l.Os, tok.Scope, tok.Name, tok.ID))
 	out := apitypes.CLILoginWait{Status: "approved", Token: secret, User: u.Email}
+	if l.Platform {
+		out.Platform = apitypes.PlatformRole(deref(u.PlatformRole))
+		return out, nil
+	}
 	ua := userActor(u)
 	if l.TwoFactor {
 		ua.Factor = factorLogin
@@ -289,6 +300,7 @@ func (c *Core) CLILogin(ctx context.Context, a Actor, userCode, clientIP string)
 		UserCode: formatUserCode(l.UserCode), ClientName: l.ClientName, Hostname: l.Hostname, OS: l.Os, IP: l.Ip,
 		CreatedAt: l.CreatedAt, ExpiresAt: l.ExpiresAt, Status: l.Status,
 		Scope: a.Scope, TokenName: cliTokenName(l.Hostname), TokenDays: int(cliTokenTTL / (24 * time.Hour)),
+		Platform: l.Platform,
 	}, nil
 }
 
@@ -307,6 +319,15 @@ func (c *Core) DecideCLILogin(ctx context.Context, a Actor, userCode, clientIP s
 		// Approving makes a token: a step-up, like creating one.
 		if err := a.requireRecent("approving a CLI login"); err != nil {
 			return err
+		}
+		if l.Platform {
+			// A platform login runs the platform: the approver needs a
+			// platform role (ADR 0080), and their sign-in must satisfy
+			// the platform's two-factor rule (gateOperator took it away
+			// otherwise).
+			if err := a.requirePlatform(PlatformView, "approving a platform login"); err != nil {
+				return err
+			}
 		}
 		status = "approved"
 	}

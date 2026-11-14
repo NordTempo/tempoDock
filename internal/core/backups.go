@@ -232,7 +232,7 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 		return apitypes.BackupSettings{}, err
 	}
 	if reveal {
-		if err := a.requireOperator("revealing the backup password"); err != nil {
+		if err := a.requirePlatform(BackupsManage, "revealing the backup password"); err != nil {
 			return apitypes.BackupSettings{}, err
 		}
 		if err := a.requireRecent("revealing the backup password"); err != nil {
@@ -321,7 +321,7 @@ func (c *Core) withBackupStorage(ctx context.Context, a Actor, out *apitypes.Bac
 // answer carries the repository password when this call generated it:
 // without it, an off-box repository can't be read after losing the server.
 func (c *Core) ConfigureBackups(ctx context.Context, a Actor, req apitypes.ConfigureBackupRequest) (apitypes.BackupSettings, error) {
-	if err := a.requireOperator("configuring backups"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "configuring backups"); err != nil {
 		return apitypes.BackupSettings{}, err
 	}
 	s, err := c.backupSettings(ctx)

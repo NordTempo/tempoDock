@@ -17,7 +17,7 @@ const ApplyFile = lazy(() => import("../features/apply/ApplyFile"));
 export const Route = createFileRoute("/_app/$org/$project/settings/")({
   loader: async ({ context: { queryClient }, params }) => {
     const session = await queryClient.ensureQueryData(queries.session());
-    if (session?.operator) {
+    if (session?.platform) {
       await queryClient.ensureQueryData(queries.placements(params.project));
     }
   },
@@ -38,7 +38,7 @@ function General() {
   return (
     <Page>
       <ProjectName project={overview.project} />
-      {session?.operator && <Placements project={project} />}
+      {session?.platform && <Placements project={project} />}
       <section aria-labelledby="config-file">
         <SectionHead id="config-file">Config file</SectionHead>
         <Export

@@ -158,7 +158,7 @@ func (m movingService) runs() bool { return m.rel != nil && m.ss.svc.StoppedAt =
 // locked environment's lock applies.
 func (c *Core) MoveEnvironment(ctx context.Context, a Actor, ref EnvRef, req apitypes.MoveEnvironmentRequest) (apitypes.EnvironmentMove, error) {
 	const action = "moving an environment"
-	if err := a.requireOperator(action); err != nil {
+	if err := a.requirePlatform(ServersManage, action); err != nil {
 		return apitypes.EnvironmentMove{}, err
 	}
 	es, err := c.loadEnv(ctx, a.OrgID, ref)

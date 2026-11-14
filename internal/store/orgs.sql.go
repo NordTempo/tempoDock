@@ -250,6 +250,41 @@ func (q *Queries) DeleteRegistryCredential(ctx context.Context, arg DeleteRegist
 	return result.RowsAffected()
 }
 
+const firstLiveOrgs = `-- name: FirstLiveOrgs :many
+SELECT id, slug FROM orgs WHERE deleted_at IS NULL ORDER BY id LIMIT 2
+`
+
+type FirstLiveOrgsRow struct {
+	ID   int64
+	Slug string
+}
+
+// FirstLiveOrgs is at most two live orgs, by ID: a platform credential
+// without an org acts on the install's only one (core.platformIn), and
+// two say there are several.
+func (q *Queries) FirstLiveOrgs(ctx context.Context) ([]FirstLiveOrgsRow, error) {
+	rows, err := q.db.QueryContext(ctx, firstLiveOrgs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FirstLiveOrgsRow
+	for rows.Next() {
+		var i FirstLiveOrgsRow
+		if err := rows.Scan(&i.ID, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getInviteByHash = `-- name: GetInviteByHash :one
 SELECT org_invites.id, org_invites.org_id, org_invites.email, org_invites.role, org_invites.hash, org_invites.created_by, org_invites.created_at, org_invites.expires_at, org_invites.accepted_at, org_invites.revoked_at, orgs.id, orgs.slug, orgs.name, orgs.created_at, orgs.lock_production, orgs.request_ttl_hours, orgs.require_two_factor, orgs.suspended_at, orgs.suspended_by, orgs.deleted_at, orgs.vuln_alerts
 FROM org_invites JOIN orgs ON orgs.id = org_invites.org_id

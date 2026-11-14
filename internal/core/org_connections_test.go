@@ -165,7 +165,7 @@ func TestZoneOnSeveralConnections(t *testing.T) {
 	}
 	// Only an operator sees which server it went to.
 	operator := bob
-	operator.Operator = true
+	operator = operator.withPlatform(apitypes.PlatformOperator)
 	if e, err := p.c.GetEnvironment(p.ctx, operator, EnvRef{"shop", "staging"}); err != nil || e.Server != "homelab" {
 		t.Fatalf("acme's environment = %+v, %v", e, err)
 	}

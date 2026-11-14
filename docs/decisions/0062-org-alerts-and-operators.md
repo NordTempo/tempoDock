@@ -2,7 +2,7 @@
 
 Status: accepted (decided by the owner, 2026-11-07). Amends
 [0025](0025-platform-console.md) and [0027](0027-organizations.md).
-Superseded in part by [0065](0065-sign-in-is-the-platforms.md) (no org sign-in settings), [0066](0066-github-apps-for-many-orgs.md) (install links prove the installer); amended by [0064](0064-changing-an-org-slug.md) (slugs).
+Superseded in part by [0065](0065-sign-in-is-the-platforms.md) (no org sign-in settings), [0066](0066-github-apps-for-many-orgs.md) (install links prove the installer); amended by [0064](0064-changing-an-org-slug.md) (slugs). Superseded in part by [0080](0080-permissions-roles-groups-and-agents.md) (operators and viewers are platform roles; a platform credential never acts in an org).
 
 ## Context
 

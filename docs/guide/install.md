@@ -64,10 +64,15 @@ from the terminal and approve:
 dock login http://100.64.0.10:7070
 ```
 
-Keep the operator token for scripts and for creating agent tokens
-(`dock login <url> --token-stdin` works too). Operators run the platform:
-servers, backups and user accounts; an organization's admins manage its
-projects, members' roles and tokens ([ADR 0027](../decisions/0027-organizations.md)).
+Keep the bootstrap token for scripts and for creating agent tokens
+(`dock login <url> --token-stdin` works too). It is both the first
+organization's admin token and the platform's, so install scripts can set
+up servers and projects with it; split it in Console › Tokens (`dock
+platform token split`) once you have other credentials. Operators run the
+platform: servers, backups and user accounts, with a platform login (`dock
+login --platform`) beside their org login; an organization's admins manage
+its projects, members' roles and tokens ([ADR 0027](../decisions/0027-organizations.md),
+[ADR 0080](../decisions/0080-permissions-roles-groups-and-agents.md)).
 
 ### The CLI
 

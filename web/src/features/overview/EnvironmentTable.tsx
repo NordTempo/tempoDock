@@ -8,7 +8,7 @@ import {
   serviceRef,
   useCanDeploy,
   useIsAdmin,
-  useIsOperator,
+  useSeesPlatform,
   useSession,
 } from "../../data/queries";
 import type {
@@ -80,7 +80,7 @@ export function EnvironmentTable({
   const newService = () => openCreate({ kind: "service", env: ref });
   // Moving to another server (ADR 0053): operators open it from here;
   // anyone opens a running move's progress from its strip.
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   const [moveOpen, setMoveOpen] = useState(false);
   const hidden = hiddenFailures(services);
   const sleep = useSleepEnvironment();

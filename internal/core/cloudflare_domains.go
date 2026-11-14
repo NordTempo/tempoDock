@@ -482,7 +482,7 @@ const cfRecordsCap = 500
 // ListCloudflareRecords returns the domains Dock routes through tunnels,
 // failed ones first, at most cfRecordsCap. Operators only.
 func (c *Core) ListCloudflareRecords(ctx context.Context, a Actor) ([]apitypes.CloudflareRecord, error) {
-	if err := a.requireOperator("listing domains in Cloudflare"); err != nil {
+	if err := a.requirePlatform(PlatformView, "listing domains in Cloudflare"); err != nil {
 		return nil, err
 	}
 	rows, err := c.store.ListCloudflareRecords(ctx, cfRecordsCap)

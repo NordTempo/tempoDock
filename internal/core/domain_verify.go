@@ -44,10 +44,13 @@ func verifyRecord(d store.Domain) apitypes.DNSRecord {
 // record. Not when Dock knows who controls the name already: generated
 // hostnames and any under the server's base domain are the platform's,
 // Dock makes the DNS records of a domain from Cloudflare itself, and an
-// operator runs the proxy anyway.
+// operator runs the proxy anyway: a person who is one, in their org login
+// too (ADR 0080 keeps platform power off org logins, but this is trust in
+// the person, not running the platform).
 func needsProof(a Actor, host string, generated bool, zone *store.CloudflareZone, ing serverIngress) bool {
 	platform := ing.baseDomain != "" && strings.HasSuffix(host, "."+ing.baseDomain)
-	return !generated && zone == nil && !a.Operator && !platform
+	operator := a.Operator || a.userPlatform == apitypes.PlatformOperator
+	return !generated && zone == nil && !operator && !platform
 }
 
 // checkClaims refuses host for ss when it is taken: by a verified claim

@@ -32,7 +32,7 @@ func (a Actor) operatorIn(o store.Org) Actor {
 
 // operatorOrg checks a is an operator and loads the org named by slug.
 func (c *Core) operatorOrg(ctx context.Context, a Actor, slug, action string) (store.Org, error) {
-	if err := a.requireOperator(action); err != nil {
+	if err := a.requirePlatform(viewing(action, OrgsAdminister), action); err != nil {
 		return store.Org{}, err
 	}
 	o, err := c.orgBySlug(ctx, slug)
@@ -58,7 +58,7 @@ func (c *Core) auditBoth(ctx context.Context, a Actor, o store.Org, action, summ
 // minute ago, is read again in the background, as opening its disk page
 // does, and the result arrives as a disk event. Operators only.
 func (c *Core) OperatorOrgs(ctx context.Context, a Actor, readDisks bool) ([]apitypes.OperatorOrg, error) {
-	if err := a.requireOperator("listing organizations"); err != nil {
+	if err := a.requirePlatform(PlatformView, "listing organizations"); err != nil {
 		return nil, err
 	}
 	orgs, err := c.store.ListOperatorOrgs(ctx)
@@ -313,7 +313,7 @@ func (c *Core) OperatorRemoveMember(ctx context.Context, a Actor, slug string, u
 // invite its people into (OperatorCreateInvite): it shows as having no
 // admin until someone accepts an admin invite. Operators only.
 func (c *Core) OperatorCreateOrg(ctx context.Context, a Actor, req apitypes.CreateOrgRequest) (apitypes.OperatorOrg, error) {
-	if err := a.requireOperator("creating organizations for others"); err != nil {
+	if err := a.requirePlatform(OrgsAdminister, "creating organizations for others"); err != nil {
 		return apitypes.OperatorOrg{}, err
 	}
 	if err := validOrgSlug(req.Slug); err != nil {

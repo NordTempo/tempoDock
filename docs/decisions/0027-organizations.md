@@ -1,6 +1,6 @@
 # 0027: Organizations and the platform operator
 
-Status: accepted (decided by the agent; direction from the owner); superseded in part by [0062](0062-org-alerts-and-operators.md) (alerts and channels), [0064](0064-changing-an-org-slug.md) (slugs can change), [0065](0065-sign-in-is-the-platforms.md) (signup is the invite-only switch, no `signup` setting)
+Status: accepted (decided by the agent; direction from the owner); superseded in part by [0062](0062-org-alerts-and-operators.md) (alerts and channels), [0064](0064-changing-an-org-slug.md) (slugs can change), [0065](0065-sign-in-is-the-platforms.md) (signup is the invite-only switch, no `signup` setting), [0080](0080-permissions-roles-groups-and-agents.md) (operators are a platform role with their own credentials; operator tokens are legacy)
 
 ## Context
 

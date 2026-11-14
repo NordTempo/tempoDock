@@ -31,7 +31,7 @@ type storageKeys struct {
 
 // ListStorage returns the storage connections, by name.
 func (c *Core) ListStorage(ctx context.Context, a Actor) ([]apitypes.Storage, error) {
-	if err := a.requireOperator("listing storage connections"); err != nil {
+	if err := a.requirePlatform(PlatformView, "listing storage connections"); err != nil {
 		return nil, err
 	}
 	rows, err := c.store.ListStorageConnections(ctx)
@@ -52,7 +52,7 @@ func (c *Core) ListStorage(ctx context.Context, a Actor) ([]apitypes.Storage, er
 // AddStorage saves a new storage connection after checking that its
 // bucket can be listed with its keys.
 func (c *Core) AddStorage(ctx context.Context, a Actor, req apitypes.CreateStorageRequest) (apitypes.Storage, error) {
-	if err := a.requireOperator("adding storage connections"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "adding storage connections"); err != nil {
 		return apitypes.Storage{}, err
 	}
 	if err := validName("storage connection", req.Name); err != nil {
@@ -95,7 +95,7 @@ func (c *Core) AddStorage(ctx context.Context, a Actor, req apitypes.CreateStora
 // build or pull uses the registry. A rename touches nothing else: the
 // registry refers to the connection by ID.
 func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apitypes.UpdateStorageRequest) (apitypes.Storage, error) {
-	if err := a.requireOperator("changing storage connections"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "changing storage connections"); err != nil {
 		return apitypes.Storage{}, err
 	}
 	row, b, err := c.storageByName(ctx, name)
@@ -192,7 +192,7 @@ func (c *Core) UpdateStorage(ctx context.Context, a Actor, name string, req apit
 // RemoveStorage deletes a storage connection nothing uses. The bucket and
 // what is in it are left alone.
 func (c *Core) RemoveStorage(ctx context.Context, a Actor, name string) error {
-	if err := a.requireOperator("removing storage connections"); err != nil {
+	if err := a.requirePlatform(BackupsManage, "removing storage connections"); err != nil {
 		return err
 	}
 	row, err := c.store.GetStorageConnection(ctx, name)

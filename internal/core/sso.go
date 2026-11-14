@@ -34,7 +34,7 @@ func (c *Core) ssoRedirectURL() string { return c.dockURL() + SSOCallbackPath }
 // ListSSOProviders returns the platform's identity providers and the
 // redirect URL to register at them.
 func (c *Core) ListSSOProviders(ctx context.Context, a Actor) (apitypes.SSOProviders, error) {
-	if err := a.requireOperator("managing single sign-on"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "managing single sign-on"); err != nil {
 		return apitypes.SSOProviders{}, err
 	}
 	rows, err := c.store.ListSSOProvidersLinked(ctx)
@@ -201,7 +201,7 @@ func (c *Core) DeleteSSOProvider(ctx context.Context, a Actor, name string) erro
 
 // SignInSettings returns the platform's sign-in switches.
 func (c *Core) SignInSettings(ctx context.Context, a Actor) (apitypes.SignInSettings, error) {
-	if err := a.requireOperator("managing sign-in"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "managing sign-in"); err != nil {
 		return apitypes.SignInSettings{}, err
 	}
 	return signInSettings(ctx, c.store.Queries)
@@ -267,7 +267,7 @@ func (c *Core) SetSignInSettings(ctx context.Context, a Actor, req apitypes.Sign
 // generated password, returned once (someone who only ever signed in
 // through a provider has none they know). Operators only.
 func (c *Core) ResetPasswordSignIn(ctx context.Context, a Actor, email string) (password string, err error) {
-	if err := a.requireOperator("turning password sign-in on"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "turning password sign-in on"); err != nil {
 		return "", err
 	}
 	var u store.User
@@ -329,7 +329,7 @@ func signInSettings(ctx context.Context, q *store.Queries) (apitypes.SignInSetti
 // requireSSOOperator checks the actor may change the platform's sign-in:
 // an operator, recently confirmed.
 func requireSSOOperator(a Actor) error {
-	if err := a.requireOperator("managing single sign-on"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "managing single sign-on"); err != nil {
 		return err
 	}
 	return a.requireRecent("changing how people sign in")

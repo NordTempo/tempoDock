@@ -1113,6 +1113,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/console/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the platform's tokens
+         * @description Platform tokens, platform logins (`dock login --platform`) and legacy tokens that are both an organization's and the platform's, newest first (ADR 0080). Needs platform.view.
+         */
+        get: operations["list-platform-tokens"];
+        put?: never;
+        /**
+         * Create a platform token
+         * @description A token that runs the platform with a platform role and never acts in an organization; its secret starts with dock_p_ and is shown once. A person signed in recently. Needs accounts.manage.
+         */
+        post: operations["create-platform-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke a platform token
+         * @description A platform token, platform login or legacy token. A person. Needs accounts.manage.
+         */
+        delete: operations["revoke-platform-token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/tokens/{id}/split": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Split a legacy token
+         * @description A legacy organization token that also runs the platform stays the organization's and stops running the platform; a new platform token with the operator role takes that over, its secret shown once. A legacy `dock login` just stops: its person runs `dock login --platform`. A person signed in recently. Needs accounts.manage.
+         */
+        post: operations["split-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/console/users": {
         parameters: {
             query?: never;
@@ -1146,6 +1210,26 @@ export interface paths {
          * @description The platform keeps at least one operator who can sign in. A person signed in recently, not a token. Operators only.
          */
         put: operations["set-operator"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/console/users/{id}/platform-role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Give a user a platform role, or take it away
+         * @description operator runs the platform, viewer reads the console, none is neither (ADR 0080). The platform keeps at least one operator who can sign in. A person signed in recently, not a token. Needs accounts.manage.
+         */
+        put: operations["set-platform-role"];
         post?: never;
         delete?: never;
         options?: never;
@@ -6251,6 +6335,8 @@ export interface components {
             name: string;
             operator: boolean;
             orgs: components["schemas"]["AccountOrg"][] | null;
+            /** @enum {string} */
+            platform_role?: "operator" | "viewer";
             two_factor: boolean;
         };
         AccountOrg: {
@@ -6700,6 +6786,7 @@ export interface components {
             /** @description Address the CLI started the login from */
             ip: string;
             os: string;
+            platform?: boolean;
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
             /** @enum {string} */
@@ -6738,8 +6825,11 @@ export interface components {
             hostname: string;
             /** @example darwin/arm64 */
             os: string;
+            platform?: boolean;
         };
         CLILoginWait: {
+            /** @enum {string} */
+            platform?: "operator" | "viewer";
             scope?: string;
             /** @enum {string} */
             status: "pending" | "approved";
@@ -7069,6 +7159,16 @@ export interface components {
             /** @description Lowercase letters, digits and dashes */
             slug: string;
         };
+        CreatePlatformTokenRequest: {
+            /**
+             * Format: int64
+             * @description 0 means never
+             */
+            expires_in_days?: number;
+            name: string;
+            /** @enum {string} */
+            role: "operator" | "viewer";
+        };
         CreateProjectRequest: {
             /** @description DNS-safe name */
             name: string;
@@ -7156,6 +7256,7 @@ export interface components {
              */
             expires_in_days?: number;
             name: string;
+            /** @description Refused: platform tokens are made in the console (dock platform token create) */
             operator?: boolean;
             project?: string;
             /** @enum {string} */
@@ -9000,6 +9101,9 @@ export interface components {
             name: string;
             operator: boolean;
             org?: string;
+            /** @enum {string} */
+            platform?: "operator" | "viewer";
+            platform_login?: boolean;
             project?: string;
             /** @enum {string} */
             scope?: "read" | "deploy" | "admin";
@@ -9468,7 +9572,7 @@ export interface components {
             actor: string;
             ask?: string[] | null;
             /** @enum {string} */
-            decided_by: "role" | "scope" | "limit" | "operator" | "person";
+            decided_by: "role" | "scope" | "limit" | "platform" | "person";
             fix: string;
             has?: string;
             /** @example shop/staging */
@@ -10438,6 +10542,10 @@ export interface components {
         SetOrgVariableRequest: {
             value: string;
         };
+        SetPlatformRoleRequest: {
+            /** @enum {string} */
+            role: "operator" | "viewer" | "none";
+        };
         SetRegistryCredentialRequest: {
             password: string;
             username: string;
@@ -10823,6 +10931,10 @@ export interface components {
             restore: components["schemas"]["SnapshotRestore"];
             service?: components["schemas"]["Service"];
         };
+        SplitTokenResult: {
+            platform: components["schemas"]["CreatedToken"];
+            token: components["schemas"]["Token"];
+        };
         StartUpdateRequest: {
             /** @example v0.4.0 */
             version?: string;
@@ -11061,13 +11173,17 @@ export interface components {
             last_used_at?: string;
             name: string;
             operator?: boolean;
+            org?: string;
             /** @enum {string} */
             origin: "manual" | "cli_login";
+            /** @enum {string} */
+            platform?: "operator" | "viewer" | "login";
             project?: string;
             /** Format: date-time */
             revoked_at?: string;
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
+            user?: string;
         };
         Trace: {
             /** Format: double */
@@ -17845,6 +17961,374 @@ export interface operations {
             };
         };
     };
+    "list-platform-tokens": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Token"][] | null;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "create-platform-token": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlatformTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedToken"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "revoke-platform-token": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "split-token": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitTokenResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "list-accounts": {
         parameters: {
             query?: {
@@ -17937,6 +18421,107 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SetOperatorRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "set-platform-role": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPlatformRoleRequest"];
             };
         };
         responses: {

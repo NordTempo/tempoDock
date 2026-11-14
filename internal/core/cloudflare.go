@@ -265,7 +265,7 @@ func (c *Core) cfClient(conn store.CloudflareConnection) (*cloudflare.Client, er
 // org's, for its unlimited admins.
 func connectionsIn(a Actor, platform bool, action string) (int64, error) {
 	if platform {
-		return 0, a.requireOperator(action)
+		return 0, a.requirePlatform(viewing(action, PlatformSettings), action)
 	}
 	return a.OrgID, a.requireUnlimited(apitypes.ScopeAdmin, action)
 }

@@ -500,6 +500,11 @@ export const useSession = () => useSuspenseQuery(queries.session()).data;
 export const useIsAdmin = () => useSession()?.scope === "admin";
 /** Platform operators run the console: servers, backups, accounts (ADR 0027). */
 export const useIsOperator = () => useSession()?.operator === true;
+/**
+ * Whether the caller has a platform role (ADR 0080): operators and
+ * platform viewers read the console; only operators change it.
+ */
+export const useSeesPlatform = () => !!useSession()?.platform;
 export const useOrgs = () => useSuspenseQuery(queries.orgs()).data;
 export const useProjects = () => useSuspenseQuery(queries.projects()).data;
 export const useProjectOverview = (project: string) =>

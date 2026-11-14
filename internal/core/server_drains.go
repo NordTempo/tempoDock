@@ -40,7 +40,7 @@ const drainBusyWait = 15 * time.Second
 // a problem. Starting stops the server taking new environments (of the
 // kind, for a kind drain). Operators only.
 func (c *Core) DrainServer(ctx context.Context, a Actor, name string, req apitypes.DrainServerRequest) (apitypes.ServerDrain, error) {
-	if err := a.requireOperator("draining a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "draining a server"); err != nil {
 		return apitypes.ServerDrain{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -272,7 +272,7 @@ func isBusy(err error) bool {
 // and no status, items or forwards: its console page asks for it on
 // every visit, so that is an answer, not a not found. Operators only.
 func (c *Core) ServerDrainStatus(ctx context.Context, a Actor, name string) (apitypes.ServerDrain, error) {
-	if err := a.requireOperator("reading a server's drain"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading a server's drain"); err != nil {
 		return apitypes.ServerDrain{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -300,7 +300,7 @@ func (c *Core) ServerDrainStatus(ctx context.Context, a Actor, name string) (api
 // failed is tried again, or with req.Skip left where it is. Operators
 // only.
 func (c *Core) ResumeServerDrain(ctx context.Context, a Actor, name string, req apitypes.ResumeDrainRequest) (apitypes.ServerDrain, error) {
-	if err := a.requireOperator("draining a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "draining a server"); err != nil {
 		return apitypes.ServerDrain{}, err
 	}
 	srv, err := c.loadServer(ctx, name)
@@ -360,7 +360,7 @@ func (c *Core) ResumeServerDrain(ctx context.Context, a Actor, name string, req 
 // keeps not taking new environments until an operator says otherwise.
 // Operators only.
 func (c *Core) CancelServerDrain(ctx context.Context, a Actor, name string) (apitypes.ServerDrain, error) {
-	if err := a.requireOperator("draining a server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "draining a server"); err != nil {
 		return apitypes.ServerDrain{}, err
 	}
 	srv, err := c.loadServer(ctx, name)

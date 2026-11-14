@@ -20,14 +20,14 @@ import (
 // it starts a login on server, shows the link and the code to type there,
 // opens the browser when it can and waits for a user to approve. The
 // result carries the new token, its scope and who approved it.
-func (g *globals) browserLogin(ctx context.Context, server string, open bool) (apitypes.CLILoginWait, error) {
+func (g *globals) browserLogin(ctx context.Context, server string, open, platform bool) (apitypes.CLILoginWait, error) {
 	api, err := apiclient.New(server, "")
 	if err != nil {
 		return apitypes.CLILoginWait{}, err
 	}
 	host, _ := os.Hostname()
 	var start apitypes.CLILoginStart
-	req := apitypes.CLILoginStartRequest{ClientName: "dock CLI", Hostname: host, OS: runtime.GOOS + "/" + runtime.GOARCH}
+	req := apitypes.CLILoginStartRequest{ClientName: "dock CLI", Hostname: host, OS: runtime.GOOS + "/" + runtime.GOARCH, Platform: platform}
 	if err := api.JSON(ctx, http.MethodPost, apiPrefix+"/auth/cli", req, &start); err != nil {
 		return apitypes.CLILoginWait{}, err
 	}

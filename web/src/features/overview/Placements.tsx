@@ -2,9 +2,9 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { usePinPlacement } from "../../data/mutations";
 import {
-  useIsOperator,
   usePlacements,
   useProjectOverview,
+  useSeesPlatform,
   useServers,
 } from "../../data/queries";
 import type { EnvironmentKind } from "../../data/types";
@@ -21,7 +21,7 @@ const kinds: EnvironmentKind[] = ["production", "non_production"];
 export function Placements({ project }: { project: string }) {
   const placements = usePlacements(project);
   const { environments } = useProjectOverview(project);
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   return (
     <section aria-labelledby="placement" className="min-w-0">
       <SectionHead id="placement">Placement</SectionHead>

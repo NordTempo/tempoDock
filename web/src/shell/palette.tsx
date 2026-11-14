@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useIsOperator } from "../data/queries";
+import { useSeesPlatform } from "../data/queries";
 import { CreateHost } from "../features/create/open";
 import { DeployHost } from "../features/deploy/start";
 import { openHelp } from "../features/help/open";
@@ -117,7 +117,7 @@ function Palette({
   const list = useRef<HTMLDivElement>(null);
 
   const help = useHelpSearch(query !== "");
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   const rows = useMemo((): Row[] => {
     const matches = matchCommands(commands, query).map((m) => ({
       ...m,

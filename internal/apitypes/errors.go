@@ -84,9 +84,9 @@ const (
 	// RefusedLimit: the token is limited to another project or
 	// environment, or to one where the call needs more.
 	RefusedLimit RefusalCause = "limit"
-	// RefusedOperator: the call runs the platform, and the caller isn't
-	// a platform operator.
-	RefusedOperator RefusalCause = "operator"
+	// RefusedPlatform: the call runs the platform, and the caller's
+	// credential or platform role doesn't allow it.
+	RefusedPlatform RefusalCause = "platform"
 	// RefusedPerson: only a person in a signed-in browser session may do
 	// it, never a token.
 	RefusedPerson RefusalCause = "person"
@@ -96,11 +96,11 @@ const (
 // the caller has, what decided it, and what to do next. Reason and Fix
 // are full sentences for people; the rest is for programs and agents.
 type Refusal struct {
-	DecidedBy RefusalCause `json:"decided_by" enum:"role,scope,limit,operator,person"`
+	DecidedBy RefusalCause `json:"decided_by" enum:"role,scope,limit,platform,person"`
 	// Action is what was refused, as the check names it ("archiving a service").
 	Action string `json:"action"`
-	// Need is what the action needs: a scope (read, deploy, admin),
-	// "operator" or "person".
+	// Need is what the action needs: a scope (read, deploy, admin), a
+	// platform permission (servers.manage) or "person".
 	Need string `json:"need"`
 	// Actor is who was refused: `user "ola@example.com"` or `token "ci"`.
 	Actor string `json:"actor"`

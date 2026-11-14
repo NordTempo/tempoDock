@@ -1064,7 +1064,11 @@ const maxAlertList = 500
 // with scope need.
 func alertsIn(a Actor, platform bool, need apitypes.Scope, action string) (int64, error) {
 	if platform {
-		return 0, a.requireOperator(action)
+		perm := PlatformAlerts
+		if need == apitypes.ScopeRead {
+			perm = PlatformView
+		}
+		return 0, a.requirePlatform(perm, action)
 	}
 	return a.OrgID, a.require(need, action)
 }
@@ -1135,7 +1139,7 @@ func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Al
 	}
 	org := alertOrgID(row)
 	if org == 0 {
-		err = a.requireOperator("resolving platform alerts")
+		err = a.requirePlatform(PlatformAlerts, "resolving platform alerts")
 	} else if err = a.require(apitypes.ScopeDeploy, "resolving alerts"); err == nil && !a.seesAlert(row) {
 		err = missing
 	}

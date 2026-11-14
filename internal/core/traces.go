@@ -265,7 +265,7 @@ func (c *Core) pruneTraces() {
 // should run but doesn't answer is started again, in the background, as
 // the analytics store is.
 func (c *Core) TracingStatus(ctx context.Context, a Actor) (apitypes.TracingStatus, error) {
-	if err := a.requireOperator("reading the tracing status"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the tracing status"); err != nil {
 		return apitypes.TracingStatus{}, err
 	}
 	out := apitypes.TracingStatus{RetentionDays: c.cfg.Traces.RetentionDays, MemoryMB: c.cfg.Traces.StoreMemoryMB}
@@ -314,7 +314,7 @@ func (c *Core) retryTraceStart() bool {
 // server (the control plane's own if none was chosen). It doesn't turn
 // analytics on. Turning it on again changes nothing.
 func (c *Core) EnableTraces(ctx context.Context, a Actor) (apitypes.TracingStatus, error) {
-	if err := a.requireOperator("turning tracing on"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "turning tracing on"); err != nil {
 		return apitypes.TracingStatus{}, err
 	}
 	if cl, _ := c.tracesClient(); cl == nil {
@@ -350,7 +350,7 @@ func (c *Core) EnableTraces(ctx context.Context, a Actor) (apitypes.TracingStatu
 // traced apps send nothing Dock keeps until their next deploy or restart.
 // Operators, with a recent sign-in: it is how a leaked token is revoked.
 func (c *Core) RotateTraceKey(ctx context.Context, a Actor) (apitypes.TracingStatus, error) {
-	if err := a.requireOperator("rotating the trace key"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "rotating the trace key"); err != nil {
 		return apitypes.TracingStatus{}, err
 	}
 	if err := a.requireRecent("rotating the trace key"); err != nil {
@@ -376,7 +376,7 @@ func (c *Core) RotateTraceKey(ctx context.Context, a Actor) (apitypes.TracingSta
 // DisableTraces turns tracing off: the trace store and every span it
 // holds are removed from the analytics server, which must be online.
 func (c *Core) DisableTraces(ctx context.Context, a Actor) (apitypes.TracingStatus, error) {
-	if err := a.requireOperator("turning tracing off"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "turning tracing off"); err != nil {
 		return apitypes.TracingStatus{}, err
 	}
 	if cl, serverID := c.tracesClient(); cl != nil {

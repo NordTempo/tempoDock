@@ -1,11 +1,6 @@
 import { useId, useState } from "react";
 import { useCreateToken } from "../../data/mutations";
-import {
-  useIsOperator,
-  useProjects,
-  useProjectTree,
-  useTokens,
-} from "../../data/queries";
+import { useProjects, useProjectTree, useTokens } from "../../data/queries";
 import type { Scope } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { Dialog } from "../../ui/Dialog";
@@ -241,7 +236,6 @@ function CreateToken({
   const v = useValidation();
   const nameId = useId();
   const envWhy = useId();
-  const operatorCaller = useIsOperator();
   const projects = useProjects();
   const tree = useProjectTree();
   const [name, setName] = useState("");
@@ -258,9 +252,6 @@ function CreateToken({
     "Enter a whole number of days, 1 or more.",
   );
   const [data, setData] = useState<DataTokenAccess>(null);
-  // Operator tokens are unlimited admin tokens (ADR 0027).
-  const [operatorToken, setOperatorToken] = useState(false);
-  const operator = operatorToken && scope === "admin" && !project;
   const environments =
     tree
       .find((p) => p.project.name === project)
@@ -270,7 +261,6 @@ function CreateToken({
     project && `-p ${project}`,
     project && environment && `-e ${environment}`,
     expires > 0 && `--expires ${expires}d`,
-    operator && "--operator",
     tokenDataFlags(data),
   ]
     .filter(Boolean)
@@ -293,7 +283,6 @@ function CreateToken({
               ...(project && environment && { environment }),
               ...(expires > 0 && { expires_in_days: expires }),
               ...(data && { data }),
-              ...(operator && { operator }),
             },
             {
               onSuccess: ({ token, secret }) => {
@@ -345,24 +334,6 @@ function CreateToken({
                 </span>
               </label>
             ))}
-            {operatorCaller && scope === "admin" && (
-              <label className="flex items-baseline gap-2">
-                <input
-                  type="checkbox"
-                  className="accent-fg"
-                  checked={operatorToken}
-                  disabled={!!project}
-                  onChange={(e) => setOperatorToken(e.target.checked)}
-                />
-                <span>
-                  <b className="font-medium">operator</b>{" "}
-                  <span className="text-mut">
-                    also runs the platform: servers, backups, accounts. No
-                    project limit
-                  </span>
-                </span>
-              </label>
-            )}
           </div>
         </fieldset>
         <div className="flex flex-wrap gap-3">

@@ -118,7 +118,14 @@ function TokenRow({
         </td>
         <td className="py-2">
           {token.scope}
-          {token.operator && <span className="text-warn"> operator</span>}
+          {token.operator && (
+            <span
+              className="block text-2xs text-warn"
+              title="From before platform tokens (ADR 0080): it also runs the platform until an operator splits it in Console › Tokens"
+            >
+              legacy: also the platform's
+            </span>
+          )}
         </td>
         <td className="py-2 font-mono">
           {token.project ? (

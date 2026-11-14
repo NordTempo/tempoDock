@@ -71,7 +71,7 @@ func (c *Core) publicURL() string {
 // Address describes where Dock is reached and checks the public address's
 // DNS and certificate now. Operators only.
 func (c *Core) Address(ctx context.Context, a Actor) (apitypes.Address, error) {
-	if err := a.requireOperator("reading Dock's address"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading Dock's address"); err != nil {
 		return apitypes.Address{}, err
 	}
 	return c.describeAddress(ctx)
@@ -81,7 +81,7 @@ func (c *Core) Address(ctx context.Context, a Actor) (apitypes.Address, error) {
 // starts serving the API and UI there and gets it a certificate once its
 // DNS points at the server. Operators only.
 func (c *Core) SetAddress(ctx context.Context, a Actor, req apitypes.SetAddressRequest) (apitypes.Address, error) {
-	if err := a.requireOperator("setting Dock's address"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "setting Dock's address"); err != nil {
 		return apitypes.Address{}, err
 	}
 	host, err := normalizeHostname(req.Hostname)
@@ -119,7 +119,7 @@ func (c *Core) SetAddress(ctx context.Context, a Actor, req apitypes.SetAddressR
 // RemoveAddress stops serving Dock on its public address; it stays
 // reachable at its private one. Operators only.
 func (c *Core) RemoveAddress(ctx context.Context, a Actor) (apitypes.Address, error) {
-	if err := a.requireOperator("removing Dock's address"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "removing Dock's address"); err != nil {
 		return apitypes.Address{}, err
 	}
 	if old := c.publicHost(); old != "" {

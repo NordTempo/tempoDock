@@ -60,7 +60,7 @@ func (c *Core) loadEmailServer(ctx context.Context) (s emailServer, ok bool, err
 // EmailSettings is the platform's SMTP server and how sending goes.
 // Operators only.
 func (c *Core) EmailSettings(ctx context.Context, a Actor) (apitypes.EmailSettings, error) {
-	if err := a.requireOperator("reading the email settings"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the email settings"); err != nil {
 		return apitypes.EmailSettings{}, err
 	}
 	return c.emailSettings(ctx)
@@ -102,7 +102,7 @@ func (c *Core) emailSettings(ctx context.Context) (apitypes.EmailSettings, error
 // confirmed (ADR 0057): it decides where every invite link goes. Mail
 // waiting for a retry is tried again at once, as the fix may be this.
 func (c *Core) SetEmail(ctx context.Context, a Actor, req apitypes.SetEmailRequest) (apitypes.EmailSettings, error) {
-	if err := a.requireOperator("setting up email"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "setting up email"); err != nil {
 		return apitypes.EmailSettings{}, err
 	}
 	if err := a.requireRecent("setting up email"); err != nil {
@@ -185,7 +185,7 @@ func (c *Core) SetEmail(ctx context.Context, a Actor, req apitypes.SetEmailReque
 // RemoveEmail turns Dock's email off: the settings go, and mail still
 // queued is given up on. Operators only, recently confirmed.
 func (c *Core) RemoveEmail(ctx context.Context, a Actor) (apitypes.EmailSettings, error) {
-	if err := a.requireOperator("turning email off"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "turning email off"); err != nil {
 		return apitypes.EmailSettings{}, err
 	}
 	if err := a.requireRecent("turning email off"); err != nil {
@@ -207,7 +207,7 @@ func (c *Core) RemoveEmail(ctx context.Context, a Actor) (apitypes.EmailSettings
 // It skips the outbox's queue and its limits, but is listed with the
 // rest. Operators only.
 func (c *Core) TestEmail(ctx context.Context, a Actor, req apitypes.TestEmailRequest) (apitypes.EmailTest, error) {
-	if err := a.requireOperator("sending a test email"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "sending a test email"); err != nil {
 		return apitypes.EmailTest{}, err
 	}
 	to := cmp.Or(strings.TrimSpace(req.To), a.Email)
@@ -253,7 +253,7 @@ func (c *Core) TestEmail(ctx context.Context, a Actor, req apitypes.TestEmailReq
 
 // EmailLog is the latest mails, newest first. Operators only.
 func (c *Core) EmailLog(ctx context.Context, a Actor, limit int) (apitypes.EmailLog, error) {
-	if err := a.requireOperator("reading the mail Dock sent"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the mail Dock sent"); err != nil {
 		return apitypes.EmailLog{}, err
 	}
 	if limit <= 0 || limit > 200 {

@@ -114,16 +114,26 @@ const maxReason = 500
 // data_status stays, to say why.
 var dataTools = []string{"data_schema", "data_rows", "data_keys", "data_query", "data_insights", "data_cancel", "propose_data_changes"}
 
+// platformTools are the tools a platform credential lists: who it is,
+// the servers and the platform's alerts (list_alerts with platform).
+var platformTools = []string{"whoami", "list_servers", "list_alerts"}
+
 // view is the tools an actor's tools/list shows (mcpkit.View): the
 // arguments its limits fill and the tools it can never use are left out.
 // A token limited to one environment can't promote, clone or see other
 // projects, and without data access there (the default for tokens) has
-// data_status only; only operators list servers, only admins registry
+// data_status only; only the platform's operators and viewers list servers, only admins registry
 // credentials; read tokens change nothing. A client lists tools once per
 // session: access granted later shows in a new one (the tools answer
 // calls either way).
 func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
 	var v mcpkit.View
+	if a.Me().PlatformLogin {
+		// A platform credential acts in no org (ADR 0080): its tools are
+		// the platform's few.
+		v.Only = platformTools
+		return v
+	}
 	if a.ProjectName != "" {
 		v.Implied = append(v.Implied, "project")
 		v.Hide = append(v.Hide, "list_projects")
@@ -135,7 +145,7 @@ func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
 			v.Hide = append(v.Hide, dataTools...)
 		}
 	}
-	if !a.Operator {
+	if a.Platform == "" {
 		v.Hide = append(v.Hide, "list_servers")
 	}
 	if a.Scope != apitypes.ScopeAdmin {

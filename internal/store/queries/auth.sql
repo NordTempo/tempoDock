@@ -2,7 +2,7 @@
 SELECT count(*) FROM users;
 
 -- name: CreateUser :one
-INSERT INTO users (email, name, password_hash, operator)
+INSERT INTO users (email, name, password_hash, platform_role)
 VALUES (?, ?, ?, ?)
 RETURNING *;
 
@@ -31,15 +31,15 @@ DELETE FROM sessions WHERE hash = +?;
 DELETE FROM sessions WHERE expires_at < +?;
 
 -- name: CreateToken :one
-INSERT INTO tokens (name, hash, scope, org_id, operator, project_id, environment_id, created_by, user_id, expires_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO tokens (name, hash, scope, org_id, operator, platform, project_id, environment_id, created_by, user_id, expires_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- GetTokenByHash also returns the user a `dock login` token acts for and
 -- a manual token's org in the same query, since authentication checks
 -- them on every request.
 -- name: GetTokenByHash :one
-SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
+SELECT sqlc.embed(tokens), users.email AS user_email, users.platform_role AS user_platform_role,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.hash = +?;
@@ -47,7 +47,7 @@ WHERE tokens.hash = +?;
 -- GetTokenByIDWithOwner is GetTokenByHash by ID: an approved access
 -- request acts as the token that asked, checked as it is now.
 -- name: GetTokenByIDWithOwner :one
-SELECT sqlc.embed(tokens), users.email AS user_email, users.operator AS user_operator,
+SELECT sqlc.embed(tokens), users.email AS user_email, users.platform_role AS user_platform_role,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.id = +?;
@@ -61,7 +61,7 @@ SELECT * FROM tokens WHERE id = +?;
 SELECT * FROM tokens WHERE tokens.org_id = +sqlc.arg(org_id)
 UNION ALL
 SELECT tokens.* FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
-WHERE org_members.org_id = +sqlc.arg(org_id) AND tokens.origin = 'cli_login';
+WHERE org_members.org_id = +sqlc.arg(org_id) AND tokens.origin = 'cli_login' AND tokens.platform IS NULL;
 
 -- ListUserTokens is a user's own tokens: their `dock login` tokens and
 -- the manual tokens they created in an org, through tokens_user.
@@ -69,6 +69,21 @@ WHERE org_members.org_id = +sqlc.arg(org_id) AND tokens.origin = 'cli_login';
 SELECT * FROM tokens WHERE user_id = +sqlc.arg(user_id)
     AND (origin = 'cli_login' OR org_id = +sqlc.arg(org_id))
 ORDER BY id;
+
+-- ListPlatformTokens is the platform's tokens (ADR 0080): the ones
+-- operators made, platform logins, and the legacy tokens that are both an
+-- org's and the platform's (operator), newest first, through
+-- tokens_platform.
+-- name: ListPlatformTokens :many
+SELECT sqlc.embed(tokens), users.email AS user_email, orgs.slug AS org_slug
+FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
+WHERE (tokens.platform IS NOT NULL OR tokens.operator) AND tokens.revoked_at IS NULL
+ORDER BY tokens.id DESC;
+
+-- SetTokenOperator ends or sets a token's legacy platform power, for
+-- splitting it (core.SplitToken).
+-- name: SetTokenOperator :exec
+UPDATE tokens SET operator = ? WHERE id = +?;
 
 -- name: TouchToken :exec
 UPDATE tokens SET last_used_at = ? WHERE id = +?;

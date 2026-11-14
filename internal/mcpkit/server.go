@@ -105,11 +105,12 @@ type Server[A any] struct {
 // a model's context on every turn, so a caller sees neither the tools it
 // can never use (Hide) nor the arguments its defaults always fill
 // (Implied: a token limited to one environment never names a project or
-// environment), and with ReadOnly no tool that changes anything. Calls
-// still take hidden tools and implied arguments.
+// environment), and with ReadOnly no tool that changes anything. Only,
+// when set, lists those tools and no others (a platform credential's few).
+// Calls still take hidden tools and implied arguments.
 type View struct {
-	Hide, Implied []string
-	ReadOnly      bool
+	Hide, Implied, Only []string
+	ReadOnly            bool
 }
 
 // New returns the endpoint for the options.
@@ -137,12 +138,13 @@ func (s *Server[A]) build() {
 
 // viewList is tools/list as v shows it, encoded once per view.
 func (s *Server[A]) viewList(v View) []byte {
-	if len(v.Hide)+len(v.Implied) == 0 && !v.ReadOnly {
+	if len(v.Hide)+len(v.Implied)+len(v.Only) == 0 && !v.ReadOnly {
 		return s.toolsList
 	}
 	slices.Sort(v.Hide)
 	slices.Sort(v.Implied)
-	key := fmt.Sprint(v.Hide, v.Implied, v.ReadOnly)
+	slices.Sort(v.Only)
+	key := fmt.Sprint(v.Hide, v.Implied, v.Only, v.ReadOnly)
 	s.viewsMu.Lock()
 	defer s.viewsMu.Unlock()
 	if b, ok := s.views[key]; ok {
@@ -150,7 +152,7 @@ func (s *Server[A]) viewList(v View) []byte {
 	}
 	tools := make([]tool[A], 0, len(s.tools))
 	for _, t := range s.tools {
-		if slices.Contains(v.Hide, t.Name) || v.ReadOnly && !t.Annotations.ReadOnly {
+		if slices.Contains(v.Hide, t.Name) || v.ReadOnly && !t.Annotations.ReadOnly || len(v.Only) > 0 && !slices.Contains(v.Only, t.Name) {
 			continue
 		}
 		c := *t

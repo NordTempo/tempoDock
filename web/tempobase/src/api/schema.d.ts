@@ -1595,7 +1595,7 @@ export interface components {
             actor: string;
             ask?: string[] | null;
             /** @enum {string} */
-            decided_by: "role" | "scope" | "limit" | "operator" | "person";
+            decided_by: "role" | "scope" | "limit" | "platform" | "person";
             fix: string;
             has?: string;
             /** @example shop/staging */

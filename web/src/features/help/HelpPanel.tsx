@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { useIsOperator } from "../../data/queries";
+import { useSeesPlatform } from "../../data/queries";
 import {
   isTyping,
   type LegendItem,
@@ -31,7 +31,7 @@ export default function HelpPanel({ pick }: { pick: HelpState["pick"] }) {
   const [query, setQuery] = useState("");
   const [browsing, setBrowsing] = useState(false);
   const panel = useRef<HTMLElement>(null);
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
 
   // Focus moves into the panel and back to where it was when it closes.
   const [previous] = useState(() => document.activeElement);

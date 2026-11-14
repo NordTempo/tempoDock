@@ -98,7 +98,18 @@ one decides.
    it, and the web UI's disabled actions say why. `dock run` output is
    masked live and when read, and its likely cause for everyone, like
    logs, for callers who can't reveal secrets.
-2. Platform split.
+2. **Platform split** (built): platform permissions and the Operator
+   and Platform viewer roles (`users.platform_role`), platform tokens
+   (`dock_p_`), `dock login --platform` kept beside the org login (the
+   CLI retries a call the server refuses as the platform's with it),
+   Console › Tokens with split, legacy tokens (the bootstrap token, and
+   operators' `dock login` tokens until they expire) that are both. A
+   platform credential acts on an org's resources (moving an environment,
+   pinning a project) in the named org or the install's only one, with no
+   org scope there. Two details settled while building: an operator's
+   domains skip TXT verification in their org login too (trust in the
+   person, not running the platform), and the bootstrap token stays both
+   so install scripts keep working with the one token they get.
 3. The model, shadowed: tables, area roles, default groups, migration,
    both evaluators, the equivalence test.
 4. Groups decide: members and groups, the group editor, effective access.

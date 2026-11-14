@@ -639,7 +639,7 @@ func cmpErrs(a, b error) error {
 // of their orgs, or the platform when they are an operator. "" for
 // nothing.
 func (c *Core) twoFactorRequiredOf(ctx context.Context, q *store.Queries, u store.User) (string, error) {
-	if u.Operator && c.operators2FA.Load() {
+	if u.PlatformRole != nil && c.operators2FA.Load() {
 		return "the platform", nil
 	}
 	orgs, err := q.ListUserOrgs(ctx, u.ID)
@@ -685,7 +685,7 @@ func (c *Core) NewRecoveryCodes(ctx context.Context, a Actor) (apitypes.Recovery
 // ends their sessions and `dock login` tokens, for someone who lost
 // theirs. Operators only; `dock admin reset-2fa` on the server.
 func (c *Core) ResetTwoFactor(ctx context.Context, a Actor, email string) error {
-	if err := a.requireOperator("resetting a user's two-factor sign-in"); err != nil {
+	if err := a.requirePlatform(AccountsManage, "resetting a user's two-factor sign-in"); err != nil {
 		return err
 	}
 	if err := a.requireRecent("resetting a user's two-factor sign-in"); err != nil {
@@ -727,8 +727,9 @@ func (c *Core) ResetTwoFactor(ctx context.Context, a Actor, email string) error 
 // requires one of operators. A sign-in through an identity provider
 // counts as one (ADR 0065).
 func (c *Core) gateOperator(a Actor) Actor {
-	if a.Operator && a.Factor == "" && c.operators2FA.Load() {
-		a.Operator, a.operatorNeeds2FA = false, true
+	if a.Platform != "" && a.Factor == "" && c.operators2FA.Load() {
+		a = a.withPlatform("")
+		a.operatorNeeds2FA = true
 	}
 	return a
 }
@@ -760,7 +761,7 @@ func (c *Core) SetOrgRequireTwoFactor(ctx context.Context, a Actor, req apitypes
 
 // PlatformSecurity returns the platform's sign-in policy. Operators only.
 func (c *Core) PlatformSecurity(_ context.Context, a Actor) (apitypes.PlatformSecurity, error) {
-	if err := a.requireOperator("reading the platform's sign-in policy"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading the platform's sign-in policy"); err != nil {
 		return apitypes.PlatformSecurity{}, err
 	}
 	return apitypes.PlatformSecurity{OperatorsTwoFactor: c.operators2FA.Load()}, nil
@@ -770,7 +771,7 @@ func (c *Core) PlatformSecurity(_ context.Context, a Actor) (apitypes.PlatformSe
 // second factor of operators needs the caller's own session to have used
 // one.
 func (c *Core) SetPlatformSecurity(ctx context.Context, a Actor, req apitypes.PlatformSecurity) (apitypes.PlatformSecurity, error) {
-	if err := a.requireOperator("changing the platform's sign-in policy"); err != nil {
+	if err := a.requirePlatform(PlatformSettings, "changing the platform's sign-in policy"); err != nil {
 		return apitypes.PlatformSecurity{}, err
 	}
 	if err := a.requireRecent("changing the platform's sign-in policy"); err != nil {

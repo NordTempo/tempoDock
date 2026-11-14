@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { api, body, done, list } from "../../api/client";
 import type { components } from "../../api/schema";
-import { useIsOperator } from "../../data/queries";
+import { useSeesPlatform } from "../../data/queries";
 
 // Alerts and alert channels (ADR 0020). An org's alerts (its projects and
 // services) are for its members and its channels; the platform's (servers,
@@ -99,7 +99,7 @@ export function useOrgOpenAlerts(): Alert[] {
 
 /** The platform's open alerts for operators (the console); else empty. */
 export function usePlatformOpenAlerts(): Alert[] {
-  const operator = useIsOperator();
+  const operator = useSeesPlatform();
   return (
     useQuery({ ...alertQueries.open("platform"), enabled: operator }).data ?? []
   );

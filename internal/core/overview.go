@@ -217,7 +217,7 @@ type AuditFilter struct {
 // only see events there.
 func (c *Core) ListAudit(ctx context.Context, a Actor, f AuditFilter) ([]apitypes.AuditEvent, error) {
 	if f.Platform {
-		if err := a.requireOperator("reading the platform's audit log"); err != nil {
+		if err := a.requirePlatform(PlatformView, "reading the platform's audit log"); err != nil {
 			return nil, err
 		}
 		if f.Project != "" || f.Service != "" {

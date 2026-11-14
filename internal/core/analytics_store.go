@@ -249,7 +249,7 @@ func (c *Core) readyStore(ctx context.Context, cl *analytics.Client, minEvents i
 // should run but doesn't answer is started again, in the background: the
 // page shows it starting, and why it failed if it does.
 func (c *Core) AnalyticsStatus(ctx context.Context, a Actor) (apitypes.AnalyticsStatus, error) {
-	if err := a.requireOperator("reading analytics status"); err != nil {
+	if err := a.requirePlatform(PlatformView, "reading analytics status"); err != nil {
 		return apitypes.AnalyticsStatus{}, err
 	}
 	out := apitypes.AnalyticsStatus{}
@@ -317,7 +317,7 @@ func (c *Core) retryStart() bool {
 // is refused unless req.StartEmpty, which starts the store empty and
 // removes the old one when that server is back.
 func (c *Core) SetAnalyticsServer(ctx context.Context, a Actor, req apitypes.SetAnalyticsServerRequest) (apitypes.AnalyticsStatus, error) {
-	if err := a.requireOperator("choosing the analytics server"); err != nil {
+	if err := a.requirePlatform(ServersManage, "choosing the analytics server"); err != nil {
 		return apitypes.AnalyticsStatus{}, err
 	}
 	var target store.Server

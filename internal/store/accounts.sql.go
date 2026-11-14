@@ -10,7 +10,7 @@ import (
 )
 
 const countOtherOperators = `-- name: CountOtherOperators :one
-SELECT count(*) FROM users WHERE operator AND disabled_at IS NULL AND id != +?
+SELECT count(*) FROM users WHERE platform_role = 'operator' AND disabled_at IS NULL AND id != +?
 `
 
 // Operators who can sign in, other than user_id: the platform keeps one.
@@ -73,7 +73,7 @@ func (q *Queries) ListAccountMemberships(ctx context.Context) ([]ListAccountMemb
 
 const listAccounts = `-- name: ListAccounts :many
 
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.operator, users.factor_failures, users.factor_failed_at, users.email_requests,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role,
     EXISTS (SELECT 1 FROM user_factors WHERE user_factors.user_id = users.id) AS two_factor
 FROM users ORDER BY users.email
 `
@@ -102,10 +102,10 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]ListAccountsRow, error) {
 			&i.User.PasswordHash,
 			&i.User.CreatedAt,
 			&i.User.DisabledAt,
-			&i.User.Operator,
 			&i.User.FactorFailures,
 			&i.User.FactorFailedAt,
 			&i.User.EmailRequests,
+			&i.User.PlatformRole,
 			&i.TwoFactor,
 		); err != nil {
 			return nil, err
@@ -121,16 +121,18 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]ListAccountsRow, error) {
 	return items, nil
 }
 
-const setUserOperator = `-- name: SetUserOperator :exec
-UPDATE users SET operator = ? WHERE id = +?
+const setUserPlatformRole = `-- name: SetUserPlatformRole :exec
+UPDATE users SET platform_role = ? WHERE id = +?
 `
 
-type SetUserOperatorParams struct {
-	Operator bool
-	ID       int64
+type SetUserPlatformRoleParams struct {
+	PlatformRole *string
+	ID           int64
 }
 
-func (q *Queries) SetUserOperator(ctx context.Context, arg SetUserOperatorParams) error {
-	_, err := q.db.ExecContext(ctx, setUserOperator, arg.Operator, arg.ID)
+// SetUserPlatformRole gives a user a platform role ('operator',
+// 'viewer') or takes it away (NULL); ADR 0080.
+func (q *Queries) SetUserPlatformRole(ctx context.Context, arg SetUserPlatformRoleParams) error {
+	_, err := q.db.ExecContext(ctx, setUserPlatformRole, arg.PlatformRole, arg.ID)
 	return err
 }
