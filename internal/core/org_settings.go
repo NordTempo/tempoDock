@@ -116,7 +116,7 @@ func (c *Core) DeleteOrg(ctx context.Context, a Actor) error {
 		return conflict("organization %s has %d status pages; remove them first (`dock status-page remove`)", a.OrgSlug, n)
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy} {
+		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy, q.DeleteOrgTemplates} {
 			if err := del(ctx, a.OrgID); err != nil {
 				return err
 			}

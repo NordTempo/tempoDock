@@ -723,6 +723,15 @@ type OrgSiteDefault struct {
 	UpdatedAt time.Time
 }
 
+type OrgTemplate struct {
+	ID        int64
+	OrgID     int64
+	Name      string
+	Body      string
+	CreatedBy string
+	UpdatedAt time.Time
+}
+
 type OrgVariable struct {
 	OrgID     int64
 	Key       string

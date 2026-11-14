@@ -52,6 +52,25 @@ type AppTemplate struct {
 	Inputs   []TemplateInput      `json:"inputs"`
 	// Notes say what to do once it runs (the first sign-in, say).
 	Notes string `json:"notes,omitempty"`
+	// Org is set for the organization's own templates, saved by its
+	// admins; the others come with Dock.
+	Org bool `json:"org,omitempty"`
+}
+
+// SaveTemplateRequest saves an organization template from its file, in
+// the catalog's format (`dock template show NAME --toml` prints one).
+type SaveTemplateRequest struct {
+	File string `json:"file" doc:"The template file, TOML"`
+}
+
+// SaveTemplateFromRequest saves an environment's services as an
+// organization template.
+type SaveTemplateFromRequest struct {
+	Name     string   `json:"name" doc:"The template's name: lower case letters, digits and dashes"`
+	Title    string   `json:"title,omitempty" doc:"Default: the name"`
+	Summary  string   `json:"summary,omitempty"`
+	Services []string `json:"services,omitempty" doc:"The services it holds; default: every service that runs an image or a database template"`
+	Main     string   `json:"main,omitempty" doc:"The service the user names; default: the first one that has a domain, else the first"`
 }
 
 // AppTemplateService is one service an app template creates.

@@ -20,20 +20,40 @@ import (
 // other staged changes in the environment. Domains are added before the
 // first deploys, so DOCK_PUBLIC_DOMAIN is set in the first release.
 
-// appTemplate returns a template by name: the catalog's, or one made from
-// a database template.
-func (c *Core) appTemplate(name string) (apptemplates.Template, error) {
+// appTemplate returns a template by name: the catalog's, one made from a
+// database template, or the organization's own (org is then true).
+func (c *Core) appTemplate(ctx context.Context, orgID int64, name string) (t apptemplates.Template, org bool, err error) {
+	if t, ok := builtinTemplate(name); ok {
+		return t, false, nil
+	}
+	row, err := c.store.GetOrgTemplate(ctx, store.GetOrgTemplateParams{OrgID: orgID, Name: name})
+	if store.IsNotFound(err) {
+		return t, false, notFound("there's no template %q; list them with `dock template list`", name)
+	}
+	if err != nil {
+		return t, false, err
+	}
+	t, err = apptemplates.Parse([]byte(row.Body))
+	if err != nil {
+		return t, true, invalid("the organization's template %s doesn't parse: %v. Save it again with `dock template save`", name, err)
+	}
+	return t, true, nil
+}
+
+// builtinTemplate is a template that comes with Dock: the catalog's, or
+// one made from a database template.
+func builtinTemplate(name string) (apptemplates.Template, bool) {
 	cat, err := apptemplates.Catalog()
 	if err != nil {
-		return apptemplates.Template{}, err
+		return apptemplates.Template{}, false // the catalog test keeps it parsing
 	}
 	if t, ok := cat[name]; ok {
-		return t, nil
+		return t, true
 	}
 	if t, ok := templates[apitypes.Template(name)]; ok {
-		return dbAppTemplate(t), nil
+		return dbAppTemplate(t), true
 	}
-	return apptemplates.Template{}, notFound("there's no template %q; list them with `dock template list`", name)
+	return apptemplates.Template{}, false
 }
 
 // dbAppTemplate is a database template as a one-service app template, so
@@ -62,18 +82,22 @@ func appTemplateInfo(t apptemplates.Template) apitypes.AppTemplate {
 	return info
 }
 
-// ListAppTemplates lists the app templates, apps by title and then the
-// databases. They are the same for everyone, so any caller may list them.
-func (c *Core) ListAppTemplates(context.Context, Actor) ([]apitypes.AppTemplate, error) {
+// ListAppTemplates lists the app templates: the organization's own, then
+// Dock's apps by title, then the databases. Any member may list them.
+func (c *Core) ListAppTemplates(ctx context.Context, a Actor) ([]apitypes.AppTemplate, error) {
 	cat, err := apptemplates.Catalog()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]apitypes.AppTemplate, 0, len(cat)+len(templates))
+	out, err := c.orgTemplates(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	own := len(out)
 	for _, t := range cat {
 		out = append(out, appTemplateInfo(t))
 	}
-	slices.SortFunc(out, func(x, y apitypes.AppTemplate) int {
+	slices.SortFunc(out[own:], func(x, y apitypes.AppTemplate) int {
 		return cmp.Compare(strings.ToLower(x.Title), strings.ToLower(y.Title))
 	})
 	for _, name := range slices.Sorted(maps.Keys(templates)) {
@@ -83,12 +107,14 @@ func (c *Core) ListAppTemplates(context.Context, Actor) ([]apitypes.AppTemplate,
 }
 
 // GetAppTemplate describes one app template.
-func (c *Core) GetAppTemplate(_ context.Context, _ Actor, name string) (apitypes.AppTemplate, error) {
-	t, err := c.appTemplate(name)
+func (c *Core) GetAppTemplate(ctx context.Context, a Actor, name string) (apitypes.AppTemplate, error) {
+	t, org, err := c.appTemplate(ctx, a.OrgID, name)
 	if err != nil {
 		return apitypes.AppTemplate{}, err
 	}
-	return appTemplateInfo(t), nil
+	info := appTemplateInfo(t)
+	info.Org = org
+	return info, nil
 }
 
 // UseAppTemplate creates a template's services in an environment, or with
@@ -109,7 +135,7 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 	if err := notArchived(es.project); err != nil {
 		return out, err
 	}
-	t, err := c.appTemplate(name)
+	t, _, err := c.appTemplate(ctx, es.project.OrgID, name)
 	if err != nil {
 		return out, err
 	}
