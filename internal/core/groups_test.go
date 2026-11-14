@@ -1,6 +1,8 @@
 package core
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -133,4 +135,71 @@ func (h *harness) userRow(id int64) store.User {
 		h.t.Fatal(err)
 	}
 	return u
+}
+
+// A site's reads follow the person's grants (ADR 0080): a Viewer watches
+// it live, checks its tracking, reads its replays and its public
+// dashboard, as read could before groups; someone whose Analytics grant
+// leaves production out can't, there. These checks once named no
+// permission, and people fell back to their role, wherever it held.
+func TestSiteReadsFollowGrants(t *testing.T) {
+	h := newHarness(t)
+	countingSite(h)
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	viewer := h.user("vi@example.com", apitypes.ScopeRead)
+	ola := h.user("ola@example.com", apitypes.ScopeRead)
+	if _, err := h.c.RemoveGroupMember(h.ctx, admin, "Viewers", ola.Email); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.CreateGroup(h.ctx, admin, apitypes.CreateGroupRequest{Name: "Testers"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"deploy:view", "analytics:view"} {
+		if _, err := h.c.GrantGroup(h.ctx, admin, "Testers", apitypes.GrantRequest{Role: role, Kinds: []string{"other", "previews"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.c.AddGroupMember(h.ctx, admin, "Testers", ola.Email); err != nil {
+		t.Fatal(err)
+	}
+	ola = h.in(userActor(h.userRow(ola.UserID)), "")
+	for _, action := range []string{"watching a site live", "checking a site's tracking", "reading a site's replays", "watching a site's replays", "reading a site's public dashboard"} {
+		if _, err := h.c.loadSite(h.ctx, viewer, "shop", "shop.example.com", apitypes.ScopeRead, action); err != nil {
+			t.Errorf("a viewer %s: %v", action, err)
+		}
+		if _, err := h.c.loadSite(h.ctx, ola, "shop", "shop.example.com", apitypes.ScopeRead, action); CodeOf(err) != apitypes.CodeForbidden {
+			t.Errorf("analytics outside production, %s in production: %v", action, err)
+		}
+	}
+}
+
+// A check that names no permission refuses people, whatever their role:
+// it can't say where they would hold it.
+func TestUnmappedCheckRefusesPeople(t *testing.T) {
+	h := newHarness(t)
+	admin := h.user("ada@example.com", apitypes.ScopeAdmin)
+	const action = "doing something no permission names"
+	defer forgetShadow(action)
+	if admin.grantAllows(apitypes.ScopeRead, action, 0, 0, 0) || admin.holdsAnywhere(apitypes.ScopeRead, action) {
+		t.Fatal("full access passed a check that names no permission")
+	}
+	r := refusalOf(t, admin.require(apitypes.ScopeRead, action))
+	if !strings.Contains(r.Reason, "names no permission") {
+		t.Fatalf("refusal = %+v", r)
+	}
+	if !slices.ContainsFunc(ShadowReport(), func(d apitypes.AccessDisagreement) bool { return strings.Contains(d.Check, action) }) {
+		t.Fatal("the unmapped check isn't reported")
+	}
+}
+
+// forgetShadow drops what a test recorded on purpose about action, so
+// TestMain's gate only sees the rest.
+func forgetShadow(action string) {
+	shadowRecord.mu.Lock()
+	defer shadowRecord.mu.Unlock()
+	for k := range shadowRecord.counts {
+		if strings.Contains(k, strconv.Quote(action)) {
+			delete(shadowRecord.counts, k)
+		}
+	}
 }

@@ -169,7 +169,7 @@ func statusPagesIn(a Actor, action string) error {
 func (c *Core) loadStatusPage(ctx context.Context, a Actor, slug string, need apitypes.Scope, action string) (store.StatusPage, error) {
 	var err error
 	if need == apitypes.ScopeAdmin {
-		err = statusPagesIn(a, action)
+		err = a.requireUnlimited(need, action) // as statusPagesIn
 	} else {
 		err = a.require(need, action)
 	}

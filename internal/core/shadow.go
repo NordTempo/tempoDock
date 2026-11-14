@@ -46,6 +46,10 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeRead, "adding a goal"}:                                           PermAnalyticsRead,
 	{apitypes.ScopeAdmin, "adding alert channels"}:                                  PermAlertsManage,
 	{apitypes.ScopeAdmin, "adding redirects"}:                                       PermConnectionsManage,
+	{apitypes.ScopeAdmin, "changing Cloudflare connections"}:                        PermConnectionsManage,
+	{apitypes.ScopeAdmin, "changing redirects"}:                                     PermConnectionsManage,
+	{apitypes.ScopeAdmin, "retrying redirects"}:                                     PermConnectionsManage,
+	{apitypes.ScopeAdmin, "removing an ignore in the whole organization"}:           PermOrgSettings,
 	{apitypes.ScopeDeploy, "applying a project file to a new project"}:              PermProjectsCreate,
 	{apitypes.ScopeAdmin, "approving access requests"}:                              PermApprove,
 	{apitypes.ScopeDeploy, "changing a site"}:                                       PermAnalyticsWrite,
@@ -85,7 +89,11 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "scheduling maintenance"}:                                PermStatusPagesPost,
 	{apitypes.ScopeDeploy, "turning analytics on for a domain"}:                     PermDomainsWrite,
 	{apitypes.ScopeAdmin, "unassigning a GitHub App installation"}:                  PermConnectionsManage,
-	{apitypes.ScopeRead, "watching a site's replays"}:                               PermAnalyticsRead,
+	{apitypes.ScopeRead, "watching a site's replays"}:                               PermAnalyticsReplays,
+	{apitypes.ScopeRead, "reading a site's replays"}:                                PermAnalyticsReplays,
+	{apitypes.ScopeRead, "watching a site live"}:                                    PermAnalyticsRead,
+	{apitypes.ScopeRead, "checking a site's tracking"}:                              PermAnalyticsRead,
+	{apitypes.ScopeRead, "reading a site's public dashboard"}:                       PermAnalyticsRead,
 	{apitypes.ScopeDeploy, "adding a domain"}:                                       PermDomainsWrite,
 	{apitypes.ScopeAdmin, "adding a status page hook"}:                              PermStatusPagesManage,
 	{apitypes.ScopeDeploy, "adding a volume"}:                                       PermConfigWrite,
@@ -297,6 +305,28 @@ func recordShadow(a Actor, key actionKey, place string, old, model bool, why str
 	}
 }
 
+// permOf is the permission a check names. A check that names none is a
+// bug in Dock (TestEveryCheckHasAPermission keeps them out): it is
+// counted where operators and the test suites' gates see it, logged as an
+// error the first time, and people's grants refuse it rather than guess.
+func permOf(a Actor, key actionKey, place string) (Perm, bool) {
+	if p, ok := permFor(key); ok {
+		return p, true
+	}
+	k := fmt.Sprintf("%s %s: %q at %s: no permission names this check (unmapped; people are refused)", a.Kind, key.need, key.action, place)
+	shadowRecord.mu.Lock()
+	if shadowRecord.counts == nil {
+		shadowRecord.counts = map[string]int64{}
+	}
+	shadowRecord.counts[k]++
+	first := shadowRecord.counts[k] == 1
+	shadowRecord.mu.Unlock()
+	if l := shadowLog.Load(); first && l != nil {
+		l.Error("a permission check names no permission, so people are refused it: add it to actionPerms (ADR 0080)", "check", k)
+	}
+	return 0, false
+}
+
 func verdict(ok bool) string {
 	if ok {
 		return "allows"
@@ -392,22 +422,27 @@ func modelAllows(g grantEntry, perm Perm, project, env int64, kind uint8) bool {
 	return inProject && (g.env == 0 || g.env == env) && g.kinds&kind != 0
 }
 
+// placeOf is the kind of place a check asks about, as disagreements name
+// it.
+func placeOf(project, env int64) string {
+	switch {
+	case env != 0:
+		return "an environment"
+	case project != 0:
+		return "a project"
+	}
+	return "the org"
+}
+
 // shadow compares today's answer to a check with the model's.
 func (a Actor) shadow(need apitypes.Scope, action string, project, env int64, old bool) {
 	if !a.shadowed() {
 		return
 	}
 	key := actionKey{need, action}
-	place := "the org"
-	switch {
-	case env != 0:
-		place = "an environment"
-	case project != 0:
-		place = "a project"
-	}
-	perm, ok := permFor(key)
+	place := placeOf(project, env)
+	perm, ok := permOf(a, key, place)
 	if !ok {
-		recordShadow(a, key, place, old, false, " (unmapped: no permission for this check)")
 		return
 	}
 	if model := modelAllows(a.modelAccess(), perm, project, env, kindOther); model != old {

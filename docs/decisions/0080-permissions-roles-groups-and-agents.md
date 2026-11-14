@@ -120,7 +120,7 @@ one decides.
    fails on any disagreement but the data policy's lowering rules, which
    the migration's preflight stops on. `TestPermissionsFitScopes` checks
    every entry against today's scopes, `TestEveryCheckHasAPermission`
-   that no literal check lacks one. Settled while building: Developers
+   that no check lacks one (see phase 4 for how). Settled while building: Developers
    also hold Analytics edit (goals, funnels, sites), Status pages post
    and Logs edit (resolving errors), as today's deploy does; analytics
    defaults are Org settings; a change to a project needs a grant on the
@@ -141,6 +141,20 @@ one decides.
    so a check needs no query. Settled while building: `dock access` was
    already a service's access protection (ADR 0030), so effective access
    is `dock can [email]` and one-off grants `dock grant`.
+   Prod's shadow then found checks that named no permission (watching a
+   site live, checking its tracking, its replays, its public dashboard):
+   the scan only knew a fixed list of check functions, so a loader
+   passing its scope and action on (`loadSite`) hid them; their tests ran
+   as the system actor, which the shadow doesn't compare; and since
+   grants decide, an unmapped check fell back to the person's summary
+   role, which says nothing of where they hold it (it let someone with
+   Analytics outside production read production's sites). Now the scan
+   follows every function that passes a scope or action on to a check
+   and resolves constants and locals, so every call site is covered or
+   the test says which it can't read; an unmapped check refuses people,
+   logs an error and fails the test suites' gates. Replays have their own
+   permission (`analytics.replays`, in Analytics view) so a role may leave
+   them out.
 5. Custom roles; MCP tools declare their permission.
 6. Agents: personal agents and their settings, org agents, agent rules.
 7. Protection.

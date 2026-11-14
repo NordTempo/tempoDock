@@ -245,11 +245,12 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 // grantAllows is a person's answer to a check from their grants: the
 // permission the check means (actionPerms) held at the place, in an
 // environment of that kind (kind 0 at the org or a project). A check
-// without one falls back to their summary role.
+// without one is refused (permOf): their summary role can't stand in, as
+// it doesn't say where they hold it.
 func (a Actor) grantAllows(need apitypes.Scope, action string, project, env int64, kind uint8) bool {
-	perm, ok := permFor(actionKey{need, action})
+	perm, ok := permOf(a, actionKey{need, action}, placeOf(project, env))
 	if !ok {
-		return rank(a.Scope) >= rank(need)
+		return false
 	}
 	for _, g := range a.grants {
 		if modelAllows(g, perm, project, env, kind) {
@@ -263,9 +264,9 @@ func (a Actor) grantAllows(need apitypes.Scope, action string, project, env int6
 // anywhere: the pre-check a loader makes before it knows the place, which
 // the check at the place then decides.
 func (a Actor) holdsAnywhere(need apitypes.Scope, action string) bool {
-	perm, ok := permFor(actionKey{need, action})
+	perm, ok := permOf(a, actionKey{need, action}, "the org")
 	if !ok {
-		return rank(a.Scope) >= rank(need)
+		return false
 	}
 	for _, g := range a.grants {
 		if g.perms.has(perm) {
@@ -306,10 +307,17 @@ func (a Actor) seesEnv(projectID, envID int64) bool {
 // refuseGrant is the refusal when a person's grants don't give a check's
 // permission at its place.
 func (a Actor) refuseGrant(need apitypes.Scope, action, place string) error {
-	perm, _ := permFor(actionKey{need, action})
 	where := "here"
 	if place != "" {
 		where = "in " + place
+	}
+	perm, ok := permFor(actionKey{need, action})
+	if !ok {
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedGrants, Action: action, Place: place,
+			Reason: fmt.Sprintf("Dock can't decide %s %s: the check names no permission, a bug in Dock", action, where),
+			Fix:    "tell the server's operator; Dock's log names the check",
+		})
 	}
 	return a.refuse(apitypes.Refusal{
 		DecidedBy: apitypes.RefusedGrants, Action: action, Need: perm.String(), Place: place,
