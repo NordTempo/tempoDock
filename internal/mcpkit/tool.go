@@ -361,6 +361,8 @@ type toolError struct {
 		Hint    string             `json:"hint,omitempty"`
 		Request int64              `json:"request,omitempty"`
 		Release int64              `json:"release,omitempty"`
+		// Refusal explains a forbidden error (ADR 0080).
+		Refusal *apitypes.Refusal `json:"refusal,omitempty"`
 	} `json:"error"`
 }
 
@@ -379,7 +381,7 @@ func (s *Server[A]) fail(err error) toolResult {
 	te.Error.Code, te.Error.Message = apitypes.CodeInternal, "internal error; see the daemon log"
 	switch de, ok := errors.AsType[*datapanel.Error](err); {
 	case ok:
-		te.Error.Code, te.Error.Message, te.Error.Release = de.Code, de.Msg, de.Release
+		te.Error.Code, te.Error.Message, te.Error.Release, te.Error.Refusal = de.Code, de.Msg, de.Release, de.Refusal
 	case errors.Is(err, context.Canceled):
 		te.Error.Message = "the call was cancelled" // the client went away
 	default:

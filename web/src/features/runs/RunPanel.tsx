@@ -6,6 +6,7 @@ import {
   useDeployBlock,
   useService,
   useVolumes,
+  useWhyNot,
 } from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
@@ -114,7 +115,7 @@ function RunForm({
   // A database's volume is never mounted; it is reached over the network.
   const applied = useVolumes(ref).some((v) => !v.pending);
   const mounts = applied && !service.template;
-  const canDeploy = useCanDeploy(ref);
+  const denied = useWhyNot("deploy", ref);
   const blocked = useDeployBlock(ref);
   const run = useRunCommand();
   const [command, setCommand] = useState("");
@@ -123,7 +124,7 @@ function RunForm({
   const [snapshot, setSnapshot] = useState(true);
   const writes = mounts && volumes === "write";
 
-  const reason = !canDeploy ? "Needs deploy access" : blocked;
+  const reason = denied ?? blocked;
   const trimmed = command.trim();
   const cli = [
     `dock run -s ${ref.service} -e ${ref.environment} --detach`,

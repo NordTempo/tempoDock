@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 )
 
@@ -29,6 +30,9 @@ type Problem struct {
 	// Release is the release a deploy_in_progress error is about: the one
 	// deploying. Older servers don't send it.
 	Release int64 `json:"release,omitempty"`
+	// Refusal explains a forbidden error: why, and what would allow it
+	// (ADR 0080). Older servers don't send it.
+	Refusal *apitypes.Refusal `json:"refusal,omitempty"`
 }
 
 // ProblemDetail is one validation failure.
@@ -39,6 +43,10 @@ type ProblemDetail struct {
 
 func (p *Problem) Error() string {
 	msg := p.Detail
+	if p.Refusal != nil && p.Refusal.Reason != "" {
+		// The fix is the hint (problemExit), not part of the message.
+		msg = p.Refusal.Reason
+	}
 	if msg == "" {
 		msg = p.Title
 	}
@@ -135,5 +143,26 @@ func problemExit(p *Problem, status int) error {
 	if !ok {
 		hint = exitHints[exit]
 	}
+	if r := p.Refusal; r != nil && r.Fix != "" {
+		hint = refusalHint(r)
+	}
 	return &output.Error{Exit: exit, Code: p.Code, Hint: hint, Err: p}
+}
+
+// refusalHint is what to do about a refusal: its fix, and whom to ask
+// when the server named them. An agent reads it as "stop and report".
+func refusalHint(r *apitypes.Refusal) string {
+	hint := upperFirst(r.Fix) + "."
+	if len(r.Ask) > 0 {
+		hint += " Ask " + strings.Join(r.Ask, " or ") + "."
+	}
+	return hint
+}
+
+// upperFirst capitalizes s's first letter (ASCII), for a sentence.
+func upperFirst(s string) string {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	return string(s[0]-'a'+'A') + s[1:]
 }

@@ -43,7 +43,17 @@ func (c *Core) DoThing(ctx context.Context, a Actor, req apitypes.DoThingRequest
   `a.requireRecent`: the session must have re-authenticated within
   `ReauthWindow` (ADR 0057).
 - Errors are `datapanel.Error` with an `apitypes` code; the API maps codes
-  to statuses. Messages are for humans and say what to do next.
+  to statuses. Messages are for humans and say what to do next. A
+  permission refusal comes from the `Actor` checks (`refuse*` in
+  refusal.go), which attach an `apitypes.Refusal`: why, what would allow
+  it, and (through `Explain`) whom to ask (ADR 0080). Don't hand-write a
+  forbidden error for what a scope, limit or operator check says.
+- Anything that can show a service's variables (logs, build output, run
+  output, a diagnosis's evidence) is masked for callers who can't reveal
+  secrets (`logRedactor`, live streams with `redactor.writer`), and text
+  every reader sees (a run's likely cause, events) with
+  `releaseRedactor` or `newRedactor`. A scope that runs code (deploy) is
+  not a scope that may read secrets.
 - Secret values (variables, org variables, connection URLs) are sealed
   with `c.box` before they reach the store, bound to their column and
   row: a new sealed column goes in `sealedColumns` (sealed.go, ADR 0041).

@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Fragment, useMemo, useState } from "react";
-import { useCanDeploy, useDeployBlock, useService } from "../../data/queries";
+import {
+  useCanDeploy,
+  useDeployBlock,
+  useService,
+  useWhyNot,
+} from "../../data/queries";
 import type { ServiceRef } from "../../data/types";
 import { ago, clock, day } from "../../ui/format";
 import {
@@ -144,13 +149,14 @@ function JobsTable({
   selected: string | undefined;
   onSelect: (name: string, run?: number) => void;
 }) {
-  const canDeploy = useCanDeploy(ref);
+  const denied = useWhyNot("deploy", ref);
+  const canDeploy = denied === undefined;
   const blocked = useDeployBlock(ref);
   const { service } = useService(ref);
   const run = useRunJob();
   const enable = useSetJobEnabled();
-  const runBlock = !canDeploy
-    ? "Needs deploy access"
+  const runBlock = denied
+    ? denied
     : !service.active_release
       ? "Deploy first"
       : blocked;
@@ -236,7 +242,7 @@ function JobsTable({
                         small
                         cli={`dock job ${j.enabled ? "disable" : "enable"} ${j.name} ${target(ref)}`}
                         disabled={!canDeploy || pending(enable)}
-                        title={canDeploy ? undefined : "Needs deploy access"}
+                        title={denied}
                         onClick={() =>
                           enable.mutate({
                             ref,

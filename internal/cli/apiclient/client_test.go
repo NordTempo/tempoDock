@@ -52,6 +52,7 @@ func TestErrorMapping(t *testing.T) {
 		{"conflict", 409, "application/problem+json", `{"detail":"a deploy is already running"}`, output.ExitConflict, "", "already running"},
 		{"proxy html", 502, "text/html", `<html>bad gateway</html>`, output.ExitUnreachable, "", "Bad Gateway"},
 		{"upgrade", 426, "text/plain", `CLI too old`, output.ExitIncompatible, "", "CLI too old"},
+		{"refusal", 403, "application/problem+json", `{"detail":"user \"ola\" has role read; restarting requires deploy; an admin can give you role deploy","code":"forbidden","refusal":{"decided_by":"role","reason":"user \"ola\" has role read; restarting requires deploy","fix":"an admin can give you role deploy","ask":["Ada","Kari"]}}`, output.ExitAuth, "forbidden", "has role read"},
 		{"server offline", 503, "application/problem+json", `{"detail":"server homelab is offline","code":"server_offline"}`, output.ExitUnreachable, "server_offline", "homelab is offline"},
 	}
 	for _, tt := range tests {
@@ -74,6 +75,10 @@ func TestErrorMapping(t *testing.T) {
 			}
 			if tt.code == "server_offline" && !strings.Contains(e.Hint, "dock server list") {
 				t.Errorf("hint = %q, want the server_offline one", e.Hint)
+			}
+			if tt.name == "refusal" && (e.Error() != "user \"ola\" has role read; restarting requires deploy" ||
+				e.Hint != "An admin can give you role deploy. Ask Ada or Kari.") {
+				t.Errorf("refusal: message %q, hint %q; want the reason, then its fix and whom to ask", e.Error(), e.Hint)
 			}
 			if _, ok := errors.AsType[*Problem](err); !ok {
 				t.Error("the Problem should be reachable with errors.As")

@@ -399,6 +399,7 @@ exits with the command's exit code.
 | Volumes | A database's volume is never mounted (connect over the network). Another stateful service's volumes are mounted read-only (`--volumes read`, the default), not at all with `--volumes none`, or writable with `--volumes write`, next to the running service: only for storage that takes a second writer. One writer per service at a time. A writer first takes a [snapshot](databases.md#snapshots) of the volumes (the run shows its ID); a failed snapshot refuses the run, and `--no-snapshot` skips it |
 | Limits | `--timeout`, default 1 hour, at most 24 hours; 4 runs per service at once. `--detach` runs it in the background (`dock runs show <id>` for its output) |
 | Record | Audited as `service.run` with the command and exit code. The service's last 50 runs keep their status and the last 16 KB of output, except terminal sessions, which keep no output |
+| Secrets | The service's secret values are masked in the output, live and kept, for anyone who can't reveal them (admins can), as in logs. Code you run still reads them, so running needs deploy |
 
 The service's Run tab in the UI runs commands too (without a terminal),
 and agents have the MCP tool `run_command`. Design: [ADR

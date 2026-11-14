@@ -267,8 +267,17 @@ func TestScopedToken(t *testing.T) {
 		{"deploy_image", map[string]any{"project": "blog", "environment": "production", "service": "api"}},
 		{"set_variables", map[string]any{"environment": "production", "set": map[string]any{"A": "1"}}},
 	} {
-		if code := call(t, s, tc.tool, tc.args).errorCode(t); code != apitypes.CodeForbidden {
+		c := call(t, s, tc.tool, tc.args)
+		if code := c.errorCode(t); code != apitypes.CodeForbidden {
 			t.Errorf("%s %v: code %s, want forbidden", tc.tool, tc.args, code)
+		}
+		// The refusal says why and what would allow it (ADR 0080).
+		var e struct {
+			Error struct{ Refusal *apitypes.Refusal }
+		}
+		c.decode(t, &e)
+		if r := e.Error.Refusal; r == nil || r.DecidedBy != apitypes.RefusedLimit || r.Limit != "shop/staging" || r.Fix == "" {
+			t.Errorf("%s: refusal %+v", tc.tool, r)
 		}
 	}
 

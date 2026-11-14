@@ -270,6 +270,7 @@ func (s *Server) problem(err error) error {
 	if errors.As(err, &ce) {
 		status := statusForCode(ce.Code)
 		e := &apitypes.Error{Status: status, Title: http.StatusText(status), Detail: ce.Msg, Code: ce.Code, Release: ce.Release}
+		e.Refusal = ce.Refusal
 		if le, ok := errors.AsType[*core.LockedError](err); ok {
 			e.Request = le.Request
 		}
@@ -378,7 +379,7 @@ func (s *Server) serveAuthed(ctx context.Context, op *huma.Operation, replayable
 		if replayable {
 			err = s.fileRequest(ctx, actor, *op, in, err)
 		}
-		return nil, s.problem(err)
+		return nil, s.problem(s.core.Explain(ctx, actor, err))
 	}
 	return o, nil
 }

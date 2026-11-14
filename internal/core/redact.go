@@ -117,6 +117,13 @@ func (r *redactor) appendMasked(dst, src []byte, final bool) ([]byte, int) {
 	if !final {
 		hold = max(0, len(src)-(r.longest-1))
 	}
+	return r.appendMaskedTo(dst, src, hold)
+}
+
+// appendMaskedTo is appendMasked stopping at hold: secrets that start
+// before it are masked whole, and src[hold:] (past the last of those) is
+// left for later.
+func (r *redactor) appendMaskedTo(dst, src []byte, hold int) ([]byte, int) {
 	pos := 0
 	for {
 		at, n := r.next(src[pos:])
@@ -193,6 +200,69 @@ func (rr *redactReader) Read(p []byte) (int, error) {
 
 // Close implements io.Closer.
 func (rr *redactReader) Close() error { return rr.src.Close() }
+
+// writer masks the secrets in what is written to w, streaming, for a
+// live terminal: unlike reader it holds back only a tail that could be
+// the start of a secret, so a prompt shows at once. Flush writes what
+// it held. A nil redactor returns w itself and a no-op flush.
+func (r *redactor) writer(w io.Writer) (io.Writer, func() error) {
+	if r == nil {
+		return w, func() error { return nil }
+	}
+	rw := &redactWriter{dst: w, red: r}
+	return rw, rw.flush
+}
+
+// redactWriter is redactor.writer's Writer. Writes come from one
+// goroutine (node.JobStream), so it needs no lock.
+type redactWriter struct {
+	dst     io.Writer
+	red     *redactor
+	pending []byte // written, not masked yet: a tail a secret may start in
+	out     []byte
+}
+
+// Write implements io.Writer: it masks what can't be part of a secret
+// still being written, and keeps the rest for the next write.
+func (rw *redactWriter) Write(p []byte) (int, error) {
+	rw.pending = append(rw.pending, p...)
+	hold := len(rw.pending) - rw.red.secretPrefixAt(rw.pending)
+	var used int
+	rw.out, used = rw.red.appendMaskedTo(rw.out[:0], rw.pending, hold)
+	rw.pending = rw.pending[:copy(rw.pending, rw.pending[used:])]
+	if len(rw.out) > 0 {
+		if _, err := rw.dst.Write(rw.out); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+// flush writes what Write held back, masked.
+func (rw *redactWriter) flush() error {
+	if len(rw.pending) == 0 {
+		return nil
+	}
+	out, _ := rw.red.appendMasked(rw.out[:0], rw.pending, true)
+	rw.pending = rw.pending[:0]
+	_, err := rw.dst.Write(out)
+	return err
+}
+
+// secretPrefixAt is the length of the longest tail of b that is the start
+// (not all) of a secret: what a live writer must hold back.
+func (r *redactor) secretPrefixAt(b []byte) int {
+	n := 0
+	for _, v := range r.raw {
+		for k := min(len(b), len(v)-1); k > n; k-- {
+			if bytes.HasSuffix(b, v[:k]) {
+				n = k
+				break
+			}
+		}
+	}
+	return n
+}
 
 // publishBuildLog publishes a build log line: once when it shows no
 // secret, else as written to subscribers that may reveal secrets and
