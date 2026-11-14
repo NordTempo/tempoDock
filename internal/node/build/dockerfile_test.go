@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestDockerfileOptScopesCaches(t *testing.T) {
 		t.Fatal(err)
 	}
 	vars := map[string]string{"GREETING": "hi", "BUILDKIT_CACHE_MOUNT_NS": "p2_e2", "TOKEN": "secret"}
-	opt, _, err := dockerfileOpt(src, "Dockerfile", vars, "p1_e1", io.Discard)
+	opt, _, err := dockerfileOpt(t.TempDir(), src, "Dockerfile", vars, "p1_e1", io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +62,94 @@ func TestDockerfileOptScopesCaches(t *testing.T) {
 	}
 	if !maps.Equal(opt.FrontendAttrs, want) {
 		t.Fatalf("attrs = %v, want %v", opt.FrontendAttrs, want)
+	}
+}
+
+// TestDockerfileOptKeysSecretSteps checks that a Dockerfile mounting a
+// secret builds from a keyed copy, next to its own ignore file, with the
+// key as a build arg the source can't override.
+func TestDockerfileOptKeysSecretSteps(t *testing.T) {
+	src, dir := t.TempDir(), t.TempDir()
+	df := "FROM alpine\nARG DOCK_CACHE_KEY\nRUN --mount=type=secret,id=TOKEN x\n"
+	for name, body := range map[string]string{"Dockerfile": df, "Dockerfile.dockerignore": "node_modules\n"} {
+		if err := os.WriteFile(filepath.Join(src, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vars := map[string]string{"TOKEN": "t", "DOCK_CACHE_KEY": "chosen"}
+	opt, _, err := dockerfileOpt(dir, src, "Dockerfile", vars, "p1_e1", io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := opt.FrontendAttrs["build-arg:"+cacheKeyArg], secretsKey("p1_e1", vars, []string{"TOKEN"}); got != want {
+		t.Errorf("key = %q, want %q", got, want)
+	}
+	keyed, err := os.ReadFile(filepath.Join(dir, "dockerfile", "Dockerfile"))
+	if err != nil || string(keyed) != "FROM alpine\nARG DOCK_CACHE_KEY\nARG DOCK_CACHE_KEY\nRUN --mount=type=secret,id=TOKEN x\n" {
+		t.Errorf("keyed Dockerfile = %q, %v", keyed, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "dockerfile", "Dockerfile.dockerignore")); err != nil {
+		t.Errorf("ignore file not copied: %v", err)
+	}
+}
+
+// TestKeySecretSteps checks where the cache key ARG goes (before the
+// first secret-mounting RUN of each stage) and which secrets it covers.
+func TestKeySecretSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name, df, want string
+		ids            []string // nil: every variable
+	}{{
+		name: "no secrets",
+		df:   "FROM alpine\nRUN --mount=type=cache,target=/c echo\n",
+	}, {
+		name: "first secret step of each stage",
+		df: "FROM alpine AS a\nRUN echo\nRUN --mount=type=secret,id=NPM_TOKEN \\\n  --mount=type=secret,target=/run/secrets/PIP mk\n" +
+			"RUN --mount=type=secret,src=OTHER x\nFROM a\nRUN --mount=type=bind,target=/x y\nRUN --mount=type=secret,id=NPM_TOKEN,env=T z\n",
+		want: "FROM alpine AS a\nRUN echo\nARG DOCK_CACHE_KEY\nRUN --mount=type=secret,id=NPM_TOKEN \\\n  --mount=type=secret,target=/run/secrets/PIP mk\n" +
+			"RUN --mount=type=secret,src=OTHER x\nFROM a\nRUN --mount=type=bind,target=/x y\nARG DOCK_CACHE_KEY\nRUN --mount=type=secret,id=NPM_TOKEN,env=T z\n",
+		ids: []string{"NPM_TOKEN", "OTHER", "PIP"},
+	}, {
+		name: "id from a variable",
+		df:   "FROM alpine\nARG WHICH\nRUN --mount=type=secret,id=$WHICH x\n",
+		want: "FROM alpine\nARG WHICH\nARG DOCK_CACHE_KEY\nRUN --mount=type=secret,id=$WHICH x\n",
+	}, {
+		name: "type from a variable",
+		df:   "FROM alpine\nRUN --mount=type=${T},id=X x\n",
+		want: "FROM alpine\nARG DOCK_CACHE_KEY\nRUN --mount=type=${T},id=X x\n",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			keyed, ids, err := keySecretSteps([]byte(tc.df))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(keyed) != tc.want {
+				t.Errorf("keyed =\n%s\nwant\n%s", keyed, tc.want)
+			}
+			if !slices.Equal(ids, tc.ids) {
+				t.Errorf("ids = %q, want %q", ids, tc.ids)
+			}
+		})
+	}
+}
+
+// TestSecretsKey checks that the key follows the scope and the named
+// secrets' values, and nothing else.
+func TestSecretsKey(t *testing.T) {
+	vars := map[string]string{"TOKEN": "a", "OTHER": "b"}
+	base := secretsKey("p1_e1", vars, []string{"TOKEN"})
+	if secretsKey("p1_e1", map[string]string{"TOKEN": "a", "OTHER": "changed"}, []string{"TOKEN"}) != base {
+		t.Error("a variable no step mounts changed the key")
+	}
+	for name, k := range map[string]string{
+		"another scope":  secretsKey("p1_e2", vars, []string{"TOKEN"}),
+		"another value":  secretsKey("p1_e1", map[string]string{"TOKEN": "c"}, []string{"TOKEN"}),
+		"value unset":    secretsKey("p1_e1", map[string]string{}, []string{"TOKEN"}),
+		"name and value": secretsKey("p1_e1", map[string]string{"TOKE": "Na"}, []string{"TOKE"}),
+	} {
+		if k == base {
+			t.Errorf("%s gave the same key", name)
+		}
 	}
 }
 

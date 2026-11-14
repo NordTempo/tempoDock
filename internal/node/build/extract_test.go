@@ -191,7 +191,7 @@ func TestDockerfileMustResolveInsideSource(t *testing.T) {
 	if err := os.Symlink("../host", filepath.Join(src, "l")); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := dockerfileOpt(src, "l/Dockerfile", nil, "ns", io.Discard); err == nil {
+	if _, _, err := dockerfileOpt(t.TempDir(), src, "l/Dockerfile", nil, "ns", io.Discard); err == nil {
 		t.Fatal("expected an error for a Dockerfile outside the source")
 	}
 }

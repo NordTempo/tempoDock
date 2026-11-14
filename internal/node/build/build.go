@@ -49,17 +49,22 @@
 // as build args, since many Dockerfiles rely on ARG for settings like
 // NODE_ENV or public URLs. ARG values are visible in the image history
 // (`docker history`) of every RUN step that sees them, so secrets should be
-// consumed with secret mounts, never declared as ARG. Changing a secret
-// doesn't invalidate cached Dockerfile layers that read it; Railpack builds
-// rebuild when any variable changes.
+// consumed with secret mounts, never declared as ARG.
 //
 // # Cache isolation
 //
+// Builds of every project and org share the builder's cache, and
+// BuildRequest.CacheScope keeps them apart where content alone doesn't.
 // Cache mounts (RUN --mount=type=cache, Railpack's caches) are mutable
-// state shared across builds on the builder. Each build's cache IDs are
-// prefixed with BuildRequest.CacheScope, so a build in one project and
-// environment can't read or poison another's caches. Layer cache is
-// content-addressed and needs no namespacing.
+// state: each build's cache IDs are prefixed with the scope, so a build
+// in one project and environment can't read or poison another's caches.
+// Layers are content-addressed, but BuildKit leaves secret values out of
+// a step's cache key: two builds with the same base, files and a RUN line
+// that mounts a secret would share the layer whatever their secrets. So
+// those steps are keyed by a hash of the scope and the secrets' values
+// (secretsKey): a Dockerfile gets it as an added ARG (keySecretSteps),
+// Railpack as its secrets-hash. Changing a secret rebuilds the steps
+// that mount it (in Railpack, any variable rebuilds every step).
 //
 // # Network
 //
@@ -297,7 +302,7 @@ func solveOpt(ctx context.Context, dir, src string, req node.BuildRequest, logs 
 		}
 	}
 	if dockerfile != "" {
-		return dockerfileOpt(src, dockerfile, req.BuildArgs, ns, logs)
+		return dockerfileOpt(dir, src, dockerfile, req.BuildArgs, ns, logs)
 	}
 	opt, err := railpackOpt(ctx, dir, src, req, ns, logs)
 	return opt, "", err
