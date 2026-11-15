@@ -38,7 +38,7 @@ import {
   servesCopyOf,
   shortImage,
 } from "../features/service/releases";
-import { deploySteps, StepTable } from "../features/service/Steps";
+import { ReleaseSteps } from "../features/service/Steps";
 import { useShortcuts } from "../shell/keys";
 import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
@@ -407,12 +407,10 @@ function ReleasePage() {
       <section aria-labelledby="steps" className="flex flex-col gap-2">
         <SectionHead id="steps">{failed ? "What failed" : "Steps"}</SectionHead>
         {/* What served when it ran, not what serves now. */}
-        <StepTable
-          steps={deploySteps(
-            release,
-            previous?.number ?? null,
-            service.stateful,
-          )}
+        <ReleaseSteps
+          release={release}
+          serving={previous?.number ?? null}
+          stateful={service.stateful}
         />
       </section>
 

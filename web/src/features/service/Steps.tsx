@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import type { Release } from "../../data/types";
+import { useNow } from "../../ui/clock";
 import { elapsed } from "../../ui/format";
 import { Glyph } from "../../ui/kit";
+import { inFlight } from "../../ui/status";
 import { errorSummary } from "./releases";
 
 type StepState = "done" | "running" | "failed" | "pending" | "skipped";
@@ -31,15 +33,17 @@ const at = (r: Release, pattern: RegExp) => {
 /**
  * A release's deploy steps (build, start, health check, cutover) with
  * timings from its progress events. `serving` is the release that keeps
- * traffic until cutover.
+ * traffic until cutover. `now` ends the running step's time (see
+ * `ReleaseSteps`); finished steps use the server's timestamps only.
  */
 export function deploySteps(
   r: Release,
   serving: number | null,
   stateful: boolean,
+  now: number,
 ): Step[] {
   const created = Date.parse(r.created_at);
-  const end = r.finished_at ? Date.parse(r.finished_at) : Date.now();
+  const end = r.finished_at ? Date.parse(r.finished_at) : now;
   const build = at(r, /^(Building|Pulling|Waiting for another build)/);
   const built = at(r, /^Built /);
   const started = at(r, /^Started container /);
@@ -208,4 +212,21 @@ export function StepTable({ steps }: { steps: Step[] }) {
       </div>
     </div>
   );
+}
+
+/**
+ * A release's step table whose running step counts live: only this
+ * component re-renders on the clock's tick, not the page around it.
+ */
+export function ReleaseSteps({
+  release,
+  serving,
+  stateful,
+}: {
+  release: Release;
+  serving: number | null;
+  stateful: boolean;
+}) {
+  const now = useNow(inFlight(release.status));
+  return <StepTable steps={deploySteps(release, serving, stateful, now)} />;
 }
