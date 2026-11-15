@@ -1554,7 +1554,7 @@ export interface paths {
         put?: never;
         /**
          * Get the GitHub App's install link for an org
-         * @description Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and assigns it to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any.
+         * @description Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.
          */
         post: operations["install-github-app"];
         delete?: never;
@@ -14689,9 +14689,7 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: {
-                dock_login?: string;
-            };
+            cookie?: never;
         };
         requestBody: {
             content: {
@@ -14773,9 +14771,7 @@ export interface operations {
             };
             header?: never;
             path?: never;
-            cookie?: {
-                dock_session?: string;
-            };
+            cookie?: never;
         };
         requestBody?: never;
         responses: {
@@ -14825,15 +14821,6 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14967,9 +14954,7 @@ export interface operations {
                 Origin?: string;
             };
             path?: never;
-            cookie?: {
-                dock_login?: string;
-            };
+            cookie?: never;
         };
         requestBody: {
             content: {
@@ -15236,9 +15221,7 @@ export interface operations {
             };
             header?: never;
             path?: never;
-            cookie?: {
-                dock_sso?: string;
-            };
+            cookie?: never;
         };
         requestBody?: never;
         responses: {

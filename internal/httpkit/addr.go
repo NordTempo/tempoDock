@@ -41,3 +41,22 @@ func IsInternalAddr(ip netip.Addr) bool {
 	ip = ip.Unmap()
 	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip == awsMetadataV6 || ip == alibabaMetadata
 }
+
+// ClientKey is what per-client limits count a client IP as: an IPv4
+// address (IPv4-mapped IPv6 too) as itself, an IPv6 address as its /64,
+// which one subscriber usually holds whole and can pick any address in.
+// A value that isn't an IP is its own key.
+func ClientKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	if a = a.Unmap(); a.Is4() {
+		return a.String()
+	}
+	p, err := a.WithZone("").Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
+}

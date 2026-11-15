@@ -105,14 +105,68 @@ func TestSSOSignsInAnExistingAccount(t *testing.T) {
 	if h.audited("user.sso_link") != 1 || h.audited("user.login") != 2 {
 		t.Fatal("link and sign-ins not audited")
 	}
+	// An operator made her account, so its email counts as proven: linking
+	// leaves her password working.
+	if _, err := h.c.Login(h.ctx, adaEmail, "a long enough password", testClient); err != nil {
+		t.Fatalf("password after linking: %v", err)
+	}
 	// A step-up without a Dock second factor signs in through it again.
 	wantCode(t, "reauth", h.c.Reauth(h.ctx, s.a, apitypes.Verification{Password: "x"}, testClient), apitypes.CodeSSORequired)
 	// Removing the provider ends the sessions that came through it.
 	if err := h.c.DeleteSSOProvider(h.ctx, testSystem, "corp"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, ""); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("session outlived its provider: %v", err)
+	}
+}
+
+// An account made from an invite never proved its email: whoever held
+// the invite code chose its password. The email's owner signing in
+// through a provider takes it over, and that person's ways in end.
+func TestSSOTakesOverAnUnprovenAccount(t *testing.T) {
+	h, idp := ssoHarness(t)
+	admin := h.in(h.member("ann@x", map[string]apitypes.Scope{"test": apitypes.ScopeAdmin}), "test")
+	inv, err := h.c.CreateInvite(h.ctx, admin, apitypes.CreateInviteRequest{Email: "vic@example.com", Role: apitypes.ScopeAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The inviter opens the link themselves and digs in.
+	res, err := h.c.SignUpWithInvite(h.ctx, inv.Code, apitypes.InviteSignUpRequest{Name: "Vic", Password: "the inviter's password"}, testClient)
+	if err != nil {
+		t.Fatal(err)
+	}
+	squat := session(t, h, res.Secret)
+	addTOTP(t, h, squat)
+	squat = session(t, h, squat.secret)
+	tok, err := h.c.CreateToken(h.ctx, h.in(squat.a, "test"), apitypes.CreateTokenRequest{Name: "kept", Scope: apitypes.ScopeDeploy})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Vic signs in through corp: no second factor to give, Vic's account.
+	s := h.ssoSession(idp, "vic-sub", "vic@example.com")
+	if s.a.UserID != squat.a.UserID || s.a.OrgSlug != "test" || s.a.Scope != apitypes.ScopeAdmin {
+		t.Fatalf("actor = %+v", s.a)
+	}
+	if _, err := h.c.AuthenticateSession(h.ctx, squat.secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
+		t.Fatalf("the inviter's session: %v", err)
+	}
+	if _, err := h.c.AuthenticateToken(h.ctx, tok.Secret, ""); err == nil {
+		t.Fatal("the inviter's token still works")
+	}
+	if _, err := h.c.Login(h.ctx, "vic@example.com", "the inviter's password", testClient); err == nil {
+		t.Fatal("the inviter's password still works")
+	}
+	if n, err := h.store.CountUserFactors(h.ctx, s.a.UserID); err != nil || n != 0 {
+		t.Fatalf("second factors left: %d, %v", n, err)
+	}
+	if h.audited("user.sso_takeover") != 1 || h.audited("user.sso_link") != 0 {
+		t.Fatalf("audited takeover %d, link %d", h.audited("user.sso_takeover"), h.audited("user.sso_link"))
+	}
+	// Proven now: the next sign-in finds the linked identity.
+	if again := h.ssoSession(idp, "vic-sub", "vic@example.com"); again.a.UserID != s.a.UserID || h.audited("user.sso_takeover") != 1 {
+		t.Fatalf("second sign-in: %+v", again.a)
 	}
 }
 

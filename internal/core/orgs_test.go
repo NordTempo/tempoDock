@@ -16,7 +16,7 @@ import (
 // authentication first sees them.
 func (h *harness) member(email string, orgs map[string]apitypes.Scope) Actor {
 	h.t.Helper()
-	u, err := h.store.CreateUser(h.ctx, store.CreateUserParams{Email: email, Name: email, PasswordHash: "x"})
+	u, err := h.store.CreateUser(h.ctx, store.CreateUserParams{Email: email, Name: email, PasswordHash: "x", EmailProven: true})
 	if err != nil {
 		h.t.Fatal(err)
 	}

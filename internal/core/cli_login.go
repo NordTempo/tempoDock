@@ -121,7 +121,7 @@ var (
 // in, since only it knows the server's address.
 func (c *Core) StartCLILogin(ctx context.Context, req apitypes.CLILoginStartRequest, clientIP string) (apitypes.CLILoginStart, error) {
 	t := now()
-	if !c.cliLogins.starts.Allow("ip:"+clientIP, t) {
+	if !c.cliLogins.starts.Allow("ip:"+httpkit.ClientKey(clientIP), t) {
 		return apitypes.CLILoginStart{}, errf(apitypes.CodeRateLimited, "too many logins started from %s; wait a minute and try again", clientIP)
 	}
 	if err := c.store.DeleteExpiredCLILogins(ctx, t); err != nil {
@@ -357,7 +357,7 @@ func (c *Core) cliLoginFor(ctx context.Context, a Actor, userCode, clientIP stri
 		return store.CliLogin{}, errf(apitypes.CodeForbidden, "only a signed-in user can approve a CLI login, not %s", a)
 	}
 	t := now()
-	keys := []string{"user:" + strconv.FormatInt(a.UserID, 10), "ip:" + clientIP}
+	keys := []string{"user:" + strconv.FormatInt(a.UserID, 10), "ip:" + httpkit.ClientKey(clientIP)}
 	for _, k := range keys {
 		if c.cliLogins.fails.Exhausted(k, t) {
 			return store.CliLogin{}, errf(apitypes.CodeRateLimited, "too many wrong login codes; wait a few minutes and try again")

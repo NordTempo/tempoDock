@@ -161,8 +161,10 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 }
 
 // AuthenticateSession resolves a UI session cookie to an actor in org (a
-// slug; "" for the user's only org).
-func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Actor, error) {
+// slug; "" for the user's only org). legacy says the secret came under
+// the cookie's bare name over HTTPS, which only sessions from before the
+// __Host- prefix may (sessions.legacy_cookie, internal/api's cookies.go).
+func (c *Core) AuthenticateSession(ctx context.Context, secret, org string, legacy bool) (Actor, error) {
 	if !strings.HasPrefix(secret, sessionPrefix) {
 		return Actor{}, errUnauthenticated
 	}
@@ -174,7 +176,7 @@ func (c *Core) AuthenticateSession(ctx context.Context, secret, org string) (Act
 		return Actor{}, err
 	}
 	s := row.Session
-	if s.Pending || now().After(s.ExpiresAt) || row.User.DisabledAt != nil {
+	if s.Pending || now().After(s.ExpiresAt) || row.User.DisabledAt != nil || legacy && !s.LegacyCookie {
 		return Actor{}, errUnauthenticated
 	}
 	a := userActor(row.User)
@@ -934,6 +936,7 @@ func operatorRole(operator bool) *string {
 }
 
 // createUser creates a user and makes them a member of org with req.Role.
+// The operator who makes it vouches for its email (email_proven).
 func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, orgID int64) (store.User, error) {
 	if !strings.Contains(req.Email, "@") {
 		return store.User{}, invalid("email %q is not valid", req.Email)
@@ -951,7 +954,7 @@ func (c *Core) createUser(ctx context.Context, req apitypes.CreateUserRequest, o
 	var u store.User
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), PlatformRole: operatorRole(req.Operator)}); err != nil {
+		if u, err = q.CreateUser(ctx, store.CreateUserParams{Email: req.Email, Name: req.Name, PasswordHash: string(hash), PlatformRole: operatorRole(req.Operator), EmailProven: true}); err != nil {
 			return err
 		}
 		return joinOrgMember(ctx, q, orgID, u.ID, req.Role)

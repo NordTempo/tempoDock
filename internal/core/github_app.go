@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -31,20 +32,25 @@ import (
 //
 // The links into GitHub carry a state: 256 random bits, issued to an
 // operator (or an org's admin, for that org's install), single use,
-// valid for githubFlowTTL. The state is the authority for GitHub's
-// redirect back, which therefore needs no session and works when the
-// flow was started from the CLI. It vouches for the org, never for the
-// installation ID next to it: an App with its OAuth client sends the
-// browser on to GitHub's authorize page and claims the installation only
-// if the person's token can access it (ADR 0066, github_app_verify.go).
+// valid for GitHubFlowTTL. For the manifest the state is the authority
+// for GitHub's redirect back. An install link is a person's: it opens
+// Dock's start page, which needs that person's session and binds the
+// flow to the browser with a cookie (BindGitHubInstall), so a link sent
+// to someone else installs nothing for the org. Every later step checks
+// the cookie. The state vouches for the org, never for the installation
+// ID next to it: an App with its OAuth client sends the browser on to
+// GitHub's authorize page and claims the installation only if the
+// person's token can access it (ADR 0066, github_app_verify.go), after
+// the person confirms the org on Dock's page.
 
 const (
 	// githubWeb is GitHub's web origin, where Apps are registered and
 	// installed.
 	githubWeb = "https://github.com"
-	// githubFlowTTL is how long a manifest or install link stays usable;
-	// GitHub's manifest codes also expire after an hour.
-	githubFlowTTL = time.Hour
+	// GitHubFlowTTL is how long a manifest or install link stays usable,
+	// and the API's install binding cookie lasts; GitHub's manifest codes
+	// also expire after an hour.
+	GitHubFlowTTL = time.Hour
 	// maxGitHubFlows bounds the links waiting for GitHub's redirect.
 	maxGitHubFlows = 16
 	// tokenRenewal is how early an installation token is renewed before
@@ -54,14 +60,21 @@ const (
 	maxGitHubRepos = 1000
 )
 
-// Paths of GitHub's redirects back to Dock, served by the API without a
-// session (the state is their authority).
+// Paths of the pages GitHub's flows pass through, served by the API
+// outside Huma: GitHub's redirects back to Dock, and the install's start
+// and confirm pages.
 const (
 	GitHubAppCallbackPath     = "/api/v1/github/app/callback"
 	GitHubInstallCallbackPath = "/api/v1/github/install/callback"
 	// GitHubUserCallbackPath is the App's OAuth callback, where the
 	// installer comes back from GitHub's authorize page (ADR 0066).
 	GitHubUserCallbackPath = "/api/v1/github/user/callback"
+	// GitHubInstallStartPath is where an install link opens: it binds
+	// the flow to the browser and goes on to GitHub.
+	GitHubInstallStartPath = "/api/v1/github/install/start"
+	// GitHubInstallConfirmPath takes the confirm page's form: the person
+	// assigns the installation to the org.
+	GitHubInstallConfirmPath = "/api/v1/github/install/confirm"
 )
 
 // githubAppState is the App's in-memory state: links waiting for GitHub
@@ -80,6 +93,7 @@ const (
 	flowManifest githubFlowKind = iota // registering the App
 	flowInstall                        // installing it for an org
 	flowVerify                         // checking who installed it (ADR 0066)
+	flowConfirm                        // waiting for the person to confirm the org
 )
 
 // githubFlow is a link into GitHub waiting for its redirect back.
@@ -92,14 +106,30 @@ type githubFlow struct {
 	owner  string
 	hookID string
 	public bool
-	org    store.Org // install, verify: the org it is for
+	org    store.Org // install, verify, confirm: the org it is for
+	// binding is the SHA-256 of the install's browser binding cookie,
+	// set when the start page opens (BindGitHubInstall); "" until then.
+	binding string
 	// installation, verifier and redirect are a verify link's: the
 	// installation to claim, its PKCE verifier and the redirect URL the
-	// code is bound to.
+	// code is bound to. account is the installation's GitHub account, for
+	// the confirm page.
 	installation int64
 	verifier     string
 	redirect     string
+	account      string
 	expires      time.Time
+}
+
+// boundTo reports whether binding is the browser binding of f.
+func (f githubFlow) boundTo(binding string) bool {
+	return f.binding != "" && subtle.ConstantTimeCompare([]byte(hashSecret(binding)), []byte(f.binding)) == 1
+}
+
+// errGitHubUnbound refuses a step of an install from a browser other
+// than the one that opened the install link.
+func errGitHubUnbound() error {
+	return errf(apitypes.CodeUnauthorized, "this install was started in another browser, or its cookie was lost; start again from Dock with `dock github install`, in the browser you are signed in to Dock with")
 }
 
 type installToken struct {
@@ -132,7 +162,7 @@ func (s *githubAppState) startFlow(f githubFlow) string {
 		delete(s.flows, oldest)
 	}
 	state := randomHex(32)
-	f.expires = t.Add(githubFlowTTL)
+	f.expires = t.Add(GitHubFlowTTL)
 	s.flows[state] = f
 	return state
 }
@@ -154,6 +184,28 @@ func (s *githubAppState) flow(state string, kind githubFlowKind, take bool) (git
 		delete(s.flows, state)
 	}
 	return f, nil
+}
+
+// bind binds the install link state to a browser for user userID, the
+// person who started it, and returns the binding for its cookie. Opening
+// the link again (the same person) binds the newer browser instead.
+func (s *githubAppState) bind(state string, userID int64) (string, error) {
+	if _, err := s.flow(state, flowInstall, false); err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.flows[state]
+	if !ok {
+		return "", errf(apitypes.CodeUnauthorized, "this link was just used; start again with `dock github install <org>`")
+	}
+	if userID == 0 || f.actor.UserID != userID {
+		return "", errf(apitypes.CodeForbidden, "this install link is someone else's: only the person who asked Dock for it can use it. Sign in to Dock as yourself and run `dock github install`, or install the App on GitHub and ask an operator to assign it (`dock github assign`)")
+	}
+	binding, hash := newSecret("")
+	f.binding = hash
+	s.flows[state] = f
+	return binding, nil
 }
 
 // forgetTokens drops cached installation tokens: all of them (id 0) when
@@ -496,14 +548,21 @@ func (c *Core) RemoveGitHubApp(ctx context.Context, a Actor) error {
 	return nil
 }
 
-// StartGitHubInstall returns the App's install link on GitHub for an org:
-// GitHub's redirect back (CompleteGitHubInstall) assigns the installation
-// to it. An org's unlimited admins install it for their own org (req.Org
-// empty or theirs); operators for any.
-func (c *Core) StartGitHubInstall(ctx context.Context, a Actor, req apitypes.GitHubOrgRequest) (apitypes.GitHubLink, error) {
+// StartGitHubInstall returns the install link for an org: Dock's start
+// page at origin (or Dock's public address), which only a's person may
+// open (BindGitHubInstall) and which goes on to the App's install page on
+// GitHub. GitHub's redirect back (CompleteGitHubInstall) then leads to
+// assigning the installation to the org. An org's unlimited admins
+// install it for their own org (req.Org empty or theirs); operators for
+// any. A person's credential only: a token of no one's has no browser to
+// finish in.
+func (c *Core) StartGitHubInstall(ctx context.Context, a Actor, req apitypes.GitHubOrgRequest, origin string) (apitypes.GitHubLink, error) {
 	org, err := c.installOrg(ctx, a, strings.TrimSpace(req.Org))
 	if err != nil {
 		return apitypes.GitHubLink{}, err
+	}
+	if a.UserID == 0 {
+		return apitypes.GitHubLink{}, invalid("the GitHub App is installed by a person, who finishes in the browser they are signed in to Dock with; run `dock login`, then `dock github install`")
 	}
 	app, err := c.githubApp(ctx)
 	if err != nil {
@@ -513,7 +572,24 @@ func (c *Core) StartGitHubInstall(ctx context.Context, a Actor, req apitypes.Git
 		return apitypes.GitHubLink{}, errNoAppClient()
 	}
 	state := c.git.app.startFlow(githubFlow{kind: flowInstall, actor: a, org: org})
-	return apitypes.GitHubLink{URL: app.HtmlUrl + "/installations/new?state=" + url.QueryEscape(state)}, nil
+	return apitypes.GitHubLink{URL: cmp.Or(c.publicURL(), origin) + GitHubInstallStartPath + "?state=" + url.QueryEscape(state)}, nil
+}
+
+// BindGitHubInstall opens an install link for a, the session of the
+// browser it was opened in: if a is the person who asked for the link,
+// it binds the flow to that browser and returns GitHub's install page to
+// go on to, and the binding for the browser's cookie. Someone else's
+// link is refused, so a link sent to a GitHub account's owner can't
+// install their account for the sender's org.
+func (c *Core) BindGitHubInstall(ctx context.Context, a Actor, state string) (redirect, binding string, err error) {
+	app, err := c.githubApp(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if binding, err = c.git.app.bind(state, a.UserID); err != nil {
+		return "", "", err
+	}
+	return app.HtmlUrl + "/installations/new?state=" + url.QueryEscape(state), binding, nil
 }
 
 // installOrg is the org an install link is for: the named one for an

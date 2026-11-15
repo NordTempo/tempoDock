@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -17,6 +18,19 @@ import (
 
 // githubAppNewPath is the page that posts the App's manifest to GitHub.
 const githubAppNewPath = Prefix + "/github/app/new"
+
+// installInput asks for an install link, which opens on the Dock origin
+// the caller reached.
+type installInput struct {
+	Body   apitypes.GitHubOrgRequest
+	origin string
+}
+
+// Resolve records the origin the request came to.
+func (in *installInput) Resolve(ctx huma.Context) []error {
+	in.origin = clientOf(ctx).origin(ctx.Host())
+	return nil
+}
 
 // registerGitHub registers the install's GitHub App (ADR 0031): operators
 // create it, install it and assign installations to orgs; an org's admins
@@ -70,10 +84,10 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	authed(s, a, huma.Operation{
 		OperationID: "install-github-app", Method: http.MethodPost, Path: Prefix + "/github/installations",
 		Summary: "Get the GitHub App's install link for an org", Tags: tags,
-		Description: "Returns the App's install page on GitHub, valid for an hour. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and assigns it to the org, unless another org has it. " +
-			"Organization admins for their own organization (org empty or theirs); operators for any.",
-	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.GitHubOrgRequest }) (*out[apitypes.GitHubLink], error) {
-		return reply(s.core.StartGitHubInstall(ctx, actor, in.Body))
+		Description: "Returns the install link, valid for an hour: a page on Dock that only the caller, signed in to Dock in that browser, can open, and which goes on to the App's install page on GitHub. Once it is installed, GitHub sends the browser back to Dock, which checks with GitHub that the person can access the installation and, once they confirm, assigns it to the org, unless another org has it. " +
+			"Organization admins for their own organization (org empty or theirs); operators for any. A person's credential: a UI session or a `dock login` token.",
+	}, func(ctx context.Context, actor core.Actor, in *installInput) (*out[apitypes.GitHubLink], error) {
+		return reply(s.core.StartGitHubInstall(ctx, actor, in.Body, in.origin))
 	})
 	authed(s, a, huma.Operation{
 		OperationID: "assign-github-installation", Method: http.MethodPut, Path: Prefix + "/github/installations/{id}",
@@ -125,9 +139,20 @@ func registerGitHub(s *Server, a huma.API, mux *http.ServeMux) {
 	githubPages(s.core, s.opts.Logger, mux)
 }
 
-// githubPageCSP lets the manifest page post its form to GitHub, and
-// nothing else: no scripts, no loads.
-const githubPageCSP = "default-src 'none'; style-src 'unsafe-inline'; form-action https://github.com; frame-ancestors 'none'; base-uri 'none'"
+// githubPageCSP lets the manifest page post its form to GitHub and the
+// confirm page to Dock, and nothing else: no scripts, no loads.
+const githubPageCSP = "default-src 'none'; style-src 'unsafe-inline'; form-action https://github.com 'self'; frame-ancestors 'none'; base-uri 'none'"
+
+// githubCookie binds a GitHub App install in flight to the browser of the
+// person who opened its link (core.BindGitHubInstall). SameSite=Lax:
+// GitHub sends the browser back with a cross-site top-level GET.
+const githubCookie = "dock_github"
+
+// githubCookie sets (value) or clears ("") the install binding cookie,
+// sent only to the GitHub pages over plain HTTP.
+func (c client) githubCookie(value string) http.Cookie {
+	return c.cookie(githubCookie, value, Prefix+"/github", time.Now().Add(core.GitHubFlowTTL), http.SameSiteLaxMode)
+}
 
 // githubPage is the HTML of the pages GitHub's flow passes through: a
 // title, a message, and either the manifest form or a link onward.
@@ -138,25 +163,31 @@ var githubPage = template.Must(template.New("github").Parse(`<!doctype html>
 h1{font-size:18px;margin:0 0 8px}p{color:#ddd}code{font-family:ui-monospace,Menlo,monospace;font-size:13px}a{color:#cfe0ff}
 button{background:#fff;color:#000;border:0;padding:4px 12px;font:inherit;cursor:pointer}</style></head>
 <body><main><h1>{{.Title}}</h1><p>{{.Message}}</p>
-{{if .Action}}<form method="post" action="{{.Action}}"><input type="hidden" name="manifest" value="{{.Manifest}}"><button type="submit">Continue to GitHub</button></form>{{end}}
+{{if .Action}}<form method="post" action="{{.Action}}">{{range $k, $v := .Fields}}<input type="hidden" name="{{$k}}" value="{{$v}}">{{end}}<button type="submit">{{.Button}}</button></form>{{end}}
 {{if .Link}}<p><a href="{{.Link}}">{{.LinkText}}</a></p>{{end}}
 </main></body></html>`))
 
-// githubPageData fills githubPage.
+// githubPageData fills githubPage: a form posts Fields to Action with a
+// Button.
 type githubPageData struct {
-	Title, Message   string
-	Action, Manifest string
-	Link, LinkText   string
+	Title, Message string
+	Action, Button string
+	Fields         map[string]string
+	Link, LinkText string
 }
 
-// githubPages serves the plain pages of the GitHub App's flows. They need
-// no session: each carries the state Dock issued to an operator, which is
-// single use (core.CompleteGitHubApp).
+// githubPages serves the plain pages of the GitHub App's flows. Each
+// carries a single-use state Dock issued. The manifest's state is its
+// authority; an install's start page needs the session of the person
+// who asked for the link and binds the browser with githubCookie, which
+// every later step checks (core.BindGitHubInstall).
 //
-//	GET /api/v1/github/app/new?state=          posts the manifest to GitHub
-//	GET /api/v1/github/app/callback?code&state  GitHub's redirect: store the App
-//	GET /api/v1/github/install/callback?…       GitHub's redirect after install
-//	GET /api/v1/github/user/callback?code&state GitHub's redirect after authorizing: check and assign
+//	GET  /api/v1/github/app/new?state=          posts the manifest to GitHub
+//	GET  /api/v1/github/app/callback?code&state  GitHub's redirect: store the App
+//	GET  /api/v1/github/install/start?state=     binds the browser, on to GitHub's install page
+//	GET  /api/v1/github/install/callback?…       GitHub's redirect after install
+//	GET  /api/v1/github/user/callback?code&state GitHub's redirect after authorizing: check, ask to confirm
+//	POST /api/v1/github/install/confirm          the confirm form: assign
 func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 	render := func(w http.ResponseWriter, status int, d githubPageData) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -184,7 +215,7 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 		render(w, http.StatusOK, githubPageData{
 			Title:   "Create Dock's GitHub App",
 			Message: "GitHub asks you to confirm the App's name, then sends you back here. The App can read code and post commit statuses, and receives pushes.",
-			Action:  action, Manifest: string(manifest),
+			Action:  action, Button: "Continue to GitHub", Fields: map[string]string{"manifest": string(manifest)},
 		})
 	})
 	mux.HandleFunc("GET "+core.GitHubAppCallbackPath, func(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +231,47 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 			Link:    "/console", LinkText: "Back to Dock",
 		})
 	})
+	// step answers an install step: on to GitHub, the confirm page, or
+	// what happened.
+	step := func(w http.ResponseWriter, r *http.Request, st core.GitHubInstallStep) {
+		switch {
+		case st.Redirect != "":
+			http.Redirect(w, r, st.Redirect, http.StatusFound)
+		case st.Confirm != nil:
+			render(w, http.StatusOK, githubPageData{
+				Title:   "Assign to org " + st.Confirm.Org + "?",
+				Message: "Org " + st.Confirm.Org + " will deploy from " + st.Confirm.Account + "'s repositories through the GitHub App, and its members can read them.",
+				Action:  core.GitHubInstallConfirmPath, Button: "Assign to org " + st.Confirm.Org, Fields: map[string]string{"state": st.Confirm.State},
+				Link: "/", LinkText: "Cancel",
+			})
+		default:
+			render(w, http.StatusOK, githubPageData{Title: "GitHub App installed", Message: st.Message, Link: "/", LinkText: "Back to Dock"})
+		}
+	}
+	mux.HandleFunc("GET "+core.GitHubInstallStartPath, func(w http.ResponseWriter, r *http.Request) {
+		cl := requestClient(r)
+		secret, legacy := cl.session(r.Cookie)
+		if secret == "" {
+			render(w, http.StatusUnauthorized, githubPageData{
+				Title: "Sign in to Dock", Message: "This install link works in the browser you are signed in to Dock with. Sign in here, then open the link again.",
+				Link: "/login", LinkText: "Sign in",
+			})
+			return
+		}
+		a, err := c.AuthenticateSession(r.Context(), secret, "", legacy)
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		to, binding, err := c.BindGitHubInstall(r.Context(), a, r.URL.Query().Get("state"))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		ck := cl.githubCookie(binding)
+		http.SetCookie(w, &ck)
+		http.Redirect(w, r, to, http.StatusFound)
+	})
 	mux.HandleFunc("GET "+core.GitHubInstallCallbackPath, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		id, _ := strconv.ParseInt(q.Get("installation_id"), 10, 64)
@@ -213,24 +285,33 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 			})
 			return
 		}
-		step, err := c.CompleteGitHubInstall(r.Context(), id, q.Get("setup_action"), q.Get("state"), requestOrigin(r))
+		cl := requestClient(r)
+		st, err := c.CompleteGitHubInstall(r.Context(), id, q.Get("setup_action"), q.Get("state"), cl.read(r.Cookie, githubCookie), requestOrigin(r))
 		if err != nil {
 			fail(w, err)
 			return
 		}
-		if step.Redirect != "" {
-			http.Redirect(w, r, step.Redirect, http.StatusFound)
-			return
-		}
-		render(w, http.StatusOK, githubPageData{Title: "GitHub App installed", Message: step.Message, Link: "/", LinkText: "Back to Dock"})
+		step(w, r, st)
 	})
 	mux.HandleFunc("GET "+core.GitHubUserCallbackPath, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		msg, err := c.CompleteGitHubVerify(r.Context(), q.Get("code"), q.Get("state"))
+		st, err := c.CompleteGitHubVerify(r.Context(), q.Get("code"), q.Get("state"), requestClient(r).read(r.Cookie, githubCookie))
 		if err != nil {
 			fail(w, err)
 			return
 		}
+		step(w, r, st)
+	})
+	mux.HandleFunc("POST "+core.GitHubInstallConfirmPath, func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+		cl := requestClient(r)
+		msg, err := c.ConfirmGitHubInstall(r.Context(), r.PostFormValue("state"), cl.read(r.Cookie, githubCookie))
+		if err != nil {
+			fail(w, err)
+			return
+		}
+		ck := cl.githubCookie("")
+		http.SetCookie(w, &ck)
 		render(w, http.StatusOK, githubPageData{Title: "GitHub App installed", Message: msg, Link: "/", LinkText: "Back to Dock"})
 	})
 }
@@ -238,9 +319,5 @@ func githubPages(c *core.Core, log *slog.Logger, mux *http.ServeMux) {
 // requestOrigin is the scheme and host the browser used to reach Dock:
 // https when Caddy forwarded it (Dock's public address), else plain.
 func requestOrigin(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-	return scheme + "://" + r.Host
+	return requestClient(r).origin(r.Host)
 }

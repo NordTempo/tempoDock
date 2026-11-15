@@ -687,11 +687,14 @@ The App is private by default: only the GitHub account that owns it
 --public`, any GitHub account can, so each org deploys from its own
 ([ADR 0066](../decisions/0066-github-apps-for-many-orgs.md)). Each
 installation is assigned to one org, and only that org's services can
-read its repositories. After an install, GitHub sends the browser back to
-Dock, then on to GitHub's authorize page for the App: Dock assigns the
-installation to the org in the link only if GitHub says the person can
-access it. Org admins install it for their own org with `dock github
-install`. Installations made on GitHub directly are assigned by an
+read its repositories. An install link is yours alone: it opens in the
+browser you are signed in to Dock with, so sending it to someone else
+installs nothing. After an install, GitHub sends the browser back to
+Dock, then on to GitHub's authorize page for the App: if GitHub says you
+can access the installation, Dock asks you to confirm the org and then
+assigns it. Org admins install it for their own org with `dock github
+install`. When someone else owns the GitHub account, they install the
+App on GitHub and an operator assigns it. Installations made on GitHub directly are assigned by an
 operator with `dock github assign <id> <org>`.
 
 An App made before Dock kept its client secret (ADR 0066), so only

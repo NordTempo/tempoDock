@@ -76,3 +76,28 @@ disabled or deleted by an operator like any other.
   always "open"; dead links are 404s with their reason.
 - The sign-in page's note for invite links changes from "ask the admin who
   invited you" to pointing back at the invite to create the account.
+
+## Amendment (2026-11-15): a sign-up doesn't prove the email
+
+"Whoever holds the code is the person the link was sent to" holds for
+joining the org, not for owning the email: the admin who made the invite
+holds the code too. Single sign-on later linked an identity to an account
+by its verified email ([0058](0058-sso-oidc.md)), so an inviter could sign
+up as `victim@corp.com`, set a password and a second factor, and wait for
+the real person's first single sign-on to land them in the inviter's
+account.
+
+- `users.email_proven` (migration 0111) records whether an account's
+  email is known to reach its owner. Accounts from before count as
+  proven, as do accounts an operator or a single sign-on makes, and an
+  emailed reset link proves one. An invite sign-up's isn't.
+- A single sign-on whose verified email names an unproven account takes
+  it over for the mailbox's owner (`core.takeOver`): its sessions,
+  `dock login` tokens and hand-made tokens end, its password becomes an
+  unknown random one, its second factors and recovery codes go, and the
+  identity is linked. The account keeps its orgs and roles: they were the
+  invite's for that email. Audited as `user.sso_takeover`.
+- Refusing the sign-on instead was simpler but left the real person
+  locked out of their own email's account until an operator stepped in;
+  the takeover gives them a working account and removes everything the
+  inviter set up.

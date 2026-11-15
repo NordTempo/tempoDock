@@ -397,7 +397,7 @@ func (c *Core) ReauthOptions(ctx context.Context, a Actor, origin string) (apity
 	if err != nil {
 		return apitypes.PasskeyChallenge{}, err
 	}
-	return c.beginPasskey(ctx, ceremonyReauth, origin, &u, a.SessionID)
+	return c.beginPasskey(ctx, ceremonyReauth, origin, "", &u, a.SessionID)
 }
 
 // Reauth confirms the caller is still the person who signed in, so the

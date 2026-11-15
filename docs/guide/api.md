@@ -23,7 +23,7 @@ The spec is also printed offline by `dock openapi` (hidden command).
 | Method | Header | Used by |
 |---|---|---|
 | API token | `Authorization: Bearer dock_...` | CLI, agents, CI, scripts |
-| Session cookie | `dock_session` (HttpOnly, SameSite=Lax), from `POST /api/v1/auth/login` | The web UI |
+| Session cookie | `__Host-dock_session` over HTTPS, `dock_session` over plain HTTP (HttpOnly, SameSite=Strict), from `POST /api/v1/auth/login` | The web UI |
 
 Every operation checks the caller's scope (`read` < `deploy` < `admin`) and
 project/environment limits. `GET /api/v1/me` shows who you are:

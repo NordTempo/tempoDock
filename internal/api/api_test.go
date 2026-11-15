@@ -25,6 +25,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/node/fake"
 	"github.com/NordTempo/tempoDock/internal/secrets"
+	"github.com/NordTempo/tempoDock/internal/store"
 	"github.com/NordTempo/tempoDock/internal/store/storetest"
 )
 
@@ -33,6 +34,7 @@ type fixture struct {
 	srv     *httptest.Server
 	core    *core.Core
 	rt      *fake.Runtime
+	store   *store.Store
 	dataDir string
 	tokens  map[string]string // name → secret
 }
@@ -62,7 +64,7 @@ func newFixture(t *testing.T) *fixture {
 		c.Close()
 		_ = st.Close()
 	})
-	f := &fixture{t: t, srv: srv, core: c, rt: rt, dataDir: dir, tokens: map[string]string{}}
+	f := &fixture{t: t, srv: srv, core: c, rt: rt, store: st, dataDir: dir, tokens: map[string]string{}}
 
 	for _, p := range []string{"shop", "blog"} {
 		if _, err := c.CreateProject(ctx, sys, apitypes.CreateProjectRequest{Name: p}); err != nil {

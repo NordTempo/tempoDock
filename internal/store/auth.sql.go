@@ -112,9 +112,9 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, name, password_hash, platform_role)
-VALUES (?, ?, ?, ?)
-RETURNING id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role
+INSERT INTO users (email, name, password_hash, platform_role, email_proven)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role, email_proven
 `
 
 type CreateUserParams struct {
@@ -122,14 +122,18 @@ type CreateUserParams struct {
 	Name         string
 	PasswordHash string
 	PlatformRole *string
+	EmailProven  bool
 }
 
+// CreateUser makes an account; email_proven says whether its email is
+// known to reach the person (an invite sign-up's isn't).
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUser,
 		arg.Email,
 		arg.Name,
 		arg.PasswordHash,
 		arg.PlatformRole,
+		arg.EmailProven,
 	)
 	var i User
 	err := row.Scan(
@@ -143,6 +147,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.FactorFailedAt,
 		&i.EmailRequests,
 		&i.PlatformRole,
+		&i.EmailProven,
 	)
 	return i, err
 }
@@ -199,7 +204,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sso_providers.name AS sso_name, sso_providers.label AS sso_label
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sessions.legacy_cookie, sso_providers.name AS sso_name, sso_providers.label AS sso_label
 FROM sessions JOIN users ON users.id = sessions.user_id
 LEFT JOIN sso_providers ON sso_providers.id = sessions.sso_provider_id
 WHERE sessions.hash = +?
@@ -228,6 +233,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.User.FactorFailedAt,
 		&i.User.EmailRequests,
 		&i.User.PlatformRole,
+		&i.User.EmailProven,
 		&i.Session.ID,
 		&i.Session.UserID,
 		&i.Session.Hash,
@@ -238,6 +244,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 		&i.Session.Attempts,
 		&i.Session.VerifiedAt,
 		&i.Session.SsoProviderID,
+		&i.Session.LegacyCookie,
 		&i.SsoName,
 		&i.SsoLabel,
 	)
@@ -380,7 +387,7 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role FROM users WHERE id = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role, email_proven FROM users WHERE id = +?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
@@ -397,12 +404,13 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 		&i.FactorFailedAt,
 		&i.EmailRequests,
 		&i.PlatformRole,
+		&i.EmailProven,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role FROM users WHERE email = +?
+SELECT id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role, email_proven FROM users WHERE email = +?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -419,12 +427,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.FactorFailedAt,
 		&i.EmailRequests,
 		&i.PlatformRole,
+		&i.EmailProven,
 	)
 	return i, err
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
-SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, org_members.role, org_members.expires_at,
+SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven, org_members.role, org_members.expires_at,
     CAST((SELECT count(*) FROM sessions WHERE sessions.user_id = users.id AND sessions.expires_at > +?1 AND NOT sessions.pending) AS INTEGER) AS sessions,
     CAST((SELECT count(*) FROM tokens WHERE tokens.user_id = users.id AND tokens.revoked_at IS NULL
         AND (tokens.expires_at IS NULL OR tokens.expires_at > +?1)) AS INTEGER) AS tokens,
@@ -472,6 +481,7 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 			&i.User.FactorFailedAt,
 			&i.User.EmailRequests,
 			&i.User.PlatformRole,
+			&i.User.EmailProven,
 			&i.Role,
 			&i.ExpiresAt,
 			&i.Sessions,
@@ -664,6 +674,20 @@ func (q *Queries) ListUserTokens(ctx context.Context, arg ListUserTokensParams) 
 	return items, nil
 }
 
+const proveUserEmail = `-- name: ProveUserEmail :execrows
+UPDATE users SET email_proven = 1 WHERE id = +? AND NOT email_proven
+`
+
+// ProveUserEmail records that the account's email reaches its owner; 1
+// row when it wasn't proven before.
+func (q *Queries) ProveUserEmail(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, proveUserEmail, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const revokeToken = `-- name: RevokeToken :exec
 UPDATE tokens SET revoked_at = ? WHERE id = +? AND revoked_at IS NULL
 `
@@ -693,6 +717,25 @@ type RevokeUserLoginTokensParams struct {
 // except token keep (0: none).
 func (q *Queries) RevokeUserLoginTokens(ctx context.Context, arg RevokeUserLoginTokensParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, revokeUserLoginTokens, arg.Now, arg.UserID, arg.Keep)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const revokeUserTokens = `-- name: RevokeUserTokens :execrows
+UPDATE tokens SET revoked_at = +?1
+WHERE user_id = +?2 AND revoked_at IS NULL
+`
+
+type RevokeUserTokensParams struct {
+	Now    *time.Time
+	UserID *int64
+}
+
+// RevokeUserTokens revokes every token a user holds or made by hand.
+func (q *Queries) RevokeUserTokens(ctx context.Context, arg RevokeUserTokensParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, revokeUserTokens, arg.Now, arg.UserID)
 	if err != nil {
 		return 0, err
 	}
@@ -730,7 +773,7 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 }
 
 const setUserName = `-- name: SetUserName :one
-UPDATE users SET name = ? WHERE id = +? RETURNING id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role
+UPDATE users SET name = ? WHERE id = +? RETURNING id, email, name, password_hash, created_at, disabled_at, factor_failures, factor_failed_at, email_requests, platform_role, email_proven
 `
 
 type SetUserNameParams struct {
@@ -753,6 +796,7 @@ func (q *Queries) SetUserName(ctx context.Context, arg SetUserNameParams) (User,
 		&i.FactorFailedAt,
 		&i.EmailRequests,
 		&i.PlatformRole,
+		&i.EmailProven,
 	)
 	return i, err
 }

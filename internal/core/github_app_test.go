@@ -165,30 +165,52 @@ func appHarness(t *testing.T) (*harness, *fakeGitHub, string) {
 	if _, err := h.c.CompleteGitHubApp(h.ctx, "c0de", state); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.installApp(testSystem, "test", fakeInstall, octo); err != nil {
+	if err := h.installApp(h.operator("ops@x"), "test", fakeInstall, octo); err != nil {
 		t.Fatal(err)
 	}
 	return h, gh, path.Base(m.HookAttributes.URL)
 }
 
 // installApp goes through the App's install flow as a, for org, the way
-// a browser would after GitHub user login installed installation id:
-// GitHub's redirect back, then (for an App that checks installs) the
-// authorize page's redirect with login's code.
+// a's browser would after GitHub user login installed installation id:
+// the start page, GitHub's redirect back, then (for an App that checks
+// installs) the authorize page's redirect with login's code, and the
+// confirm page.
 func (h *harness) installApp(a Actor, org string, id int64, login string) error {
 	h.t.Helper()
-	link, err := h.c.StartGitHubInstall(h.ctx, a, apitypes.GitHubOrgRequest{Org: org})
+	state, binding, err := h.startInstall(a, org)
 	if err != nil {
 		return err
 	}
-	u, _ := url.Parse(link.URL)
-	step, err := h.c.CompleteGitHubInstall(h.ctx, id, "install", u.Query().Get("state"), "https://dock.example.com")
-	if err != nil || step.Redirect == "" {
+	step, err := h.c.CompleteGitHubInstall(h.ctx, id, "install", state, binding, "https://dock.example.com")
+	if err != nil {
 		return err
 	}
-	r, _ := url.Parse(step.Redirect)
-	_, err = h.c.CompleteGitHubVerify(h.ctx, login, r.Query().Get("state"))
+	if step.Redirect != "" {
+		r, _ := url.Parse(step.Redirect)
+		if step, err = h.c.CompleteGitHubVerify(h.ctx, login, r.Query().Get("state"), binding); err != nil {
+			return err
+		}
+	}
+	if step.Confirm == nil {
+		h.t.Fatalf("no confirm page: %+v", step)
+	}
+	_, err = h.c.ConfirmGitHubInstall(h.ctx, step.Confirm.State, binding)
 	return err
+}
+
+// startInstall asks for a's install link for org and opens it in a's
+// browser: the flow's state and the browser's binding.
+func (h *harness) startInstall(a Actor, org string) (state, binding string, err error) {
+	h.t.Helper()
+	link, err := h.c.StartGitHubInstall(h.ctx, a, apitypes.GitHubOrgRequest{Org: org}, "https://dock.example.com")
+	if err != nil {
+		return "", "", err
+	}
+	u, _ := url.Parse(link.URL)
+	state = u.Query().Get("state")
+	_, binding, err = h.c.BindGitHubInstall(h.ctx, a, state)
+	return state, binding, err
 }
 
 // The manifest flow registers the App and the install flow assigns its
@@ -249,35 +271,58 @@ func TestGitHubAppSetup(t *testing.T) {
 		len(st.Installations) != 1 || st.Installations[0].Account != "acme" || st.Installations[0].Org != "" {
 		t.Fatalf("status before install: %+v", st)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubOrgRequest{Org: "nope"}); CodeOf(err) != apitypes.CodeNotFound {
+	op := h.operator("ops@x")
+	if _, err := h.c.StartGitHubInstall(h.ctx, op, apitypes.GitHubOrgRequest{Org: "nope"}, ""); CodeOf(err) != apitypes.CodeNotFound {
 		t.Fatalf("install for a missing org: %v", err)
 	}
-	link, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubOrgRequest{Org: "test"})
+	// A credential of no one's has no browser to finish in.
+	if _, err := h.c.StartGitHubInstall(h.ctx, testSystem, apitypes.GitHubOrgRequest{Org: "test"}, ""); CodeOf(err) != apitypes.CodeValidation {
+		t.Fatalf("install by the system: %v", err)
+	}
+	// The link is Dock's start page, where Dock was reached.
+	link, err := h.c.StartGitHubInstall(h.ctx, op, apitypes.GitHubOrgRequest{Org: "test"}, "http://100.64.0.1:7070")
 	if err != nil {
 		t.Fatal(err)
 	}
 	u, _ := url.Parse(link.URL)
-	if u.Host != "github.com" || u.Path != "/apps/tempo-dock-test/installations/new" {
+	install := u.Query().Get("state")
+	if u.Host != "100.64.0.1:7070" || u.Path != GitHubInstallStartPath || install == "" {
 		t.Fatalf("install link %s", link.URL)
 	}
+	// Only the person who asked for it opens it; it goes on to GitHub.
+	if _, _, err := h.c.BindGitHubInstall(h.ctx, h.member("eve@x", nil), install); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("someone else opened the install link: %v", err)
+	}
+	to, binding, err := h.c.BindGitHubInstall(h.ctx, op, install)
+	if g, _ := url.Parse(to); err != nil || binding == "" || g.Host != "github.com" || g.Path != "/apps/tempo-dock-test/installations/new" || g.Query().Get("state") != install {
+		t.Fatalf("start page = %s, %v", to, err)
+	}
 	// A manifest state can't finish an install.
-	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, ""); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, binding, ""); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("manifest state for an install: %v", err)
 	}
 	// The App checks who installed it: GitHub's redirect goes on to the
 	// App's authorize page, with a state of its own and PKCE.
-	step, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state"), "https://dock.example.com")
+	step, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", install, binding, "https://dock.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	r, _ := url.Parse(step.Redirect)
 	verify := r.Query().Get("state")
 	if r.Path != "/login/oauth/authorize" || r.Query().Get("client_id") != fakeClientID || r.Query().Get("code_challenge_method") != "S256" ||
-		r.Query().Get("redirect_uri") != "https://dock.example.com"+GitHubUserCallbackPath || verify == "" || verify == u.Query().Get("state") {
+		r.Query().Get("redirect_uri") != "https://dock.example.com"+GitHubUserCallbackPath || verify == "" || verify == install {
 		t.Fatalf("authorize link %s", step.Redirect)
 	}
-	if _, err := h.c.CompleteGitHubVerify(h.ctx, octo, verify); err != nil {
-		t.Fatal(err)
+	// Then Dock asks the person to confirm the org, and assigns it.
+	step, err = h.c.CompleteGitHubVerify(h.ctx, octo, verify, binding)
+	if err != nil || step.Confirm == nil || step.Confirm.Org != "test" || step.Confirm.Account != "acme" {
+		t.Fatalf("after authorizing: %+v, %v", step, err)
+	}
+	if st, _ := h.c.GitHubStatus(h.ctx, testSystem); st.Installations[0].Org != "" {
+		t.Fatalf("assigned before confirming: %+v", st.Installations)
+	}
+	if msg, err := h.c.ConfirmGitHubInstall(h.ctx, step.Confirm.State, binding); err != nil || !strings.Contains(msg, "org test") {
+		t.Fatalf("confirm = %q, %v", msg, err)
 	}
 	if st, _ := h.c.GitHubStatus(h.ctx, testSystem); len(st.Installations) != 1 || st.Installations[0].Org != "test" {
 		t.Fatalf("status after install: %+v", st)
@@ -563,22 +608,56 @@ func TestGitHubInstallChecksTheInstaller(t *testing.T) {
 		t.Fatalf("someone who can't access installation 7 claimed it: %v", err)
 	}
 
-	link, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{})
+	state, binding, err := h.startInstall(admin, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, _ := url.Parse(link.URL)
-	step, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", u.Query().Get("state"), "https://dock.example.com")
+	step, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, binding, "https://dock.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	r, _ := url.Parse(step.Redirect)
 	verify := r.Query().Get("state")
-	if _, err := h.c.CompleteGitHubVerify(h.ctx, "", verify); CodeOf(err) != apitypes.CodeForbidden || assigned() {
+	if _, err := h.c.CompleteGitHubVerify(h.ctx, "", verify, binding); CodeOf(err) != apitypes.CodeForbidden || assigned() {
 		t.Fatalf("no code: %v", err)
 	}
-	if _, err := h.c.CompleteGitHubVerify(h.ctx, octo, verify); CodeOf(err) != apitypes.CodeUnauthorized || assigned() {
+	if _, err := h.c.CompleteGitHubVerify(h.ctx, octo, verify, binding); CodeOf(err) != apitypes.CodeUnauthorized || assigned() {
 		t.Fatalf("verify link used twice: %v", err)
+	}
+
+	// The admin sends the link to octo, who owns the GitHub account: on
+	// Dock's start page it is someone else's link, and GitHub's redirect
+	// in octo's browser, which the admin's binding cookie isn't in, gets
+	// nowhere, nor does a confirm from it.
+	link, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{}, "https://dock.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(link.URL)
+	state = u.Query().Get("state")
+	if _, _, err := h.c.BindGitHubInstall(h.ctx, h.member("octo@x", nil), state); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("octo opened the admin's link: %v", err)
+	}
+	if _, _, err := h.c.BindGitHubInstall(h.ctx, admin, state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, "", "https://dock.example.com"); CodeOf(err) != apitypes.CodeUnauthorized || assigned() {
+		t.Fatalf("GitHub's redirect in another browser: %v", err)
+	}
+	state, binding, _ = h.startInstall(admin, "")
+	step, _ = h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, binding, "https://dock.example.com")
+	r, _ = url.Parse(step.Redirect)
+	if _, err := h.c.CompleteGitHubVerify(h.ctx, octo, r.Query().Get("state"), "another"); CodeOf(err) != apitypes.CodeUnauthorized || assigned() {
+		t.Fatalf("authorize redirect in another browser: %v", err)
+	}
+	state, binding, _ = h.startInstall(admin, "")
+	step, _ = h.c.CompleteGitHubInstall(h.ctx, fakeInstall, "install", state, binding, "https://dock.example.com")
+	r, _ = url.Parse(step.Redirect)
+	if step, err = h.c.CompleteGitHubVerify(h.ctx, octo, r.Query().Get("state"), binding); err != nil || step.Confirm == nil {
+		t.Fatalf("verify: %+v, %v", step, err)
+	}
+	if _, err := h.c.ConfirmGitHubInstall(h.ctx, step.Confirm.State, "another"); CodeOf(err) != apitypes.CodeUnauthorized || assigned() {
+		t.Fatalf("confirm from another browser: %v", err)
 	}
 
 	// An edited redirect names installation 8, which octo can't access.
@@ -603,11 +682,11 @@ func TestGitHubAppClientSecret(t *testing.T) {
 	if st, err := h.c.GitHubStatus(h.ctx, testSystem); err != nil || st.App.VerifiesInstalls || !strings.HasSuffix(st.CallbackURL, GitHubUserCallbackPath) {
 		t.Fatalf("status of an App without its client: %+v, %v", st, err)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{}); CodeOf(err) != apitypes.CodeConflict {
+	if _, err := h.c.StartGitHubInstall(h.ctx, admin, apitypes.GitHubOrgRequest{}, ""); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("org admin's install link without the client: %v", err)
 	}
 	// An operator's link claims it straight away, as before.
-	if err := h.installApp(testSystem, "test", fakeInstall, ""); err != nil {
+	if err := h.installApp(h.operator("ops2@x"), "test", fakeInstall, ""); err != nil {
 		t.Fatal(err)
 	}
 

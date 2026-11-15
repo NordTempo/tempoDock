@@ -43,7 +43,7 @@ than on a quiet machine.
 | UI initial CSS (gzip) | ≤ 30 KB | 13.9 KB |
 | UI initial fonts (preloaded or declared by the initial CSS, woff2 as shipped) | ≤ 100 KB | 63.6 KB (Inter and JetBrains Mono, Latin subsets) |
 | UI fonts (all font files) | ≤ 150 KB | 63.6 KB |
-| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 3% (62.3 MB) | 60.5 MB (2026-11-11, Huma's `Register` no longer generic, see below): measure before adding a dependency |
+| Binary size (`bin/dock`, UI and dock-probe embedded) | ≤ baseline + 3% (64.5 MB) | 62.6 MB (2026-11-15, re-recorded with the sign-in hardening after the features since 2026-11-11 used the headroom): measure before adding a dependency |
 | Go benchmarks | ns/op ≤ baseline + 30%, allocs/op ≤ baseline + 15% (+2) | see `scripts/perf/baseline.json` |
 
 `make perf` also prints, without a budget, the daemon's memory after

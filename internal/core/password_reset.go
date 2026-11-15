@@ -16,7 +16,7 @@ import (
 // bearer secret kept only as its SHA-256; it works once, for an hour, and
 // a newer one replaces it. Setting the password ends every session and
 // `dock login` token, keeps the account's second factors, and sends a
-// security notice. Offered only while passwords sign in and email can
+// security notice. It proves the account's email (ssoUser). Offered only while passwords sign in and email can
 // carry a link (canEmailLinks).
 
 // PasswordResetTTL is how long a reset link works.
@@ -127,6 +127,10 @@ func (c *Core) ResetPasswordWithLink(ctx context.Context, code string, req apity
 			return err
 		}
 		if err := q.DeleteUnusedPasswordResets(ctx, u.ID); err != nil {
+			return err
+		}
+		// The link reached the mailbox: its owner holds the account now.
+		if _, err := q.ProveUserEmail(ctx, u.ID); err != nil {
 			return err
 		}
 		revoked, err = endUserAccess(ctx, q, u.ID, 0)

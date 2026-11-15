@@ -421,10 +421,10 @@ func TestGitHubInstallByOrgAdmin(t *testing.T) {
 	if _, err := h.c.GitHubOrgStatus(h.ctx, deployer); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("a deployer read the org's installations: %v", err)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, deployer, apitypes.GitHubOrgRequest{}); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.StartGitHubInstall(h.ctx, deployer, apitypes.GitHubOrgRequest{}, ""); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("a deployer started an install: %v", err)
 	}
-	if _, err := h.c.StartGitHubInstall(h.ctx, other, apitypes.GitHubOrgRequest{Org: "test"}); CodeOf(err) != apitypes.CodeForbidden {
+	if _, err := h.c.StartGitHubInstall(h.ctx, other, apitypes.GitHubOrgRequest{Org: "test"}, ""); CodeOf(err) != apitypes.CodeForbidden {
 		t.Fatalf("an org admin started an install for another org: %v", err)
 	}
 	if err := h.c.UnassignGitHubInstallation(h.ctx, other, fakeInstall); CodeOf(err) != apitypes.CodeNotFound || assignedTo() != 1 {

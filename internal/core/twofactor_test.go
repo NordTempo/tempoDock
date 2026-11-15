@@ -72,7 +72,7 @@ func passwordLogin(t *testing.T, h *harness) signedIn {
 
 func session(t *testing.T, h *harness, secret string) signedIn {
 	t.Helper()
-	a, err := h.c.AuthenticateSession(h.ctx, secret, "")
+	a, err := h.c.AuthenticateSession(h.ctx, secret, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestTOTPSecondFactor(t *testing.T) {
 		t.Fatalf("password step: %+v %v", res, err)
 	}
 	// A pending sign-in authenticates nothing.
-	_, err = h.c.AuthenticateSession(h.ctx, res.Secret, "")
+	_, err = h.c.AuthenticateSession(h.ctx, res.Secret, "", false)
 	wantCode(t, "pending session", err, apitypes.CodeUnauthorized)
 
 	_, err = h.c.LoginSecondFactor(h.ctx, res.Secret, apitypes.Verification{Code: "000000"}, testClient)
@@ -302,7 +302,7 @@ func TestOrgRequiresTwoFactor(t *testing.T) {
 	}
 	_, err = h.c.ListProjects(h.ctx, grace.a, false)
 	wantCode(t, "grace lists projects", err, apitypes.CodeTwoFactorRequired)
-	if _, err := h.c.AuthenticateSession(h.ctx, res.Secret, org.Slug); err != nil {
+	if _, err := h.c.AuthenticateSession(h.ctx, res.Secret, org.Slug, false); err != nil {
 		t.Fatal(err) // still authenticated, just not in the org
 	}
 	addTOTP(t, h, grace)
@@ -381,7 +381,7 @@ func TestResetTwoFactor(t *testing.T) {
 	if err := h.c.ResetTwoFactor(h.ctx, System, adaEmail); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, ""); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("session survived the reset: %v", err)
 	}
 	// Back to a password alone.
@@ -507,7 +507,7 @@ func TestFailedStepUpsEndTheSession(t *testing.T) {
 		err = h.c.Reauth(h.ctx, s.a, apitypes.Verification{Code: "000000"}, testClient)
 	}
 	wantCode(t, "last wrong step-up", err, apitypes.CodeUnauthorized)
-	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, ""); CodeOf(err) != apitypes.CodeUnauthorized {
+	if _, err := h.c.AuthenticateSession(h.ctx, s.secret, "", false); CodeOf(err) != apitypes.CodeUnauthorized {
 		t.Fatalf("session after failed step-ups: %v", err)
 	}
 }

@@ -1045,6 +1045,7 @@ type Session struct {
 	Attempts      int64
 	VerifiedAt    *time.Time
 	SsoProviderID *int64
+	LegacyCookie  bool
 }
 
 type Site struct {
@@ -1313,6 +1314,7 @@ type User struct {
 	FactorFailedAt *time.Time
 	EmailRequests  bool
 	PlatformRole   *string
+	EmailProven    bool
 }
 
 type UserFactor struct {

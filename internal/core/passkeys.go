@@ -101,13 +101,13 @@ func (c *Core) passkeyUser(ctx context.Context, u store.User) (*passkeyUser, err
 
 // beginPasskey starts an assertion (second factor or step-up) for u in
 // session sessionID, or a passwordless sign-in for whoever answers when u
-// is nil.
-func (c *Core) beginPasskey(ctx context.Context, purpose, origin string, u *store.User, sessionID int64) (apitypes.PasskeyChallenge, error) {
+// is nil, which counts against clientIP's share (ceremonies.put).
+func (c *Core) beginPasskey(ctx context.Context, purpose, origin, clientIP string, u *store.User, sessionID int64) (apitypes.PasskeyChallenge, error) {
 	rp, err := c.relyingParty(origin)
 	if err != nil {
 		return apitypes.PasskeyChallenge{}, err
 	}
-	cer := &ceremony{purpose: purpose, sessionID: sessionID, origin: origin}
+	cer := &ceremony{purpose: purpose, sessionID: sessionID, origin: origin, client: clientIP}
 	var opts *protocol.CredentialAssertion
 	var data *webauthn.SessionData
 	if u == nil {
@@ -230,13 +230,13 @@ func (c *Core) PasskeyOptions(ctx context.Context, req apitypes.PasskeyOptionsRe
 	}
 	switch req.Purpose {
 	case ceremonyLogin:
-		return c.beginPasskey(ctx, ceremonyLogin, origin, nil, 0)
+		return c.beginPasskey(ctx, ceremonyLogin, origin, clientIP, nil, 0)
 	case ceremonySecond:
 		s, err := c.pendingSession(ctx, pendingSecret)
 		if err != nil {
 			return apitypes.PasskeyChallenge{}, err
 		}
-		return c.beginPasskey(ctx, ceremonySecond, origin, &s.User, s.Session.ID)
+		return c.beginPasskey(ctx, ceremonySecond, origin, clientIP, &s.User, s.Session.ID)
 	}
 	return apitypes.PasskeyChallenge{}, invalid("purpose must be login or second")
 }

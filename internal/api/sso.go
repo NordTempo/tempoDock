@@ -23,16 +23,9 @@ import (
 const ssoCookie = "dock_sso"
 
 // ssoCookie sets (value) or clears ("") the browser binding cookie, sent
-// only to the single sign-on endpoints.
+// only to the single sign-on endpoints over plain HTTP.
 func (c client) ssoCookie(value string) http.Cookie {
-	ck := http.Cookie{
-		Name: ssoCookie, Value: value, Path: Prefix + "/auth/sso", Expires: time.Now().Add(core.SSOTTL),
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: c.secure,
-	}
-	if value == "" {
-		ck.Expires, ck.MaxAge = time.Time{}, -1
-	}
-	return ck
+	return c.cookie(ssoCookie, value, Prefix+"/auth/sso", time.Now().Add(core.SSOTTL), http.SameSiteLaxMode)
 }
 
 type ssoStartInput struct {
@@ -55,13 +48,14 @@ type ssoCallbackInput struct {
 	State   string `query:"state"`
 	Code    string `query:"code"`
 	Error   string `query:"error"`
-	Binding string `cookie:"dock_sso"`
+	binding string
 	client  client
 }
 
-// Resolve records how the request arrived.
+// Resolve records how the request arrived, with its binding cookie.
 func (in *ssoCallbackInput) Resolve(ctx huma.Context) []error {
 	in.client = clientOf(ctx)
+	in.binding = in.client.read(humaCookies(ctx), ssoCookie)
 	return nil
 }
 
@@ -87,7 +81,7 @@ func (c client) ssoLanding(res core.SSOResult) *ssoCallbackOutput {
 		out.SetCookie = []http.Cookie{c.pendingCookie(res.Secret, res.Expires), c.ssoCookie("")}
 		return out
 	}
-	out.SetCookie = []http.Cookie{c.sessionCookie(res.Secret, res.Expires), c.pendingCookie("", time.Time{}), c.ssoCookie("")}
+	out.SetCookie = append(c.sessionCookies(res.Secret, res.Expires), c.pendingCookie("", time.Time{}), c.ssoCookie(""))
 	return out
 }
 
@@ -129,7 +123,7 @@ func registerSSO(s *Server, a huma.API) {
 			"to /login?second=1 when the user has a second factor, to /invite-only when this Dock has no account for them and they have no invite, or to /login?error=<reason>.",
 		Tags: []string{"auth"}, DefaultStatus: http.StatusSeeOther,
 	}, func(ctx context.Context, in *ssoCallbackInput) (*ssoCallbackOutput, error) {
-		res, err := s.core.FinishSSO(ctx, core.SSOCallback{State: in.State, Code: in.Code, Error: in.Error, Binding: in.Binding}, in.client.ip)
+		res, err := s.core.FinishSSO(ctx, core.SSOCallback{State: in.State, Code: in.Code, Error: in.Error, Binding: in.binding}, in.client.ip)
 		if err != nil {
 			reason := "signing in failed; try again"
 			if ae, ok := errors.AsType[*apitypes.Error](s.problem(err)); ok && ae.Code != apitypes.CodeInternal {

@@ -49,7 +49,7 @@ func TestInviteSignUp(t *testing.T) {
 	if err != nil || res.Pending || res.Secret == "" {
 		t.Fatalf("sign-up = %+v, %v", res, err)
 	}
-	a, err := h.c.AuthenticateSession(h.ctx, res.Secret, "")
+	a, err := h.c.AuthenticateSession(h.ctx, res.Secret, "", false)
 	if err != nil || a.Email != "New@x" || a.DisplayName != "New Person" || a.OrgSlug != "test" || a.Scope != apitypes.ScopeDeploy {
 		t.Fatalf("new session = %+v, %v", a, err)
 	}
