@@ -90,7 +90,7 @@ config file).
 ## Amendment: organization templates
 
 An organization's templates are stored as their files (`org_templates`,
-migration 0114) and listed first in the catalog for its members. Admins
+migration 0117) and listed first in the catalog for its members. Admins
 save them from a file in the catalog's format or from an environment's
 services: settings, volumes, jobs and references between them; database
 templates stay templates; variables that aren't references become secret
