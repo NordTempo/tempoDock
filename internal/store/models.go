@@ -35,6 +35,7 @@ type AccessRequest struct {
 	Error         string
 	FinishedAt    *time.Time
 	AskUserID     *int64
+	UserID        *int64
 }
 
 type AgentRule struct {
@@ -428,6 +429,7 @@ type Environment struct {
 	WokeAt            *time.Time
 	WokeBy            string
 	Preview           bool
+	LockPeople        bool
 }
 
 type EnvironmentMove struct {

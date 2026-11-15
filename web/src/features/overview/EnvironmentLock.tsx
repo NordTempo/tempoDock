@@ -33,6 +33,10 @@ import { isPending, useRequestsIfAdmin } from "../requests/data";
 /** What a lock does, in the words every lock control uses. */
 export const lockEffect = "changes by tokens wait for an admin's approval";
 
+/** What a lock for people too does (ADR 0080, protected environments). */
+export const lockPeopleEffect =
+  "only its approvers change it; everyone else's changes wait for them";
+
 const touches = ({ ref }: { ref: EnvRef }) => [
   keys.overview(ref.project),
   ["audit"],
@@ -57,13 +61,21 @@ function patchEnvironment(queryClient: QueryClient, environment: Environment) {
 function useLock() {
   const queryClient = useQueryClient();
   return useAction(
-    async ({ ref, reason }: { ref: EnvRef; reason: string }) =>
+    async ({
+      ref,
+      reason,
+      people,
+    }: {
+      ref: EnvRef;
+      reason: string;
+      people?: boolean;
+    }) =>
       patchEnvironment(
         queryClient,
         await body(
           api.POST(
             "/api/v1/projects/{project}/environments/{environment}/lock",
-            { params: { path: envPath(ref) }, body: { reason } },
+            { params: { path: envPath(ref) }, body: { reason, people } },
           ),
         ),
       ),
@@ -127,11 +139,13 @@ export function LockStrip({
       {lockHolds(lock) ? (
         <>
           <span className="inline-flex items-center gap-1.5">
-            <Icon name="lock" size={12} /> Locked
+            <Icon name="lock" size={12} />{" "}
+            {lock.people ? "Locked for people too" : "Locked"}
           </span>
           <span className="min-w-0 text-mut">
             by {lock.locked_by}, {ago(lock.locked_at)}
-            {lock.reason && <> · {lock.reason}</>} · {lockEffect}{" "}
+            {lock.reason && <> · {lock.reason}</>} ·{" "}
+            {lock.people ? lockPeopleEffect : lockEffect}{" "}
             {/* Where they wait, as a link: the place to look after locking. */}
             {admin && (
               <>
@@ -247,7 +261,13 @@ export function LockStrip({
               className={warnBtn}
               cli={`dock environment lock ${env}`}
               disabled={busy}
-              onClick={() => lockNow.mutate({ ref, reason: lock.reason ?? "" })}
+              onClick={() =>
+                lockNow.mutate({
+                  ref,
+                  reason: lock.reason ?? "",
+                  people: lock.people,
+                })
+              }
             >
               Lock now
             </Act>
@@ -268,16 +288,20 @@ export function LockForm({
 }) {
   const lock = useLock();
   const [reason, setReason] = useState("");
+  const [people, setPeople] = useState(false);
   // Opened by clicking Lock: the reason is the first thing to type.
   const reasonField = useRef<HTMLInputElement>(null);
   useEffect(() => reasonField.current?.focus(), []);
-  const cli = `dock environment lock ${ref.environment}${reason.trim() ? ` --reason ${JSON.stringify(reason.trim())}` : ""}`;
+  const cli = `dock environment lock ${ref.environment}${reason.trim() ? ` --reason ${JSON.stringify(reason.trim())}` : ""}${people ? " --people" : ""}`;
   return (
     <form
       className={strip}
       onSubmit={(e) => {
         e.preventDefault();
-        lock.mutate({ ref, reason: reason.trim() }, { onSuccess: onDone });
+        lock.mutate(
+          { ref, reason: reason.trim(), people },
+          { onSuccess: onDone },
+        );
       }}
     >
       <span className="inline-flex items-center gap-1.5">
@@ -297,8 +321,21 @@ export function LockForm({
       <Button small onClick={onDone}>
         Cancel
       </Button>
+      <label className="flex items-center gap-1.5 text-fg">
+        <input
+          type="checkbox"
+          className="accent-fg"
+          checked={people}
+          onChange={(e) => setPeople(e.target.checked)}
+        />
+        People too
+      </label>
       <span className="text-mut">
-        Then {lockEffect}. People signed in here aren't affected.
+        Then{" "}
+        {people
+          ? lockPeopleEffect
+          : `${lockEffect}. People signed in here aren't affected`}
+        .
       </span>
       <ErrorText error={lock.error} />
     </form>

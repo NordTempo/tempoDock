@@ -17,6 +17,9 @@ type EnvironmentLock struct {
 	// OpenUntil is set while the environment is opened for a while: until
 	// then tokens act in it as if it were unlocked.
 	OpenUntil *time.Time `json:"open_until,omitempty"`
+	// People: people's changes wait too, but those of whoever may approve
+	// there (ADR 0080, protected environments); otherwise only agents'.
+	People bool `json:"people,omitempty"`
 }
 
 // Holds reports whether the lock applies at t (it isn't opened then).
@@ -27,6 +30,7 @@ func (l *EnvironmentLock) Holds(t time.Time) bool {
 // LockEnvironmentRequest locks an environment.
 type LockEnvironmentRequest struct {
 	Reason string `json:"reason,omitempty" maxLength:"200" doc:"Why it is locked, shown with the lock"`
+	People bool   `json:"people,omitempty" doc:"Hold people's changes too, not only agents'; whoever may approve there still changes it"`
 }
 
 // UnlockEnvironmentRequest unlocks an environment, or opens it for a while.

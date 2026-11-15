@@ -7563,6 +7563,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "people": {
+            "type": "boolean"
+          },
           "reason": {
             "type": "string"
           }
@@ -10295,6 +10298,10 @@
       "LockEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
+          "people": {
+            "description": "Hold people's changes too, not only agents'; whoever may approve there still changes it",
+            "type": "boolean"
+          },
           "reason": {
             "description": "Why it is locked, shown with the lock",
             "maxLength": 200,

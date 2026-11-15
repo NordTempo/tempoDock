@@ -119,7 +119,7 @@ SELECT * FROM environments WHERE project_id = +? AND archived_at IS NULL ORDER B
 -- SetEnvironmentLock locks (locked_at set) or unlocks (NULL) an
 -- environment, or opens a locked one until open_until (ADR 0044).
 -- name: SetEnvironmentLock :one
-UPDATE environments SET locked_at = ?, locked_by = ?, lock_reason = ?, open_until = ?
+UPDATE environments SET locked_at = ?, locked_by = ?, lock_reason = ?, open_until = ?, lock_people = ?
 WHERE id = +? RETURNING *;
 
 -- name: ArchiveProject :exec

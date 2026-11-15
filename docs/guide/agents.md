@@ -259,6 +259,9 @@ $ dock request wait 12
   An admin can also open the environment for a while instead.
 - Data panel changes in a locked environment are changesets for an admin
   to approve, as on production.
+- `dock environment lock production --people` holds people's changes too:
+  only its approvers (Approvers, Full access) change it directly, and
+  everyone else's change waits for them as an access request.
 
 ## Your agents
 

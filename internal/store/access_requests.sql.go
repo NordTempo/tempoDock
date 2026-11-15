@@ -48,9 +48,9 @@ func (q *Queries) CountPendingAccessRequests(ctx context.Context, arg CountPendi
 
 const createAccessRequest = `-- name: CreateAccessRequest :one
 INSERT INTO access_requests (nonce, org_id, project_id, environment_id, status, via, operation, title, action, args,
-    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at, upload, ask_user_id)
-VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at, upload, ask_user_id, user_id)
+VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 type CreateAccessRequestParams struct {
@@ -72,6 +72,7 @@ type CreateAccessRequestParams struct {
 	ExpiresAt     time.Time
 	Upload        string
 	AskUserID     *int64
+	UserID        *int64
 }
 
 func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessRequestParams) (AccessRequest, error) {
@@ -94,6 +95,7 @@ func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessReque
 		arg.ExpiresAt,
 		arg.Upload,
 		arg.AskUserID,
+		arg.UserID,
 	)
 	var i AccessRequest
 	err := row.Scan(
@@ -123,6 +125,7 @@ func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessReque
 		&i.Error,
 		&i.FinishedAt,
 		&i.AskUserID,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -130,7 +133,7 @@ func (q *Queries) CreateAccessRequest(ctx context.Context, arg CreateAccessReque
 const decideAccessRequest = `-- name: DecideAccessRequest :one
 UPDATE access_requests SET status = ?, decided_by = ?, decided_at = ?, comment = ?
 WHERE id = +? AND status = 'pending' AND expires_at > +?
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 type DecideAccessRequestParams struct {
@@ -181,6 +184,7 @@ func (q *Queries) DecideAccessRequest(ctx context.Context, arg DecideAccessReque
 		&i.Error,
 		&i.FinishedAt,
 		&i.AskUserID,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -192,7 +196,7 @@ UPDATE access_requests SET status = 'rejected', decided_by = 'system', decided_a
 WHERE status = 'pending' AND (
     token_id IN (SELECT id FROM tokens WHERE revoked_at IS NOT NULL)
     OR project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL))
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 // EndOrphanedAccessRequests rejects, for the system, pending requests
@@ -234,6 +238,7 @@ func (q *Queries) EndOrphanedAccessRequests(ctx context.Context, now *time.Time)
 			&i.Error,
 			&i.FinishedAt,
 			&i.AskUserID,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -251,7 +256,7 @@ func (q *Queries) EndOrphanedAccessRequests(ctx context.Context, now *time.Time)
 const endUnlockedAccessRequests = `-- name: EndUnlockedAccessRequests :many
 UPDATE access_requests SET status = 'expired', finished_at = ?1, comment = ?2
 WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at > +?1 AND environment_id = +?3
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 type EndUnlockedAccessRequestsParams struct {
@@ -300,6 +305,7 @@ func (q *Queries) EndUnlockedAccessRequests(ctx context.Context, arg EndUnlocked
 			&i.Error,
 			&i.FinishedAt,
 			&i.AskUserID,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -317,7 +323,7 @@ func (q *Queries) EndUnlockedAccessRequests(ctx context.Context, arg EndUnlocked
 const expireAccessRequests = `-- name: ExpireAccessRequests :many
 UPDATE access_requests SET status = 'expired', finished_at = expires_at
 WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at <= +?
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 // ExpireAccessRequests marks pending requests past their time expired.
@@ -359,6 +365,7 @@ func (q *Queries) ExpireAccessRequests(ctx context.Context, expiresAt time.Time)
 			&i.Error,
 			&i.FinishedAt,
 			&i.AskUserID,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -376,7 +383,7 @@ func (q *Queries) ExpireAccessRequests(ctx context.Context, expiresAt time.Time)
 const failRunningAccessRequests = `-- name: FailRunningAccessRequests :many
 UPDATE access_requests SET status = 'failed', error = ?, finished_at = ?
 WHERE status = 'approved'
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 type FailRunningAccessRequestsParams struct {
@@ -421,6 +428,7 @@ func (q *Queries) FailRunningAccessRequests(ctx context.Context, arg FailRunning
 			&i.Error,
 			&i.FinishedAt,
 			&i.AskUserID,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -438,7 +446,7 @@ func (q *Queries) FailRunningAccessRequests(ctx context.Context, arg FailRunning
 const finishAccessRequest = `-- name: FinishAccessRequest :one
 UPDATE access_requests SET status = ?, result = ?, error = ?, finished_at = ?
 WHERE id = +? AND status = 'approved'
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 type FinishAccessRequestParams struct {
@@ -486,12 +494,13 @@ func (q *Queries) FinishAccessRequest(ctx context.Context, arg FinishAccessReque
 		&i.Error,
 		&i.FinishedAt,
 		&i.AskUserID,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const getAccessRequest = `-- name: GetAccessRequest :one
-SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id FROM access_requests WHERE id = +?
+SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id FROM access_requests WHERE id = +?
 `
 
 func (q *Queries) GetAccessRequest(ctx context.Context, id int64) (AccessRequest, error) {
@@ -524,12 +533,13 @@ func (q *Queries) GetAccessRequest(ctx context.Context, id int64) (AccessRequest
 		&i.Error,
 		&i.FinishedAt,
 		&i.AskUserID,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const getPendingAccessRequest = `-- name: GetPendingAccessRequest :one
-SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id FROM access_requests WHERE fingerprint = +? AND status = 'pending'
+SELECT id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id FROM access_requests WHERE fingerprint = +? AND status = 'pending'
 `
 
 // GetPendingAccessRequest is the pending request with a fingerprint, so an
@@ -564,6 +574,7 @@ func (q *Queries) GetPendingAccessRequest(ctx context.Context, fingerprint strin
 		&i.Error,
 		&i.FinishedAt,
 		&i.AskUserID,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -583,18 +594,19 @@ func (q *Queries) LatestEnvironmentAudit(ctx context.Context, environmentID *int
 }
 
 const listAskedAccessRequests = `-- name: ListAskedAccessRequests :many
-SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, access_requests.ask_user_id, projects.name AS project_name, environments.name AS environment_name
+SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, access_requests.ask_user_id, access_requests.user_id, projects.name AS project_name, environments.name AS environment_name
 FROM access_requests
 JOIN projects ON projects.id = access_requests.project_id
 JOIN environments ON environments.id = access_requests.environment_id
-WHERE access_requests.ask_user_id = +?1 AND access_requests.org_id = +?2
+WHERE (access_requests.ask_user_id = +?1 OR access_requests.user_id = +?1)
+  AND access_requests.org_id = +?2
 ORDER BY access_requests.id DESC LIMIT +?3
 `
 
 type ListAskedAccessRequestsParams struct {
-	AskUserID *int64
-	OrgID     int64
-	Limit     int64
+	UserID *int64
+	OrgID  int64
+	Limit  int64
 }
 
 type ListAskedAccessRequestsRow struct {
@@ -603,10 +615,12 @@ type ListAskedAccessRequestsRow struct {
 	EnvironmentName string
 }
 
-// ListAskedAccessRequests is the requests a person's agents asked them to
-// approve first, newest first, with their places' names.
+// ListAskedAccessRequests is a person's own requests in an org: those
+// their agents asked them to approve first, and those they asked
+// themselves in a protected environment, newest first, with their
+// places' names.
 func (q *Queries) ListAskedAccessRequests(ctx context.Context, arg ListAskedAccessRequestsParams) ([]ListAskedAccessRequestsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAskedAccessRequests, arg.AskUserID, arg.OrgID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listAskedAccessRequests, arg.UserID, arg.OrgID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -641,6 +655,7 @@ func (q *Queries) ListAskedAccessRequests(ctx context.Context, arg ListAskedAcce
 			&i.AccessRequest.Error,
 			&i.AccessRequest.FinishedAt,
 			&i.AccessRequest.AskUserID,
+			&i.AccessRequest.UserID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -686,7 +701,7 @@ func (q *Queries) ListHeldUploads(ctx context.Context) ([]string, error) {
 }
 
 const listOrgAccessRequests = `-- name: ListOrgAccessRequests :many
-SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, access_requests.ask_user_id, projects.name AS project_name, environments.name AS environment_name
+SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, access_requests.ask_user_id, access_requests.user_id, projects.name AS project_name, environments.name AS environment_name
 FROM access_requests
 JOIN projects ON projects.id = access_requests.project_id
 JOIN environments ON environments.id = access_requests.environment_id
@@ -742,6 +757,7 @@ func (q *Queries) ListOrgAccessRequests(ctx context.Context, arg ListOrgAccessRe
 			&i.AccessRequest.Error,
 			&i.AccessRequest.FinishedAt,
 			&i.AccessRequest.AskUserID,
+			&i.AccessRequest.UserID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -759,7 +775,7 @@ func (q *Queries) ListOrgAccessRequests(ctx context.Context, arg ListOrgAccessRe
 }
 
 const listTokenAccessRequests = `-- name: ListTokenAccessRequests :many
-SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, access_requests.ask_user_id, projects.name AS project_name, environments.name AS environment_name
+SELECT access_requests.id, access_requests.nonce, access_requests.org_id, access_requests.project_id, access_requests.environment_id, access_requests.status, access_requests.via, access_requests.operation, access_requests.title, access_requests."action", access_requests.args, access_requests.fingerprint, access_requests.reason, access_requests.token_id, access_requests.requested_by, access_requests.audit_mark, access_requests.upload, access_requests.created_at, access_requests.expires_at, access_requests.decided_by, access_requests.decided_at, access_requests.comment, access_requests.result, access_requests.error, access_requests.finished_at, access_requests.ask_user_id, access_requests.user_id, projects.name AS project_name, environments.name AS environment_name
 FROM access_requests
 JOIN projects ON projects.id = access_requests.project_id
 JOIN environments ON environments.id = access_requests.environment_id
@@ -815,6 +831,7 @@ func (q *Queries) ListTokenAccessRequests(ctx context.Context, arg ListTokenAcce
 			&i.AccessRequest.Error,
 			&i.AccessRequest.FinishedAt,
 			&i.AccessRequest.AskUserID,
+			&i.AccessRequest.UserID,
 			&i.ProjectName,
 			&i.EnvironmentName,
 		); err != nil {
@@ -878,7 +895,7 @@ func (q *Queries) SetOrgRequestTTL(ctx context.Context, arg SetOrgRequestTTLPara
 const supersedeAccessRequest = `-- name: SupersedeAccessRequest :one
 UPDATE access_requests SET status = 'expired', finished_at = ?
 WHERE id = +? AND status = 'pending'
-RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id
+RETURNING id, nonce, org_id, project_id, environment_id, status, via, operation, title, "action", args, fingerprint, reason, token_id, requested_by, audit_mark, upload, created_at, expires_at, decided_by, decided_at, comment, result, error, finished_at, ask_user_id, user_id
 `
 
 type SupersedeAccessRequestParams struct {
@@ -919,6 +936,7 @@ func (q *Queries) SupersedeAccessRequest(ctx context.Context, arg SupersedeAcces
 		&i.Error,
 		&i.FinishedAt,
 		&i.AskUserID,
+		&i.UserID,
 	)
 	return i, err
 }
