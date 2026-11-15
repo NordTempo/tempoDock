@@ -4,7 +4,7 @@ summary = "Dashboards for metrics, logs and traces"
 category = "monitoring"
 website = "https://grafana.com/oss/grafana"
 license = "AGPL-3.0"
-revision = 1
+revision = 2
 main = "app"
 domain = true
 notes = "Sign in as admin with the password you chose."
@@ -20,7 +20,8 @@ notes = "Sign in as admin with the password you chose."
   track = '^\d+\.\d+\.\d+$'
   port = 3000
   health_check_path = "/api/health"
-  memory_mb = 256
+  memory_mb = 512
+  health_check_timeout_seconds = 300
   volumes = [{ name = "data", mount_path = "/var/lib/grafana" }]
   [services.values]
     GF_SERVER_ROOT_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"

@@ -215,22 +215,62 @@ func (c *Core) UseAppTemplate(ctx context.Context, a Actor, ref EnvRef, name str
 	c.applyStagedDomains(ctx, a, es, domains, &applied)
 	out.Failed = append(out.Failed, applied.Failed...)
 
-	for _, s := range firstDeployOrder(created, deps) {
-		if s.Image == "" && s.Template == "" {
-			continue
-		}
-		ss := svcScope{es, s}
-		rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceImage})
-		if err != nil {
-			out.Failed = append(out.Failed, fmt.Sprintf("couldn't deploy %s: %v. Deploy it once that's fixed: dock deploy -s %s -e %s", s.Name, err, s.Name, es.env.Name))
-			continue
-		}
-		c.audit(ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from image %s", rel.Number, rel.ImageRef))
-		r, err := c.toRelease(ctx, ss, rel, false)
-		if err != nil {
-			return out, err
-		}
-		out.Releases = append(out.Releases, r)
-	}
+	rels, failed := c.deployInOrder(ctx, a, es, created, deps)
+	out.Releases = append(out.Releases, rels...)
+	out.Failed = append(out.Failed, failed...)
 	return out, nil
+}
+
+// deployInOrder starts the first releases of a template's new services,
+// each once the services it depends on finished theirs: an app whose
+// database doesn't accept connections yet often exits at start, and its
+// deploy's health check fails on that. One whose dependency failed still
+// starts, and its release says why. The sequence runs on the daemon's
+// context; the caller waits for it unless its own context ends first.
+func (c *Core) deployInOrder(ctx context.Context, a Actor, es envScope, svcs []store.Service, deps map[string][]string) ([]apitypes.Release, []string) {
+	type result struct {
+		rels   []apitypes.Release
+		failed []string
+	}
+	res := make(chan result, 1)
+	c.wg.Go(func() {
+		var r result
+		defer func() { res <- r }()
+		// finished holds each started service's outcome, put back after
+		// every read so later dependents read it too.
+		finished := map[string]chan bool{}
+		for _, s := range firstDeployOrder(svcs, deps) {
+			if s.Image == "" && s.Template == "" {
+				continue
+			}
+			for _, d := range deps[s.Name] {
+				if ch := finished[d]; ch != nil {
+					select {
+					case ok := <-ch:
+						ch <- ok
+					case <-c.ctx.Done():
+						return
+					}
+				}
+			}
+			ss := svcScope{es, s}
+			ch := make(chan bool, 1)
+			rel, err := c.startRelease(c.ctx, a, ss, releaseSpec{source: apitypes.SourceImage, done: func(ok bool) { ch <- ok }})
+			if err != nil {
+				r.failed = append(r.failed, fmt.Sprintf("couldn't deploy %s: %v. Deploy it once that's fixed: dock deploy -s %s -e %s", s.Name, err, s.Name, es.env.Name))
+				continue
+			}
+			finished[s.Name] = ch
+			c.audit(c.ctx, a, "release.deploy", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d from image %s", rel.Number, rel.ImageRef))
+			if rr, err := c.toRelease(c.ctx, ss, rel, false); err == nil {
+				r.rels = append(r.rels, rr)
+			}
+		}
+	})
+	select {
+	case r := <-res:
+		return r.rels, r.failed
+	case <-ctx.Done():
+		return nil, []string{"stopped waiting while the services deploy in order; follow them with `dock status -e " + es.env.Name + "`"}
+	}
 }

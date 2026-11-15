@@ -20,7 +20,7 @@ few inputs.
 | Composition | No template syntax. Wiring is references Dock resolves anyway: `"https://${{app.DOCK_PUBLIC_DOMAIN}}"`, `"${{db.DATABASE_URL}}?sslmode=disable"`. A value two services share is generated on one and referenced from the other |
 | Databases | Stay typed Go templates (ADR 0019): app templates use them with `template = "postgres"`, and the catalog lists each as a one-service template under Databases |
 | Names | The main service takes the name given (default the template's), the others `NAME-<part>` (`umami`, `umami-db`); references and `depends_on` are rewritten. A taken name refuses with the `--name` that avoids it |
-| Using one | Expand, plan with `planEnv`, stage with `stageEnv`, and make only the template's services live in the same transaction (`applyPending` per service): like `dock service create`, it is live at once and never applies other staged changes in the environment. Domains are added before the first releases, so `DOCK_PUBLIC_DOMAIN` is set in the first one. A generated domain on a server without a base domain refuses first, since its references would break the deploy. A domain or deploy that fails after the services exist is listed, not undone |
+| Using one | Expand, plan with `planEnv`, stage with `stageEnv`, and make only the template's services live in the same transaction (`applyPending` per service): like `dock service create`, it is live at once and never applies other staged changes in the environment. Domains are added before the first releases, so `DOCK_PUBLIC_DOMAIN` is set in the first one. Each service's first release starts once the services it depends on finished theirs: apps that exit when their database isn't up yet (Miniflux) otherwise fail their first deploy. A generated domain on a server without a base domain refuses first, since its references would break the deploy. A domain or deploy that fails after the services exist is listed, not undone |
 | After | The services are ordinary. Each records the template and revision that made it (`services.from_template`, migration 0115), shown on the service; nothing reads it to run them. Export and clone copy services, not their origin |
 | Catalog | Embedded (`internal/apptemplates/catalog`, about 60 KB with marks), parsed on first use. No remote catalog: fetching one needs a timer or a fetch on open, and a catalog that can change images under an install is a supply chain door. Templates update with Dock releases |
 | Images | `tag@sha256:<index digest>`, an index with linux/amd64 and linux/arm64. Each service names a `track` (tag pattern); `go run ./scripts/templates bump` moves to the newest tag on it, pins it and raises `revision`; `pin` re-pins the current tags. Run by hand before a release, then `e2e/templates.sh` for the templates that changed |
@@ -32,16 +32,19 @@ few inputs.
 
 ## The first catalog
 
-25 apps that run on Dock as it is, plus Postgres and Redis: Umami, n8n,
+24 apps that run on Dock as it is, plus Postgres and Redis: Umami, n8n,
 Uptime Kuma, Grafana, Forgejo, Mailpit, Meilisearch, Vaultwarden, Pocket
-ID, Directus, Metabase, Appsmith, Baserow, Docmost, Wiki.js,
-Paperless-ngx, Memos, listmonk, Twenty, Miniflux, Mealie, Actual Budget,
-linkding, Open WebUI and Stirling-PDF. Each was deployed on a test server
+ID, Directus, Metabase, Appsmith, Docmost, Wiki.js, Paperless-ngx, Memos,
+listmonk, Twenty, Miniflux, Mealie, Actual Budget, linkding, Open WebUI
+and Stirling-PDF. Each was deployed on a test server (`e2e/templates.sh`)
 before it went in.
 
 Left out on purpose: apps that need the Docker socket, host networking,
 DNS or other UDP, host folders or GPUs. MinIO's community edition stopped
-publishing images in October 2025; the S3 template is Garage.
+publishing images in October 2025. Baserow's all-in-one image starts its
+web frontend on `$PORT`, which Dock sets to the service's port, so it
+collides with the image's own proxy; Baserow's separate images would
+work and are left for later.
 
 ## What blocks more apps
 

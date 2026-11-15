@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,6 +37,11 @@ func TestUseAppTemplate(t *testing.T) {
 		if rel := h.wait(ref, 1); rel.Status != apitypes.ReleaseActive {
 			t.Fatalf("%s: %s (%s)", ref.Service, rel.Status, rel.Error)
 		}
+	}
+	// The app deploys once its database is live, not alongside it.
+	ops := h.rt.Ops()
+	if dbUp, appPull := indexOf(ops, "start "+h.ctr(db, 1)), slices.IndexFunc(ops, func(op string) bool { return strings.HasPrefix(op, "pull ghcr.io/umami-software") }); dbUp < 0 || appPull < dbUp {
+		t.Fatalf("umami was pulled before umami-db started: %v", ops)
 	}
 	spec, _ := h.rt.Spec(h.ctr(app, 1))
 	if spec.Env["DOCK_PUBLIC_DOMAIN"] != "stats.example.com" || !strings.HasPrefix(spec.Env["DATABASE_URL"], "postgresql://postgres:") || len(spec.Env["APP_SECRET"]) != 64 {
