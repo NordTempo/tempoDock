@@ -166,6 +166,21 @@ one decides.
    that gives more than a role shows only where the role passes the
    scope pre-check; `TestPermissionsFitScopes` keeps the seeded groups
    from giving more.
+   Hardened after the pre-open-source security review (enforce mode):
+   an environment permission asked at the org holds wherever it is held
+   at all, so revealing secret values is decided where they are
+   (`revealsAt`: the environment, the whole project, or the whole org
+   for the org's variables), per event for live streams;
+   `TestEnvPermsCheckedAtTheirPlace` refuses an org-level check of an
+   environment permission that changes or reveals, but in functions
+   that say why. **Nobody gives more than they hold**: a grant, a group
+   join, a role change, an invite's role, a token's scope and a custom
+   role's parts need the giver to hold every permission at least as
+   widely (`covers`), so Members and access edit is no way to Full
+   access. Approving is decided in the environment's kind; build log
+   and audit events need logs.read and activity.read where they happen;
+   errors, alert resolving, incidents' components and org variables'
+   uses follow the grants where each one is.
 5. **Custom roles; MCP tools declare their permission** (built). An
    org's own roles (migration 0110) are built-in roles and single
    permissions under one name, stored as their names (`roles.parts`), so

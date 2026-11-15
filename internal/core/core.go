@@ -652,10 +652,11 @@ func (c *Core) audit(ctx context.Context, a Actor, action string, p *store.Proje
 	if p != nil {
 		ae.Project = p.Name
 	}
+	var kind uint8
 	if e != nil {
-		ae.Environment = e.Name
+		ae.Environment, kind = e.Name, envKind(*e)
 	}
-	c.bus.publish(busEvent{orgID: oid, projectID: pid, envID: eid, ev: apitypes.Event{
+	c.bus.publish(busEvent{orgID: oid, projectID: pid, envID: eid, envKind: kind, ev: apitypes.Event{
 		Type: apitypes.EventAudit, Project: ae.Project, Environment: ae.Environment, Audit: &ae,
 	}})
 }

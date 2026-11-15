@@ -59,13 +59,14 @@ func (c *Core) CloneEnvironment(ctx context.Context, a Actor, from EnvRef, req a
 		return out, invalid("kind must be production or non_production")
 	}
 	if req.CopyValues {
-		if err := a.require(apitypes.ScopeAdmin, "copying values into a clone"); err != nil {
+		// Copying values reads them where they are.
+		if err := a.mayReveal(src, "copying values into a clone"); err != nil {
 			return out, err
 		}
 	}
 	out.SourceKind = apitypes.EnvironmentKind(src.env.Kind)
 	cross := out.SourceKind != kind
-	copyLiterals := a.revealsSecrets() && (!cross || req.CopyValues)
+	copyLiterals := a.revealsIn(src) && (!cross || req.CopyValues)
 	rules := cloneRules{literal: func(apitypes.VariableRef) bool { return copyLiterals }}
 
 	var dst envScope

@@ -35,6 +35,14 @@ type EventFilter struct {
 	Project, Environment, Service string
 }
 
+// eventPerms are the permissions events need beyond seeing their place
+// (env.view): a build log's lines are logs, an audit event is activity.
+// Their publishers set busEvent.envKind, which grants for some kinds need.
+var eventPerms = map[apitypes.EventType]Perm{
+	apitypes.EventBuildLog: PermLogsRead,
+	apitypes.EventAudit:    PermActivityRead,
+}
+
 // Events streams live events the actor may see. When the client is too
 // slow and events were dropped, it receives an EventLagged event and
 // should refetch what it shows. Events queued while the client was being
@@ -74,11 +82,16 @@ func (c *Core) Events(ctx context.Context, a Actor, f EventFilter) (Stream[LiveE
 		if !a.canSee(e.orgID, e.projectID, envID) || (e.serverStats && !serverStats) || (e.noServers && serverStats) || !e.seenBy(a) {
 			return false
 		}
+		// What an event shows beyond status needs its own permission there.
+		if p, ok := eventPerms[e.ev.Type]; ok && !a.holdsAt(p, e.projectID, e.envID, e.envKind) {
+			return false
+		}
 		return (pid == 0 || e.projectID == pid) &&
 			(eid == 0 || e.envID == eid || e.ev.Type == apitypes.EventProjectRenamed) &&
 			(sid == 0 || e.serviceID == sid || e.ev.Type == apitypes.EventProjectRenamed)
 	}
-	reveal := a.revealsSecrets()
+	// Secret values in an event are revealed per its environment.
+	reveal := func(e busEvent) bool { return a.revealsAt(e.projectID, e.envID, e.envKind) }
 	return func(ctx context.Context, ready func(), send func(...LiveEvent) error) error {
 		sub := c.bus.subscribeAs(reveal, match)
 		defer sub.close()
@@ -109,7 +122,7 @@ func (c *Core) BuildLog(ctx context.Context, a Actor, ref ServiceRef, number int
 	if err != nil {
 		return nil, err
 	}
-	red, err := c.logRedactor(a, rel)
+	red, err := c.logRedactor(a, ss.envScope, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -135,18 +148,18 @@ func (c *Core) FollowBuildLog(ctx context.Context, a Actor, ref ServiceRef, numb
 	if err != nil {
 		return nil, err
 	}
-	red, err := c.logRedactor(a, rel)
+	red, err := c.logRedactor(a, ss.envScope, rel)
 	if err != nil {
 		return nil, err
 	}
-	reveal := a.revealsSecrets()
+	reveal := a.revealsIn(ss.envScope)
 	building := func(status string) bool {
 		return status == string(apitypes.ReleaseQueued) || status == string(apitypes.ReleaseBuilding)
 	}
 	return func(ctx context.Context, ready func(), send func(...apitypes.BuildLogLine) error) error {
 		// Subscribe before reading the file so no line falls in between;
 		// line numbers (Seq) drop the duplicates.
-		sub := c.bus.subscribeAs(reveal, func(e busEvent) bool {
+		sub := c.bus.subscribeAs(func(busEvent) bool { return reveal }, func(e busEvent) bool {
 			return e.serviceID == ss.svc.ID &&
 				((e.ev.BuildLog != nil && e.ev.BuildLog.ReleaseNumber == number) ||
 					(e.ev.Release != nil && e.ev.Release.Number == number))
@@ -389,7 +402,7 @@ func (c *Core) ServiceLogs(ctx context.Context, a Actor, ref ServiceRef, q LogQu
 	if err != nil {
 		return nil, err
 	}
-	red, err := c.logRedactor(a, rel)
+	red, err := c.logRedactor(a, ss.envScope, rel)
 	if err != nil {
 		return nil, err
 	}

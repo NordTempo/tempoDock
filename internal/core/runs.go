@@ -332,7 +332,7 @@ func (r *Run) wait(ctx context.Context, stream *node.JobStream) apitypes.Command
 	defer stop()
 
 	flush := func() error { return nil }
-	if red, rerr := c.logRedactor(r.actor, r.rel); rerr == nil && red != nil && stream != nil {
+	if red, rerr := c.logRedactor(r.actor, r.ss.envScope, r.rel); rerr == nil && red != nil && stream != nil {
 		// Its output can print the service's variables (`printenv`):
 		// masked live, as logs are, for whoever can't reveal them.
 		masked := *stream
@@ -441,7 +441,7 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 	}
 	out := c.toRun(r.ss, r.rel, r.row)
 	out.Job = r.jobName()
-	c.maskRunOutput(r.actor, r.rel, &out)
+	c.maskRunOutput(r.actor, r.ss.envScope, r.rel, &out)
 	return out
 }
 
@@ -450,11 +450,11 @@ func (r *Run) finish(ctx context.Context, status apitypes.RunStatus, exit *int, 
 // printenv` needs deploy, revealing needs admin. It stops a command that
 // prints them, not one that encodes them first, so running stays a
 // permission that reaches secrets. Output it can't mask is dropped.
-func (c *Core) maskRunOutput(a Actor, rel store.Release, run *apitypes.CommandRun) {
+func (c *Core) maskRunOutput(a Actor, es envScope, rel store.Release, run *apitypes.CommandRun) {
 	if run.Output == "" {
 		return
 	}
-	red, err := c.logRedactor(a, rel)
+	red, err := c.logRedactor(a, es, rel)
 	if err != nil {
 		c.log.Error("mask a run's output", "run", run.ID, "err", err)
 		run.Output = ""
@@ -590,7 +590,7 @@ func (c *Core) GetRun(ctx context.Context, a Actor, ref ServiceRef, id int64) (a
 			out.Job = job.Name
 		}
 	}
-	c.maskRunOutput(a, rel, &out)
+	c.maskRunOutput(a, ss.envScope, rel, &out)
 	return out, nil
 }
 

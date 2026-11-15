@@ -62,6 +62,8 @@ type LockedError struct {
 	Request int64
 	// askedFirst: the environment isn't locked; the caller asked first.
 	askedFirst bool
+	// envKind is the environment's kind (envKind), for who sees its request.
+	envKind uint8
 }
 
 func (e *LockedError) Error() string { return e.err.Msg }
@@ -75,7 +77,7 @@ func (e *LockedError) AccessRequest() int64 { return e.Request }
 
 // lockedErr is the error checkEnv returns when the lock stops a token.
 func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *LockedError {
-	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action,
+	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action, envKind: envKind(e),
 		askedFirst: a.askFirst && (a.Kind != "token" || !lockHolds(e, now()))}
 	le.err = &Error{Code: apitypes.CodeEnvironmentLocked, Msg: le.message()}
 	return le

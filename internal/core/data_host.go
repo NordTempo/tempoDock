@@ -371,7 +371,7 @@ func (h dataHost) Audit(ctx context.Context, pa datapanel.Actor, d *svcData, e d
 		ID: row.ID, Actor: row.Actor, ActorKind: row.ActorKind, Action: row.Action, Project: ss.project.Name,
 		Environment: ss.env.Name, Target: row.Target, Summary: row.Summary, DetailID: row.DetailID, CreatedAt: row.CreatedAt,
 	}
-	c.bus.publish(busEvent{orgID: ss.project.OrgID, projectID: ss.project.ID, envID: ss.env.ID, ev: apitypes.Event{
+	c.bus.publish(busEvent{orgID: ss.project.OrgID, projectID: ss.project.ID, envID: ss.env.ID, envKind: envKind(ss.env), ev: apitypes.Event{
 		Type: apitypes.EventAudit, Project: ae.Project, Environment: ae.Environment, Audit: &ae,
 	}})
 }

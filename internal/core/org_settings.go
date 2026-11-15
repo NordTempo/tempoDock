@@ -164,6 +164,9 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 	if !validScope(req.Role) {
 		return apitypes.User{}, invalid("role must be read, deploy or admin")
 	}
+	if err := a.scopeGive(req.Role, 0, 0, uint8(allKinds), "role "+string(req.Role)); err != nil {
+		return apitypes.User{}, err
+	}
 	if err := c.keepAnAdmin(ctx, a.OrgID, userID, req.Role); err != nil {
 		return apitypes.User{}, err
 	}
@@ -258,6 +261,9 @@ func (c *Core) CreateInvite(ctx context.Context, a Actor, req apitypes.CreateInv
 	}
 	if !validScope(req.Role) {
 		return apitypes.CreatedInvite{}, invalid("role must be read, deploy or admin")
+	}
+	if err := a.scopeGive(req.Role, 0, 0, uint8(allKinds), "role "+string(req.Role)); err != nil {
+		return apitypes.CreatedInvite{}, err
 	}
 	if _, err := c.store.GetMemberRoleByEmail(ctx, store.GetMemberRoleByEmailParams{OrgID: a.OrgID, Email: email}); err == nil {
 		return apitypes.CreatedInvite{}, conflict("%s is a member of %s already", email, a.OrgSlug)
@@ -518,10 +524,9 @@ func (c *Core) ListOrgVariables(ctx context.Context, a Actor, reveal bool) ([]ap
 		return nil, err
 	}
 	if reveal {
-		if err := a.require(apitypes.ScopeAdmin, "revealing secret values"); err != nil {
-			return nil, err
-		}
-		if err := a.requireRecent("revealing secret values"); err != nil {
+		// The org's variables reach every environment: reveal on the
+		// whole org.
+		if err := a.requireReveal(envScope{}); err != nil {
 			return nil, err
 		}
 	}
@@ -529,7 +534,9 @@ func (c *Core) ListOrgVariables(ctx context.Context, a Actor, reveal bool) ([]ap
 	if err != nil {
 		return nil, err
 	}
-	uses, err := c.orgVariableUses(ctx, a.OrgID)
+	// Where they are used, as far as the caller sees (a project-limited
+	// token sees its project's).
+	uses, err := c.orgVariableUses(ctx, a.OrgID, func(project, env int64) bool { return a.canSee(a.OrgID, project, env) })
 	if err != nil {
 		return nil, err
 	}
@@ -552,14 +559,18 @@ func (c *Core) ListOrgVariables(ctx context.Context, a Actor, reveal bool) ([]ap
 }
 
 // orgVariableUses finds the ${{org.KEY}} references in the live and staged
-// variables of the org's live projects, by key.
-func (c *Core) orgVariableUses(ctx context.Context, orgID int64) (map[string][]apitypes.VariableUse, error) {
+// variables of the org's live projects, by key; with seen, only in the
+// places it lets through.
+func (c *Core) orgVariableUses(ctx context.Context, orgID int64, seen func(project, env int64) bool) (map[string][]apitypes.VariableUse, error) {
 	rows, err := c.store.ListOrgVariableUses(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string][]apitypes.VariableUse{}
 	for _, r := range rows {
+		if seen != nil && !seen(r.ProjectID, r.EnvironmentID) {
+			continue
+		}
 		use := apitypes.VariableUse{Project: r.ProjectName, Environment: r.EnvironmentName, Service: r.ServiceName}
 		for _, sealed := range [][]byte{r.Value, r.PendingValue} {
 			v, err := c.openValue(sealed, variableAAD(r.EnvironmentID, r.ServiceID, r.Key), r.Key)
@@ -596,7 +607,7 @@ func (c *Core) SetOrgVariable(ctx context.Context, a Actor, key, value string) (
 	if err := c.store.UpsertOrgVariable(ctx, store.UpsertOrgVariableParams{OrgID: a.OrgID, Key: key, Value: sealed, UpdatedAt: n, UpdatedBy: a.Name}); err != nil {
 		return apitypes.OrgVariable{}, err
 	}
-	uses, err := c.orgVariableUses(ctx, a.OrgID)
+	uses, err := c.orgVariableUses(ctx, a.OrgID, nil)
 	if err != nil {
 		return apitypes.OrgVariable{}, err
 	}
@@ -614,7 +625,7 @@ func (c *Core) DeleteOrgVariable(ctx context.Context, a Actor, key string) error
 	if err := a.requireUnlimited(apitypes.ScopeAdmin, "removing organization variables"); err != nil {
 		return err
 	}
-	uses, err := c.orgVariableUses(ctx, a.OrgID)
+	uses, err := c.orgVariableUses(ctx, a.OrgID, nil)
 	if err != nil {
 		return err
 	}
@@ -656,7 +667,7 @@ func (c *Core) RedeployOrgVariable(ctx context.Context, a Actor, key string) (ap
 	if err := a.require(apitypes.ScopeDeploy, "redeploying"); err != nil {
 		return out, err
 	}
-	uses, err := c.orgVariableUses(ctx, a.OrgID)
+	uses, err := c.orgVariableUses(ctx, a.OrgID, nil)
 	if err != nil {
 		return out, err
 	}

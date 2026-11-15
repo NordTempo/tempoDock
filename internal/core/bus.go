@@ -35,6 +35,9 @@ type busEvent struct {
 	// requests).
 	adminsOnly bool
 	requester  int64
+	// envKind is envID's kind (envKind), where the publisher knows it:
+	// what a person's grants for some kinds see of it (streams.go).
+	envKind uint8
 }
 
 // secretsView says which subscribers get an event (busEvent.secrets).
@@ -48,7 +51,7 @@ const (
 
 // seenBy reports whether the event's audience includes a, beyond canSee.
 func (e busEvent) seenBy(a Actor) bool {
-	return !e.adminsOnly || a.approves(e.projectID, e.envID) || (e.requester != 0 && a.TokenID == e.requester)
+	return !e.adminsOnly || a.approves(e.projectID, e.envID, e.envKind) || (e.requester != 0 && a.TokenID == e.requester)
 }
 
 // LiveEvent is an event as delivered to subscribers. Every subscriber that
@@ -99,8 +102,9 @@ type bus struct {
 type subscription struct {
 	ch    chan LiveEvent
 	match func(busEvent) bool
-	// reveal: the subscriber may see secret values (busEvent.secrets).
-	reveal bool
+	// reveal says whether the subscriber may see an event's secret values
+	// (busEvent.secrets), in its environment.
+	reveal func(busEvent) bool
 	lagged atomic.Bool
 	bus    *bus
 	once   sync.Once
@@ -111,12 +115,18 @@ const subscriptionBuffer = 256
 func newBus() *bus { return &bus{subs: map[*subscription]struct{}{}, names: map[int64]string{}} }
 
 func (b *bus) subscribe(match func(busEvent) bool) *subscription {
-	return b.subscribeAs(false, match)
+	return b.subscribeAs(nil, match)
+}
+
+// reveals reports whether the subscriber sees e's secret values; one
+// without a reveal rule doesn't.
+func (s *subscription) reveals(e busEvent) bool {
+	return s.reveal != nil && s.reveal(e)
 }
 
 // subscribeAs is subscribe for a subscriber that may reveal secret values
 // or not: it gets log lines as written or masked (busEvent.secrets).
-func (b *bus) subscribeAs(reveal bool, match func(busEvent) bool) *subscription {
+func (b *bus) subscribeAs(reveal func(busEvent) bool, match func(busEvent) bool) *subscription {
 	s := &subscription{ch: make(chan LiveEvent, subscriptionBuffer), match: match, reveal: reveal, bus: b}
 	b.mu.Lock()
 	b.subs[s] = struct{}{}
@@ -138,7 +148,7 @@ func (b *bus) publish(e busEvent) {
 	live := newLiveEvent(e.ev)
 	live.signal, live.projectID, live.serviceID = e.alert, e.projectID, e.serviceID
 	for s := range b.subs {
-		if (e.secrets == secretsRevealed && !s.reveal) || (e.secrets == secretsMasked && s.reveal) || !s.match(e) {
+		if e.secrets != secretsNone && (e.secrets == secretsRevealed) != s.reveals(e) || !s.match(e) {
 			continue
 		}
 		select {

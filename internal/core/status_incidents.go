@@ -341,24 +341,32 @@ func (c *Core) resolveImpacts(ctx context.Context, a Actor, p store.StatusPage, 
 // speak only for components built entirely from what it can see: none
 // that is manual, and never for the whole page.
 func (c *Core) checkIncidentScope(ctx context.Context, a Actor, p store.StatusPage, ims []statusImpact) error {
-	if !a.limited() {
+	// A person whose grants post on less than the whole org is limited
+	// like a token (ADR 0080): to what they post for.
+	granted := a.hasGrants && !a.covers(1<<PermStatusPagesPost, 0, 0, uint8(allKinds))
+	if !a.limited() && !granted {
 		return nil
 	}
 	if len(ims) == 0 {
-		return errf(apitypes.CodeForbidden, "%s is limited to %s; an incident that names no component speaks for the whole page, which needs an unlimited token", a, a.limitName())
+		return errf(apitypes.CodeForbidden, "%s posts for only part of the organization; an incident that names no component speaks for the whole page, which needs Status pages post on the whole organization", a)
 	}
 	srcs, err := c.store.ListStatusPageSources(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+	kinds, err := c.envKinds(ctx, a)
 	if err != nil {
 		return err
 	}
 	ok := map[int64]bool{}
 	for _, s := range srcs {
 		v, seen := ok[s.ComponentID]
-		ok[s.ComponentID] = (v || !seen) && a.canSee(s.OrgID, s.ProjectID, s.EnvironmentID)
+		ok[s.ComponentID] = (v || !seen) && a.canSee(s.OrgID, s.ProjectID, s.EnvironmentID) &&
+			a.holdsAt(PermStatusPagesPost, s.ProjectID, s.EnvironmentID, kinds[s.EnvironmentID])
 	}
 	for _, im := range ims {
 		if !ok[im.component] {
-			return errf(apitypes.CodeForbidden, "%s is limited to %s and component %q isn't built only from it; ask someone with an unlimited token", a, a.limitName(), im.name)
+			return errf(apitypes.CodeForbidden, "%s can't speak for component %q: it isn't built only from what %s posts for; ask someone who posts for all of it", a, im.name, a)
 		}
 	}
 	return nil

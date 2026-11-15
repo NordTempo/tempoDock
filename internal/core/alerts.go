@@ -1154,6 +1154,23 @@ func (c *Core) ResolveAlert(ctx context.Context, a Actor, id int64) (apitypes.Al
 		err = a.requirePlatform(PlatformAlerts, "resolving platform alerts")
 	} else if err = a.require(apitypes.ScopeDeploy, "resolving alerts"); err == nil && !a.seesAlert(row) {
 		err = missing
+	} else if err == nil && a.hasGrants && row.ProjectID != nil {
+		// alerts.resolve where the alert is (ADR 0080), not anywhere.
+		var env int64
+		var kind uint8
+		if row.ServiceID != nil {
+			svc, serr := c.store.GetService(ctx, *row.ServiceID)
+			if serr != nil {
+				return apitypes.Alert{}, serr
+			}
+			if kind, err = c.envKindOf(ctx, a, svc.EnvironmentID); err != nil {
+				return apitypes.Alert{}, err
+			}
+			env = svc.EnvironmentID
+		}
+		if !a.holdsAt(PermAlertsResolve, *row.ProjectID, env, kind) {
+			err = a.refuseGrant(apitypes.ScopeDeploy, "resolving alerts", row.Project)
+		}
 	}
 	if err != nil {
 		return apitypes.Alert{}, err

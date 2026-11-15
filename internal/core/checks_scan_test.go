@@ -57,13 +57,18 @@ type checkSig struct {
 	action      int
 	fixedAction string
 	suffix      string
+	// base is the Actor check it ends in.
+	base string
 }
 
 // scannedCheck is one call site's check.
 type scannedCheck struct {
-	pos string
-	fn  string
-	key actionKey
+	pos  string
+	fn   string
+	key  actionKey
+	base string
+	// in is the function the call is in.
+	in string
 }
 
 // scanChecks finds every check in the package's code with its scope and
@@ -92,7 +97,7 @@ func scanChecks(t *testing.T) ([]scannedCheck, []string) {
 	}
 	sigs := map[string][]checkSig{}
 	for _, name := range baseChecks {
-		sigs[name] = []checkSig{{scope: 0, action: 1}}
+		sigs[name] = []checkSig{{scope: 0, action: 1, base: name}}
 	}
 	// Grow the set of checks until no function joins: one that passes a
 	// parameter on as a check's scope or action is a check too, once for
@@ -140,10 +145,10 @@ func scanChecks(t *testing.T) ([]scannedCheck, []string) {
 			switch {
 			case len(actions) > 0:
 				for _, act := range actions {
-					checks = append(checks, scannedCheck{pos, fn, actionKey{need, act + sig.suffix}})
+					checks = append(checks, scannedCheck{pos, fn, actionKey{need, act + sig.suffix}, sig.base, fd.Name.Name})
 				}
 			case prefix != "":
-				checks = append(checks, scannedCheck{pos, fn, actionKey{need, prefix}})
+				checks = append(checks, scannedCheck{pos, fn, actionKey{need, prefix}, sig.base, fd.Name.Name})
 			default:
 				problems = append(problems, fmt.Sprintf("%s: %s's action can't be read from the code: write it as a literal or a constant", pos, fn))
 			}
@@ -174,7 +179,7 @@ func eachCheck(fd *ast.FuncDecl, sigs map[string][]checkSig, f func(*ast.CallExp
 // its scope, or both; what isn't passed on is fixed (a literal, a
 // constant). None when the call passes nothing on.
 func passedOn(call *ast.CallExpr, sig checkSig, params map[string]int, fd *ast.FuncDecl) []checkSig {
-	out := checkSig{scope: -1, fixed: sig.fixed, action: -1, fixedAction: sig.fixedAction, suffix: sig.suffix}
+	out := checkSig{scope: -1, fixed: sig.fixed, action: -1, fixedAction: sig.fixedAction, suffix: sig.suffix, base: sig.base}
 	passes := false
 	if sig.fixed == "" {
 		if si, isParam := params[identName(call.Args[sig.scope])]; isParam {
@@ -355,4 +360,61 @@ func localValues(id *ast.Ident, fd *ast.FuncDecl, out []string) []string {
 		return nil
 	}
 	return out
+}
+
+// orgChecksOfEnvPerms are the functions that check, at the org, an
+// environment permission that changes or reveals something, and why
+// that is right there. Asked at the org such a permission holds wherever
+// it is held at all (modelAllows), so anywhere else it would let a grant
+// on one environment act on every one: check it at the place instead
+// (checkEnv, checkEnvAccess, envFor, serviceFor) or add the function
+// here with its reason.
+var orgChecksOfEnvPerms = map[string]string{
+	"ApplyProject":             "pre-check; every environment of the file is checked with checkEnv",
+	"CheckRequest":             "pre-check; checkEnvAccess where the request is follows",
+	"DecideRequest":            "pre-check; checkEnvAccess where the request is follows",
+	"LockEnvironment":          "pre-check; checkEnvAccess where it locks follows",
+	"DisableHostnameAnalytics": "pre-check; checkEnv where the domain is follows",
+	"EnableHostnameAnalytics":  "pre-check in domainScope; checkEnv where the domain is follows",
+	"ResolveAlert":             "pre-check; holdsAt where the alert is follows",
+	"RedeployOrgVariable":      "pre-check; each service's redeploy is checked where it is, and skipped otherwise",
+	"OpenIncident":             "status pages are the org's; checkIncidentScope holds each component to where the caller posts",
+	"PostIncidentUpdate":       "status pages are the org's; checkIncidentScope holds each component to where the caller posts",
+	"UpdateIncident":           "status pages are the org's; checkIncidentScope holds each component to where the caller posts",
+	"EditIncidentUpdate":       "status pages are the org's; checkIncidentScope holds each component to where the caller posts",
+	"ScheduleMaintenance":      "status pages are the org's; checkIncidentScope holds each component to where the caller posts",
+	"ListCloudflareZones":      "lists the org's zones to add a domain to; adding one is checked where its service is",
+	"GitHubRepos":              "lists repositories to connect; connecting one is checked where its service is",
+	"GitHubBranches":           "lists branches to connect; connecting one is checked where its service is",
+	"GitHubPaths":              "lists directories to connect; connecting one is checked where its service is",
+	"revealsAt":                "only for actors grants don't decide; grants are asked at the place",
+	"requireReveal":            "through mayReveal, only for actors grants don't decide",
+	"CloneEnvironment":         "through mayReveal, only for actors grants don't decide",
+}
+
+// An environment permission that changes or reveals something is checked
+// where it applies, not at the org (orgChecksOfEnvPerms): the security
+// review found reveal on one environment revealing every one's secrets.
+func TestEnvPermsCheckedAtTheirPlace(t *testing.T) {
+	checks, _ := scanChecks(t)
+	used := map[string]bool{}
+	for _, c := range checks {
+		p, ok := permFor(c.key)
+		if !ok || c.base != "require" && c.base != "requireUnlimited" {
+			continue
+		}
+		if info := permTable[p]; info.level != PermEnv || info.read {
+			continue
+		}
+		if _, ok := orgChecksOfEnvPerms[c.in]; ok {
+			used[c.in] = true
+			continue
+		}
+		t.Errorf("%s: %s(%s, %q) checks %s at the org, where a grant on any environment passes; check it where it applies (checkEnv), or say why in orgChecksOfEnvPerms", c.pos, c.fn, c.key.need, c.key.action, p)
+	}
+	for in := range orgChecksOfEnvPerms {
+		if !used[in] {
+			t.Errorf("orgChecksOfEnvPerms names %s, which checks no such permission at the org now", in)
+		}
+	}
 }

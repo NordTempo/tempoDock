@@ -563,7 +563,7 @@ func (c *Core) GetDiagnosis(ctx context.Context, a Actor, ref ServiceRef, id int
 	if err != nil {
 		return b, err
 	}
-	red, err := c.logRedactor(a, rel)
+	red, err := c.logRedactor(a, ss.envScope, rel)
 	if err != nil {
 		return b, err
 	}
