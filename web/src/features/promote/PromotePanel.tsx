@@ -12,7 +12,7 @@ import { useOrg } from "../../shell/location";
 import { Button, Check, ErrorText, Panel, StateText } from "../../ui/kit";
 import { inFlight, releaseState, stepPhrase } from "../../ui/status";
 import { imageLabel } from "../service/releases";
-import { deploySteps, StepTable } from "../service/Steps";
+import { ReleaseSteps } from "../service/Steps";
 import { type PlanRow, promoteCli } from "./plan";
 
 /** Why the API skipped a service, when it sends no message. */
@@ -259,12 +259,10 @@ function Progress({
         </Panel>
       )}
       {focus && twin && (
-        <StepTable
-          steps={deploySteps(
-            focus.release,
-            twin.service.active_release ?? null,
-            twin.service.stateful,
-          )}
+        <ReleaseSteps
+          release={focus.release}
+          serving={twin.service.active_release ?? null}
+          stateful={twin.service.stateful}
         />
       )}
       {skipped.length > 0 && (

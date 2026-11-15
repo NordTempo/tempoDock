@@ -13,8 +13,10 @@ import {
 import { Signals } from "../features/service/Signals";
 import { deploySteps, StepTable } from "../features/service/Steps";
 import { useOrg } from "../shell/location";
+import { useNow } from "../ui/clock";
 import { elapsed } from "../ui/format";
 import { Actor, actorKind, SectionHead } from "../ui/kit";
+import { inFlight } from "../ui/status";
 
 // A service at a glance (A2): status, what needs attention, facts, uptime
 // and visitors, the deploy in flight and the newest releases (all of them
@@ -70,10 +72,12 @@ function DeployProgress({
   const org = useOrg();
   const { service } = useService(ref);
   const release = useRelease(ref, number);
+  const now = useNow(inFlight(release.status));
   const steps = deploySteps(
     release,
     service.active_release ?? null,
     service.stateful,
+    now,
   );
   return (
     <section aria-labelledby="progress">
@@ -87,7 +91,10 @@ function DeployProgress({
               kind={actorKind(release.created_by)}
             />{" "}
             · <span className="font-mono">{imageLabel(release)}</span> ·{" "}
-            {elapsed(Date.now() - Date.parse(release.created_at))}
+            {elapsed(
+              (release.finished_at ? Date.parse(release.finished_at) : now) -
+                Date.parse(release.created_at),
+            )}
           </>
         }
         right={
