@@ -200,6 +200,10 @@ export const topics: Record<TopicId, Topic> = {
         what: "Get it as a project file to edit",
         cli: "dock template use umami --file -e {env}",
       },
+      {
+        what: "Save this environment as the organization's template",
+        cli: "dock template save my-stack -e {env}",
+      },
     ],
     watch: [
       "The services are ordinary afterwards; a newer template doesn't change them.",

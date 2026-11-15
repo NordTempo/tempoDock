@@ -67,8 +67,7 @@ work and are left for later.
 - Template images age between bumps; updating a running app is the same
   image change as for any service. Telling services that a newer revision
   of their template exists is later.
-- Org templates (save an environment as a template) reuse the format and
-  come next.
+- Organization templates reuse the format (below).
 
 ## Amendment: what more apps need
 
@@ -87,3 +86,17 @@ Wave 2: Ghost, WordPress, BookStack, Matomo, Plausible, Nextcloud,
 Authentik and Keycloak. Not yet: Chatwoot and Immich (their workers share
 a volume with the web service), Garage (its image has no shell for the
 config file).
+
+## Amendment: organization templates
+
+An organization's templates are stored as their files (`org_templates`,
+migration 0114) and listed first in the catalog for its members. Admins
+save them from a file in the catalog's format or from an environment's
+services: settings, volumes, jobs and references between them; database
+templates stay templates; variables that aren't references become secret
+inputs, so a template never carries a value someone set; services that
+build from source are refused. Dock's own names can't be taken, saving a
+name again replaces it, and removing one leaves the services made from
+it. Audit `template.save`, `template.remove`. The UI saves from Project
+settings and removes from the picker; the CLI is `dock template save`,
+`remove` and `show --toml`. Agents use them through the same MCP tools.

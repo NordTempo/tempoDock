@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { useIsAdmin } from "../../data/queries";
 import type { EnvRef } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Button, ErrorText } from "../../ui/kit";
@@ -19,6 +20,7 @@ import {
   type AppTemplate,
   appTemplates,
   type TemplateInput,
+  useRemoveTemplate,
   useUseTemplate,
 } from "./data";
 import { Mark } from "./Mark";
@@ -86,6 +88,8 @@ export function FromTemplate({
   const navigate = useNavigate();
   const catalog = useQuery(appTemplates());
   const use = useUseTemplate();
+  const remove = useRemoveTemplate();
+  const isAdmin = useIsAdmin();
   const v = useValidation();
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState(initial ?? "");
@@ -109,7 +113,9 @@ export function FromTemplate({
     )
     .sort(
       (a, b) =>
-        rank(a.category) - rank(b.category) || a.title.localeCompare(b.title),
+        rank(a) - rank(b) ||
+        group(a).localeCompare(group(b)) ||
+        a.title.localeCompare(b.title),
     );
   const t =
     shown.find((x) => x.name === picked) ??
@@ -261,8 +267,8 @@ export function FromTemplate({
           >
             {catalog.error && <ErrorText error={catalog.error} />}
             {shown.map((x) => {
-              const header = x.category !== lastCategory && x.category;
-              lastCategory = x.category;
+              const header = group(x) !== lastCategory && group(x);
+              lastCategory = group(x);
               return (
                 <div key={x.name}>
                   {header && (
@@ -305,7 +311,7 @@ export function FromTemplate({
                 <div className="text-xs text-mut">
                   {t.summary}{" "}
                   <span className="text-faint">
-                    · {t.license}
+                    · {t.org ? "the organization's" : t.license}
                     {t.website && (
                       <>
                         {" · "}
@@ -423,6 +429,20 @@ export function FromTemplate({
               {memText(t.memory_mb)} of memory in all
             </p>
             {t.notes && <p className="mt-3 text-xs text-mut">{t.notes}</p>}
+            {t.org && isAdmin && (
+              <p className="mt-3 flex items-center gap-2 text-xs text-mut">
+                <button
+                  type="button"
+                  className="btn sm"
+                  title={`dock template remove ${t.name}`}
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(t.name)}
+                >
+                  Remove template
+                </button>
+                Services made from it stay.
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -442,7 +462,11 @@ export function FromTemplate({
   );
 }
 
-const rank = (category: string) => {
-  const i = order.indexOf(category);
+/** The list's group: the organization's own first, then by category. */
+const group = (t: AppTemplate) => (t.org ? "this organization" : t.category);
+
+const rank = (t: AppTemplate) => {
+  if (t.org) return -1;
+  const i = order.indexOf(t.category);
   return i < 0 ? order.length : i;
 };

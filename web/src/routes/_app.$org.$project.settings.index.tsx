@@ -10,6 +10,7 @@ import {
 import { Page, SectionHead } from "../ui/kit";
 
 const ApplyFile = lazy(() => import("../features/apply/ApplyFile"));
+const SaveTemplate = lazy(() => import("../features/templates/SaveTemplate"));
 
 // A project's General settings (ADR 0059): its name, where its
 // environments are placed (operators only, as servers are), its config
@@ -29,6 +30,7 @@ function General() {
   const overview = useProjectOverview(project);
   const session = useSession();
   const [applying, setApplying] = useState(false);
+  const [saving, setSaving] = useState(false);
   // Staging a file needs deploy in the project (environment-limited
   // tokens only their own environment, which the dialog fixes).
   const canApply =
@@ -44,9 +46,17 @@ function General() {
         <Export
           project={project}
           onApply={canApply ? () => setApplying(true) : undefined}
+          onSaveTemplate={
+            session?.scope === "admin" ? () => setSaving(true) : undefined
+          }
         />
       </section>
       <ArchiveProject project={project} />
+      {saving && (
+        <Suspense fallback={null}>
+          <SaveTemplate project={project} onClose={() => setSaving(false)} />
+        </Suspense>
+      )}
       {applying && (
         <Suspense fallback={null}>
           <ApplyFile project={project} onClose={() => setApplying(false)} />

@@ -112,7 +112,11 @@ export default function SaveTemplate({
                 <label
                   key={s.name}
                   className={`flex items-center gap-1.5 font-mono text-xs ${ok ? "" : "text-faint"}`}
-                  title={ok ? undefined : "Builds from source; a template runs images"}
+                  title={
+                    ok
+                      ? undefined
+                      : "Builds from source; a template runs images"
+                  }
                 >
                   <input
                     type="checkbox"
