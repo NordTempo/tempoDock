@@ -76,7 +76,7 @@ Decided by the agent while building the second catalog wave.
 
 | Gap | What was built |
 |---|---|
-| MySQL and MariaDB | Database templates (MySQL 8.4, MariaDB 11.8 LTS): root password generated, an `app` database, `DATABASE_URL`, the Data panel, and backups by `mysqldump` or `mariadb-dump` of every database but the server's own, restored into a new server as its root. Migration 0113 widens the CHECKs on `services.template` and `backups.kind` |
+| MySQL and MariaDB | Database templates (MySQL 8.4, MariaDB 11.8 LTS): root password generated, an `app` database, `DATABASE_URL`, the Data panel, and backups by `mysqldump` or `mariadb-dump` of every database but the server's own, restored into a new server as its root. Migration 0116 widens the CHECKs on `services.template` and `backups.kind` |
 | Redis's licence | A `valkey` template (Valkey 9, BSD): Redis's files, protocol and variables |
 | Vector search | A `pgvector` template: Postgres 17 with the extension, backed up and restored in its own image |
 | A command as arguments | A start command in exec form, a JSON array like a Dockerfile's `CMD ["worker"]`, starts the container with those arguments and no shell (container spec args, node protocol 29). A Compose `command` without an `entrypoint` becomes one, as Compose passes it to the entrypoint too |
