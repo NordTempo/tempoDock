@@ -20,6 +20,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/tonistiigi/fsutil v0.0.0-20261009124904-c1c5bffae3b5
+	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0
 	go.opentelemetry.io/proto/otlp v1.11.1
 	golang.org/x/crypto v0.58.0
 	golang.org/x/mod v0.42.0
@@ -113,7 +114,6 @@ require (
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tidwall/pretty v1.2.2 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
-	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect
 	github.com/x448/float16 v0.8.4 // indirect

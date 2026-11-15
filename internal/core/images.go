@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
+	"github.com/NordTempo/tempoDock/internal/httpkit"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -342,20 +343,14 @@ func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 // releases keep their images.
 func (c *Core) keepReleases() int { return max(c.cfg.Defaults.KeepReleases, 1) }
 
-// cgnat is 100.64.0.0/10 (RFC 6598), where Tailscale puts its addresses:
-// private in practice, though netip doesn't call it that.
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
-
 // validateImageRef refuses image references a user gives that are under
 // the platform registry's host (registry, "" without one: those images
 // are pulled with tokens the control plane mints, see pullAllowed), or
-// whose registry is this machine or a private network (localhost,
-// loopback, link-local, RFC 1918, CGNAT/Tailscale and ULA addresses): a
-// pull makes the Docker daemon connect there, which would let a deploy
-// token probe internal services. Docker Hub refs and public registries
-// (ghcr.io, registry.example.com:5000) pass. Hostnames are not resolved,
-// so a public name pointing at a private address is not caught.
-func validateImageRef(ref, registry string) error {
+// whose registry is localhost or an address g refuses (imageAddrErr).
+// Docker Hub refs and public registries (ghcr.io,
+// registry.example.com:5000) pass. Hostnames are resolved when pulling
+// (checkRegistry), not here.
+func validateImageRef(ref, registry string, g *egressGuard) error {
 	host := registryHost(ref)
 	if host == "" {
 		return nil
@@ -363,18 +358,70 @@ func validateImageRef(ref, registry string) error {
 	if registry != "" && strings.EqualFold(host, registry) {
 		return invalid("image %q is in the platform registry, which only holds images the platform built; deploy from source, promote, or use another registry", ref)
 	}
-	h := host
-	if hh, _, err := net.SplitHostPort(host); err == nil {
-		h = hh
-	}
-	h = strings.ToLower(strings.Trim(h, "[]"))
+	h := registryAddr(host)
 	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
 		return invalid("image %q is on a localhost registry; use a public registry", ref)
 	}
 	if ip, err := netip.ParseAddr(h); err == nil {
-		ip = ip.Unmap()
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() || ip.IsMulticast() || cgnat.Contains(ip) {
-			return invalid("image %q is on a registry at a private or loopback address (%s); use a public registry", ref, ip)
+		return imageAddrErr(g, ref, ip)
+	}
+	return nil
+}
+
+// registryAddr is a registry host[:port] without the port and brackets,
+// lower-cased: a name or an address.
+func registryAddr(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.ToLower(strings.Trim(host, "[]"))
+}
+
+// imageAddrErr refuses a registry at ip that g refuses. A server's Docker
+// daemon pulls from the host, outside the app firewall, so a pull from
+// such a registry would let anyone who can name an image reach the
+// server's own loopback services (the API, the registry), cloud metadata
+// or, unless the operator allows them for apps (`[network]
+// allow_private`), the LAN and tailnet.
+func imageAddrErr(g *egressGuard, ref string, ip netip.Addr) error {
+	if g.addrErr(ip) == nil {
+		return nil
+	}
+	if ip = ip.Unmap(); httpkit.IsSelfAddr(ip) || httpkit.IsInternalAddr(ip) {
+		return invalid("image %q is on a registry at %s, a loopback, link-local or cloud metadata address, which servers never pull from; push it to a public registry", ref, ip)
+	}
+	return invalid("image %q is on a registry at a private address (%s); push it to a public registry, or an operator lets apps and pulls reach that network with [network] allow_private", ref, ip)
+}
+
+// pullLookupTimeout bounds resolving a registry's name before a pull.
+const pullLookupTimeout = 5 * time.Second
+
+// checkRegistry refuses a pull of ref from its registry (host, as
+// imageRegistry returns it) when the host is, or its name resolves to, an
+// address imageAddrErr refuses. Every pull outside the platform registry
+// passes it through registryLogin. Docker Hub isn't looked up. The name
+// is resolved on the control plane, and a name it can't resolve is
+// refused: it may be one only a remote server's DNS knows, on its LAN.
+// Docker resolves the name again for the pull, and follows a registry's
+// token realm and redirects wherever they point; see docs/safety-model.md
+// for what that leaves open.
+func (c *Core) checkRegistry(ctx context.Context, ref, host string) error {
+	if host == dockerHub {
+		return nil
+	}
+	h := registryAddr(host)
+	if ip, err := netip.ParseAddr(h); err == nil {
+		return imageAddrErr(&c.pulls, ref, ip)
+	}
+	lctx, cancel := context.WithTimeout(ctx, pullLookupTimeout)
+	defer cancel()
+	addrs, err := c.lookupIP(lctx, h)
+	if err != nil {
+		return fmt.Errorf("look up registry %s before pulling %s from it (check the image name): %w", host, ref, err)
+	}
+	for _, ip := range addrs {
+		if err := imageAddrErr(&c.pulls, ref, ip); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -795,7 +795,8 @@ func (c *Core) movePrepare(ctx context.Context, es envScope, m store.Environment
 }
 
 // pullForMove makes a release's image present on the target: by digest
-// from the platform registry when it is there, else by its reference.
+// from the platform registry when it is there, else by its reference with
+// the org's credential for its registry (registryLogin).
 func (c *Core) pullForMove(ctx context.Context, ss svcScope, rel *store.Release, rt node.Runtime, srv store.Server) error {
 	ref := rel.ImageRef
 	if ok, err := rt.HasImage(ctx, ref); err != nil || ok {
@@ -808,15 +809,21 @@ func (c *Core) pullForMove(ctx context.Context, ss svcScope, rel *store.Release,
 			return c.nodeErr(srv.ID, err)
 		}
 	}
-	var opts []node.PullOptions
+	var opts node.PullOptions
 	if repo, ok := c.inRegistry(from); ok {
 		if !pullAllowed(ss, repo) {
 			return fmt.Errorf("image %s of %s belongs to another project", from, ss)
 		}
 		defer c.useRegistry()()
-		opts = append(opts, node.PullOptions{Token: c.reg.Token("server "+srv.Name, repo, false)})
+		opts = node.PullOptions{Token: c.reg.Token("server "+srv.Name, repo, false)}
+	} else {
+		login, _, err := c.registryLogin(ctx, ss.project.OrgID, from)
+		if err != nil {
+			return fmt.Errorf("pull %s on %s for %s: %w", from, srv.Name, ss.svc.Name, err)
+		}
+		opts = login
 	}
-	if _, err := rt.Pull(ctx, from, io.Discard, opts...); err != nil {
+	if _, err := rt.Pull(ctx, from, io.Discard, opts); err != nil {
 		return fmt.Errorf("pull %s on %s for %s: %w", from, srv.Name, ss.svc.Name, c.nodeErr(srv.ID, err))
 	}
 	return nil

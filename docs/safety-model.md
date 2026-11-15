@@ -170,9 +170,32 @@ tailnet. Apps and builds reach the public internet, nothing private:
   access. Caddy runs as its own user without it, so a Caddy compromise
   doesn't become root.
 
+- **Builds don't share secret-dependent layers.** BuildKit leaves secret
+  values out of its layer cache keys, so build steps that mount a secret
+  are keyed by a hash of their environment and the secrets' values. A
+  project with the same Dockerfile and its own `PIP_INDEX_URL` can't hand
+  another environment or org a layer built from its own index.
+- **Image pulls go to public registries.** A server's Docker daemon pulls
+  images from the host, outside the firewall. So an image's registry must
+  not be the server itself, link-local or cloud metadata, or a private
+  address outside `[network] allow_private`. Literal addresses are refused
+  when an image is set, and the registry's name is resolved and checked
+  before every pull. The platform registry is Dock's own and always
+  allowed.
+
 BuildKit runs privileged to build images, so the firewall contains build
 steps but not a BuildKit escape. See the [install guide](guide/install.md#app-firewall)
 for the exact rules.
+
+Known limit: Docker resolves a registry's name again for the pull, and
+follows the registry's token realm and blob redirects wherever they point.
+So a registry that rebinds its DNS, or a public one that answers with a
+realm or redirect to a private address, can still make the daemon send
+GET requests there. They are blind: the daemon only takes a token or a
+blob with the right digest from them, so a response's content doesn't
+reach the user. Closing this needs a firewall rule for the Docker daemon's
+own traffic, which would have to allow the platform registry and every
+registry operators allow. It isn't contained enough to add yet.
 
 ## Concurrency
 

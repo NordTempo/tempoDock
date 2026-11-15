@@ -97,8 +97,9 @@ type Options struct {
 	// from a map.
 	LookupTXT func(ctx context.Context, name string) ([]string, error)
 	// LookupIP resolves a hostname, to tell whether a new domain is
-	// public before Dock adds an uptime check for it (ADR 0059); nil
-	// uses the system resolver.
+	// public before Dock adds an uptime check for it (ADR 0059) and
+	// whether servers may pull from a registry (checkRegistry); nil uses
+	// the system resolver.
 	LookupIP func(ctx context.Context, host string) ([]netip.Addr, error)
 }
 
@@ -150,6 +151,8 @@ type Core struct {
 	lookupTXT func(ctx context.Context, name string) ([]string, error)
 	// lookupIP is Options.LookupIP, or the system resolver's.
 	lookupIP func(ctx context.Context, host string) ([]netip.Addr, error)
+	// pulls refuses registries servers may not pull from (checkRegistry).
+	pulls egressGuard
 
 	// routesMu serialises render-and-apply, so a slow render can't
 	// overwrite a newer routing table.
@@ -333,6 +336,7 @@ func New(ctx context.Context, o Options) (*Core, error) {
 	if c.lookupTXT == nil {
 		c.lookupTXT = net.DefaultResolver.LookupTXT
 	}
+	c.pulls.what, c.pulls.private, c.pulls.allow = "image pulls", true, o.Config.Network.AllowPrivate
 	if c.lookupIP == nil {
 		c.lookupIP = func(ctx context.Context, host string) ([]netip.Addr, error) {
 			return net.DefaultResolver.LookupNetIP(ctx, "ip", host)

@@ -2,11 +2,18 @@ package build
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/distribution/reference"
@@ -16,15 +23,22 @@ import (
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/session"
+	"github.com/tonistiigi/go-csvvalue"
 )
 
 // maxDockerfileSize bounds how much of an uploaded file is read and parsed
 // as the Dockerfile.
 const maxDockerfileSize = 1 << 20
 
+// cacheKeyArg is the build arg that keys the layers of RUN steps that
+// mount secrets (keySecretSteps).
+const cacheKeyArg = "DOCK_CACHE_KEY"
+
 // dockerfileOpt returns options to build src with BuildKit's built-in
 // Dockerfile frontend. See the package doc for how vars reach the build.
-func dockerfileOpt(src, dockerfile string, vars map[string]string, ns string, logs io.Writer) (bkclient.SolveOpt, string, error) {
+// dir is the build's own directory, outside src, where a Dockerfile that
+// mounts secrets is rewritten to (keySecretSteps).
+func dockerfileOpt(dir, src, dockerfile string, vars map[string]string, ns string, logs io.Writer) (bkclient.SolveOpt, string, error) {
 	if !filepath.IsLocal(dockerfile) {
 		return bkclient.SolveOpt{}, "", fmt.Errorf("dockerfile path %q must be inside the source", dockerfile)
 	}
@@ -68,9 +82,172 @@ func dockerfileOpt(src, dockerfile string, vars map[string]string, ns string, lo
 	for k, v := range args {
 		attrs["build-arg:"+k] = v
 	}
-	opt, err := localOpt("dockerfile.v0", attrs, src, filepath.Join(src, filepath.Dir(dockerfile)))
+	dfDir := filepath.Join(src, filepath.Dir(dockerfile))
+	keyed, ids, err := keySecretSteps(df)
+	if err != nil {
+		return bkclient.SolveOpt{}, "", fmt.Errorf("parse %s: %w", dockerfile, err)
+	}
+	if keyed != nil {
+		if ids == nil {
+			ids = slices.Collect(maps.Keys(vars))
+		}
+		attrs["build-arg:"+cacheKeyArg] = secretsKey(ns, vars, ids)
+		if dfDir, err = writeKeyed(dir, root, dockerfile, keyed); err != nil {
+			return bkclient.SolveOpt{}, "", err
+		}
+		_, _ = fmt.Fprintf(logs, "steps that mount secrets are cached per environment: the build adds ARG %s before the first in each stage\n", cacheKeyArg)
+	}
+	opt, err := localOpt("dockerfile.v0", attrs, src, dfDir)
 	opt.Session = []session.Attachable{secretStore(vars)}
 	return opt, baseImage(df, vars), err
+}
+
+// keySecretSteps returns the Dockerfile with `ARG DOCK_CACHE_KEY` added
+// before the first RUN step of each stage that mounts a secret, or nil
+// when no step does. BuildKit leaves secret values out of a step's cache
+// key, so without it two builds with the same base, files and RUN line
+// share the layer whatever their secrets: one environment or org could
+// hand another a layer built from its own PIP_INDEX_URL. A declared ARG
+// is in the environment of every later RUN in its stage, so its value
+// (secretsKey) enters their cache keys; later steps and stages built on
+// those layers chain on them. ids are the secrets the steps mount, or
+// nil when one can't be told before the build (an id naming a variable):
+// then every variable counts.
+//
+// Line numbers in BuildKit's errors count the added lines.
+func keySecretSteps(dockerfile []byte) (keyed []byte, ids []string, err error) {
+	res, err := parser.Parse(bytes.NewReader(dockerfile))
+	if err != nil {
+		return nil, nil, err
+	}
+	var at []int // 1-based lines to add the ARG before
+	seen, all := map[string]bool{}, false
+	stageKeyed := false
+	for _, n := range res.AST.Children {
+		switch {
+		case strings.EqualFold(n.Value, command.From):
+			stageKeyed = false
+		case strings.EqualFold(n.Value, command.Run):
+			found, known := secretMounts(n, seen)
+			all = all || !known
+			if found && !stageKeyed {
+				at, stageKeyed = append(at, n.StartLine), true
+			}
+		}
+	}
+	if len(at) == 0 {
+		return nil, nil, nil
+	}
+	lines := strings.SplitAfter(string(dockerfile), "\n")
+	var b strings.Builder
+	b.Grow(len(dockerfile) + len(at)*(len(cacheKeyArg)+6))
+	for i, l := range lines {
+		if len(at) > 0 && at[0] == i+1 {
+			b.WriteString("ARG " + cacheKeyArg + "\n")
+			at = at[1:]
+		}
+		b.WriteString(l)
+	}
+	if !all {
+		ids = slices.Sorted(maps.Keys(seen))
+	}
+	return []byte(b.String()), ids, nil
+}
+
+// secretMounts reports whether a RUN step mounts a secret, adding the
+// ids it mounts to ids, the way BuildKit reads --mount (instructions'
+// parseMount, dockerfile2llb's dispatchSecret). known is false when an id
+// can't be told before the build: a type or id naming a variable, which
+// BuildKit expands first, or flags that don't parse here.
+func secretMounts(run *parser.Node, ids map[string]bool) (found, known bool) {
+	known = true
+	for _, f := range run.Flags {
+		name, val, _ := strings.Cut(strings.TrimPrefix(f, "--"), "=")
+		if name != "mount" {
+			continue
+		}
+		fields, err := csvvalue.Fields(val, nil)
+		if err != nil {
+			found, known = true, false
+			continue
+		}
+		var typ, id, source, target string
+		for _, field := range fields {
+			k, v, _ := strings.Cut(field, "=")
+			switch strings.ToLower(k) {
+			case "type":
+				typ = v
+			case "id":
+				id = v
+			case "source", "src":
+				source = v
+			case "target", "dst", "destination":
+				target = v
+			}
+		}
+		if strings.Contains(typ, "$") {
+			found, known = true, false
+			continue
+		}
+		if !strings.EqualFold(typ, "secret") {
+			continue
+		}
+		if source != "" {
+			id = source
+		}
+		if id == "" && target != "" {
+			id = path.Base(target)
+		}
+		found = true
+		if id == "" || strings.Contains(id, "$") {
+			known = false
+			continue
+		}
+		ids[id] = true
+	}
+	return found, known
+}
+
+// secretsKey is a build's DOCK_CACHE_KEY (and Railpack's secrets-hash):
+// a hash of its cache namespace and the names and values of the vars
+// named in ids. The namespace keeps two scopes from sharing a layer even
+// with the same values, so one can't learn another's value by guessing
+// it and watching for a cache hit. Like any ARG it shows in the image's
+// history, so it is a hash, never the values.
+func secretsKey(ns string, vars map[string]string, ids []string) string {
+	h := sha256.New()
+	_, _ = fmt.Fprintf(h, "%d:%s\n", len(ns), ns)
+	for _, k := range slices.Sorted(slices.Values(ids)) {
+		if v, ok := vars[k]; ok {
+			_, _ = fmt.Fprintf(h, "%d:%s=%d:%s\n", len(k), k, len(v), v)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// writeKeyed writes the keyed Dockerfile into its own directory under
+// dir, next to a copy of its own ignore file (<name>.dockerignore) if the
+// source has one, and returns the directory: the source stays as it was,
+// so COPY . sees the Dockerfile the user wrote.
+func writeKeyed(dir string, src *os.Root, dockerfile string, keyed []byte) (string, error) {
+	out := filepath.Join(dir, "dockerfile")
+	if err := os.Mkdir(out, 0o700); err != nil {
+		return "", err
+	}
+	name := filepath.Base(dockerfile)
+	if err := os.WriteFile(filepath.Join(out, name), keyed, 0o600); err != nil {
+		return "", err
+	}
+	ignore, err := src.ReadFile(dockerfile + ".dockerignore")
+	switch {
+	case err == nil:
+		if err := os.WriteFile(filepath.Join(out, name+".dockerignore"), ignore, 0o600); err != nil {
+			return "", err
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return "", err
+	}
+	return out, nil
 }
 
 // dockerfileArgs picks the vars passed to a Dockerfile build as build args:

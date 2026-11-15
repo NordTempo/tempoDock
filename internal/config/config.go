@@ -314,8 +314,9 @@ type Network struct {
 	// one /24 per environment. Keep it clear of the LAN and the tailnet.
 	Pool netip.Prefix `toml:"pool"`
 	// AllowPrivate lists private CIDRs app containers and builds may reach
-	// (a NAS, a LAN database). All other private, link-local and tailnet
-	// addresses, and the server itself, are blocked.
+	// (a NAS, a LAN database) and servers may pull images from. All other
+	// private, link-local and tailnet addresses, and the server itself,
+	// are blocked.
 	AllowPrivate []netip.Prefix `toml:"allow_private"`
 }
 

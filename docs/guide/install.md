@@ -191,7 +191,7 @@ running).
 | `[backup] restic_image` | `restic/restic:0.18.1@sha256:39d9…` | Where backup jobs get the restic binary, pinned by digest. Retention is set with `dock backup configure`, the repository with `dock backup move` |
 | `[backup] snapshot_keep`, `snapshot_days` | `5`, `7` | [Volume snapshots](../decisions/0047-volume-snapshots.md) kept per service, and for how many days at most |
 | `[network] pool` | `10.213.0.0/16` | IPv4 range app networks get their addresses from, a /24 per environment. Keep it clear of your LAN and VPNs |
-| `[network] allow_private` | `[]` | Private CIDRs apps and builds may reach, e.g. `["192.168.10.20/32"]` for a NAS. See [App firewall](#app-firewall) |
+| `[network] allow_private` | `[]` | Private CIDRs apps and builds may reach and servers may pull images from, e.g. `["192.168.10.20/32"]` for a NAS. See [App firewall](#app-firewall) |
 | `[defaults] memory_mb` | `512` | Memory limit for services that don't set one |
 | `[defaults] cpus` | `1` | CPU limit for services that don't set one |
 | `[defaults] health_check_timeout_seconds` | `60` | Health check timeout for services that don't set one |
@@ -324,8 +324,8 @@ servers (Docker forwards container DNS to them). If the server's resolver is
 Tailscale's MagicDNS (`100.100.100.100`), apps can resolve tailnet names but
 still can't connect to them.
 
-To let apps reach a LAN host, such as a NAS or a database, add it to the
-allowlist and re-apply:
+To let apps reach a LAN host, such as a NAS, a database or a registry to
+pull images from, add it to the allowlist and re-apply:
 
 ```toml
 # /etc/dock/config.toml

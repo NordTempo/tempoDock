@@ -3,8 +3,6 @@ package build
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -75,12 +73,9 @@ func railpackOpt(ctx context.Context, dir, src string, req node.BuildRequest, ns
 		"build-arg:cache-key": ns,
 	}
 	if len(req.BuildArgs) > 0 {
-		h := sha256.New()
-		for _, k := range slices.Sorted(maps.Keys(req.BuildArgs)) {
-			_, _ = fmt.Fprintf(h, "%s=%s\n", k, req.BuildArgs[k])
-		}
-		// Secrets don't invalidate cached layers on their own.
-		attrs["build-arg:secrets-hash"] = hex.EncodeToString(h.Sum(nil))
+		// Secrets don't invalidate cached layers on their own (see
+		// Cache isolation in the package doc).
+		attrs["build-arg:secrets-hash"] = secretsKey(ns, req.BuildArgs, slices.Collect(maps.Keys(req.BuildArgs)))
 	}
 	opt, err := localOpt("gateway.v0", attrs, src, planDir)
 	opt.Session = []session.Attachable{secretStore(req.BuildArgs)}

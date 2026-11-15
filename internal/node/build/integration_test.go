@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -326,6 +327,48 @@ RUN --mount=type=cache,id=shared,target=/cache echo "nonce $NONCE"; cat /cache/o
 	}
 	if logs := step("a", a); !strings.Contains(logs, "found "+a) {
 		t.Fatalf("scope a lost its own cache:\n%s", logs)
+	}
+}
+
+// TestBuildSecretLayersPerScope checks that a step mounting a secret is
+// cached per scope and secret value: another scope with the same
+// Dockerfile and its own value runs the step instead of reusing the
+// first scope's layer, and the same scope and value still hit the cache.
+func TestBuildSecretLayersPerScope(t *testing.T) {
+	b := newBuilder(t, dockerClient(t), 1024)
+	nonce := fmt.Sprint(time.Now().UnixNano())
+	df := `FROM node:22-alpine
+RUN echo "nonce ` + nonce + `"
+RUN --mount=type=secret,id=PIP_INDEX_URL,env=PIP_INDEX_URL echo "ran with $(printf %s "$PIP_INDEX_URL" | sha256sum | cut -c1-12)"
+`
+	step := func(scope, value string) string {
+		t.Helper()
+		_, logs, err := build(t, b, node.BuildRequest{
+			Source:     sourceTar(t, map[string]string{"Dockerfile": df}),
+			BuildArgs:  map[string]string{"PIP_INDEX_URL": value},
+			CacheScope: scope + "_" + nonce,
+			Tag:        "dock-test/hello:secret-" + scope,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return logs
+	}
+	ran := func(value string) string {
+		return fmt.Sprintf("ran with %x", sha256.Sum256([]byte(value)))[:len("ran with ")+12]
+	}
+	if logs := step("a", "https://a.example/simple"); !strings.Contains(logs, ran("https://a.example/simple")) {
+		t.Fatalf("scope a's first build didn't run the step:\n%s", logs)
+	}
+	if logs := step("b", "https://b.example/simple"); !strings.Contains(logs, ran("https://b.example/simple")) {
+		t.Fatalf("scope b reused scope a's layer:\n%s", logs)
+	}
+	// The step's own line says "ran with $(printf ...", its output a hash.
+	if logs := step("a", "https://a.example/simple"); regexp.MustCompile(`ran with [0-9a-f]{12}`).MatchString(logs) {
+		t.Errorf("scope a didn't reuse its own layer:\n%s", logs)
+	}
+	if logs := step("a", "https://c.example/simple"); !strings.Contains(logs, ran("https://c.example/simple")) {
+		t.Errorf("a changed secret didn't rebuild the step:\n%s", logs)
 	}
 }
 

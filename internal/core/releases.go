@@ -667,7 +667,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 		if params.ImageRef == "" {
 			return ss, rel, invalid("no image given and service %s has no image setting", ss)
 		}
-		if err := validateImageRef(params.ImageRef, c.registryHost()); err != nil {
+		if err := validateImageRef(params.ImageRef, c.registryHost(), &c.pulls); err != nil {
 			return ss, rel, err
 		}
 		// The image setting follows image deploys, so deploying the
