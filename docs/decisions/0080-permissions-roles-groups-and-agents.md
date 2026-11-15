@@ -196,7 +196,7 @@ one decides.
    get grants (phase 6), when `make agent-eval` runs on them.
 6. **Agents.** 6a, personal agents (built): a person's `dock login`
    tokens act for them with their grants as they are now, capped by
-   their agent setting (migration 0111, `agent_settings`: per area role
+   their agent setting (migration 0112, `agent_settings`: per area role
    and environment kind a level, `all` or `off`, and ask) and by the
    agent's own narrowing (the same rows with its token), which only
    lowers. No setting: everything but approving, as `dock login` was.
@@ -209,7 +209,7 @@ one decides.
    person signed in, recently; settings apply while grants decide
    (enforce), and the shadow compares with them. 6b, org agents
    (built): an organization's tokens hold grants (`grants.token_id`,
-   migration 0112 rebuilds grants for the third holder) and join groups
+   migration 0113 rebuilds grants for the third holder) and join groups
    (`group_agents`); a token's scope and limit become grants when it is
    made, older tokens' once at start (`tokens.granted`), so each does
    exactly what it did. Settled while building: a token keeps its scope
@@ -217,7 +217,7 @@ one decides.
    MCP's implied project and environment); `dock token access|grant`,
    `dock group add --agent`, and Grants and groups in a token's menu.
    6c, agent rules (built): the org's ceilings per area role and kind
-   (migration 0113, `agent_rules`: the most any agent may use, and ask),
+   (migration 0114, `agent_rules`: the most any agent may use, and ask),
    read with every agent's request; an agent uses the lowest of its
    person's setting, its narrowing and the rule. A rule's ask files a
    request the environment's approvers decide (a person's ask goes to
