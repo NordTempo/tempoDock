@@ -9,6 +9,11 @@ migrates it; `stmts.go` prepares each query on first use and reuses it.
 - Files are `NNNN_name.sql`, applied in order above `PRAGMA user_version`,
   each in its own transaction. Add the next number; never edit or renumber
   a migration that has been on `main`: installs have already run it.
+  `TestMigrationNumbers` fails on a shared number or a gap. Parallel
+  branches race for the next number: check `main` right before merging,
+  in its own step. If two reach `main` with one number anyway, renumber
+  the later one and add it to `renumbered` (store.go), so a database that
+  ran it under the old number gets the other one, not this one again.
 - Start with a comment saying what the migration is for (and its ADR).
 - Rebuilding a table other tables reference: make `-- foreign_keys: off`
   the first line (see `0022_orgs.sql`). It runs with foreign keys off and

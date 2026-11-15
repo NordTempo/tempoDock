@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"io/fs"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -19,22 +21,67 @@ func testOrg(t testing.TB, s *Store) int64 {
 	return o.ID
 }
 
-// Every migration has a number of its own: migrate skips one numbered at or
+// Migrations are numbered NNNN_name.sql, each number once and with no
+// gaps: migrate applies them in name order and skips any numbered at or
 // below the version already applied, so two branches that both add the
-// next number would leave one unapplied. Renumber the later one.
-func TestMigrationNumbersUnique(t *testing.T) {
+// next number leave one unapplied (a renumbered one needs an entry in
+// renumbered), and a gap is a migration lost on the way. The numbers
+// below were never used; installs are already past them.
+func TestMigrationNumbers(t *testing.T) {
 	names, err := fs.Glob(migrations, "migrations/*.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]string{}
+	sort.Strings(names)
+	unused := map[int]bool{9: true, 67: true, 68: true}
+	want := 1
 	for _, name := range names {
 		base := strings.TrimPrefix(name, "migrations/")
 		num, _, _ := strings.Cut(base, "_")
-		if other, ok := seen[num]; ok {
-			t.Errorf("migrations %s and %s share number %s; give the newer one the next free number", other, base, num)
+		n, err := strconv.Atoi(num)
+		if len(num) != 4 || err != nil {
+			t.Errorf("migration %s: name it NNNN_what.sql with the next number", base)
+			continue
 		}
-		seen[num] = base
+		for unused[want] {
+			want++
+		}
+		switch {
+		case n < want:
+			t.Errorf("migration %s shares number %04d with another; give the newer one the next free number", base, n)
+		case n > want:
+			t.Errorf("migration %s leaves a gap: %04d is missing", base, want)
+		}
+		want = n + 1
+	}
+}
+
+// A database that ran custom roles as 0109, before they moved to 0110
+// beside SSO presets' 0109, gets SSO presets once and custom roles not
+// again (renumbered).
+func TestRenumberedMigration(t *testing.T) {
+	roles, err := migrations.ReadFile("migrations/0110_custom_roles.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := openBefore(t, "0109_sso_presets.sql", string(roles))
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("PRAGMA user_version = 109"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	s, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("migrating a database that ran custom roles as 0109: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+	// SSO presets ran: the new kinds are accepted.
+	if _, err := s.DB.Exec(`INSERT INTO sso_providers (name, kind, label, issuer, client_id, client_secret, created_at, created_by)
+		VALUES ('okta', 'okta', 'Okta', 'https://x.okta.com', 'id', x'00', CURRENT_TIMESTAMP, 'test')`); err != nil {
+		t.Fatalf("SSO presets didn't run: %v", err)
 	}
 }
 

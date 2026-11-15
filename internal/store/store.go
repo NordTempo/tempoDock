@@ -110,6 +110,10 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
 		return fmt.Errorf("read schema version: %w", err)
 	}
+	current, err := repairRenumbered(ctx, db, current)
+	if err != nil {
+		return err
+	}
 	names, err := fs.Glob(migrations, "migrations/*.sql")
 	if err != nil {
 		return err
@@ -135,6 +139,48 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		current = version
 	}
 	return nil
+}
+
+// renumbered are migrations that shared a number on main and moved: a
+// database that ran the moved one under the old number, known by a table
+// it made, has its version at that number and never ran the one it
+// shared it with. On 2026-11-14 custom roles (#326) ran as 0109 beside
+// SSO presets' 0109 (#325) and became 0110.
+var renumbered = []struct {
+	was, now int
+	// made is a table only the moved migration creates.
+	made string
+	// skipped is the migration that kept the number.
+	skipped string
+}{
+	{109, 110, "roles", "migrations/0109_sso_presets.sql"},
+}
+
+// repairRenumbered applies to such a database the migration it skipped,
+// as the moved one's new number, so neither runs twice. It returns the
+// version after.
+func repairRenumbered(ctx context.Context, db *sql.DB, current int) (int, error) {
+	for _, r := range renumbered {
+		if current != r.was {
+			continue
+		}
+		var n int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", r.made).Scan(&n); err != nil {
+			return current, err
+		}
+		if n == 0 {
+			continue
+		}
+		body, err := migrations.ReadFile(r.skipped)
+		if err != nil {
+			return current, err
+		}
+		if err := migrateOne(ctx, db, r.now, string(body)); err != nil {
+			return current, fmt.Errorf("migration %s (skipped while %s held its number): %w", r.skipped, r.made, err)
+		}
+		current = r.now
+	}
+	return current, nil
 }
 
 // fkOffMarker starts a migration that rebuilds a table other tables
