@@ -47,10 +47,11 @@ func TestPullFromPrivateRegistry(t *testing.T) {
 
 	// Core's pullRefused tells refusals by these words, to say how to fix
 	// them.
-	if _, err := e.Pull(ctx, ref, nil); err == nil || !strings.Contains(err.Error(), "denied") {
+	// Docker's words for an anonymous refusal vary by version.
+	if _, err := e.Pull(ctx, ref, nil); err == nil || !strings.Contains(err.Error(), "denied") && !strings.Contains(err.Error(), "no basic auth credentials") {
 		t.Fatalf("anonymous pull = %v, want access denied", err)
 	}
-	if _, err := e.Pull(ctx, ref, nil, node.PullOptions{Username: "bot", Password: "wrong"}); err == nil || !strings.Contains(err.Error(), "Unauthorized") {
+	if _, err := e.Pull(ctx, ref, nil, node.PullOptions{Username: "bot", Password: "wrong"}); err == nil || !strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
 		t.Fatalf("pull with a wrong password = %v, want unauthorized", err)
 	}
 	id, err := e.Pull(ctx, ref, nil, node.PullOptions{Username: "bot", Password: "s3cret"})

@@ -178,14 +178,17 @@ func (c *Core) registryLogin(ctx context.Context, orgID int64, ref string) (node
 	return node.PullOptions{Username: row.Username, Password: string(secret)}, host, nil
 }
 
-// pullRefused guesses from a pull's error whether the registry refused
-// access (no or wrong credentials), to say how to fix it. Docker passes
+// pullRefused guesses from a pull's error message whether the registry
+// refused access (no or wrong credentials), to say how to fix it: the
+// deploy's error and the diagnosis's pull_failed rule. Docker passes
 // registries' messages on as text: "unauthorized", "denied: ...",
-// "pull access denied", "authentication required", "forbidden". Status
-// codes alone aren't matched: digests in messages contain any digits.
-func pullRefused(err error) bool {
-	msg := strings.ToLower(err.Error())
-	for _, s := range []string{"unauthorized", "denied", "authentication required", "forbidden"} {
+// "pull access denied", "authentication required", "forbidden", and
+// newer Dockers' "no basic auth credentials" for an anonymous pull.
+// Status codes alone aren't matched: digests in messages contain any
+// digits.
+func pullRefused(msg string) bool {
+	msg = strings.ToLower(msg)
+	for _, s := range []string{"unauthorized", "denied", "authentication required", "forbidden", "no basic auth credentials"} {
 		if strings.Contains(msg, s) {
 			return true
 		}
