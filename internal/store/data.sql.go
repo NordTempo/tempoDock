@@ -159,6 +159,42 @@ func (q *Queries) AddSensitiveKey(ctx context.Context, arg AddSensitiveKeyParams
 	return err
 }
 
+const copySensitiveKeys = `-- name: CopySensitiveKeys :exec
+INSERT INTO sensitive_keys (service_id, pattern)
+SELECT ?1, src.pattern FROM sensitive_keys AS src
+WHERE src.service_id = +?2
+ON CONFLICT DO NOTHING
+`
+
+type CopySensitiveKeysParams struct {
+	ToService   int64
+	FromService int64
+}
+
+func (q *Queries) CopySensitiveKeys(ctx context.Context, arg CopySensitiveKeysParams) error {
+	_, err := q.db.ExecContext(ctx, copySensitiveKeys, arg.ToService, arg.FromService)
+	return err
+}
+
+const copySensitiveMarks = `-- name: CopySensitiveMarks :exec
+INSERT INTO sensitive_columns (service_id, schema_name, table_name, column_name)
+SELECT ?1, src.schema_name, src.table_name, src.column_name FROM sensitive_columns AS src
+WHERE src.service_id = +?2
+ON CONFLICT DO NOTHING
+`
+
+type CopySensitiveMarksParams struct {
+	ToService   int64
+	FromService int64
+}
+
+// Gives a restored copy of a database its source's sensitive columns.
+// CopySensitiveKeys does the same for key patterns.
+func (q *Queries) CopySensitiveMarks(ctx context.Context, arg CopySensitiveMarksParams) error {
+	_, err := q.db.ExecContext(ctx, copySensitiveMarks, arg.ToService, arg.FromService)
+	return err
+}
+
 const createChangeset = `-- name: CreateChangeset :one
 INSERT INTO changesets (service_id, author, author_kind, user_id, token_id, message, changes, key_changes, sql, created_at, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

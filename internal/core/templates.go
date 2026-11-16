@@ -179,6 +179,10 @@ type templateOptions struct {
 	// keep are values for variables the template generates, used instead
 	// (a snapshot restore keeps the credentials in its data files).
 	keep map[string]string
+	// marksFrom is the service whose sensitive columns and key patterns
+	// the new one takes (a restore copies a database, so masking must hold
+	// on the copy).
+	marksFrom int64
 }
 
 // createFromTemplate creates a service from a template: the service with
@@ -212,6 +216,15 @@ func (c *Core) createFromTemplate(ctx context.Context, a Actor, es envScope, nam
 			ServiceID: s.ID, Name: templateVolume, MountPath: t.mountPath, Pending: true, DockerName: volumeName(ss, templateVolume),
 		}); err != nil {
 			return err
+		}
+		if opts.marksFrom != 0 {
+			copied := store.CopySensitiveMarksParams{ToService: s.ID, FromService: opts.marksFrom}
+			if err := q.CopySensitiveMarks(ctx, copied); err != nil {
+				return err
+			}
+			if err := q.CopySensitiveKeys(ctx, store.CopySensitiveKeysParams(copied)); err != nil {
+				return err
+			}
 		}
 		vars := t.vars(name, newPassword())
 		maps.Copy(vars, opts.keep)
