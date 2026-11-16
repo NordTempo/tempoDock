@@ -192,6 +192,10 @@ func (c *Core) CreateRole(ctx context.Context, a Actor, req apitypes.RoleRequest
 	if err != nil {
 		return apitypes.Role{}, err
 	}
+	// A role may be granted anywhere: its maker holds it on the whole org.
+	if err := a.mayGive(partsPerms(parts), 0, 0, uint8(allKinds), "role "+name, a.orgName()); err != nil {
+		return apitypes.Role{}, err
+	}
 	if _, err := c.store.GetRoleByName(ctx, store.GetRoleByNameParams{OrgID: a.OrgID, Name: name}); err == nil {
 		return apitypes.Role{}, conflict("%s already has a role %q; edit it with `dock role edit`", a.orgName(), name)
 	}
@@ -220,6 +224,10 @@ func (c *Core) UpdateRole(ctx context.Context, a Actor, name string, req apitype
 	}
 	parts, err := roleParts(req)
 	if err != nil {
+		return apitypes.Role{}, err
+	}
+	// Its holders hold the new parts: its editor holds them on the whole org.
+	if err := a.mayGive(partsPerms(parts), 0, 0, uint8(allKinds), "role "+newName, a.orgName()); err != nil {
 		return apitypes.Role{}, err
 	}
 	if !strings.EqualFold(newName, r.Name) {

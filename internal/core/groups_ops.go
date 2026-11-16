@@ -288,6 +288,9 @@ func (c *Core) AddGroupMember(ctx context.Context, a Actor, ref, who string) (ap
 	if err != nil {
 		return apitypes.Group{}, err
 	}
+	if err := c.mayGiveGroup(ctx, a, g); err != nil {
+		return apitypes.Group{}, err
+	}
 	if err := c.store.AddGroupMember(ctx, store.AddGroupMemberParams{GroupID: g.ID, UserID: u.ID}); err != nil {
 		return apitypes.Group{}, err
 	}
@@ -327,7 +330,8 @@ func (c *Core) RemoveGroupMember(ctx context.Context, a Actor, ref, who string) 
 // one environment.
 func (c *Core) grantParams(ctx context.Context, a Actor, req apitypes.GrantRequest) (store.CreateGrantParams, string, error) {
 	p := store.CreateGrantParams{OrgID: a.OrgID, Role: strings.TrimSpace(req.Role), GrantedBy: a.Name}
-	if _, ok := rolePerms(p.Role); !ok {
+	perms, ok := rolePerms(p.Role)
+	if !ok {
 		r, err := c.store.GetRoleByName(ctx, store.GetRoleByNameParams{OrgID: a.OrgID, Name: p.Role})
 		if store.IsNotFound(err) {
 			return p, "", invalid("role %q is neither built in nor %s's; `dock role list` lists them, like deploy:edit", req.Role, a.orgName())
@@ -335,13 +339,14 @@ func (c *Core) grantParams(ctx context.Context, a Actor, req apitypes.GrantReque
 		if err != nil {
 			return p, "", err
 		}
-		p.Role, p.RoleID = "", &r.ID
+		p.Role, p.RoleID, perms = "", &r.ID, partsPerms(r.Parts)
 	}
 	kinds, err := kindBits(req.Kinds)
 	if err != nil {
 		return p, "", err
 	}
 	p.Kinds = kinds
+	reach := uint8(kinds) // the kinds the grant reaches, for mayGive
 	place := "the org"
 	switch {
 	case req.Environment != "" && req.Project == "":
@@ -355,6 +360,7 @@ func (c *Core) grantParams(ctx context.Context, a Actor, req apitypes.GrantReque
 			return p, "", err
 		}
 		p.ProjectID, p.EnvironmentID, place = &es.project.ID, &es.env.ID, es.project.Name+"/"+es.env.Name
+		reach = envKind(es.env)
 	case req.Project != "":
 		pr, err := c.loadProject(ctx, a.OrgID, req.Project)
 		if err != nil {
@@ -367,6 +373,9 @@ func (c *Core) grantParams(ctx context.Context, a Actor, req apitypes.GrantReque
 	}
 	if len(req.Kinds) > 0 {
 		place += " (" + strings.Join(req.Kinds, ", ") + ")"
+	}
+	if err := a.mayGive(perms, deref(p.ProjectID), deref(p.EnvironmentID), reach, strings.TrimSpace(req.Role), place); err != nil {
+		return p, "", err
 	}
 	return p, place, nil
 }

@@ -29,17 +29,73 @@ const secretMask = "*****"
 // log longer.
 const minSecretLen = 6
 
-// revealsSecrets reports whether a may see secret values: the rule
-// ListVariables applies to reveal.
-func (a Actor) revealsSecrets() bool {
-	return a.require(apitypes.ScopeAdmin, "revealing secret values") == nil
+// revealsAt reports whether a may see secret values in an environment
+// (ADR 0080: variables.read_secret where they are). envID 0 asks for every
+// environment of the project, projectID 0 for every one of the org (the
+// org's variables reach them all); a grant somewhere else doesn't count.
+// Actors grants don't decide reveal as admins did before.
+func (a Actor) revealsAt(projectID, envID int64, kind uint8) bool {
+	if !a.hasGrants {
+		return a.require(apitypes.ScopeAdmin, "revealing secret values") == nil
+	}
+	for _, g := range a.grants {
+		if !g.perms.has(PermVariablesReadSecret) {
+			continue
+		}
+		every := g.kinds == uint8(allKinds)
+		switch {
+		case projectID == 0:
+			if g.project == 0 && g.env == 0 && every {
+				return true
+			}
+		case envID == 0:
+			if (g.project == 0 || g.project == projectID) && g.env == 0 && every {
+				return true
+			}
+		case modelAllows(g, PermVariablesReadSecret, projectID, envID, kind):
+			return true
+		}
+	}
+	return false
 }
 
-// logRedactor returns what masks rel's secret values in its logs for a:
-// nil when a may reveal them or there are none, so they get logs as
-// written at no cost. It reads no more than the release row it is given.
-func (c *Core) logRedactor(a Actor, rel store.Release) (*redactor, error) {
-	if a.revealsSecrets() {
+// revealsIn is revealsAt for an environment.
+func (a Actor) revealsIn(es envScope) bool {
+	return a.revealsAt(es.project.ID, es.env.ID, envKind(es.env))
+}
+
+// requireReveal checks a may reveal secret values at a place (revealsAt;
+// es zero for the whole org) after a recent sign-in (ADR 0057).
+func (a Actor) requireReveal(es envScope) error {
+	if err := a.mayReveal(es, "revealing secret values"); err != nil {
+		return err
+	}
+	return a.requireRecent("revealing secret values")
+}
+
+// mayReveal is requireReveal without the recent sign-in, for action.
+func (a Actor) mayReveal(es envScope, action string) error {
+	ok := a.revealsAt(0, 0, 0)
+	if es.env.ID != 0 {
+		ok = a.revealsIn(es)
+	}
+	switch {
+	case ok:
+		return nil
+	case !a.hasGrants:
+		return a.require(apitypes.ScopeAdmin, action)
+	case es.env.ID != 0:
+		return a.refuseGrant(apitypes.ScopeAdmin, "revealing secret values", es.String())
+	}
+	return a.refuseGrant(apitypes.ScopeAdmin, "revealing secret values", a.orgName())
+}
+
+// logRedactor returns what masks rel's secret values in its logs for a in
+// es, rel's environment: nil when a may reveal them there or there are
+// none, so they get logs as written at no cost. It reads no more than
+// the release row it is given.
+func (c *Core) logRedactor(a Actor, es envScope, rel store.Release) (*redactor, error) {
+	if a.revealsIn(es) {
 		return nil, nil
 	}
 	return c.releaseRedactor(rel)

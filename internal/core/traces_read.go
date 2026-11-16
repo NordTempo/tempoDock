@@ -101,7 +101,7 @@ func (c *Core) ListTraces(ctx context.Context, a Actor, ref ServiceRef, f TraceF
 	if err != nil {
 		return apitypes.TraceList{}, err
 	}
-	masks, err := c.traceMasks(a, rels)
+	masks, err := c.traceMasks(a, ss, rels, func(id int64) bool { return id == ss.svc.ID })
 	if err != nil {
 		return apitypes.TraceList{}, err
 	}
@@ -172,7 +172,10 @@ func (c *Core) GetTrace(ctx context.Context, a Actor, ref ServiceRef, id string,
 	if err != nil {
 		return apitypes.Trace{}, err
 	}
-	masks, err := c.traceMasks(a, rels)
+	masks, err := c.traceMasks(a, ss, rels, func(id int64) bool {
+		n, ok := names[id]
+		return ok && n.Project == ss.project.Name && n.Environment == ss.env.Name
+	})
 	if err != nil {
 		return apitypes.Trace{}, err
 	}
@@ -274,11 +277,17 @@ type traceMask struct{ r *redactor }
 
 // traceMasks are the masks of the releases in rels for a, each opened
 // once a request: a release's values are decrypted once, not per span.
-// A reader who may reveal secret values gets none.
-func (c *Core) traceMasks(a Actor, rels map[int64]store.Release) (map[int64]traceMask, error) {
+// A reader who may reveal secret values in ss's environment gets none for
+// the services there (inEnv); another environment's stay masked.
+func (c *Core) traceMasks(a Actor, ss svcScope, rels map[int64]store.Release, inEnv func(serviceID int64) bool) (map[int64]traceMask, error) {
+	reveal := a.revealsIn(ss.envScope)
 	out := make(map[int64]traceMask, len(rels))
 	for id, rel := range rels {
-		r, err := c.logRedactor(a, rel)
+		if reveal && inEnv(rel.ServiceID) {
+			out[id] = traceMask{}
+			continue
+		}
+		r, err := c.releaseRedactor(rel)
 		if err != nil {
 			return nil, err
 		}

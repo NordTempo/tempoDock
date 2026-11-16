@@ -270,7 +270,7 @@ func (c *Core) liveMask(ctx context.Context, a Actor, ss svcScope) (liveCtx, err
 	if err != nil {
 		return liveCtx{}, err
 	}
-	r, err := c.logRedactor(a, rel)
+	r, err := c.logRedactor(a, ss.envScope, rel)
 	if err != nil {
 		return liveCtx{}, err
 	}

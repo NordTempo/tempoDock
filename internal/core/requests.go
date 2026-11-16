@@ -141,7 +141,7 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 				return r, err
 			}
 			r.Reason = call.Reason
-			c.publishRequest(r, le.Project, le.Environment)
+			c.publishRequest(r, le.Project, le.Environment, le.envKind)
 		}
 		return r, nil
 	}
@@ -189,7 +189,7 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 	} else {
 		c.audit(ctx, a, "request.create", &p, &e, fmt.Sprintf("request #%d", r.ID), requestSummary(r, le.Project, le.Environment)+reasonSuffix(r.Reason))
 	}
-	c.publishRequest(r, le.Project, le.Environment)
+	c.publishRequest(r, le.Project, le.Environment, le.envKind)
 	c.alertRequest(ctx, r, le)
 	if replaced == nil {
 		// A newer call replacing a pending one isn't mailed again.
@@ -280,22 +280,22 @@ func (c *Core) toRequest(r store.AccessRequest, es envScope, args bool) apitypes
 }
 
 // publishRequest tells the org's admins and the token that asked.
-func (c *Core) publishRequest(r store.AccessRequest, project, env string) {
+func (c *Core) publishRequest(r store.AccessRequest, project, env string, kind uint8) {
 	view := c.toRequest(r, envScope{store.Project{Name: project}, store.Environment{Name: env}}, false)
 	c.bus.publish(busEvent{
-		orgID: r.OrgID, projectID: r.ProjectID, envID: r.EnvironmentID, requester: derefOr(r.TokenID), adminsOnly: true,
+		orgID: r.OrgID, projectID: r.ProjectID, envID: r.EnvironmentID, envKind: kind, requester: derefOr(r.TokenID), adminsOnly: true,
 		ev: apitypes.Event{Type: apitypes.EventAccessRequest, Project: project, Environment: env, AccessRequest: &view},
 	})
 }
 
 // seesRequest reports whether the actor may see a request: whoever may
-// approve in its environment (ADR 0080; the org's admins before), and the
-// token that asked.
-func (a Actor) seesRequest(r store.AccessRequest) bool {
+// approve in its environment, of kind (ADR 0080; the org's admins
+// before), and the token that asked.
+func (a Actor) seesRequest(r store.AccessRequest, kind uint8) bool {
 	if a.Kind == "token" && r.TokenID != nil && a.TokenID == *r.TokenID {
 		return true
 	}
-	return a.approves(r.ProjectID, r.EnvironmentID) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
+	return a.approves(r.ProjectID, r.EnvironmentID, kind) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
 }
 
 // RequestFilter narrows ListRequests.
@@ -312,6 +312,10 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 		return nil, err
 	}
 	limit := int64(min(max(f.Limit, 1), 200))
+	kinds, err := c.envKinds(ctx, a)
+	if err != nil {
+		return nil, err
+	}
 	// Both lists join the project's and environment's names: one query.
 	type row struct {
 		r            store.AccessRequest
@@ -327,13 +331,13 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 		for _, g := range got {
 			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
 		}
-	case a.approves(0, 0):
+	case a.approves(0, 0, 0):
 		got, err := c.store.ListOrgAccessRequests(ctx, store.ListOrgAccessRequestsParams{OrgID: a.OrgID, Limit: limit})
 		if err != nil {
 			return nil, err
 		}
 		for _, g := range got {
-			if !a.seesRequest(g.AccessRequest) {
+			if !a.seesRequest(g.AccessRequest, kinds[g.AccessRequest.EnvironmentID]) {
 				continue // an approver of other environments only
 			}
 			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
@@ -343,7 +347,7 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 	}
 	out := []apitypes.AccessRequest{}
 	for _, r := range rows {
-		if !a.seesRequest(r.r) {
+		if !a.seesRequest(r.r, kinds[r.r.EnvironmentID]) {
 			continue
 		}
 		v := c.toRequest(r.r, envScope{store.Project{Name: r.project}, store.Environment{Name: r.env}}, false)
@@ -382,15 +386,23 @@ func (c *Core) requestScopes(ctx context.Context, rows []store.AccessRequest) (m
 
 // loadRequest loads a request the actor may see.
 func (c *Core) loadRequest(ctx context.Context, a Actor, id int64) (store.AccessRequest, envScope, error) {
+	missing := notFound("access request #%d not found; see `dock request list`", id)
 	r, err := c.store.GetAccessRequest(ctx, id)
-	if store.IsNotFound(err) || (err == nil && !a.seesRequest(r) && a.Kind != "system") {
-		return r, envScope{}, notFound("access request #%d not found; see `dock request list`", id)
+	if store.IsNotFound(err) || err == nil && r.OrgID != a.OrgID && a.Kind != "system" {
+		return r, envScope{}, missing
 	}
 	if err != nil {
 		return r, envScope{}, err
 	}
+	// Who sees it depends on its environment's kind (approves).
 	es, err := c.requestScope(ctx, r)
-	return r, es, err
+	if err != nil {
+		return r, es, err
+	}
+	if !a.seesRequest(r, envKind(es.env)) && a.Kind != "system" {
+		return r, envScope{}, missing
+	}
+	return r, es, nil
 }
 
 // GetRequest returns one request; admins get its arguments and how many
@@ -403,7 +415,7 @@ func (c *Core) GetRequest(ctx context.Context, a Actor, id int64) (apitypes.Acce
 	if err != nil {
 		return apitypes.AccessRequest{}, err
 	}
-	admin := a.approves(r.ProjectID, r.EnvironmentID)
+	admin := a.approves(r.ProjectID, r.EnvironmentID, envKind(es.env))
 	out := c.toRequest(r, es, admin)
 	if admin {
 		n, err := c.store.CountEnvironmentAuditSince(ctx, store.CountEnvironmentAuditSinceParams{EnvironmentID: &r.EnvironmentID, ID: r.AuditMark})
@@ -438,7 +450,7 @@ func (c *Core) GiveRequestReason(ctx context.Context, a Actor, id int64, reason 
 		return err
 	}
 	r.Reason = reason
-	c.publishRequest(r, es.project.Name, es.env.Name)
+	c.publishRequest(r, es.project.Name, es.env.Name, envKind(es.env))
 	return nil
 }
 
@@ -534,7 +546,7 @@ func (c *Core) DecideRequest(ctx context.Context, a Actor, id int64, approve boo
 	c.audit(ctx, a, "request."+map[bool]string{true: "approve", false: "reject"}[approve], &es.project, &es.env,
 		fmt.Sprintf("request #%d", r.ID), fmt.Sprintf("%s %s%s", what, requestSummary(r, es.project.Name, es.env.Name), commentSuffix(req.Comment)))
 	c.signalAlert(ctx, alertSignal{Key: requestAlertKey(r.ID), Resolve: true})
-	c.publishRequest(decided, es.project.Name, es.env.Name)
+	c.publishRequest(decided, es.project.Name, es.env.Name, envKind(es.env))
 	if !approve {
 		c.dropUpload(decided.Upload)
 		c.endHeldPush(ctx, decided, "the request was rejected")
@@ -583,7 +595,7 @@ func (c *Core) runRequest(r store.AccessRequest, es envScope, by Actor) {
 		c.log.Error("finish access request", "request", r.ID, "err", ferr)
 		return
 	}
-	c.publishRequest(finished, es.project.Name, es.env.Name)
+	c.publishRequest(finished, es.project.Name, es.env.Name, envKind(es.env))
 }
 
 // restartOps are the calls that restart a service, by Via and Op: their
@@ -756,7 +768,7 @@ func (c *Core) endedRequests(ctx context.Context, rows []store.AccessRequest) {
 			c.endHeldPush(ctx, r, cmp.Or(r.Comment, "the request expired"))
 		}
 		es := scopes[r.EnvironmentID]
-		c.publishRequest(r, es.project.Name, es.env.Name)
+		c.publishRequest(r, es.project.Name, es.env.Name, envKind(es.env))
 	}
 }
 

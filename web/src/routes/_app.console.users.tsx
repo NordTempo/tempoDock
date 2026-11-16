@@ -367,7 +367,7 @@ const UserRow = memo(function UserRow({
               {o.org}
             </Link>{" "}
             <span className="text-mut">
-              {o.owner ? "owner" : o.role}
+              {o.role}
               {o.expires_at && ", joined as operator"}
             </span>
           </span>

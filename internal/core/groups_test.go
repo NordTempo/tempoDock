@@ -77,8 +77,8 @@ func TestGroupsDecide(t *testing.T) {
 		t.Fatal(err)
 	}
 	bo = h.in(userActor(h.userRow(bo.UserID)), "")
-	if !bo.approves(0, 0) || bo.Scope != apitypes.ScopeRead {
-		t.Fatalf("an approver: approves %v, summary %s", bo.approves(0, 0), bo.Scope)
+	if !bo.approves(0, 0, 0) || bo.Scope != apitypes.ScopeRead {
+		t.Fatalf("an approver: approves %v, summary %s", bo.approves(0, 0, 0), bo.Scope)
 	}
 
 	// Somebody keeps Full access.

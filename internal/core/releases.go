@@ -1181,5 +1181,5 @@ func (c *Core) publish(ss svcScope, ev apitypes.Event) {
 // publishTo is publish for the subscribers view picks (busEvent.secrets).
 func (c *Core) publishTo(ss svcScope, ev apitypes.Event, view secretsView) {
 	ev.Project, ev.Environment, ev.Service = ss.project.Name, ss.env.Name, ss.svc.Name
-	c.bus.publish(busEvent{orgID: ss.project.OrgID, projectID: ss.project.ID, envID: ss.env.ID, serviceID: ss.svc.ID, ev: ev, secrets: view})
+	c.bus.publish(busEvent{orgID: ss.project.OrgID, projectID: ss.project.ID, envID: ss.env.ID, envKind: envKind(ss.env), serviceID: ss.svc.ID, ev: ev, secrets: view})
 }

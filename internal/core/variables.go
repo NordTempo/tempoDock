@@ -34,10 +34,7 @@ func (c *Core) ListVariables(ctx context.Context, a Actor, ref EnvRef, service s
 		return nil, err
 	}
 	if reveal {
-		if err := a.require(apitypes.ScopeAdmin, "revealing secret values"); err != nil {
-			return nil, err
-		}
-		if err := a.requireRecent("revealing secret values"); err != nil {
+		if err := a.requireReveal(es); err != nil {
 			return nil, err
 		}
 	}

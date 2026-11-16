@@ -31,10 +31,7 @@ func (c *Core) GetChanges(ctx context.Context, a Actor, ref EnvRef, reveal bool)
 		return apitypes.PendingChanges{}, err
 	}
 	if reveal {
-		if err := a.require(apitypes.ScopeAdmin, "revealing secret values"); err != nil {
-			return apitypes.PendingChanges{}, err
-		}
-		if err := a.requireRecent("revealing secret values"); err != nil {
+		if err := a.requireReveal(es); err != nil {
 			return apitypes.PendingChanges{}, err
 		}
 	}
@@ -528,7 +525,7 @@ func (c *Core) applyEnv(ctx context.Context, a Actor, es envScope, deps map[stri
 			return err
 		}
 		if len(res.archive) > 0 {
-			if err := a.require(apitypes.ScopeAdmin, "applying staged changes that archive a service"); err != nil {
+			if err := a.checkEnvAccess(apitypes.ScopeAdmin, "applying staged changes that archive a service", es.project, es.env); err != nil {
 				return err
 			}
 		}

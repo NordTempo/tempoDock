@@ -284,6 +284,53 @@ func (a Actor) holdsAnywhere(need apitypes.Scope, action string) bool {
 	return false
 }
 
+// holdsAt reports whether a person whose grants decide holds p at a place
+// (modelAllows: envID 0 a project, projectID 0 the org; kind is the
+// environment's); others pass, their scope and limit having decided what
+// they see. For filtering what a list or stream shows.
+func (a Actor) holdsAt(p Perm, projectID, envID int64, kind uint8) bool {
+	if !a.hasGrants {
+		return true
+	}
+	for _, g := range a.grants {
+		if modelAllows(g, p, projectID, envID, kind) {
+			return true
+		}
+	}
+	return false
+}
+
+// envKinds maps the org's environments to their kinds (envKind), for
+// checking a person's grants against many items at once (holdsAt): one
+// query, and none for actors grants don't decide (nil).
+func (c *Core) envKinds(ctx context.Context, a Actor) (map[int64]uint8, error) {
+	if !a.hasGrants {
+		return nil, nil
+	}
+	rows, err := c.store.ListOrgEnvironments(ctx, a.OrgID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]uint8, len(rows))
+	for _, e := range rows {
+		out[e.ID] = envKind(store.Environment{Kind: e.Kind, Preview: e.Preview})
+	}
+	return out, nil
+}
+
+// envKindOf is one environment's kind for holdsAt; 0 for actors grants
+// don't decide, without a query.
+func (c *Core) envKindOf(ctx context.Context, a Actor, envID int64) (uint8, error) {
+	if !a.hasGrants || envID == 0 {
+		return 0, nil
+	}
+	e, err := c.store.GetEnvironment(ctx, envID)
+	if err != nil {
+		return 0, err
+	}
+	return envKind(e), nil
+}
+
 // seesProject reports whether the actor may see that project exists: a
 // token limited to another one can't, nor a person with no grant that
 // shows any of it (env.view).
@@ -335,14 +382,14 @@ func (a Actor) refuseGrant(need apitypes.Scope, action, place string) error {
 }
 
 // approves reports whether the actor may decide access requests in an
-// environment (approve): a person whose grants give it there, otherwise
-// an admin. projectID 0 asks whether anywhere.
-func (a Actor) approves(projectID, envID int64) bool {
+// environment of kind (envKind; approve): a person whose grants give it
+// there, otherwise an admin. projectID 0 asks whether anywhere.
+func (a Actor) approves(projectID, envID int64, kind uint8) bool {
 	if !a.hasGrants {
 		return rank(a.Scope) >= rank(apitypes.ScopeAdmin)
 	}
 	for _, g := range a.grants {
-		if projectID == 0 && g.perms.has(PermApprove) || modelAllows(g, PermApprove, projectID, envID, uint8(allKinds)) {
+		if projectID == 0 && g.perms.has(PermApprove) || modelAllows(g, PermApprove, projectID, envID, kind) {
 			return true
 		}
 	}

@@ -73,7 +73,15 @@ func (c *Core) ListErrors(ctx context.Context, a Actor, f ErrorFilter) (apitypes
 	if err != nil {
 		return apitypes.ErrorList{}, err
 	}
-	rows = slices.DeleteFunc(rows, func(r issueRow) bool { return !a.canSee(a.OrgID, r.ProjectID, r.EnvironmentID) })
+	// Errors are logs: logs.read where each one is (ADR 0080).
+	kinds, err := c.envKinds(ctx, a)
+	if err != nil {
+		return apitypes.ErrorList{}, err
+	}
+	reads := func(project, env int64) bool {
+		return a.canSee(a.OrgID, project, env) && a.holdsAt(PermLogsRead, project, env, kinds[env])
+	}
+	rows = slices.DeleteFunc(rows, func(r issueRow) bool { return !reads(r.ProjectID, r.EnvironmentID) })
 	out := apitypes.ErrorList{Issues: make([]apitypes.ErrorIssue, 0, min(len(rows), limit)), Facets: []apitypes.ErrorFacet{}}
 	if len(rows) > limit {
 		rows, out.Truncated = rows[:limit], true
@@ -116,7 +124,7 @@ func (c *Core) ListErrors(ctx context.Context, a Actor, f ErrorFilter) (apitypes
 		return apitypes.ErrorList{}, err
 	}
 	for _, r := range facets {
-		if a.canSee(a.OrgID, r.ProjectID, r.EnvironmentID) {
+		if reads(r.ProjectID, r.EnvironmentID) {
 			out.Facets = append(out.Facets, apitypes.ErrorFacet{
 				Project: r.Project, Environment: r.Environment, Service: r.Service,
 				Issues: int(r.Issues), New: int(r.NewIssues), Events: r.Events,
@@ -247,6 +255,14 @@ func (c *Core) errorIssue(ctx context.Context, a Actor, id int64) (store.GetErro
 	}
 	i := r.ErrorIssue
 	if r.Archived != 0 || !a.canSee(i.OrgID, i.ProjectID, i.EnvironmentID) || a.OrgID != 0 && a.OrgID != i.OrgID {
+		return r, missing
+	}
+	// Errors are logs: logs.read where it is (ADR 0080).
+	kind, err := c.envKindOf(ctx, a, i.EnvironmentID)
+	if err != nil {
+		return r, err
+	}
+	if !a.holdsAt(PermLogsRead, i.ProjectID, i.EnvironmentID, kind) {
 		return r, missing
 	}
 	return r, nil

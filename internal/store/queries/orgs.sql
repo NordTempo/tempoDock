@@ -137,7 +137,7 @@ DELETE FROM org_variables WHERE org_id = +? AND key = +?;
 -- projects, with where it is, for finding ${{org.KEY}} references.
 -- name: ListOrgVariableUses :many
 SELECT variables.environment_id, variables.service_id, variables.key, variables.value, variables.pending_value,
-    projects.name AS project_name, environments.name AS environment_name,
+    projects.id AS project_id, projects.name AS project_name, environments.name AS environment_name,
     coalesce(services.name, '') AS service_name
 FROM projects
 JOIN environments ON environments.project_id = projects.id

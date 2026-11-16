@@ -606,6 +606,15 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 		exp := now().Add(time.Duration(req.ExpiresInDays) * 24 * time.Hour)
 		params.ExpiresAt = &exp
 	}
+	// A token does what its scope gives at its limit: no more than its
+	// maker holds there (gives.go).
+	reach := uint8(allKinds)
+	if e != nil {
+		reach = envKind(*e)
+	}
+	if err := a.scopeGive(req.Scope, deref(params.ProjectID), deref(params.EnvironmentID), reach, "a "+string(req.Scope)+" token"); err != nil {
+		return apitypes.CreatedToken{}, err
+	}
 	secret, hash := newSecret(tokenPrefix)
 	params.Hash = hash
 	var t store.Token

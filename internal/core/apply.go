@@ -105,7 +105,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 				ep.changes = slices.Insert(ep.changes, 0, apitypes.PlanChange{Environment: fe.Name, Kind: apitypes.PlanEnvironment, Action: apitypes.ChangeAdd, Name: fe.Name, New: es.env.Kind})
 			}
 			if len(ep.archive) > 0 {
-				if err := a.require(apitypes.ScopeAdmin, "archiving services a project file leaves out (--prune)"); err != nil {
+				if err := a.checkEnvAccess(apitypes.ScopeAdmin, "archiving services a project file leaves out (--prune)", es.project, es.env); err != nil {
 					return err
 				}
 			}
@@ -503,7 +503,10 @@ func addPlan(p *apitypes.ApplyPlan, ep envPlan) {
 // planEnv compares a file environment with its live state (le nil: it
 // doesn't exist yet) for a. values are the values sent with the file.
 func (c *Core) planEnv(a Actor, fe apitypes.EnvironmentExport, le *liveEnv, values map[varKey]string, prune bool) (envPlan, error) {
-	ep := envPlan{settings: map[string]*apitypes.ServiceSettings{}, blind: !a.revealsSecrets()}
+	ep := envPlan{settings: map[string]*apitypes.ServiceSettings{}, blind: !a.revealsAt(0, 0, 0)}
+	if le != nil {
+		ep.blind = !a.revealsAt(le.row.ProjectID, le.row.ID, envKind(le.row))
+	}
 	env := fe.Name
 	if err := validName("environment", env); err != nil {
 		return ep, err
