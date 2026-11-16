@@ -96,7 +96,7 @@ func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token) (Act
 // agentToken loads one of the org's tokens by name or ID, for an admin
 // managing it.
 func (c *Core) agentToken(ctx context.Context, a Actor, ref string) (store.Token, error) {
-	if err := a.require(apitypes.ScopeAdmin, "managing tokens"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing tokens"); err != nil {
 		return store.Token{}, err
 	}
 	var t store.Token

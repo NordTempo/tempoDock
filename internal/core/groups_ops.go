@@ -140,7 +140,7 @@ func kindBits(names []string) (int64, error) {
 // groupFor loads one of the org's groups by ID or name, after a manages
 // members, recently signed in: groups give power, like roles.
 func (c *Core) groupFor(ctx context.Context, a Actor, ref, action string) (store.Group, error) {
-	if err := a.require(apitypes.ScopeAdmin, action); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, action); err != nil {
 		return store.Group{}, err
 	}
 	if err := a.requireRecent(action); err != nil {
@@ -180,7 +180,7 @@ func validGroupName(name string) (string, error) {
 
 // CreateGroup makes an empty group. Needs members.manage.
 func (c *Core) CreateGroup(ctx context.Context, a Actor, req apitypes.CreateGroupRequest) (apitypes.Group, error) {
-	if err := a.require(apitypes.ScopeAdmin, "managing groups"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing groups"); err != nil {
 		return apitypes.Group{}, err
 	}
 	if err := a.requireRecent("managing groups"); err != nil {
@@ -412,7 +412,7 @@ func (c *Core) GrantGroup(ctx context.Context, a Actor, ref string, req apitypes
 
 // RevokeGrant ends a grant, a group's or a person's.
 func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
-	if err := a.require(apitypes.ScopeAdmin, "managing groups"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing groups"); err != nil {
 		return err
 	}
 	if err := a.requireRecent("managing groups"); err != nil {
@@ -446,7 +446,7 @@ func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
 
 // GrantMember gives one member a role at a place: a one-off grant.
 func (c *Core) GrantMember(ctx context.Context, a Actor, who string, req apitypes.GrantRequest) (apitypes.Grant, error) {
-	if err := a.require(apitypes.ScopeAdmin, "managing groups"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing groups"); err != nil {
 		return apitypes.Grant{}, err
 	}
 	if err := a.requireRecent("managing groups"); err != nil {

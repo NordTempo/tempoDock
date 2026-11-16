@@ -170,7 +170,7 @@ func (c *Core) AgentRules(ctx context.Context, a Actor) (apitypes.AgentSettings,
 // replace theirs. They apply to every agent's next request, personal and
 // the org's, but org agents that bypass them.
 func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSettings) (apitypes.AgentSettings, error) {
-	if err := a.require(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
 		return apitypes.AgentSettings{}, err
 	}
 	if err := a.requireRecent("managing agent rules"); err != nil {
@@ -223,7 +223,7 @@ func (c *Core) SetAgentRulesBypass(ctx context.Context, a Actor, ref string, byp
 	if err != nil {
 		return apitypes.AgentAccess{}, err
 	}
-	if err := a.require(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
 		return apitypes.AgentAccess{}, err
 	}
 	if err := a.requireRecent("managing agent rules"); err != nil {

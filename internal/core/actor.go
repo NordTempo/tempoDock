@@ -196,6 +196,14 @@ func (a Actor) String() string {
 
 func (a Actor) limited() bool { return a.ProjectID != 0 || a.EnvironmentID != 0 }
 
+// limitCovers reports whether a's project or environment limit takes in
+// a whole place: project 0 the org, env 0 a project. A limited token
+// covers no place wider than its limit.
+func (a Actor) limitCovers(project, env int64) bool {
+	return (a.ProjectID == 0 || project != 0 && a.ProjectID == project) &&
+		(a.EnvironmentID == 0 || env != 0 && a.EnvironmentID == env)
+}
+
 // require checks the actor's scope in its org. action completes "…
 // requires <scope>", e.g. "archiving a service".
 func (a Actor) require(need apitypes.Scope, action string) error {

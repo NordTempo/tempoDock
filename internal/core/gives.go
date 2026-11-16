@@ -18,11 +18,11 @@ import (
 // covers reports whether a holds every permission in perms on a place as
 // wide as (project, env, kinds): project 0 the org, env 0 a project;
 // kinds the environment kinds the place covers (an environment's own).
-// Actors grants don't decide give what their scope holds: an admin
-// anything, as before.
+// Actors grants don't decide give what their scope holds (an admin
+// anything, as before) inside their token's limit.
 func (a Actor) covers(perms Perms, project, env int64, kinds uint8) bool {
 	if !a.hasGrants {
-		return rank(a.Scope) >= rank(apitypes.ScopeAdmin) || perms&^seededPerms(a.Scope) == 0
+		return a.limitCovers(project, env) && (rank(a.Scope) >= rank(apitypes.ScopeAdmin) || perms&^seededPerms(a.Scope) == 0)
 	}
 	for p := range permCount {
 		if !perms.has(p) {

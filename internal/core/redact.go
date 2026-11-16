@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"cmp"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -33,10 +34,11 @@ const minSecretLen = 6
 // (ADR 0080: variables.read_secret where they are). envID 0 asks for every
 // environment of the project, projectID 0 for every one of the org (the
 // org's variables reach them all); a grant somewhere else doesn't count.
-// Actors grants don't decide reveal as admins did before.
+// Actors grants don't decide reveal as admins did before, inside their
+// token's limit.
 func (a Actor) revealsAt(projectID, envID int64, kind uint8) bool {
 	if !a.hasGrants {
-		return a.require(apitypes.ScopeAdmin, "revealing secret values") == nil
+		return a.require(apitypes.ScopeAdmin, "revealing secret values") == nil && a.limitCovers(projectID, envID)
 	}
 	for _, g := range a.grants {
 		if !g.perms.has(PermVariablesReadSecret) {
@@ -82,6 +84,12 @@ func (a Actor) mayReveal(es envScope, action string) error {
 	switch {
 	case ok:
 		return nil
+	case !a.hasGrants && es.env.ID != 0:
+		return a.require(apitypes.ScopeAdmin, action)
+	case !a.hasGrants && a.limited():
+		// The org's values reach every environment: a limited token
+		// sees none of them.
+		return a.refuseLimit(apitypes.ScopeAdmin, action, "", fmt.Sprintf("%s is limited to %s; %s of the organization requires an unlimited admin token", a, a.limitName(), action))
 	case !a.hasGrants:
 		return a.require(apitypes.ScopeAdmin, action)
 	case es.env.ID != 0:

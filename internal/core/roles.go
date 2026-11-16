@@ -146,9 +146,15 @@ func (c *Core) Roles(ctx context.Context, a Actor) ([]apitypes.Role, error) {
 	return out, nil
 }
 
-// roleFor loads one of the org's roles by name, for an admin action.
+// roleFor loads one of the org's roles by name, for an admin action:
+// reading it, or managing it with an unlimited token (a role reaches
+// wherever it is granted).
 func (c *Core) roleFor(ctx context.Context, a Actor, name, action string) (store.Role, error) {
-	if err := a.require(apitypes.ScopeAdmin, action); err != nil {
+	check := a.requireUnlimited
+	if action == "reading roles" {
+		check = a.require
+	}
+	if err := check(apitypes.ScopeAdmin, action); err != nil {
 		return store.Role{}, err
 	}
 	r, err := c.store.GetRoleByName(ctx, store.GetRoleByNameParams{OrgID: a.OrgID, Name: strings.TrimSpace(name)})
@@ -178,7 +184,7 @@ func (c *Core) Role(ctx context.Context, a Actor, name string) (apitypes.Role, e
 
 // CreateRole makes one of the org's own roles.
 func (c *Core) CreateRole(ctx context.Context, a Actor, req apitypes.RoleRequest) (apitypes.Role, error) {
-	if err := a.require(apitypes.ScopeAdmin, "managing roles"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing roles"); err != nil {
 		return apitypes.Role{}, err
 	}
 	if err := a.requireRecent("managing roles"); err != nil {
