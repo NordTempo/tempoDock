@@ -1,4 +1,6 @@
 /bin/
+# `go build ./cmd/dock` at the root writes the binary here; bin/dock is make build's.
+/dock
 /dist/
 /web/dist/*
 !/web/dist/.gitkeep
