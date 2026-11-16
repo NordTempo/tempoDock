@@ -2,11 +2,12 @@
 
 ## Problem
 
-Hosted deploy platforms are great to use but expensive at scale, and your apps
-and data live on someone else's infrastructure. Self-hosted options (Coolify, Dokploy, Dokku,
-Kamal) cover parts of this, but none are designed around AI agents deploying on
-your behalf with enforced limits, and several are heavy on the server they run
-on.
+You want your apps and their data on servers you choose, and deploying to
+them should feel as easy as on a hosted platform: projects, environments,
+previews, logs and domains, from a CLI or a web UI. More and more of that
+deploying is done by AI agents, so it has to be safe to let them: limits the
+server enforces, not instructions they may ignore. And the platform should
+take as little of the server as possible, leaving it to the apps.
 
 ## Who it's for
 
