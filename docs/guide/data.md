@@ -84,7 +84,11 @@ dock db saved run open-orders
   default (`-n`, at most 100 000), a 10 s timeout (`--timeout`, at most
   60 s), at most 64 MB, cells over 8 KB cut. Results stream as they arrive;
   `--json` prints the API's NDJSON frames (header, rows, then end or error).
-- Writes in `query` fail (exit 3). Change data with changesets.
+- Writes in `query` fail: a statement that isn't a read is refused before
+  it runs (exit 2), and a write inside a read (`WITH ... DELETE`, a
+  function that writes) fails in the read-only transaction (exit 3).
+  Selecting a sensitive column your access masks fails too (exit 3).
+  Change data with changesets.
 - MySQL and MariaDB: `query` runs reads only (`SELECT`, `WITH`, `SHOW`,
   `DESCRIBE`, `EXPLAIN`, `TABLE`, `VALUES`), never locking reads (`FOR
   UPDATE`, `FOR SHARE`) or executable comments (`/*! */`); named locks a

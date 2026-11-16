@@ -851,10 +851,17 @@ func queryError(e *apitypes.DataQueryError) error {
 	hint := strings.TrimSpace(strings.Join([]string{e.Detail, e.Hint}, "\n"))
 	exit := output.ExitError
 	switch {
-	case e.SQLState == "25006" || e.SQLState == "42501":
+	case e.SQLState == "25006":
 		exit = output.ExitAuth
 		if hint == "" {
 			hint = "Queries are read-only; change data with `dock db apply`."
+		}
+	case e.SQLState == "42501":
+		// Insufficient privilege: a masked reader selecting a sensitive
+		// column, or a function or table the reader roles aren't granted.
+		exit = output.ExitAuth
+		if hint == "" {
+			hint = "Your access can't read that. If it is a table, its sensitive columns are masked for you: select the other columns (`dock db schema TABLE` marks them)."
 		}
 	case strings.HasPrefix(e.SQLState, "42"):
 		exit = output.ExitUsage
