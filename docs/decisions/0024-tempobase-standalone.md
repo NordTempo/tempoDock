@@ -1,6 +1,10 @@
 # 0024: tempoBase, a standalone build of the Data panel
 
-Status: accepted (decided by the agent)
+Status: accepted (decided by the agent). Since 2026-11-16 releases carry
+the binaries only: the image `ghcr.io/nordtempo/tempobase` and its
+Dockerfile and Compose example are gone. Nobody ran tempoBase from it
+(the Data panel is used inside Dock), and an unused package is one more
+thing to keep secure now that the repository is public.
 
 ## Context
 

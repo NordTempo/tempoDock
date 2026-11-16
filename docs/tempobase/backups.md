@@ -19,14 +19,8 @@ tempoBase; back that up as you do today.
 while the server runs:
 
 ```sh
-# binary or systemd
 sudo tempobase admin backup /var/backups/tempobase-$(date +%F).db
 sudo cp /var/lib/tempobase/secrets.key /var/backups/   # once; it doesn't change
-
-# Docker
-docker exec tempobase /tempobase admin backup /data/backup.db
-docker cp tempobase:/data/backup.db ./tempobase-$(date +%F).db
-docker cp tempobase:/data/secrets.key ./secrets.key
 ```
 
 Don't copy `tempobase.db` itself while the server runs: it may be caught

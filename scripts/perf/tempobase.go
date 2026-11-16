@@ -180,7 +180,7 @@ func startTempobase(bin string) (*tempobase, error) {
 	env := append(cleanEnv(),
 		fmt.Sprintf("TEMPOBASE_LISTEN=127.0.0.1:%d", ports[0]),
 		"TEMPOBASE_DATA_DIR="+data,
-		"GOMEMLIMIT=48MiB", // as deploy/tempobase/Dockerfile and tempobase.service
+		"GOMEMLIMIT=48MiB", // as deploy/tempobase/tempobase.service
 		measuredProcs,
 		"HOME="+dir,
 	)

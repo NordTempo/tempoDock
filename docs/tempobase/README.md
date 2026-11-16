@@ -3,13 +3,13 @@
 tempoBase is Tempo Dock's database panel as a standalone, self-hosted
 server: browse, query and safely change Postgres data, with users, a data
 access policy, an audit log and an MCP endpoint for agents. One small
-binary or image, one data directory, no Docker access needed. It is built
+binary, one data directory, no Docker access needed. It is built
 from this repository and released with Dock
 ([ADR 0024](../decisions/0024-tempobase-standalone.md)).
 
 | Page | For |
 |---|---|
-| [Install](install.md) | The binary, the Docker image or systemd; configuration |
+| [Install](install.md) | The binary or systemd; configuration |
 | [First run](first-run.md) | Creating the first admin, signing in, a lost admin |
 | [Connections](connections.md) | Adding a Postgres database, TLS, setting up access, browsing and changing data |
 | [People and the policy](people.md) | Viewers, editors and admins, invites, who may do what, sensitive columns, audit |

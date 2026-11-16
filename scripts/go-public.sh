@@ -52,8 +52,6 @@ api -X PUT "repos/$repo/actions/permissions/selected-actions" --input - <<'EOF'
 {"github_owned_allowed": true, "verified_allowed": false, "patterns_allowed": [
   "golangci/golangci-lint-action@*",
   "pnpm/action-setup@*",
-  "docker/login-action@*",
-  "docker/setup-buildx-action@*",
   "contributor-assistant/github-action@*"
 ]}
 EOF

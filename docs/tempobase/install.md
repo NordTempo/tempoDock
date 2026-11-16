@@ -11,27 +11,9 @@ own, and idles at about 10 MB of memory with no background work.
 | Network | Outbound to your databases. Inbound on port 7171, behind TLS for anything public |
 | Databases | Postgres 14 or newer, and a user that can create roles (`CREATEROLE`) to set up access |
 
-Pick one of the three ways below. Every release carries the binaries
-(`tempobase-linux-amd64`, `tempobase-linux-arm64`, `tempobase-darwin-arm64`)
-and `SHA256SUMS` next to Dock's, and the image
-`ghcr.io/nordtempo/tempobase` with the same version tag.
-
-## Docker
-
-```sh
-docker run -d --name tempobase --restart unless-stopped \
-  -p 127.0.0.1:7171:7171 -v tempobase:/data \
-  -e TEMPOBASE_BASE_URL=https://tempobase.example.com \
-  ghcr.io/nordtempo/tempobase:latest
-docker logs tempobase    # the setup link, see First run
-```
-
-Or with Compose, from [deploy/tempobase/compose.yaml](../../deploy/tempobase/compose.yaml):
-`docker compose up -d`. The image runs as a non-root user (65532), keeps
-everything in the `/data` volume and listens on `0.0.0.0:7171`. It has no
-health check, since one would wake the server every few seconds; add
-`tempobase healthcheck` as one if your orchestrator wants it. Pin a version
-(`:v0.2.0`) instead of `:latest` to upgrade on your own schedule.
+Every release carries the binaries (`tempobase-linux-amd64`,
+`tempobase-linux-arm64`, `tempobase-darwin-arm64`) and `SHA256SUMS` next
+to Dock's.
 
 ## Binary
 
@@ -72,8 +54,8 @@ with comments: [deploy/tempobase/tempobase.toml](../../deploy/tempobase/tempobas
 
 | TOML | Environment | Default | |
 |---|---|---|---|
-| `listen` | `TEMPOBASE_LISTEN` | `127.0.0.1:7171` (image: `0.0.0.0:7171`) | HTTP address |
-| `data_dir` | `TEMPOBASE_DATA_DIR` | `/var/lib/tempobase` (image: `/data`) | `tempobase.db` and, by default, the key file |
+| `listen` | `TEMPOBASE_LISTEN` | `127.0.0.1:7171` | HTTP address |
+| `data_dir` | `TEMPOBASE_DATA_DIR` | `/var/lib/tempobase` | `tempobase.db` and, by default, the key file |
 | `secrets_key_file` | `TEMPOBASE_SECRETS_KEY_FILE` | `<data_dir>/secrets.key` | The encryption key, created on first start. Point it at a mounted secret to keep it out of volume backups |
 | `base_url` | `TEMPOBASE_BASE_URL` | from each request | The address people open: used in setup, invite and reset links and the MCP snippet, and to decide `Secure` cookies |
 | `trusted_proxies` | `TEMPOBASE_TRUSTED_PROXIES` (comma separated) | none | CIDRs whose `X-Forwarded-For` and `X-Forwarded-Proto` are believed |
@@ -96,8 +78,7 @@ marked `Secure` once `base_url` is `https://`.
 
 ## Upgrades
 
-Replace the binary and restart (`systemctl restart tempobase`), or pull the
-new image and recreate the container. The database is migrated on start.
+Replace the binary and restart (`systemctl restart tempobase`). The database is migrated on start.
 Back up first ([Backups](backups.md)); there is no downgrade.
 
 ## Commands
@@ -113,5 +94,4 @@ Back up first ([Backups](backups.md)); there is no downgrade.
 | `tempobase version` | Prints the version |
 
 `admin` commands work on the data directory directly, so run them on the
-server with the same configuration (in Docker: `docker exec tempobase
-/tempobase admin ...`).
+server with the same configuration.

@@ -437,7 +437,7 @@ people who only want to browse, query and safely change Postgres data.
 - One web project with two entries (`web/` and `web/tempobase/`) sharing
   `features/data`. Dock's UI is style A and tempoBase's style G, on
   system fonts ([design](design/README.md)). One version and one release
-  for both binaries; the image is `ghcr.io/nordtempo/tempobase`.
+  for both binaries.
 
 ## Code layout
 

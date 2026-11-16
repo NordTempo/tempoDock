@@ -68,7 +68,7 @@ echo "dist/dock-install-$version.tar.gz"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage" "$probe.gz" "$sync.gz"' EXIT
 cp -R deploy "$stage/deploy"
-rm -rf "$stage/deploy/tempobase" # tempoBase's image and examples, not Dock's install
+rm -rf "$stage/deploy/tempobase" # tempoBase's examples, not Dock's install
 # install.sh downloads this version when DOCK_BINARY isn't given.
 printf '%s\n' "$version" > "$stage/deploy/VERSION"
 tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \

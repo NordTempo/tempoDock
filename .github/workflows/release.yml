@@ -5,10 +5,10 @@ name: release
 # release-local, see scripts/release/build.sh), then publishes a
 # GitHub Release with generated notes: dock and tempobase from the same
 # commit, one version (ADR 0024). Tags with a "-" (v0.2.0-rc.1) are marked
-# as pre-releases, so "latest" never points at them. tempoBase's image goes
-# to ghcr.io/nordtempo/tempobase. Dock Analytics' store (ADR 0037) ships as
-# dock-analytics-linux-{amd64,arm64} in the release, which a Dock of the
-# same version downloads when analytics runs.
+# as pre-releases, so "latest" never points at them. Dock Analytics' store
+# (ADR 0037) ships as dock-analytics-linux-{amd64,arm64} in the release,
+# which a Dock of the same version downloads when analytics runs. Nothing
+# goes to GitHub Packages.
 on:
   push:
     tags: ['v*']
@@ -93,15 +93,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Neither GitHub Releases nor GHCR may publish until main's CI and the
-  # parallel builds have succeeded. Publish the built artifacts, never
-  # rebuild.
+  # Nothing is published until main's CI and the parallel builds have
+  # succeeded. Publish the built artifacts, never rebuild.
   release:
     needs: [ci, build, analytics]
     runs-on: ${{ vars.RELEASE_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -129,24 +127,3 @@ jobs:
           flags=()
           [[ "$GITHUB_REF_NAME" != *-* ]] || flags+=(--prerelease)
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME" "${flags[@]}"
-
-      # tempoBase's image (deploy/tempobase/Dockerfile) from the binaries
-      # just released. Only on a v* tag, and only once the release has
-      # tempoBase binaries (cmd/tempobase exists).
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Publish the tempoBase image
-        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
-        run: |
-          image=ghcr.io/nordtempo/tempobase
-          tags=(--tag "$image:$GITHUB_REF_NAME")
-          [[ "$GITHUB_REF_NAME" == *-* ]] || tags+=(--tag "$image:latest")
-          docker buildx build --platform linux/amd64,linux/arm64 --push \
-            --file deploy/tempobase/Dockerfile "${tags[@]}" dist

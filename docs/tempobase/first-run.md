@@ -13,8 +13,8 @@ and you are signed in as admin. The code lives only in memory: it is gone
 once used or when the server restarts, which prints a new one. It sits
 after `#`, so it never reaches a proxy's logs.
 
-Find the link with `journalctl -u tempobase`, `docker logs tempobase` or on
-the terminal. Without `base_url` the link can't know your public address;
+Find the link with `journalctl -u tempobase` or on the
+terminal. Without `base_url` the link can't know your public address;
 open it through the address you actually use.
 
 For automation, skip the link and create the admin on the server:
