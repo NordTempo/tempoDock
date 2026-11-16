@@ -33,14 +33,13 @@ health check, since one would wake the server every few seconds; add
 `tempobase healthcheck` as one if your orchestrator wants it. Pin a version
 (`:v0.2.0`) instead of `:latest` to upgrade on your own schedule.
 
-While the repository is private, so is the image: `docker login ghcr.io`
-first, with a token that can read packages.
-
 ## Binary
 
 ```sh
 v=v0.2.0
-gh release download $v -R NordTempo/tempoDock -p tempobase-linux-amd64 -p SHA256SUMS
+for f in tempobase-linux-amd64 SHA256SUMS; do
+  curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/$v/$f"
+done
 grep ' tempobase-linux-amd64$' SHA256SUMS | sha256sum -c
 sudo install -m 0755 tempobase-linux-amd64 /usr/local/bin/tempobase
 TEMPOBASE_DATA_DIR=$HOME/.tempobase tempobase serve

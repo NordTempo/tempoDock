@@ -101,6 +101,6 @@ func upgradeHint(serverVersion string) string {
 	if !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$`).MatchString(serverVersion) {
 		return "The server isn't a release; build the CLI from its commit (make build-cli)."
 	}
-	return fmt.Sprintf("Install the matching CLI: gh release download %s -R %s -p install-cli.sh -O - | DOCK_VERSION=%s sh",
-		serverVersion, releaseRepo, serverVersion)
+	return fmt.Sprintf("Install the matching CLI: curl -fsSL https://github.com/%s/releases/download/%s/install-cli.sh | DOCK_VERSION=%s sh",
+		releaseRepo, serverVersion, serverVersion)
 }

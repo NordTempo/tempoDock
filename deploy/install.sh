@@ -6,7 +6,7 @@
 #
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh
 #   sudo DOCK_BINARY=./dock-linux-amd64 NODE_JOIN_TOKEN=dockjoin1_... ./deploy/install.sh --node
-#   sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh   # downloads the release's binary
+#   sudo ./deploy/install.sh                               # downloads the release's binary
 #   sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh --restore /root/dock-backup.tar.gz
 #
 # Re-running is safe: data is kept, binaries and units are replaced (that is
@@ -30,7 +30,7 @@
 #   DOCK_BINARY   path to a dock binary (a release's dock-linux-<arch>, or make build)
 #   DOCK_VERSION  without DOCK_BINARY: the release to download, checked against its
 #                 SHA256SUMS (default: this release tarball's version, else the latest)
-#   GITHUB_TOKEN  for that download: a token that can read the repository's releases
+#   GITHUB_TOKEN  for that download from a private repository: a token that can read its releases
 #   CADDY_VERSION     Caddy release to install (default below)
 #   PUBLIC_IP         address users point DNS at (default: auto-detect; empty on tunnel servers)
 #   BASE_DOMAIN       base for generated hostnames, needs wildcard DNS (optional)
@@ -816,8 +816,7 @@ else
   if [[ -n "$node_listen" ]]; then
     say "  Nodes connect to $node_listen. Add a server: dock server add <name>"
   fi
-  say "  Updates: the console's Updates page, or dock update. A private release"
-  say "  repository needs a token in /etc/dock/github-token (root:dock, 0640)."
+  say "  Updates: the console's Updates page, or dock update."
   if [[ -n "$restore" ]]; then
     say "  Restored from $restore."
     [[ ! -f /etc/dock/config.from-backup.toml ]] || say "  The old config.toml is in /etc/dock/config.from-backup.toml for reference."

@@ -2,16 +2,16 @@
 # Installs the dock CLI (the dock-cli build: the client without the daemon)
 # on macOS or Linux from a GitHub release, checked against its SHA256SUMS.
 #
-#   gh release download -R NordTempo/tempoDock -p install-cli.sh -O - | sh
-#   gh release download v0.2.0 -R NordTempo/tempoDock -p install-cli.sh -O - | DOCK_VERSION=v0.2.0 sh
+#   curl -fsSL https://github.com/NordTempo/tempoDock/releases/latest/download/install-cli.sh | sh
+#   curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.2.0/install-cli.sh | DOCK_VERSION=v0.2.0 sh
 #
 # Downloads with gh when it is installed and logged in, otherwise with curl
-# and GITHUB_TOKEN (the repository is private).
+# (and GITHUB_TOKEN, if set, for a private repository's releases).
 #
 # Environment:
 #   DOCK_VERSION      release tag, e.g. v0.2.0 (default: the latest release)
 #   DOCK_INSTALL_DIR  where `dock` goes (default: /usr/local/bin as root, else ~/.local/bin)
-#   GITHUB_TOKEN      a token that can read the repository's releases (curl only)
+#   GITHUB_TOKEN      a token for a private repository's releases (curl only)
 set -eu
 
 repo=NordTempo/tempoDock
