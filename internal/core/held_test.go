@@ -110,9 +110,9 @@ func TestHeldSourceEnded(t *testing.T) {
 	if err := h.c.expireRequests(h.ctx, now()); err != nil {
 		t.Fatal(err)
 	}
-	if files := h.heldFiles(); len(files) != 0 {
-		t.Fatalf("files after expiry: %v", files)
-	}
+	// A retention pass the harness's first stats tick started may have
+	// expired the request first and still be removing the archive.
+	eventually(t, "the expired request's archive to go", func() bool { return len(h.heldFiles()) == 0 })
 
 	if _, err := h.c.DeploySource(h.ctx, h.agent, web, sourceTar("v2"), 1<<20); len(h.heldFiles()) != 1 {
 		t.Fatalf("held again: %v", err)

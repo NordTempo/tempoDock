@@ -334,14 +334,14 @@ func (d *deployment) pull(ctx context.Context, ref string) (string, error) {
 	}
 	if login.Username == "" {
 		id, err := d.rt.Pull(ctx, ref, d.log)
-		if err != nil && host != "" && pullRefused(err) {
+		if err != nil && host != "" && pullRefused(err.Error()) {
 			err = fmt.Errorf("%w; if the image is private, an admin adds credentials for its registry with `dock registry login %s`", err, host)
 		}
 		return id, err
 	}
 	_, _ = fmt.Fprintf(d.log, "Signing in to %s as %s\n", host, login.Username)
 	id, err := d.rt.Pull(ctx, ref, d.log, login)
-	if err != nil && pullRefused(err) {
+	if err != nil && pullRefused(err.Error()) {
 		err = fmt.Errorf("%w; check the credentials for %s, or replace them with `dock registry login %s`", err, host, host)
 	}
 	return id, err

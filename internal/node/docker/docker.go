@@ -121,7 +121,10 @@ func (e notFoundError) Is(target error) bool {
 // minted after checking the caller may pull, pullAllowed) reuses it as it
 // is. Any other digest ref is first looked up at its registry with the
 // caller's own credentials (one manifest request), so the registry decides
-// whether the caller may have it.
+// whether the caller may have it; its refusal is the pull's error. Never
+// fall through to ImagePull then: with containerd's image store (the
+// default on new Docker installs) pulling a digest whose content is
+// already here doesn't ask the registry at all.
 func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...node.PullOptions) (string, error) {
 	if logs == nil {
 		logs = io.Discard
@@ -137,7 +140,12 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 		}
 	}
 	if strings.Contains(ref, "@sha256:") {
-		if img, err := r.cli.ImageInspect(ctx, ref); err == nil && (platform || r.mayPull(ctx, ref, pull.RegistryAuth)) {
+		if img, err := r.cli.ImageInspect(ctx, ref); err == nil {
+			if !platform {
+				if err := r.mayPull(ctx, ref, pull.RegistryAuth); err != nil {
+					return "", err
+				}
+			}
 			_, _ = fmt.Fprintln(logs, "Image is already on the server")
 			return img.ID, nil
 		}
@@ -168,10 +176,11 @@ func (r *Runtime) Pull(ctx context.Context, ref string, logs io.Writer, opts ...
 	return img.ID, nil
 }
 
-// mayPull reports whether the registry gives ref's manifest to auth.
-func (r *Runtime) mayPull(ctx context.Context, ref, auth string) bool {
+// mayPull asks ref's registry for its manifest with auth: nil if it gives
+// it, else the registry's refusal (or why it couldn't be asked).
+func (r *Runtime) mayPull(ctx context.Context, ref, auth string) error {
 	_, err := r.cli.DistributionInspect(ctx, ref, client.DistributionInspectOptions{EncodedRegistryAuth: auth})
-	return err == nil
+	return err
 }
 
 // pullLine renders a pull progress message as a log line. Byte-level

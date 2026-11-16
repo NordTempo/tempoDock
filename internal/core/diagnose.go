@@ -256,7 +256,7 @@ func rulePullFailed(in *diagInput) diagVerdict {
 	}
 	e := strings.ToLower(in.err)
 	switch {
-	case strings.Contains(e, "unauthorized") || strings.Contains(e, "denied") || strings.Contains(e, "authentication required"):
+	case pullRefused(e):
 		return diagVerdict{matched: true, why: "the registry refused access",
 			summary: "The image's registry refused access; add or fix its registry credentials",
 			fix:     &apitypes.DiagnosisFix{Setting: "image", CLI: "dock registry login HOST --username NAME"}}
