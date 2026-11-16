@@ -85,6 +85,7 @@ Nothing is deployed unless --deploy, which deploys the images serving in
 						return err
 					}
 				}
+				return promoteStopped(res.Deploy.Skipped)
 			}
 			return nil
 		},

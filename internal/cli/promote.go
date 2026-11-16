@@ -113,5 +113,21 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 			return err
 		}
 	}
+	return promoteStopped(res.Skipped)
+}
+
+// promoteStopped is the deploy failure of a promotion (or a clone's
+// deploy) that stopped at a service it couldn't start: the services
+// before it stay live, the rest were skipped (apitypes.SkipFailed).
+func promoteStopped(skipped []apitypes.SkippedService) error {
+	for _, sk := range skipped {
+		if sk.Reason == apitypes.SkipFailed {
+			return &output.Error{
+				Exit:    output.ExitDeployFailed,
+				Message: fmt.Sprintf("%s wasn't promoted: %s", sk.Service, sk.Message),
+				Hint:    "The services promoted before it stay live; the ones after it were skipped. Fix it and promote again.",
+			}
+		}
+	}
 	return nil
 }

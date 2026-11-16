@@ -367,7 +367,8 @@ func newRollbackCmd(g *globals) *cobra.Command {
 		Short: "Roll back to an earlier release (default: the one before the active one)",
 		Long: `Start a new release with an earlier release's image and config, through the
 same health-checked path as a deploy. Without a number, rolls back to the
-release that was serving before the active one.`,
+newest release that served before the active one and runs something else
+(restarts copy the release they restart, so they are skipped).`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeReleaseArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -413,20 +414,38 @@ func describeCopy(r apitypes.Release) string {
 }
 
 // previousRelease is the newest release that served traffic before the
-// active one.
+// active one and runs something else: restarts (and starts) and rollbacks
+// copy a release, so one that copies what is live would change nothing.
 func previousRelease(ctx context.Context, s *session, t target) (int64, error) {
 	rels, err := get[[]apitypes.Release](ctx, s, t.servicePath()+"/releases?limit=100")
 	if err != nil {
 		return 0, err
 	}
+	byNumber := make(map[int64]apitypes.Release, len(rels))
 	active := int64(-1)
 	for _, r := range rels {
+		byNumber[r.Number] = r
 		if r.Status == apitypes.ReleaseActive {
 			active = r.Number
 		}
 	}
+	// origin is the release whose image and config r runs.
+	origin := func(r apitypes.Release) int64 {
+		for range len(rels) {
+			from, ok := byNumber[r.FromRelease]
+			if r.Source != apitypes.SourceRestart && r.Source != apitypes.SourceRollback || !ok {
+				break
+			}
+			r = from
+		}
+		return r.Number
+	}
+	live := int64(-1)
+	if a, ok := byNumber[active]; ok {
+		live = origin(a)
+	}
 	for _, r := range rels { // newest first
-		if r.Status == apitypes.ReleaseSuperseded && (active < 0 || r.Number < active) {
+		if r.Status == apitypes.ReleaseSuperseded && (active < 0 || r.Number < active) && origin(r) != live {
 			return r.Number, nil
 		}
 	}
