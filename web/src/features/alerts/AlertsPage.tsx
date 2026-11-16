@@ -106,12 +106,16 @@ export function AlertLists({
     .slice(0, more ? MAX : HISTORY);
   return (
     <Scope.Provider value={scope}>
-      {open.length > 0 && (
-        <section aria-labelledby="open">
-          <SectionHead id="open">Open</SectionHead>
+      <section aria-labelledby="open">
+        <SectionHead id="open" aside={open.length > 0 && open.length}>
+          Open
+        </SectionHead>
+        {open.length > 0 ? (
           <AlertTable alerts={open} resolvable />
-        </section>
-      )}
+        ) : (
+          <p className="py-2 text-mut">Nothing open.</p>
+        )}
+      </section>
       <section aria-labelledby="history">
         <SectionHead
           id="history"
@@ -128,7 +132,10 @@ export function AlertLists({
             )
           }
         >
-          Last {more ? MAX : HISTORY} resolved
+          {/* "Last 50" only once the list is cut there. */}
+          {more || resolved.length === HISTORY
+            ? `Last ${more ? MAX : HISTORY} resolved`
+            : "Resolved"}
         </SectionHead>
         {resolved.length > 0 ? (
           <AlertTable alerts={resolved} />

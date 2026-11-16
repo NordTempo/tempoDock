@@ -261,10 +261,15 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       // What runs now; the image setting only when the next deploy differs
       // (after a rollback, or a failed deploy of a new tag).
       <span key="s" className="flex flex-col font-mono">
-        <span className="break-all" title={running}>
+        <span className="wrap-anywhere" title={running}>
           {/* The full name, but a digest only as long as it needs to be. */}
-          {running?.replace(/@sha256:([0-9a-f]{7})[0-9a-f]+/, "@$1") ||
-            "built from source"}
+          {running ? (
+            <BreakAtParts
+              text={running.replace(/@sha256:([0-9a-f]{7})[0-9a-f]+/, "@$1")}
+            />
+          ) : (
+            "built from source"
+          )}
         </span>
         {/* After a failed new tag, the status line says it once and the
             Deploy dialog offers the serving image; nothing more here. */}
@@ -932,4 +937,17 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </span>
     </div>
   );
+}
+
+/**
+ * An image name that wraps after its slashes and before its tag or
+ * digest (ghcr.io/org/ · name · :2.3.0), not in the middle of a part.
+ */
+function BreakAtParts({ text }: { text: string }) {
+  return text.split(/(?<=\/)|(?=[:@])/).map((part, i) => (
+    <Fragment key={`${i}-${part}`}>
+      {i > 0 && <wbr />}
+      {part}
+    </Fragment>
+  ));
 }

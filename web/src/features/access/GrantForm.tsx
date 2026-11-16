@@ -137,9 +137,11 @@ export function GrantForm({
         </label>
       )}
       {!environment && (
-        <fieldset className="flex flex-col gap-1.5">
-          <legend className="text-xs text-faint">Kinds (none: all)</legend>
-          <span className="flex gap-2.5">
+        <fieldset>
+          <legend className="mb-1.5 text-xs text-faint">
+            Kinds (none: all)
+          </legend>
+          <span className="flex min-h-[34px] items-center gap-2.5">
             {kindsList.map((k) => (
               <label key={k} className="flex items-center gap-1">
                 <input

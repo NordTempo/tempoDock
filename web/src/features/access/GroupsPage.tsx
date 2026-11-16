@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Act, Button, Confirm, ErrorText, Page } from "../../ui/kit";
 import { orgQueries } from "../org/data";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import {
   type Group,
   grantPlace,
@@ -35,75 +36,85 @@ export function GroupsPage({
   const [name, setName] = useState("");
   const current = groups.find((g) => g.name === selected) ?? groups[0];
   return (
-    <Page>
-      <ShadowNote />
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <section
-          aria-label="Groups"
-          className="flex min-w-0 flex-col gap-3 lg:w-[360px]"
-        >
-          <table>
-            <thead>
-              <tr>
-                <th>Group</th>
-                <th>People</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groups.map((g) => (
-                <tr
-                  key={g.id}
-                  className={`cursor-pointer ${g.id === current?.id ? "bg-selected" : "hover:bg-hover"}`}
-                  onClick={() => onSelect(g.name)}
-                >
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      className="text-left"
-                      onClick={() => onSelect(g.name)}
-                    >
-                      {g.name}
-                    </button>
-                  </td>
-                  <td className="py-2 text-mut">{(g.members ?? []).length}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (name.trim())
-                create.mutate(name.trim(), {
-                  onSuccess: (g) => {
-                    setName("");
-                    onSelect(g.name);
-                  },
-                });
-            }}
+    <>
+      <OrgSettingsBar />
+      <Page>
+        <ShadowNote />
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <section
+            aria-label="Groups"
+            className="flex min-w-0 flex-col gap-3 lg:w-[360px]"
           >
-            <input
-              className="field min-w-0 flex-1"
-              placeholder="New group, like Contractors"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Act
-              type="submit"
-              cli={`dock group create ${name.trim() || "<name>"}`}
-              disabled={!name.trim() || create.isPending}
+            <table>
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th>People</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g) => (
+                  <tr
+                    key={g.id}
+                    className={`cursor-pointer ${g.id === current?.id ? "bg-sel" : "hover:bg-hover"}`}
+                    onClick={() => onSelect(g.name)}
+                  >
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => onSelect(g.name)}
+                      >
+                        {g.name}
+                      </button>
+                    </td>
+                    <td className="py-2 text-mut">
+                      {(g.members ?? []).length}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <form
+              className="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (name.trim())
+                  create.mutate(name.trim(), {
+                    onSuccess: (g) => {
+                      setName("");
+                      onSelect(g.name);
+                    },
+                  });
+              }}
             >
-              Create
-            </Act>
-          </form>
-          {create.error && <ErrorText error={create.error} />}
-        </section>
-        {current && (
-          <GroupEditor key={current.id} group={current} onRenamed={onSelect} />
-        )}
-      </div>
-    </Page>
+              <input
+                aria-label="New group name"
+                className="field min-w-0 flex-1"
+                placeholder="New group, like Contractors"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <Act
+                type="submit"
+                cli={`dock group create ${name.trim() || "<name>"}`}
+                disabled={!name.trim() || create.isPending}
+              >
+                Create
+              </Act>
+            </form>
+            {create.error && <ErrorText error={create.error} />}
+          </section>
+          {current && (
+            <GroupEditor
+              key={current.id}
+              group={current}
+              onRenamed={onSelect}
+            />
+          )}
+        </div>
+      </Page>
+    </>
   );
 }
 
@@ -146,6 +157,7 @@ function GroupEditor({
         }}
       >
         <input
+          aria-label="Group name"
           className="field text-md font-semibold"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
@@ -283,6 +295,7 @@ function GroupEditor({
       )}
       <div className="flex flex-wrap items-center gap-2">
         <select
+          aria-label={`Add a member to ${group.name}`}
           className="field"
           value={adding}
           onChange={(e) => setAdding(e.target.value)}

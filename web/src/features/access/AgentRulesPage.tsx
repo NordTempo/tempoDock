@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { api, body } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { Page } from "../../ui/kit";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import { AgentMatrix } from "./AgentMatrix";
 import { ShadowNote } from "./ShadowNote";
 
@@ -24,17 +25,20 @@ export function AgentRulesPage() {
     () => "Saved the agent rules",
   );
   return (
-    <Page>
-      <ShadowNote />
-      <AgentMatrix
-        saved={saved.settings ?? []}
-        pending={save.isPending}
-        error={save.error}
-        cli={(c) =>
-          `dock agent rule ${c.area}=${c.level} --kinds ${c.kind}${c.ask ? " --ask" : " --no-ask"}`
-        }
-        onSave={(changed) => save.mutate(changed)}
-      />
-    </Page>
+    <>
+      <OrgSettingsBar />
+      <Page>
+        <ShadowNote />
+        <AgentMatrix
+          saved={saved.settings ?? []}
+          pending={save.isPending}
+          error={save.error}
+          cli={(c) =>
+            `dock agent rule ${c.area}=${c.level} --kinds ${c.kind}${c.ask ? " --ask" : " --no-ask"}`
+          }
+          onSave={(changed) => save.mutate(changed)}
+        />
+      </Page>
+    </>
   );
 }

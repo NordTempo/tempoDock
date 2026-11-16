@@ -106,11 +106,11 @@ export function TrackingChip({
     <button
       type="button"
       aria-expanded={open}
-      aria-label="Tracking"
       title="Is the tracking script working? Click for the checklist"
       onClick={onToggle}
       className="inline-flex min-h-[24px] items-center"
     >
+      <span className="sr-only">Tracking: </span>
       <StateText state={trackingState(t, check.isPending)} />
     </button>
   );

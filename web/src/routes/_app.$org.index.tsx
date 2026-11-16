@@ -514,7 +514,7 @@ function StatusPages() {
             <span
               className={p.published ? "text-xs text-ok" : "text-xs text-mut"}
             >
-              {p.published ? "published" : "not published"}
+              {p.published ? "published" : "unpublished"}
             </span>
             {p.url && p.published && (
               <span className="font-mono text-xs text-sec">

@@ -48,7 +48,9 @@ function crumbsFor(path: string, projects: string[]): Crumb[] {
 
 /**
  * The header bar every page has, in PageBar's look (kept out of the kit's
- * chunk), with the breadcrumb of the address the page was meant to show.
+ * chunk): the way up, small, over the title, with the breadcrumb of the
+ * address the page was meant to show. Same height as PageBar, so a page
+ * that fails doesn't jump.
  */
 function Bar({ title }: { title: string }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -58,21 +60,67 @@ function Bar({ title }: { title: string }) {
       ?.map((p) => p.name) ?? [];
   const crumbs = crumbsFor(path, projects);
   return (
-    <header className="sticky top-(--shell-top) z-10 flex min-h-[52px] items-center border-b border-line bg-page px-4 py-2.5 sm:px-5">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5">
-        {crumbs.map((c) => (
-          <span key={c.href} className="flex items-center gap-1.5">
-            <Link to={c.href} className="text-mut hover:text-fg">
-              {c.label}
-            </Link>
-            <span aria-hidden className="text-faint">
-              /
-            </span>
-          </span>
-        ))}
-        <h1 className="text-lg font-semibold">{title}</h1>
-      </nav>
+    <header className="page-bar sticky top-(--shell-top) z-10 flex min-h-[64px] items-center border-b border-line bg-page px-4 py-2.5 sm:px-7">
+      <div className="flex min-w-0 flex-col">
+        {crumbs.length > 0 ? (
+          <nav
+            aria-label="Breadcrumb"
+            className="flex items-center gap-1.5 text-xs text-mut"
+          >
+            {crumbs.map((c, i) => (
+              <span key={c.href} className="flex items-center gap-1.5">
+                {i > 0 && (
+                  <span aria-hidden className="text-faint">
+                    /
+                  </span>
+                )}
+                <Link to={c.href} className="hover:text-fg">
+                  {c.label}
+                </Link>
+              </span>
+            ))}
+          </nav>
+        ) : (
+          <span aria-hidden className="h-[18px]" />
+        )}
+        <h1 className="text-2xl leading-7 font-semibold tracking-[-0.01em]">
+          {title}
+        </h1>
+      </div>
     </header>
+  );
+}
+
+/**
+ * A page's frame while it loads, still (no shimmer): PageBar's two lines
+ * and a table's rows under a hairline, as most pages are, so the page
+ * doesn't jump when it arrives.
+ */
+export function PagePending() {
+  const bar = (w: string, h = "h-[10px]") => (
+    <span className={`block rounded-tag bg-dash ${h} ${w}`} />
+  );
+  return (
+    <div aria-busy="true" className="flex flex-1 flex-col">
+      <div className="flex min-h-[64px] flex-col justify-center gap-2 border-b border-line px-4 py-2.5 sm:px-7">
+        {bar("w-20", "h-[8px]")}
+        {bar("w-48", "h-[16px]")}
+      </div>
+      <div className="flex w-full max-w-[1400px] flex-col gap-3 px-4 pt-6 sm:px-7">
+        <p role="status" className="sr-only">
+          Loading…
+        </p>
+        <div className="flex flex-col border-t border-line">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="flex gap-6 border-b border-line py-3">
+              {bar("w-28")}
+              {bar("w-20")}
+              {bar("w-48")}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -158,48 +206,24 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
 }
 
 /**
- * The shell's frame while its first data loads (a cold start): the
- * sidebar's column with still placeholder rows, the header bar, a
- * Loading line and a table's frame. Static on purpose (no shimmer).
+ * The shell's frame while its first data loads (a cold start): the top
+ * bar, the project rail with still tiles, and a page's frame
+ * (PagePending). Static on purpose (no shimmer).
  */
 export function ShellPending() {
-  const bar = (w: string) => (
-    <span className={`block h-[10px] rounded-tag bg-dash ${w}`} />
-  );
   return (
-    <div className="flex min-h-screen" aria-busy="true">
-      <div className="hidden w-[248px] flex-none flex-col gap-4 border-r border-line px-4 py-4 lg:flex">
-        {bar("w-24")}
-        <span className="block h-[30px] rounded-ctl border border-line" />
-        <div className="flex flex-col gap-3 pt-2">
-          {bar("w-16")}
-          {bar("w-28")}
-          {bar("w-20")}
-          {bar("w-24")}
+    <div className="flex min-h-screen flex-col">
+      <div className="h-[52px] flex-none border-b border-line" />
+      <div className="flex flex-1">
+        <div className="hidden w-[60px] flex-none flex-col items-center gap-2 border-r border-line py-2.5 lg:flex">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="block size-[30px] rounded-ctl border border-line"
+            />
+          ))}
         </div>
-      </div>
-      <div className="flex flex-1 flex-col">
-        <div className="flex h-[52px] items-center border-b border-line px-5">
-          {bar("w-40")}
-        </div>
-        <div className="flex flex-col gap-3 px-7 py-6">
-          <p role="status" className="text-sec">
-            Loading Dock…
-          </p>
-          {/* A table's frame with still rows, like most pages. */}
-          <div className="flex max-w-[1400px] flex-col rounded-panel border border-edge">
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="flex gap-6 border-b border-line px-3.5 py-3 last:border-b-0"
-              >
-                {bar("w-28")}
-                {bar("w-20")}
-                {bar("w-48")}
-              </div>
-            ))}
-          </div>
-        </div>
+        <PagePending />
       </div>
     </div>
   );
