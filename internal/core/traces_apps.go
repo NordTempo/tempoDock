@@ -123,16 +123,15 @@ func (c *Core) otlpPort(serverID int64) (int, bool) {
 // traced from the edge (node.Route.Trace): every service with a live
 // release (the active one, or the one override switches to) while tracing
 // is on, but those whose release sends its traces elsewhere, whose own
-// backend would get spans with a parent it never sees, and those a server
-// forwards for another (traced there).
-func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsRow, forwarded []store.ListForwardedDomainsRow, override map[int64]routeOverride) (map[int64]string, error) {
+// backend would get spans with a parent it never sees, and the held ones:
+// those a server forwards for another (traced there) and those a move
+// holds, which it forwards next. A held route that stops being traced at
+// the switch would change Caddy's config, and the reload fails every
+// request it holds.
+func (c *Core) edgeTraced(ctx context.Context, rows []store.ListRoutableDomainsRow, skip map[int64]bool, override map[int64]routeOverride) (map[int64]string, error) {
 	out := map[int64]string{}
 	if cl, _ := c.tracesClient(); cl == nil {
 		return out, nil
-	}
-	skip := map[int64]bool{}
-	for _, f := range forwarded {
-		skip[f.ServiceID] = true
 	}
 	live := func(d store.ListRoutableDomainsRow) int64 {
 		if o, ok := override[d.ServiceID]; ok {

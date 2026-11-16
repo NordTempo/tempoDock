@@ -421,6 +421,44 @@ func TestMoveWithoutDowntime(t *testing.T) {
 	}
 }
 
+// TestMoveSwitchKeepsTheSourcesRoutes: the source's routes after the
+// switch are the ones it held requests with, so Caddy has nothing to
+// reload: a reload ends every held request with a 502. The moved service
+// keeps its place before another service on the source, and its route
+// isn't traced on either side of the switch.
+func TestMoveSwitchKeepsTheSourcesRoutes(t *testing.T) {
+	p, lab, _, _, _ := movePool(t)
+	p.mustEnv("shop", "qa", "", "homelab")
+	docs := p.createService("qa", "docs", apitypes.CreateServiceRequest{Port: 8080})
+	p.deploy(docs, "docs:1")
+	if _, err := p.c.AddDomain(p.ctx, testSystem, docs, apitypes.AddDomainRequest{Hostname: "docs.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.c.EnableTraces(p.ctx, testSystem); err != nil {
+		t.Fatal(err)
+	}
+	var inHold []node.Route
+	p.c.moves.hook = func(_ int64, s apitypes.MoveStep) {
+		if s == apitypes.MoveCopy {
+			inHold = lab.Routes()
+		}
+	}
+	staging := EnvRef{"shop", "staging"}
+	if _, err := p.c.MoveEnvironment(p.ctx, testSystem, staging, apitypes.MoveEnvironmentRequest{To: p.ids2name("cp")}); err != nil {
+		t.Fatal(err)
+	}
+	if m := p.waitMove(staging); m.Status != apitypes.MoveSucceeded {
+		t.Fatalf("move = %+v", m)
+	}
+	after := lab.Routes()
+	if i := slices.IndexFunc(after, func(r node.Route) bool { return slices.Contains(r.Hostnames, "shop.example.com") }); i < 0 || !after[i].Hold || after[i].Trace != "" {
+		t.Fatalf("homelab's forwarded route: %+v", after)
+	}
+	if fmt.Sprint(inHold) != fmt.Sprint(after) {
+		t.Errorf("homelab's routes changed at the switch:\nin the hold %+v\nafter       %+v", inHold, after)
+	}
+}
+
 // TestMoveRefusesALongHold: data that keeps changing faster than the
 // copy catches up fails the move before anything stops, instead of
 // holding requests for longer than the budget.

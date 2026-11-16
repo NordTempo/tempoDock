@@ -1,8 +1,10 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -53,6 +55,11 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 		held[f.ServiceID] = true
 		rows = append(rows, store.ListRoutableDomainsRow(f))
 	}
+	// In service order, forwarded ones included: a move's switch turns a
+	// held service into a forwarded one, and its route must render where
+	// it was. A config that changes makes Caddy reload, and a reload ends
+	// every held request with a 502.
+	slices.SortStableFunc(rows, func(a, b store.ListRoutableDomainsRow) int { return cmp.Compare(a.ServiceID, b.ServiceID) })
 	viaTunnel, err := c.tunnelOnlyHosts(ctx, serverID)
 	if err != nil {
 		return err
@@ -65,7 +72,7 @@ func (c *Core) applyRoutesLocked(ctx context.Context, serverID int64, override m
 	for _, h := range hosts {
 		siteOf[h.Hostname] = h.SiteID
 	}
-	traced, err := c.edgeTraced(ctx, rows, fwd, override)
+	traced, err := c.edgeTraced(ctx, rows, held, override)
 	if err != nil {
 		return err
 	}
