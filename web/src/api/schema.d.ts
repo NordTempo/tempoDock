@@ -10202,6 +10202,12 @@ export interface components {
             service: string;
             url: string;
         };
+        PrivacyFeature: {
+            /** @enum {string} */
+            consent: "not_needed" | "after_consent" | "needs_consent";
+            name: string;
+            why: string;
+        };
         Project: {
             /** @description Only in an archive's answer: containers on an offline server (stopped when it reconnects) or a revoked one (left running there), and environment networks left on them */
             archive_notes?: string[] | null;
@@ -11408,6 +11414,7 @@ export interface components {
             hostnames: components["schemas"]["SiteHostname"][] | null;
             name: string;
             overrides: components["schemas"]["SiteSettings"];
+            privacy: components["schemas"]["SitePrivacy"];
             public_urls?: string[] | null;
             settings: components["schemas"]["SiteSettings"];
         };
@@ -11546,6 +11553,14 @@ export interface components {
             kind: "deploy" | "added" | "moved" | "removed";
             message: string;
         };
+        SitePrivacy: {
+            /** @description What the summary leaves out */
+            detail?: string;
+            features: components["schemas"]["PrivacyFeature"][] | null;
+            needs_consent: boolean;
+            /** @description The site's status in a line */
+            summary: string;
+        };
         SitePublic: {
             addresses: components["schemas"]["PublicAddress"][] | null;
             public: boolean;
@@ -11568,8 +11583,14 @@ export interface components {
              * @description Unix ms
              */
             to: number;
+            waits_for_consent: boolean;
         };
         SiteSettings: {
+            /**
+             * @description What waits for the visitor's consent (dock.consent(true) in the page): replay (the default), all, or none for sites that load the script only after consent
+             * @enum {string}
+             */
+            consent?: "none" | "replay" | "all";
             /** Format: int64 */
             error_retention_days?: number;
             /** @description Collect errors and Web Vitals (phase A2) */

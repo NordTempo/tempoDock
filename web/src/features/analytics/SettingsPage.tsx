@@ -14,6 +14,13 @@ import {
   useUpdateSite,
 } from "./data";
 import {
+  ConsentSnippet,
+  ConsentWarning,
+  PolicyText,
+  PrivacyStatus,
+  PrivacyTable,
+} from "./Privacy";
+import {
   type PublicDraft,
   PublicSection,
   publicChange,
@@ -36,8 +43,8 @@ import {
 import { TrackingStatus } from "./Tracking";
 
 // A site's settings page in the Analytics area (Saile's pick, 2026-11-13;
-// it replaced a dialog): the site, its hostnames, goals, what it collects,
-// replay, retention and sharing. Rows in the app's settings model: the
+// it replaced a dialog): the site, what it means for consent (ADR 0085),
+// its hostnames, goals, what it collects, replay, retention and sharing. Rows in the app's settings model: the
 // value as text and one Edit that opens a small form, Save or Esc. Each
 // setting is the site's own or its organization's default.
 
@@ -74,6 +81,12 @@ export function SettingsPage() {
   const cmd = `dock analytics site set ${site.name} -p ${project}`;
   return (
     <div className="flex max-w-[960px] flex-col gap-8">
+      <ConsentWarning
+        project={project}
+        site={site}
+        cmd={cmd}
+        canEdit={canEdit}
+      />
       <Section id="set-site" title="Site">
         <NameRow project={project} site={site} canEdit={canEdit} />
         <Row label="Environment" hint="Its hostnames come from here.">
@@ -87,6 +100,27 @@ export function SettingsPage() {
             <CopyButton text={scriptTag} />
             <TrackingStatus project={project} site={site.name} />
           </span>
+        </Row>
+      </Section>
+      <Section id="set-privacy" title="Privacy">
+        <Row label="Status" hint="Not legal advice.">
+          <PrivacyStatus site={site} />
+        </Row>
+        <Row label="Collects" hint="Mention all of it in your privacy policy.">
+          <PrivacyTable site={site} />
+        </Row>
+        <SettingRow
+          project={project}
+          site={site}
+          field={fieldOf.consent}
+          cmd={cmd}
+          canEdit={canEdit}
+        />
+        <Row label="In your banner" hint="Gives or withdraws consent.">
+          <ConsentSnippet site={site} />
+        </Row>
+        <Row label="Privacy policy" hint="From this site's settings.">
+          <PolicyText site={site} />
         </Row>
       </Section>
       <Hostnames site={site} canEdit={canEdit} />

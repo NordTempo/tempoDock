@@ -108,6 +108,22 @@ export function ReplaysView({
           </Link>
         </p>
       )}
+      {data.recording && data.waits_for_consent && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-mut">
+          Replay waits for each visitor's consent: it records only on pages
+          where your consent banner calls dock.consent(true). To record at load
+          instead, only if the script loads after your banner's consent, set
+          Wait for consent to Nothing waits.
+          <Link
+            to="/$org/analytics/$project/$site/settings"
+            params={{ org, project, site: site.name }}
+            hash="set-privacy"
+            className="btn sm"
+          >
+            Privacy settings
+          </Link>
+        </p>
+      )}
       {!data.store_online && (
         <p className="text-warn-text">{data.store_error}</p>
       )}

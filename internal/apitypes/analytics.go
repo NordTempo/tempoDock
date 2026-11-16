@@ -61,6 +61,53 @@ type Site struct {
 	Overrides SiteSettings `json:"overrides"`
 	// PublicURLs are where its public dashboard is, while it has one.
 	PublicURLs []string `json:"public_urls,omitempty"`
+	// Privacy is what the settings in effect mean for consent.
+	Privacy SitePrivacy `json:"privacy"`
+}
+
+// Consent modes: what a site's script holds back until the page calls
+// dock.consent(true) (ADR 0085).
+const (
+	// ConsentNone runs everything at load, for sites that load the
+	// script only after their own consent banner.
+	ConsentNone = "none"
+	// ConsentReplay runs the cookieless basics at load and holds session
+	// replay back: the default.
+	ConsentReplay = "replay"
+	// ConsentAll sends nothing before consent.
+	ConsentAll = "all"
+)
+
+// Consent labels of a PrivacyFeature.
+const (
+	// PrivacyNotNeeded runs without the visitor's consent.
+	PrivacyNotNeeded = "not_needed"
+	// PrivacyAfterConsent needs consent and waits for it.
+	PrivacyAfterConsent = "after_consent"
+	// PrivacyNeedsConsent needs consent but runs at load.
+	PrivacyNeedsConsent = "needs_consent"
+)
+
+// SitePrivacy is what a site's settings mean for cookies and consent
+// (ADR 0085): a line for the site and each thing it collects. Not legal
+// advice; the UI, CLI and MCP show the same words.
+type SitePrivacy struct {
+	// NeedsConsent is set when something that needs the visitor's consent
+	// runs before the page gives it.
+	NeedsConsent bool   `json:"needs_consent"`
+	Summary      string `json:"summary" doc:"The site's status in a line"`
+	Detail       string `json:"detail,omitempty" doc:"What the summary leaves out"`
+	// Features are what the site collects, each with its consent label.
+	// Every one belongs in the site's privacy policy.
+	Features []PrivacyFeature `json:"features"`
+}
+
+// PrivacyFeature is one thing a site collects and whether it needs the
+// visitor's consent.
+type PrivacyFeature struct {
+	Name    string `json:"name"`
+	Consent string `json:"consent" enum:"not_needed,after_consent,needs_consent"`
+	Why     string `json:"why"`
 }
 
 // OrgSite is a site in the organization's list (the Analytics area),
@@ -87,6 +134,7 @@ type SiteHostname struct {
 // SiteSettings are a site's settings (ADR 0037). In Site.Settings every
 // field is set; in overrides and in requests, nil means "the default".
 type SiteSettings struct {
+	Consent             *string   `json:"consent,omitempty" enum:"none,replay,all" doc:"What waits for the visitor's consent (dock.consent(true) in the page): replay (the default), all, or none for sites that load the script only after consent"`
 	Replay              *bool     `json:"replay,omitempty" doc:"Record sessions (phase A3); off by default"`
 	ReplaySampleRate    *int      `json:"replay_sample_rate,omitempty" minimum:"1" maximum:"100" doc:"Percent of page loads recorded"`
 	MaskAllText         *bool     `json:"mask_all_text,omitempty" doc:"Mask all text in replays; inputs are always masked"`
@@ -369,10 +417,13 @@ type SiteReplays struct {
 	Replays []Replay `json:"replays"`
 	// Recording is the site's replay setting, and SampleRate the percent
 	// of page loads recorded.
-	Recording   bool   `json:"recording"`
-	SampleRate  int    `json:"sample_rate"`
-	StoreOnline bool   `json:"store_online"`
-	StoreError  string `json:"store_error,omitempty"`
+	Recording  bool `json:"recording"`
+	SampleRate int  `json:"sample_rate"`
+	// WaitsForConsent says recording starts only on pages that call
+	// dock.consent(true) (consent mode replay or all).
+	WaitsForConsent bool   `json:"waits_for_consent"`
+	StoreOnline     bool   `json:"store_online"`
+	StoreError      string `json:"store_error,omitempty"`
 }
 
 // Replay is a visitor's recorded page loads with no gap over 30 minutes,

@@ -42,7 +42,8 @@ func (c *Core) SiteReplays(ctx context.Context, a Actor, project, name string, q
 		return apitypes.SiteReplays{}, err
 	}
 	set := mergeSettings(defaults, siteOverrides(s.site))
-	out := apitypes.SiteReplays{Site: s.site.Name, From: from, To: to, Replays: []apitypes.Replay{}, Recording: *set.Replay, SampleRate: *set.ReplaySampleRate}
+	out := apitypes.SiteReplays{Site: s.site.Name, From: from, To: to, Replays: []apitypes.Replay{}, Recording: *set.Replay, SampleRate: *set.ReplaySampleRate,
+		WaitsForConsent: *set.Consent != apitypes.ConsentNone}
 	cl, _ := c.analyticsClient()
 	if cl == nil {
 		out.StoreError = analyticsOff

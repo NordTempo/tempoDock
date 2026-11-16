@@ -71,11 +71,29 @@ dock alerts resolve 31                                           # by hand
 ## Analytics
 
 Dock Analytics counts visits to your sites first party and without
-cookies, so there is no consent banner. A visitor is a hash of a salt
-that changes daily, the site, their address and browser, so one person
-counts once a day and nothing names them. A site
-also gets browser errors, Web Vitals, goals, funnels and, where turned
-on, session replays of a sampled share of page loads.
+cookies: nothing is stored in the visitor's browser. A visitor is a hash
+of a salt that changes daily, the site, their address and browser, so one
+person counts once a day and nothing names them. A site also gets browser
+errors, Web Vitals, goals, funnels and, where turned on, session replays
+of a sampled share of page loads.
+
+**Consent.** Session replay needs the visitor's consent, so by default it
+waits for it: a page records only once your consent banner calls
+`dock.consent(true)`. Most sites run the rest without a banner, but
+Norwegian law has no explicit exemption for statistics; `--consent all`
+holds everything back until consent, and `--consent none` runs
+everything at load (for sites that add the script only after consent). A
+site's settings page shows what each setting means under Privacy, with
+privacy-policy text to copy. This is not legal advice.
+
+```html
+<script src="/_dock/a/s.js" defer></script>
+<script>
+  // in your consent banner's callbacks
+  dock.consent(true);  // accepted
+  dock.consent(false); // declined or withdrawn: replay stops
+</script>
+```
 
 An operator picks the server the analytics store runs on first
 (`dock analytics server`). Then any domain can join a site:
@@ -89,6 +107,7 @@ dock analytics replays shop              # sessions, with --errors for the ones 
 dock analytics goals add shop signup page:/welcome
 dock analytics funnels add shop checkout /cart /pay /done
 dock analytics site set shop --replay on # a site's own settings
+dock analytics site set shop --consent all # nothing before consent
 ```
 
 The top bar's **Analytics** has every site; a service's Requests tab

@@ -11936,6 +11936,31 @@
         ],
         "type": "object"
       },
+      "PrivacyFeature": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "enum": [
+              "not_needed",
+              "after_consent",
+              "needs_consent"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "consent",
+          "why"
+        ],
+        "type": "object"
+      },
       "Project": {
         "additionalProperties": false,
         "properties": {
@@ -15917,6 +15942,9 @@
           "overrides": {
             "$ref": "#/components/schemas/SiteSettings"
           },
+          "privacy": {
+            "$ref": "#/components/schemas/SitePrivacy"
+          },
           "public_urls": {
             "items": {
               "type": "string"
@@ -15937,7 +15965,8 @@
           "archived",
           "created_at",
           "settings",
-          "overrides"
+          "overrides",
+          "privacy"
         ],
         "type": "object"
       },
@@ -16429,6 +16458,37 @@
         ],
         "type": "object"
       },
+      "SitePrivacy": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "description": "What the summary leaves out",
+            "type": "string"
+          },
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/PrivacyFeature"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "needs_consent": {
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "The site's status in a line",
+            "type": "string"
+          }
+        },
+        "required": [
+          "needs_consent",
+          "summary",
+          "features"
+        ],
+        "type": "object"
+      },
       "SitePublic": {
         "additionalProperties": false,
         "properties": {
@@ -16488,6 +16548,9 @@
             "description": "Unix ms",
             "format": "int64",
             "type": "integer"
+          },
+          "waits_for_consent": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -16497,6 +16560,7 @@
           "replays",
           "recording",
           "sample_rate",
+          "waits_for_consent",
           "store_online"
         ],
         "type": "object"
@@ -16504,6 +16568,15 @@
       "SiteSettings": {
         "additionalProperties": false,
         "properties": {
+          "consent": {
+            "description": "What waits for the visitor's consent (dock.consent(true) in the page): replay (the default), all, or none for sites that load the script only after consent",
+            "enum": [
+              "none",
+              "replay",
+              "all"
+            ],
+            "type": "string"
+          },
           "error_retention_days": {
             "format": "int64",
             "maximum": 3650,

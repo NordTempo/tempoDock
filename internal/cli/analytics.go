@@ -400,6 +400,9 @@ func printReplays(g *globals, l apitypes.SiteReplays) error {
 	}
 	if !l.Recording {
 		g.io.Warnf("this site doesn't record replays; turn them on with `dock analytics site set %s --replay on`", l.Site)
+	} else if l.WaitsForConsent {
+		g.io.Detail("Replay waits for each visitor's consent: it records only on pages that call dock.consent(true). " +
+			"To record at load (only if the script loads after your banner's consent): dock analytics site set " + l.Site + " --consent none")
 	}
 	if len(l.Replays) == 0 {
 		g.io.Detail("No replays in this range.")
@@ -848,7 +851,7 @@ then its certificate. Turn the dashboard on with
 // siteSettingFlags set a site's (or the defaults') settings from flags.
 type siteSettingFlags struct {
 	replay, maskText, errors, public    string
-	publicDomain, publicErrors          string
+	publicDomain, publicErrors, consent string
 	sample, events, replays, errorsDays int
 	paths, ips, reset                   []string
 	name                                string
@@ -856,6 +859,7 @@ type siteSettingFlags struct {
 
 func (sf *siteSettingFlags) add(cmd *cobra.Command) {
 	fl := cmd.Flags()
+	fl.StringVar(&sf.consent, "consent", "", "what waits for the visitor's consent (dock.consent(true) in the page): replay, all, or none when the script loads only after consent")
 	fl.StringVar(&sf.replay, "replay", "", "record sessions: on or off (phase A3)")
 	fl.IntVar(&sf.sample, "replay-sample", 0, "percent of page loads recorded, 1 to 100")
 	fl.StringVar(&sf.maskText, "mask-text", "", "mask all text in replays: on or off (inputs are always masked)")
@@ -910,6 +914,9 @@ func (sf *siteSettingFlags) request(cmd *cobra.Command) (apitypes.UpdateSiteRequ
 	num("error-retention-days", sf.errorsDays, &set.ErrorRetentionDays)
 	if cmd.Flags().Changed("exclude-path") {
 		set.ExcludedPaths = &sf.paths
+	}
+	if cmd.Flags().Changed("consent") {
+		set.Consent = &sf.consent
 	}
 	if cmd.Flags().Changed("public-domain") {
 		set.PublicDomain = &sf.publicDomain
@@ -1016,7 +1023,32 @@ func printSite(g *globals, st apitypes.Site) error {
 		return err
 	}
 	_, _ = io.WriteString(g.io.Out, "\n")
+	if err := printPrivacy(g, st.Privacy); err != nil {
+		return err
+	}
+	_, _ = io.WriteString(g.io.Out, "\n")
 	return printSettings(g, st.Settings, st.Overrides)
+}
+
+// printPrivacy prints what a site's settings mean for consent: its status
+// and what it collects, each with its label (ADR 0085).
+func printPrivacy(g *globals, p apitypes.SitePrivacy) error {
+	if p.NeedsConsent {
+		g.io.Warnf("%s %s", p.Summary, p.Detail)
+	} else {
+		g.io.Detail(strings.TrimSpace(p.Summary + " " + p.Detail))
+	}
+	words := map[string]string{apitypes.PrivacyNotNeeded: "no consent", apitypes.PrivacyAfterConsent: "after consent",
+		apitypes.PrivacyNeedsConsent: "needs consent"}
+	tb := g.io.Table("COLLECTS", "CONSENT", "WHY")
+	for _, f := range p.Features {
+		tb.Row(f.Name, words[f.Consent], f.Why)
+	}
+	if err := tb.Flush(); err != nil {
+		return err
+	}
+	g.io.Detail("Mention all of these in your privacy policy. Not legal advice.")
+	return nil
 }
 
 // printSettings prints settings, marking those overrides sets.
@@ -1047,6 +1079,7 @@ func printSettings(g *globals, s, overrides apitypes.SiteSettings) error {
 	}
 	o := overrides
 	return g.io.Fields(
+		"waits for consent", mark(o.Consent != nil, deref(s.Consent)),
 		"replay", mark(o.Replay != nil, b(s.Replay)),
 		"replay sample", mark(o.ReplaySampleRate != nil, n(s.ReplaySampleRate)+"%"),
 		"mask all text", mark(o.MaskAllText != nil, b(s.MaskAllText)),

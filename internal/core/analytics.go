@@ -14,6 +14,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/analytics"
 	"github.com/NordTempo/tempoDock/internal/analytics/ingest"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
 	"github.com/NordTempo/tempoDock/internal/node/remote"
 	"github.com/NordTempo/tempoDock/internal/store"
@@ -437,7 +438,12 @@ func (c *Core) analyticsConfig(ctx context.Context) (node.AnalyticsConfig, error
 		if *set.Replay {
 			r.ReplayPercent, r.MaskAllText = *set.ReplaySampleRate, *set.MaskAllText
 		}
-		if len(r.ExcludedPaths) > 0 || len(r.IgnoredIPs) > 0 || r.ErrorsOff || r.ReplayPercent > 0 {
+		// The consent mode matters to a site that records, or that holds
+		// everything back; the rest send the same script either way.
+		if *set.Consent == apitypes.ConsentAll || (*set.Consent == apitypes.ConsentReplay && r.ReplayPercent > 0) {
+			r.Consent = *set.Consent
+		}
+		if len(r.ExcludedPaths) > 0 || len(r.IgnoredIPs) > 0 || r.ErrorsOff || r.ReplayPercent > 0 || r.Consent != "" {
 			cfg.Sites[s.ID] = r
 		}
 	}

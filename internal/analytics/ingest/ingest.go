@@ -117,6 +117,9 @@ type scriptVariant struct {
 	// text in them.
 	replay int
 	mask   bool
+	// consent is what the script holds back until dock.consent(true):
+	// 0 nothing, consentReplay or consentAll.
+	consent uint8
 }
 
 // builtScript is one variant: its source, gzipped, and its ETag.
@@ -182,15 +185,17 @@ func buildScript(v scriptVariant) *builtScript {
 		ev = bytes.TrimSpace(evScript)
 	}
 	src := bytes.Replace(coreScript, []byte(evMarker), ev, 1)
-	config := "{}"
+	var config []string
 	if v.replay > 0 {
-		config = `{"r":` + strconv.Itoa(v.replay)
+		config = append(config, `"r":`+strconv.Itoa(v.replay))
 		if v.mask {
-			config += `,"m":1`
+			config = append(config, `"m":1`)
 		}
-		config += "}"
 	}
-	src = bytes.Replace(src, []byte(configMarker), []byte(config), 1)
+	if v.consent > 0 {
+		config = append(config, `"c":`+strconv.Itoa(int(v.consent)))
+	}
+	src = bytes.Replace(src, []byte(configMarker), []byte("{"+strings.Join(config, ",")+"}"), 1)
 	return compress(src)
 }
 
@@ -209,7 +214,7 @@ func compress(src []byte) *builtScript {
 // within the hour) and revalidated by ETag after.
 func (in *Ingest) serveScript(w http.ResponseWriter, r *http.Request) {
 	site, _, _, _ := parseTag(r.Header.Get(TagHeader))
-	v := scriptVariant{errors: in.Rules.collectsErrors(site)}
+	v := scriptVariant{errors: in.Rules.collectsErrors(site), consent: in.Rules.consent(site)}
 	if in.Replay != nil {
 		v.replay, v.mask = in.Rules.replay(site)
 	}
@@ -375,7 +380,11 @@ func (in *Ingest) event(r *http.Request, body []byte, e *analytics.Event) (keep,
 		}
 		e.Props = props
 	case analytics.KindOutbound:
-		e.Name = cut(b.Name, maxOutbound)
+		// Without its query or fragment, which can carry tokens or
+		// someone's email address.
+		link, _, _ := strings.Cut(b.Name, "#")
+		link, _, _ = strings.Cut(link, "?")
+		e.Name = cut(link, maxOutbound)
 	case analytics.KindError:
 		typ := cut(b.Type, maxType)
 		e.Name = cut(errorMessage(typ, b.Name), maxMessage)

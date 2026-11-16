@@ -34,9 +34,9 @@ type siteScope struct {
 func defaultSiteSettings() apitypes.SiteSettings {
 	f, t := false, true
 	sample, events, replays, errs := 20, 396, 30, 90
-	paths, ips, domain := []string{}, []string{}, ""
+	paths, ips, domain, consent := []string{}, []string{}, "", apitypes.ConsentReplay
 	return apitypes.SiteSettings{
-		Replay: &f, ReplaySampleRate: &sample, MaskAllText: &f, ErrorsAndVitals: &t,
+		Consent: &consent, Replay: &f, ReplaySampleRate: &sample, MaskAllText: &f, ErrorsAndVitals: &t,
 		EventRetentionDays: &events, ReplayRetentionDays: &replays, ErrorRetentionDays: &errs,
 		ExcludedPaths: &paths, IgnoredIPs: &ips, Public: &f, PublicDomain: &domain, PublicErrors: &f,
 	}
@@ -53,7 +53,8 @@ func over[T any](base, o *T) *T {
 // mergeSettings applies o's set fields over base.
 func mergeSettings(base, o apitypes.SiteSettings) apitypes.SiteSettings {
 	return apitypes.SiteSettings{
-		Replay: over(base.Replay, o.Replay), ReplaySampleRate: over(base.ReplaySampleRate, o.ReplaySampleRate),
+		Consent: over(base.Consent, o.Consent),
+		Replay:  over(base.Replay, o.Replay), ReplaySampleRate: over(base.ReplaySampleRate, o.ReplaySampleRate),
 		MaskAllText: over(base.MaskAllText, o.MaskAllText), ErrorsAndVitals: over(base.ErrorsAndVitals, o.ErrorsAndVitals),
 		EventRetentionDays:  over(base.EventRetentionDays, o.EventRetentionDays),
 		ReplayRetentionDays: over(base.ReplayRetentionDays, o.ReplayRetentionDays),
@@ -68,6 +69,8 @@ func mergeSettings(base, o apitypes.SiteSettings) apitypes.SiteSettings {
 func resetSettings(s *apitypes.SiteSettings, names []string) error {
 	for _, n := range names {
 		switch n {
+		case "consent":
+			s.Consent = nil
 		case "replay":
 			s.Replay = nil
 		case "replay_sample_rate":
@@ -101,6 +104,9 @@ func resetSettings(s *apitypes.SiteSettings, names []string) error {
 
 // checkSettings refuses settings the ingest can't apply.
 func checkSettings(s apitypes.SiteSettings) error {
+	if c := s.Consent; c != nil && *c != apitypes.ConsentNone && *c != apitypes.ConsentReplay && *c != apitypes.ConsentAll {
+		return invalid("consent is none, replay or all, not %q", *c)
+	}
 	if r := s.ReplaySampleRate; r != nil && (*r < 1 || *r > 100) {
 		return invalid("the replay sample rate is a percentage from 1 to 100")
 	}
@@ -353,6 +359,7 @@ func (c *Core) toSites(ctx context.Context, sites []store.Site, envs map[int64]s
 			Name: s.Name, Environment: envs[s.EnvironmentID], Archived: s.ArchivedAt != nil, CreatedAt: s.CreatedAt,
 			Settings: mergeSettings(defaults, o), Overrides: o, Hostnames: []apitypes.SiteHostname{},
 		}
+		site.Privacy = sitePrivacy(site.Settings)
 		if s.ArchivedAt == nil {
 			for _, h := range c.publicHosts(base, s.PublicSlug, site.Settings) {
 				site.PublicURLs = append(site.PublicURLs, c.controlURL(h))

@@ -28,7 +28,17 @@ type siteRules struct {
 	errorsOff     bool
 	replayPercent int
 	maskAllText   bool
+	// consent is what the script holds back until dock.consent(true):
+	// 0 nothing, consentReplay or consentAll.
+	consent uint8
 }
+
+// What a site's script holds back until the page calls dock.consent(true)
+// (ADR 0085), as the script's config says it (c.c).
+const (
+	consentReplay = 1
+	consentAll    = 2
+)
 
 // OpenRules reads the rules kept at path (none if it doesn't exist).
 func OpenRules(path string) (*Rules, error) {
@@ -77,6 +87,12 @@ func (r *Rules) load(sites map[int64]node.SiteRules) {
 	m := make(map[int64]siteRules, len(sites))
 	for id, s := range sites {
 		sr := siteRules{paths: s.ExcludedPaths, errorsOff: s.ErrorsOff, replayPercent: min(max(s.ReplayPercent, 0), 100), maskAllText: s.MaskAllText}
+		switch s.Consent {
+		case "replay":
+			sr.consent = consentReplay
+		case "all":
+			sr.consent = consentAll
+		}
 		for _, ip := range s.IgnoredIPs {
 			if p, err := netip.ParsePrefix(ip); err == nil {
 				sr.nets = append(sr.nets, p.Masked())
@@ -139,6 +155,13 @@ func (r *Rules) collectsErrors(site int64) bool {
 func (r *Rules) replay(site int64) (percent int, maskAllText bool) {
 	sr, _ := r.site(site)
 	return sr.replayPercent, sr.maskAllText
+}
+
+// consent is what a site's script holds back until dock.consent(true):
+// 0 nothing, consentReplay or consentAll.
+func (r *Rules) consent(site int64) uint8 {
+	sr, _ := r.site(site)
+	return sr.consent
 }
 
 // globMatch matches s against pattern, where * matches any run of

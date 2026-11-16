@@ -91,6 +91,17 @@ export function SiteBar({
           open={showChecklist}
           onToggle={() => setChecklist(!showChecklist)}
         />
+        {site.privacy.needs_consent && (
+          <Link
+            to="/$org/analytics/$project/$site/settings"
+            params={{ org, project, site: site.name }}
+            hash="set-privacy"
+            title={`${site.privacy.summary} ${site.privacy.detail ?? ""}`}
+            className="text-sm text-warn-text hover:underline"
+          >
+            ▲ needs consent: replay
+          </Link>
+        )}
         {named && (
           <Link
             to="/$org/analytics/$project/$site/settings"

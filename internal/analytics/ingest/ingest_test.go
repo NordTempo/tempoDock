@@ -167,7 +167,7 @@ func TestNoSaltNoEvent(t *testing.T) {
 func TestCustomEventAndOutbound(t *testing.T) {
 	in, sp := newIngest(t)
 	post(in, "shop.example.com", `{"k":2,"n":"signup","u":"https://shop.example.com/pricing","p":{"plan":"pro","seats":3}}`, chromeMac, "203.0.113.77")
-	post(in, "shop.example.com", `{"k":3,"n":"https://github.com/nordtempo","u":"https://shop.example.com/"}`, chromeMac, "203.0.113.77")
+	post(in, "shop.example.com", `{"k":3,"n":"https://github.com/nordtempo?invite=ola%40example.com#top","u":"https://shop.example.com/"}`, chromeMac, "203.0.113.77")
 	ev := spooled(t, sp)
 	if len(ev) != 2 || ev[0].Name != "signup" || ev[0].Props != `{"plan":"pro","seats":3}` || ev[1].Name != "https://github.com/nordtempo" {
 		t.Errorf("events = %+v", ev)
@@ -425,7 +425,7 @@ func TestReplayChunks(t *testing.T) {
 	}
 	q := chunkQuery
 	data := gz(`[{"type":4,"timestamp":1000}]`)
-	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20, MaskAllText: true}})
+	in.Rules.load(map[int64]node.SiteRules{3: {ReplayPercent: 20, MaskAllText: true, Consent: "replay"}})
 	if code := send(q, data); code != http.StatusAccepted {
 		t.Fatalf("status %d", code)
 	}
@@ -454,12 +454,13 @@ func TestReplayChunks(t *testing.T) {
 			t.Errorf("%q: status %d", bad.q, code)
 		}
 	}
-	// The script tells sampled page loads to record, masking all text.
+	// The script tells sampled page loads to record, masking all text,
+	// once the visitor consented.
 	r := httptest.NewRequest(http.MethodGet, ScriptPath, nil)
 	r.Header.Set(TagHeader, "3.40.981")
 	w := httptest.NewRecorder()
 	in.ServeHTTP(w, r)
-	if !strings.HasSuffix(strings.TrimSpace(w.Body.String()), `})({"r":20,"m":1});`) {
+	if !strings.HasSuffix(strings.TrimSpace(w.Body.String()), `})({"r":20,"m":1,"c":1});`) {
 		t.Errorf("script ends %q", w.Body.String()[max(0, w.Body.Len()-40):])
 	}
 	r = httptest.NewRequest(http.MethodGet, RecorderPath, nil)
