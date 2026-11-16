@@ -32,8 +32,8 @@ line means a later record added to it without changing what it decided.
 | [0016](0016-database-panel.md) | Database panel | superseded in part by [0023](0023-connect-tunnels.md), [0024](0024-tempobase-standalone.md) |
 | [0017](0017-mcp-endpoint.md) | MCP endpoint | accepted |
 | [0018](0018-git-push-deploy.md) | GitHub push-to-deploy | superseded in part by [0031](0031-github-app.md) |
-| [0019](0019-templates-and-backups.md) | Database templates and backups | superseded in part by [0039](0039-backups-on-storage-connections.md), [0061](0061-one-restore-model.md) |
-| [0020](0020-retention-and-alerts.md) | Retention, disk pruning and alerts | superseded in part by [0062](0062-org-alerts-and-operators.md) |
+| [0019](0019-templates-and-backups.md) | Database templates and backups | superseded in part by [0039](0039-backups-on-storage-connections.md), [0061](0061-one-restore-model.md); amended by [0069](0069-database-insights.md) |
+| [0020](0020-retention-and-alerts.md) | Retention, disk pruning and alerts | superseded in part by [0062](0062-org-alerts-and-operators.md), [0078](0078-deleting-archived-projects.md), [0079](0079-dock-sends-its-own-email.md) |
 | [0021](0021-control-plane-backup-and-move.md) | Control plane backup, restore and move | accepted |
 | [0022](0022-clone-and-export.md) | Clone an environment, export a project's config | superseded in part by [0049](0049-apply-and-compose-import.md) |
 | [0023](0023-connect-tunnels.md) | `dock connect` tunnels | accepted |
@@ -51,13 +51,13 @@ line means a later record added to it without changing what it decided.
 | [0035](0035-server-disk-breakdown.md) | Where a server's disk goes | accepted |
 | [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | superseded in part by [0062](0062-org-alerts-and-operators.md), [0068](0068-redirects-on-cloudflare-zones.md) |
 | [0037](0037-analytics.md) | Dock Analytics | superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md); amended by [0085](0085-analytics-consent.md) |
-| [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | accepted |
+| [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | superseded in part by [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
 | [0040](0040-traffic-counts-requests.md) | Traffic counts requests; visitors are Analytics' | accepted |
 | [0041](0041-sealed-values-bound-to-their-place.md) | Sealed values are bound to where they are stored | accepted |
 | [0042](0042-domain-verification.md) | Custom domains are verified with a TXT record | accepted |
 | [0043](0043-ongoing-health-checks.md) | Ongoing health checks | accepted |
-| [0044](0044-environment-lock.md) | Locked environments, and agents asking for access | accepted |
+| [0044](0044-environment-lock.md) | Locked environments, and agents asking for access | superseded in part by [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0045](0045-pre-deploy-command.md) | Pre-deploy command | accepted |
 | [0046](0046-log-history-and-drains.md) | Log history past the container, and log drains | superseded in part by [0062](0062-org-alerts-and-operators.md) |
 | [0047](0047-volume-snapshots.md) | Volume snapshots | superseded in part by [0061](0061-one-restore-model.md), [0063](0063-moves-without-downtime-and-server-drains.md) |
@@ -69,11 +69,11 @@ line means a later record added to it without changing what it decided.
 | [0053](0053-moving-environments.md) | Moving an environment to another server | superseded in part by [0063](0063-moves-without-downtime-and-server-drains.md) |
 | [0054](0054-scheduled-jobs.md) | Scheduled jobs (cron) | accepted |
 | [0055](0055-uptime-checks.md) | Uptime checks from another server | accepted; amended by [0070](0070-sleeping-environments.md) (paused while asleep) and [0073](0073-public-status-pages.md) (day rows for 90 days) |
-| [0056](0056-preview-environments.md) | Preview environments per pull request | accepted; amended by [0070](0070-sleeping-environments.md) (previews sleep) |
-| [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted |
+| [0056](0056-preview-environments.md) | Preview environments per pull request | superseded in part by [0077](0077-previews-belong-to-services.md); amended by [0070](0070-sleeping-environments.md) (previews sleep) |
+| [0057](0057-two-factor-sign-in.md) | Two-factor sign-in, step-ups and break-glass | accepted; amended by [0065](0065-sign-in-is-the-platforms.md) |
 | [0058](0058-sso-oidc.md) | Single sign-on with OpenID Connect | superseded in part by [0065](0065-sign-in-is-the-platforms.md) |
-| [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up | accepted |
-| [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted |
+| [0059](0059-analytics-area-and-slimmer-service-page.md) | An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up | superseded in part by [0076](0076-service-page-in-nine-tabs.md) |
+| [0060](0060-invite-links-signed-out.md) | Invite links work signed out, with a sign-up step | accepted; amended by [0065](0065-sign-in-is-the-platforms.md), [0079](0079-dock-sends-its-own-email.md) |
 | [0061](0061-one-restore-model.md) | One restore model: restore points, a restored service, and switching to it | accepted |
 | [0062](0062-org-alerts-and-operators.md) | Alerts belong to the org, operators run the platform | superseded in part by [0065](0065-sign-in-is-the-platforms.md), [0066](0066-github-apps-for-many-orgs.md), [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0063](0063-moves-without-downtime-and-server-drains.md) | Moves without downtime, and draining a server | accepted |
@@ -88,14 +88,14 @@ line means a later record added to it without changing what it decided.
 | [0072](0072-mysql-and-redis-in-the-data-panel.md) | MySQL/MariaDB and Redis/Valkey in the Data panel | accepted |
 | [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 to 5 |
 | [0074](0074-image-vulnerability-scanning.md) | Image vulnerability scanning | accepted |
-| [0075](0075-tracing-over-otlp.md) | Tracing over OTLP | accepted; phases 1 and 2 |
+| [0075](0075-tracing-over-otlp.md) | Tracing over OTLP | accepted; phases 1 to 6 built |
 | [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built |
 | [0077](0077-previews-belong-to-services.md) | Previews belong to services | accepted |
 | [0078](0078-deleting-archived-projects.md) | Renaming and deleting archived projects | accepted |
-| [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; invites built |
-| [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; phases 1 to 3 built |
+| [0079](0079-dock-sends-its-own-email.md) | Dock sends its own email: the platform's SMTP server, an outbox, invites first | accepted; built, except the rows marked Later |
+| [0080](0080-permissions-roles-groups-and-agents.md) | Permissions, roles, groups and agents: area roles, groups as job functions, personal agents, protected environments, the platform apart | accepted; all seven phases built |
 | [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
-| [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo; going public is v1.0.0 | accepted; not yet public |
+| [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo | accepted; public since 2026-11-16 at 0.x |
 | [0083](0083-app-templates.md) | App templates: a catalog of apps as project file fragments with inputs, embedded and pinned | accepted; first catalog built |
 | [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted |
 | [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |

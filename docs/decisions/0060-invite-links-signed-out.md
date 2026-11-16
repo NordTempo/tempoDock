@@ -1,6 +1,6 @@
 # 0060: Invite links work signed out, with a sign-up step
 
-Status: accepted (asked by Saile, 2026-11-05; designed by the agent); amended by [0065](0065-sign-in-is-the-platforms.md) (no password sign-up while password sign-in is off)
+Status: accepted (asked by Saile, 2026-11-05; designed by the agent); amended by [0065](0065-sign-in-is-the-platforms.md) (no password sign-up while password sign-in is off) and [0079](0079-dock-sends-its-own-email.md) (Dock emails invite links)
 
 ## Context
 

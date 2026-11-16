@@ -1,6 +1,8 @@
 # 0057: Two-factor sign-in, step-ups and break-glass
 
-Status: accepted (asked by Saile, 2026-11-03; designed by the agent)
+Status: accepted (asked by Saile, 2026-11-03; designed by the agent); amended by
+[0065](0065-sign-in-is-the-platforms.md) (a provider's sign-in counts as two-factor; a step-up without a Dock
+factor signs in through the provider again)
 
 ## Context
 

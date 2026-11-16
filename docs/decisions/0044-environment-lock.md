@@ -1,6 +1,8 @@
 # 0044: Locked environments, and agents asking for access
 
-Status: accepted (asked by Saile, 2026-11-03; designed by the agent)
+Status: accepted (asked by Saile, 2026-11-03; designed by the agent); superseded
+in part by [0080](0080-permissions-roles-groups-and-agents.md) (approvers, not only admins, decide requests and loosen a
+lock; `--people` holds people's changes too)
 
 ## Context
 

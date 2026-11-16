@@ -1,8 +1,9 @@
 # 0082: Open source under the AGPL, with a trademark policy and a CLA
 
 Status: accepted (decided with Saile, 2026-11-14). Answers the license
-question [0008](0008-keep-doors-open.md) left open. Not yet public: the
-repository goes public with v1.0.0, through `scripts/go-public.sh`.
+question [0008](0008-keep-doors-open.md) left open. Decision 6 changed: the
+repository went public on 2026-11-16 at 0.x (v0.52.1), through
+`scripts/go-public.sh`; v1.0.0 comes later.
 
 ## Context
 

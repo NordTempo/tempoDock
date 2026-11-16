@@ -1,6 +1,6 @@
 # 0020: Retention, disk pruning and alerts
 
-Status: accepted (decided by the agent); superseded in part by [0062](0062-org-alerts-and-operators.md) (who sees alerts, channels per org); amended by [0043](0043-ongoing-health-checks.md) (unhealthy alerts)
+Status: accepted (decided by the agent); superseded in part by [0062](0062-org-alerts-and-operators.md) (who sees alerts, channels per org), [0078](0078-deleting-archived-projects.md) (archived projects can be deleted, their releases and history with them), [0079](0079-dock-sends-its-own-email.md) (email channels send through the platform's mail server); amended by [0043](0043-ongoing-health-checks.md) (unhealthy alerts)
 
 ## Context
 

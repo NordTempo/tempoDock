@@ -1,6 +1,6 @@
 # 0055: Uptime checks from another server
 
-Status: accepted (decided by the agent); amended by [0059](0059-analytics-area-and-slimmer-service-page.md) (checks that set themselves up)
+Status: accepted (decided by the agent); amended by [0059](0059-analytics-area-and-slimmer-service-page.md) (checks that set themselves up), [0070](0070-sleeping-environments.md) (checks pause while the environment sleeps) and [0073](0073-public-status-pages.md) (day rows for 90 days)
 
 ## Context
 

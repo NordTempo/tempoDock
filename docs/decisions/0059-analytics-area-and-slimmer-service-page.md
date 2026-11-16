@@ -1,7 +1,8 @@
 # 0059: An Analytics area, a slimmer service page, project settings and uptime checks that set themselves up
 
 Status: accepted (Saile decided the layout and the moves; the details
-below are the agent's)
+below are the agent's); superseded in part by [0076](0076-service-page-in-nine-tabs.md) (the service page's
+tabs, its Overview's release list and the old addresses)
 
 ## Context
 
