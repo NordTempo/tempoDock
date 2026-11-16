@@ -86,6 +86,32 @@ func (c *Core) domainsOf(ctx context.Context, ss svcScope) ([]apitypes.Domain, e
 	return out, nil
 }
 
+// maxRedirectHops bounds how far checkRedirectLoop follows redirects.
+const maxRedirectHops = 8
+
+// checkRedirectLoop refuses host redirecting to target when Dock's own
+// redirects lead from target back to host: browsers would bounce between
+// them until they give up. It follows routing (verified) domains, at most
+// maxRedirectHops queries.
+func (c *Core) checkRedirectLoop(ctx context.Context, host, target string) error {
+	next := target
+	for range maxRedirectHops {
+		d, err := c.store.GetDomainByHostname(ctx, next)
+		switch {
+		case store.IsNotFound(err):
+			return nil
+		case err != nil:
+			return err
+		case d.RedirectTo == "":
+			return nil
+		case d.RedirectTo == host:
+			return invalid("redirecting %s to %s would loop: %s redirects back to %s. Remove that redirect first, or redirect to another hostname", host, target, d.Hostname, host)
+		}
+		next = d.RedirectTo
+	}
+	return nil
+}
+
 // envIngress is the ingress of the server an environment runs on.
 func (c *Core) envIngress(ctx context.Context, es envScope) (serverIngress, error) {
 	srv, err := c.store.GetServer(ctx, es.env.ServerID)
@@ -115,6 +141,9 @@ func (c *Core) AddDomain(ctx context.Context, a Actor, ref ServiceRef, req apity
 		}
 		if redirect == host {
 			return apitypes.DomainChange{}, invalid("a domain can't redirect to itself")
+		}
+		if err := c.checkRedirectLoop(ctx, host, redirect); err != nil {
+			return apitypes.DomainChange{}, err
 		}
 	}
 	if req.Analytics != "" && req.Analytics != "keep" && req.Analytics != "new" {
