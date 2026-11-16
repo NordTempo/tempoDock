@@ -371,6 +371,24 @@ type Registry struct {
 	// PublicName names the registry: the audience of its tokens. Required
 	// when Enabled.
 	PublicName string `toml:"public_name"`
+	// GatewayListen is the loopback address of the storage gateway the
+	// registry reaches a bucket through (ADR 0084).
+	GatewayListen string `toml:"gateway_listen"`
+	// SpoolDir is where pushes land before they upload to a bucket; ""
+	// is registry-spool in DataDir (which dock.service may write).
+	SpoolDir string `toml:"spool_dir"`
+	// SpoolMaxGB caps the spool; 0 is the smaller of 20 GB and a quarter
+	// of its disk. Past it, or with less than 10% of the disk free,
+	// pushes are refused.
+	SpoolMaxGB int `toml:"spool_max_gb"`
+}
+
+// RegistrySpoolDir is the storage gateway's spool (ADR 0084).
+func (c Config) RegistrySpoolDir() string {
+	if c.Registry.SpoolDir != "" {
+		return c.Registry.SpoolDir
+	}
+	return filepath.Join(c.DataDir, "registry-spool")
 }
 
 // IngressMode is how public traffic reaches a server's Caddy (ADR 0013).
@@ -462,9 +480,10 @@ func Default() Config {
 			KeepReleases:       5,
 		},
 		Registry: Registry{
-			Listen:     "127.0.0.1:5000",
-			StorageDir: "/var/lib/dock-registry",
-			ConfigDir:  "/etc/dock/registry",
+			Listen:        "127.0.0.1:5000",
+			StorageDir:    "/var/lib/dock-registry",
+			ConfigDir:     "/etc/dock/registry",
+			GatewayListen: "127.0.0.1:5001",
 		},
 		Ingress: Ingress{
 			Mode:             IngressDirect,
@@ -544,6 +563,15 @@ func (c *Config) validate() error {
 		}
 		if err := CheckHostPort("[registry] listen", c.Registry.Listen); err != nil {
 			return err
+		}
+		if err := CheckHostPort("[registry] gateway_listen", c.Registry.GatewayListen); err != nil {
+			return err
+		}
+		if c.Registry.GatewayListen == c.Registry.Listen {
+			return errors.New("[registry] gateway_listen must differ from listen")
+		}
+		if c.Registry.SpoolMaxGB < 0 {
+			return errors.New("[registry] spool_max_gb can't be negative (0 picks the default)")
 		}
 	}
 	if err := c.Hooks.validate(); err != nil {
@@ -677,7 +705,7 @@ func (c Config) checkTunnelPort() error {
 		return fmt.Errorf("[caddy] tunnel_port %d is not a port (0 turns the tunnel listener off)", p)
 	}
 	taken := []int{c.Caddy.HTTPPort, c.Caddy.HTTPSPort}
-	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Analytics.IngestListen, c.Analytics.StatsListen, c.Status.Listen} {
+	for _, addr := range []string{c.Listen, c.InternalListen, c.PublicListen, c.Hooks.Listen, c.Caddy.TrafficListen, c.Registry.Listen, c.Registry.GatewayListen, c.Analytics.IngestListen, c.Analytics.StatsListen, c.Status.Listen} {
 		if _, port, err := net.SplitHostPort(addr); err == nil {
 			if n, err := strconv.Atoi(port); err == nil {
 				taken = append(taken, n)

@@ -18,6 +18,7 @@ import (
 	"github.com/moby/moby/client"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/NordTempo/tempoDock/internal/registry/gateway"
 	"github.com/NordTempo/tempoDock/internal/s3"
 )
 
@@ -76,6 +77,19 @@ func (p *Platform) Migrate(ctx context.Context, to *s3.Bucket, owner string, com
 		}
 	}()
 
+	if from != nil && p.Gateway != nil {
+		// What waits on this server's disk must be in the bucket before
+		// it is copied (the registry is read-only now: nothing new comes).
+		dctx, cancel := context.WithTimeout(ctx, DrainTimeout)
+		err := p.Gateway.Drain(dctx)
+		cancel()
+		if de, ok := errors.AsType[*gateway.DrainError](err); ok {
+			return 0, 0, fmt.Errorf("%d objects still wait on this server's disk to upload to the bucket after %s; move the images when `dock registry` shows none waiting", de.Waiting, DrainTimeout)
+		}
+		if err != nil {
+			return 0, 0, err
+		}
+	}
 	if to != nil {
 		if err := prepareBucket(ctx, &s3.Client{Bucket: *to}, owner); err != nil {
 			return 0, 0, err
@@ -103,6 +117,10 @@ func (p *Platform) Migrate(ctx context.Context, to *s3.Bucket, owner string, com
 	}
 	return objects, size, nil
 }
+
+// DrainTimeout bounds Migrate's wait for the gateway's spool to reach the
+// bucket it moves the images from.
+const DrainTimeout = 10 * time.Minute
 
 // OwnerKey holds the install ID of the Dock whose registry data is under
 // BucketRoot in a bucket. Distribution ignores it (it reads only

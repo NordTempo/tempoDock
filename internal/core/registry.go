@@ -49,6 +49,13 @@ type Registry interface {
 	Migrate(ctx context.Context, to *s3.Bucket, owner string, commit func() error) (objects int, bytes int64, err error)
 	// Drop deletes the registry's data from storage it no longer uses.
 	Drop(ctx context.Context, storage *s3.Bucket) error
+	// PushStarted marks a build's push to the registry as running until
+	// done is called: meanwhile the storage gateway reports blobs stuck in
+	// the bucket missing, so the push uploads them again (ADR 0084).
+	PushStarted() (done func())
+	// Bucket is the bucket's health and the spool pushes land in, nil
+	// when the images are on the control plane's disk (ADR 0084).
+	Bucket() *apitypes.RegistryBucket
 }
 
 // GetRegistry describes the platform registry for the console: its size,
@@ -69,14 +76,24 @@ func (c *Core) registryInfo(ctx context.Context) (apitypes.Registry, error) {
 	if err != nil {
 		return apitypes.Registry{}, err
 	}
-	stored, err := c.reg.Stored(ctx)
-	if err != nil {
-		c.log.Debug("registry size", "err", err)
+	// The size lists a bucket, which mustn't hold the page when the bucket
+	// is slow: it gets storedTimeout, and isn't asked while failing (0
+	// shows as unknown).
+	bucket := c.reg.Bucket()
+	var stored int64
+	if bucket == nil || bucket.State != "failing" {
+		sctx, cancel := context.WithTimeout(ctx, storedTimeout)
+		stored, err = c.reg.Stored(sctx)
+		cancel()
+		if err != nil {
+			c.log.Debug("registry size", "err", err)
+		}
 	}
 	out := apitypes.Registry{
 		Enabled:      true,
 		Host:         c.reg.Host(),
 		StoredBytes:  stored,
+		Bucket:       bucket,
 		KeepReleases: c.keepReleases(),
 		Services:     make([]apitypes.RegistryService, len(rows)),
 	}
@@ -451,4 +468,57 @@ func (c *Core) InstallRegistryStorage(ctx context.Context, a Actor, req apitypes
 	}
 	st.UsedBy = []string{"registry"}
 	return st, nil
+}
+
+// storedTimeout bounds measuring the registry's size for GetRegistry.
+const storedTimeout = 5 * time.Second
+
+// registryStorageSays starts what a failed push's error adds about the
+// registry's bucket (bucketTrouble); the push_failed diagnosis reads it.
+const registryStorageSays = "the registry's storage: "
+
+// bucketTrouble says what is wrong with the registry's bucket or spool
+// (ADR 0084) and what to do, for a push that failed; "" when nothing is.
+func bucketTrouble(b *apitypes.RegistryBucket) string {
+	switch {
+	case b == nil:
+		return ""
+	case b.Refusing == "spool":
+		return fmt.Sprintf("the bucket is too slow, and the %s of pushes waiting on the control plane's disk filled the spool; deploys work again as uploads free it, see `dock registry`", humanBytes(b.WaitingBytes))
+	case b.Refusing == "disk":
+		return "the control plane's disk is nearly full, so the registry takes no more pushes; free space on it, see `dock registry`"
+	case b.State != "healthy":
+		return fmt.Sprintf("the bucket is %s: %d of its last %d calls failed or took over 10 s; check the storage provider's status, see `dock registry`", b.State, b.Bad, b.Calls)
+	}
+	return ""
+}
+
+// registryBucketAlertKey names the alert of the registry's bucket.
+const registryBucketAlertKey = "registry:bucket"
+
+// RegistryBucketChanged raises, updates or resolves the platform alert
+// for the registry's bucket when the storage gateway's view of it
+// changes (ADR 0084): degraded or failing from the calls it makes anyway,
+// or refusing pushes because the spool or the disk is full. No timer
+// checks it; the gateway calls this on its transitions.
+func (c *Core) RegistryBucketChanged(ctx context.Context, b *apitypes.RegistryBucket) {
+	if b == nil || b.State == "healthy" && b.Refusing == "" {
+		c.signalAlert(ctx, alertSignal{Key: registryBucketAlertKey, Resolve: true})
+		return
+	}
+	sev, title := apitypes.SeverityWarning, "The registry's bucket is "+b.State
+	msg := fmt.Sprintf("%d of the last %d calls to the bucket failed or took over 10 s. Pushes land on the control plane's disk and upload when the bucket answers, so deploys keep working; %d objects (%s) wait to upload. If it lasts, check the storage provider's status.",
+		b.Bad, b.Calls, b.Waiting, humanBytes(b.WaitingBytes))
+	switch b.Refusing {
+	case "spool":
+		sev, title = apitypes.SeverityCritical, "The registry refuses pushes: its spool is full"
+		msg = fmt.Sprintf("The bucket is too slow to take what was pushed: %s waits on the control plane's disk, the spool's limit. Builds fail at the push until uploads free space. Check the storage provider's status, or move the images to this server with `dock registry migrate --to local` once the bucket answers.", humanBytes(b.WaitingBytes))
+	case "disk":
+		sev, title = apitypes.SeverityCritical, "The registry refuses pushes: the disk is nearly full"
+		msg = fmt.Sprintf("Less than %d%% of the control plane's disk would stay free, so the registry takes no more pushes; %s of them wait to upload to the bucket. Free space on the disk.", b.DiskMinFreePercent, humanBytes(b.WaitingBytes))
+	}
+	c.signalAlert(ctx, alertSignal{
+		Key: registryBucketAlertKey, Kind: apitypes.AlertConnection, Severity: sev,
+		Title: title, Message: msg, Command: "dock registry", Target: &apitypes.AlertTarget{Connection: registryBucketAlertKey},
+	})
 }

@@ -16,6 +16,7 @@ import {
   SectionHead,
 } from "../../ui/kit";
 import { storageQuery } from "../storage/data";
+import { BucketSection } from "./BucketSection";
 import {
   type Registry,
   useMigrateRegistry,
@@ -141,6 +142,7 @@ export function RegistryPage() {
             them.
           </p>
         )}
+        {registry.bucket && <BucketSection bucket={registry.bucket} />}
         <section aria-labelledby="services">
           <SectionHead
             id="services"

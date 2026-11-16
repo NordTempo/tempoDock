@@ -704,6 +704,14 @@ set_registry_storage() {
 # apps; the control plane stops it for garbage collection, which runs in a
 # one-shot container next to it. It is recreated only when its image,
 # config or mounts change.
+#
+# It runs on the host's network (ADR 0084), listening only on [registry]
+# listen (config.yml's http.addr, loopback), so it reaches the daemon's
+# storage gateway on [registry] gateway_listen. A registry from before ran
+# on Docker's bridge network with the port published; the network in the
+# hash recreates it once. A config.yml that binds every address (:5000,
+# written by an older dock binary) keeps the published port instead: on
+# the host's network that would put the registry on every interface.
 setup_registry() {
   local listen storage cfg_dir hash current
   listen="$(toml_get "$CONF" registry listen)"
@@ -716,7 +724,11 @@ setup_registry() {
   runuser -u dock -- /usr/local/bin/dock admin registry-config --config "$CONF" --out "$cfg_dir" \
     || die "dock admin registry-config failed; the registry was not changed"
 
-  hash="$( { printf '%s\n' "$REGISTRY_IMAGE" "$listen" "$storage"; cat "$cfg_dir"/*; } | sha256sum | cut -c1-16)"
+  local net=(--network host)
+  if grep -Eq '^  addr: "?:5000"?$' "$cfg_dir/config.yml"; then
+    net=(--publish "$listen:5000")
+  fi
+  hash="$( { printf '%s\n' "$REGISTRY_IMAGE" "$listen" "$storage" "${net[*]}"; cat "$cfg_dir"/*; } | sha256sum | cut -c1-16)"
   current="$(docker inspect -f '{{index .Config.Labels "dock.install-hash"}}' dock-registry 2>/dev/null || true)"
   if [[ "$current" == "$hash" ]]; then
     docker start dock-registry >/dev/null
@@ -731,7 +743,7 @@ setup_registry() {
     --cap-drop ALL --security-opt no-new-privileges \
     --memory 256m --pids-limit 256 \
     --env OTEL_TRACES_EXPORTER=none \
-    --publish "$listen:5000" \
+    "${net[@]}" \
     --volume "$storage:/var/lib/registry" \
     --volume "$cfg_dir:/etc/distribution:ro" \
     "$REGISTRY_IMAGE" >/dev/null

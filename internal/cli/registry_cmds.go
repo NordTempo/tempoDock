@@ -26,6 +26,11 @@ a storage connection's bucket), their size, how the last prune and migration
 went, and every service with images in it, with how many its rollback
 window keeps. Prune and migration state are since the daemon started.
 
+With the images in a bucket, pushes land on this server's disk first and
+upload in the background (ADR 0084): it also shows the bucket's health
+from recent calls, what waits to upload, the spool's size and blobs the
+bucket keeps timing out on.
+
 Images deployed from private registries (ghcr.io, a registry of your own,
 Docker Hub) are pulled with the organization's credentials for their host:
 ` + "`dock registry login`" + ` adds them.`,
@@ -85,6 +90,11 @@ func printRegistry(g *globals, r apitypes.Registry) error {
 	if r.CollectPending {
 		g.io.Warnf("Deleted images' layers are still on disk; the next prune collects them.")
 	}
+	if b := r.Bucket; b != nil {
+		if err := printRegistryBucket(g, *b); err != nil {
+			return err
+		}
+	}
 	if len(r.Services) == 0 {
 		g.io.Detail("No images pushed yet.")
 		return nil
@@ -102,6 +112,59 @@ func printRegistry(g *globals, r apitypes.Registry) error {
 		t.Row(s.Project+"/"+s.Environment+"/"+s.Service, s.Repository, kept, "#"+itoa(s.Newest), active)
 	}
 	return t.Flush()
+}
+
+// printRegistryBucket shows the bucket's health and the spool pushes land
+// in (ADR 0084): one line when all is well.
+func printRegistryBucket(g *globals, b apitypes.RegistryBucket) error {
+	if b.State == "healthy" && b.Refusing == "" && b.Waiting == 0 && len(b.Stuck) == 0 {
+		g.io.Detail("Bucket healthy, nothing waiting to upload.")
+		return nil
+	}
+	waiting := "nothing"
+	if b.Waiting > 0 {
+		waiting = fmt.Sprintf("%s, %s", plural(b.Waiting, "object"), bytesize(b.WaitingBytes))
+		if b.OldestWaitingAt != nil {
+			waiting += ", the oldest since " + ago(*b.OldestWaitingAt)
+		}
+	}
+	pushes := "accepted; they land in the spool and upload in the background"
+	switch b.Refusing {
+	case "spool":
+		pushes = "refused: the spool is full; builds fail at the push until uploads free space"
+	case "disk":
+		pushes = fmt.Sprintf("refused: less than %d%% of the disk would stay free", b.DiskMinFreePercent)
+	}
+	var stuck []string
+	for _, s := range b.Stuck {
+		stuck = append(stuck, s.Digest+" since "+ago(s.Since))
+	}
+	if err := g.io.Fields(
+		"bucket", fmt.Sprintf("%s since %s: %d of the last %d calls failed or took over 10 s, the slowest %s", b.State, ago(b.Since), b.Bad, b.Calls, fmtMillis(b.SlowestMS)),
+		"last error", b.LastError,
+		"waiting to upload", waiting,
+		"spool", bytesize(b.SpoolBytes)+" of "+bytesize(b.SpoolMaxBytes),
+		"disk", bytesize(b.DiskFreeBytes)+" free of "+bytesize(b.DiskBytes),
+		"pushes", pushes,
+		"stuck blobs", strings.Join(stuck, ", "),
+	); err != nil {
+		return err
+	}
+	if b.Waiting > 0 {
+		g.io.Detail("What waits in the spool is only on this server's disk until it uploads.")
+	}
+	if len(b.Stuck) > 0 {
+		g.io.Detail("The bucket keeps timing out on the stuck blobs; the next push of an image with one uploads it again.")
+	}
+	return nil
+}
+
+// fmtMillis is a duration in milliseconds as people read it.
+func fmtMillis(ms int64) string {
+	if ms < 1000 {
+		return strconv.FormatInt(ms, 10) + " ms"
+	}
+	return strconv.FormatFloat(float64(ms)/1000, 'f', 1, 64) + " s"
 }
 
 func newRegistryPruneCmd(g *globals) *cobra.Command {

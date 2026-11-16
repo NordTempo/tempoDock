@@ -96,6 +96,7 @@ line means a later record added to it without changing what it decided.
 | [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
 | [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo; going public is v1.0.0 | accepted; not yet public |
 | [0083](0083-app-templates.md) | App templates: a catalog of apps as project file fragments with inputs, embedded and pinned | accepted; first catalog built |
+| [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted |
 | [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |
 
 ## Template

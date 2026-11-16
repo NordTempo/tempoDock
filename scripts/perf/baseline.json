@@ -400,6 +400,11 @@
       "bytes_op": 3046464,
       "allocs_op": 8308
     },
+    "registry/gateway.BenchmarkGatewayRead": {
+      "ns_op": 131765,
+      "bytes_op": 19283,
+      "allocs_op": 233
+    },
     "repoconfig.BenchmarkFromTar": {
       "ns_op": 392096,
       "bytes_op": 85565,

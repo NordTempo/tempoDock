@@ -10,11 +10,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/NordTempo/tempoDock/internal/api"
+	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/cli/output"
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
@@ -110,19 +112,39 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 	}
 	opts := core.Options{Config: cfg, Store: st, Secrets: box, Runtime: rt, Logger: log, ConfigPath: configPath}
 	var signer *registry.Signer
+	var reg *registry.Platform
+	// The gateway reports to core, which starts after it.
+	var coreRef atomic.Pointer[core.Core]
 	if cfg.Registry.Enabled {
+		if err := checkLoopback("[registry] gateway_listen", cfg.Registry.GatewayListen); err != nil {
+			return err
+		}
 		if signer, err = registrySigner(cfg); err != nil {
 			return err
 		}
-		if opts.Registry, err = platformRegistry(cfg, signer); err != nil {
+		onBucket := func(b *apitypes.RegistryBucket) {
+			if c := coreRef.Load(); c != nil {
+				c.RegistryBucketChanged(context.WithoutCancel(ctx), b)
+			}
+		}
+		if reg, err = platformRegistry(cfg, signer, log, onBucket); err != nil {
 			return err
 		}
+		defer reg.Gateway.Close()
+		opts.Registry = reg
 	}
 	c, hub, err := startCore(ctx, opts, linkID)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+	coreRef.Store(c)
+	if reg != nil {
+		// What the gateway reported before core was there to hear it.
+		if st := reg.Gateway.Status(); st.Reported {
+			c.RegistryBucketChanged(ctx, registry.BucketStatus(st))
+		}
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -145,6 +167,12 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 		},
 	}
 	servers = append(servers, ingestServers(cfg, in)...)
+	if reg != nil {
+		// The registry's storage gateway (ADR 0084): only the registry,
+		// signing with keys derived for it, gets an answer. No timeouts
+		// past the header: layers stream for as long as they take.
+		servers = append(servers, &http.Server{Addr: cfg.Registry.GatewayListen, Handler: reg.Gateway, ReadHeaderTimeout: 10 * time.Second})
+	}
 	if cfg.Analytics.StatsListen != "" {
 		// Sites' public dashboards, through Caddy (ADR 0037): nothing but
 		// them on this listener.

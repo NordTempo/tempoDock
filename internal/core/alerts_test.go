@@ -584,3 +584,27 @@ func TestArchiveServiceResolvesAlerts(t *testing.T) {
 	}
 	h.openAlert("deploy:service:1", false)
 }
+
+// The registry's bucket (ADR 0084) opens a warning while degraded, turns
+// critical when pushes are refused, and resolves once healthy.
+func TestRegistryBucketAlert(t *testing.T) {
+	h := newHarness(t)
+	h.c.RegistryBucketChanged(h.ctx, &apitypes.RegistryBucket{State: "degraded", Bad: 9, Calls: 64, Waiting: 3, WaitingBytes: 412 << 20})
+	a := h.openAlert(registryBucketAlertKey, true)
+	if a.Severity != string(apitypes.SeverityWarning) || !strings.Contains(a.Message, "9 of the last 64 calls") {
+		t.Fatalf("degraded alert = %+v", a)
+	}
+	h.c.RegistryBucketChanged(h.ctx, &apitypes.RegistryBucket{State: "failing", Refusing: "spool", WaitingBytes: 20 << 30})
+	deadline := time.Now().Add(5 * time.Second)
+	for a = h.openAlert(registryBucketAlertKey, true); a.Severity != string(apitypes.SeverityCritical); a = h.openAlert(registryBucketAlertKey, true) {
+		if time.Now().After(deadline) {
+			t.Fatalf("refusing alert = %+v", a)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !strings.Contains(a.Title, "refuses pushes") {
+		t.Errorf("title = %q", a.Title)
+	}
+	h.c.RegistryBucketChanged(h.ctx, &apitypes.RegistryBucket{State: "healthy"})
+	h.openAlert(registryBucketAlertKey, false)
+}

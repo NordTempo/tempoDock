@@ -401,6 +401,7 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 		repo = repoOf(ref, c.reg.Host())
 		req.Push = &node.PushTarget{Ref: c.reg.Host() + "/" + ref, Token: c.reg.Token("server "+builder.Name, repo, true)}
 		defer c.useRegistry()()
+		defer c.reg.PushStarted()()
 	}
 	if builder.ID != d.server.ID {
 		d.event(ctx, fmt.Sprintf("Building %s on %s", ref, where))
@@ -414,6 +415,11 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	if err != nil {
 		if ctx.Err() == nil && errors.Is(bctx.Err(), context.DeadlineExceeded) {
 			return "", step(apitypes.CodeBuildFailed, "build took longer than %s and was stopped; raise [buildkit] timeout_minutes on the control plane if it needs longer", timeout)
+		}
+		if req.Push != nil {
+			if why := bucketTrouble(c.reg.Bucket()); why != "" {
+				return "", step(apitypes.CodeBuildFailed, "build failed: %w (%s%s)", c.nodeErr(builder.ID, err), registryStorageSays, why)
+			}
 		}
 		return "", step(apitypes.CodeBuildFailed, "build failed: %w", c.nodeErr(builder.ID, err))
 	}

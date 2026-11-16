@@ -135,7 +135,7 @@ type AlertTarget struct {
 	ErrorIssue int64 `json:"error_issue,omitempty"`
 	// Connection names the connection of connection_failed:
 	// cloudflare:<name>, github:app, storage:<repository> or
-	// registry:prune and registry:push.
+	// registry:prune, registry:push and registry:bucket.
 	Connection string `json:"connection,omitempty"`
 	// Image is the image scan of new_vulnerability (GET /org/images/{id}),
 	// Vulnerabilities the IDs it is about.

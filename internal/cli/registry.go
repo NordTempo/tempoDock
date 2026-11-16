@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/core"
 	"github.com/NordTempo/tempoDock/internal/registry"
+	"github.com/NordTempo/tempoDock/internal/registry/gateway"
 )
 
 // registrySigner loads (or, the first time, creates) the control plane's
@@ -41,19 +43,33 @@ func registrySigner(cfg config.Config) (*registry.Signer, error) {
 // platformRegistry is core.Registry on the control plane. Its image host
 // is [registry] listen: the control plane reaches the registry container
 // there, and every node serves it at the same address over the link, so
-// image references work on every server.
-func platformRegistry(cfg config.Config, s *registry.Signer) (*registry.Platform, error) {
+// image references work on every server. It opens the storage gateway's
+// spool (ADR 0084); the caller serves the gateway on [registry]
+// gateway_listen and closes it. onBucket hears its state changes.
+func platformRegistry(cfg config.Config, s *registry.Signer, log *slog.Logger, onBucket func(*apitypes.RegistryBucket)) (*registry.Platform, error) {
 	docker, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
+	access, secret := registry.GatewayKeys(s)
+	gw, err := gateway.Open(gateway.Options{
+		Dir: cfg.RegistrySpoolDir(), MaxBytes: int64(cfg.Registry.SpoolMaxGB) << 30,
+		AccessKey: access, Secret: secret, Log: log.With("component", "registry-gateway"),
+		OnChange: func(st gateway.Status) { onBucket(registry.BucketStatus(st)) },
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &registry.Platform{
-		Name:       cfg.Registry.Listen,
-		Signer:     s,
-		Client:     &registry.Client{URL: "http://" + cfg.Registry.Listen, Signer: s},
-		Docker:     docker,
-		StorageDir: cfg.Registry.StorageDir,
-		ConfigDir:  cfg.Registry.ConfigDir,
+		Name:        cfg.Registry.Listen,
+		Signer:      s,
+		Client:      &registry.Client{URL: "http://" + cfg.Registry.Listen, Signer: s},
+		Docker:      docker,
+		StorageDir:  cfg.Registry.StorageDir,
+		ConfigDir:   cfg.Registry.ConfigDir,
+		Listen:      cfg.Registry.Listen,
+		Gateway:     gw,
+		GatewayAddr: cfg.Registry.GatewayListen,
 	}, nil
 }
 
@@ -95,7 +111,10 @@ bucket's keys: it is written 0640.`,
 			if err != nil {
 				return err
 			}
-			if _, err := registry.WriteConfig(out, s, registry.Storage{Bucket: bucket}); err != nil {
+			// install.sh runs the registry on the host's network (ADR 0084),
+			// reaching a bucket through the daemon's gateway.
+			st := registry.Storage{Bucket: bucket, Listen: cfg.Registry.Listen, Gateway: cfg.Registry.GatewayListen}
+			if _, err := registry.WriteConfig(out, s, st); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.ErrOrStderr(), "Wrote %s and %s\n", filepath.Join(out, "config.yml"), filepath.Join(out, "jwks.json"))

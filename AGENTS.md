@@ -91,7 +91,8 @@ internal/tempobase/    tempoBase's server: App, tbhttp, tbstore, tbmcp
 internal/httpkit/      HTTP plumbing shared by both servers; mcpkit the same for MCP
 internal/analytics/    Dock Analytics' events, store interface and client;
                        standard library only (make analytics-deps)
-internal/registry/     the platform image registry next to the control plane
+internal/registry/     the platform image registry next to the control plane;
+                       gateway/ its storage gateway in front of a bucket (ADR 0084)
 internal/s3/           the small S3 client behind the registry and backups
 internal/update/       finding, downloading and verifying Dock releases;
 internal/updater/      applying one as root (`dock admin update`, ADR 0028)
