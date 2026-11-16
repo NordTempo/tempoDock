@@ -50,8 +50,9 @@ export function TwoFactorSection() {
             <span className="text-mut">
               <Glyph char="○" /> off
             </span>
-          )}{" "}
+          )}
           <span className="text-mut">
+            {" · "}
             {on
               ? "signing in takes a second factor"
               : "your password alone signs you in"}

@@ -467,7 +467,9 @@ export function AuditTable({
                 <td className="whitespace-normal wrap-anywhere">
                   <ActionText action={e.action} past />{" "}
                   <span className="font-mono">{e.target}</span>{" "}
-                  <span className="text-mut">{e.summary}</span>
+                  <span className="text-mut" title={e.summary}>
+                    {shortDigests(e.summary)}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -530,7 +532,8 @@ export function AuditTable({
                   </td>
                   <td className="font-mono">{e.target}</td>
                   <td className="whitespace-normal wrap-anywhere text-mut">
-                    {e.summary} <AuditLogLink event={e} />
+                    <span title={e.summary}>{shortDigests(e.summary)}</span>{" "}
+                    <AuditLogLink event={e} />
                   </td>
                 </tr>
                 {opened && (
@@ -548,3 +551,7 @@ export function AuditTable({
     </Panel>
   );
 }
+
+/** A summary with image digests cut to 7 characters (the title keeps all). */
+const shortDigests = (text: string) =>
+  text.replace(/@sha256:([0-9a-f]{7})[0-9a-f]+/g, "@$1");

@@ -135,9 +135,9 @@ export function VariablesEditor({
     <div className="flex flex-1 flex-col md:flex-row">
       <nav
         aria-label="Applies to"
-        className="flex flex-col gap-0.5 border-b border-line px-2.5 pt-4 pb-3 md:w-[220px] md:flex-none md:border-r md:border-b-0"
+        className="flex flex-col gap-0.5 border-b border-line px-3 pt-4 pb-3 md:w-[220px] md:flex-none md:border-r md:border-b-0"
       >
-        <div className="px-2 pb-1.5 text-2xs text-faint">Applies to</div>
+        <div className="px-2 pb-1 text-xs text-faint">Applies to</div>
         <Link
           to="/$org/$project/settings/variables/$environment"
           params={{ org, ...env }}
@@ -237,7 +237,7 @@ export function VariablesEditor({
             {"$"}
             {"{{db.DATABASE_URL}}"}
           </span>{" "}
-          reads another service's variable; → shows what it reads
+          reads db's DATABASE_URL
         </p>
 
         {/* A service's tab has the strip in its header; shared variables
@@ -463,12 +463,13 @@ function NewLine({
       { onSuccess: () => setText("") },
     );
   };
-  // Focused (Add variable, N), the row turns blue and ringed, its Enter
-  // hint turns white and the line under it says what to type, so the jump
-  // shows even though the row was already on screen.
+  // Focused (Add variable, N), the row turns blue, its Enter hint turns
+  // white and the line under it says what to type, so the jump shows even
+  // though the row was already on screen. No ring: its square corners sat
+  // inside the list's rounded ones; the field's own edge marks focus.
   return (
     <div
-      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-info-bg focus-within:outline-2 focus-within:outline-info`}
+      className={`${grid} group scroll-my-24 border-b-0 focus-within:bg-info-bg`}
     >
       <span className="text-right text-faint group-focus-within:text-info">
         {n}
@@ -485,7 +486,7 @@ function NewLine({
         placeholder={`NAME=value  ·  for ${service ?? "every service"}`}
         aria-label="New variable, NAME=value"
         title={`dock env set NAME=value ${scopeFlags(env, service)}`}
-        className="col-span-2 min-h-[24px] min-w-0 rounded-tag border border-field bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-fg focus:bg-page"
+        className="col-span-2 min-h-[24px] min-w-0 rounded-ctl border border-field bg-transparent px-1.5 py-0.5 outline-none placeholder:text-faint focus:border-info focus:bg-page"
       />
       <span className="flex items-center gap-1.5 font-sans text-2xs text-faint group-focus-within:text-fg">
         <ErrorText error={stage.error} />
@@ -502,8 +503,8 @@ function NewLine({
       {/* Always there (brighter while the row has focus), so nothing moves
           when focus leaves: a click on Apply right after typing lands. */}
       <span className="col-span-full pb-1 pl-[68px] font-sans text-xs text-faint group-focus-within:text-fg">
-        Type a name and value, like LOG_LEVEL=debug, then Enter. Several lines
-        add several. They wait for Apply below.
+        Type NAME=value, like LOG_LEVEL=debug, then Enter; paste several lines
+        to add several. They wait for Apply.
       </span>
     </div>
   );

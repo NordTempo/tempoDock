@@ -20,6 +20,7 @@ export function SettingInput({
           rows={3}
           className="field w-full max-w-[520px] font-mono text-xs"
           aria-label={id ? undefined : field.label}
+          placeholder={"placeholder" in field ? field.placeholder : undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />

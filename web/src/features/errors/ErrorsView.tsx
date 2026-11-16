@@ -239,7 +239,7 @@ function Segment({
   const fresh = (fs: ErrorFacet[]) => fs.reduce((n, f) => n + f.new, 0);
   return (
     <Menu
-      label={label}
+      label={`${label}: ${text}`}
       button={
         <span className={`btn sm font-mono ${on ? "border-fg text-fg" : ""}`}>
           {text} <span aria-hidden>▾</span>

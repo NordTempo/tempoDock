@@ -144,9 +144,9 @@ export function CloudflarePage({
               </Panel>
             ) : (
               !adding && (
-                <p className="py-2 text-mut">
+                <p className="max-w-[70ch] py-2 text-mut">
                   {scope === "platform"
-                    ? "No connection. With a Cloudflare API token, Dock runs each server's tunnel and adds domains from your zones; without one, tunnels and their DNS are set up by hand. Add one with Add connection."
+                    ? "No connection. With a Cloudflare API token, Dock runs each server's tunnel and adds domains from your zones; without one, tunnels and their DNS are set up by hand."
                     : "No connection of this organization's own. Domains can use the zones the platform shares; to add domains from your own Cloudflare zones, add a token here. It needs to be in the same Cloudflare account as the platform's tunnels."}
                 </p>
               )

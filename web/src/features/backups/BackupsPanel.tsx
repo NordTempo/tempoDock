@@ -159,7 +159,12 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
             <span className="block text-warn">{backups.warning}</span>
           )}
         </dd>
-        <dt>Schedule</dt>
+        {/* On the middle line of the row's controls (the 28px hour select,
+            or the 24px checkbox alone), not a 34px field's (the .props rule
+            matches the select). */}
+        <dt className={backups.schedule.enabled ? "pt-[13px]" : "pt-[11px]"}>
+          Schedule
+        </dt>
         <dd>
           <Schedule serviceRef={ref} backups={backups} />
         </dd>
@@ -448,15 +453,8 @@ function PointRow({
         </span>
       </td>
       <td className="font-mono">{p.size > 0 ? size(p.size) : none}</td>
-      <td
-        className={
-          p.kind === "backup" && p.where !== "off-site"
-            ? "whitespace-nowrap text-warn"
-            : "whitespace-nowrap"
-        }
-      >
-        {p.where}
-      </td>
+      {/* Plain: "kept on this server only" above says the risk once. */}
+      <td className="whitespace-nowrap">{p.where}</td>
       <td className="max-w-[420px] whitespace-normal">
         {p.detail ? (
           <span className={p.state === "failed" ? "text-fail" : ""}>
@@ -479,7 +477,7 @@ function PointRow({
             </Button>
           )}
           {onDelete && (
-            <Button small onClick={onDelete}>
+            <Button small danger onClick={onDelete}>
               Delete
             </Button>
           )}

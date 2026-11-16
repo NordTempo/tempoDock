@@ -36,11 +36,13 @@ function Ignores() {
             <span className="font-mono">dock vulns ignore</span>.
           </p>
         ) : (
-          <IgnoresTable ignores={ignores} />
+          <>
+            <IgnoresTable ignores={ignores} />
+            <p className="text-xs text-mut">
+              Expired ignores no longer apply and go after 30 days.
+            </p>
+          </>
         )}
-        <p className="text-xs text-mut">
-          Expired ignores no longer apply and go after 30 days.
-        </p>
         <p className="font-mono text-2xs text-mut">dock vulns ignores</p>
       </Page>
     </>

@@ -590,6 +590,11 @@
     padding: 7px 9px;
   }
 
+  /* A select keeps room for its chevron. */
+  select.field {
+    padding-right: 26px;
+  }
+
   .field:hover {
     border-color: var(--color-mut);
   }
@@ -634,8 +639,17 @@
 
   .props > dt {
     color: var(--color-faint);
-    font-size: 12px;
-    line-height: 19px;
+    font-size: 13px;
+    line-height: 20px;
+  }
+
+  /* A row that opens with a field: the label sits on the field's middle
+     line, not above it (fields are 34px; 7px more than a line of text). */
+  .props
+  > dt:has(+ dd > :first-child :is(input:not([type="checkbox"]), select)),
+  .props
+    > dt:has(+ dd > :is(input:not([type="checkbox"]), select):first-child) {
+    padding-top: 16px;
   }
 
   /*
@@ -747,6 +761,8 @@
      the body size and colour, so they read as places, not as fine print. */
   .seg.views {
     font-size: var(--text-xs);
+    /* The first view's text lines up with the page's left edge. */
+    margin-left: -9px;
   }
 
   .seg.views > * {
@@ -778,11 +794,17 @@
     color: var(--color-fg);
   }
 
-  /* The current tab: white text over a white underline, no chip. */
+  /* The current tab: white text over a white underline, no chip. The
+     weight stays, so the strip doesn't shift as the current tab changes. */
   .tabs > a[aria-current="page"] {
     color: var(--color-fg);
-    font-weight: 500;
     box-shadow: inset 0 -2px 0 var(--color-fg);
+  }
+
+  /* Inside the strip, which scrolls sideways and would clip a ring drawn
+     outside the tab. */
+  .tabs > a:focus-visible {
+    outline-offset: -2px;
   }
 
   /* Side navigation rows (sidebar, settings, variables scopes). */

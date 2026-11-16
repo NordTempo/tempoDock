@@ -10,6 +10,7 @@ import {
 import type { EnvRef, Service } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
+import { plural } from "../../ui/format";
 import { Button, CopyButton, ErrorText } from "../../ui/kit";
 import { useGitHubRepos } from "../git/api";
 import { FromTemplate } from "../templates/FromTemplate";
@@ -201,7 +202,7 @@ function ServiceForm({
     (timeout === undefined || memory === undefined || !(cpus >= 0)
       ? "Timeout, CPUs and memory are positive numbers; leave them empty for no limit."
       : undefined);
-  // What a submit still needs, named for the footer.
+  // What a submit still needs.
   const missing = [
     !name && "a name",
     source === "image" && !image.trim() && "an image",
@@ -216,6 +217,12 @@ function ServiceForm({
     ) ||
     !!portError ||
     !!problem;
+  // The footer sits beside three buttons, so after a failed submit it
+  // counts the marked fields (each says what is wrong under it) instead
+  // of naming them again on two lines.
+  const marked = [nameError, imageError, repoError, portError].filter(
+    Boolean,
+  ).length;
 
   if (done) {
     return <Created env={env} done={done} onClose={onClose} />;
@@ -586,7 +593,9 @@ function ServiceForm({
       <Footer
         submit={source === "image" ? "Create and deploy" : "Create service"}
         pending={create.isPending || connect.isPending || deploy.isPending}
-        problem={v.problem(missing, blocked)}
+        problem={
+          v.tried && marked > 0 ? `Fix ${plural(marked, "field")}.` : undefined
+        }
         error={create.error ?? deploy.error}
         cli={
           source === "image"

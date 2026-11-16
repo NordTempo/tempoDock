@@ -232,7 +232,8 @@ function Detail({ org: o, initial }: { org: ConsoleOrg; initial?: Opened }) {
   return (
     <aside
       aria-label={`Organization ${o.slug}`}
-      className="flex flex-col gap-4"
+      // Under the same hairline as the table beside it, so their tops line up.
+      className="flex flex-col gap-4 border-t border-line pt-2"
     >
       <div>
         <h2 className="flex items-center gap-2 text-lg font-semibold">
@@ -289,20 +290,33 @@ function Detail({ org: o, initial }: { org: ConsoleOrg; initial?: Opened }) {
         </dl>
         <div className="flex flex-col gap-1.5">
           <h3 className="text-xs font-semibold">Operate</h3>
-          <Button onClick={() => setOpen("rename")}>Edit settings</Button>
-          <Button onClick={() => setOpen("members")}>
-            Members and invites
-          </Button>
-          <Button onClick={() => setOpen("join")}>Join as operator</Button>
-          <Button onClick={() => setOpen("stop")} disabled={o.services === 0}>
-            Stop all services
-          </Button>
-          <Button onClick={() => setOpen("suspend")}>
-            {o.status === "suspended"
-              ? "Unsuspend"
-              : "Suspend: block deploys and changes"}
-          </Button>
-          <Button onClick={() => setOpen("delete")}>Delete organization</Button>
+          {/* Small buttons that wrap, like a row's actions; the one that
+              can't be undone in red. */}
+          <div className="flex flex-wrap gap-1.5">
+            <Button small onClick={() => setOpen("rename")}>
+              Edit settings
+            </Button>
+            <Button small onClick={() => setOpen("members")}>
+              Members and invites
+            </Button>
+            <Button small onClick={() => setOpen("join")}>
+              Join as operator
+            </Button>
+            <Button
+              small
+              onClick={() => setOpen("stop")}
+              disabled={o.services === 0}
+            >
+              Stop all services
+            </Button>
+            {/* Its confirmation says what suspending blocks. */}
+            <Button small onClick={() => setOpen("suspend")}>
+              {o.status === "suspended" ? "Unsuspend" : "Suspend"}
+            </Button>
+            <Button small danger onClick={() => setOpen("delete")}>
+              Delete organization
+            </Button>
+          </div>
           <p className="text-xs text-faint">
             Its variables, logs, data and code stay hidden. Joining makes you an
             admin until it runs out and shows in its activity log.

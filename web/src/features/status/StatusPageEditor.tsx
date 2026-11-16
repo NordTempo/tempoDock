@@ -277,10 +277,14 @@ function Components({
   };
   if (page.components.length === 0)
     return (
-      <p className="text-mut">
-        No components.{" "}
-        {admin && "Add one for each part of your product the public relies on."}
-      </p>
+      <section>
+        <SectionHead>Components</SectionHead>
+        <p className="text-mut">
+          None yet.{" "}
+          {admin &&
+            "Add one for each part of your product the public relies on."}
+        </p>
+      </section>
     );
   return (
     <section>

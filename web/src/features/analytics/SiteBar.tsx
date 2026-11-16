@@ -80,10 +80,14 @@ export function SiteBar({
         ) : (
           <span className="font-semibold">{site.name}</span>
         )}
-        <span className="text-xs text-faint">
-          site · {hostnames.length}{" "}
-          {hostnames.length === 1 ? "hostname" : "hostnames"} · {services.size}{" "}
-          {services.size === 1 ? "service" : "services"}
+        {/* What the site counts, quiet; a site page's header already says it is a site. */}
+        <span
+          className="text-xs text-faint"
+          title={hostnames.map((h) => h.hostname).join(", ")}
+        >
+          {named && "site · "}
+          {hostnames.length} {hostnames.length === 1 ? "hostname" : "hostnames"}{" "}
+          · {services.size} {services.size === 1 ? "service" : "services"}
         </span>
         <TrackingChip
           project={project}

@@ -34,15 +34,18 @@ export function PrivacyStatus({ site }: { site: Site }) {
   );
 }
 
-/** What the site collects, with each feature's consent label and why. */
+/**
+ * What the site collects, with each feature's consent label and why. All
+ * of it goes in the privacy policy; the row's label says so. The rows sit
+ * in a settings row, so the last one leaves its line to the row's.
+ */
 export function PrivacyTable({ site }: { site: Site }) {
   return (
-    <table className="max-w-[760px] text-sm">
+    <table className="-mt-2 max-w-[760px] [&_tr:last-child>td]:border-b-0">
       <thead>
         <tr>
-          <th>What the site collects</th>
+          <th>Data</th>
           <th>Consent</th>
-          <th>Privacy policy</th>
           <th>Why</th>
         </tr>
       </thead>
@@ -53,7 +56,6 @@ export function PrivacyTable({ site }: { site: Site }) {
             <td className={labels[f.consent].tone}>
               {labels[f.consent].words}
             </td>
-            <td>Mention</td>
             <td className="whitespace-normal text-mut">{f.why}</td>
           </tr>
         ))}
@@ -78,7 +80,7 @@ dock.consent(false)  // declined or withdrawn`;
   return (
     <span className="flex max-w-[760px] flex-col gap-1.5">
       <span className="flex items-start gap-3">
-        <pre className="m-0 flex-1 overflow-x-auto rounded-ctl border border-line bg-panel px-3 py-2 font-mono text-xs text-sec">
+        <pre className="m-0 flex-1 overflow-x-auto font-mono text-xs text-sec">
           {code}
         </pre>
         <CopyButton text={code} />
@@ -114,7 +116,7 @@ export function PolicyText({ site }: { site: Site }) {
         </span>
         <CopyButton text={paragraphs.join("\n\n")} />
       </span>
-      <span className="flex flex-col gap-1.5 rounded-ctl border border-line bg-panel px-3 py-2 text-sec">
+      <span className="flex flex-col gap-1.5 text-sec">
         {paragraphs.map((p) => (
           <span key={p}>{p}</span>
         ))}

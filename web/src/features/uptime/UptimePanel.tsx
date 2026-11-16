@@ -66,7 +66,7 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     .slice(0, 5);
   return (
     <>
-      <section aria-labelledby="uptime-checks" className="flex flex-col gap-3">
+      <section aria-labelledby="uptime-checks">
         <SectionHead
           id="uptime-checks"
           right={
@@ -80,55 +80,58 @@ export function UptimePanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         >
           Uptime checks
         </SectionHead>
-        {domains.length === 0 ? (
-          <p className="text-mut">
-            Uptime checks probe one of the service's domains. Add a domain
-            first.
-          </p>
-        ) : (
-          <AddCheck
-            serviceRef={ref}
-            host={domains[0]?.hostname ?? ""}
-            checks={checks}
-            onAdded={setAdded}
-          />
-        )}
-        {checks.length > 0 && (
-          <Panel>
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th>State</th>
-                  <th>URL</th>
-                  <th>Every</th>
-                  <th>Expects</th>
-                  <th>Last 24 hours</th>
-                  <th className="text-right">24h</th>
-                  <th className="text-right">7d</th>
-                  <th className="text-right">30d</th>
-                  <th>Last probe</th>
-                  <th>From</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {checks.map((c) => (
-                  <CheckRow
-                    key={c.id}
-                    serviceRef={ref}
-                    check={c}
-                    fresh={c.id === added}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </Panel>
-        )}
-        {checks.length > 0 && (
-          <p className="text-xs text-mut">
-            Two failed probes in a row raise an alert.
-          </p>
-        )}
+        {/* The heading keeps its own margin, as the tab's other sections. */}
+        <div className="flex flex-col gap-3">
+          {domains.length === 0 ? (
+            <p className="text-mut">
+              Uptime checks probe one of the service's domains. Add a domain
+              first.
+            </p>
+          ) : (
+            <AddCheck
+              serviceRef={ref}
+              host={domains[0]?.hostname ?? ""}
+              checks={checks}
+              onAdded={setAdded}
+            />
+          )}
+          {checks.length > 0 && (
+            <Panel>
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th>State</th>
+                    <th>URL</th>
+                    <th>Every</th>
+                    <th>Expects</th>
+                    <th>Last 24 hours</th>
+                    <th className="text-right">24h</th>
+                    <th className="text-right">7d</th>
+                    <th className="text-right">30d</th>
+                    <th>Last probe</th>
+                    <th>From</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {checks.map((c) => (
+                    <CheckRow
+                      key={c.id}
+                      serviceRef={ref}
+                      check={c}
+                      fresh={c.id === added}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </Panel>
+          )}
+          {checks.length > 0 && (
+            <p className="text-xs text-mut">
+              Two failed probes in a row raise an alert.
+            </p>
+          )}
+        </div>
       </section>
       <Inside serviceRef={ref} />
       {incidents.length > 0 && (
@@ -510,6 +513,12 @@ function Inside({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 const fieldLabel = "flex flex-col gap-1";
 
 /**
+ * One height for the add form's inputs, select and button, so labels and
+ * bottoms line up (a native select is shorter than an input otherwise).
+ */
+const control = "h-[34px]";
+
+/**
  * The add form. While the URL typed is one an existing check probes (any
  * status or interval), it says so before adding, and an exact repeat (same
  * URL, status and interval) can't be added. A new one gets a notice.
@@ -573,7 +582,7 @@ function AddCheck({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={`https://${host}/`}
-            className="field w-[320px] font-mono"
+            className={`field w-[320px] font-mono ${control}`}
           />
         </label>
         <label className={fieldLabel} title="The answer that counts as up">
@@ -582,7 +591,7 @@ function AddCheck({
             value={status}
             onChange={(e) => setStatus(e.target.value.trim())}
             list="uptime-statuses"
-            className="field w-[96px] font-mono"
+            className={`field w-[96px] font-mono ${control}`}
           />
           <datalist id="uptime-statuses">
             <option value="200" />
@@ -595,7 +604,7 @@ function AddCheck({
           <select
             value={intervalS}
             onChange={(e) => setIntervalS(Number(e.target.value))}
-            className="field min-w-[96px]"
+            className={`field min-w-[96px] ${control}`}
           >
             {intervals.map(([s, label]) => (
               <option key={s} value={s}>
@@ -612,7 +621,7 @@ function AddCheck({
             max={30}
             value={timeoutS}
             onChange={(e) => setTimeoutS(Number(e.target.value))}
-            className="field w-[96px] font-mono"
+            className={`field w-[96px] font-mono ${control}`}
           />
         </label>
         {/* With a check of this URL already there, both ways are fine
@@ -621,6 +630,7 @@ function AddCheck({
         <Act
           primary={existing.length === 0}
           type="submit"
+          className={control}
           cli={addCli(ref, req)}
           disabled={req.url === "" || repeat || add.isPending}
           reason={

@@ -101,7 +101,7 @@ function Strip({ settings: st }: { settings: EmailSettings }) {
   if (!st.configured) {
     state = (
       <span>
-        <span className="text-mut">
+        <span className="mr-1 text-mut">
           <Glyph char="○" />
         </span>{" "}
         Not set up. Dock sends invites and other mail once a server is set here.
@@ -110,14 +110,17 @@ function Strip({ settings: st }: { settings: EmailSettings }) {
   } else if (failing && s.last_error_at) {
     state = (
       <span className="text-fail">
-        <Glyph char="●" /> Failing since {when(s.last_error_at)}: {s.last_error}
-        . Check the server and login below.
+        <span className="mr-1">
+          <Glyph char="●" />
+        </span>{" "}
+        Failing since {when(s.last_error_at)}: {s.last_error}. Check the server
+        and login below.
       </span>
     );
   } else if (s.last_ok_at) {
     state = (
       <span>
-        <span className="text-ok">
+        <span className="mr-1 text-ok">
           <Glyph char="●" />
         </span>{" "}
         Working. Last mail sent {when(s.last_ok_at)}
@@ -126,7 +129,7 @@ function Strip({ settings: st }: { settings: EmailSettings }) {
   } else {
     state = (
       <span>
-        <span className="text-mut">
+        <span className="mr-1 text-mut">
           <Glyph char="○" />
         </span>{" "}
         Nothing sent yet. Send a test to check the settings.
@@ -145,7 +148,8 @@ function Strip({ settings: st }: { settings: EmailSettings }) {
           <span className="text-mut">{s.failed_day} failed today</span>
         </>
       )}
-      <code className="font-mono text-2xs text-faint">dock email</code>
+      {/* The CLI that does the same, at the strip's far end. */}
+      <code className="ml-auto font-mono text-2xs text-faint">dock email</code>
     </div>
   );
 }
@@ -224,7 +228,7 @@ function SettingsForm({ settings: st }: { settings: EmailSettings }) {
             <div
               role="radiogroup"
               aria-label="Security"
-              className="inline-flex self-start overflow-hidden rounded-ctl border border-ctl"
+              className="inline-flex self-start overflow-hidden rounded-ctl border border-field"
             >
               {(
                 [
@@ -234,7 +238,7 @@ function SettingsForm({ settings: st }: { settings: EmailSettings }) {
               ).map(([value, label]) => (
                 <label
                   key={value}
-                  className={`cursor-pointer px-3 py-1.5 has-focus-visible:outline ${security === value ? "bg-sel text-fg" : "text-mut hover:text-fg"}`}
+                  className={`cursor-pointer px-3 py-[7px] has-focus-visible:outline ${security === value ? "bg-sel text-fg" : "text-mut hover:text-fg"}`}
                 >
                   <input
                     type="radio"

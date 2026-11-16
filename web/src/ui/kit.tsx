@@ -104,9 +104,9 @@ type ButtonProps = ComponentProps<"button"> & {
   primary?: boolean;
   small?: boolean;
   /**
-   * Red: only on the button that does something destructive (a Confirm's,
-   * an inline "Remove now"). The button that opens the question (Archive,
-   * Remove, Revoke, Delete) stays neutral, so every trigger looks alike.
+   * Red, for destructive actions (docs/design/README.md): outlined on the
+   * page's button that opens the question (Remove, Revoke, Delete),
+   * filled in the Confirm that runs it. Undoable actions stay neutral.
    */
   danger?: boolean;
   /**

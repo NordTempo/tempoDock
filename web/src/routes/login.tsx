@@ -203,7 +203,7 @@ function Login() {
 
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pt-[16vh] pb-10">
-      <main className="flex w-full max-w-[360px] flex-col gap-[22px]">
+      <main className="flex w-full max-w-[420px] flex-col gap-[22px]">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-lg font-bold">dock</span>
           <h1 className="text-xl font-semibold">{why.title}</h1>
@@ -225,10 +225,7 @@ function Login() {
         ) : (
           <div className="flex flex-col gap-3.5">
             {error && (
-              <p
-                role="alert"
-                className="rounded-ctl border border-fail-edge bg-fail-bg px-3 py-2 text-fail"
-              >
+              <p role="alert" className="text-fail">
                 {sentence(error)}
               </p>
             )}
@@ -336,15 +333,9 @@ function Login() {
               email={email}
               canEmail={methods.data?.password_reset ?? false}
             />
-            {/* A line kept for the answer; a failed sign-in shows as a red box above the button. */}
-            <p
-              role="alert"
-              className={
-                failed
-                  ? "rounded-ctl border border-fail-edge bg-fail-bg px-3 py-2 text-fail"
-                  : "min-h-[1lh]"
-              }
-            >
+            {/* A line kept for the answer, so a failed sign-in appears in
+                place, as a red line above the button, and nothing moves. */}
+            <p role="alert" className="min-h-[1lh] text-fail">
               {failed && loginMessage(failed)}
             </p>
             <button

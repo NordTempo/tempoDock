@@ -422,7 +422,7 @@ const UserRow = memo(function UserRow({
               right
               className="inline-flex"
               button={
-                <span className="grid h-6 w-7 place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
+                <span className="grid h-[24px] w-[28px] place-items-center rounded-ctl text-sec hover:bg-hover hover:text-fg">
                   <Icon name="more" size={14} />
                 </span>
               }

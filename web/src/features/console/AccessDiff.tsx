@@ -3,7 +3,7 @@ import { api, body, list } from "../../api/client";
 import { useAction } from "../../data/mutations";
 import { keys, useSession } from "../../data/queries";
 import { CliHint } from "../../ui/CliHint";
-import { Act, ErrorText } from "../../ui/kit";
+import { Act, ErrorText, SectionHead } from "../../ui/kit";
 
 // The permission model of ADR 0080: whether groups and grants decide
 // people's checks (enforce) or only watch beside their roles (shadow),
@@ -38,11 +38,11 @@ export function AccessDiff() {
   const next: Mode = mode === "enforce" ? "shadow" : "enforce";
   return (
     <section aria-labelledby="access-diff" className="flex flex-col gap-1.5">
-      <h2 id="access-diff" className="font-semibold">
+      <SectionHead id="access-diff">
         <CliHint cli="dock platform access-diff" className="">
           <span>Permission model</span>
         </CliHint>
-      </h2>
+      </SectionHead>
       <div className="flex flex-wrap items-center gap-2.5">
         <span>
           {mode === "enforce"
@@ -61,7 +61,10 @@ export function AccessDiff() {
       </div>
       {set.error && <ErrorText error={set.error} />}
       {data.length === 0 ? (
-        <p>Agreed with every check since Dock started.</p>
+        <p className="text-mut">
+          No check has come out differently from the roles since Dock last
+          started.
+        </p>
       ) : (
         <ul className="flex flex-col gap-1 font-mono text-xs">
           {data.slice(0, 20).map((d) => (

@@ -36,8 +36,9 @@ export function BackupStorage({
     ]),
   );
   return (
-    <section aria-labelledby="storage" className="flex flex-col gap-2">
-      <SectionHead id="storage">Storage</SectionHead>
+    <section aria-labelledby="repositories" className="flex flex-col gap-2">
+      {/* Not "Storage": that is the page of storage buckets. */}
+      <SectionHead id="repositories">Repositories</SectionHead>
       {repos.length === 0 ? (
         <p className="text-mut">Local disk on each server.</p>
       ) : (

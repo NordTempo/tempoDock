@@ -69,7 +69,7 @@ export function AppMetricsPanel({
   const at = `-p ${ref.project} -e ${ref.environment} -s ${ref.service}`;
 
   return (
-    <section aria-labelledby="app-metrics" className="flex flex-col gap-3">
+    <section aria-labelledby="app-metrics">
       <SectionHead
         id="app-metrics"
         right={
@@ -97,72 +97,75 @@ export function AppMetricsPanel({
       >
         App metrics
       </SectionHead>
-      <Why metrics={m} />
-      {adding && (
-        <AddChart
-          serviceRef={ref}
-          range={range}
-          metrics={m}
-          pinned={specs}
-          pending={pin.isPending}
-          at={at}
-          onPin={(spec) => {
-            save([...specs, spec], `Pinned ${chartName(spec)}`);
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      )}
-      {pin.error && <ErrorText error={pin.error} />}
-      {m.charts.length > 0 && (
-        <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2 2xl:grid-cols-3">
-          {m.charts.map((c, i) => {
-            const spec = specs[i] as ChartSpec;
-            return (
-              <MetricChart
-                key={chartName(spec)}
-                chart={c}
-                from={from}
-                stepSeconds={m.step_seconds}
-                title={
-                  <>
-                    {c.name}
-                    {(c.agg || c.by) && (
-                      <span className="font-normal text-mut">
-                        {" "}
-                        {[c.agg, c.by && `by ${c.by}`]
-                          .filter(Boolean)
-                          .join(" ")}
-                      </span>
-                    )}
-                  </>
-                }
-                action={
-                  canDeploy &&
-                  editing && (
-                    <Act
-                      small
-                      disabled={pin.isPending}
-                      cli={`dock metrics unpin ${c.name} ${chartFlags(spec)} ${at}`.replace(
-                        / +/g,
-                        " ",
+      {/* The heading keeps its own margin, as the tab's other sections. */}
+      <div className="flex flex-col gap-3">
+        <Why metrics={m} />
+        {adding && (
+          <AddChart
+            serviceRef={ref}
+            range={range}
+            metrics={m}
+            pinned={specs}
+            pending={pin.isPending}
+            at={at}
+            onPin={(spec) => {
+              save([...specs, spec], `Pinned ${chartName(spec)}`);
+              setAdding(false);
+            }}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+        {pin.error && <ErrorText error={pin.error} />}
+        {m.charts.length > 0 && (
+          <div className="grid gap-x-8 gap-y-6 lg:grid-cols-2 2xl:grid-cols-3">
+            {m.charts.map((c, i) => {
+              const spec = specs[i] as ChartSpec;
+              return (
+                <MetricChart
+                  key={chartName(spec)}
+                  chart={c}
+                  from={from}
+                  stepSeconds={m.step_seconds}
+                  title={
+                    <>
+                      {c.name}
+                      {(c.agg || c.by) && (
+                        <span className="font-normal text-mut">
+                          {" "}
+                          {[c.agg, c.by && `by ${c.by}`]
+                            .filter(Boolean)
+                            .join(" ")}
+                        </span>
                       )}
-                      onClick={() =>
-                        save(
-                          specs.filter((s) => !same(s, spec)),
-                          `Unpinned ${chartName(spec)}`,
-                        )
-                      }
-                    >
-                      Unpin
-                    </Act>
-                  )
-                }
-              />
-            );
-          })}
-        </div>
-      )}
+                    </>
+                  }
+                  action={
+                    canDeploy &&
+                    editing && (
+                      <Act
+                        small
+                        disabled={pin.isPending}
+                        cli={`dock metrics unpin ${c.name} ${chartFlags(spec)} ${at}`.replace(
+                          / +/g,
+                          " ",
+                        )}
+                        onClick={() =>
+                          save(
+                            specs.filter((s) => !same(s, spec)),
+                            `Unpinned ${chartName(spec)}`,
+                          )
+                        }
+                      >
+                        Unpin
+                      </Act>
+                    )
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

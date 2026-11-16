@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Act, ErrorText, Page } from "../../ui/kit";
+import { OrgSettingsBar } from "../org/SettingsBar";
 import {
   type AreaRole,
   type Role,
@@ -26,91 +27,94 @@ export function RolesPage({
   const own = useCustomRoles();
   const current = own.find((r) => r.name === selected);
   return (
-    <Page>
-      <ShadowNote />
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <section
-          aria-label="Roles"
-          className="flex min-w-0 flex-col gap-3 lg:w-[400px]"
-        >
-          <table>
-            <thead>
-              <tr>
-                <th>The organization's</th>
-                <th>Held by</th>
-              </tr>
-            </thead>
-            <tbody>
-              {own.map((r) => (
-                <tr
-                  key={r.id}
-                  className={`cursor-pointer ${r.name === selected ? "bg-selected" : "hover:bg-hover"}`}
-                  onClick={() => onSelect(r.name)}
-                >
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      className="text-left"
-                      onClick={() => onSelect(r.name)}
-                    >
-                      {r.name}
-                    </button>
-                  </td>
-                  <td className="py-2 text-mut">
-                    {[...(r.groups ?? []), ...(r.people ?? [])].join(", ") ||
-                      "nobody"}
-                  </td>
-                </tr>
-              ))}
-              {own.length === 0 && (
+    <>
+      <OrgSettingsBar />
+      <Page>
+        <ShadowNote />
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <section
+            aria-label="Roles"
+            className="flex min-w-0 flex-col gap-3 lg:w-[400px]"
+          >
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={2} className="py-2 text-faint">
-                    None yet.
-                  </td>
+                  <th>Custom roles</th>
+                  <th>Held by</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-          <div>
-            <Act
-              cli={`dock role create <name> --include deploy:edit`}
-              onClick={() => onSelect("new")}
-            >
-              New role
-            </Act>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Built in</th>
-                <th>Levels</th>
-              </tr>
-            </thead>
-            <tbody>
-              {builtIn.map((r) => (
-                <tr key={r.key}>
-                  <td className="py-1.5">{r.name}</td>
-                  <td className="py-1.5 text-mut">
-                    {(r.levels ?? [])
-                      .map((l) => l.name)
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </td>
+              </thead>
+              <tbody>
+                {own.map((r) => (
+                  <tr
+                    key={r.id}
+                    className={`cursor-pointer ${r.name === selected ? "bg-sel" : "hover:bg-hover"}`}
+                    onClick={() => onSelect(r.name)}
+                  >
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => onSelect(r.name)}
+                      >
+                        {r.name}
+                      </button>
+                    </td>
+                    <td className="py-2 text-mut">
+                      {[...(r.groups ?? []), ...(r.people ?? [])].join(", ") ||
+                        "nobody"}
+                    </td>
+                  </tr>
+                ))}
+                {own.length === 0 && (
+                  <tr>
+                    <td colSpan={2} className="py-2 text-faint">
+                      None yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div>
+              <Act
+                cli={`dock role create <name> --include deploy:edit`}
+                onClick={() => onSelect("new")}
+              >
+                New role
+              </Act>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Built in</th>
+                  <th>Levels</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-        {(current || selected === "new") && (
-          <RoleEditor
-            key={current?.id ?? "new"}
-            role={current}
-            builtIn={builtIn}
-            onDone={onSelect}
-          />
-        )}
-      </div>
-    </Page>
+              </thead>
+              <tbody>
+                {builtIn.map((r) => (
+                  <tr key={r.key}>
+                    <td className="py-1.5">{r.name}</td>
+                    <td className="py-1.5 text-mut">
+                      {(r.levels ?? [])
+                        .map((l) => l.name)
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+          {(current || selected === "new") && (
+            <RoleEditor
+              key={current?.id ?? "new"}
+              role={current}
+              builtIn={builtIn}
+              onDone={onSelect}
+            />
+          )}
+        </div>
+      </Page>
+    </>
   );
 }
 

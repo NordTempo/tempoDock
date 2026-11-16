@@ -103,9 +103,9 @@ function Members() {
       <Page>
         {/* The roles sit beside the table when the page itself is wide
             (inside the settings column, the window's width says little),
-            under it otherwise, so the table's actions never clip. */}
+            under it otherwise, so the table's last columns never clip. */}
         <div className="@container">
-          <div className="grid items-start gap-8 @min-[1080px]:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="grid items-start gap-8 @min-[1240px]:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex min-w-0 flex-col gap-5">
               <ShadowNote />
               {without > 0 && (
@@ -192,10 +192,23 @@ function Members() {
                 Removing someone takes them out of this organization; their
                 account stays. Leave the organization from General.
               </p>
-              <p className="font-mono text-2xs text-mut">
-                {enforce
-                  ? "dock group add|remove <group> <email> · dock can <email> · dock org member remove <email>"
-                  : "dock org member role <email> read|deploy|admin · dock group add|remove <group> <email> · dock can <email>"}
+              <p className="flex flex-wrap gap-x-4 font-mono text-2xs text-mut">
+                {(enforce
+                  ? [
+                      "dock group add|remove <group> <email>",
+                      "dock can <email>",
+                      "dock org member remove <email>",
+                    ]
+                  : [
+                      "dock org member role <email> read|deploy|admin",
+                      "dock group add|remove <group> <email>",
+                      "dock can <email>",
+                    ]
+                ).map((c) => (
+                  <span key={c} className="whitespace-nowrap">
+                    {c}
+                  </span>
+                ))}
               </p>
             </div>
             {person ? (
@@ -403,7 +416,7 @@ function MemberRow({
           type="button"
           className={`text-left ${selected ? "underline" : ""}`}
           aria-expanded={selected}
-          aria-label={`${email}: grants and what they can do`}
+          title="Grants and what they can do"
           onClick={onSelect}
         >
           <PersonCell name={name} email={email} you={you} />
@@ -434,14 +447,14 @@ function MemberRow({
           )}
         </td>
       )}
-      <td className="min-w-[280px] py-2">
+      <td className="min-w-[240px] py-2">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {groups.map((g) => (
             <span key={g} className="whitespace-nowrap">
               {g}
               <button
                 type="button"
-                className="px-0.5 text-mut hover:text-fg"
+                className="-my-1 inline-grid min-h-[24px] min-w-[24px] place-items-center text-mut hover:text-fg"
                 aria-label={`Take ${email} out of ${g}`}
                 disabled={membership.isPending}
                 onClick={() =>
@@ -589,9 +602,10 @@ function InviteRow({
         </>
       )}
       <td />
-      <td className="py-2 text-faint">
+      <td className="py-2 whitespace-nowrap text-faint">
         {invite.expired ? "expired" : `until ${day(expires_at)}`}
       </td>
+      <td />
       <td className="w-full py-1.5 text-right">
         <span className="inline-flex gap-1.5">
           <Button small onClick={() => setRenewing(true)}>

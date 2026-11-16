@@ -8,7 +8,6 @@ import {
   Page,
   PageBar,
   Panel,
-  SectionHead,
 } from "../../ui/kit";
 import {
   type NewStorage,
@@ -47,8 +46,8 @@ export function StoragePage() {
         }
       />
       <Page>
-        <section aria-labelledby="connections" className="flex flex-col gap-2">
-          <SectionHead id="connections">Storage buckets</SectionHead>
+        {/* One list, named by the page title: no heading of its own. */}
+        <section aria-label="Storage buckets" className="flex flex-col gap-2">
           {storage.length > 0 ? (
             <Panel>
               <table>
@@ -80,10 +79,10 @@ export function StoragePage() {
             </Panel>
           ) : (
             !adding && (
-              <p className="py-2 text-mut">
+              <p className="max-w-[70ch] text-mut">
                 No storage buckets yet. An S3-compatible bucket can hold the
                 registry's images and the backups; until then they stay on the
-                servers' disks. Add one with Add storage bucket.
+                servers' disks.
               </p>
             )
           )}

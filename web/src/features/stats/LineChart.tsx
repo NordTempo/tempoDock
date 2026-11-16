@@ -234,7 +234,9 @@ export const LineChart = memo(function LineChart({
               style={{ top: `${(yOf(g.v) / H) * 100}%` }}
             >
               <span
-                className={`absolute right-0 -translate-y-full text-2xs ${g.tone === "ok" ? "text-ok" : "text-fail"}`}
+                // At the left end: the right end holds "now" and the newest
+                // deploy markers, which the label would cover.
+                className={`absolute left-1 -translate-y-full text-2xs ${g.tone === "ok" ? "text-ok" : "text-fail"}`}
               >
                 {g.label}
               </span>

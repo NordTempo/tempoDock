@@ -13,6 +13,7 @@ import {
   ErrorText,
   Page,
   PageBar,
+  Panel,
 } from "../../ui/kit";
 
 // The platform's tokens (ADR 0080): credentials that run the platform
@@ -177,49 +178,54 @@ export function PlatformTokensPage() {
         {tokens.length === 0 ? (
           <p className="text-faint">No platform tokens.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Token</th>
-                <th>What</th>
-                <th>Last used</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {tokens.map((t) => (
-                <tr key={t.id} className="*:align-middle hover:bg-hover">
-                  <td className="py-2 font-mono">{t.name}</td>
-                  <td className={t.operator ? "py-2 text-warn" : "py-2"}>
-                    {kind(t)}
-                  </td>
-                  <td className="py-2 text-mut">
-                    {t.last_used_at ? ago(t.last_used_at) : "never"}
-                  </td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    {operator && t.operator && (
-                      <Act
-                        small
-                        cli={`dock platform token split ${t.id}`}
-                        onClick={() => setAsking({ t, what: "split" })}
-                      >
-                        Split
-                      </Act>
-                    )}{" "}
-                    {operator && (
-                      <Act
-                        small
-                        cli={`dock platform token revoke ${t.id}`}
-                        onClick={() => setAsking({ t, what: "revoke" })}
-                      >
-                        Revoke
-                      </Act>
-                    )}
-                  </td>
+          <Panel>
+            <table>
+              <thead>
+                <tr>
+                  <th>Token</th>
+                  <th>What</th>
+                  <th>Last used</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tokens.map((t) => (
+                  <tr key={t.id} className="*:align-middle hover:bg-hover">
+                    <td className="py-2 font-mono">{t.name}</td>
+                    <td className={t.operator ? "py-2 text-warn" : "py-2"}>
+                      {kind(t)}
+                    </td>
+                    <td className="py-2 text-mut">
+                      {t.last_used_at ? ago(t.last_used_at) : "never"}
+                    </td>
+                    <td className="py-1.5 text-right whitespace-nowrap">
+                      <span className="inline-flex gap-1.5">
+                        {operator && t.operator && (
+                          <Act
+                            small
+                            cli={`dock platform token split ${t.id}`}
+                            onClick={() => setAsking({ t, what: "split" })}
+                          >
+                            Split
+                          </Act>
+                        )}
+                        {operator && (
+                          <Act
+                            small
+                            danger
+                            cli={`dock platform token revoke ${t.id}`}
+                            onClick={() => setAsking({ t, what: "revoke" })}
+                          >
+                            Revoke
+                          </Act>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Panel>
         )}
       </Page>
     </>

@@ -271,13 +271,11 @@ function Row({
             >
               {g.message}
             </span>
-            {isNew && (
-              <span className="shrink-0 text-xs text-warn-text">
-                new{g.first_release ? ` in ${g.first_release}` : ""}
-              </span>
-            )}
           </span>
+          {/* New on the second line, so the message keeps the first; the
+              release it came with is in First seen. */}
           <span className="flex min-h-[24px] items-center gap-3 pl-4 text-xs">
+            {isNew && <span className="shrink-0 text-warn-text">new</span>}
             <span className="min-w-0 truncate font-mono text-faint">
               {g.frame || "no stack"}
             </span>
@@ -333,6 +331,16 @@ function Spark({
       aria-hidden
     >
       <title>{`Peak ${most} in one ${step >= 86_400_000 ? "day" : "hour"}`}</title>
+      {/* The range's baseline, so a lone bar reads as a moment in it. */}
+      <line
+        x1={0}
+        y1={19.5}
+        x2={100}
+        y2={19.5}
+        className="stroke-edge"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
       {bars.map((b, i) =>
         b.v > 0 ? (
           <rect

@@ -14,42 +14,44 @@ export const fields = [
     kind: "list",
     flag: "--exclude-path",
     label: "Excluded paths",
-    help: "Paths not counted, one per line; * matches anything, like /admin/*.",
+    help: "Not counted, one per line; * matches anything.",
+    placeholder: "/admin/*",
   },
   {
     key: "ignored_ips",
     kind: "list",
     flag: "--ignore-ip",
     label: "Ignored addresses",
-    help: "Visits from these addresses or CIDR ranges aren't counted, like your office.",
+    help: "Addresses or CIDR ranges not counted.",
+    placeholder: "203.0.113.7\n10.0.0.0/8",
   },
   {
     key: "event_retention_days",
     kind: "days",
     flag: "--event-retention-days",
     label: "Event retention",
-    help: "How long raw events are kept, in days. Daily totals stay; filters reach back this far.",
+    help: "How far filters reach back. Daily totals stay.",
   },
   {
     key: "errors_and_vitals",
     kind: "switch",
     flag: "--errors",
     label: "Errors and Web Vitals",
-    help: "Collect errors thrown on the site's pages and how fast they load. Adds about 1 KB to the script.",
+    help: "Page errors and load speed; about 1 KB of script.",
   },
   {
     key: "error_retention_days",
     kind: "days",
     flag: "--error-retention-days",
     label: "Error retention",
-    help: "How long errors and their stacks are kept, in days.",
+    help: "How long errors and stacks are kept.",
   },
   {
     key: "consent",
     kind: "choice",
     flag: "--consent",
     label: "Wait for consent",
-    help: "What runs only after the page calls dock.consent(true).",
+    help: "What waits for dock.consent(true).",
     options: [
       ["none", "Nothing waits"],
       ["replay", "Replay waits"],
@@ -61,35 +63,38 @@ export const fields = [
     kind: "switch",
     flag: "--replay",
     label: "Session replay",
-    help: "Record visits to watch them back. Inputs are always masked; data-dock-block hides an element.",
+    help: "Inputs always masked; data-dock-block hides more.",
   },
   {
     key: "replay_sample_rate",
     kind: "percent",
     flag: "--replay-sample",
     label: "Replay sample",
-    help: "Percent of page loads recorded, 1 to 100. Only those load the recorder.",
+    help: "Page loads recorded; only those load the recorder.",
   },
   {
     key: "mask_all_text",
     kind: "switch",
     flag: "--mask-text",
     label: "Mask all text",
-    help: "Replays show all text as ****, not only what is typed.",
+    help: "All text as ****, not only what is typed.",
   },
   {
     key: "replay_retention_days",
     kind: "days",
     flag: "--replay-retention-days",
     label: "Replay retention",
-    help: "How long replays are kept, in days.",
+    help: "How long replays are kept.",
   },
 ] as const satisfies readonly {
   key: keyof SiteSettings;
   kind: Kind;
   flag: string;
   label: string;
+  /** One short line: it sits under the label in a settings row. */
   help: string;
+  /** A list's example entries, shown in its empty field. */
+  placeholder?: string;
   /** A choice's values and their words. */
   options?: readonly (readonly [string, string])[];
 }[];

@@ -1119,7 +1119,7 @@ function ServiceLink({ view }: { view: ServiceView }) {
       )}
       <span className="flex-1 truncate">{service.name}</span>
       <span
-        className={`max-w-24 truncate text-2xs ${state.tone === "ok" || state.tone === "mut" ? "text-faint" : toneText[state.tone]}`}
+        className={`max-w-28 truncate text-2xs ${state.tone === "ok" || state.tone === "mut" ? "text-faint" : toneText[state.tone]}`}
       >
         {note}
       </span>

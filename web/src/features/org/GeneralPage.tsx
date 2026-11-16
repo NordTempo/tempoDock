@@ -53,7 +53,7 @@ export function GeneralPage() {
           <table>
             <tbody>
               <tr>
-                <td className="w-32 py-2.5 text-faint">Name</td>
+                <td className="w-36 py-2.5 text-faint">Name</td>
                 <td className="py-1.5">
                   {admin ? (
                     <form
@@ -286,15 +286,17 @@ function LockSettings() {
   const valid = Number.isInteger(n) && n >= TTL_MIN && n <= TTL_MAX;
   return (
     <section aria-labelledby="locks" className="flex flex-col gap-2">
-      <h2 id="locks" className="text-md font-semibold">
-        Locked environments
-      </h2>
-      <p className="-mt-1 text-xs text-mut">These save as you change them.</p>
+      <div className="flex flex-wrap items-baseline gap-x-2.5">
+        <h2 id="locks" className="text-md font-semibold">
+          Locked environments
+        </h2>
+        <span className="text-xs text-faint">saved as you change them</span>
+      </div>
       <Panel>
         <table>
           <tbody>
             <tr>
-              <td className="w-32 py-2.5 text-faint">New production</td>
+              <td className="w-36 py-2.5 text-faint">New production</td>
               <td className="py-2.5">
                 <span className="flex flex-wrap items-center gap-2">
                   <Check

@@ -5,7 +5,7 @@ import { type Bar, niceMax } from "./series";
 type Props = {
   /** What is counted, also the accessible name: "Requests". */
   title: string;
-  /** What one bar covers: "per 10 minutes". */
+  /** What one bar covers, after the title: "per 10 minutes". */
   per: string;
   bars: Bar[];
   /** The time span shown (ms) and one bar's width. */
@@ -24,7 +24,8 @@ const count = (n: number) => n.toLocaleString("en-US");
  * Requests over time as thin bars, with the 4xx and then the 5xx part of
  * each stacked from the baseline in their status colours, and a legend
  * naming them. A crosshair reads out the bar under the pointer or the
- * arrow keys. Static: no animation, no chart library.
+ * arrow keys. With no bars, only why, at the chart's height. Static: no
+ * animation, no chart library.
  */
 export const BarChart = memo(function BarChart({
   title,
@@ -73,11 +74,26 @@ export const BarChart = memo(function BarChart({
     setActive(best);
   };
 
+  if (!bars.length)
+    return (
+      <figure className="flex min-w-0 flex-col gap-1.5">
+        <figcaption className="font-medium">
+          {title} {per}
+        </figcaption>
+        {/* The plot and its time axis, 104px and 16px. */}
+        <p className="grid h-[120px] place-items-center text-xs text-mut">
+          No requests through Dock's proxy yet. Counts arrive every minute;
+          visitors come from the browser instead.
+        </p>
+      </figure>
+    );
+
   return (
     <figure className="flex min-w-0 flex-col gap-1.5">
       <figcaption className="flex flex-wrap items-baseline gap-x-3">
-        <span className="font-medium">{title}</span>
-        <span className="text-xs text-mut">{per}</span>
+        <span className="font-medium">
+          {title} {per}
+        </span>
         <span className="ml-auto flex gap-3 text-xs text-mut">
           <Swatch className="bg-info/55">ok</Swatch>
           <Swatch className="bg-warn">4xx</Swatch>
@@ -170,12 +186,6 @@ export const BarChart = memo(function BarChart({
               );
             })}
           </svg>
-          {!bars.length && (
-            <p className="absolute inset-0 grid place-items-center text-xs text-mut">
-              No requests through Dock's proxy yet. Counts arrive every minute;
-              visitors come from the browser instead.
-            </p>
-          )}
           {bar && (
             <>
               <div

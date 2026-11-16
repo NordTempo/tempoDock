@@ -209,7 +209,7 @@ function PlaceLink({
 
 /** A topic in TopicList: the current one marked by aria-current. */
 export const topicItem =
-  "block w-full rounded-ctl px-2 py-0.5 text-left text-sec hover:bg-hover hover:text-fg aria-[current]:bg-sel aria-[current]:text-fg";
+  "flex min-h-[24px] w-full items-center rounded-ctl px-2 text-left text-sec hover:bg-hover hover:text-fg aria-[current]:bg-sel aria-[current]:text-fg";
 
 /**
  * Every topic in its groups, operator-only ones for operators; `item`

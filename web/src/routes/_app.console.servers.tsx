@@ -196,12 +196,12 @@ const ServerRow = memo(function ServerRow({ server: s }: { server: Server }) {
       <td className="py-2.5">
         <Ingress server={s} />
       </td>
-      <td className="min-w-48 py-2.5 whitespace-normal text-sec">{takes(s)}</td>
+      <td className="w-full min-w-48 py-2.5 whitespace-normal text-sec">
+        {takes(s)}
+      </td>
       <td className="py-2.5 font-mono">
         {usage ? pct(usage.cpu_percent) : dash}
-        {usage && (
-          <span className="font-sans text-xs text-mut"> of {usage.cpus}</span>
-        )}
+        {usage && <span className="text-mut"> of {usage.cpus}</span>}
       </td>
       <td className="py-2.5 font-mono">
         {usage ? (
@@ -222,7 +222,7 @@ const ServerRow = memo(function ServerRow({ server: s }: { server: Server }) {
         {s.memory_bytes ? (
           <>
             {size(s.reserved_memory_bytes)}
-            <span className="font-sans text-xs text-mut">
+            <span className="text-mut">
               {" "}
               {pct((100 * s.reserved_memory_bytes) / s.memory_bytes)}
             </span>
@@ -241,7 +241,7 @@ const ServerRow = memo(function ServerRow({ server: s }: { server: Server }) {
           dash
         )}
       </td>
-      <td className="w-full py-2.5 whitespace-normal">
+      <td className="py-2.5">
         {s.environments ? (
           <>
             {s.projects} <span className="text-mut">projects</span>

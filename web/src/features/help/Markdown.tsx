@@ -51,7 +51,9 @@ function blocks(source: string, page: string): ReactNode[] {
       out.push(
         <pre
           key={key}
-          className="overflow-x-auto rounded-panel border border-line bg-panel px-3.5 py-2.5 font-mono text-xs text-sec"
+          // Wraps instead of scrolling sideways: a scrolling block would need
+          // keyboard focus to be read (WCAG 2.1.1).
+          className="whitespace-pre-wrap break-words rounded-panel border border-line bg-panel px-3.5 py-2.5 font-mono text-xs text-sec"
         >
           <code>{code.join("\n")}</code>
         </pre>,
