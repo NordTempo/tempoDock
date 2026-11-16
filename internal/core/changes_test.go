@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"slices"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -336,5 +337,58 @@ func TestApplyServedImageStartsNoRelease(t *testing.T) {
 	}
 	if svc, _ := h.c.GetService(h.ctx, testSystem, web); svc.Image != "app:1" {
 		t.Fatalf("live image %q", svc.Image)
+	}
+}
+
+// Rolling back puts the service's own variables back to the release's, so
+// the next unrelated apply doesn't bring the newer values back; shared
+// variables keep their values and the rollback says it ran older ones.
+func TestRollbackPutsVariablesBack(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"KEEP": "k"}}); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(web, h.deploy(web, "app:1").Number) // r1 takes KEEP live
+	h.setVars(web, map[string]string{"VERSION": "v2", "KEEP": "k2"})
+	shared := apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu"}, Apply: true}
+	res, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := h.wait(web, res.Applied.Releases[0].Number)
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"STAGED": "s"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	rb, err := h.c.Rollback(h.ctx, testSystem, web, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := h.wait(web, rb.Number); r.Status != apitypes.ReleaseActive || r.Number != last.Number+1 {
+		t.Fatalf("rollback = %+v", r)
+	}
+	if got := h.revealed(web); got["KEEP"] != "k" || got["VERSION"] != "" {
+		t.Errorf("live variables after the rollback = %v, want release 1's", got)
+	}
+	r, _ := h.c.GetRelease(h.ctx, testSystem, web, rb.Number)
+	events := fmt.Sprint(r.Events)
+	if !strings.Contains(events, "web's variables are release 1's again: KEEP, VERSION") || !strings.Contains(events, "older shared REGION") {
+		t.Errorf("rollback events = %s", events)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, web.Env(), false); p.Count != 1 {
+		t.Errorf("the staged change is gone or more were staged: %+v", p)
+	}
+
+	// The next apply ships the rolled-back values, the staged one and the
+	// shared one's current value.
+	applied, err := h.c.ApplyChanges(h.ctx, testSystem, web.Env())
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := h.wait(web, applied.Releases[0].Number)
+	spec, _ := h.rt.Spec(h.ctr(web, next.Number))
+	if spec.Env["KEEP"] != "k" || spec.Env["VERSION"] != "" || spec.Env["STAGED"] != "s" || spec.Env["REGION"] != "eu" {
+		t.Errorf("the apply after the rollback runs %v", spec.Env)
 	}
 }

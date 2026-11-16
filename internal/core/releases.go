@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -991,12 +993,112 @@ func (c *Core) Rollback(ctx context.Context, a Actor, ref ServiceRef, number int
 	if from.Status != string(apitypes.ReleaseSuperseded) && from.Status != string(apitypes.ReleaseActive) {
 		return apitypes.Release{}, invalid("release %d never went live (status %s); roll back to a release that served traffic", number, from.Status)
 	}
-	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRollback, from: &from})
+	undo, shared, err := c.rollbackVariables(ctx, ss, from)
 	if err != nil {
 		return apitypes.Release{}, err
 	}
-	c.audit(ctx, a, "release.rollback", &ss.project, &ss.env, ss.String(), fmt.Sprintf("release %d rolls back to release %d", rel.Number, number))
+	rel, err := c.startRelease(ctx, a, ss, releaseSpec{source: apitypes.SourceRollback, from: &from, carried: undo})
+	if err != nil {
+		return apitypes.Release{}, err
+	}
+	summary := fmt.Sprintf("release %d rolls back to release %d", rel.Number, number)
+	if len(undo.Variables) > 0 {
+		if err := c.store.Tx(ctx, func(q *store.Queries) error { return setLiveVariables(ctx, q, ss.env.ID, undo) }); err != nil {
+			return apitypes.Release{}, err
+		}
+		keys := make([]string, len(undo.Variables))
+		for i, v := range undo.Variables {
+			keys[i] = v.Key
+		}
+		note := fmt.Sprintf("%s's variables are release %d's again: %s", ss.svc.Name, number, strings.Join(keys, ", "))
+		c.releaseEvent(ctx, ss, rel, note)
+		summary += "; " + note
+	}
+	if len(shared) > 0 {
+		c.releaseEvent(ctx, ss, rel, fmt.Sprintf("Release %d used older shared %s; the next deploy uses the current values", number, strings.Join(shared, ", ")))
+	}
+	c.audit(ctx, a, "release.rollback", &ss.project, &ss.env, ss.String(), summary)
 	return c.toRelease(ctx, ss, rel, false)
+}
+
+// rollbackVariables is what rolling ss back to from does to its own
+// variables: the changes that went live with every release since, undone,
+// as the rollback's carried changes (each key back to its value before
+// the first of them). The rollback runs from's resolved config, so the
+// live values must follow it, or the next apply or deploy would bring
+// the newer ones back. Shared variables changed since are only named:
+// they affect other services too, so they keep their current values.
+// Failed releases are skipped: their changes were staged again.
+func (c *Core) rollbackVariables(ctx context.Context, ss svcScope, from store.Release) (carried, []string, error) {
+	since, err := c.store.ListReleasesSince(ctx, store.ListReleasesSinceParams{ServiceID: ss.svc.ID, Number: from.Number})
+	if err != nil {
+		return carried{}, nil, err
+	}
+	before := map[string][]byte{} // key → its value at from (nil: unset)
+	var order, shared []string
+	seenShared := map[string]bool{}
+	for _, r := range since {
+		if r.Status != string(apitypes.ReleaseActive) && r.Status != string(apitypes.ReleaseSuperseded) {
+			continue
+		}
+		ch, err := decodeCarried(r.Carried)
+		if err != nil {
+			return carried{}, nil, fmt.Errorf("read release %d's changes: %w", r.Number, err)
+		}
+		for _, v := range ch.Variables {
+			switch {
+			case v.ServiceID == nil:
+				if !seenShared[v.Key] {
+					seenShared[v.Key] = true
+					shared = append(shared, v.Key)
+				}
+			case *v.ServiceID != ss.svc.ID:
+			default:
+				if _, ok := before[v.Key]; !ok {
+					before[v.Key] = v.Old
+					order = append(order, v.Key)
+				}
+			}
+		}
+	}
+	var undo carried
+	for _, k := range order {
+		cur, err := c.store.GetVariable(ctx, store.GetVariableParams{EnvironmentID: ss.env.ID, ServiceID: &ss.svc.ID, Key: k})
+		if err != nil && !store.IsNotFound(err) {
+			return carried{}, nil, err
+		}
+		if bytes.Equal(cur.Value, before[k]) {
+			continue // the same value again (or still unset)
+		}
+		undo.Variables = append(undo.Variables, carriedVar{ServiceID: &ss.svc.ID, Key: k, Old: cur.Value, New: before[k]})
+	}
+	slices.Sort(shared)
+	return undo, shared, nil
+}
+
+// setLiveVariables makes ch's variable changes live (each key's New), in
+// q's transaction, keeping whatever is staged on top.
+func setLiveVariables(ctx context.Context, q *store.Queries, envID int64, ch carried) error {
+	for _, v := range ch.Variables {
+		cur, err := q.GetVariable(ctx, store.GetVariableParams{EnvironmentID: envID, ServiceID: v.ServiceID, Key: v.Key})
+		missing := store.IsNotFound(err)
+		if err != nil && !missing {
+			return err
+		}
+		switch {
+		case missing && v.New == nil:
+		case missing:
+			err = q.InsertLiveVariable(ctx, store.InsertLiveVariableParams{EnvironmentID: envID, ServiceID: v.ServiceID, Key: v.Key, Value: v.New, UpdatedAt: now()})
+		case v.New == nil && cur.Pending != "set":
+			err = q.DeleteVariable(ctx, cur.ID) // nothing live, nothing staged to keep
+		default:
+			err = q.RestoreVariable(ctx, store.RestoreVariableParams{Value: v.New, Pending: cur.Pending, PendingValue: cur.PendingValue, UpdatedAt: now(), ID: cur.ID})
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Restart creates a new release identical to the active one.

@@ -183,3 +183,9 @@ staged-changes diff. Values still reach the app, so anything the app prints
 to its logs is visible to whoever can read logs.
 
 Rolling back restores the variable values of the release you roll back to.
+The service's own variables go back to that release's values, so the next
+apply or deploy keeps them; the release's events and the audit log name
+them. Shared variables keep their current values, since other services use
+them too: the rollback says which ones the old release ran with older
+values, and the next deploy uses the current ones. What is staged stays
+staged.

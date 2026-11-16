@@ -1,6 +1,7 @@
 -- name: InsertLiveVariable :exec
 -- A variable that is live from the start: a cloned environment's
--- variables, where nothing runs yet (ADR 0022).
+-- variables, where nothing runs yet (ADR 0022), or one a rollback puts
+-- back.
 INSERT INTO variables (environment_id, service_id, key, value, pending, updated_at)
 VALUES (?, ?, ?, ?, '', ?);
 

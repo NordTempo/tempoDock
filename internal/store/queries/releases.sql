@@ -22,6 +22,11 @@ WHERE service_id = +? AND status IN ('queued', 'building', 'starting', 'health_c
 -- name: ListReleases :many
 SELECT * FROM releases WHERE service_id = +? ORDER BY number DESC LIMIT +?;
 
+-- name: ListReleasesSince :many
+-- A service's releases after number, oldest first: what a rollback to
+-- number undoes.
+SELECT * FROM releases WHERE service_id = +? AND number > +? ORDER BY number;
+
 -- name: ListActiveReleases :many
 SELECT * FROM releases WHERE status = 'active';
 
