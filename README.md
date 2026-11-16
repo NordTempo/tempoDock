@@ -1,6 +1,6 @@
 # Tempo Dock
 
-A self-hosted, Railway-style deploy platform. The CLI and binary are `dock`.
+A self-hosted deploy platform for your own servers. The CLI and binary are `dock`.
 
 Deploy Docker apps to your own servers from a CLI or a web UI, with projects,
 environments, services and variables. Built so AI agents can deploy safely (CLI, API or MCP)

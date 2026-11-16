@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// Staged changes, Railway style: variables, settings and volumes are staged
+// Staged changes: variables, settings and volumes are staged
 // next to the live values and go live with `dock apply` (or a deploy of the
 // service, for its own changes).
 

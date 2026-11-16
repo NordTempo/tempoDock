@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Tempo Dock: a self-hosted, Railway-style deploy platform. One Go binary,
+Tempo Dock: a self-hosted deploy platform for your own servers. One Go binary,
 `dock`, is the CLI, the daemon (`dock serve`: Huma API with SSE, SQLite,
 embedded React UI) and the node runtime (Docker, BuildKit, Caddy). Start
 with [README](README.md) and [architecture](docs/architecture.md).

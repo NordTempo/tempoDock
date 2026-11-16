@@ -2,8 +2,8 @@
 
 ## Problem
 
-Railway is great to use but expensive at scale, and your apps and data live on
-someone else's infrastructure. Self-hosted options (Coolify, Dokploy, Dokku,
+Hosted deploy platforms are great to use but expensive at scale, and your apps
+and data live on someone else's infrastructure. Self-hosted options (Coolify, Dokploy, Dokku,
 Kamal) cover parts of this, but none are designed around AI agents deploying on
 your behalf with enforced limits, and several are heavy on the server they run
 on.
@@ -12,11 +12,12 @@ on.
 
 1. **Now:** NordTempo. We host our own apps on our own VPSes, deployed by people
    and by agents.
-2. **Possibly later:** an open-source project others self-host.
+2. **Now:** an open-source project others self-host (AGPL-3.0,
+   [ADR 0082](decisions/0082-open-source-license.md)).
 3. **Possibly later:** paid hosting, most likely a hosted control plane managing
    servers customers bring.
 
-We build for (1) without closing doors on (2) and (3). See
+We build for (1) and (2) without closing the door on (3). See
 [ADR 0008](decisions/0008-keep-doors-open.md) for what that means concretely,
 and what we deliberately don't build yet.
 
@@ -33,8 +34,8 @@ and what we deliberately don't build yet.
 ## Goals
 
 - One-command deploys of any Dockerized app to your own server.
-- Railway's model: projects, environments, services and variables, with private
-  networking between services in the same environment.
+- Projects, environments, services and variables, with private networking
+  between services in the same environment.
 - UI and CLI parity. Everything you can do in one, you can do in the other
   ([ADR 0026](decisions/0026-ui-cli-parity.md)).
 - Agent-safe by design, enforced server-side.
