@@ -217,7 +217,7 @@ func (c *Core) updateServer(s store.Server, nu nodeUpdate) apitypes.UpdateServer
 
 // manualUpdate is what to run on a node that can't update over its link.
 func manualUpdate(v string) string {
-	return fmt.Sprintf("on it, with the %s release's dock-install tarball unpacked: sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh", v)
+	return fmt.Sprintf("on it, with the %s release's dock-install tarball unpacked: sudo ./deploy/install.sh", v)
 }
 
 func newerThanRunning(v string) bool {

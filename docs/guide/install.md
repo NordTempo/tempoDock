@@ -23,14 +23,15 @@ control plane.
 
 A server needs two files from a [release](https://github.com/NordTempo/tempoDock/releases):
 the `dock-linux-<arch>` binary and `dock-install-<version>.tar.gz` (the
-`deploy/` directory: `install.sh` and the systemd units). The repository is
-private, so download with `gh` (logged in to an account that can read it),
+`deploy/` directory: `install.sh` and the systemd units). Download them,
 check them against `SHA256SUMS`, copy them over and run the script as root:
 
 ```sh
 v=v0.1.0
-gh release download $v -R NordTempo/tempoDock -D dock-$v \
-  -p dock-linux-amd64 -p "dock-install-$v.tar.gz" -p SHA256SUMS
+mkdir dock-$v
+for f in dock-linux-amd64 "dock-install-$v.tar.gz" SHA256SUMS; do
+  curl -fsSL -o "dock-$v/$f" "https://github.com/NordTempo/tempoDock/releases/download/$v/$f"
+done
 (cd dock-$v && grep -E " (dock-linux-amd64|dock-install-$v.tar.gz)\$" SHA256SUMS | shasum -a 256 -c)
 scp -r dock-$v server:/tmp/
 ssh server "cd /tmp/dock-$v && tar -xzf dock-install-$v.tar.gz && sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh"
@@ -38,14 +39,11 @@ ssh server "cd /tmp/dock-$v && tar -xzf dock-install-$v.tar.gz && sudo DOCK_BINA
 
 Without `DOCK_BINARY`, `install.sh` downloads the binary itself: the
 version the tarball came from (or `DOCK_VERSION`), checked against the
-release's `SHA256SUMS`. While the repository is private it needs a
-`GITHUB_TOKEN` that can read it, e.g. a fine-grained token with read access
-to its contents, or `gh auth token`:
+release's `SHA256SUMS`:
 
 ```sh
 tar -xzf dock-install-v0.1.0.tar.gz
-export GITHUB_TOKEN=github_pat_...
-sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh
+sudo ./deploy/install.sh
 ```
 
 From source instead: `make web && GOOS=linux GOARCH=amd64 make build`
@@ -80,18 +78,18 @@ Laptops and CI only need the client, `dock-cli-<os>-<arch>` (a quarter of
 the size; see [CLI-only build](../cli.md#cli-only-build)). Install the one
 matching the server's version: `install-cli.sh` from the release picks the
 right build, checks it against `SHA256SUMS` and installs it as `dock` in
-`~/.local/bin` (`/usr/local/bin` as root, or `DOCK_INSTALL_DIR`). It
-downloads with `gh` when that is logged in, otherwise with curl and
-`GITHUB_TOKEN`.
+`~/.local/bin` (`/usr/local/bin` as root, or `DOCK_INSTALL_DIR`).
 
 ```sh
-gh release download v0.1.0 -R NordTempo/tempoDock -p install-cli.sh -O - | DOCK_VERSION=v0.1.0 sh
+curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/install-cli.sh | DOCK_VERSION=v0.1.0 sh
 ```
 
 Or by hand:
 
 ```sh
-gh release download v0.1.0 -R NordTempo/tempoDock -p dock-cli-darwin-arm64 -p SHA256SUMS
+for f in dock-cli-darwin-arm64 SHA256SUMS; do
+  curl -fsSLO "https://github.com/NordTempo/tempoDock/releases/download/v0.1.0/$f"
+done
 grep ' dock-cli-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
 install -m 0755 dock-cli-darwin-arm64 ~/.local/bin/dock
 ```
@@ -112,7 +110,7 @@ the others also change an existing config, touching only their own keys.
 |---|---|---|
 | `DOCK_BINARY` | download | Path to a `dock` binary: a release's `dock-linux-<arch>`, or `bin/dock` from `make build` |
 | `DOCK_VERSION` | the tarball's version, else the latest release | Without `DOCK_BINARY`: the release to download `dock-linux-<arch>` from, checked against its `SHA256SUMS` |
-| `GITHUB_TOKEN` | empty | For that download: a token that can read the repository's releases (pass it with `sudo --preserve-env=GITHUB_TOKEN`) |
+| `GITHUB_TOKEN` | empty | For that download, only from a private repository: a token that can read its releases (pass it with `sudo --preserve-env=GITHUB_TOKEN`) |
 | `CADDY_VERSION` | `2.11.7` | Caddy release to download from GitHub |
 | `PUBLIC_IP` | auto (`api.ipify.org`), empty on tunnel servers | Address users point DNS at → `public_ip` |
 | `LISTEN` | Tailscale IPv4`:7070`, else `127.0.0.1:7070` | API and UI address → `listen`. Control plane only |
@@ -237,7 +235,7 @@ running).
 | `[scan] memory_mb`, `quiet_seconds` | `1024`, `60` | Each scan job's memory limit, and how long no build, deploy, wake or move may have run before a scan starts. `dock scanning off` turns scanning off |
 | `[scan] offline` | `false` | For installs without internet access: builders never download a vulnerability database or check base images; import one with `dock scanning import FILE` (a Grype database archive) |
 | `[updates] source` | `github.com/NordTempo/tempoDock` | Where [updates](#upgrading) come from: a GitHub repository's releases, or an absolute path to a directory of releases (`<dir>/<version>/` with the release's assets and an optional `notes.md`), for a mirror or an air-gapped install. Control plane only |
-| `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. A private repository needs one |
+| `[updates] token_file` | `/etc/dock/github-token` | A GitHub token that can read the repository's releases, used when the file exists. Only releases in a private repository need one |
 
 Where alerts are sent (webhook, Slack, email) is set with `dock alerts
 channel add`, not in this file: an organization's channels get its
@@ -757,17 +755,6 @@ Coming from v0.14 or v0.23? Read
 first: services that keep data in an anonymous Docker volume lose it on
 their first restart after the update.
 
-**The repository is private**, so the control plane needs a token that
-can read its releases, e.g. a fine-grained token with read access to its
-contents:
-
-```sh
-sudo install -m 0640 -o root -g dock /dev/stdin /etc/dock/github-token <<< "github_pat_..."
-```
-
-Without it the console says the repository answered 404. Once the
-repository is public, delete the file.
-
 **The first update to a version with updates in the console is by hand**,
 because the updater units come with it, and so is a node's first update
 to protocol 4 (`dock update` lists such nodes with the command). By hand
@@ -777,7 +764,7 @@ the script from its tarball, so the units match the binary:
 ```sh
 sudo DOCK_BINARY=./dock-linux-amd64 ./deploy/install.sh     # also refreshes units and caddy.json
 # or let it download the tarball's version:
-sudo --preserve-env=GITHUB_TOKEN ./deploy/install.sh
+sudo ./deploy/install.sh
 ```
 
 With several servers, upgrade the control plane first, then each node the
