@@ -161,3 +161,48 @@ func TestAutoincrementMigrationKeepsRows(t *testing.T) {
 		t.Fatalf("new project = %+v, %v; want ID 8", next, err)
 	}
 }
+
+// Migration 0119 keeps the rows of access requests, groups, grants and
+// runs, and a deleted newest row's ID isn't handed out again.
+func TestIDsNotReusedMigrationKeepsRows(t *testing.T) {
+	ctx := context.Background()
+	path := openBefore(t, "_ids_not_reused.sql",
+		`INSERT INTO orgs (id, slug, name) VALUES (1, 'one', 'One')`,
+		`INSERT INTO servers (id, name, local, accepts_production, accepts_non_production) VALUES (1, 'local', 1, 1, 1)`,
+		`INSERT INTO projects (id, org_id, name) VALUES (1, 1, 'shop')`,
+		`INSERT INTO environments (id, project_id, name, server_id, kind) VALUES (1, 1, 'production', 1, 'production')`,
+		`INSERT INTO services (id, environment_id, name, image) VALUES (1, 1, 'web', 'app:1')`,
+		`INSERT INTO access_requests (id, nonce, org_id, project_id, environment_id, status, via, operation, title, action, args, fingerprint,
+			requested_by, audit_mark, created_at, expires_at) VALUES
+			(9, 'n9', 1, 1, 1, 'pending', 'api', 'op', 't', 'a', x'00', 'f9', 'ci', 0, '2026-11-01 00:00:00', '2026-11-02 00:00:00')`,
+		`INSERT INTO groups (id, org_id, name) VALUES (5, 1, 'Ops')`,
+		`INSERT INTO grants (id, org_id, group_id, role, granted_by) VALUES (6, 1, 5, 'full', 'test')`,
+		`INSERT INTO service_runs (id, service_id, trigger, command, volumes, timeout_seconds, status, actor, actor_kind, started_at)
+			VALUES (8, 1, 'command', 'ls', 'none', 60, 'succeeded', 'ci', 'token', '2026-11-01 00:00:00')`,
+	)
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	for _, c := range []struct{ table, insert string }{
+		{"access_requests", `INSERT INTO access_requests (nonce, org_id, project_id, environment_id, status, via, operation, title, action, args,
+			fingerprint, requested_by, audit_mark, created_at, expires_at) VALUES
+			('n10', 1, 1, 1, 'pending', 'api', 'op', 't', 'a', x'00', 'f10', 'ci', 0, '2026-11-01 00:00:00', '2026-11-02 00:00:00') RETURNING id`},
+		{"grants", `INSERT INTO grants (org_id, group_id, role, granted_by) VALUES (1, 5, 'full', 'test') RETURNING id`},
+		{"service_runs", `INSERT INTO service_runs (service_id, trigger, command, volumes, timeout_seconds, status, actor, actor_kind, started_at)
+			VALUES (1, 'command', 'ls', 'none', 60, 'succeeded', 'ci', 'token', '2026-11-01 00:00:00') RETURNING id`},
+		{"groups", `INSERT INTO groups (org_id, name) VALUES (1, 'Ops') RETURNING id`},
+	} {
+		var old, n int64
+		if err := s.DB.QueryRowContext(ctx, `SELECT max(id) FROM `+c.table).Scan(&old); err != nil || old == 0 {
+			t.Fatalf("%s kept no rows: %v", c.table, err)
+		}
+		if _, err := s.DB.ExecContext(ctx, `DELETE FROM `+c.table+` WHERE id = ?`, old); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.DB.QueryRowContext(ctx, c.insert).Scan(&n); err != nil || n <= old {
+			t.Errorf("%s: new row got ID %d after %d was deleted (%v); IDs must not be reused", c.table, n, old, err)
+		}
+	}
+}
