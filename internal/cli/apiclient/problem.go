@@ -96,7 +96,7 @@ func statusExit(status int) output.ExitCode {
 var exitHints = map[output.ExitCode]string{
 	output.ExitAuth:         "Check which token is in use with `dock context current`, or log in again with `dock login <server-url>`.",
 	output.ExitUnreachable:  "The server or a proxy in front of it is not answering. Check `dock context current` and try again.",
-	output.ExitIncompatible: "Update the CLI to match the server's version.",
+	output.ExitIncompatible: "Run `dock self-update` to install the CLI that matches the server, or `dock version` for the install command.",
 }
 
 // codeHints replace the exit code's hint for codes where it would mislead:

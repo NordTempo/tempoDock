@@ -94,8 +94,20 @@ grep ' dock-cli-darwin-arm64$' SHA256SUMS | shasum -a 256 -c
 install -m 0755 dock-cli-darwin-arm64 ~/.local/bin/dock
 ```
 
-`dock version` shows the CLI's version and the server's, and the command
-that installs the matching CLI when they differ. `dock login` warns too.
+Once it is installed, `dock self-update` keeps it in step: it installs the
+release the current context's server runs (or the latest, with
+`--latest`, or a given one, with `--to v0.54.1`), checked against the
+release's `SHA256SUMS`, in place of the running binary. In a directory
+only root can write to, such as `/usr/local/bin`, it prints the `sudo`
+command to run, with the version pinned.
+
+```sh
+dock self-update             # the server's version
+dock self-update --dry-run   # what it would install, and where
+```
+
+`dock version` shows the CLI's version and the server's, and says to run
+`dock self-update` when they differ. `dock login` warns too.
 
 ### install.sh options
 
@@ -806,8 +818,8 @@ sudo ./deploy/install.sh
 
 With several servers, upgrade the control plane first, then each node the
 same way (re-run `install.sh` there; it stays a node). Then install the
-matching CLI on laptops and in CI ([The CLI](#the-cli)); `dock version`
-shows whether they are in step.
+matching CLI on laptops and in CI with `dock self-update` ([The CLI](#the-cli));
+`dock version` shows whether they are in step.
 
 - Database migrations run on start and only go forward. Updates from the
   console back up first; by hand, run `sudo dock admin backup`

@@ -110,7 +110,7 @@ the process list. Create the first token on the server with
 				return &output.Error{
 					Exit:    output.ExitIncompatible,
 					Message: fmt.Sprintf("server speaks API %s, this CLI speaks %s", ver.APIVersion, apitypes.APIVersion),
-					Hint:    "Install the CLI that matches the server (" + ver.Version + ").",
+					Hint:    upgradeHint(ver.Version, true),
 				}
 			}
 			var approved apitypes.CLILoginWait
@@ -170,7 +170,7 @@ the process list. Create the first token on the server with
 				}
 				g.io.Successf("Now using context %s", name)
 				if ver.Version != version.Version {
-					g.io.Warnf("The server runs %s and this CLI is %s. Keep them in step to avoid surprises.", ver.Version, version.Version)
+					g.io.Warnf("The server runs %s and this CLI is %s. %s", ver.Version, version.Version, upgradeHint(ver.Version, false))
 				}
 				if os.Getenv(clientconfig.EnvURL) != "" || os.Getenv(clientconfig.EnvContext) != "" {
 					g.io.Warnf("%s or %s is set and takes precedence over the current context.", clientconfig.EnvURL, clientconfig.EnvContext)

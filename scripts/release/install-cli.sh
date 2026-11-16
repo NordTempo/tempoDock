@@ -5,13 +5,11 @@
 #   curl -fsSL https://github.com/NordTempo/tempoDock/releases/latest/download/install-cli.sh | sh
 #   curl -fsSL https://github.com/NordTempo/tempoDock/releases/download/v0.2.0/install-cli.sh | DOCK_VERSION=v0.2.0 sh
 #
-# Downloads with gh when it is installed and logged in, otherwise with curl
-# (and GITHUB_TOKEN, if set, for a private repository's releases).
+# Once installed, `dock self-update` keeps it in step with your server.
 #
 # Environment:
 #   DOCK_VERSION      release tag, e.g. v0.2.0 (default: the latest release)
 #   DOCK_INSTALL_DIR  where `dock` goes (default: /usr/local/bin as root, else ~/.local/bin)
-#   GITHUB_TOKEN      a token for a private repository's releases (curl only)
 set -eu
 
 repo=NordTempo/tempoDock
@@ -42,41 +40,10 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-# github GET-ARGS... runs curl against the GitHub API, with the token if set.
-# The token goes to curl as a config on stdin (printf is a builtin), never in
-# its arguments, which any user could read in the process list.
-github() {
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -K - -fsSL "$@"
-  else
-    curl -fsSL "$@"
-  fi
-}
-
-# asset_url FILE NAME prints the API URL of asset NAME in a release's JSON.
-# In GitHub's responses an asset's "url" comes just before its "name".
-asset_url() {
-  # shellcheck disable=SC2020 # one newline per character, on purpose
-  tr ',{}[]' '\n\n\n\n\n' < "$1" | awk -v name="$2" '
-    /"url": *"[^"]*\/releases\/assets\/[0-9]+"/ { u = $0; sub(/^[^:]*: *"/, "", u); sub(/".*$/, "", u) }
-    $0 ~ "\"name\": *\"" name "\"" && u != "" { print u; found = 1; exit }
-    END { exit !found }'
-}
-
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  set --
-  [ "$version" = latest ] || set -- "$version"
-  gh release download "$@" -R "$repo" -p "$asset" -p SHA256SUMS -D "$tmp" \
-    || die "could not download $asset ($version) from $repo"
-else
-  if [ "$version" = latest ]; then path=releases/latest; else path="releases/tags/$version"; fi
-  github "https://api.github.com/repos/$repo/$path" > "$tmp/release.json" \
-    || die "could not read release $version of $repo. Set GITHUB_TOKEN to a token that can read it, or log in with gh"
-  for name in "$asset" SHA256SUMS; do
-    url="$(asset_url "$tmp/release.json" "$name")" || die "release $version has no $name"
-    github -H "Accept: application/octet-stream" -o "$tmp/$name" "$url" || die "could not download $name"
-  done
-fi
+if [ "$version" = latest ]; then base="https://github.com/$repo/releases/latest/download"; else base="https://github.com/$repo/releases/download/$version"; fi
+for name in "$asset" SHA256SUMS; do
+  curl -fsSL -o "$tmp/$name" "$base/$name" || die "could not download $name of release $version from $repo"
+done
 
 grep "  $asset\$" "$tmp/SHA256SUMS" > "$tmp/sum" || die "SHA256SUMS has no entry for $asset"
 if command -v sha256sum >/dev/null 2>&1; then

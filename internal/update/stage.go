@@ -112,20 +112,26 @@ func Stage(ctx context.Context, src Source, dataDir, version string, archs ...st
 
 // downloadSums downloads and parses version's SHA256SUMS into dir.
 func downloadSums(ctx context.Context, src Source, dir, version string) (Sums, error) {
-	rc, err := src.Open(ctx, version, SumsAsset)
-	if err != nil {
-		return nil, err
-	}
-	raw, err := io.ReadAll(io.LimitReader(rc, maxSums))
-	_ = rc.Close()
-	if err != nil {
-		return nil, fmt.Errorf("download %s: %w", SumsAsset, err)
-	}
-	sums, err := ParseSums(raw)
+	sums, raw, err := fetchSums(ctx, src, version)
 	if err != nil {
 		return nil, err
 	}
 	return sums, os.WriteFile(filepath.Join(dir, SumsAsset), raw, 0o600)
+}
+
+// fetchSums downloads and parses version's SHA256SUMS, returning it raw too.
+func fetchSums(ctx context.Context, src Source, version string) (Sums, []byte, error) {
+	rc, err := src.Open(ctx, version, SumsAsset)
+	if err != nil {
+		return nil, nil, err
+	}
+	raw, err := io.ReadAll(io.LimitReader(rc, maxSums))
+	_ = rc.Close()
+	if err != nil {
+		return nil, nil, fmt.Errorf("download %s: %w", SumsAsset, err)
+	}
+	sums, err := ParseSums(raw)
+	return sums, raw, err
 }
 
 // stageAsset downloads one asset unless a matching copy is there.
@@ -138,22 +144,51 @@ func stageAsset(ctx context.Context, src Source, dir, version, name string, sums
 	if got, err := HashFile(dst); err == nil && got == want {
 		return nil
 	}
-	rc, err := src.Open(ctx, version, name)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rc.Close() }()
 	tmp := dst + ".partial"
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp) }()
-	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(rc, MaxAsset+1))
+	err = copyVerified(ctx, src, version, name, want, f)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
+// Fetch streams asset of release version from src into w, checked against
+// the release's SHA256SUMS: how `dock self-update` downloads the CLI. The
+// bytes are written before the check ends, so on an error (ErrMismatch
+// among them) w holds something to throw away.
+func Fetch(ctx context.Context, src Source, version, asset string, w io.Writer) error {
+	if !IsRelease(version) {
+		return fmt.Errorf("%q is not a release version", version)
+	}
+	sums, _, err := fetchSums(ctx, src, version)
+	if err != nil {
+		return err
+	}
+	want, ok := sums[asset]
+	if !ok {
+		return fmt.Errorf("release %s's SHA256SUMS doesn't list %s", version, asset)
+	}
+	return copyVerified(ctx, src, version, asset, want, w)
+}
+
+// copyVerified streams version's asset name from src into w, hashing it on
+// the way, and fails when it is over MaxAsset or its SHA-256 isn't want.
+func copyVerified(ctx context.Context, src Source, version, name, want string, w io.Writer) error {
+	rc, err := src.Open(ctx, version, name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rc.Close() }()
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(w, h), io.LimitReader(rc, MaxAsset+1))
 	switch {
 	case err != nil:
 		return fmt.Errorf("download %s: %w", name, err)
@@ -162,7 +197,7 @@ func stageAsset(ctx context.Context, src Source, dir, version, name string, sums
 	case hex.EncodeToString(h.Sum(nil)) != want:
 		return fmt.Errorf("%s %w; refusing it", name, ErrMismatch)
 	}
-	return os.Rename(tmp, dst)
+	return nil
 }
 
 // pruneReleases removes staged versions other than keep.

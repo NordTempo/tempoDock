@@ -36,7 +36,7 @@ notes, and each server's version. The check is reused for 15 minutes;
 --refresh checks now. Update with ` + "`dock update apply`" + `.
 
 This updates the platform (the control plane and its nodes), not this CLI;
-` + "`dock version`" + ` says how to get the CLI in step.`,
+` + "`dock self-update`" + ` installs the CLI that matches it.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := g.connect()
