@@ -235,7 +235,7 @@ func (c *Core) controlPlaneBackups(ctx context.Context) (apitypes.ControlPlaneBa
 	if err != nil {
 		return out, err
 	}
-	at = later(at, now())
+	at = later(at, now()).In(time.Local) // the hour's zone, as for services
 	out.NextAt = &at
 	return out, nil
 }

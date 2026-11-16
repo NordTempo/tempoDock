@@ -94,7 +94,8 @@ type BackupSchedule struct {
 	// the daily backup; DefaultHour says it follows the install's.
 	Hour        int  `json:"hour"`
 	DefaultHour bool `json:"default_hour"`
-	// NextAt is the next scheduled backup, if enabled.
+	// NextAt is the next scheduled backup, if enabled, in the control
+	// plane's time zone like Hour.
 	NextAt *time.Time `json:"next_at,omitempty"`
 }
 
@@ -158,7 +159,8 @@ type BackupSettings struct {
 	KeepMonthly    int         `json:"keep_monthly"`
 	// Hour is when scheduled backups run (0-23, the control plane's local
 	// time) unless a service sets its own.
-	Hour        int        `json:"hour"`
+	Hour int `json:"hour"`
+	// TimeZone names the control plane's zone: Europe/Oslo, or UTC.
 	TimeZone    string     `json:"time_zone"`
 	ResticImage string     `json:"restic_image"`
 	UpdatedAt   *time.Time `json:"updated_at,omitempty"`

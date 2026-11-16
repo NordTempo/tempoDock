@@ -264,6 +264,17 @@ func (c *Core) GetBackupSettings(ctx context.Context, a Actor, reveal bool) (api
 	return out, nil
 }
 
+// localZone names the control plane's time zone, which backup hours are
+// in: its name when TZ sets one (Europe/Oslo), else the zone's
+// abbreviation (UTC, CET) rather than Go's "Local".
+func localZone() string {
+	if name := time.Local.String(); name != "Local" {
+		return name
+	}
+	name, _ := time.Now().Zone()
+	return name
+}
+
 // toBackupSettings is s as the API shows it, without what
 // withBackupStorage adds.
 func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
@@ -271,7 +282,7 @@ func (c *Core) toBackupSettings(s store.BackupSetting) apitypes.BackupSettings {
 		Repository: s.Repository, OffBox: s.Repository != "", HasCredentials: s.Credentials != nil || s.StorageID != nil,
 		Repositories: []apitypes.BackupRepository{},
 		KeepDaily:    int(s.KeepDaily), KeepWeekly: int(s.KeepWeekly), KeepMonthly: int(s.KeepMonthly),
-		Hour: int(s.Hour), TimeZone: time.Local.String(), ResticImage: c.cfg.Backup.ResticImage, UpdatedBy: s.UpdatedBy,
+		Hour: int(s.Hour), TimeZone: localZone(), ResticImage: c.cfg.Backup.ResticImage, UpdatedBy: s.UpdatedBy,
 	}
 	if !s.UpdatedAt.IsZero() {
 		out.UpdatedAt = &s.UpdatedAt
