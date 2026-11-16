@@ -1,4 +1,4 @@
-// Package apptemplates is the catalog of app templates (ADR 0082): each
+// Package apptemplates is the catalog of app templates (ADR 0083): each
 // app's services as a project file fragment (ADR 0049) with the inputs
 // its form asks for and the secrets Dock generates. Expand turns one into
 // the environment a project file would describe, which core plans and

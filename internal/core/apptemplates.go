@@ -13,7 +13,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// App templates (ADR 0082). A template expands into the services of one
+// App templates (ADR 0083). A template expands into the services of one
 // environment as a project file describes them; using it plans that with
 // planEnv, stages it with stageEnv and makes only its services live at
 // once, the way a direct `dock service create` is live. It never touches

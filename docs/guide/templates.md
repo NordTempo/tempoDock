@@ -3,7 +3,7 @@
 A template creates an app in one step: its services, volumes, generated
 secrets and a domain. Umami comes with its Postgres, Paperless-ngx with
 Postgres and Redis, Twenty with a worker. Postgres and Redis are templates
-too. Design: [ADR 0082](../decisions/0082-app-templates.md).
+too. Design: [ADR 0083](../decisions/0083-app-templates.md).
 
 ## Use one
 

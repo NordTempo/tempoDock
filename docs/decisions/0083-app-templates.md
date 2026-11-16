@@ -1,4 +1,4 @@
-# 0082: App templates
+# 0083: App templates
 
 Status: accepted (asked by Saile, 2026-11-14; the UI is mock A of the plan).
 

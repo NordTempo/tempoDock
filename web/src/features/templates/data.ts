@@ -13,7 +13,7 @@ export type AppTemplate = Schemas["AppTemplate"];
 export type TemplateInput = Schemas["TemplateInput"];
 export type UseTemplate = Schemas["UseTemplateRequest"];
 
-/** The template catalog (ADR 0082); it changes only with a Dock release. */
+/** The template catalog (ADR 0083); it changes only with a Dock release. */
 export const appTemplates = () =>
   queryOptions({
     queryKey: ["app-templates"],

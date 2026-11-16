@@ -693,7 +693,7 @@ type SetServiceFromTemplateParams struct {
 	ID                   int64
 }
 
-// Records the app template (ADR 0082) a service was created from.
+// Records the app template (ADR 0083) a service was created from.
 func (q *Queries) SetServiceFromTemplate(ctx context.Context, arg SetServiceFromTemplateParams) error {
 	_, err := q.db.ExecContext(ctx, setServiceFromTemplate, arg.FromTemplate, arg.FromTemplateRevision, arg.ID)
 	return err

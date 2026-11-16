@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 )
 
-// App templates (ADR 0082): `dock template list|show|use`.
+// App templates (ADR 0083): `dock template list|show|use`.
 
 func newTemplateCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{

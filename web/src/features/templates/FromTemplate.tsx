@@ -52,7 +52,7 @@ const shortImage = (image: string) =>
   (image.split("@")[0] ?? image).split("/").at(-1) ?? image;
 
 /**
- * The Template source of New service and New project (ADR 0082, mock A):
+ * The Template source of New service and New project (ADR 0083, mock A):
  * the catalog on the left with search, the picked template on the right
  * with its name, domain and inputs, and the services it creates. Using it
  * is `dock template use`; it opens the main service, or lists what didn't

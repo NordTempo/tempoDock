@@ -106,7 +106,7 @@ internal/clientconfig/ the CLI's contexts and directory links
 internal/pack/         source archive for `dock deploy`
 internal/repoconfig/   dock.toml parsing (ADR 0007)
 internal/projectfile/  project files for `dock apply` and `dock project export`
-internal/apptemplates/ the app template catalog (ADR 0082); scripts/templates pins its images
+internal/apptemplates/ the app template catalog (ADR 0083); scripts/templates pins its images
 internal/compose/      Docker Compose to project file (`dock import compose`)
 internal/cron/         cron expressions for scheduled jobs (ADR 0054)
 internal/runframe/     stream framing for `dock run` (ADR 0048)
