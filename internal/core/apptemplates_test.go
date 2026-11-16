@@ -62,6 +62,17 @@ func TestUseAppTemplate(t *testing.T) {
 	if _, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Plan: true}); err != nil {
 		t.Fatalf("another name: %v", err)
 	}
+	// A hostname another service has is refused before anything is made:
+	// the template's references to its domain would break the first deploy.
+	for _, plan := range []bool{true, false} {
+		_, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "umami", apitypes.UseTemplateRequest{Name: "stats", Domain: "stats.example.com", Plan: plan})
+		if CodeOf(err) != apitypes.CodeHostnameTaken || !strings.Contains(err.Error(), "--domain") {
+			t.Fatalf("taken hostname (plan %v): %v", plan, err)
+		}
+	}
+	if svcs, _ := h.c.ListServices(h.ctx, testSystem, env); len(svcs) != 3 {
+		t.Fatalf("a refused use created services: %d", len(svcs))
+	}
 }
 
 // Inputs reach their services (secrets sealed), unknown templates and

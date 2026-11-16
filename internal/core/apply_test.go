@@ -100,6 +100,46 @@ func TestApplyPreDeployCommand(t *testing.T) {
 	}
 }
 
+// A file adding a hostname another service has plans it as needing a
+// person, not as a change that would fail once applied; one the file
+// takes off its service (--prune) is free.
+func TestApplyTakenHostname(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "web:1", Port: 3000})
+	if _, err := h.c.AddDomain(h.ctx, testSystem, web, apitypes.AddDomainRequest{Hostname: "shop.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	file := func(webDomains string) string {
+		return `version = 1
+project = "shop"
+[[environments]]
+  name = "production"
+  [[environments.services]]
+    name = "api"
+    image = "api:1"
+    domains = [{hostname = "shop.example.com"}]
+  [[environments.services]]
+    name = "web"
+    image = "web:1"
+    port = 3000
+    domains = [` + webDomains + `]
+`
+	}
+	const add = "production api domain add shop.example.com"
+	plan, err := h.c.PlanProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file(`{hostname = "shop.example.com"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.Index(lines(plan.Manual), add)
+	if i < 0 || slices.Contains(lines(plan.Changes), add) || !strings.Contains(plan.Manual[i].Note, "already in use") {
+		t.Fatalf("taken: changes %q, manual %+v", lines(plan.Changes), plan.Manual)
+	}
+	plan, err = h.c.PlanProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file(""), Prune: true})
+	if err != nil || !slices.Contains(lines(plan.Changes), add) {
+		t.Fatalf("moved: %v %q", err, lines(plan.Changes))
+	}
+}
+
 // The property behind config as code: a project exported, applied as a
 // new project with its secrets' values, and applied live exports the same
 // as the original. Random projects: services with random settings,

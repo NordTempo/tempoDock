@@ -155,7 +155,7 @@ func (c *Core) cloudflareZoneFor(ctx context.Context, a Actor, ss svcScope, host
 	if err != nil {
 		return nil, err
 	}
-	if err := checkClaims(claims, ss, host); err != nil {
+	if err := checkClaims(claims, ss.project.OrgID, host); err != nil {
 		return nil, err
 	}
 	srv, err := c.store.GetServer(ctx, ss.env.ServerID)
@@ -214,11 +214,18 @@ func (c *Core) GenerateDomain(ctx context.Context, a Actor, ref ServiceRef) (api
 }
 
 // checkNewDomain refuses host for a service before anything is set up
-// for it: an archived service, the webhook hostname, Dock's address.
+// for it: an archived service, or one of Dock's own names (checkOwnHost).
 func (c *Core) checkNewDomain(ss svcScope, host string) error {
-	switch {
-	case ss.svc.ArchivedAt != nil:
+	if ss.svc.ArchivedAt != nil {
 		return invalid("service %s is archived", ss)
+	}
+	return c.checkOwnHost(host)
+}
+
+// checkOwnHost refuses a hostname Dock answers itself: the webhook
+// hostname, Dock's address, a public analytics dashboard or a status page.
+func (c *Core) checkOwnHost(host string) error {
+	switch {
 	case host == c.cfg.Hooks.PublicHost:
 		return errf(apitypes.CodeHostnameTaken, "%s is this server's webhook hostname ([hooks] public_host); use another hostname", host)
 	case host == c.publicHost():
@@ -259,7 +266,7 @@ func (c *Core) addDomain(ctx context.Context, a Actor, ss svcScope, host, redire
 		if err != nil {
 			return err
 		}
-		if err := checkClaims(claims, ss, host); err != nil {
+		if err := checkClaims(claims, ss.project.OrgID, host); err != nil {
 			return err
 		}
 		if redirect, err := q.RedirectHostnameExists(ctx, host); err != nil {

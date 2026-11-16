@@ -53,13 +53,13 @@ func needsProof(a Actor, host string, generated bool, zone *store.CloudflareZone
 	return !generated && zone == nil && !operator && !platform
 }
 
-// checkClaims refuses host for ss when it is taken: by a verified claim
-// anywhere, or by any claim in ss's own org. Other orgs' unverified claims
-// don't block a new one.
-func checkClaims(claims []store.ListHostnameClaimsRow, ss svcScope, host string) error {
+// checkClaims refuses host for a service of org when it is taken: by a
+// verified claim anywhere, or by any claim in the same org. Other orgs'
+// unverified claims don't block a new one.
+func checkClaims(claims []store.ListHostnameClaimsRow, org int64, host string) error {
 	for _, cl := range claims {
 		switch {
-		case cl.OrgID == ss.project.OrgID:
+		case cl.OrgID == org:
 			return errf(apitypes.CodeHostnameTaken, "%s is already in use by a service; a hostname can belong to only one service", host)
 		case cl.VerifiedAt != nil:
 			return errf(apitypes.CodeHostnameTaken, "%s belongs to another organization, which proved it controls it; use another hostname", host)
