@@ -130,7 +130,7 @@ func (g *globals) applyFile(ctx context.Context, f targetFlags, path string, o a
 			res.Applied[i].Releases = rels
 		}
 	}
-	return g.io.Print(res, func() error {
+	err = g.io.Print(res, func() error {
 		for _, a := range res.Applied {
 			g.io.Successf("Applied %s/%s: %s started", t.Project, a.Environment, plural(len(a.Releases), "release"))
 			for _, r := range a.Releases {
@@ -142,6 +142,15 @@ func (g *globals) applyFile(ctx context.Context, f targetFlags, path string, o a
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	for _, a := range res.Applied {
+		if err := firstFailure(ctx, s, a.Releases); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // planGlyph marks a plan line like a diff.
