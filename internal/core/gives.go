@@ -96,11 +96,7 @@ func (c *Core) mayGiveGroup(ctx context.Context, a Actor, g store.Group) error {
 // scopeGive is what a scope's role gives (its seeded group) on the whole
 // org, for role changes, invites and tokens.
 func (a Actor) scopeGive(s apitypes.Scope, project, env int64, kinds uint8, what string) error {
-	var perms Perms
-	for _, r := range scopeRoles(s) {
-		p, _ := rolePerms(r)
-		perms |= p
-	}
+	perms := scopePerms(s)
 	place := a.orgName()
 	if project != 0 {
 		place = "its project"
@@ -127,4 +123,14 @@ func scopeRoles(s apitypes.Scope) []string {
 		}
 	}
 	return nil
+}
+
+// scopePerms is what a scope's roles hold (scopeRoles).
+func scopePerms(s apitypes.Scope) Perms {
+	var perms Perms
+	for _, r := range scopeRoles(s) {
+		p, _ := rolePerms(r)
+		perms |= p
+	}
+	return perms
 }

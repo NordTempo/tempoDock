@@ -229,7 +229,7 @@ func (c *Core) loadAccess(ctx context.Context, a Actor) (Actor, error) {
 		if err != nil {
 			return a, err
 		}
-		rules, err := c.store.ListAgentRules(ctx, a.OrgID)
+		rules, err := c.orgRules(ctx, a.OrgID)
 		if err != nil {
 			return a, err
 		}

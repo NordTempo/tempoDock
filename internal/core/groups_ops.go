@@ -429,6 +429,12 @@ func (c *Core) RevokeGrant(ctx context.Context, a Actor, id int64) error {
 		if err := q.DeleteGrant(ctx, store.DeleteGrantParams{ID: id, OrgID: a.OrgID}); err != nil {
 			return err
 		}
+		if g.TokenID != nil {
+			// The token's grants are its own now (loadTokenAccess reads them).
+			if err := q.SetTokenOwnGrants(ctx, *g.TokenID); err != nil {
+				return err
+			}
+		}
 		return keepFullAccess(ctx, q, a)
 	})
 	if err != nil {

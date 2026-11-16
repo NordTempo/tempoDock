@@ -48,25 +48,34 @@ func (c *Core) grantTokens(ctx context.Context) error {
 	return nil
 }
 
-// loadTokenAccess reads what an org token holds (one query), capped by
-// the org's agent rules unless it bypasses them (one more), and makes it
+// loadTokenAccess works out what an org token holds: its scope's roles at
+// its limit until an admin changes its grants or groups (own_grants), then
+// what it holds (one query); capped by the org's agent rules unless it
+// bypasses them (orgRules, kept in memory); and makes it
 // its access while grants decide; in shadow mode the shadow answers from
 // it. Its Scope stays the token's own, for what still speaks in scopes
 // (the data policy).
-func (c *Core) loadTokenAccess(ctx context.Context, a Actor, bypass bool) (Actor, error) {
-	rows, err := c.store.ListTokenGrants(ctx, store.ListTokenGrantsParams{TokenID: &a.TokenID, Now: ptr(now().Unix())})
-	if err != nil {
-		return a, err
-	}
-	entries := make([]grantEntry, 0, len(rows))
-	for _, r := range rows {
-		if perms, ok := grantPerms(r.Role, r.Parts); ok {
-			entries = append(entries, grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms})
+func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token) (Actor, error) {
+	var entries []grantEntry
+	if t.OwnGrants {
+		rows, err := c.store.ListTokenGrants(ctx, store.ListTokenGrantsParams{TokenID: &a.TokenID, Now: ptr(now().Unix())})
+		if err != nil {
+			return a, err
 		}
+		entries = make([]grantEntry, 0, len(rows))
+		for _, r := range rows {
+			if perms, ok := grantPerms(r.Role, r.Parts); ok {
+				entries = append(entries, grantEntry{project: deref(r.ProjectID), env: deref(r.EnvironmentID), kinds: uint8(r.Kinds), perms: perms})
+			}
+		}
+	} else {
+		// Its grants are still its scope's at its limit (grantToken):
+		// the same, without reading them.
+		entries = []grantEntry{{project: a.ProjectID, env: a.EnvironmentID, kinds: uint8(allKinds), perms: scopePerms(apitypes.Scope(t.Scope))}}
 	}
-	if !bypass {
+	if !t.RulesBypass {
 		// The org's agent rules cap it.
-		rules, err := c.store.ListAgentRules(ctx, a.OrgID)
+		rules, err := c.orgRules(ctx, a.OrgID)
 		if err != nil {
 			return a, err
 		}
@@ -157,7 +166,13 @@ func (c *Core) GrantAgent(ctx context.Context, a Actor, ref string, req apitypes
 		return apitypes.AgentAccess{}, err
 	}
 	p.TokenID = &t.ID
-	if _, err := c.store.CreateGrant(ctx, p); err != nil {
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if _, err := q.CreateGrant(ctx, p); err != nil {
+			return err
+		}
+		return q.SetTokenOwnGrants(ctx, t.ID)
+	})
+	if err != nil {
 		return apitypes.AgentAccess{}, err
 	}
 	c.audit(ctx, a, "agent.grant", nil, nil, "token "+t.Name, fmt.Sprintf("gave token %s %s on %s", t.Name, req.Role, place))
@@ -179,7 +194,12 @@ func (c *Core) SetGroupAgent(ctx context.Context, a Actor, groupRef, tokenRef st
 		if err := c.mayGiveGroup(ctx, a, g); err != nil {
 			return apitypes.Group{}, err
 		}
-		err = c.store.AddGroupAgent(ctx, store.AddGroupAgentParams{GroupID: g.ID, TokenID: t.ID})
+		err = c.store.Tx(ctx, func(q *store.Queries) error {
+			if err := q.AddGroupAgent(ctx, store.AddGroupAgentParams{GroupID: g.ID, TokenID: t.ID}); err != nil {
+				return err
+			}
+			return q.SetTokenOwnGrants(ctx, t.ID)
+		})
 	} else {
 		var n int64
 		if n, err = c.store.RemoveGroupAgent(ctx, store.RemoveGroupAgentParams{GroupID: g.ID, TokenID: t.ID}); err == nil && n == 0 {

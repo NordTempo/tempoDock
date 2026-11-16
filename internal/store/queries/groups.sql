@@ -182,6 +182,9 @@ WHERE granted = 0 AND origin = 'manual' AND platform IS NULL AND org_id IS NOT N
 -- name: SetTokenGranted :exec
 UPDATE tokens SET granted = 1 WHERE id = +?;
 
+-- name: SetTokenOwnGrants :exec
+UPDATE tokens SET own_grants = 1 WHERE id = +?;
+
 -- name: AddGroupAgent :exec
 INSERT INTO group_agents (group_id, token_id) VALUES (?, ?) ON CONFLICT DO NOTHING;
 

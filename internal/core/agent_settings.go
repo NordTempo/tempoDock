@@ -147,7 +147,7 @@ func (c *Core) AgentRules(ctx context.Context, a Actor) (apitypes.AgentSettings,
 	if err := a.require(apitypes.ScopeAdmin, "reading agent rules"); err != nil {
 		return apitypes.AgentSettings{}, err
 	}
-	rows, err := c.store.ListAgentRules(ctx, a.OrgID)
+	rows, err := c.orgRules(ctx, a.OrgID)
 	if err != nil {
 		return apitypes.AgentSettings{}, err
 	}
@@ -207,6 +207,8 @@ func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSet
 		}
 		return nil
 	})
+	c.rulesGen.Add(1)
+	c.agentRules.Delete(a.OrgID)
 	if err != nil {
 		return cur, err
 	}
@@ -236,4 +238,23 @@ func (c *Core) SetAgentRulesBypass(ctx context.Context, a Actor, ref string, byp
 	}
 	c.audit(ctx, a, "agents.bypass", nil, nil, "token "+t.Name, fmt.Sprintf("token %s %s the agent rules", t.Name, word))
 	return c.AgentAccess(ctx, a, t.Name)
+}
+
+// orgRules is an org's agent rules, read once and kept (Core.agentRules)
+// until SetAgentRules changes them: every agent's request reads them, so
+// they cost no query there. A read that raced a change isn't kept.
+func (c *Core) orgRules(ctx context.Context, orgID int64) ([]store.AgentRule, error) {
+	if v, ok := c.agentRules.Load(orgID); ok {
+		return v.([]store.AgentRule), nil
+	}
+	gen := c.rulesGen.Load()
+	rows, err := c.store.ListAgentRules(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	if c.rulesGen.Load() == gen {
+		// No change since the read began: keep it.
+		c.agentRules.Store(orgID, rows)
+	}
+	return rows, nil
 }

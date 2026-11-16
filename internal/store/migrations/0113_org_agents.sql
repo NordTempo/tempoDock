@@ -41,3 +41,7 @@ CREATE TABLE group_agents (
 CREATE INDEX group_agents_token ON group_agents (token_id, group_id);
 
 ALTER TABLE tokens ADD COLUMN granted BOOLEAN NOT NULL DEFAULT 0;
+-- own_grants: an admin gave or ended one of its grants or put it in a
+-- group. Until then its grants are its scope's at its limit, which the
+-- core works out without reading them on every request.
+ALTER TABLE tokens ADD COLUMN own_grants BOOLEAN NOT NULL DEFAULT 0;

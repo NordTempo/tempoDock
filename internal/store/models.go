@@ -1274,6 +1274,7 @@ type Token struct {
 	TwoFactor         bool
 	Platform          *string
 	Granted           bool
+	OwnGrants         bool
 	RulesBypass       bool
 }
 

@@ -229,6 +229,11 @@ type Core struct {
 	// enforceGrants: people's groups and grants decide their checks (ADR
 	// 0080's enforce); false, their roles do and the model watches.
 	enforceGrants atomic.Bool
+	// agentRules caches each org's agent rules (orgRules), which every
+	// agent's request needs and admins rarely change: one entry per org.
+	// rulesGen counts changes, so a read that raced one isn't kept.
+	agentRules sync.Map
+	rulesGen   atomic.Int64
 	// email is the outbox's sender (email_send.go, ADR 0079).
 	email emailState
 	// moves holds the environment moves being driven (ADR 0053).
