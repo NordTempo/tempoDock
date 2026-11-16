@@ -11,7 +11,7 @@ checks out, the environment switches to it in one step. Design:
 ## Add a database
 
 ```sh
-dock service create db --template postgres     # or: --template redis
+dock service create db --template postgres     # or pgvector, mysql, mariadb, redis, valkey
 dock env set -s api DATABASE_URL='${{db.DATABASE_URL}}' --deploy
 ```
 
@@ -24,6 +24,15 @@ database bring their own from a [template](templates.md).
 | Variables it gets | `POSTGRES_USER` (`postgres`), `POSTGRES_PASSWORD` (generated), `POSTGRES_DB` (`app`), `DATABASE_URL` | `REDIS_PASSWORD` (generated), `REDIS_URL` |
 | Memory limit | 512 MB (`shared_buffers` 128 MB, 50 connections) | 256 MB (`maxmemory` 200 MB, `noeviction`, append-only file) |
 | Volume | `data` at `/var/lib/postgresql/data` | `data` at `/data` |
+
+The others follow the same pattern:
+
+| Template | Image | Variables | Memory | Backups |
+|---|---|---|---|---|
+| `pgvector` | Postgres 17 with the vector extension | as Postgres | 512 MB | `pg_dump`, restored in the same image |
+| `mysql` | MySQL 8.4 LTS | `MYSQL_ROOT_PASSWORD` (generated), `MYSQL_DATABASE` (`app`), `DATABASE_URL` (`mysql://root:...@db:3306/app`) | 768 MB | `mysqldump` of every database but the server's own |
+| `mariadb` | MariaDB 11.8 LTS | `MARIADB_ROOT_PASSWORD`, `MARIADB_DATABASE`, `DATABASE_URL` | 512 MB | `mariadb-dump`, as MySQL |
+| `valkey` | Valkey 9, the BSD fork of Redis | as Redis | 256 MB | as Redis |
 
 - Creating a template service deploys it at once. Afterwards it is an
   ordinary service: change its memory or start command, roll it back, and

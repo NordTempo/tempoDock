@@ -1,0 +1,56 @@
+name = "authentik"
+title = "Authentik"
+summary = "Identity provider: SSO, OIDC, SAML and LDAP"
+category = "security"
+website = "https://goauthentik.io"
+license = "MIT core"
+revision = 1
+main = "server"
+domain = true
+notes = "Sign in as akadmin with the password you chose."
+
+[[inputs]]
+  key = "AUTHENTIK_BOOTSTRAP_EMAIL"
+  label = "Admin email"
+  kind = "email"
+
+[[inputs]]
+  key = "AUTHENTIK_BOOTSTRAP_PASSWORD"
+  label = "Admin password"
+  kind = "secret"
+
+[[services]]
+  name = "server"
+  image = "ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5"
+  track = '^\d{4}\.\d+\.\d+$'
+  port = 9000
+  health_check_path = "/-/health/live/"
+  health_check_timeout_seconds = 300
+  memory_mb = 768
+  depends_on = ["db"]
+  start_command = '["server"]'
+  volumes = [{ name = "data", mount_path = "/data" }]
+  generate = { AUTHENTIK_SECRET_KEY = "base64:48" }
+  [services.values]
+    AUTHENTIK_POSTGRESQL__HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    AUTHENTIK_POSTGRESQL__USER = "${{db.POSTGRES_USER}}"
+    AUTHENTIK_POSTGRESQL__PASSWORD = "${{db.POSTGRES_PASSWORD}}"
+    AUTHENTIK_POSTGRESQL__NAME = "${{db.POSTGRES_DB}}"
+
+[[services]]
+  name = "worker"
+  image = "ghcr.io/goauthentik/server:2026.8.5@sha256:602227a86455d6772e3d16b7d852713c4f864f40df5df894abd1285bb53979a5"
+  track = '^\d{4}\.\d+\.\d+$'
+  memory_mb = 768
+  depends_on = ["server"]
+  start_command = '["worker"]'
+  [services.values]
+    AUTHENTIK_SECRET_KEY = "${{server.AUTHENTIK_SECRET_KEY}}"
+    AUTHENTIK_POSTGRESQL__HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    AUTHENTIK_POSTGRESQL__USER = "${{db.POSTGRES_USER}}"
+    AUTHENTIK_POSTGRESQL__PASSWORD = "${{db.POSTGRES_PASSWORD}}"
+    AUTHENTIK_POSTGRESQL__NAME = "${{db.POSTGRES_DB}}"
+
+[[services]]
+  name = "db"
+  template = "postgres"

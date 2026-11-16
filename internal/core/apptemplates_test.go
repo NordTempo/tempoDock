@@ -98,3 +98,104 @@ func TestUseAppTemplateInputsAndScopes(t *testing.T) {
 		t.Fatalf("postgres: %v %+v", err, res)
 	}
 }
+
+// A start command in exec form starts the container with its arguments
+// and no shell; a malformed one is refused when set.
+func TestStartCommandExecForm(t *testing.T) {
+	h := newHarness(t)
+	w := h.service("worker", apitypes.CreateServiceRequest{Image: "ak:1", StartCommand: `["worker", "--queue", "mail"]`})
+	h.deploy(w, "ak:1")
+	spec, _ := h.rt.Spec(h.ctr(w, 1))
+	if strings.Join(spec.Args, " ") != "worker --queue mail" || spec.Cmd != "" {
+		t.Fatalf("args %q, cmd %q", spec.Args, spec.Cmd)
+	}
+	bad := `["worker"`
+	if _, err := h.c.UpdateService(h.ctx, testSystem, w, apitypes.UpdateServiceRequest{StartCommand: &bad}); CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "exec form") {
+		t.Fatalf("malformed: %v", err)
+	}
+}
+
+// A template's scheduled jobs are set on its new services, and a start
+// command in exec form reaches the container as arguments.
+func TestUseAppTemplateJobsAndExecForm(t *testing.T) {
+	h := newHarness(t)
+	h.service("web", apitypes.CreateServiceRequest{Image: "web:1"})
+	env := EnvRef{"shop", "production"}
+	if _, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "nextcloud", apitypes.UseTemplateRequest{
+		Domain: "cloud.example.com", Inputs: map[string]string{"NEXTCLOUD_ADMIN_PASSWORD": "pw"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := h.c.ListJobs(h.ctx, testSystem, ServiceRef{"shop", "production", "nextcloud"})
+	if err != nil || len(jobs) != 1 || jobs[0].Name != "cron" || jobs[0].Schedule != "*/5 * * * *" {
+		t.Fatalf("jobs: %v %+v", err, jobs)
+	}
+
+	res, err := h.c.UseAppTemplate(h.ctx, testSystem, env, "authentik", apitypes.UseTemplateRequest{
+		Domain: "id.example.com", Inputs: map[string]string{"AUTHENTIK_BOOTSTRAP_EMAIL": "me@example.com", "AUTHENTIK_BOOTSTRAP_PASSWORD": "pw"},
+	})
+	if err != nil || len(res.Failed) != 0 {
+		t.Fatalf("authentik: %v %+v", err, res.Failed)
+	}
+	worker := ServiceRef{"shop", "production", "authentik-worker"}
+	h.wait(worker, 1)
+	if spec, _ := h.rt.Spec(h.ctr(worker, 1)); strings.Join(spec.Args, " ") != "worker" {
+		t.Fatalf("worker args %q", spec.Args)
+	}
+}
+
+// An environment's services saved as an organization template: settings,
+// references and database templates kept, secrets turned into inputs,
+// listed for the org only, and used like Dock's own. Members can't save.
+func TestOrgTemplates(t *testing.T) {
+	h := newHarness(t)
+	db := h.templateDB("db", apitypes.TemplatePostgres)
+	api := h.service("api", apitypes.CreateServiceRequest{Image: "acme/api:2", Port: 3000})
+	h.set(api.Env(), "api", map[string]string{"DATABASE_URL": "${{db.DATABASE_URL}}", "STRIPE_KEY": "sk_live_1"}, true)
+	if _, err := h.c.GenerateDomain(h.ctx, testSystem, api); err != nil {
+		t.Fatal(err)
+	}
+	reader := h.token(testSystem, apitypes.CreateTokenRequest{Name: "r", Scope: apitypes.ScopeDeploy})
+	req := apitypes.SaveTemplateFromRequest{Name: "shop-stack", Services: []string{"api", "db"}}
+	if _, err := h.c.SaveAppTemplateFrom(h.ctx, reader, db.Env(), req); CodeOf(err) != apitypes.CodeForbidden {
+		t.Fatalf("deploy token saving: %v", err)
+	}
+	saved, err := h.c.SaveAppTemplateFrom(h.ctx, testSystem, db.Env(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !saved.Org || !saved.Domain || len(saved.Inputs) != 1 || saved.Inputs[0].Key != "STRIPE_KEY" || saved.Inputs[0].Kind != apitypes.InputSecret {
+		t.Fatalf("saved = %+v", saved)
+	}
+	file, _ := h.c.AppTemplateFile(h.ctx, testSystem, "shop-stack")
+	if strings.Contains(file, "sk_live_1") || !strings.Contains(file, "${{db.DATABASE_URL}}") || !strings.Contains(file, `main = 'api'`) {
+		t.Fatalf("file:\n%s", file)
+	}
+	list, _ := h.c.ListAppTemplates(h.ctx, testSystem)
+	if list[0].Name != "shop-stack" {
+		t.Fatalf("first listed: %s", list[0].Name)
+	}
+
+	if _, err := h.c.CreateEnvironment(h.ctx, testSystem, "shop", apitypes.CreateEnvironmentRequest{Name: "staging"}); err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.c.UseAppTemplate(h.ctx, testSystem, EnvRef{"shop", "staging"}, "shop-stack",
+		apitypes.UseTemplateRequest{Name: "api", Domain: "staging.example.com", Inputs: map[string]string{"STRIPE_KEY": "sk_test_2"}})
+	if err != nil || strings.Join(res.Services, ",") != "api,api-db" {
+		t.Fatalf("use: %v %+v", err, res)
+	}
+	vars := h.revealed(ServiceRef{"shop", "staging", "api"})
+	if vars["STRIPE_KEY"] != "sk_test_2" || vars["DATABASE_URL"] != "${{api-db.DATABASE_URL}}" {
+		t.Fatalf("staging api variables: %v", vars)
+	}
+
+	if _, err := h.c.SaveAppTemplate(h.ctx, testSystem, apitypes.SaveTemplateRequest{File: strings.Replace(file, "name = 'shop-stack'", "name = 'umami'", 1)}); CodeOf(err) != apitypes.CodeConflict {
+		t.Fatalf("saving over Dock's umami: %v", err)
+	}
+	if err := h.c.RemoveAppTemplate(h.ctx, testSystem, "shop-stack"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.c.GetAppTemplate(h.ctx, testSystem, "shop-stack"); CodeOf(err) != apitypes.CodeNotFound {
+		t.Fatalf("removed: %v", err)
+	}
+}

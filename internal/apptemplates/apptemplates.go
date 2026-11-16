@@ -33,7 +33,7 @@ type Template struct {
 	Title    string `toml:"title"`
 	Summary  string `toml:"summary"`
 	Category string `toml:"category"`
-	Website  string `toml:"website"`
+	Website  string `toml:"website,omitempty"`
 	License  string `toml:"license"`
 	// Revision goes up with every change to the file, so services know
 	// which version made them.
@@ -42,9 +42,9 @@ type Template struct {
 	Main string `toml:"main"`
 	// Domain gives the main service a domain: the one given, or a
 	// generated one.
-	Domain   bool                     `toml:"domain"`
-	Notes    string                   `toml:"notes"`
-	Inputs   []apitypes.TemplateInput `toml:"inputs"`
+	Domain   bool                     `toml:"domain,omitempty"`
+	Notes    string                   `toml:"notes,omitempty"`
+	Inputs   []apitypes.TemplateInput `toml:"inputs,omitempty"`
 	Services []Service                `toml:"services"`
 	// Mark is the SVG path of the app's mark (catalog/marks/NAME.svg).
 	Mark string `toml:"-"`
@@ -56,9 +56,9 @@ type Service struct {
 	apitypes.ServiceExport
 	// Generate are variables Dock fills once, by kind: password, hex:N,
 	// base64:N (N random bytes) or uuid.
-	Generate map[string]string `toml:"generate"`
+	Generate map[string]string `toml:"generate,omitempty,inline"`
 	// Track is the tag pattern scripts/templates bumps the image along.
-	Track string `toml:"track"`
+	Track string `toml:"track,omitempty"`
 }
 
 //go:embed catalog/*.toml catalog/marks/*.svg
@@ -112,6 +112,24 @@ func markPath(svg []byte) string {
 		return string(m[1])
 	}
 	return ""
+}
+
+// File returns a built-in template's file, to copy and edit into an
+// organization's own.
+func File(name string) ([]byte, bool) {
+	b, err := files.ReadFile("catalog/" + name + ".toml")
+	return b, err == nil
+}
+
+// TOML writes a template as a file Parse reads back.
+func (t Template) TOML() ([]byte, error) {
+	var b bytes.Buffer
+	enc := toml.NewEncoder(&b)
+	enc.SetIndentTables(true)
+	if err := enc.Encode(t); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
 // MaxSize caps a template file (org templates are uploaded).

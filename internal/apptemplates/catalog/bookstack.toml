@@ -1,0 +1,33 @@
+name = "bookstack"
+title = "BookStack"
+summary = "Wiki organised as shelves, books and pages"
+category = "docs"
+website = "https://www.bookstackapp.com"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in as admin@admin.com with the password password and change both at once."
+
+[[services]]
+  name = "app"
+  image = "lscr.io/linuxserver/bookstack:26.09.3@sha256:42d8c8a5b74e2fd8613547ce14a1c011293765ceb3cd50ef4e751597b457798b"
+  track = '^\d+\.\d+\.\d+$'
+  port = 80
+  health_check_timeout_seconds = 300
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "config", mount_path = "/config" }]
+  generate = { BOOKSTACK_KEY = "base64:32" }
+  [services.values]
+    APP_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    APP_KEY = "base64:${{app.BOOKSTACK_KEY}}"
+    DB_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    DB_PORT = "3306"
+    DB_USERNAME = "root"
+    DB_PASSWORD = "${{db.MARIADB_ROOT_PASSWORD}}"
+    DB_DATABASE = "${{db.MARIADB_DATABASE}}"
+
+[[services]]
+  name = "db"
+  template = "mariadb"

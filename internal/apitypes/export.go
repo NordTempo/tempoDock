@@ -88,6 +88,9 @@ type ServiceExport struct {
 	Volumes   []VolumeExport `json:"volumes,omitempty" toml:"volumes,omitempty,inline"`
 	Domains   []DomainExport `json:"domains,omitempty" toml:"domains,omitempty,inline"`
 	Git       *GitExport     `json:"git,omitempty" toml:"git,omitempty,inline"`
+	// Jobs are the service's scheduled jobs (ADR 0054), not those from
+	// its dock.toml: a file's jobs are set at once when it's applied.
+	Jobs []JobExport `json:"jobs,omitempty" toml:"jobs,omitempty"`
 
 	// The ongoing health check (ADR 0043); an interval of -1 is off.
 	HealthCheckIntervalSeconds     int `json:"health_check_interval_seconds,omitempty" toml:"health_check_interval_seconds,omitempty"`
@@ -107,6 +110,19 @@ type DomainExport struct {
 	Hostname   string `json:"hostname" toml:"hostname"`
 	RedirectTo string `json:"redirect_to,omitempty" toml:"redirect_to,omitempty"`
 	Generated  bool   `json:"generated,omitempty" toml:"generated,omitempty"`
+}
+
+// JobExport is a scheduled job of an exported service, with the keys of
+// SetJobRequest. Left-out keys take the same defaults.
+type JobExport struct {
+	Name           string     `json:"name" toml:"name"`
+	Schedule       string     `json:"schedule" toml:"schedule"`
+	Timezone       string     `json:"timezone,omitempty" toml:"timezone,omitempty"`
+	Command        string     `json:"command" toml:"command"`
+	TimeoutSeconds int        `json:"timeout_seconds,omitempty" toml:"timeout_seconds,omitempty"`
+	Overlap        JobOverlap `json:"overlap,omitempty" toml:"overlap,omitempty" enum:"skip,allow"`
+	// Enabled is written only for a disabled job.
+	Enabled *bool `json:"enabled,omitempty" toml:"enabled,omitempty"`
 }
 
 // GitExport is an exported service's git connection, without its webhook

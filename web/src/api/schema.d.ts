@@ -345,7 +345,11 @@ export interface paths {
          */
         get: operations["list-app-templates"];
         put?: never;
-        post?: never;
+        /**
+         * Save an organization template
+         * @description Saves a template file (the catalog's TOML format) as the organization's, replacing one of the same name. Dock's own names are taken. Scope: admin.
+         */
+        post: operations["save-app-template"];
         delete?: never;
         options?: never;
         head?: never;
@@ -364,6 +368,30 @@ export interface paths {
          * @description Its services, inputs and notes.
          */
         get: operations["get-app-template"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove an organization template
+         * @description Services made from it stay as they are. Scope: admin.
+         */
+        delete: operations["remove-app-template"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/app-templates/{template}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a template's file
+         * @description The template file (TOML): the organization's as saved, Dock's as it ships. Edit it and save it as the organization's.
+         */
+        get: operations["get-app-template-file"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3141,6 +3169,26 @@ export interface paths {
         get: operations["get-environment"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/environments/{environment}/app-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save services as an organization template
+         * @description Saves services of the environment as the organization's template: settings, volumes, jobs and references between them. Variables that aren't references become secret inputs; values are never copied. Scope: admin.
+         */
+        post: operations["save-app-template-from"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7158,6 +7206,7 @@ export interface components {
             memory_mb: number;
             name: string;
             notes?: string;
+            org?: boolean;
             /** Format: int64 */
             revision: number;
             services: components["schemas"]["AppTemplateService"][] | null;
@@ -7175,7 +7224,7 @@ export interface components {
             /** Format: int64 */
             port?: number;
             /** @enum {string} */
-            template?: "postgres" | "redis";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
             volumes?: string[] | null;
         };
         AppliedChanges: {
@@ -7285,7 +7334,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "postgres" | "redis" | "volume";
+            kind: "postgres" | "redis" | "mysql" | "volume";
             not_restorable?: string;
             off_box: boolean;
             /** @enum {string} */
@@ -7805,7 +7854,7 @@ export interface components {
              * @description Create a database from a template; other settings are ignored
              * @enum {string}
              */
-            template?: "postgres" | "redis";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
         };
         CreateSnapshotRequest: {
             note?: string;
@@ -9662,6 +9711,17 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        JobExport: {
+            command: string;
+            enabled?: boolean;
+            name: string;
+            /** @enum {string} */
+            overlap?: "skip" | "allow";
+            schedule: string;
+            /** Format: int64 */
+            timeout_seconds?: number;
+            timezone?: string;
+        };
         JoinOrgRequest: {
             /**
              * Format: int64
@@ -10019,7 +10079,7 @@ export interface components {
             action: "add" | "update" | "remove";
             environment?: string;
             /** @enum {string} */
-            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database" | "log_drain" | "registry_credential";
+            kind: "project" | "environment" | "service" | "setting" | "variable" | "volume" | "domain" | "git" | "database" | "log_drain" | "registry_credential" | "job";
             name?: string;
             new?: string;
             note?: string;
@@ -10606,6 +10666,21 @@ export interface components {
             name: string;
             sql: string;
         };
+        SaveTemplateFromRequest: {
+            /** @description The service the user names; default: the first one that has a domain, else the first */
+            main?: string;
+            /** @description The template's name: lower case letters, digits and dashes */
+            name: string;
+            /** @description The services it holds; default: every service that runs an image or a database template */
+            services?: string[] | null;
+            summary?: string;
+            /** @description Default: the name */
+            title?: string;
+        };
+        SaveTemplateRequest: {
+            /** @description The template file, TOML */
+            file: string;
+        };
         ScanRequest: {
             /**
              * Format: int64
@@ -10939,12 +11014,12 @@ export interface components {
             stopped_at?: string;
             stopped_by?: string;
             /** @enum {string} */
-            template?: "postgres" | "redis";
+            template?: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
             usage?: components["schemas"]["ServiceUsage"];
         };
         ServiceBackups: {
             /** @enum {string} */
-            kind: "postgres" | "redis" | "volume";
+            kind: "postgres" | "redis" | "mysql" | "volume";
             off_box: boolean;
             restorable: boolean;
             runs: components["schemas"]["BackupRun"][] | null;
@@ -10974,6 +11049,7 @@ export interface components {
             /** Format: int64 */
             health_check_timeout_seconds?: number;
             image?: string;
+            jobs?: components["schemas"]["JobExport"][] | null;
             /** Format: int64 */
             memory_mb?: number;
             name: string;
@@ -11841,6 +11917,9 @@ export interface components {
             secret: string;
             uri: string;
         };
+        TemplateFile: {
+            file: string;
+        };
         TemplateInfo: {
             description: string;
             exports: string[] | null;
@@ -11849,7 +11928,7 @@ export interface components {
             memory_mb: number;
             mount_path: string;
             /** @enum {string} */
-            name: "postgres" | "redis";
+            name: "postgres" | "redis" | "mysql" | "mariadb" | "valkey" | "pgvector";
         };
         TemplateInput: {
             choices?: string[] | null;
@@ -14550,6 +14629,105 @@ export interface operations {
             };
         };
     };
+    "save-app-template": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppTemplate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "get-app-template": {
         parameters: {
             query?: {
@@ -14572,6 +14750,191 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppTemplate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "remove-app-template": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Template name */
+                template: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "get-app-template-file": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Template name */
+                template: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateFile"];
                 };
             };
             /** @description Bad Request */
@@ -30639,6 +31002,113 @@ export interface operations {
             };
             /** @description Unprocessable Entity */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "save-app-template-from": {
+        parameters: {
+            query?: {
+                /** @description Organization slug to act in (or the Dock-Org header). Optional for a token, which belongs to one, and for a user with one organization. */
+                org?: string;
+            };
+            header?: {
+                /** @description Expected project identity for linked clients */
+                "Dock-Project-ID"?: number;
+            };
+            path: {
+                /** @description Project name */
+                project: string;
+                /** @description Environment name */
+                environment: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveTemplateFromRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppTemplate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Locked */
+            423: {
                 headers: {
                     [name: string]: unknown;
                 };

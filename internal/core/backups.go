@@ -718,6 +718,13 @@ func (c *Core) backupJob(ctx context.Context, ss svcScope, row store.Backup) (re
 		}
 		t, _ := templateOf(ss.svc)
 		src.Port, src.Password, image = t.port, env["REDIS_PASSWORD"], jobImage(ss)
+	case apitypes.BackupMySQL:
+		env, err := c.activeEnv(ctx, ss)
+		if err != nil {
+			return backup.Result{}, "", err
+		}
+		t, _ := templateOf(ss.svc)
+		src.Port, src.Password, image = t.port, mysqlRootPassword(env), jobImage(ss)
 	case apitypes.BackupVolume:
 		for _, v := range vols {
 			mounts = append(mounts, node.Mount{Volume: v.DockerName, Path: backup.VolumesPath + "/" + v.Name, ReadOnly: true})

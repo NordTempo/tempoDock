@@ -1,0 +1,54 @@
+name = "nextcloud"
+title = "Nextcloud"
+summary = "Files, calendars and contacts you host"
+category = "personal"
+website = "https://nextcloud.com"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in with the admin user and password you chose. In Administration settings, Basic settings, pick Webcron: Dock calls cron.php every 5 minutes."
+
+[[inputs]]
+  key = "NEXTCLOUD_ADMIN_USER"
+  label = "Admin user"
+  kind = "text"
+  default = "admin"
+
+[[inputs]]
+  key = "NEXTCLOUD_ADMIN_PASSWORD"
+  label = "Admin password"
+  kind = "secret"
+
+[[services]]
+  name = "app"
+  image = "nextcloud:35.0.3-apache@sha256:8a7a65b8bae82a79568fec2ed9cf3e374a1944eda2a22ebe130d79463336fee3"
+  track = '^\d+\.\d+\.\d+-apache$'
+  port = 80
+  health_check_path = "/status.php"
+  health_check_timeout_seconds = 600
+  memory_mb = 1024
+  depends_on = ["db", "redis"]
+  volumes = [{ name = "html", mount_path = "/var/www/html" }]
+  # Background jobs over HTTP (Webcron): a job runs in the image, without
+  # its volume, so it calls the service on the private network.
+  jobs = [{ name = "cron", schedule = "*/5 * * * *", command = "curl -fsS -o /dev/null \"http://$DOCK_PRIVATE_DOMAIN/cron.php\"", timeout_seconds = 300 }]
+  [services.values]
+    POSTGRES_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    POSTGRES_DB = "${{db.POSTGRES_DB}}"
+    POSTGRES_USER = "${{db.POSTGRES_USER}}"
+    POSTGRES_PASSWORD = "${{db.POSTGRES_PASSWORD}}"
+    REDIS_HOST = "${{redis.DOCK_PRIVATE_DOMAIN}}"
+    REDIS_HOST_PASSWORD = "${{redis.REDIS_PASSWORD}}"
+    NEXTCLOUD_TRUSTED_DOMAINS = "${{app.DOCK_PUBLIC_DOMAIN}} ${{app.DOCK_PRIVATE_DOMAIN}}"
+    OVERWRITEPROTOCOL = "https"
+    TRUSTED_PROXIES = "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
+    PHP_MEMORY_LIMIT = "512M"
+
+[[services]]
+  name = "db"
+  template = "postgres"
+
+[[services]]
+  name = "redis"
+  template = "valkey"

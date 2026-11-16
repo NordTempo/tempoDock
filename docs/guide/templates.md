@@ -47,14 +47,32 @@ dock apply n8n.toml --plan
 secrets are names without values there: set them with `dock env set`
 before deploying, or apply the file and set them on the staged services.
 
+## Your organization's templates
+
+Admins save an environment's services as the organization's own template,
+which its members find first in the picker and use like Dock's:
+
+```sh
+dock template save shop-stack -p shop -e production --services api,worker,db
+dock template show umami --toml > stats.toml   # start from one of Dock's
+dock template save --file stats.toml           # the name is in the file
+dock template remove shop-stack                # services made from it stay
+```
+
+In the UI: Project settings, **Save as template…**. Settings, volumes,
+jobs and the references between the services are kept, and database
+templates stay templates. Variables that aren't references become inputs
+the form asks for: a template never carries a value someone set. Services
+that build from source can't be in one; deploy them from an image first.
+
 ## For agents
 
 MCP `list_templates` (with `name`: its inputs) and `use_template` (with
 `plan` to only see what it creates).
 
-## What isn't a template yet
+## What isn't a template
 
 Apps that need the Docker socket, host networking, UDP or other TCP ports
-from outside, host folders or GPUs don't run on Dock. MySQL-based apps
-(Ghost, WordPress), Plausible, Authentik and Keycloak are next. For
-anything else, `dock import compose` converts its compose file.
+from outside, host folders or GPUs don't run on Dock, nor do pairs of
+services sharing one volume. For anything else, `dock import compose`
+converts its compose file.

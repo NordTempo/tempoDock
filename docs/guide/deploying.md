@@ -169,7 +169,7 @@ For each setting, first match wins:
 | Health check timeout | 60 s |
 | Memory | 512 MB |
 | CPUs | 1 |
-| Start command | the image's own; a set command runs with `sh -c` |
+| Start command | the image's own; a set command runs with `sh -c` after the image's entrypoint, and one in exec form, a JSON array like `["worker", "--queue", "mail"]`, is passed to the entrypoint as arguments without a shell (for images whose entrypoint takes its mode as arguments) |
 | Pre-deploy command | none; see [below](#pre-deploy-command) |
 | Pre-deploy timeout | 10 minutes (at most 1 hour) |
 

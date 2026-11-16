@@ -752,13 +752,17 @@ func (c *Core) containerSpec(ss svcScope, rel store.Release, cfg releaseConfig) 
 		Image:   image,
 		Labels:  c.labels(ss, rel.ID),
 		Env:     cfg.Env,
-		Cmd:     cfg.Cmd,
 		Network: networkName(ss.envScope),
 		Aliases: cfg.Aliases,
 		Resources: node.Resources{
 			MemoryBytes: int64(cfg.MemoryMB) << 20,
 			NanoCPUs:    int64(cfg.CPUs * 1e9),
 		},
+	}
+	if args, ok := execForm(cfg.Cmd); ok {
+		spec.Args = args
+	} else {
+		spec.Cmd = cfg.Cmd
 	}
 	if cfg.Published {
 		spec.Port, spec.HostPort = cfg.Port, int(rel.HostPort)

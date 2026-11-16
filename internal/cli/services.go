@@ -189,7 +189,7 @@ func newServiceCreateCmd(g *globals) *cobra.Command {
 		Short: "Create a service (without deploying it), a database from a template, or a service from a GitHub repository",
 		Long: `Create a service. Nothing is deployed until you deploy it.
 
-With --template (postgres or redis) it is a database: a pinned image, a volume,
+With --template (postgres, pgvector, mysql, mariadb, redis or valkey) it is a database: a pinned image, a volume,
 generated credentials and small-server defaults, deployed right away and
 backed up daily. Other services reference it, e.g. ${{db.DATABASE_URL}}.
 
@@ -253,7 +253,7 @@ Find repositories with ` + "`dock github repos`" + ` and directories with
 	}
 	f.add(cmd, needEnvironment)
 	settings.add(cmd.Flags())
-	cmd.Flags().StringVar(&template, "template", "", "create a database from a template: postgres or redis (other settings are ignored)")
+	cmd.Flags().StringVar(&template, "template", "", "create a database from a template: postgres, pgvector, mysql, mariadb, redis or valkey (other settings are ignored)")
 	cmd.Flags().StringVar(&git.Repo, "repo", "", "deploy from this GitHub repository (owner/name) through the org's GitHub App")
 	cmd.Flags().StringVar(&git.Branch, "branch", "", "with --repo: the branch every push to deploys (default: the repository's default branch)")
 	cmd.Flags().StringVar(&git.Dir, "dir", "", "with --repo: the subdirectory to build (default: the repository root)")

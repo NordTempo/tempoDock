@@ -67,7 +67,7 @@ var engineConns = map[apitypes.DataEngine]engineConn{
 		// MARIADB_*), MYSQL_DATABASE; no database means every user
 		// database.
 		owner: func(env map[string]string) (data.Credentials, string) {
-			return data.Credentials{User: "root", Password: cmp.Or(env["MYSQL_ROOT_PASSWORD"], env["MARIADB_ROOT_PASSWORD"])},
+			return data.Credentials{User: "root", Password: mysqlRootPassword(env)},
 				cmp.Or(env["MYSQL_DATABASE"], env["MARIADB_DATABASE"])
 		},
 	},

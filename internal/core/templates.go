@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
@@ -46,15 +47,33 @@ const templateVolume = "data"
 
 // templates are the database templates by name.
 var templates = map[apitypes.Template]dbTemplate{
-	apitypes.TemplatePostgres: {
-		name:        apitypes.TemplatePostgres,
-		title:       "PostgreSQL",
-		license:     "PostgreSQL",
-		description: "PostgreSQL 17, tuned for 512 MB",
-		image:       "postgres:17-alpine@sha256:1bcc18d81671b02906296aad470ec9778a6b71016ce953092024b680bad007b0",
-		port:        defaultPostgresPort,
-		mountPath:   "/var/lib/postgresql/data",
-		memoryMB:    512,
+	apitypes.TemplatePostgres: postgresTemplate(apitypes.TemplatePostgres, "PostgreSQL", "PostgreSQL 17, tuned for 512 MB",
+		"postgres:17-alpine@sha256:1bcc18d81671b02906296aad470ec9778a6b71016ce953092024b680bad007b0"),
+	// pgvector is Postgres with the vector extension, for apps that store
+	// embeddings (ADR 0083). Its backups and restores run in its own
+	// image, so a restore has the extension too.
+	apitypes.TemplatePgvector: postgresTemplate(apitypes.TemplatePgvector, "PostgreSQL with pgvector", "PostgreSQL 17 with the vector extension, tuned for 512 MB",
+		"pgvector/pgvector:0.8.7-pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd"),
+	apitypes.TemplateRedis: redisTemplate(apitypes.TemplateRedis, "Redis", "AGPL-3.0", "Redis 8 with append-only persistence, 200 MB of data",
+		"redis:8-alpine@sha256:615b4cedaff0c1437a1548acae4222572df8c021eeb7382d64cb8b5e3a13ac7a", "redis-server"),
+	// Valkey is the BSD-licensed fork of Redis, with the same protocol,
+	// files and variables.
+	apitypes.TemplateValkey: redisTemplate(apitypes.TemplateValkey, "Valkey", "BSD-3-Clause", "Valkey 9 (Redis compatible) with append-only persistence, 200 MB of data",
+		"valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b", "valkey-server"),
+	apitypes.TemplateMySQL: mysqlTemplate(apitypes.TemplateMySQL, "MySQL", "GPL-2.0", "MySQL 8.4 LTS, tuned for 768 MB",
+		"mysql:8.4.13@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902", "mysqld", "MYSQL", 768),
+	apitypes.TemplateMariaDB: mysqlTemplate(apitypes.TemplateMariaDB, "MariaDB", "GPL-2.0", "MariaDB 11.8 LTS, tuned for 512 MB",
+		"mariadb:11.8.9@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707", "mariadbd", "MARIADB", 512),
+}
+
+// postgresTemplate is a Postgres template running image, which keeps the
+// official image's entrypoint and variables.
+func postgresTemplate(name apitypes.Template, title, description, image string) dbTemplate {
+	return dbTemplate{
+		name: name, title: title, license: "PostgreSQL", description: description, image: image,
+		port:      defaultPostgresPort,
+		mountPath: "/var/lib/postgresql/data",
+		memoryMB:  512,
 		// queryStatsFlags: pg_stat_statements for the Data panel's Health
 		// tab (ADR 0069); Dock creates the extension once the release is
 		// active (afterActive).
@@ -72,19 +91,20 @@ var templates = map[apitypes.Template]dbTemplate{
 			}
 		},
 		exports: []string{"DATABASE_URL"},
-	},
-	apitypes.TemplateRedis: {
-		name:        apitypes.TemplateRedis,
-		title:       "Redis",
-		license:     "AGPL-3.0",
-		description: "Redis 8 with append-only persistence, 200 MB of data",
-		image:       "redis:8-alpine@sha256:615b4cedaff0c1437a1548acae4222572df8c021eeb7382d64cb8b5e3a13ac7a",
-		port:        6379,
-		mountPath:   "/data",
-		memoryMB:    256,
+	}
+}
+
+// redisTemplate is a Redis-compatible template: server is the image's
+// server binary.
+func redisTemplate(name apitypes.Template, title, license, description, image, server string) dbTemplate {
+	return dbTemplate{
+		name: name, title: title, license: license, description: description, image: image,
+		port:      6379,
+		mountPath: "/data",
+		memoryMB:  256,
 		// noeviction: Redis is often a queue, where silently dropping keys
 		// is worse than an error.
-		cmd: `exec docker-entrypoint.sh redis-server --requirepass "$REDIS_PASSWORD" --appendonly yes` +
+		cmd: `exec docker-entrypoint.sh ` + server + ` --requirepass "$REDIS_PASSWORD" --appendonly yes` +
 			" --maxmemory 200mb --maxmemory-policy noeviction",
 		backup:   apitypes.BackupRedis,
 		database: apitypes.DatabaseRedis,
@@ -95,7 +115,32 @@ var templates = map[apitypes.Template]dbTemplate{
 			}
 		},
 		exports: []string{"REDIS_URL"},
-	},
+	}
+}
+
+// mysqlTemplate is a MySQL or MariaDB template: server is the image's
+// server binary, prefix its variables' (MYSQL_ or MARIADB_). Apps connect
+// as root to the app database; backups dump every database but the
+// server's own with mysqldump or mariadb-dump.
+func mysqlTemplate(name apitypes.Template, title, license, description, image, server, prefix string, memoryMB int) dbTemplate {
+	return dbTemplate{
+		name: name, title: title, license: license, description: description, image: image,
+		port:      3306,
+		mountPath: "/var/lib/mysql",
+		memoryMB:  memoryMB,
+		cmd:       "exec docker-entrypoint.sh " + server + " --innodb-buffer-pool-size=128M --max-connections=50",
+		database:  apitypes.DatabaseMySQL,
+		backup:    apitypes.BackupMySQL,
+		vars: func(svc, password string) map[string]string {
+			return map[string]string{
+				prefix + "_ROOT_PASSWORD": password,
+				prefix + "_DATABASE":      "app",
+				"DATABASE_URL": fmt.Sprintf("mysql://root:${{%[1]s.%[2]s_ROOT_PASSWORD}}@%[1]s:3306/${{%[1]s.%[2]s_DATABASE}}",
+					svc, prefix),
+			}
+		},
+		exports: []string{"DATABASE_URL"},
+	}
 }
 
 // templateOf returns a service's template, if it has one.
@@ -269,3 +314,13 @@ const (
 	setupAttempts   = 5
 	setupRetryDelay = time.Second
 )
+
+// templateNames lists the database templates' names for an error.
+func templateNames() string {
+	names := make([]string, 0, len(templates))
+	for name := range templates {
+		names = append(names, string(name))
+	}
+	slices.Sort(names)
+	return strings.Join(names, ", ")
+}

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -130,7 +131,32 @@ func (r *restore) deployed(ok bool) {
 		r.finish(ctx, fmt.Errorf("%s failed to start; see its release", r.to.svc.Name))
 		return
 	}
+	if r.t.backup == apitypes.BackupMySQL {
+		r.finish(ctx, r.mysqlRestore(ctx))
+		return
+	}
 	r.finish(ctx, r.pgRestore(ctx))
+}
+
+// mysqlRestore streams the dump into the new, running MySQL or MariaDB as
+// its root.
+func (r *restore) mysqlRestore(ctx context.Context) error {
+	to, err := r.c.scopeOf(ctx, r.to.svc.ID)
+	if err != nil {
+		return err
+	}
+	env, err := r.c.activeEnv(ctx, to)
+	if err != nil {
+		return notRunningErr(to, err)
+	}
+	target := backup.Source{Kind: apitypes.BackupMySQL, Host: to.svc.Name, Port: r.t.port, Password: mysqlRootPassword(env)}
+	return r.run(ctx, to, target, nil)
+}
+
+// mysqlRootPassword is a MySQL or MariaDB service's root password, from
+// the variable its image reads.
+func mysqlRootPassword(env map[string]string) string {
+	return cmp.Or(env["MYSQL_ROOT_PASSWORD"], env["MARIADB_ROOT_PASSWORD"])
 }
 
 // pgRestore streams the dump into the new, running Postgres.

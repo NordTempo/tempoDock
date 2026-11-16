@@ -60,9 +60,12 @@ export function ProjectName({ project }: { project: Project }) {
 export function Export({
   project,
   onApply,
+  onSaveTemplate,
 }: {
   project: string;
   onApply?: () => void;
+  /** Admins: save an environment's services as the org's template. */
+  onSaveTemplate?: () => void;
 }) {
   const path = `/api/v1/projects/${encodeURIComponent(project)}/export`;
   return (
@@ -93,6 +96,16 @@ export function Export({
           onClick={onApply}
         >
           Apply a file…
+        </button>
+      )}
+      {onSaveTemplate && (
+        <button
+          type="button"
+          className="btn sm"
+          title={`dock template save <name> -p ${project} -e <environment>`}
+          onClick={onSaveTemplate}
+        >
+          Save as template…
         </button>
       )}
     </div>

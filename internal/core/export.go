@@ -11,7 +11,8 @@ import (
 
 // ExportProject returns a project's configuration as a manifest (ADR
 // 0022): the environments the actor can see, their live services and
-// settings, variables, volumes, domains and git connections. Staged
+// settings, variables, volumes, domains, git connections and jobs (not
+// those from a dock.toml, which the release brings). Staged
 // changes (services staged for creation too), archived services,
 // releases, placement and preview environments are left out. Values are
 // exported only when they are made of references and nothing else (ADR
@@ -46,6 +47,10 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 		return out, err
 	}
 	gits, err := c.store.ListProjectGitConnections(ctx, p.ID)
+	if err != nil {
+		return out, err
+	}
+	jobs, err := c.store.ListProjectAPIJobs(ctx, p.ID)
 	if err != nil {
 		return out, err
 	}
@@ -111,6 +116,16 @@ func (c *Core) ExportProject(ctx context.Context, a Actor, project string) (apit
 	for _, g := range gits {
 		if se := bySvc[g.ServiceID]; se != nil {
 			se.Git = &apitypes.GitExport{Repository: g.Repo, Branch: g.Branch, Directory: g.Dir, Statuses: g.PostStatus}
+		}
+	}
+
+	for _, j := range jobs {
+		if se := bySvc[j.ServiceID]; se != nil {
+			je := apitypes.JobExport{Name: j.Name, Schedule: j.Schedule, Timezone: j.Timezone, Command: j.Command, TimeoutSeconds: int(j.TimeoutSeconds), Overlap: apitypes.JobOverlap(j.Overlap)}
+			if !j.Enabled {
+				je.Enabled = ptr(false)
+			}
+			se.Jobs = append(se.Jobs, je)
 		}
 	}
 

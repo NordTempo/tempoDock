@@ -1,6 +1,7 @@
 package apptemplates
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -162,6 +163,30 @@ func TestParseRefuses(t *testing.T) {
 	} {
 		if _, err := Parse([]byte(head + body)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: got %v", want, err)
+		}
+	}
+}
+
+// A template written with TOML parses back the same: org templates are
+// stored and downloaded that way.
+func TestTOMLRoundTrip(t *testing.T) {
+	cat, err := Catalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"umami", "authentik", "nextcloud", "plausible"} {
+		tm := cat[name]
+		b, err := tm.TOML()
+		if err != nil {
+			t.Fatal(err)
+		}
+		back, err := Parse(b)
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, b)
+		}
+		back.Mark = tm.Mark
+		if !reflect.DeepEqual(back, tm) {
+			t.Errorf("%s differs after a round trip:\n%s", name, b)
 		}
 	}
 }

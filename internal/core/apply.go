@@ -57,9 +57,11 @@ func (c *Core) PlanProject(ctx context.Context, a Actor, project string, req api
 
 // ApplyProject stages a project file: it creates the project and any new
 // environments (empty), then stages every change of the plan, one
-// transaction per environment, replanned inside it. With req.Deploy it
-// then applies each touched environment's staged changes like
-// ApplyChanges. Needs deploy; removing services (prune) needs admin.
+// transaction per environment, replanned inside it; jobs are set at once
+// in the same transaction (jobs_apply.go). With req.Deploy it then
+// applies each touched environment's staged changes like ApplyChanges,
+// and sets the jobs of the services that created. Needs deploy; removing
+// services (prune) needs admin.
 func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req apitypes.ApplyRequest) (apitypes.ApplyResult, error) {
 	out := apitypes.ApplyResult{Plan: newPlan(project), Staged: []apitypes.PendingChanges{}}
 	f, p, err := c.loadFile(ctx, a, project, req, apitypes.ScopeDeploy)
@@ -92,6 +94,7 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 			return out, err
 		}
 		var ep envPlan
+		var jobs fileJobsDone
 		err = c.store.Tx(ctx, func(q *store.Queries) error {
 			le, err := loadLiveEnv(ctx, q, c, es.env)
 			if err != nil {
@@ -109,11 +112,16 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 					return err
 				}
 			}
-			return c.stageEnv(ctx, q, es, le, ep)
+			if err := c.stageEnv(ctx, q, es, le, ep); err != nil {
+				return err
+			}
+			jobs, err = c.setFileJobs(ctx, q, a, es, le.svcs, ep.jobs)
+			return err
 		})
 		if err != nil {
 			return out, err
 		}
+		jobs.finish(ctx, c, a, es)
 		addPlan(&out.Plan, ep)
 		if ep.staged > 0 {
 			c.audit(ctx, a, "changes.stage_file", &es.project, &es.env, es.String(),
@@ -145,6 +153,12 @@ func (c *Core) ApplyProject(ctx context.Context, a Actor, project string, req ap
 			return out, fmt.Errorf("staged the file, but applying %s failed: %w", es, err)
 		}
 		out.Applied = append(out.Applied, apitypes.EnvironmentApplied{Environment: es.env.Name, AppliedChanges: res})
+		fe, _ := projectfile.Environment(apitypes.ProjectExport{Environments: f.envs}, es.env.Name)
+		chs, err := c.applyCreatedJobs(ctx, a, es, fe, req.Prune)
+		if err != nil {
+			return out, fmt.Errorf("applied %s, but setting the jobs of its new services failed: %w", es, err)
+		}
+		out.Plan.Changes = append(out.Plan.Changes, chs...)
 	}
 	return out, nil
 }
@@ -342,6 +356,7 @@ type liveSvc struct {
 	// stagedDomains by hostname ("" for a generated one to add).
 	stagedDomains map[string]store.ListEnvironmentStagedDomainsRow
 	git           *store.ListEnvironmentGitConnectionsRow
+	jobs          []store.ServiceJob
 }
 
 // liveEnvFor loads an environment of p for a plan, or nil if it doesn't
@@ -357,7 +372,7 @@ func (c *Core) liveEnvFor(ctx context.Context, q *store.Queries, a Actor, p stor
 	return loadLiveEnv(ctx, q, c, e)
 }
 
-// loadLiveEnv loads an environment's live state in six queries, however
+// loadLiveEnv loads an environment's live state in a fixed number of queries, however
 // many services it has.
 func loadLiveEnv(ctx context.Context, q *store.Queries, c *Core, e store.Environment) (*liveEnv, error) {
 	le := &liveEnv{row: e, shared: map[string]string{}, sharedStaged: map[string]string{}, svcs: map[string]*liveSvc{}, archived: map[string]bool{}}
@@ -445,6 +460,15 @@ func loadLiveEnv(ctx context.Context, q *store.Queries, c *Core, e store.Environ
 			ls.git = &g
 		}
 	}
+	jobs, err := q.ListEnvironmentJobs(ctx, e.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, j := range jobs {
+		if ls := byID[j.ServiceID]; ls != nil {
+			ls.jobs = append(ls.jobs, j)
+		}
+	}
 	if srv, err := q.GetServer(ctx, e.ServerID); err == nil {
 		le.baseDomain = c.ingressOf(srv).baseDomain != ""
 	} else if !store.IsNotFound(err) {
@@ -471,6 +495,8 @@ type envPlan struct {
 	set       []varSet
 	volumes   []volAdd
 	domains   []domainStage
+	// jobs are set or removed at once, not staged (jobs_apply.go).
+	jobs []jobOp
 }
 
 // varSet is a variable to stage: set to value, unset, or (keep) back to
@@ -589,7 +615,7 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 	if fs.Template != apitypes.TemplateNone {
 		t, ok := templates[fs.Template]
 		if !ok {
-			return invalid("service %s: unknown template %q; the templates are postgres and redis", name, fs.Template)
+			return invalid("service %s: unknown template %q; the templates are %s", name, fs.Template, templateNames())
 		}
 		tmpl = &t
 	}
@@ -683,7 +709,10 @@ func (c *Core) planService(ep *envPlan, line func(*[]apitypes.PlanChange, apityp
 		return err
 	}
 	ep.planVolumes(line, name, fs, ls, tmpl)
-	return ep.planDomains(line, name, fs, ls, le.baseDomain, prune)
+	if err := ep.planDomains(line, name, fs, ls, le.baseDomain, prune); err != nil {
+		return err
+	}
+	return ep.planJobs(line, name, fs, ls, prune, c.jobRunning)
 }
 
 // planVars compares one scope's variables (service "" for shared ones):

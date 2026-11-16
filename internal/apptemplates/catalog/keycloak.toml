@@ -1,0 +1,44 @@
+name = "keycloak"
+title = "Keycloak"
+summary = "Identity and access management: SSO, OIDC and SAML"
+category = "security"
+website = "https://www.keycloak.org"
+license = "Apache-2.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in to the admin console with the admin user and password you chose, then create a permanent admin."
+
+[[inputs]]
+  key = "KC_BOOTSTRAP_ADMIN_USERNAME"
+  label = "Admin user"
+  kind = "text"
+  default = "admin"
+
+[[inputs]]
+  key = "KC_BOOTSTRAP_ADMIN_PASSWORD"
+  label = "Admin password"
+  kind = "secret"
+
+[[services]]
+  name = "app"
+  image = "quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0"
+  track = '^\d+\.\d+\.\d+$'
+  port = 8080
+  health_check_path = "/realms/master"
+  health_check_timeout_seconds = 300
+  memory_mb = 1024
+  depends_on = ["db"]
+  start_command = '["start"]'
+  [services.values]
+    KC_DB = "postgres"
+    KC_DB_URL = "jdbc:postgresql://${{db.DOCK_PRIVATE_DOMAIN}}:5432/${{db.POSTGRES_DB}}"
+    KC_DB_USERNAME = "${{db.POSTGRES_USER}}"
+    KC_DB_PASSWORD = "${{db.POSTGRES_PASSWORD}}"
+    KC_HOSTNAME = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    KC_PROXY_HEADERS = "xforwarded"
+    KC_HTTP_ENABLED = "true"
+
+[[services]]
+  name = "db"
+  template = "postgres"

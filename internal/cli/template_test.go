@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -44,5 +46,42 @@ func TestTemplateCommands(t *testing.T) {
 	}
 	if code, _, stderr := exec(t, append([]string{"template", "use", "grafana", "--set", "nope"}, env...)...); code != 2 || !strings.Contains(stderr, "KEY=VALUE") {
 		t.Fatalf("bad --set: %d %s", code, stderr)
+	}
+}
+
+// `dock template save`: an environment's services become the org's
+// template, which lists, prints as a file, saves back from it and goes.
+func TestTemplateSaveCommands(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeAdmin])
+	exec(t, "project", "create", "shop")
+	env := []string{"-p", "shop", "-e", "production"}
+	if code, _, stderr := exec(t, append([]string{"deploy", "-s", "web", "--image", "web:1"}, env...)...); code != 0 {
+		t.Fatal(stderr)
+	}
+	if code, stdout, stderr := exec(t, append([]string{"template", "save", "web-stack"}, env...)...); code != 0 || !strings.Contains(stdout+stderr, "Saved web from production as the organization's template web-stack") {
+		t.Fatalf("save: %d\n%s%s", code, stdout, stderr)
+	}
+	if code, stdout, _ := exec(t, "template", "list"); code != 0 || !strings.Contains(stdout, "organization's") {
+		t.Fatalf("list: %d\n%s", code, stdout)
+	}
+	code, file, _ := exec(t, "template", "show", "web-stack", "--toml")
+	if code != 0 || !strings.Contains(file, "name = 'web-stack'") {
+		t.Fatalf("show --toml: %d\n%s", code, file)
+	}
+	path := filepath.Join(t.TempDir(), "t.toml")
+	if err := os.WriteFile(path, []byte(strings.Replace(file, "name = 'web-stack'", "name = 'web-two'", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := exec(t, "template", "save", "--file", path); code != 0 {
+		t.Fatalf("save --file: %s", stderr)
+	}
+	if code, _, stderr := exec(t, "template", "remove", "web-two"); code != 0 {
+		t.Fatalf("remove: %s", stderr)
+	}
+	if code, _, _ := exec(t, "template", "show", "web-two"); code == 0 {
+		t.Fatal("removed template still shows")
 	}
 }

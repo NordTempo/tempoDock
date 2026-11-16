@@ -43,7 +43,16 @@ const (
 const (
 	PostgresFile = "/postgres.dump"
 	RedisFile    = "/redis.rdb"
+	MySQLFile    = "/mysql.sql"
 )
+
+// mysqlTools picks the client and dump tools of a MySQL or MariaDB image
+// (MariaDB's are mariadb and mariadb-dump) and how they reach the server;
+// the password is MYSQL_PWD, which both read.
+const mysqlTools = `CLIENT="$(command -v mariadb || command -v mysql)"
+DUMP="$(command -v mariadb-dump || command -v mysqldump)"
+AT="-h $DOCK_DB_HOST -P $DOCK_DB_PORT -u root"
+`
 
 // Repo is a restic repository and how to open it.
 type Repo struct {
@@ -245,6 +254,14 @@ func BackupScript(kind apitypes.BackupKind) (string, error) {
 $R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(RedisFile, "/") + ` --stdin-from-command -- cat /tmp/dock.rdb
 rm -f /tmp/dock.rdb
 `
+	case apitypes.BackupMySQL:
+		// Every database but the server's own: a restore goes into a new
+		// server with its own users and root password, which a dump of
+		// the mysql schema would overwrite.
+		run = mysqlTools + `DBS="$($CLIENT $AT -N -e 'SHOW DATABASES' | grep -Ev '^(information_schema|performance_schema|mysql|sys)$' | tr '\n' ' ')"
+[ -n "$DBS" ] || { echo "dock: the server has no databases to back up" >&2; exit 1; }
+$R backup ` + backupFlags + ` --stdin-filename ` + strings.TrimPrefix(MySQLFile, "/") + ` --stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases $DBS
+`
 	case apitypes.BackupVolume:
 		run = `cd ` + VolumesPath + `
 $R backup ` + backupFlags + ` .
@@ -296,7 +313,8 @@ func BackupEnv(src Source, repo Repo, ret Retention) map[string]string {
 }
 
 // dbEnv is how a job reaches the database: libpq's PG* variables for
-// pg_dump and pg_restore, REDISCLI_AUTH for redis-cli.
+// pg_dump and pg_restore, REDISCLI_AUTH for redis-cli, MYSQL_PWD for the
+// MySQL and MariaDB tools.
 func dbEnv(src Source) map[string]string {
 	switch src.Kind {
 	case apitypes.BackupPostgres:
@@ -306,12 +324,15 @@ func dbEnv(src Source) map[string]string {
 		}
 	case apitypes.BackupRedis:
 		return map[string]string{"DOCK_DB_HOST": src.Host, "DOCK_DB_PORT": strconv.Itoa(src.Port), "REDISCLI_AUTH": src.Password}
+	case apitypes.BackupMySQL:
+		return map[string]string{"DOCK_DB_HOST": src.Host, "DOCK_DB_PORT": strconv.Itoa(src.Port), "MYSQL_PWD": src.Password}
 	}
 	return nil
 }
 
 // RestoreScript is the job script that restores a snapshot (DOCK_SNAPSHOT)
-// into a new service: pg_restore into the running new Postgres, or the
+// into a new service: pg_restore into the running new Postgres, the dump
+// into the running new MySQL or MariaDB, or the
 // RDB as the AOF base of the new Redis's volume, mounted at dataDir, before
 // it first starts (Redis with appendonly ignores a plain dump.rdb then).
 func RestoreScript(kind apitypes.BackupKind, dataDir string) (string, error) {
@@ -319,6 +340,9 @@ func RestoreScript(kind apitypes.BackupKind, dataDir string) (string, error) {
 	switch kind {
 	case apitypes.BackupPostgres:
 		return prelude + dump + PostgresFile + ` | pg_restore --no-owner --no-acl --exit-on-error -d "$PGDATABASE"
+`, nil
+	case apitypes.BackupMySQL:
+		return prelude + mysqlTools + dump + MySQLFile + ` | $CLIENT $AT
 `, nil
 	case apitypes.BackupRedis:
 		dir := dataDir + "/appendonlydir"

@@ -67,5 +67,36 @@ work and are left for later.
 - Template images age between bumps; updating a running app is the same
   image change as for any service. Telling services that a newer revision
   of their template exists is later.
-- Org templates (save an environment as a template) reuse the format and
-  come next.
+- Organization templates reuse the format (below).
+
+## Amendment: what more apps need
+
+Decided by the agent while building the second catalog wave.
+
+| Gap | What was built |
+|---|---|
+| MySQL and MariaDB | Database templates (MySQL 8.4, MariaDB 11.8 LTS): root password generated, an `app` database, `DATABASE_URL`, the Data panel, and backups by `mysqldump` or `mariadb-dump` of every database but the server's own, restored into a new server as its root. Migration 0116 widens the CHECKs on `services.template` and `backups.kind` |
+| Redis's licence | A `valkey` template (Valkey 9, BSD): Redis's files, protocol and variables |
+| Vector search | A `pgvector` template: Postgres 17 with the extension, backed up and restored in its own image |
+| A command as arguments | A start command in exec form, a JSON array like a Dockerfile's `CMD ["worker"]`, starts the container with those arguments and no shell (container spec args, node protocol 29). A Compose `command` without an `entrypoint` becomes one, as Compose passes it to the entrypoint too |
+| Scheduled jobs | `jobs` in project files and templates ([0049](0049-apply-and-compose-import.md), [0054](0054-scheduled-jobs.md)): set at once rather than staged, kept unless `--prune`, never a dock.toml's |
+| Config files | No new feature. A template writes them in its start command (a heredoc, then `exec` the image's entrypoint), as Plausible's ClickHouse does; the file is visible and editable as the start command. A `files` setting waits for an app whose image has no shell |
+
+Wave 2: Ghost, WordPress, BookStack, Matomo, Plausible, Nextcloud,
+Authentik and Keycloak. Not yet: Chatwoot and Immich (their workers share
+a volume with the web service), Garage (its image has no shell for the
+config file).
+
+## Amendment: organization templates
+
+An organization's templates are stored as their files (`org_templates`,
+migration 0117) and listed first in the catalog for its members. Admins
+save them from a file in the catalog's format or from an environment's
+services: settings, volumes, jobs and references between them; database
+templates stay templates; variables that aren't references become secret
+inputs, so a template never carries a value someone set; services that
+build from source are refused. Dock's own names can't be taken, saving a
+name again replaces it, and removing one leaves the services made from
+it. Audit `template.save`, `template.remove`. The UI saves from Project
+settings and removes from the picker; the CLI is `dock template save`,
+`remove` and `show --toml`. Agents use them through the same MCP tools.

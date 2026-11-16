@@ -131,7 +131,31 @@ func Check(f apitypes.ProjectExport) error {
 			if generated > 1 {
 				return fmt.Errorf("%s has %d generated domains; a service gets one", where, generated)
 			}
+			if err := checkJobs(where, s.Jobs); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+// checkJobs refuses a job without a name, schedule or command, and a name
+// listed twice. The daemon checks the schedule, timezone and limits.
+func checkJobs(where string, jobs []apitypes.JobExport) error {
+	if len(jobs) > apitypes.MaxJobsPerService {
+		return fmt.Errorf("%s has %d jobs; a service has at most %d", where, len(jobs), apitypes.MaxJobsPerService)
+	}
+	seen := map[string]bool{}
+	for _, j := range jobs {
+		switch {
+		case j.Name == "":
+			return fmt.Errorf("a job of %s has no name", where)
+		case seen[j.Name]:
+			return fmt.Errorf("job %s of %s is in the file twice", j.Name, where)
+		case strings.TrimSpace(j.Schedule) == "" || strings.TrimSpace(j.Command) == "":
+			return fmt.Errorf("job %s of %s needs a schedule and a command", j.Name, where)
+		}
+		seen[j.Name] = true
 	}
 	return nil
 }

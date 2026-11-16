@@ -1,0 +1,82 @@
+name = "plausible"
+title = "Plausible"
+summary = "Privacy-friendly web analytics"
+category = "analytics"
+website = "https://plausible.io"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it and register the first account, then add your site."
+
+[[inputs]]
+  key = "DISABLE_REGISTRATION"
+  label = "Registration"
+  kind = "choice"
+  choices = ["invite_only", "true", "false"]
+  default = "invite_only"
+  help = "invite_only lets the first account register, then only invited people"
+
+[[services]]
+  name = "app"
+  image = "ghcr.io/plausible/community-edition:v3.2.1@sha256:33e60bfb40f2df5da00f8753b76fad04f67dba3abe6d73eb516e440e3fb62985"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 8000
+  health_check_path = "/api/health"
+  health_check_timeout_seconds = 300
+  memory_mb = 768
+  depends_on = ["db", "events"]
+  start_command = "/entrypoint.sh db createdb && /entrypoint.sh db migrate && exec /entrypoint.sh run"
+  volumes = [{ name = "data", mount_path = "/var/lib/plausible" }]
+  generate = { SECRET_KEY_BASE = "base64:48", TOTP_VAULT_KEY = "base64:32" }
+  [services.values]
+    BASE_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    DATABASE_URL = "${{db.DATABASE_URL}}"
+    CLICKHOUSE_DATABASE_URL = "http://${{events.DOCK_PRIVATE_DOMAIN}}:8123/plausible_events_db"
+    TMPDIR = "/var/lib/plausible/tmp"
+
+[[services]]
+  name = "events"
+  image = "clickhouse/clickhouse-server:24.12.6.70-alpine@sha256:cd450891db46cc6ffe313ca2b0fb7dbfb897a6873ca74a724cbe050a2cf62621"
+  track = '^24\.12\.\d+\.\d+-alpine$'
+  port = 8123
+  health_check_path = "/ping"
+  memory_mb = 1024
+  volumes = [{ name = "data", mount_path = "/var/lib/clickhouse" }]
+  # ClickHouse for a small server, as Plausible's own setup has it: IPv4
+  # only (Docker networks have no IPv6), little memory and few threads,
+  # and no system logs piling up. The files are written before the
+  # server starts.
+  start_command = '''
+cat > /etc/clickhouse-server/config.d/dock.xml <<'XML'
+<clickhouse>
+  <listen_host>0.0.0.0</listen_host>
+  <mark_cache_size>524288000</mark_cache_size>
+  <logger><level>warning</level><console>true</console></logger>
+  <query_log replace="1"><database>system</database><table>query_log</table><flush_interval_milliseconds>7500</flush_interval_milliseconds><engine>ENGINE = MergeTree PARTITION BY event_date ORDER BY (event_time) TTL event_date + interval 30 day SETTINGS ttl_only_drop_parts=1</engine></query_log>
+  <metric_log remove="remove"/>
+  <asynchronous_metric_log remove="remove"/>
+  <query_thread_log remove="remove"/>
+  <text_log remove="remove"/>
+  <trace_log remove="remove"/>
+  <session_log remove="remove"/>
+  <part_log remove="remove"/>
+</clickhouse>
+XML
+cat > /etc/clickhouse-server/users.d/dock.xml <<'XML'
+<clickhouse><profiles><default>
+  <max_threads>1</max_threads>
+  <max_block_size>8192</max_block_size>
+  <max_download_threads>1</max_download_threads>
+  <input_format_parallel_parsing>0</input_format_parallel_parsing>
+  <output_format_parallel_formatting>0</output_format_parallel_formatting>
+</default></profiles></clickhouse>
+XML
+exec /entrypoint.sh
+'''
+  [services.values]
+    CLICKHOUSE_SKIP_USER_SETUP = "1"
+
+[[services]]
+  name = "db"
+  template = "postgres"

@@ -72,6 +72,15 @@ func TestCreateOptions(t *testing.T) {
 	}
 }
 
+// A spec with Args (a start command in exec form) runs them as they are,
+// without a shell.
+func TestCreateOptionsArgs(t *testing.T) {
+	o := createOptions(node.ContainerSpec{Name: "w", Image: "ak", Args: []string{"worker", "--x"}, Cmd: "ignored"}, "", nil)
+	if got := o.Config.Cmd; !slices.Equal(got, []string{"worker", "--x"}) {
+		t.Errorf("Cmd = %v", got)
+	}
+}
+
 // A spec with Health gets Docker's healthcheck running the bind-mounted
 // probe, which times out a second before Docker would kill it. Without an
 // installed probe, or without Health, the image's own check is turned off.

@@ -497,7 +497,7 @@ func (c *Core) OperatorDeleteOrg(ctx context.Context, a Actor, slug, confirm str
 		}
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
-		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy} {
+		for _, del := range []func(context.Context, int64) error{q.DeleteOrgMembers, q.DeleteOrgInvites, q.DeleteOrgVariables, q.DeleteOrgRegistryCredentials, q.DeleteOrgDataPolicy, q.DeleteOrgTemplates} {
 			if err := del(ctx, o.ID); err != nil {
 				return err
 			}

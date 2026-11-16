@@ -10,11 +10,16 @@ const (
 	TemplateNone     Template = ""
 	TemplatePostgres Template = "postgres"
 	TemplateRedis    Template = "redis"
+	TemplateMySQL    Template = "mysql"
+	TemplateMariaDB  Template = "mariadb"
+	TemplateValkey   Template = "valkey"
+	// TemplatePgvector is Postgres with the vector extension (pgvector).
+	TemplatePgvector Template = "pgvector"
 )
 
 // TemplateInfo describes a template for the UI and CLI.
 type TemplateInfo struct {
-	Name        Template `json:"name" enum:"postgres,redis"`
+	Name        Template `json:"name" enum:"postgres,redis,mysql,mariadb,valkey,pgvector"`
 	Description string   `json:"description"`
 	Image       string   `json:"image"`
 	MemoryMB    int      `json:"memory_mb"`
@@ -25,12 +30,13 @@ type TemplateInfo struct {
 }
 
 // BackupKind is how a service is backed up: with the database's own tool
-// (postgres, redis) or file by file (volume).
+// (postgres, redis, mysql) or file by file (volume).
 type BackupKind string
 
 const (
 	BackupPostgres BackupKind = "postgres"
 	BackupRedis    BackupKind = "redis"
+	BackupMySQL    BackupKind = "mysql"
 	BackupVolume   BackupKind = "volume"
 )
 
@@ -48,7 +54,7 @@ type BackupRun struct {
 	ID        int64        `json:"id"`
 	Service   string       `json:"service"`
 	Operation string       `json:"operation" enum:"backup,restore"`
-	Kind      BackupKind   `json:"kind" enum:"postgres,redis,volume"`
+	Kind      BackupKind   `json:"kind" enum:"postgres,redis,mysql,volume"`
 	Trigger   string       `json:"trigger" enum:"schedule,manual"`
 	Status    BackupStatus `json:"status" enum:"running,succeeded,failed"`
 	// Snapshot is the restic snapshot ID: written by a backup, read by a
@@ -95,7 +101,7 @@ type BackupSchedule struct {
 // ServiceBackups is a stateful service's backups: how, when, and the runs.
 type ServiceBackups struct {
 	Service string     `json:"service"`
-	Kind    BackupKind `json:"kind" enum:"postgres,redis,volume"`
+	Kind    BackupKind `json:"kind" enum:"postgres,redis,mysql,volume"`
 	// Warning explains the limits of file-level volume backups.
 	Warning string `json:"warning,omitempty"`
 	// Restorable says backups can be restored into a new service (template

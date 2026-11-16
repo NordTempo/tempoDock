@@ -1,0 +1,30 @@
+name = "matomo"
+title = "Matomo"
+summary = "Web analytics you host, a Google Analytics alternative"
+category = "analytics"
+website = "https://matomo.org"
+license = "GPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Open it to run the installer; the database settings are filled in. Reports are archived when you view them, which suits small sites."
+
+[[services]]
+  name = "app"
+  image = "matomo:5.14.2-apache@sha256:db40a508196ba5327a53dcae07d12835e50c7764bdaae3ea7822c35d432e64dc"
+  track = '^\d+\.\d+\.\d+-apache$'
+  port = 80
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "html", mount_path = "/var/www/html" }]
+  [services.values]
+    MATOMO_DATABASE_HOST = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    MATOMO_DATABASE_ADAPTER = "mysql"
+    MATOMO_DATABASE_TABLES_PREFIX = "matomo_"
+    MATOMO_DATABASE_USERNAME = "root"
+    MATOMO_DATABASE_PASSWORD = "${{db.MARIADB_ROOT_PASSWORD}}"
+    MATOMO_DATABASE_DBNAME = "${{db.MARIADB_DATABASE}}"
+
+[[services]]
+  name = "db"
+  template = "mariadb"

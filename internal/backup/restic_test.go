@@ -20,6 +20,8 @@ func TestBackupScript(t *testing.T) {
 		apitypes.BackupPostgres: {"--stdin-from-command -- pg_dump -Fc", "--stdin-filename postgres.dump"},
 		apitypes.BackupRedis:    {`redis-cli -h "$DOCK_DB_HOST" -p "$DOCK_DB_PORT" --rdb /tmp/dock.rdb`, "--stdin-filename redis.rdb", "-- cat /tmp/dock.rdb"},
 		apitypes.BackupVolume:   {"cd /volumes", "backup --json"},
+		apitypes.BackupMySQL: {`CLIENT="$(command -v mariadb || command -v mysql)"`, "grep -Ev '^(information_schema|performance_schema|mysql|sys)$'",
+			"--stdin-filename mysql.sql", "--stdin-from-command -- $DUMP $AT --single-transaction --routines --triggers --events --databases $DBS"},
 	} {
 		s, err := BackupScript(kind)
 		if err != nil {
@@ -34,7 +36,7 @@ func TestBackupScript(t *testing.T) {
 			}
 		}
 	}
-	if _, err := BackupScript("mysql"); err == nil {
+	if _, err := BackupScript("mongodb"); err == nil {
 		t.Error("unknown kind: no error")
 	}
 }
@@ -92,6 +94,10 @@ func TestRestoreScript(t *testing.T) {
 		if !strings.Contains(redis, w) {
 			t.Errorf("redis restore lacks %q:\n%s", w, redis)
 		}
+	}
+	my, err := RestoreScript(apitypes.BackupMySQL, "")
+	if err != nil || !strings.Contains(my, `"$DOCK_SNAPSHOT" /mysql.sql | $CLIENT $AT`) || !strings.Contains(my, "set -o pipefail") {
+		t.Errorf("mysql restore: %v\n%s", err, my)
 	}
 	if _, err := RestoreScript(apitypes.BackupVolume, ""); err == nil {
 		t.Error("volume restore: no error")
