@@ -24,6 +24,7 @@ import { invalid, useValidation } from "../features/create/form";
 import { openDeploy } from "../features/deploy/start";
 import { shortSha, useGitDeploy } from "../features/git/api";
 import { hasFindings, notScanned, summary } from "../features/images/parts";
+import { CancelDeploy } from "../features/service/CancelDeploy";
 import {
   Cause,
   Evidence,
@@ -313,6 +314,9 @@ function ReleasePage() {
           >
             Open build log <kbd>L</kbd>
           </Act>
+          {inFlight(release.status) && mayDeploy && (
+            <CancelDeploy serviceRef={ref} number={release.number} />
+          )}
           {failed && mayDeploy && (
             <DeployAgain
               release={release}

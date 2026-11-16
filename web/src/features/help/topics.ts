@@ -126,6 +126,11 @@ export const topics: Record<TopicId, Topic> = {
         at: { s: "history" },
       },
       {
+        what: "Cancel a deploy before it goes live",
+        cli: "dock release cancel -s {service} -e {env}",
+        at: { s: "overview" },
+      },
+      {
         what: "See why a release failed",
         cli: "dock diagnose -s {service} -e {env}",
         at: { s: "history" },
@@ -142,7 +147,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["services", "previews", "logs"],
     guide: "deploying#how-a-release-goes-live",
-    words: "release rollback restart build github git push promote cutover",
+    words:
+      "release rollback restart cancel build github git push promote cutover",
   },
 
   services: {
