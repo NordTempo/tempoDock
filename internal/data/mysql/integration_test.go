@@ -436,6 +436,14 @@ func TestMasked(t *testing.T) {
 		if f := query(t, e, tg, c, "SELECT id, name FROM customers"); f[len(f)-1].Type != apitypes.FrameEnd {
 			t.Errorf("masked SQL: %+v", f)
 		}
+		// A view runs as its definer: while a column is sensitive, masked
+		// callers read no view.
+		if f := query(t, e, tg, c, "SELECT * FROM cheap"); f[len(f)-1].Type != apitypes.FrameError {
+			t.Errorf("masked SQL read a view: %+v", f)
+		}
+		if _, err := e.Page(t.Context(), tg, c, apitypes.DataPageRequest{Table: "app.cheap", Limit: 1}); !errors.Is(err, data.ErrInvalid) {
+			t.Errorf("masked page of a view: %v", err)
+		}
 	})
 }
 

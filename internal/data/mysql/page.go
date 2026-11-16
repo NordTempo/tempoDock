@@ -188,6 +188,10 @@ func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apity
 	if err := checkMaskedUse(req, masked); err != nil {
 		return apitypes.DataPage{}, err
 	}
+	if c.Masked && len(c.Sensitive) > 0 && tm.Kind == apitypes.TableKindView {
+		// Like the masked reader's grants (maskedViews).
+		return apitypes.DataPage{}, fmt.Errorf("%w: %s.%s is a view, and views can read sensitive columns, which your access shows masked; read its tables instead", data.ErrInvalid, tm.Schema, tm.Name)
+	}
 	plan, err := planPage(tm, req, masked)
 	if err != nil {
 		return apitypes.DataPage{}, err

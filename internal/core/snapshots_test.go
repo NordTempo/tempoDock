@@ -10,6 +10,7 @@ import (
 
 	"github.com/NordTempo/tempoDock/internal/apitypes"
 	"github.com/NordTempo/tempoDock/internal/node"
+	"github.com/NordTempo/tempoDock/internal/store"
 )
 
 // snapshotJobs answers snapshot jobs as the real script would: a size for
@@ -263,6 +264,13 @@ func TestSnapshotRestoreIntoNewService(t *testing.T) {
 	h.snapshotJobs(nil)
 	db := h.templateDB("db", apitypes.TemplatePostgres)
 	pw := h.revealed(db)["POSTGRES_PASSWORD"]
+	src := h.serviceID(db)
+	if err := h.store.AddSensitiveColumn(h.ctx, store.AddSensitiveColumnParams{ServiceID: src, SchemaName: "public", TableName: "users", ColumnName: "email"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.AddSensitiveKey(h.ctx, store.AddSensitiveKeyParams{ServiceID: src, Pattern: "session:*"}); err != nil {
+		t.Fatal(err)
+	}
 	s := h.snapshot(db)
 
 	res := h.restoreSnapshot(db, s.ID, apitypes.RestoreSnapshotRequest{})
@@ -278,6 +286,12 @@ func TestSnapshotRestoreIntoNewService(t *testing.T) {
 	vars := h.revealed(to)
 	if vars["POSTGRES_PASSWORD"] != pw || !strings.Contains(vars["DATABASE_URL"], "@"+name+":5432") {
 		t.Errorf("new service's variables = %v; the data files need the snapshot's password", vars)
+	}
+	// The copy holds the same data: masking holds on it too.
+	cols, _ := h.store.ListSensitiveColumns(h.ctx, h.serviceID(to))
+	keys, _ := h.store.ListSensitiveKeys(h.ctx, h.serviceID(to))
+	if len(cols) != 1 || cols[0].ColumnName != "email" || !slices.Equal(keys, []string{"session:*"}) {
+		t.Errorf("the copy's sensitive columns %+v and keys %v, want the source's", cols, keys)
 	}
 	// The volume was filled before the new service's first container.
 	ops := h.rt.Ops()

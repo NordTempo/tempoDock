@@ -83,6 +83,20 @@ DELETE FROM sensitive_columns WHERE service_id = +sqlc.arg(service_id);
 INSERT INTO sensitive_columns (service_id, schema_name, table_name, column_name) VALUES (?, ?, ?, ?)
 ON CONFLICT DO NOTHING;
 
+-- name: CopySensitiveMarks :exec
+-- Gives a restored copy of a database its source's sensitive columns.
+-- CopySensitiveKeys does the same for key patterns.
+INSERT INTO sensitive_columns (service_id, schema_name, table_name, column_name)
+SELECT sqlc.arg(to_service), src.schema_name, src.table_name, src.column_name FROM sensitive_columns AS src
+WHERE src.service_id = +sqlc.arg(from_service)
+ON CONFLICT DO NOTHING;
+
+-- name: CopySensitiveKeys :exec
+INSERT INTO sensitive_keys (service_id, pattern)
+SELECT sqlc.arg(to_service), src.pattern FROM sensitive_keys AS src
+WHERE src.service_id = +sqlc.arg(from_service)
+ON CONFLICT DO NOTHING;
+
 -- name: ListSavedQueries :many
 -- One user's saved queries on one database, by name.
 SELECT * FROM saved_queries

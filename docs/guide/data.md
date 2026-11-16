@@ -361,6 +361,13 @@ tab, and each reveal is audited (`data.reveal`). Their SQL isn't masked;
 every statement is in the audit log anyway. The Schema tab suggests
 columns to mark from their names (email, password, token, phone, ...).
 
+A view reads its tables with its owner's rights, so masked callers can't
+read one that could show a sensitive column: in Postgres a view or
+materialized view that uses one (directly or through another view); in
+MySQL and MariaDB, while any column is marked, every view. A restored copy
+of a database (`dock backup restore`, a snapshot restored as a new
+service) keeps the source's marks.
+
 ## Connecting from your machine
 
 For psql, TablePlus, pg_dump, redis-cli and the like, `dock connect` opens a

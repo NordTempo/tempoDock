@@ -73,7 +73,7 @@ func (c *Core) RestoreBackup(ctx context.Context, a Actor, ref ServiceRef, req a
 	r := &restore{c: c, from: ss, t: t, snapshot: from.SnapshotID}
 	// Created without a deploy, so the restore row exists before anything
 	// can finish.
-	r.to, err = c.createFromTemplate(ctx, a, ss.envScope, name, t, templateOptions{noDeploy: true})
+	r.to, err = c.createFromTemplate(ctx, a, ss.envScope, name, t, templateOptions{noDeploy: true, marksFrom: ss.svc.ID})
 	if err != nil {
 		c.releaseService(ss.svc.ID)
 		return apitypes.RestoreResult{}, err

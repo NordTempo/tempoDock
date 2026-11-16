@@ -733,6 +733,12 @@ func TestMasked(t *testing.T) {
 	if _, err := e.Status(ctx, tg); err != nil {
 		t.Fatal(err)
 	}
+	// Views run as their owner: one that reads the sensitive column, or
+	// reads such a view, gets the masked reader nothing.
+	ownerExec(t, ctx, `CREATE VIEW logins AS SELECT id, password_hash FROM customers;
+CREATE VIEW logins2 AS SELECT * FROM logins;
+CREATE VIEW names AS SELECT id, name FROM customers`)
+	defer ownerExec(t, context.Background(), "DROP VIEW logins2, logins, names")
 	hash, err := e.SyncGrants(ctx, tg, owner, sensitive)
 	if err != nil {
 		t.Fatal(err)
@@ -756,10 +762,21 @@ func TestMasked(t *testing.T) {
 	if f := query("SELECT id, email FROM customers ORDER BY id LIMIT 1"); f[len(f)-1].Type != apitypes.FrameEnd {
 		t.Fatalf("masked select of visible columns: %+v", f[len(f)-1])
 	}
-	for _, sql := range []string{"SELECT password_hash FROM customers", "SELECT * FROM customers"} {
+	for _, sql := range []string{"SELECT password_hash FROM customers", "SELECT * FROM customers", "SELECT * FROM logins", "SELECT * FROM logins2"} {
 		if f := query(sql); f[len(f)-1].Type != apitypes.FrameError || f[len(f)-1].Error.SQLState != "42501" {
 			t.Fatalf("%s: %+v", sql, f[len(f)-1])
 		}
+	}
+	if f := query("SELECT * FROM names"); f[len(f)-1].Type != apitypes.FrameEnd {
+		t.Fatalf("masked select of a view without sensitive columns: %+v", f[len(f)-1])
+	}
+	for _, view := range []string{"public.logins", "public.logins2"} {
+		if _, err := e.Page(ctx, tg, masked, apitypes.DataPageRequest{Table: view, Limit: 1}); !errors.Is(err, data.ErrInvalid) {
+			t.Fatalf("masked page of %s: %v", view, err)
+		}
+	}
+	if _, err := e.Page(ctx, tg, masked, apitypes.DataPageRequest{Table: "public.names", Limit: 1}); err != nil {
+		t.Fatalf("masked page of a view without sensitive columns: %v", err)
 	}
 	// Unmarking the column and syncing again grants it.
 	if _, err := e.SyncGrants(ctx, tg, owner, nil); err != nil {

@@ -142,10 +142,15 @@ func (e *Engine) SyncGrants(ctx context.Context, t data.Target, owner data.Crede
 
 // maskedGrantsSQL gives the masked reader SELECT on each table: the whole
 // table when nothing in it is sensitive, else its other columns (none
-// left: nothing). Revoked first, so marks taken away take effect.
+// left: nothing). Revoked first, so marks taken away take effect. While
+// any column is sensitive it gets no views (maskedViews).
 func maskedGrantsSQL(roles data.Roles, tables []apitypes.DataTable) []string {
+	views := maskedViews(tables)
 	var out []string
 	for _, tb := range tables {
+		if tb.Kind == apitypes.TableKindView && !views {
+			continue
+		}
 		target := quoteTable(tb.Schema, tb.Name)
 		var cols []string
 		masked := false
@@ -164,4 +169,20 @@ func maskedGrantsSQL(roles data.Roles, tables []apitypes.DataTable) []string {
 		}
 	}
 	return out
+}
+
+// maskedViews reports whether masked readers may read views: only while no
+// column is sensitive. A view reads its tables with its definer's
+// privileges (or, as the panel's pages do, as the reader), and MySQL
+// can't say which columns MariaDB's views use, so any view could carry a
+// sensitive column past the masked reader's column grants.
+func maskedViews(tables []apitypes.DataTable) bool {
+	for _, tb := range tables {
+		for _, col := range tb.Columns {
+			if col.Sensitive {
+				return false
+			}
+		}
+	}
+	return true
 }

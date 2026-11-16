@@ -161,10 +161,19 @@ func (e *Engine) SyncGrants(ctx context.Context, t data.Target, owner data.Crede
 	if err != nil {
 		return "", err
 	}
-	schema := markSensitive(cat, markSet(sensitive))
+	marks := markSet(sensitive)
+	schema := markSensitive(cat, marks)
+	var leaks map[relRef]bool
+	if len(marks) > 0 {
+		deps, err := viewDeps(ctx, pg)
+		if err != nil {
+			return "", fmt.Errorf("read views: %w", err)
+		}
+		leaks = leakingViews(deps, marks)
+	}
 	stmts := membershipSQL(e.roles, existing)
 	stmts = append(stmts, grantsSQL(e.roles, schemas)...)
-	stmts = append(stmts, maskedGrantsSQL(e.roles, schema.Tables)...)
+	stmts = append(stmts, maskedGrantsSQL(e.roles, schema.Tables, leaks)...)
 	if err := simpleExec(ctx, pg, "BEGIN;\n"+strings.Join(stmts, ";\n")+";\nCOMMIT"); err != nil {
 		return "", fmt.Errorf("grant %s, %s and %s their privileges as %s: %w", e.roles.Reader, e.roles.Writer, e.roles.ReaderMasked, owner.User, err)
 	}
@@ -230,9 +239,70 @@ func membershipSQL(roles data.Roles, existing map[string]existingRole) []string 
 	return out
 }
 
+// relRef names a relation: a table, view or materialized view.
+type relRef struct{ schema, name string }
+
+// viewDep is one thing a view or materialized view reads: a column of
+// another relation, or the whole of it (column "", a whole-row reference).
+type viewDep struct {
+	view, rel relRef
+	column    string
+}
+
+// viewDepsSQL lists what every view and materialized view reads, from the
+// dependencies of its rewrite rule: one row per column it uses.
+const viewDepsSQL = `SELECT DISTINCT vn.nspname, vc.relname, rn.nspname, rc.relname, coalesce(a.attname, '')
+FROM pg_rewrite r
+JOIN pg_class vc ON vc.oid = r.ev_class AND vc.relkind IN ('v', 'm')
+JOIN pg_namespace vn ON vn.oid = vc.relnamespace
+JOIN pg_depend d ON d.classid = 'pg_rewrite'::regclass AND d.objid = r.oid
+  AND d.refclassid = 'pg_class'::regclass AND d.refobjid <> r.ev_class
+JOIN pg_class rc ON rc.oid = d.refobjid
+JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+LEFT JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid AND d.refobjsubid > 0`
+
+// viewDeps reads viewDepsSQL.
+func viewDeps(ctx context.Context, pg *pgx.Conn) ([]viewDep, error) {
+	rows, err := pg.Query(ctx, viewDepsSQL)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (viewDep, error) {
+		var d viewDep
+		err := r.Scan(&d.view.schema, &d.view.name, &d.rel.schema, &d.rel.name, &d.column)
+		return d, err
+	})
+}
+
+// leakingViews are the views and materialized views that read a sensitive
+// column, directly or through another such view, or a whole row of a
+// relation with one. They run with their owner's privileges, so the
+// masked reader's column grants don't hold inside them: it gets nothing
+// on them.
+func leakingViews(deps []viewDep, marks map[colRef]bool) map[relRef]bool {
+	hasSensitive := map[relRef]bool{}
+	for m := range marks {
+		hasSensitive[relRef{m.schema, m.table}] = true
+	}
+	leaks := map[relRef]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, d := range deps {
+			if leaks[d.view] {
+				continue
+			}
+			whole := d.column == "" && hasSensitive[d.rel]
+			if whole || leaks[d.rel] || marks[colRef{d.rel.schema, d.rel.name, d.column}] {
+				leaks[d.view], hasSensitive[d.view], changed = true, true, true
+			}
+		}
+	}
+	return leaks
+}
+
 // maskedGrantsSQL renders the masked reader's statements for tables with
-// their sensitive columns marked.
-func maskedGrantsSQL(roles data.Roles, tables []apitypes.DataTable) []string {
+// their sensitive columns marked; leaks (leakingViews) get none.
+func maskedGrantsSQL(roles data.Roles, tables []apitypes.DataTable, leaks map[relRef]bool) []string {
 	role := pgx.Identifier{string(roles.ReaderMasked)}.Sanitize()
 	var out []string
 	var schema string
@@ -241,6 +311,9 @@ func maskedGrantsSQL(roles data.Roles, tables []apitypes.DataTable) []string {
 			schema = t.Schema
 			s := pgx.Identifier{schema}.Sanitize()
 			out = append(out, "REVOKE ALL ON ALL TABLES IN SCHEMA "+s+" FROM "+role, "GRANT USAGE ON SCHEMA "+s+" TO "+role)
+		}
+		if leaks[relRef{t.Schema, t.Name}] {
+			continue
 		}
 		var cols []string
 		for _, c := range t.Columns {

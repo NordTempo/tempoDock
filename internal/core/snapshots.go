@@ -675,7 +675,7 @@ func (c *Core) restoreIntoNew(ctx context.Context, a Actor, ss svcScope, t dbTem
 	if !c.claimService(ss.svc.ID) {
 		return apitypes.SnapshotRestoreResult{}, conflict("a backup, snapshot or restore of %s is running; wait for it to finish", ss)
 	}
-	to, err := c.createFromTemplate(ctx, a, ss.envScope, name, t, templateOptions{noDeploy: true, image: ss.svc.Image, keep: keep})
+	to, err := c.createFromTemplate(ctx, a, ss.envScope, name, t, templateOptions{noDeploy: true, image: ss.svc.Image, keep: keep, marksFrom: ss.svc.ID})
 	if err != nil {
 		c.releaseService(ss.svc.ID)
 		return apitypes.SnapshotRestoreResult{}, err

@@ -85,6 +85,9 @@ func (e *Engine) Page(ctx context.Context, t data.Target, c data.Call, req apity
 		if err := checkMaskedUse(req, masked); err != nil {
 			return err
 		}
+		if err := checkMaskedView(ctx, cn.Conn, c, tm); err != nil {
+			return err
+		}
 		plan, err := planPage(tm, req, masked)
 		if err != nil {
 			return err
@@ -120,6 +123,24 @@ func checkMaskedUse(req apitypes.DataPageRequest, masked map[string]bool) error 
 		if masked[f.Column] {
 			return fmt.Errorf("%w: can't filter by sensitive column %s", data.ErrInvalid, f.Column)
 		}
+	}
+	return nil
+}
+
+// checkMaskedView refuses a masked call a view or materialized view that
+// reads a sensitive column (leakingViews): which of its columns carry it
+// isn't known, so none of it is shown. It reads the views' dependencies
+// only for masked calls on views.
+func checkMaskedView(ctx context.Context, cn *pgx.Conn, c data.Call, tm *tableMeta) error {
+	if !c.Masked || len(c.Sensitive) == 0 || tm.Kind != apitypes.TableKindView && tm.Kind != apitypes.TableKindMatView {
+		return nil
+	}
+	deps, err := viewDeps(ctx, cn)
+	if err != nil {
+		return dbError(err)
+	}
+	if leakingViews(deps, markSet(c.Sensitive))[relRef{tm.Schema, tm.Name}] {
+		return fmt.Errorf("%w: %s.%s reads sensitive columns, which your access shows masked; read the tables it reads instead", data.ErrInvalid, tm.Schema, tm.Name)
 	}
 	return nil
 }
