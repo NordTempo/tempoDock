@@ -108,3 +108,14 @@ func TestRunDetach(t *testing.T) {
 		t.Fatalf("locked run: exit %d, stderr %q", code, stderr)
 	}
 }
+
+// A run that couldn't start because the image has no shell says so,
+// instead of pointing at the release and the server.
+func TestRunExitWithoutAShell(t *testing.T) {
+	err := runExit(apitypes.CommandRun{ID: 4, Status: apitypes.RunFailed,
+		Error: `it could not run: exec: "/bin/sh": stat /bin/sh: no such file or directory`})
+	var oe *output.Error
+	if !errors.As(err, &oe) || !strings.Contains(oe.Hint, "no /bin/sh") {
+		t.Fatalf("err = %#v", err)
+	}
+}

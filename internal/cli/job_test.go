@@ -55,7 +55,10 @@ func TestJob(t *testing.T) {
 		t.Fatalf("job history = %+v", runs)
 	}
 
-	ok[map[string]string](t, append([]string{"job", "remove", "nightly"}, at...)...)
+	if code, _, stderr := exec(t, append([]string{"job", "remove", "nightly"}, at...)...); code == 0 || !strings.Contains(stderr, "--yes") {
+		t.Fatalf("remove without --yes off a terminal: exit %d %s", code, stderr)
+	}
+	ok[map[string]string](t, append([]string{"job", "remove", "nightly", "--yes"}, at...)...)
 	if jobs := ok[[]apitypes.Job](t, append([]string{"job", "list"}, at...)...); len(jobs) != 0 {
 		t.Fatalf("jobs after remove = %+v", jobs)
 	}
