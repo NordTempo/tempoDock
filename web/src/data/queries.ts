@@ -1,4 +1,5 @@
 import {
+  hashKey,
   type QueryFunctionContext,
   type QueryKey,
   queryOptions,
@@ -662,21 +663,33 @@ export const useAuditLog = (filter: AuditFilter = {}) =>
   useSuspenseQuery(queries.audit(filter)).data;
 
 /**
- * A query for secret values while `enabled`. Hiding them drops them from
- * the cache too (a disabled query keeps its data), so values live in
- * memory only while on screen and revealing again is a fresh read, which
- * may ask to confirm (revealRequest).
+ * A query for secret values while `enabled`. Values live in memory only
+ * while on screen: hiding them drops them from the cache (a disabled
+ * query keeps its data), and so does leaving (gcTime 0), so revealing
+ * again is a fresh read, which may ask to confirm (revealRequest).
+ *
+ * Several components may read the same values, each with its own
+ * `enabled`. A disabled one gets no data, even when another put it in
+ * the cache, and drops it only once no component shows it: dropping it
+ * from under one that does made that one refetch, which re-rendered the
+ * other, which dropped it again, hundreds of times a second.
  */
 export function useRevealedQuery<T, K extends QueryKey>(
   options: UseQueryOptions<T, Error, T, K> & { queryKey: K },
   enabled: boolean,
 ) {
   const queryClient = useQueryClient();
-  const { queryKey } = options;
+  const { data, error } = useQuery({ ...options, enabled, gcTime: 0 });
+  // A string, so the effect runs when `enabled` flips, not every render.
+  // After useQuery, whose own effect has already disabled its observer.
+  const hash = hashKey(options.queryKey);
   useEffect(() => {
-    if (!enabled) queryClient.removeQueries({ queryKey, exact: true });
-  }, [enabled, queryClient, queryKey]);
-  return useQuery({ ...options, enabled });
+    if (enabled) return;
+    const cache = queryClient.getQueryCache();
+    const query = cache.get(hash);
+    if (query && !query.isActive()) cache.remove(query);
+  }, [enabled, queryClient, hash]);
+  return enabled ? { data, error } : { data: undefined, error: null };
 }
 
 /** Variables with values, fetched only while revealed. Needs admin. */

@@ -753,6 +753,53 @@ func TestStagedChangesCreateConfigRelease(t *testing.T) {
 	}
 }
 
+// TestStagingAgainReplacesTheStagedValue: editing a staged line (the
+// UI's Edit on a pending row) stages over it: an add stays an add with
+// the new value, a change takes the new value, and the live value again
+// un-stages it.
+func TestStagingAgainReplacesTheStagedValue(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	env := web.Env()
+	set := func(kv map[string]string) {
+		t.Helper()
+		if _, err := h.c.SetVariables(h.ctx, testSystem, env, apitypes.SetVariablesRequest{Set: kv}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	staged := func() map[string]apitypes.VariableChange {
+		t.Helper()
+		pending, err := h.c.GetChanges(h.ctx, testSystem, env, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]apitypes.VariableChange{}
+		for _, c := range pending.Variables {
+			out[c.Key] = c
+		}
+		return out
+	}
+
+	set(map[string]string{"LIVE": "one"})
+	if _, err := h.c.ApplyChanges(h.ctx, testSystem, env); err != nil {
+		t.Fatal(err)
+	}
+	set(map[string]string{"NEW": "a", "LIVE": "two"})
+	set(map[string]string{"NEW": "b", "LIVE": "three"})
+	got := staged()
+	if c := got["NEW"]; c.Action != apitypes.ChangeAdd || c.New == nil || *c.New != "b" {
+		t.Fatalf("NEW = %+v, want an add of b", c)
+	}
+	if c := got["LIVE"]; c.Action != apitypes.ChangeUpdate || c.Old == nil || *c.Old != "one" || c.New == nil || *c.New != "three" {
+		t.Fatalf("LIVE = %+v, want one -> three", c)
+	}
+
+	set(map[string]string{"LIVE": "one"})
+	if c, ok := staged()["LIVE"]; ok {
+		t.Fatalf("LIVE back to its live value is still staged: %+v", c)
+	}
+}
+
 func TestSourceDeployUsesRepoFile(t *testing.T) {
 	h := newHarness(t)
 	web := h.service("web", apitypes.CreateServiceRequest{})

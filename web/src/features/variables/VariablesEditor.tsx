@@ -111,7 +111,9 @@ export function VariablesEditor({
   for (const c of revealedChanges.data?.variables ?? []) {
     values.set(idOf(c), { ...values.get(idOf(c)), old: c.old, new: c.new });
   }
-  const shown = (v: Variable) => revealAll || revealedIds.has(idOf(v));
+  // Whether a line's values show: in the table, and in ApplyBox below.
+  const shown = (v: Parameters<typeof idOf>[0]) =>
+    revealAll || revealedIds.has(idOf(v));
 
   const sharedCount = shared.length;
   const actions = (
@@ -241,7 +243,7 @@ export function VariablesEditor({
         {/* A service's tab has the strip in its header; shared variables
             (no service header) get the panel here. */}
         {service === null && (
-          <ApplyBox env={env} reveal={revealAll} variables={all} />
+          <ApplyBox env={env} shows={shown} variables={all} />
         )}
         {footer}
       </div>
@@ -358,7 +360,32 @@ function Line({
         ) : (
           inherited && !v.pending && <span className="text-faint">shared</span>
         )}
-        {v.pending ? (
+        {/* A staged add or change is edited like a live line: Enter
+            stages the new value in its place. */}
+        {v.pending !== "remove" && !editing && (
+          <span className="flex gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+            <button
+              type="button"
+              className="lnk"
+              title={`dock env set ${v.key}=… ${scopeFlags(env, service)}`}
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </button>
+            {!v.pending && (
+              <button
+                type="button"
+                className="lnk"
+                title={`dock env unset ${v.key} ${scopeFlags(env, service)}`}
+                disabled={stage.isPending}
+                onClick={() => stage.mutate({ env, service, unset: [v.key] })}
+              >
+                Remove
+              </button>
+            )}
+          </span>
+        )}
+        {v.pending && (
           <button
             type="button"
             className="lnk"
@@ -371,32 +398,10 @@ function Line({
                 },
               })
             }
-            title={`dock discard ${v.key} ${service ? `-s ${service}` : "--shared"} -e ${env.environment}`}
+            title={`dock discard ${v.key} ${scopeFlags(env, service)}`}
           >
             Discard
           </button>
-        ) : (
-          !editing && (
-            <span className="flex gap-3 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-              <button
-                type="button"
-                className="lnk"
-                title={`dock env set ${v.key}=… ${scopeFlags(env, service)}`}
-                onClick={() => setEditing(true)}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className="lnk"
-                title={`dock env unset ${v.key} ${scopeFlags(env, service)}`}
-                disabled={stage.isPending}
-                onClick={() => stage.mutate({ env, service, unset: [v.key] })}
-              >
-                Remove
-              </button>
-            </span>
-          )
         )}
       </span>
       {resolved !== undefined && resolved !== current && (
