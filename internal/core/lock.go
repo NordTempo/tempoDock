@@ -26,14 +26,24 @@ func envLock(e store.Environment) *apitypes.EnvironmentLock {
 	if e.LockedAt == nil {
 		return nil
 	}
-	return &apitypes.EnvironmentLock{LockedAt: *e.LockedAt, LockedBy: e.LockedBy, Reason: e.LockReason, OpenUntil: e.OpenUntil}
+	return &apitypes.EnvironmentLock{LockedAt: *e.LockedAt, LockedBy: e.LockedBy, Reason: e.LockReason, OpenUntil: e.OpenUntil, People: e.LockPeople}
 }
 
-// lockedOut reports whether e's lock stops the actor: it is a token, the
-// lock holds, and no approved request lets this call through. A
+// lockedOut reports whether e's lock stops the actor: it is a token (or,
+// in an environment locked for people too, a person who doesn't approve
+// there), the lock holds, and no approved request lets this call through. A
 // check-only replay (CheckRequest) is always stopped, so it never runs.
 func (a Actor) lockedOut(e store.Environment) bool {
-	return a.checkOnly || a.askFirst || (a.Kind == "token" && a.granted != e.ID && lockHolds(e, now()))
+	switch {
+	case a.checkOnly || a.askFirst:
+		return true
+	case a.granted == e.ID || !lockHolds(e, now()):
+		return false
+	case a.Kind == "token":
+		return true
+	}
+	// A lock for people too stops a person, but one who may approve here.
+	return e.LockPeople && a.Kind == "user" && !a.approves(e.ProjectID, e.ID, envKind(e))
 }
 
 // checkLock is checkEnv's lock alone, for the few changes whose scope
@@ -69,6 +79,8 @@ type LockedError struct {
 	// them.
 	askOwner *int64
 	owner    string
+	// person: a person's change in an environment locked for people too.
+	person bool
 	// rule: the org's agent rules ask an approver first here.
 	rule bool
 }
@@ -102,7 +114,7 @@ func (a Actor) askOwnerErr(p store.Project, e store.Environment, action string) 
 // lockedErr is the error checkEnv returns when the lock stops a token.
 func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *LockedError {
 	le := &LockedError{OrgID: p.OrgID, ProjectID: p.ID, EnvID: e.ID, Project: p.Name, Environment: e.Name, Action: action, envKind: envKind(e),
-		askedFirst: a.askFirst && (a.Kind != "token" || !lockHolds(e, now()))}
+		askedFirst: a.askFirst && (a.Kind != "token" || !lockHolds(e, now())), person: a.Kind == "user" && !a.askFirst && !a.checkOnly}
 	le.err = &Error{Code: apitypes.CodeEnvironmentLocked, Msg: le.message()}
 	return le
 }
@@ -111,6 +123,10 @@ func (a Actor) lockedErr(p store.Project, e store.Environment, action string) *L
 func (e *LockedError) message() string {
 	follow := fmt.Sprintf("An admin approves or rejects it in the UI (the Inbox); approved, it runs as you. Follow it with `dock request wait %d`", e.Request)
 	switch {
+	case e.person && e.Request != 0:
+		return fmt.Sprintf("environment %s/%s is protected for people too: %s waits for an approver as access request #%d. They approve or reject it in the Inbox; approved, it runs as you", e.Project, e.Environment, e.Action, e.Request)
+	case e.person:
+		return fmt.Sprintf("environment %s/%s is protected for people too: %s needs an approver; ask one to approve it or to open the environment for a while", e.Project, e.Environment, e.Action)
 	case e.rule && e.Request != 0:
 		return fmt.Sprintf("%s in %s/%s waits for an approver as access request #%d: the organization's agent rules ask first there. %s", e.Action, e.Project, e.Environment, e.Request, follow)
 	case e.rule:
@@ -138,9 +154,10 @@ func (e *LockedError) withRequest(id int64) *LockedError {
 
 // checkProjectLocks is checkEnv's lock for project-wide changes that
 // change every environment (archiving a project): any locked environment
-// stops a token. One query, and only for tokens.
+// stops a token, and one locked for people too a person who doesn't
+// approve there. One query, and only for tokens and people.
 func (c *Core) checkProjectLocks(ctx context.Context, a Actor, p store.Project, action string) error {
-	if a.Kind != "token" {
+	if a.Kind != "token" && a.Kind != "user" {
 		return nil
 	}
 	envs, err := c.store.ListEnvironments(ctx, p.ID)
@@ -173,21 +190,30 @@ func (c *Core) LockEnvironment(ctx context.Context, a Actor, ref EnvRef, req api
 	if es.env.LockedAt != nil {
 		at = *es.env.LockedAt
 	}
-	return c.setLock(ctx, a, es, store.SetEnvironmentLockParams{LockedAt: &at, LockedBy: a.Name, LockReason: req.Reason, ID: es.env.ID},
-		"environment.lock", "locked: tokens can't change anything in it"+reasonSuffix(req.Reason))
+	if es.env.LockedAt != nil && es.env.LockPeople && !req.People {
+		// Letting people change it again loosens it: an approver's call.
+		if err := c.loosens(a, es, "letting people change a protected environment"); err != nil {
+			return apitypes.Environment{}, err
+		}
+	}
+	summary := "locked: tokens can't change anything in it"
+	if req.People {
+		summary = "locked for people too: only its approvers change it; everyone else's changes wait for them"
+	}
+	return c.setLock(ctx, a, es, store.SetEnvironmentLockParams{LockedAt: &at, LockedBy: a.Name, LockReason: req.Reason, LockPeople: req.People, ID: es.env.ID},
+		"environment.lock", summary+reasonSuffix(req.Reason))
 }
 
 // UnlockEnvironment unlocks an environment, or with Minutes opens it for
-// that long, and expires its pending access requests. Admins only, and
-// the lock applies: a token asking to unlock gets an access request like
-// any other change.
+// that long, and expires its pending access requests. Loosening it is
+// for whoever may approve there (loosens); a token asking to unlock gets
+// an access request like any other change.
 func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req apitypes.UnlockEnvironmentRequest) (apitypes.Environment, error) {
-	es, err := c.envFor(ctx, a, ref, apitypes.ScopeAdmin, "unlocking an environment")
+	es, err := c.envFor(ctx, a, ref, apitypes.ScopeRead, "unlocking an environment")
 	if err != nil {
 		return apitypes.Environment{}, err
 	}
-	// Unlocking lets tokens change it: a step-up (ADR 0057).
-	if err := a.requireRecent("unlocking an environment"); err != nil {
+	if err := c.loosens(a, es, "unlocking an environment"); err != nil {
 		return apitypes.Environment{}, err
 	}
 	if req.Minutes < 0 || req.Minutes > 7*24*60 {
@@ -202,7 +228,7 @@ func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 	} else {
 		until := now().Add(time.Duration(req.Minutes) * time.Minute)
 		out, err = c.setLock(ctx, a, es, store.SetEnvironmentLockParams{
-			LockedAt: es.env.LockedAt, LockedBy: es.env.LockedBy, LockReason: es.env.LockReason, OpenUntil: &until, ID: es.env.ID,
+			LockedAt: es.env.LockedAt, LockedBy: es.env.LockedBy, LockReason: es.env.LockReason, OpenUntil: &until, LockPeople: es.env.LockPeople, ID: es.env.ID,
 		}, "environment.unlock", fmt.Sprintf("opened for %s: tokens may change it until %s, then it locks again", time.Duration(req.Minutes)*time.Minute, until.Format("15:04 MST")))
 	}
 	if err == nil {
@@ -210,6 +236,26 @@ func (c *Core) UnlockEnvironment(ctx context.Context, a Actor, ref EnvRef, req a
 		c.endUnlockedRequests(ctx, es.env.ID)
 	}
 	return out, err
+}
+
+// loosens checks the actor may loosen es's lock (ADR 0080: loosening a
+// protection needs a current approver): the lock applies to a token,
+// which gets an access request; a person needs approve there, and a
+// recent sign-in (ADR 0057).
+func (c *Core) loosens(a Actor, es envScope, action string) error {
+	if a.Kind == "token" {
+		if err := a.checkLock(es, action); err != nil {
+			return err
+		}
+	}
+	if !a.approves(es.project.ID, es.env.ID, envKind(es.env)) {
+		return a.refuse(apitypes.Refusal{
+			DecidedBy: apitypes.RefusedGrants, Action: action, Need: "approve", Place: es.String(),
+			Reason: fmt.Sprintf("%s can't do %s: it loosens the lock, which takes someone who may approve in %s", a, action, es),
+			Fix:    "an approver there does it (the Approvers group, or Full access)",
+		})
+	}
+	return a.requireRecent(action)
 }
 
 // setLock writes an environment's lock, audits it and tells open pages.

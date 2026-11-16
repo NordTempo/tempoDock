@@ -223,7 +223,15 @@ one decides.
    request the environment's approvers decide (a person's ask goes to
    them). `tokens.rules_bypass` exempts a trusted org agent. Settings ›
    Agent rules, `dock agent rules|rule`, `dock token bypass`.
-7. Protection.
+7. **Protection** (built): a lock can hold people's changes too
+   (`--people`, migration 0118, `environments.lock_people`): whoever may
+   approve there still changes it in the browser; everyone else's change
+   files an access request that runs as them once approved
+   (`access_requests.user_id`). Loosening a lock (unlocking, opening it,
+   letting people change it again) needs an approver there, not just an
+   admin. Settled while building: protection stays the lock's name in
+   the UI and CLI (`dock environment lock --people`) rather than a
+   rename; approvers named per environment are Approver grants on it.
 
 ## Consequences
 

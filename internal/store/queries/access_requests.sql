@@ -1,7 +1,7 @@
 -- name: CreateAccessRequest :one
 INSERT INTO access_requests (nonce, org_id, project_id, environment_id, status, via, operation, title, action, args,
-    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at, upload, ask_user_id)
-VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    fingerprint, reason, token_id, requested_by, audit_mark, created_at, expires_at, upload, ask_user_id, user_id)
+VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- GetPendingAccessRequest is the pending request with a fingerprint, so an
@@ -119,12 +119,15 @@ UPDATE access_requests SET status = 'expired', finished_at = sqlc.arg(now), comm
 WHERE status IN ('pending', 'approved') AND status = 'pending' AND expires_at > +sqlc.arg(now) AND environment_id = +sqlc.arg(environment_id)
 RETURNING *;
 
--- ListAskedAccessRequests is the requests a person's agents asked them to
--- approve first, newest first, with their places' names.
+-- ListAskedAccessRequests is a person's own requests in an org: those
+-- their agents asked them to approve first, and those they asked
+-- themselves in a protected environment, newest first, with their
+-- places' names.
 -- name: ListAskedAccessRequests :many
 SELECT sqlc.embed(access_requests), projects.name AS project_name, environments.name AS environment_name
 FROM access_requests
 JOIN projects ON projects.id = access_requests.project_id
 JOIN environments ON environments.id = access_requests.environment_id
-WHERE access_requests.ask_user_id = +sqlc.arg(ask_user_id) AND access_requests.org_id = +sqlc.arg(org_id)
+WHERE (access_requests.ask_user_id = +sqlc.arg(user_id) OR access_requests.user_id = +sqlc.arg(user_id))
+  AND access_requests.org_id = +sqlc.arg(org_id)
 ORDER BY access_requests.id DESC LIMIT +sqlc.arg(limit);

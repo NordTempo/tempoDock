@@ -86,7 +86,7 @@ var sealedRequestArgs = secrets.Column{Table: "access_requests", Name: "args", K
 // one an identical call filed. Any other error is returned as it is.
 func (c *Core) FileRequest(ctx context.Context, a Actor, err error, call Call) error {
 	le, ok := errors.AsType[*LockedError](err)
-	if !ok || le.Request != 0 || a.Kind != "token" || a.TokenID == 0 {
+	if !ok || le.Request != 0 || (a.Kind != "token" || a.TokenID == 0) && !le.person {
 		return err
 	}
 	if call.Reason == "" {
@@ -98,6 +98,15 @@ func (c *Core) FileRequest(ctx context.Context, a Actor, err error, call Call) e
 		return err
 	}
 	return le.withRequest(r.ID)
+}
+
+// personOf is the person a request is for when they asked themselves (a
+// protected environment); nil for an agent's.
+func personOf(a Actor, le *LockedError) *int64 {
+	if le.person && a.UserID != 0 {
+		return &a.UserID
+	}
+	return nil
 }
 
 // fileRequest stores a request for call as asked by a (a token, or for a
@@ -113,7 +122,7 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 	if basis == "" {
 		basis = string(args)
 	}
-	sum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s\x00%d\x00%s", a.TokenID, call.Via, call.Op, le.EnvID, basis))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%d\x00%s\x00%s\x00%d\x00%s", a.TokenID, a.UserID, call.Via, call.Op, le.EnvID, basis))
 	fingerprint := hex.EncodeToString(sum[:])
 	org, err := c.store.GetOrg(ctx, le.OrgID)
 	if err != nil {
@@ -170,7 +179,7 @@ func (c *Core) fileRequest(ctx context.Context, a Actor, le *LockedError, call C
 			Nonce: nonce, OrgID: le.OrgID, ProjectID: le.ProjectID, EnvironmentID: le.EnvID,
 			Via: call.Via, Operation: call.Op, Title: call.Title, Action: le.Action, Args: sealed,
 			Fingerprint: fingerprint, Reason: call.Reason, TokenID: tokenID, RequestedBy: a.Name,
-			AuditMark: mark, CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), Upload: call.Upload, AskUserID: le.askOwner,
+			AuditMark: mark, CreatedAt: t, ExpiresAt: t.Add(requestTTL(org)), Upload: call.Upload, AskUserID: le.askOwner, UserID: personOf(a, le),
 		})
 		return err
 	})
@@ -295,6 +304,9 @@ func (a Actor) seesRequest(r store.AccessRequest, kind uint8) bool {
 	if a.Kind == "token" && r.TokenID != nil && a.TokenID == *r.TokenID {
 		return true
 	}
+	if a.Kind == "user" && r.UserID != nil && a.UserID == *r.UserID {
+		return true // a person's own, in a protected environment
+	}
 	return a.decides(r, kind) && a.canSee(r.OrgID, r.ProjectID, r.EnvironmentID)
 }
 
@@ -353,8 +365,8 @@ func (c *Core) ListRequests(ctx context.Context, a Actor, f RequestFilter) ([]ap
 			rows = append(rows, row{g.AccessRequest, g.ProjectName, g.EnvironmentName})
 		}
 	case a.Kind != "token" && a.UserID != 0:
-		// What their agents asked them first.
-		got, err := c.store.ListAskedAccessRequests(ctx, store.ListAskedAccessRequestsParams{AskUserID: &a.UserID, OrgID: a.OrgID, Limit: limit})
+		// What their agents asked them first, and what they asked.
+		got, err := c.store.ListAskedAccessRequests(ctx, store.ListAskedAccessRequestsParams{UserID: &a.UserID, OrgID: a.OrgID, Limit: limit})
 		if err != nil {
 			return nil, err
 		}
@@ -701,7 +713,20 @@ func (c *Core) replayRequest(ctx context.Context, r store.AccessRequest, es envS
 	// A held push runs as the daemon, for its pusher.
 	a := System.InOrg(r.OrgID)
 	a.Name = r.RequestedBy
-	if r.TokenID != nil {
+	switch {
+	case r.UserID != nil:
+		// A person's, in a protected environment: as them, now.
+		u, err := c.store.GetUser(ctx, *r.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if u.DisabledAt != nil {
+			return nil, errf(apitypes.CodeForbidden, "%s's account is disabled; the request can't run", u.Email)
+		}
+		if a, err = c.actIn(ctx, userActor(u), org.Slug, apitypes.ScopeAdmin); err != nil {
+			return nil, err
+		}
+	case r.TokenID != nil:
 		row, err := c.store.GetTokenByIDWithOwner(ctx, *r.TokenID)
 		if err != nil {
 			return nil, err

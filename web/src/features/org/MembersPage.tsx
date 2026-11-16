@@ -6,7 +6,6 @@ import { useIsAdmin, useSession } from "../../data/queries";
 import type { Scope, User } from "../../data/types";
 import { useShortcuts } from "../../shell/keys";
 import { useOrg } from "../../shell/location";
-import { CliHint } from "../../ui/CliHint";
 import { ago, day, plural } from "../../ui/format";
 import {
   Act,
@@ -17,7 +16,7 @@ import {
   Panel,
   StateText,
 } from "../../ui/kit";
-import { useGroups } from "../access/data";
+import { useGroupMember, useGroups } from "../access/data";
 import { PersonAccess } from "../access/PersonAccess";
 import { ShadowNote } from "../access/ShadowNote";
 import { Saved, useValidation } from "../create/form";
@@ -78,6 +77,8 @@ function Members() {
   const [inviting, setInviting] = useState(false);
   const [link, setLink] = useState<InviteLinkInfo>();
   const groups = useGroups();
+  // Under enforce groups decide; a role is only their summary (ADR 0080).
+  const enforce = me?.access_model === "enforce";
   // The person whose grants and effective access show beside the table.
   const [person, setPerson] = useState<string>();
   const groupsOf = (id: number) =>
@@ -150,7 +151,7 @@ function Members() {
                   <thead>
                     <tr>
                       <th>Person</th>
-                      <th>Role</th>
+                      {!enforce && <th>Role</th>}
                       <th>Groups</th>
                       <th title="Whether they sign in with a second factor">
                         Two-factor
@@ -168,6 +169,8 @@ function Members() {
                         required={required}
                         you={me?.email === u.email}
                         groups={groupsOf(u.id)}
+                        allGroups={groups.map((g) => g.name)}
+                        enforce={enforce}
                         selected={person === u.email}
                         onSelect={() =>
                           setPerson(person === u.email ? undefined : u.email)
@@ -178,6 +181,7 @@ function Members() {
                       <InviteRow
                         key={`invite-${i.id}`}
                         invite={i}
+                        enforce={enforce}
                         onLink={setLink}
                       />
                     ))}
@@ -188,6 +192,11 @@ function Members() {
                 Removing someone takes them out of this organization; their
                 account stays. Leave the organization from General.
               </p>
+              <p className="font-mono text-2xs text-mut">
+                {enforce
+                  ? "dock group add|remove <group> <email> · dock can <email> · dock org member remove <email>"
+                  : "dock org member role <email> read|deploy|admin · dock group add|remove <group> <email> · dock can <email>"}
+              </p>
             </div>
             {person ? (
               <Suspense fallback={<p className="text-faint">Loading.</p>}>
@@ -197,7 +206,8 @@ function Members() {
                 />
               </Suspense>
             ) : (
-              <Roles />
+              // Roles only decide until the model enforces (ADR 0080).
+              !enforce && <Roles />
             )}
           </div>
         </div>
@@ -347,20 +357,22 @@ function RoleSelect({
   );
 }
 
-/** A member's live sessions and usable tokens, "2 sessions · 1 token". */
+/** A member's live sessions and usable tokens, "2 sessions, 1 token". */
 const signedIn = (u: User) =>
   [
     u.sessions > 0 && plural(u.sessions, "session"),
     u.tokens > 0 && plural(u.tokens, "token"),
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(", ");
 
 function MemberRow({
   member,
   required,
   you,
   groups,
+  allGroups,
+  enforce,
   selected,
   onSelect,
 }: {
@@ -368,57 +380,103 @@ function MemberRow({
   /** The org requires a second factor (ADR 0057): those without can't act here. */
   required: boolean;
   you: boolean;
-  /** The groups they are in (ADR 0080). */
+  /** The groups they are in, and the org's (ADR 0080). */
   groups: string[];
+  allGroups: string[];
+  /** Groups decide: no role to set, only groups (ADR 0080). */
+  enforce: boolean;
   selected: boolean;
-  /** Shows their grants and effective access beside the table. */
+  /** Shows their grants and effective access under the table. */
   onSelect: () => void;
 }) {
   const { id, email, name, role } = member;
   const setRole = useSetMemberRole();
+  const membership = useGroupMember();
+  const others = allGroups.filter((g) => !groups.includes(g));
   const remove = useRemoveMember();
   const [asking, setAsking] = useState(false);
   const access = signedIn(member);
   return (
     <tr className="*:align-middle">
       <td className="py-2">
-        <PersonCell name={name} email={email} you={you} />
+        <button
+          type="button"
+          className={`text-left ${selected ? "underline" : ""}`}
+          aria-expanded={selected}
+          aria-label={`${email}: grants and what they can do`}
+          onClick={onSelect}
+        >
+          <PersonCell name={name} email={email} you={you} />
+        </button>
       </td>
-      <td className="py-1.5">
-        {you ? (
-          // Your own role changes through another admin.
-          <span className="px-[9px]">{role}</span>
-        ) : (
-          <>
-            <CliHint
-              cli={`dock org member role ${email} <role>`}
-              className="act"
-            >
+      {!enforce && (
+        <td className="py-1.5">
+          {you ? (
+            // Your own role changes through another admin.
+            <span className="px-[9px]">{role}</span>
+          ) : (
+            <>
+              {/* Its CLI line is under the table: a hint here would cover
+                  the next row. */}
               <RoleSelect
                 label={`Role of ${email}`}
                 value={role}
                 disabled={setRole.isPending}
                 onChange={(r) => setRole.mutate({ id, role: r })}
               />
-            </CliHint>
-            {setRole.isSuccess && (
-              <div>
-                <Saved ok />
-              </div>
-            )}
-            <ErrorText error={setRole.error} />
-          </>
-        )}
-      </td>
-      <td className="py-2 whitespace-normal">
-        <button
-          type="button"
-          className={selected ? "text-fg underline" : "text-sec hover:text-fg"}
-          title="Their grants and what they can do"
-          onClick={onSelect}
-        >
-          {groups.length ? groups.join(", ") : "no group"}
-        </button>
+              {setRole.isSuccess && (
+                <div>
+                  <Saved ok />
+                </div>
+              )}
+              <ErrorText error={setRole.error} />
+            </>
+          )}
+        </td>
+      )}
+      <td className="min-w-[280px] py-2">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          {groups.map((g) => (
+            <span key={g} className="whitespace-nowrap">
+              {g}
+              <button
+                type="button"
+                className="px-0.5 text-mut hover:text-fg"
+                aria-label={`Take ${email} out of ${g}`}
+                disabled={membership.isPending}
+                onClick={() =>
+                  membership.mutate({ group: g, member: email, add: false })
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {others.length > 0 && (
+            <select
+              aria-label={`Add ${email} to a group`}
+              className="cursor-pointer appearance-none border-0 bg-transparent bg-none p-0 text-mut hover:text-fg"
+              value=""
+              disabled={membership.isPending}
+              onChange={(e) =>
+                e.target.value &&
+                membership.mutate({
+                  group: e.target.value,
+                  member: email,
+                  add: true,
+                })
+              }
+            >
+              <option value="">+ group</option>
+              {others.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          )}
+        </span>
+        <ErrorText error={membership.error} />
       </td>
       <td className="py-2">
         <TwoFactorState
@@ -428,7 +486,7 @@ function MemberRow({
         />
       </td>
       <td
-        className={`min-w-[120px] py-2 whitespace-normal ${access ? "text-mut" : "text-faint"}`}
+        className={`py-2 whitespace-nowrap ${access ? "text-mut" : "text-faint"}`}
       >
         {access || "none"}
       </td>
@@ -489,9 +547,12 @@ function MailNote({ mail }: { mail: Invite["mail"] }) {
  */
 function InviteRow({
   invite,
+  enforce,
   onLink,
 }: {
   invite: Invite;
+  /** Groups decide: the role shows as what they join with (ADR 0080). */
+  enforce: boolean;
   onLink: (link: InviteLinkInfo) => void;
 }) {
   const { id, email, role, expires_at } = invite;
@@ -519,8 +580,14 @@ function InviteRow({
           </span>
         </span>
       </td>
-      <td className="py-2 text-mut">{role}</td>
-      <td />
+      {enforce ? (
+        <td className="py-2 text-mut">invited as {role}</td>
+      ) : (
+        <>
+          <td className="py-2 text-mut">{role}</td>
+          <td />
+        </>
+      )}
       <td />
       <td className="py-2 text-faint">
         {invite.expired ? "expired" : `until ${day(expires_at)}`}

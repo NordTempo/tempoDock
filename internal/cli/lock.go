@@ -18,19 +18,24 @@ import (
 func newEnvironmentLockCmd(g *globals) *cobra.Command {
 	var f targetFlags
 	var reason string
+	var people bool
 	cmd := &cobra.Command{
-		Use:   "lock [<environment>] [--reason <text>]",
+		Use:   "lock [<environment>] [--reason <text>] [--people]",
 		Short: "Lock an environment: tokens can't change anything in it",
 		Long: `Lock an environment. Tokens (API tokens, ` + "`dock login`" + ` tokens and MCP, so
 agents and this CLI) can still read everything, but every change they try
 in it (deploys, rollbacks, restarts, variables, settings, domains,
 volumes, archive) is refused with exit code 5 and becomes an access
 request that an admin approves or rejects in the UI. Approved, it runs as
-the token that asked. People in the web UI are not affected.
+the token that asked. People in the web UI are not affected, unless
+--people: then only those who may approve there (Approvers, Full access)
+change it, and everyone else's change waits for them too.
 
 Locking an environment that is open for a while closes it again. Needs
-admin.`,
-		Example:           `  dock environment lock production --reason "live, customers use it"`,
+admin; letting people change it again, like unlocking or opening it,
+needs an approver there.`,
+		Example: `  dock environment lock production --reason "live, customers use it"
+  dock environment lock production --people`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeEnvironmentArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,11 +43,15 @@ admin.`,
 			if err != nil {
 				return err
 			}
-			e, err := send[apitypes.Environment](cmd.Context(), s, http.MethodPost, t.envPath()+"/lock", apitypes.LockEnvironmentRequest{Reason: reason})
+			e, err := send[apitypes.Environment](cmd.Context(), s, http.MethodPost, t.envPath()+"/lock", apitypes.LockEnvironmentRequest{Reason: reason, People: people})
 			if err != nil {
 				return err
 			}
 			return g.io.Print(e, func() error {
+				if people {
+					g.io.Successf("Locked %s/%s for people too: only its approvers change it; what others try waits for them in the UI", e.Project, e.Name)
+					return nil
+				}
 				g.io.Successf("Locked %s/%s: tokens can't change anything in it; what they try waits for approval in the UI", e.Project, e.Name)
 				return nil
 			})
@@ -50,6 +59,7 @@ admin.`,
 	}
 	f.add(cmd, needEnvironment)
 	cmd.Flags().StringVar(&reason, "reason", "", "why it is locked, shown with the lock")
+	cmd.Flags().BoolVar(&people, "people", false, "hold people's changes too, but its approvers'")
 	return cmd
 }
 

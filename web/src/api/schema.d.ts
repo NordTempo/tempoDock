@@ -8945,6 +8945,7 @@ export interface components {
             locked_by: string;
             /** Format: date-time */
             open_until?: string;
+            people?: boolean;
             reason?: string;
         };
         EnvironmentMove: {
@@ -9745,6 +9746,8 @@ export interface components {
             referrer?: string;
         };
         LockEnvironmentRequest: {
+            /** @description Hold people's changes too, not only agents'; whoever may approve there still changes it */
+            people?: boolean;
             /** @description Why it is locked, shown with the lock */
             reason?: string;
         };

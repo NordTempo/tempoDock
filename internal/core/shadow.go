@@ -257,7 +257,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeAdmin, "testing log drains"}:                                  PermEnvManage,
 	{apitypes.ScopeDeploy, "turning a job on or off"}:                            PermConfigWrite,
 	{apitypes.ScopeDeploy, "turning analytics off for a domain"}:                 PermDomainsWrite,
-	{apitypes.ScopeAdmin, "unlocking an environment"}:                            PermEnvManage,
+	{apitypes.ScopeRead, "unlocking an environment"}:                             PermEnvView,
 	{apitypes.ScopeRead, "using the database panel"}:                             PermEnvView,
 	{apitypes.ScopeRead, "viewing staged changes"}:                               PermEnvView,
 	{apitypes.ScopeRead, "waiting for an access request"}:                        PermRequestsRead,
