@@ -146,7 +146,9 @@ however indirectly (changing `postgres`'s `DATABASE_URL` also redeploys the
 `api` that uses `${{postgres.DATABASE_URL}}`). `dock changes` lists them
 under "Applying redeploys" (API: `affected`). Services that aren't running
 pick the change up on their first deploy. A service already deploying is
-listed under `skipped` and picks it up on its next release.
+listed under `skipped` and picks it up on its next release. A `dock deploy`
+that takes a service's own staged variables live does the same for the
+services referencing them, and its output names them.
 
 **If a release fails, its changes are staged again.** The values in effect
 are those of the active release, so a failed release's variable, setting

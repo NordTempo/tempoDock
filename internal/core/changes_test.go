@@ -392,3 +392,35 @@ func TestRollbackPutsVariablesBack(t *testing.T) {
 		t.Errorf("the apply after the rollback runs %v", spec.Env)
 	}
 }
+
+// A deploy that takes a service's staged variable live redeploys the
+// services referencing it, as an apply does, and its events name them.
+func TestDeployRedeploysReferencingServices(t *testing.T) {
+	h := newHarness(t)
+	api := h.service("api", apitypes.CreateServiceRequest{Image: "app:1"})
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(api, h.deploy(api, "app:1").Number)
+	h.wait(web, h.deploy(web, "app:1").Number)
+	h.setVars(api, map[string]string{"SECRET_KEY": "hunter3"})
+	h.setVars(web, map[string]string{"API_SECRET": "${{api.SECRET_KEY}}"})
+	webLive, _ := h.c.GetService(h.ctx, testSystem, web)
+
+	if _, err := h.c.SetVariables(h.ctx, testSystem, api.Env(), apitypes.SetVariablesRequest{Service: "api", Set: map[string]string{"SECRET_KEY": "hunter4"}}); err != nil {
+		t.Fatal(err)
+	}
+	rel := h.wait(api, h.deploy(api, "app:2").Number)
+	next := h.wait(web, *webLive.ActiveRelease+1)
+	if next.Status != apitypes.ReleaseActive || next.Source != apitypes.SourceConfig {
+		t.Fatalf("web after api's deploy = %+v", next)
+	}
+	if spec, _ := h.rt.Spec(h.ctr(web, next.Number)); spec.Env["API_SECRET"] != "hunter4" {
+		t.Errorf("web runs API_SECRET=%q, want api's new value", spec.Env["API_SECRET"])
+	}
+	r, _ := h.c.GetRelease(h.ctx, testSystem, api, rel.Number)
+	if !strings.Contains(fmt.Sprint(r.Events), "Redeploying web (release") {
+		t.Errorf("api's release events don't name web: %v", r.Events)
+	}
+	if p, _ := h.c.GetChanges(h.ctx, testSystem, api.Env(), false); p.Count != 0 {
+		t.Errorf("staged after the deploy: %+v", p)
+	}
+}

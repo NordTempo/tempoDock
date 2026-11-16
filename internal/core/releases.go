@@ -557,6 +557,12 @@ type releaseSpec struct {
 	done func(ok bool)
 }
 
+// takesStaged reports whether the release takes its service's own staged
+// changes live: upload and image deploys, and promotions that ask.
+func (spec releaseSpec) takesStaged() bool {
+	return spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged
+}
+
 var errNoActiveRelease = errors.New("service has no active release")
 
 // startRelease creates a queued release and starts deploying it in the
@@ -580,9 +586,21 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 	}
 	// A deploy during a move waits for it (deployment.waitForMove).
 	var rel store.Release
+	var deps []queuedRelease
 	err := c.store.Tx(ctx, func(q *store.Queries) error {
+		var before map[int64]map[string]string
+		if spec.takesStaged() {
+			var err error
+			if before, _, err = c.resolveEnvs(ctx, q, ss.envScope, false); err != nil {
+				return err
+			}
+		}
 		var err error
 		ss, rel, err = c.createRelease(ctx, q, a, ss, spec)
+		if err != nil || before == nil {
+			return err
+		}
+		deps, err = c.queueDependents(ctx, q, a, ss, before)
 		return err
 	})
 	if store.IsUnique(err) {
@@ -592,7 +610,59 @@ func (c *Core) startRelease(ctx context.Context, a Actor, ss svcScope, spec rele
 		return rel, err
 	}
 	c.launch(ctx, a, ss, rel, spec)
+	if len(deps) > 0 {
+		names := make([]string, len(deps))
+		for i, d := range deps {
+			c.launch(ctx, a, d.ss, d.rel, d.spec)
+			names[i] = fmt.Sprintf("%s (release %d)", d.ss.svc.Name, d.rel.Number)
+		}
+		c.releaseEvent(ctx, ss, rel, "Redeploying "+strings.Join(names, ", ")+": they reference a variable this deploy changed")
+	}
 	return rel, nil
+}
+
+// queuedRelease is a release created in a transaction, launched once it
+// commits.
+type queuedRelease struct {
+	ss   svcScope
+	rel  store.Release
+	spec releaseSpec
+}
+
+// queueDependents creates, in q's transaction, a config release for each
+// running service whose resolved variables changed from before because
+// ss's deploy took its own staged variables live: the services that
+// reference them get the new values as an apply gives them. One that is
+// deploying keeps its old values until its next release; a broken
+// reference refuses the deploy, as it refuses an apply.
+func (c *Core) queueDependents(ctx context.Context, q *store.Queries, a Actor, ss svcScope, before map[int64]map[string]string) ([]queuedRelease, error) {
+	after, broken, err := c.resolveEnvs(ctx, q, ss.envScope, false)
+	if err != nil {
+		return nil, err
+	}
+	svcs, err := q.ListServices(ctx, ss.env.ID)
+	if err != nil {
+		return nil, err
+	}
+	var out []queuedRelease
+	for _, s := range svcs {
+		if s.ID == ss.svc.ID || s.ArchivedAt != nil || maps.Equal(before[s.ID], after[s.ID]) {
+			continue
+		}
+		if err := broken[s.ID]; err != nil {
+			return nil, err
+		}
+		spec := releaseSpec{source: apitypes.SourceConfig}
+		dss, rel, err := c.createRelease(ctx, q, a, svcScope{ss.envScope, s}, spec)
+		switch {
+		case errors.Is(err, errNoActiveRelease), CodeOf(err) == apitypes.CodeDeployInProgress:
+			continue // gets the new values on its next release
+		case err != nil:
+			return nil, fmt.Errorf("release %s: %w", dss, err)
+		}
+		out = append(out, queuedRelease{dss, rel, spec})
+	}
+	return out, nil
 }
 
 // canDeploy refuses a release in env while the daemon is shutting down or
@@ -629,7 +699,7 @@ func (c *Core) createRelease(ctx context.Context, q *store.Queries, a Actor, ss 
 	}
 	ss.svc = svc
 	ch := spec.carried
-	takesStaged := spec.source == apitypes.SourceUpload || spec.source == apitypes.SourceImage || spec.applyStaged
+	takesStaged := spec.takesStaged()
 	if svc.Staged == "create" && !takesStaged {
 		// Promote, restart and rollback don't apply staged changes, so
 		// they'd run a service whose creation isn't applied (ADR 0049).
