@@ -108,7 +108,7 @@ export function StatusPagesPage() {
   );
 }
 
-/** Makes a page: its name (its address) and title. */
+/** Makes a page: its name (unique in the organization) and title. */
 function NewPage({ onClose }: { onClose: () => void }) {
   const create = useCreateStatusPage();
   const navigate = useNavigate();
@@ -159,8 +159,8 @@ function NewPage({ onClose }: { onClose: () => void }) {
         Create
       </Act>
       <span className="basis-full text-xs text-mut">
-        The name is the page's address: status-{slug || "<name>"}.&lt;base
-        domain&gt;. It starts unpublished.
+        Its address gets a random part, so nobody finds it by guessing. It
+        starts unpublished.
       </span>
       <ErrorText error={create.error} />
     </form>

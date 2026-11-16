@@ -1227,12 +1227,15 @@ type StatusPage struct {
 	Hostname    *string
 	VerifyToken string
 	VerifiedAt  *time.Time
+	AddressKey  string
 }
 
 type StatusPageOldSlug struct {
-	Slug      string
-	PageID    int64
-	ChangedAt time.Time
+	OrgID      int64
+	Slug       string
+	PageID     int64
+	AddressKey string
+	ChangedAt  time.Time
 }
 
 type StatusSource struct {

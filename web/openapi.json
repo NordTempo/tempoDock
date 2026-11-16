@@ -16755,7 +16755,7 @@
             "type": "boolean"
           },
           "public": {
-            "description": "A public, read-only dashboard (phase A4): at stats-\u003csite\u003e.\u003cbase domain\u003e and public_domain",
+            "description": "A public, read-only dashboard (phase A4): at stats-\u003csite\u003e-\u003crandom\u003e.\u003cbase domain\u003e and public_domain",
             "type": "boolean"
           },
           "public_domain": {
@@ -17600,6 +17600,9 @@
       "StatusPage": {
         "additionalProperties": false,
         "properties": {
+          "address": {
+            "type": "string"
+          },
           "base_domain": {
             "type": "string"
           },
@@ -74006,7 +74009,7 @@
         ]
       },
       "post": {
-        "description": "Unpublished until published; then served at status-\u003cslug\u003e.\u003cbase domain\u003e. At most 5 per organization. Organization admins.",
+        "description": "Unpublished until published; then served at its `address`, status-\u003cslug\u003e-\u003crandom\u003e.\u003cbase domain\u003e. Names are unique in the organization. At most 5 per organization. Organization admins.",
         "operationId": "create-status-page",
         "parameters": [
           {
@@ -74375,7 +74378,7 @@
         ]
       },
       "patch": {
-        "description": "Its name (`slug`: the generated address moves to status-\u003cslug\u003e.\u003cbase domain\u003e, and the old name and address keep working, redirecting, until another page takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
+        "description": "Its name (`slug`: the generated address moves to status-\u003cslug\u003e-\u003crandom\u003e.\u003cbase domain\u003e, the same random part, and the old name and address keep working, redirecting, until another of the organization's pages takes it), its title, whether it shows percentages, whether alerts draft incidents, its custom hostname (served once its TXT record proves the organization controls it, or at once when Dock makes its record in a connected Cloudflare zone), and whether it is published. Organization admins.",
         "operationId": "update-status-page",
         "parameters": [
           {

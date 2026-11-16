@@ -22,7 +22,7 @@ line means a later record added to it without changing what it decided.
 | [0006](0006-every-way-to-build.md) | Every way to build and deploy | accepted |
 | [0007](0007-config-db-plus-repo-file.md) | Config in the platform DB plus an optional repo file | accepted |
 | [0008](0008-keep-doors-open.md) | Keep open source and hosting possible, cheaply | superseded in part by [0027](0027-organizations.md), [0082](0082-open-source-license.md) |
-| [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md) |
+| [0009](0009-dynamic-domains-and-tls.md) | Dynamic domains and automatic TLS | superseded in part by [0042](0042-domain-verification.md); amended by [0087](0087-unguessable-generated-hostnames.md) (random part in generated hostnames) |
 | [0010](0010-environments-on-servers.md) | Environments are placed on servers | superseded in part by [0015](0015-server-pools-and-placement.md) |
 | [0011](0011-stateful-services-and-databases.md) | Stateful services and databases | superseded in part by [0047](0047-volume-snapshots.md) |
 | [0012](0012-name-tempo-dock.md) | Name: Tempo Dock, CLI `dock` | accepted |
@@ -50,7 +50,7 @@ line means a later record added to it without changing what it decided.
 | [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
 | [0035](0035-server-disk-breakdown.md) | Where a server's disk goes | accepted |
 | [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | superseded in part by [0062](0062-org-alerts-and-operators.md), [0068](0068-redirects-on-cloudflare-zones.md) |
-| [0037](0037-analytics.md) | Dock Analytics | superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md); amended by [0085](0085-analytics-consent.md) |
+| [0037](0037-analytics.md) | Dock Analytics | superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md); amended by [0085](0085-analytics-consent.md) and [0087](0087-unguessable-generated-hostnames.md) (dashboard addresses) |
 | [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | superseded in part by [0080](0080-permissions-roles-groups-and-agents.md) |
 | [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
 | [0040](0040-traffic-counts-requests.md) | Traffic counts requests; visitors are Analytics' | accepted |
@@ -86,7 +86,7 @@ line means a later record added to it without changing what it decided.
 | [0070](0070-sleeping-environments.md) | Sleeping environments (scale to zero) | accepted |
 | [0071](0071-deploy-diagnosis.md) | Deploy diagnosis | accepted |
 | [0072](0072-mysql-and-redis-in-the-data-panel.md) | MySQL/MariaDB and Redis/Valkey in the Data panel | accepted |
-| [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 to 5 |
+| [0073](0073-public-status-pages.md) | Public status pages | accepted; phases 1 to 5; amended by [0087](0087-unguessable-generated-hostnames.md) (names per organization, random part in addresses) |
 | [0074](0074-image-vulnerability-scanning.md) | Image vulnerability scanning | accepted |
 | [0075](0075-tracing-over-otlp.md) | Tracing over OTLP | accepted; phases 1 to 6 built |
 | [0076](0076-service-page-in-nine-tabs.md) | The service page in nine tabs, one save model, a failure said once | accepted; Requests built |
@@ -100,6 +100,7 @@ line means a later record added to it without changing what it decided.
 | [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted |
 | [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |
 | [0086](0086-cancel-a-deploy.md) | Cancel a deploy: any step before the cutover, the serving release keeps serving, `canceled` is no failure | accepted |
+| [0087](0087-unguessable-generated-hostnames.md) | Generated hostnames nobody can guess: a random part in new ones, status page names per organization, plain HTTP alike for every host; what CT logs still show | accepted |
 | [0088](0088-signed-releases.md) | Signed releases: Ed25519 over `SHA256SUMS`, keys built into dock, checked on every download path from v0.56.0; build-provenance attestations | accepted |
 
 ## Template

@@ -28,7 +28,7 @@ func incidentPage(t *testing.T) (*harness, []apitypes.UptimeCheck, int64) {
 	if _, err := h.c.UpdateStatusPage(h.ctx, testSystem, "acme", apitypes.UpdateStatusPageRequest{Published: new(true)}); err != nil {
 		t.Fatal(err)
 	}
-	id, _, ok := h.c.StatusPageAt("status-acme.dock.example.net")
+	id, _, ok := h.c.StatusPageAt(h.pageAddress("acme"))
 	if !ok {
 		t.Fatal("the page isn't served")
 	}
@@ -76,7 +76,7 @@ func TestStatusIncidents(t *testing.T) {
 		t.Fatal(err)
 	}
 	if inc.Title != "API errors" || inc.State != apitypes.IncidentInvestigating || len(inc.Updates) != 1 ||
-		inc.Updates[0].Message != "We are investigating.\nMore soon." || inc.URL != "https://status-acme.dock.example.net/incidents/"+inc.ID {
+		inc.Updates[0].Message != "We are investigating.\nMore soon." || inc.URL != "https://"+h.pageAddress("acme")+"/incidents/"+inc.ID {
 		t.Fatalf("incident = %+v", inc)
 	}
 	if got := h.componentStatuses(t); got[0] != part || got[1] != op || got[2] != part {

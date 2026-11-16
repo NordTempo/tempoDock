@@ -197,7 +197,7 @@ func TestStatusPagePublished(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	const host = "status-acme.dock.example.net"
+	host := h.pageAddress("acme")
 	if _, _, ok := h.c.StatusPageAt(host); ok {
 		t.Error("an unpublished page is served")
 	}
@@ -208,8 +208,13 @@ func TestStatusPagePublished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.CreateStatusPage(h.ctx, System.InOrg(org.ID), apitypes.CreateStatusPageRequest{Slug: "acme"}); CodeOf(err) != apitypes.CodeHostnameTaken {
-		t.Errorf("another org took the slug: %v", err)
+	// Names are the organization's: another may use the same, at an
+	// address of its own; this one may not.
+	if theirs, err := h.c.CreateStatusPage(h.ctx, System.InOrg(org.ID), apitypes.CreateStatusPageRequest{Slug: "acme"}); err != nil || theirs.Address == host {
+		t.Errorf("another org's page called acme: %q, %v", theirs.Address, err)
+	}
+	if _, err := h.c.CreateStatusPage(h.ctx, testSystem, apitypes.CreateStatusPageRequest{Slug: "acme"}); CodeOf(err) != apitypes.CodeConflict {
+		t.Errorf("a second page called acme in the org: %v", err)
 	}
 	if _, err := h.c.AddDomain(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, apitypes.AddDomainRequest{Hostname: host}); CodeOf(err) != apitypes.CodeHostnameTaken {
 		t.Errorf("a service took the page's address: %v", err)
@@ -267,9 +272,9 @@ func TestStatusPagePublished(t *testing.T) {
 	}
 }
 
-// Renaming a page moves its address; the old name keeps finding the page
-// and its address redirects, routed with a certificate, until another
-// page takes the name. A new name follows a new page's rules, and a page
+// Renaming a page moves its address, keeping its random part; the old
+// name keeps finding the page and its address redirects, routed with a
+// certificate, until another of the org's pages takes the name. A page
 // keeps its statusOldSlugs newest old names.
 func TestStatusPageRename(t *testing.T) {
 	h, _ := statusHarness(t)
@@ -281,13 +286,15 @@ func TestStatusPageRename(t *testing.T) {
 		{Name: "Web", Sources: []apitypes.StatusSourceRef{{Service: "shop/production/web"}}}}}); err != nil {
 		t.Fatal(err)
 	}
-	const oldHost, newHost = "status-api.dock.example.net", "status-tempo-api.dock.example.net"
+	oldHost := h.pageAddress("api")
+	key := strings.TrimSuffix(strings.TrimPrefix(oldHost, "status-api-"), ".dock.example.net")
+	newHost := "status-tempo-api-" + key + ".dock.example.net"
 	p, err := h.c.UpdateStatusPage(h.ctx, admin, "api", apitypes.UpdateStatusPageRequest{Slug: new("tempo-api"), Title: new("Tempo API"), Published: new(true)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Slug != "tempo-api" || p.Title != "Tempo API" || p.URL != "https://"+newHost || len(p.Components) != 1 {
-		t.Fatalf("renamed page = %+v", p.StatusPageSummary)
+	if p.Slug != "tempo-api" || p.Title != "Tempo API" || p.URL != "https://"+newHost || p.Address != newHost || len(p.Components) != 1 {
+		t.Fatalf("renamed page = %+v at %s", p.StatusPageSummary, p.Address)
 	}
 	if _, _, ok := h.c.StatusPageAt(newHost); !ok || !h.routed(newHost) {
 		t.Error("the new address isn't served")
@@ -313,12 +320,8 @@ func TestStatusPageRename(t *testing.T) {
 	if _, err := h.c.CreateStatusPage(h.ctx, admin, apitypes.CreateStatusPageRequest{Slug: "other"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.c.AddDomain(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, apitypes.AddDomainRequest{Hostname: "status-shop.dock.example.net"}); err != nil {
-		t.Fatal(err)
-	}
 	for slug, code := range map[string]apitypes.ErrorCode{
-		"tempo-api": apitypes.CodeHostnameTaken, // another page's
-		"shop":      apitypes.CodeHostnameTaken, // a service's domain
+		"tempo-api": apitypes.CodeConflict, // another of the org's pages
 		"Not_Valid": apitypes.CodeValidation,
 	} {
 		if _, err := h.c.UpdateStatusPage(h.ctx, admin, "other", apitypes.UpdateStatusPageRequest{Slug: new(slug)}); CodeOf(err) != code {
@@ -328,16 +331,32 @@ func TestStatusPageRename(t *testing.T) {
 	if _, err := h.c.AddDomain(h.ctx, testSystem, ServiceRef{"shop", "production", "web"}, apitypes.AddDomainRequest{Hostname: oldHost}); CodeOf(err) != apitypes.CodeHostnameTaken {
 		t.Errorf("a service took a redirecting address: %v", err)
 	}
+	// Another org's page may have the name, and its old name is no
+	// business of ours.
+	org, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "elsewhere", Name: "elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	them := System.InOrg(org.ID)
+	if _, err := h.c.CreateStatusPage(h.ctx, them, apitypes.CreateStatusPageRequest{Slug: "api"}); err != nil {
+		t.Fatalf("another org's page called api: %v", err)
+	}
+	if _, ok := h.c.StatusPageMoved(oldHost); !ok {
+		t.Error("another org's page took our old address")
+	}
+	if got, err := h.c.GetStatusPage(h.ctx, them, "api"); err != nil || got.Slug != "api" || got.Address == oldHost {
+		t.Errorf("another org's api: %+v at %s, %v", got.StatusPageSummary, got.Address, err)
+	}
 
-	// Another page may take the old name; the redirect stops.
+	// Another of our pages may take the old name; the redirect stops.
 	if p, err = h.c.UpdateStatusPage(h.ctx, admin, "other", apitypes.UpdateStatusPageRequest{Slug: new("api")}); err != nil || p.Slug != "api" {
 		t.Fatalf("took the old name: %+v, %v", p.StatusPageSummary, err)
 	}
 	if _, ok := h.c.StatusPageMoved(oldHost); ok {
 		t.Error("a taken old name still redirects")
 	}
-	if got, err := h.c.GetStatusPage(h.ctx, admin, "api"); err != nil || got.Title != "other" {
-		t.Errorf("the taken name finds %+v, %v", got.StatusPageSummary, err)
+	if got, err := h.c.GetStatusPage(h.ctx, admin, "api"); err != nil || got.Title != "other" || got.Address == oldHost {
+		t.Errorf("the taken name finds %+v at %s, %v", got.StatusPageSummary, got.Address, err)
 	}
 
 	slug := "tempo-api"
@@ -354,8 +373,46 @@ func TestStatusPageRename(t *testing.T) {
 			moved++
 		}
 	}
-	if _, ok := h.c.StatusPageMoved("status-tempo-0.dock.example.net"); moved != statusOldSlugs || ok {
+	if _, ok := h.c.StatusPageMoved("status-tempo-0-" + key + ".dock.example.net"); moved != statusOldSlugs || ok {
 		t.Errorf("%d old addresses redirect, tempo-0 too: %v; want the newest %d", moved, ok, statusOldSlugs)
+	}
+	// Renamed back, it takes its old address again.
+	if p, err := h.c.UpdateStatusPage(h.ctx, admin, slug, apitypes.UpdateStatusPageRequest{Slug: new("tempo-3")}); err != nil || p.Address != "status-tempo-3-"+key+".dock.example.net" {
+		t.Errorf("renamed back: %q, %v", p.Address, err)
+	}
+}
+
+// A page from before random parts keeps its address, status-<slug>, until
+// it is renamed; then it gets a random part and the old address
+// redirects (ADR 0087).
+func TestStatusPageFromBeforeKeys(t *testing.T) {
+	h, _ := statusHarness(t)
+	if _, err := h.c.CreateStatusPage(h.ctx, testSystem, apitypes.CreateStatusPageRequest{Slug: "status"}); err != nil {
+		t.Fatal(err)
+	}
+	// As migration 0120 leaves it.
+	if _, err := h.store.DB.ExecContext(h.ctx, `UPDATE status_pages SET address_key = '', published = 1`); err != nil {
+		t.Fatal(err)
+	}
+	h.c.statusPagesChanged(h.ctx)
+	const legacy = "status-status.dock.example.net"
+	if _, _, ok := h.c.StatusPageAt(legacy); !ok {
+		t.Fatal("the page isn't served at its old address")
+	}
+	// Saile's report: another org names its page the same.
+	org, err := h.store.CreateOrg(h.ctx, store.CreateOrgParams{Slug: "other", Name: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if theirs, err := h.c.CreateStatusPage(h.ctx, System.InOrg(org.ID), apitypes.CreateStatusPageRequest{Slug: "status"}); err != nil || theirs.Address == legacy {
+		t.Fatalf("another org's page called status: %q, %v", theirs.Address, err)
+	}
+	p, err := h.c.UpdateStatusPage(h.ctx, testSystem, "status", apitypes.UpdateStatusPageRequest{Slug: new("uptime")})
+	if err != nil || !generatedLike("status-uptime", "dock.example.net").MatchString(p.Address) {
+		t.Fatalf("renamed: %q, %v", p.Address, err)
+	}
+	if to, ok := h.c.StatusPageMoved(legacy); !ok || to != "https://"+p.Address {
+		t.Errorf("the old address moved to %q, %v", to, ok)
 	}
 }
 
@@ -464,4 +521,18 @@ func TestStatusHistoryDays(t *testing.T) {
 	if d.Date != want || d.Uptime == nil || *d.Uptime != 80 {
 		t.Fatalf("day = %s %v, want %s at 80%%", d.Date, d.Uptime, want)
 	}
+}
+
+// pageAddress is the org's page's generated address, checked to be
+// status-<slug>-<random>.<base> (ADR 0087).
+func (h *harness) pageAddress(slug string) string {
+	h.t.Helper()
+	p, err := h.c.GetStatusPage(h.ctx, testSystem, slug)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if !generatedLike("status-"+p.Slug, p.BaseDomain).MatchString(p.Address) {
+		h.t.Fatalf("page %s has address %q, want status-%s-<random>.%s", slug, p.Address, p.Slug, p.BaseDomain)
+	}
+	return p.Address
 }

@@ -21,13 +21,13 @@ func TestStatusHostname(t *testing.T) {
 	}
 	hn := p.Hostname
 	if hn == nil || hn.Hostname != host || hn.Verified || len(hn.Records) != 2 || hn.Records[0].Type != "TXT" ||
-		hn.Records[0].Name != "_dock-challenge."+host || hn.Records[1] != (apitypes.DNSRecord{Type: "CNAME", Name: host, Value: "status-acme.dock.example.net"}) {
+		hn.Records[0].Name != "_dock-challenge."+host || hn.Records[1] != (apitypes.DNSRecord{Type: "CNAME", Name: host, Value: h.pageAddress("acme")}) {
 		t.Fatalf("hostname = %+v", hn)
 	}
 	if _, _, ok := h.c.StatusPageAt(host); ok || h.routed(host) {
 		t.Error("an unverified hostname is served")
 	}
-	const generated = "https://status-acme.dock.example.net"
+	generated := "https://" + h.pageAddress("acme")
 	if p.URL != generated {
 		t.Errorf("address before the check = %q, want the generated %q", p.URL, generated)
 	}

@@ -126,8 +126,8 @@ func newStatusPageCreateCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Make a status page, unpublished (admin)",
-		Long: `Make a status page. Its name is its address, status-<name>.<base domain>,
-and one page's in the whole install. Add components, then publish it.`,
+		Long: `Make a status page. Its name is unique in the organization; its address is
+status-<name>-<random>.<base domain>. Add components, then publish it.`,
 		Example: `  dock status-page create acme --title "Acme"
   dock status-page component add acme API --service shop/production/api --group Core
   dock status-page publish acme`,
@@ -183,8 +183,8 @@ func newStatusPageUpdateCmd(g *globals) *cobra.Command {
 }
 
 // newStatusPageRenameCmd changes a page's name, and so its generated
-// address; the old ones keep working, redirecting, until another page
-// takes the name.
+// address (keeping its random part); the old ones keep working,
+// redirecting, until another of the organization's pages takes the name.
 func newStatusPageRenameCmd(g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "rename <page> <new>",
@@ -201,9 +201,9 @@ func newStatusPageRenameCmd(g *globals) *cobra.Command {
 			}
 			return g.io.Print(p, func() error {
 				g.io.Successf("Renamed status page %s to %s", args[0], p.Slug)
-				if p.BaseDomain != "" {
-					g.io.Progressf("Its address is status-%s.%s; status-%s.%s redirects to it until another page takes the name %s.",
-						p.Slug, p.BaseDomain, args[0], p.BaseDomain, args[0])
+				if p.Address != "" {
+					g.io.Progressf("Its address is %s; the old one redirects to it until another of the organization's pages takes the name %s.",
+						p.Address, args[0])
 				}
 				return nil
 			})

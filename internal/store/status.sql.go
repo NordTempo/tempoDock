@@ -11,17 +11,25 @@ import (
 )
 
 const addStatusOldSlug = `-- name: AddStatusOldSlug :exec
-INSERT INTO status_page_old_slugs (slug, page_id, changed_at) VALUES (?, ?, ?)
+INSERT INTO status_page_old_slugs (org_id, slug, page_id, address_key, changed_at) VALUES (?, ?, ?, ?, ?)
 `
 
 type AddStatusOldSlugParams struct {
-	Slug      string
-	PageID    int64
-	ChangedAt time.Time
+	OrgID      int64
+	Slug       string
+	PageID     int64
+	AddressKey string
+	ChangedAt  time.Time
 }
 
 func (q *Queries) AddStatusOldSlug(ctx context.Context, arg AddStatusOldSlugParams) error {
-	_, err := q.db.ExecContext(ctx, addStatusOldSlug, arg.Slug, arg.PageID, arg.ChangedAt)
+	_, err := q.db.ExecContext(ctx, addStatusOldSlug,
+		arg.OrgID,
+		arg.Slug,
+		arg.PageID,
+		arg.AddressKey,
+		arg.ChangedAt,
+	)
 	return err
 }
 
@@ -224,17 +232,18 @@ func (q *Queries) CreateStatusIncident(ctx context.Context, arg CreateStatusInci
 
 const createStatusPage = `-- name: CreateStatusPage :one
 
-INSERT INTO status_pages (org_id, slug, title, published, show_uptime, created_at, created_by)
-VALUES (?, ?, ?, 0, 1, ?, ?)
-RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at
+INSERT INTO status_pages (org_id, slug, address_key, title, published, show_uptime, created_at, created_by)
+VALUES (?, ?, ?, ?, 0, 1, ?, ?)
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key
 `
 
 type CreateStatusPageParams struct {
-	OrgID     int64
-	Slug      string
-	Title     string
-	CreatedAt time.Time
-	CreatedBy string
+	OrgID      int64
+	Slug       string
+	AddressKey string
+	Title      string
+	CreatedAt  time.Time
+	CreatedBy  string
 }
 
 // Public status pages (ADR 0073).
@@ -242,6 +251,7 @@ func (q *Queries) CreateStatusPage(ctx context.Context, arg CreateStatusPagePara
 	row := q.db.QueryRowContext(ctx, createStatusPage,
 		arg.OrgID,
 		arg.Slug,
+		arg.AddressKey,
 		arg.Title,
 		arg.CreatedAt,
 		arg.CreatedBy,
@@ -260,6 +270,7 @@ func (q *Queries) CreateStatusPage(ctx context.Context, arg CreateStatusPagePara
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }
@@ -483,7 +494,7 @@ func (q *Queries) GetStatusHookByID(ctx context.Context, id int64) (StatusHook, 
 }
 
 const getStatusIncident = `-- name: GetStatusIncident :one
-SELECT status_incidents.id, status_incidents.page_id, status_incidents.public_id, status_incidents.kind, status_incidents.title, status_incidents.state, status_incidents.draft, status_incidents.starts_at, status_incidents.ends_at, status_incidents.published_at, status_incidents.resolved_at, status_incidents.alert_id, status_incidents.created_at, status_incidents.created_by, status_pages.id, status_pages.org_id, status_pages.slug, status_pages.title, status_pages.published, status_pages.show_uptime, status_pages.created_at, status_pages.created_by, status_pages.drafts, status_pages.hostname, status_pages.verify_token, status_pages.verified_at
+SELECT status_incidents.id, status_incidents.page_id, status_incidents.public_id, status_incidents.kind, status_incidents.title, status_incidents.state, status_incidents.draft, status_incidents.starts_at, status_incidents.ends_at, status_incidents.published_at, status_incidents.resolved_at, status_incidents.alert_id, status_incidents.created_at, status_incidents.created_by, status_pages.id, status_pages.org_id, status_pages.slug, status_pages.title, status_pages.published, status_pages.show_uptime, status_pages.created_at, status_pages.created_by, status_pages.drafts, status_pages.hostname, status_pages.verify_token, status_pages.verified_at, status_pages.address_key
 FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
 WHERE status_incidents.public_id = +?
 `
@@ -524,12 +535,13 @@ func (q *Queries) GetStatusIncident(ctx context.Context, publicID string) (GetSt
 		&i.StatusPage.Hostname,
 		&i.StatusPage.VerifyToken,
 		&i.StatusPage.VerifiedAt,
+		&i.StatusPage.AddressKey,
 	)
 	return i, err
 }
 
 const getStatusIncidentByID = `-- name: GetStatusIncidentByID :one
-SELECT status_incidents.id, status_incidents.page_id, status_incidents.public_id, status_incidents.kind, status_incidents.title, status_incidents.state, status_incidents.draft, status_incidents.starts_at, status_incidents.ends_at, status_incidents.published_at, status_incidents.resolved_at, status_incidents.alert_id, status_incidents.created_at, status_incidents.created_by, status_pages.id, status_pages.org_id, status_pages.slug, status_pages.title, status_pages.published, status_pages.show_uptime, status_pages.created_at, status_pages.created_by, status_pages.drafts, status_pages.hostname, status_pages.verify_token, status_pages.verified_at
+SELECT status_incidents.id, status_incidents.page_id, status_incidents.public_id, status_incidents.kind, status_incidents.title, status_incidents.state, status_incidents.draft, status_incidents.starts_at, status_incidents.ends_at, status_incidents.published_at, status_incidents.resolved_at, status_incidents.alert_id, status_incidents.created_at, status_incidents.created_by, status_pages.id, status_pages.org_id, status_pages.slug, status_pages.title, status_pages.published, status_pages.show_uptime, status_pages.created_at, status_pages.created_by, status_pages.drafts, status_pages.hostname, status_pages.verify_token, status_pages.verified_at, status_pages.address_key
 FROM status_incidents JOIN status_pages ON status_pages.id = status_incidents.page_id
 WHERE status_incidents.id = +?
 `
@@ -569,12 +581,13 @@ func (q *Queries) GetStatusIncidentByID(ctx context.Context, id int64) (GetStatu
 		&i.StatusPage.Hostname,
 		&i.StatusPage.VerifyToken,
 		&i.StatusPage.VerifiedAt,
+		&i.StatusPage.AddressKey,
 	)
 	return i, err
 }
 
 const getStatusPage = `-- name: GetStatusPage :one
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at FROM status_pages WHERE org_id = +? AND slug = +?
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key FROM status_pages WHERE org_id = +? AND slug = +?
 `
 
 type GetStatusPageParams struct {
@@ -599,12 +612,13 @@ func (q *Queries) GetStatusPage(ctx context.Context, arg GetStatusPageParams) (S
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }
 
 const getStatusPageByID = `-- name: GetStatusPageByID :one
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at FROM status_pages WHERE id = +?
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key FROM status_pages WHERE id = +?
 `
 
 func (q *Queries) GetStatusPageByID(ctx context.Context, id int64) (StatusPage, error) {
@@ -623,13 +637,14 @@ func (q *Queries) GetStatusPageByID(ctx context.Context, id int64) (StatusPage, 
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }
 
 const getStatusPageByOldSlug = `-- name: GetStatusPageByOldSlug :one
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at FROM status_pages
-WHERE org_id = +? AND id = (SELECT o.page_id FROM status_page_old_slugs o WHERE o.slug = +?)
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key FROM status_pages
+WHERE id = (SELECT o.page_id FROM status_page_old_slugs o WHERE o.org_id = +?1 AND o.slug = +?2)
 `
 
 type GetStatusPageByOldSlugParams struct {
@@ -655,6 +670,7 @@ func (q *Queries) GetStatusPageByOldSlug(ctx context.Context, arg GetStatusPageB
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }
@@ -1112,12 +1128,13 @@ func (q *Queries) ListStatusIncidents(ctx context.Context, arg ListStatusInciden
 }
 
 const listStatusOldSlugs = `-- name: ListStatusOldSlugs :many
-SELECT slug, page_id FROM status_page_old_slugs
+SELECT slug, page_id, address_key FROM status_page_old_slugs
 `
 
 type ListStatusOldSlugsRow struct {
-	Slug   string
-	PageID int64
+	Slug       string
+	PageID     int64
+	AddressKey string
 }
 
 // Every page's old names, for the addresses that redirect (as few as
@@ -1131,7 +1148,7 @@ func (q *Queries) ListStatusOldSlugs(ctx context.Context) ([]ListStatusOldSlugsR
 	var items []ListStatusOldSlugsRow
 	for rows.Next() {
 		var i ListStatusOldSlugsRow
-		if err := rows.Scan(&i.Slug, &i.PageID); err != nil {
+		if err := rows.Scan(&i.Slug, &i.PageID, &i.AddressKey); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1146,20 +1163,21 @@ func (q *Queries) ListStatusOldSlugs(ctx context.Context) ([]ListStatusOldSlugsR
 }
 
 const listStatusPageHosts = `-- name: ListStatusPageHosts :many
-SELECT id, slug, published, CAST(CASE WHEN verified_at IS NULL THEN '' ELSE coalesce(hostname, '') END AS TEXT) AS hostname
+SELECT id, slug, address_key, published, CAST(CASE WHEN verified_at IS NULL THEN '' ELSE coalesce(hostname, '') END AS TEXT) AS hostname
 FROM status_pages
 `
 
 type ListStatusPageHostsRow struct {
-	ID        int64
-	Slug      string
-	Published bool
-	Hostname  string
+	ID         int64
+	Slug       string
+	AddressKey string
+	Published  bool
+	Hostname   string
 }
 
-// Every page's slug and verified hostname, for the hostnames Dock holds
-// and serves (a few rows per org, read when Dock starts and when a page
-// changes).
+// Every page's slug, address key and verified hostname, for the
+// hostnames Dock holds and serves (a few rows per org, read when Dock
+// starts and when a page changes).
 func (q *Queries) ListStatusPageHosts(ctx context.Context) ([]ListStatusPageHostsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listStatusPageHosts)
 	if err != nil {
@@ -1172,6 +1190,7 @@ func (q *Queries) ListStatusPageHosts(ctx context.Context) ([]ListStatusPageHost
 		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
+			&i.AddressKey,
 			&i.Published,
 			&i.Hostname,
 		); err != nil {
@@ -1265,7 +1284,7 @@ func (q *Queries) ListStatusPageSources(ctx context.Context, pageID int64) ([]Li
 }
 
 const listStatusPages = `-- name: ListStatusPages :many
-SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at FROM status_pages WHERE org_id = +? ORDER BY slug
+SELECT id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key FROM status_pages WHERE org_id = +? ORDER BY slug
 `
 
 func (q *Queries) ListStatusPages(ctx context.Context, orgID int64) ([]StatusPage, error) {
@@ -1290,6 +1309,7 @@ func (q *Queries) ListStatusPages(ctx context.Context, orgID int64) ([]StatusPag
 			&i.Hostname,
 			&i.VerifyToken,
 			&i.VerifiedAt,
+			&i.AddressKey,
 		); err != nil {
 			return nil, err
 		}
@@ -1408,12 +1428,18 @@ func (q *Queries) ListStatusUpdates(ctx context.Context, arg ListStatusUpdatesPa
 }
 
 const releaseStatusOldSlug = `-- name: ReleaseStatusOldSlug :exec
-DELETE FROM status_page_old_slugs WHERE slug = +?
+DELETE FROM status_page_old_slugs WHERE org_id = +? AND slug = +?
 `
 
-// A page takes slug, so it is no longer an old name of any page.
-func (q *Queries) ReleaseStatusOldSlug(ctx context.Context, slug string) error {
-	_, err := q.db.ExecContext(ctx, releaseStatusOldSlug, slug)
+type ReleaseStatusOldSlugParams struct {
+	OrgID int64
+	Slug  string
+}
+
+// A page takes slug, so it is no longer an old name of any of the
+// organization's pages.
+func (q *Queries) ReleaseStatusOldSlug(ctx context.Context, arg ReleaseStatusOldSlugParams) error {
+	_, err := q.db.ExecContext(ctx, releaseStatusOldSlug, arg.OrgID, arg.Slug)
 	return err
 }
 
@@ -1448,7 +1474,7 @@ func (q *Queries) SetStatusHookSent(ctx context.Context, arg SetStatusHookSentPa
 
 const setStatusPageHostname = `-- name: SetStatusPageHostname :one
 UPDATE status_pages SET hostname = ?, verify_token = ?, verified_at = ? WHERE id = +?
-RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key
 `
 
 type SetStatusPageHostnameParams struct {
@@ -1481,22 +1507,24 @@ func (q *Queries) SetStatusPageHostname(ctx context.Context, arg SetStatusPageHo
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }
 
 const setStatusPageSlug = `-- name: SetStatusPageSlug :one
-UPDATE status_pages SET slug = ? WHERE id = +?
-RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at
+UPDATE status_pages SET slug = ?, address_key = ? WHERE id = +?
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key
 `
 
 type SetStatusPageSlugParams struct {
-	Slug string
-	ID   int64
+	Slug       string
+	AddressKey string
+	ID         int64
 }
 
 func (q *Queries) SetStatusPageSlug(ctx context.Context, arg SetStatusPageSlugParams) (StatusPage, error) {
-	row := q.db.QueryRowContext(ctx, setStatusPageSlug, arg.Slug, arg.ID)
+	row := q.db.QueryRowContext(ctx, setStatusPageSlug, arg.Slug, arg.AddressKey, arg.ID)
 	var i StatusPage
 	err := row.Scan(
 		&i.ID,
@@ -1511,6 +1539,7 @@ func (q *Queries) SetStatusPageSlug(ctx context.Context, arg SetStatusPageSlugPa
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }
@@ -1666,12 +1695,17 @@ func (q *Queries) StatusPageDays(ctx context.Context, arg StatusPageDaysParams) 
 }
 
 const statusSlugTaken = `-- name: StatusSlugTaken :one
-SELECT EXISTS (SELECT 1 FROM status_pages WHERE slug = +?)
+SELECT EXISTS (SELECT 1 FROM status_pages WHERE org_id = +? AND slug = +?)
 `
 
-// Whether any org's page holds slug.
-func (q *Queries) StatusSlugTaken(ctx context.Context, slug string) (bool, error) {
-	row := q.db.QueryRowContext(ctx, statusSlugTaken, slug)
+type StatusSlugTakenParams struct {
+	OrgID int64
+	Slug  string
+}
+
+// Whether the organization has a page called slug.
+func (q *Queries) StatusSlugTaken(ctx context.Context, arg StatusSlugTakenParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, statusSlugTaken, arg.OrgID, arg.Slug)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -1772,7 +1806,7 @@ func (q *Queries) UpdateStatusIncident(ctx context.Context, arg UpdateStatusInci
 
 const updateStatusPage = `-- name: UpdateStatusPage :one
 UPDATE status_pages SET title = ?, published = ?, show_uptime = ?, drafts = ? WHERE id = +?
-RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at
+RETURNING id, org_id, slug, title, published, show_uptime, created_at, created_by, drafts, hostname, verify_token, verified_at, address_key
 `
 
 type UpdateStatusPageParams struct {
@@ -1805,6 +1839,7 @@ func (q *Queries) UpdateStatusPage(ctx context.Context, arg UpdateStatusPagePara
 		&i.Hostname,
 		&i.VerifyToken,
 		&i.VerifiedAt,
+		&i.AddressKey,
 	)
 	return i, err
 }

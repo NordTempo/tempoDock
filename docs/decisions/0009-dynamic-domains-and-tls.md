@@ -1,6 +1,6 @@
 # 0009: Dynamic domains and automatic TLS
 
-Status: accepted; superseded in part by [0042](0042-domain-verification.md) (a hostname is unique per verified claim); amended by [0036](0036-cloudflare-api.md) (domains from Cloudflare)
+Status: accepted; superseded in part by [0042](0042-domain-verification.md) (a hostname is unique per verified claim); amended by [0036](0036-cloudflare-api.md) (domains from Cloudflare) and [0087](0087-unguessable-generated-hostnames.md) (generated hostnames carry a random part; plain HTTP redirects every host)
 
 ## Context
 

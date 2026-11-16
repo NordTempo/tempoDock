@@ -105,8 +105,12 @@ type StatusPageSummary struct {
 type StatusPage struct {
 	StatusPageSummary
 	// BaseDomain is the control plane's, under which the page's generated
-	// address status-<slug>.<base domain> is; "" without one.
+	// address is; "" without one.
 	BaseDomain string `json:"base_domain,omitempty"`
+	// Address is the page's generated address, status-<slug>-<random>.<base
+	// domain> (ADR 0087; status-<slug> for a page from before that hasn't
+	// been renamed), published or not; "" without a base domain.
+	Address    string `json:"address,omitempty"`
 	ShowUptime bool   `json:"show_uptime"`
 	Drafts     bool   `json:"drafts"`
 	// Status is the page's worst component (idle ones aside).

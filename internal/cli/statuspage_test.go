@@ -47,20 +47,22 @@ func TestStatusPageCommands(t *testing.T) {
 	}
 
 	p = ok[apitypes.StatusPage](t, "status-page", "publish", "acme")
-	if !p.Published || p.URL != "https://status-acme.apps.test" {
-		t.Fatalf("publish = %+v", p.StatusPageSummary)
+	address := p.Address
+	if !p.Published || p.URL != "https://"+address || !strings.HasPrefix(address, "status-acme-") {
+		t.Fatalf("publish = %+v at %s", p.StatusPageSummary, address)
 	}
-	if code, stdout, _ := exec(t, "status-page", "show", "acme"); code != 0 || !strings.Contains(stdout, "published at https://status-acme.apps.test") ||
+	key := strings.TrimSuffix(strings.TrimPrefix(address, "status-acme-"), ".apps.test")
+	if code, stdout, _ := exec(t, "status-page", "show", "acme"); code != 0 || !strings.Contains(stdout, "published at https://"+address) ||
 		!strings.Contains(stdout, "shop/production/api") {
 		t.Fatalf("show = %d\n%s", code, stdout)
 	}
 	if pages := ok[[]apitypes.StatusPageSummary](t, "status-page", "list"); len(pages) != 1 || pages[0].Components != 2 {
 		t.Fatalf("list = %+v", pages)
 	}
-	if code, _, stderr := exec(t, "status-page", "rename", "acme", "acme-api"); code != 0 || !strings.Contains(stderr, "status-acme.apps.test redirects") {
+	if code, _, stderr := exec(t, "status-page", "rename", "acme", "acme-api"); code != 0 || !strings.Contains(stderr, "Its address is status-acme-api-"+key+".apps.test; the old one redirects") {
 		t.Fatalf("rename = %d %q", code, stderr)
 	}
-	if p := ok[apitypes.StatusPage](t, "status-page", "rename", "acme-api", "acme"); p.Slug != "acme" || p.URL != "https://status-acme.apps.test" {
+	if p := ok[apitypes.StatusPage](t, "status-page", "rename", "acme-api", "acme"); p.Slug != "acme" || p.URL != "https://"+address {
 		t.Fatalf("renamed back = %+v", p.StatusPageSummary)
 	}
 	if code, _, _ := exec(t, "status-page", "remove", "acme"); code != int(output.ExitUsage) {

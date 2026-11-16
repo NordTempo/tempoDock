@@ -3,8 +3,10 @@
 A status page tells the people who use your apps how they are doing:
 each part of your product, its status now and its last 90 days. Dock
 builds it from the [uptime checks](../decisions/0055-uptime-checks.md)
-it already runs and serves it at `status-<name>.<base domain>`
-([ADR 0073](../decisions/0073-public-status-pages.md)).
+it already runs and serves it at `status-<name>-<random>.<base domain>`
+([ADR 0073](../decisions/0073-public-status-pages.md); the random part,
+[ADR 0087](../decisions/0087-unguessable-generated-hostnames.md), keeps
+anyone from finding it by guessing).
 
 ## Make one
 
@@ -18,11 +20,12 @@ dock status-page publish acme
 Or in the UI: **Status pages** in the sidebar, then **New status page**.
 Organization admins make and change pages; every member sees them.
 
-- **The name** is the page's address and one page's in the whole install.
-  `dock status-page rename acme acme-api` (or Edit next to the name in
-  the page's settings) moves it to `status-acme-api.<base domain>`; the
+- **The name** is unique in your organization; another organization may
+  use the same. `dock status-page rename acme acme-api` (or Edit next to
+  the name in the page's settings) moves the address to
+  `status-acme-api-<random>.<base domain>`, the same random part; the
   old address redirects there, and the old name still finds the page,
-  until another page takes it. A custom hostname stays as it is.
+  until another of your pages takes it. A custom hostname stays as it is.
 - **Components** have a public name: what everyone sees. Pick names that
   don't name your services or servers ("API", not "postgres-primary").
 - **What a component shows** is private: services (all their uptime
@@ -56,7 +59,7 @@ dock status-page hostname acme status.acme.com
 
 It prints two records to add at your DNS provider: a TXT record that
 proves you control the name, and a CNAME to the page's own address
-(`status-acme.<base domain>`). Then `dock status-page hostname acme
+(`status-acme-<random>.<base domain>`, shown by `dock status-page show`). Then `dock status-page hostname acme
 --check` (or **Check now** in the page's settings) verifies it, and the
 page answers on both names with its own certificate. If the name is in a
 Cloudflare zone your organization has connected, Dock makes the record

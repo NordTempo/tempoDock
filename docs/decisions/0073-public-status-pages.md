@@ -6,6 +6,10 @@ A picked by Saile, Postplan `mqr6y0crg60j`). Builds on
 [0037](0037-analytics.md) (public dashboards, whose serving it copies).
 Phases 1 to 5 of 5 are in; [Later phases](#later-phases) says what is left.
 [Renaming](#renaming-a-page) was added after (Saile, 2026-11-13).
+Amended by [0087](0087-unguessable-generated-hostnames.md): a page's name
+is unique in its organization only, and its address is
+`status-<slug>-<random>`; the random part stays through renames, and
+old names belong to their organization.
 
 ## Context
 
