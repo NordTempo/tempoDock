@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync"
 	"time"
 
 	"golang.org/x/mod/semver"
@@ -59,6 +60,16 @@ const SumsAsset = "SHA256SUMS"
 // BinaryAsset is the server binary for linux/arch.
 func BinaryAsset(arch string) string { return "dock-linux-" + arch }
 
+// CLIAsset is the CLI-only build (dock-cli) for goos/goarch, as
+// install-cli.sh picks it; "" for a platform releases have no build for.
+func CLIAsset(goos, goarch string) string {
+	switch goos + "/" + goarch {
+	case "linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64":
+		return "dock-cli-" + goos + "-" + goarch
+	}
+	return ""
+}
+
 // InstallAsset is the install tarball of version: deploy/ with install.sh
 // and the systemd units.
 func InstallAsset(version string) string { return "dock-install-" + version + ".tar.gz" }
@@ -72,12 +83,16 @@ func ReleaseDir(dataDir, version string) string {
 }
 
 // versionRe is a release tag: what build.sh stamps into the binary.
-var versionRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
+// Compiled on first use: the CLI imports this package for `dock
+// self-update`, and nothing compiles at its start-up.
+var versionRe = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$`)
+})
 
 // IsRelease reports whether v is a release version like v1.2.3 or
 // v1.2.3-rc.1, not a development build ("dev") or anything else. Versions
 // end up in file names and commands, so nothing else is accepted.
-func IsRelease(v string) bool { return versionRe.MatchString(v) && semver.IsValid(v) }
+func IsRelease(v string) bool { return versionRe().MatchString(v) && semver.IsValid(v) }
 
 // Newer reports whether release version a is newer than b.
 func Newer(a, b string) bool { return semver.Compare(a, b) > 0 }

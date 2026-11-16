@@ -840,6 +840,7 @@ export const topics: Record<TopicId, Topic> = {
       },
       { what: "Apply a project file", cli: "dock apply shop.toml --plan" },
       { what: "Switch between Docks", cli: "dock context use home" },
+      { what: "Match the CLI to the server", cli: "dock self-update" },
     ],
     watch: [
       "Hover a button to see its command; ⌘K finds commands too.",
@@ -847,7 +848,8 @@ export const topics: Record<TopicId, Topic> = {
     ],
     related: ["agents", "start", "deploying"],
     guide: "README#commands-at-a-glance",
-    words: "terminal command line json context link apply toml",
+    words:
+      "terminal command line json context link apply toml version update install",
   },
 
   agents: {

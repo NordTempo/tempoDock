@@ -234,3 +234,19 @@ func TestParseSums(t *testing.T) {
 		t.Error("a malformed line was accepted")
 	}
 }
+
+func TestCLIAsset(t *testing.T) {
+	for platform, want := range map[string]string{
+		"linux/amd64":   "dock-cli-linux-amd64",
+		"linux/arm64":   "dock-cli-linux-arm64",
+		"darwin/amd64":  "dock-cli-darwin-amd64",
+		"darwin/arm64":  "dock-cli-darwin-arm64",
+		"windows/amd64": "",
+		"linux/386":     "",
+	} {
+		goos, goarch, _ := strings.Cut(platform, "/")
+		if got := CLIAsset(goos, goarch); got != want {
+			t.Errorf("%s: %q, want %q", platform, got, want)
+		}
+	}
+}

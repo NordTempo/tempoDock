@@ -13,6 +13,10 @@ import (
 // the daemon's dependencies (Docker, BuildKit, Caddy, SQLite, Huma): see
 // cli_only.go.
 
+// cliOnly is false in this build: `dock self-update` refuses to swap the
+// daemon for a dock-cli, which can't serve.
+const cliOnly = false
+
 // serverCommands are the "Run a server" commands.
 func serverCommands() []*cobra.Command {
 	return []*cobra.Command{newServeCmd(), newNodeCmd(), newAdminCmd(), newOpenAPICmd()}

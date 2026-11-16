@@ -86,7 +86,7 @@ func newRoot(g *globals) *cobra.Command {
 	root.PersistentFlags().StringVar(&g.org, "org", "", "organization to act in (default: the linked one, then the context's, set with dock org use)")
 	root.PersistentFlags().StringVar(&g.reason, "reason", "", "why you make this change; shown to the admin if a locked environment turns it into an access request")
 	addGroup(root, "start", "Getting started:",
-		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newOrgCmd(g), newLogoutCmd(g), newVersionCmd(g),
+		newLoginCmd(g), newLinkCmd(g), newUnlinkCmd(g), newWhoamiCmd(g), newMeCmd(g), newContextCmd(g), newOrgCmd(g), newLogoutCmd(g), newVersionCmd(g), newSelfUpdateCmd(g),
 		newMCPCmd(g))
 	addGroup(root, "ship", "Deploy and operate:",
 		newDeployCmd(g), newPromoteCmd(g), newStatusCmd(g), newLogsCmd(g), newErrorsCmd(g), newTrafficCmd(g), newTracesCmd(g), newMetricsCmd(g), newUptimeCmd(g), newStatusPageCmd(g), newIncidentCmd(g), newMaintenanceCmd(g), newReleaseListCmd(g, "releases"), newReleaseCmd(g), newDiagnoseCmd(g), newVulnsCmd(g), newImagesCmd(g), newScanCmd(g), newSBOMCmd(g),

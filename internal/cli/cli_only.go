@@ -8,6 +8,10 @@ import "github.com/spf13/cobra"
 // commands: it is a quarter of the size and starts faster. See
 // server_cmds.go for the full binary.
 
+// cliOnly is true in this build: `dock self-update` may replace it with a
+// release's dock-cli.
+const cliOnly = true
+
 // serverCommands are the "Run a server" commands: none in this build.
 func serverCommands() []*cobra.Command { return nil }
 

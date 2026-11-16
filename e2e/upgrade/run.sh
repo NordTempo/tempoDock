@@ -39,8 +39,9 @@ up() {
   mkdir -p "$WORK/rel"
   if [[ ! -f "$WORK/rel/$FROM/SHA256SUMS" ]]; then
     rm -rf "$WORK/rel/$FROM" && mkdir -p "$WORK/rel/$FROM"
-    gh release download "$FROM" -R "$REPO" -D "$WORK/rel/$FROM" \
-      -p dock-linux-amd64 -p "dock-install-$FROM.tar.gz" -p SHA256SUMS
+    for f in dock-linux-amd64 "dock-install-$FROM.tar.gz" SHA256SUMS; do
+      curl -fsSL -o "$WORK/rel/$FROM/$f" "https://github.com/$REPO/releases/download/$FROM/$f"
+    done
   fi
   (cd "$WORK/rel/$FROM" && grep -E " (dock-linux-amd64|dock-install-$FROM.tar.gz)\$" SHA256SUMS | sha256sum -c --quiet)
   # /var/lib/docker is an anonymous volume so `docker rm -v` takes it along.

@@ -55,7 +55,7 @@ matching CLI when they differ. Without a server, nothing is sent.`,
 				if err != nil {
 					v.ServerError = err.Error()
 				} else if v.ServerVersion != v.CLI {
-					v.Hint = upgradeHint(v.ServerVersion)
+					v.Hint = upgradeHint(v.ServerVersion, false)
 				}
 			} else if !errors.Is(err, clientconfig.ErrNoContext) {
 				v.ServerError = err.Error()
@@ -95,12 +95,26 @@ func serverVersion(ctx context.Context, server string) (string, error) {
 	return ver.Version, err
 }
 
-// upgradeHint is one line that gets the CLI to serverVersion: the install
-// command for a published release, or a build from source otherwise.
-func upgradeHint(serverVersion string) string {
-	if !regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$`).MatchString(serverVersion) {
+// isPublished reports whether v is a version releases are published
+// under: v1.2.3 or v1.2.3-rc.1, not a build between tags
+// (v1.2.3-4-gabc1234) or a dirty one. Compiled per call, which is rare,
+// to keep it out of start-up.
+func isPublished(v string) bool {
+	return regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$`).MatchString(v)
+}
+
+// upgradeHint is one line that gets the CLI to serverVersion: `dock
+// self-update` (pinned to it with pin, for a server that isn't the
+// context's yet) with the install script as the fallback for a published
+// release, or a build from source otherwise.
+func upgradeHint(serverVersion string, pin bool) string {
+	if !isPublished(serverVersion) {
 		return "The server isn't a release; build the CLI from its commit (make build-cli)."
 	}
-	return fmt.Sprintf("Install the matching CLI: curl -fsSL https://github.com/%s/releases/download/%s/install-cli.sh | DOCK_VERSION=%s sh",
-		releaseRepo, serverVersion, serverVersion)
+	cmd := "dock self-update"
+	if pin {
+		cmd += " --to " + serverVersion
+	}
+	return fmt.Sprintf("Run `%s` to install the matching CLI, or: curl -fsSL https://github.com/%s/releases/download/%s/install-cli.sh | DOCK_VERSION=%s sh",
+		cmd, releaseRepo, serverVersion, serverVersion)
 }

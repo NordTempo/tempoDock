@@ -241,7 +241,7 @@ func (g *globals) streamRun(ctx context.Context, s *session, t target, command s
 		case runframe.Exit:
 			var r apitypes.CommandRun
 			if err := json.Unmarshal(p, &r); err != nil {
-				return r, &output.Error{Exit: output.ExitIncompatible, Message: "the server sent a run this CLI can't read", Hint: "Install the CLI matching the server: `dock version`.", Err: err}
+				return r, &output.Error{Exit: output.ExitIncompatible, Message: "the server sent a run this CLI can't read", Hint: "Run `dock self-update` to install the CLI that matches the server.", Err: err}
 			}
 			return r, nil
 		}

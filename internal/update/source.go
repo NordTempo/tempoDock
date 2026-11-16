@@ -93,6 +93,7 @@ type GitHub struct {
 	Repo string
 	// TokenFile holds a token that can read the repository's releases;
 	// read on every check when it exists, so adding one needs no restart.
+	// Empty for a public repository read without one (`dock self-update`).
 	TokenFile string
 	// API is the REST API's base URL; empty is https://api.github.com.
 	// Tests point it at a fake.
@@ -232,6 +233,10 @@ func (g *GitHub) do(ctx context.Context, url, accept string) (*http.Response, er
 	_ = resp.Body.Close()
 	detail := fmt.Sprintf("GET %s answered %s", url, resp.Status)
 	switch {
+	case resp.StatusCode == http.StatusNotFound && g.TokenFile == "":
+		return nil, sourceErr(detail, "the release doesn't exist in %s; check the version", g)
+	case (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) && g.TokenFile == "":
+		return nil, sourceErr(detail, "GitHub's rate limit was reached; try again in an hour")
 	case resp.StatusCode == http.StatusNotFound && token == "":
 		return nil, sourceErr(detail, "the repository is private or doesn't exist; put a token that can read its releases in %s", g.TokenFile)
 	case resp.StatusCode == http.StatusNotFound:

@@ -205,6 +205,7 @@ name. Update older CLI clients before renaming projects they use.
 |---|---|
 | `login [url] [--no-browser \| --token-stdin]` | Log in through the browser (on a terminal, or with `--no-browser`), or verify a token from stdin; store it as a context and use it. Warns when the server runs another version |
 | `version` | The CLI's version and, when a server is configured, the server's (one unauthenticated request; nothing without a server), with the command that installs the matching CLI when they differ |
+| `self-update [--latest \| --to vX.Y.Z] [--dry-run]` | Replace this CLI with the release's `dock-cli` for this machine, checked against its `SHA256SUMS`: by default the version the current context's server runs (the latest release when no server answers, with a warning), `--latest` the newest release, `--to` a given one. The binary (symlinks followed) is swapped by a rename in its own directory; when that directory isn't writable the error names the root command, with `--to` pinned (root has no CLI context). Already on the target: says so, exit 0. `--json`: `from`, `to`, `target` (`server`, `latest` or `pinned`), `server`, `serverError`, `asset`, `path`, `updated`, `dryRun`. The CLI-only build only; the server build points to `dock update apply` |
 | `logout` | Remove the context's token; revoke it on the server if it came from a browser login |
 | `whoami` | Who the token belongs to, the organization it acts in and its scope there, and whether its login used a second factor (with a warning when an organization or the platform requires one it didn't) |
 | `org list\|create <slug> [--name N]\|use <slug>` | Your organizations, your role in each and whether it requires two-factor sign-in; create one (users, not tokens) with you as its admin; act in one from now on, in the context in use |
@@ -502,5 +503,6 @@ make build-cli   # bin/dock-cli for this machine, plus bin/dock-cli-<os>-<arch>
 
 Measured on the development VM, 2026-11-10 (median of 30 runs).
 
-Every other command behaves the same in both. Releases publish `dock-cli`
+Every other command behaves the same in both, except `dock self-update`,
+which only replaces a `dock-cli` (a server updates with `dock update apply`). Releases publish `dock-cli`
 for these four platforms; see [install the CLI](guide/install.md#the-cli).
