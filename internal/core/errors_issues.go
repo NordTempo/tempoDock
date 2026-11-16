@@ -300,7 +300,7 @@ func (c *Core) ResolveError(ctx context.Context, a Actor, id int64) (apitypes.Er
 			return apitypes.ErrorIssue{}, err
 		}
 		if n > 0 {
-			c.resolveIssueAlerts(ctx, i.ServiceID, i.ID, t)
+			c.resolveIssueAlerts(ctx, i, e.Name, t)
 			c.audit(ctx, a, "error.resolve", &p, &e, serviceKey(p.Name, e.Name, r.Service)+" error "+strconv.FormatInt(i.ID, 10),
 				"resolved error: "+cutText(i.Title, 120))
 		}
