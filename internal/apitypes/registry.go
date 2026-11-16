@@ -29,8 +29,52 @@ type Registry struct {
 	LastPruneError string `json:"last_prune_error,omitempty"`
 	// CollectPending: images were deleted whose layers aren't collected
 	// yet; the next prune collects them.
-	CollectPending bool              `json:"collect_pending"`
-	Services       []RegistryService `json:"services"`
+	CollectPending bool `json:"collect_pending"`
+	// Bucket is the registry's bucket as its storage gateway sees it
+	// (ADR 0084); absent when the images are on the control plane's disk.
+	Bucket   *RegistryBucket   `json:"bucket,omitempty"`
+	Services []RegistryService `json:"services"`
+}
+
+// RegistryBucket is the health of the registry's bucket, from the calls
+// the gateway makes to it anyway, and the spool on the control plane's
+// disk where pushes land before they upload (ADR 0084).
+type RegistryBucket struct {
+	State string    `json:"state" enum:"healthy,degraded,failing"`
+	Since time.Time `json:"since"`
+	// Calls are the recent calls to the bucket (the last 64, up to 10
+	// minutes back), Bad how many failed or took over 10 s, SlowestMS the
+	// slowest, LastError the newest failure.
+	Calls     int    `json:"calls"`
+	Bad       int    `json:"bad"`
+	SlowestMS int64  `json:"slowest_ms"`
+	LastError string `json:"last_error,omitempty"`
+	// Waiting objects are only on this server's disk until they upload.
+	Waiting         int        `json:"waiting"`
+	WaitingBytes    int64      `json:"waiting_bytes"`
+	OldestWaitingAt *time.Time `json:"oldest_waiting_at,omitempty"`
+	Uploading       int        `json:"uploading"`
+	// SpoolBytes is what the spool holds, of SpoolMaxBytes; the disk it is
+	// on has DiskFreeBytes of DiskBytes free, and writes stop when that
+	// would fall under DiskMinFreePercent.
+	SpoolBytes         int64 `json:"spool_bytes"`
+	SpoolMaxBytes      int64 `json:"spool_max_bytes"`
+	DiskFreeBytes      int64 `json:"disk_free_bytes"`
+	DiskBytes          int64 `json:"disk_bytes"`
+	DiskMinFreePercent int   `json:"disk_min_free_percent"`
+	// Refusing is why pushes are refused: the spool is full, or the disk
+	// is nearly full. Empty when they are accepted.
+	Refusing      string     `json:"refusing,omitempty" enum:"spool,disk"`
+	RefusingSince *time.Time `json:"refusing_since,omitempty"`
+	// Stuck are blobs the bucket keeps timing out on; the next push of an
+	// image with one uploads it again.
+	Stuck []RegistryStuckBlob `json:"stuck"`
+}
+
+// RegistryStuckBlob is a blob the bucket keeps timing out on.
+type RegistryStuckBlob struct {
+	Digest string    `json:"digest" example:"sha256:e3a802d3..."`
+	Since  time.Time `json:"since"`
 }
 
 // RegistryService is one service that pushed images to the registry.

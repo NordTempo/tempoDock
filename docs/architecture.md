@@ -193,7 +193,9 @@ node protocol, [ADR 0014](decisions/0014-node-protocol.md).
   private network. See [Placement](#placement).
 - Builds run only on builder servers. Images go to the registry next to
   the control plane (CNCF Distribution in a container, on local disk or a
-  storage connection's bucket, [ADR 0034](decisions/0034-registry-object-storage.md));
+  storage connection's bucket, [ADR 0034](decisions/0034-registry-object-storage.md),
+  reached through the daemon's storage gateway, which takes pushes onto
+  local disk first, [ADR 0084](decisions/0084-registry-storage-gateway.md));
   nodes push and pull through a proxy on their own loopback that tunnels
   over the link, so image references are the same everywhere.
   `dock promote` ships a tested image to production without rebuilding.
@@ -457,7 +459,7 @@ internal/node/       runtime interface; docker/, build/ (BuildKit), caddy/, remo
                      (node link), stats/, traffic/, uptime/, collect/ (analytics
                      spool), logarchive/, firewall/, probe/, fake/
 internal/cli/        Cobra commands, human and --json output
-internal/registry/   the platform registry next to the control plane
+internal/registry/   the platform registry next to the control plane; gateway/ in front of its bucket
 internal/analytics/  analytics events, store interface, client and ingest (stdlib only)
 internal/backup/     restic jobs; internal/cpbackup the control plane's own backup
 internal/update/     finding and verifying releases; internal/updater applies them

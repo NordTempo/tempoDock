@@ -90,6 +90,10 @@ func (r *fakeRegistry) Migrate(_ context.Context, to *s3.Bucket, _ string, commi
 	return 3, 300, nil
 }
 
+func (r *fakeRegistry) PushStarted() func() { return func() {} }
+
+func (r *fakeRegistry) Bucket() *apitypes.RegistryBucket { return nil }
+
 func (r *fakeRegistry) Drop(_ context.Context, b *s3.Bucket) error {
 	r.op("drop %s", bucketLabel(b))
 	return nil

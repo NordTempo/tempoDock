@@ -206,6 +206,10 @@ func rulePushFailed(in *diagInput) diagVerdict {
 	if e := strings.ToLower(in.err); strings.Contains(e, "timeout") || strings.Contains(e, "deadline exceeded") {
 		v.summary = "The image built, but the platform registry didn't answer in time; deploy again, and if it keeps failing an operator checks `dock registry` and the registry's storage"
 	}
+	if _, why, ok := strings.Cut(in.err, registryStorageSays); ok {
+		// The gateway knew why (ADR 0084): say that instead.
+		v.summary = "The image built, but the platform registry didn't take it: " + strings.TrimSuffix(why, ")")
+	}
 	return v
 }
 

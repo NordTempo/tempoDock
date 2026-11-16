@@ -16,7 +16,7 @@ import (
 // Cloudflare connection raises its org's alert instead.
 //
 // Keys: cloudflare:<connection ID>, github:app, storage:<repository URL>,
-// registry:prune and registry:push.
+// registry:prune, registry:push and registry:bucket (RegistryBucketChanged).
 
 // connectionFailed opens (or updates) the platform alert for a connection
 // that just failed: conn names it for clients (AlertTarget.Connection),

@@ -10306,6 +10306,7 @@ export interface components {
             reason: string;
         };
         Registry: {
+            bucket?: components["schemas"]["RegistryBucket"];
             collect_pending: boolean;
             enabled: boolean;
             /** @example 127.0.0.1:5000 */
@@ -10324,6 +10325,42 @@ export interface components {
             storage?: string;
             /** Format: int64 */
             stored_bytes: number;
+        };
+        RegistryBucket: {
+            /** Format: int64 */
+            bad: number;
+            /** Format: int64 */
+            calls: number;
+            /** Format: int64 */
+            disk_bytes: number;
+            /** Format: int64 */
+            disk_free_bytes: number;
+            /** Format: int64 */
+            disk_min_free_percent: number;
+            last_error?: string;
+            /** Format: date-time */
+            oldest_waiting_at?: string;
+            /** @enum {string} */
+            refusing?: "spool" | "disk";
+            /** Format: date-time */
+            refusing_since?: string;
+            /** Format: date-time */
+            since: string;
+            /** Format: int64 */
+            slowest_ms: number;
+            /** Format: int64 */
+            spool_bytes: number;
+            /** Format: int64 */
+            spool_max_bytes: number;
+            /** @enum {string} */
+            state: "healthy" | "degraded" | "failing";
+            stuck: components["schemas"]["RegistryStuckBlob"][] | null;
+            /** Format: int64 */
+            uploading: number;
+            /** Format: int64 */
+            waiting: number;
+            /** Format: int64 */
+            waiting_bytes: number;
         };
         RegistryCredential: {
             /** Format: date-time */
@@ -10364,6 +10401,12 @@ export interface components {
             /** @example dock/p1_e2_s3 */
             repository: string;
             service: string;
+        };
+        RegistryStuckBlob: {
+            /** @example sha256:e3a802d3... */
+            digest: string;
+            /** Format: date-time */
+            since: string;
         };
         Release: {
             commit?: components["schemas"]["Commit"];

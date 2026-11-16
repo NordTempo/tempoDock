@@ -335,7 +335,7 @@ func (c *Client) sign(req *http.Request, payload string) {
 		now = c.now
 	}
 	t := now().UTC()
-	amzDate, day := t.Format("20060102T150405Z"), t.Format("20060102")
+	amzDate := t.Format("20060102T150405Z")
 	req.Header.Set("X-Amz-Date", amzDate)
 	req.Header.Set("X-Amz-Content-Sha256", payload)
 
@@ -349,23 +349,31 @@ func (c *Client) sign(req *http.Request, payload string) {
 		}
 	}
 	slices.Sort(names)
+	region := cmp.Or(c.Bucket.Region, DefaultRegion)
+	scope, sig := signature(req.Method, req.URL.EscapedPath(), req.URL.RawQuery, names, values, payload, amzDate, region, c.Bucket.SecretAccessKey)
+	req.Header.Set("Authorization", fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		c.Bucket.AccessKeyID, scope, strings.Join(names, ";"), sig))
+}
+
+// signature is SigV4's signature of a request, from its canonical parts:
+// names are the signed headers' lower-case names, sorted, and values
+// their canonical values. Both sign and Verify use it.
+func signature(method, path, rawQuery string, names []string, values map[string]string, payload, amzDate, region, secret string) (scope, sig string) {
 	var canon strings.Builder
 	for _, n := range names {
 		canon.WriteString(n + ":" + values[n] + "\n")
 	}
-	signed := strings.Join(names, ";")
 	request := strings.Join([]string{
-		req.Method, req.URL.EscapedPath(), req.URL.RawQuery, canon.String(), signed, payload,
+		method, path, rawQuery, canon.String(), strings.Join(names, ";"), payload,
 	}, "\n")
-	region := cmp.Or(c.Bucket.Region, DefaultRegion)
-	scope := day + "/" + region + "/s3/aws4_request"
+	day := amzDate[:8]
+	scope = day + "/" + region + "/s3/aws4_request"
 	toSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hexHash([]byte(request))
-	key := []byte("AWS4" + c.Bucket.SecretAccessKey)
+	key := []byte("AWS4" + secret)
 	for _, part := range []string{day, region, "s3", "aws4_request"} {
 		key = hmacSum(key, part)
 	}
-	req.Header.Set("Authorization", fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
-		c.Bucket.AccessKeyID, scope, signed, hex.EncodeToString(hmacSum(key, toSign))))
+	return scope, hex.EncodeToString(hmacSum(key, toSign))
 }
 
 // hmacSum is HMAC-SHA256 of data with key, a step of SigV4's key chain.

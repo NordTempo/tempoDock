@@ -1,6 +1,9 @@
 # 0034: The registry's images in S3-compatible object storage
 
-Status: accepted (decided by the agent, on Saile's request). Amends
+Status: accepted (decided by the agent, on Saile's request); amended by
+[0084](0084-registry-storage-gateway.md): the registry reaches the bucket
+through the daemon's storage gateway, pushes land on local disk first,
+and the bucket's keys are no longer in `config.yml`. Amends
 [0014](0014-node-protocol.md) section 4 and [0021](0021-control-plane-backup-and-move.md).
 
 ## Context

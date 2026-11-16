@@ -12353,6 +12353,9 @@
       "Registry": {
         "additionalProperties": false,
         "properties": {
+          "bucket": {
+            "$ref": "#/components/schemas/RegistryBucket"
+          },
           "collect_pending": {
             "type": "boolean"
           },
@@ -12414,6 +12417,111 @@
           "last_pruned",
           "collect_pending",
           "services"
+        ],
+        "type": "object"
+      },
+      "RegistryBucket": {
+        "additionalProperties": false,
+        "properties": {
+          "bad": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "calls": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk_free_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disk_min_free_percent": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "oldest_waiting_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "refusing": {
+            "enum": [
+              "spool",
+              "disk"
+            ],
+            "type": "string"
+          },
+          "refusing_since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "slowest_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "spool_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "spool_max_bytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "healthy",
+              "degraded",
+              "failing"
+            ],
+            "type": "string"
+          },
+          "stuck": {
+            "items": {
+              "$ref": "#/components/schemas/RegistryStuckBlob"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "uploading": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "waiting": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "waiting_bytes": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "state",
+          "since",
+          "calls",
+          "bad",
+          "slowest_ms",
+          "waiting",
+          "waiting_bytes",
+          "uploading",
+          "spool_bytes",
+          "spool_max_bytes",
+          "disk_free_bytes",
+          "disk_bytes",
+          "disk_min_free_percent",
+          "stuck"
         ],
         "type": "object"
       },
@@ -12542,6 +12650,26 @@
           "kept",
           "newest",
           "active"
+        ],
+        "type": "object"
+      },
+      "RegistryStuckBlob": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "examples": [
+              "sha256:e3a802d3..."
+            ],
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "since"
         ],
         "type": "object"
       },

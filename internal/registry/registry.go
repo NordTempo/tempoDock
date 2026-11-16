@@ -105,6 +105,30 @@ type Storage struct {
 	// ReadOnly refuses pushes and deletes: Migrate copies the storage
 	// while the registry serves pulls from it.
 	ReadOnly bool
+	// Listen is the registry's address when it runs on the host's network
+	// (ADR 0084: [registry] listen, loopback); "" is :5000 in a network
+	// namespace of its own, as before, published by Docker.
+	Listen string
+	// Gateway is the storage gateway's address (ADR 0084, [registry]
+	// gateway_listen). With a Bucket and Listen, the registry reaches the
+	// bucket through it, signing with GatewayKeys; otherwise it talks to
+	// the bucket directly with the bucket's keys (a registry container
+	// from before, which can't reach the host's loopback).
+	Gateway string
+}
+
+// throughGateway: the registry reaches its bucket through the gateway.
+func (st Storage) throughGateway() bool {
+	return st.Bucket != nil && st.Listen != "" && st.Gateway != ""
+}
+
+// GatewayKeys are the access key and secret the registry signs its
+// requests to the gateway with: derived from the signing key like
+// http.secret, so the config stays deterministic and the bucket's own
+// keys stay in the daemon.
+func GatewayKeys(s *Signer) (accessKey, secret string) {
+	sum := sha256.Sum256(append([]byte("dock registry gateway\x00"), s.key.Seed()...))
+	return "dock-registry", hex.EncodeToString(sum[:])
 }
 
 // BucketRoot is the registry's directory in a bucket: its objects are
@@ -122,7 +146,8 @@ const BucketRoot = "dock-registry"
 //
 // In a bucket, redirects stay off: every pull goes through the registry
 // (and so through each node's registry proxy, with its per-call tokens)
-// instead of to presigned bucket URLs.
+// instead of to presigned bucket URLs. On the host's network (st.Listen)
+// it listens only there and reaches a bucket through the gateway.
 func ConfigYAML(s *Signer, st Storage) ([]byte, error) {
 	cfg := s.cfg
 	if cfg.Service == "" || cfg.Realm == "" {
@@ -133,7 +158,25 @@ func ConfigYAML(s *Signer, st Storage) ([]byte, error) {
 	driver := `
   filesystem:
     rootdirectory: /var/lib/registry`
-	if b := st.Bucket; b != nil {
+	switch b := st.Bucket; {
+	case st.throughGateway():
+		// Path style to the gateway; uploads are never copied in parts
+		// (the gateway links a finished upload into place instead).
+		access, secret := GatewayKeys(s)
+		driver = fmt.Sprintf(`
+  s3:
+    regionendpoint: %s
+    secure: false
+    region: %s
+    bucket: %s
+    forcepathstyle: true
+    accesskey: %s
+    secretkey: %s
+    rootdirectory: /%s
+    multipartcopythresholdsize: 5368709120
+  redirect:
+    disable: true`, q("http://"+st.Gateway), q(s3.DefaultRegion), q(b.Name), q(access), q(secret), BucketRoot)
+	case b != nil:
 		if err := b.Validate(); err != nil {
 			return nil, fmt.Errorf("registry config: %w", err)
 		}
@@ -171,7 +214,7 @@ storage:%s
   cache:
     blobdescriptor: inmemory
 http:
-  addr: :5000
+  addr: %s
   secret: %s
   headers:
     X-Content-Type-Options: [nosniff]
@@ -185,7 +228,7 @@ auth:
     issuer: %s
     jwks: /etc/distribution/jwks.json
     signingalgorithms: [EdDSA]
-`, driver, hex.EncodeToString(secret[:]), q(cfg.Realm), q(cfg.Service), q(cfg.Issuer)), "\n")), nil
+`, driver, q(cmp.Or(st.Listen, ":5000")), hex.EncodeToString(secret[:]), q(cfg.Realm), q(cfg.Service), q(cfg.Issuer)), "\n")), nil
 }
 
 // WriteConfig writes config.yml (ConfigYAML) and jwks.json (JWKS) for s
