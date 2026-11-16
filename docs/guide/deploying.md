@@ -104,7 +104,11 @@ it). The logs tab has the same in its release list: the live release
 first, then earlier ones with kept output. Each service keeps the newest
 64 MB (compressed) for 30 days, and a server 2 GB in all; `[logs]` in
 [config.toml](install.md#configtoml) changes that. On a disk with less
-than 1 GB or 5% free nothing new is kept, so history never fills it. A server running a
+than 1 GB or 5% free nothing new is kept, so history never fills it: the
+container is still removed, the release's events say its logs weren't
+kept, and the deploy goes on. Kept output damaged by a crash or a full
+disk reads up to the damage. `--grep` and secret masking apply to kept
+output as to live output: grep matches the masked text. A server running a
 dock older than the control plane keeps only a failed release's last 200
 lines, on the control plane. Output a running container wrote before
 Docker rotated it (30 MB per container) is gone.
