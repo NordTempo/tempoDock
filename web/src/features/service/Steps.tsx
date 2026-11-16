@@ -23,12 +23,18 @@ const stepOrder = [
   "active",
 ];
 
-const at = (r: Release, pattern: RegExp) => {
-  const event = r.events?.find((e) => pattern.test(e.message));
+const at = (r: Release, pattern: RegExp, last = false) => {
+  const event = last
+    ? r.events?.findLast((e) => pattern.test(e.message))
+    : r.events?.find((e) => pattern.test(e.message));
   return (
     event && { time: Date.parse(event.created_at), message: event.message }
   );
 };
+
+// What the build step does: building or pulling, or waiting for a build
+// slot or the platform registry, which write no build output.
+const buildPhase = /^(Building|Pulling|Waiting for)/;
 
 /**
  * A release's deploy steps (build, start, health check, cutover) with
@@ -44,7 +50,9 @@ export function deploySteps(
 ): Step[] {
   const created = Date.parse(r.created_at);
   const end = r.finished_at ? Date.parse(r.finished_at) : now;
-  const build = at(r, /^(Building|Pulling|Waiting for another build)/);
+  const build = at(r, buildPhase);
+  // The newest of them says what a running build step waits on now.
+  const phase = at(r, buildPhase, true);
   const built = at(r, /^Built /);
   const started = at(r, /^Started container /);
   const healthy = at(r, /^Health check passed/);
@@ -100,7 +108,7 @@ export function deploySteps(
           <span className="text-fail">{errorSummary(r)}</span>
         ) : (
           <span className="text-mut">
-            {build?.message ??
+            {(state(0) === "running" ? phase : build)?.message ??
               (r.image_ref ? `image ${r.image_ref}` : "waiting")}
           </span>
         ),

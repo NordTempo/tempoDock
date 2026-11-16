@@ -82,13 +82,48 @@ func (p *Platform) Prune(ctx context.Context, keep []string) (int, error) {
 
 // GarbageCollect implements core.Registry.
 // While it runs, the gateway never reports a stuck blob missing: the
-// collector would take it for unreferenced.
+// collector would take it for unreferenced. It returns once the registry
+// answers again, even when ctx ended it early (core stops a collection
+// for a build that waits): the build pushes right after.
 func (p *Platform) GarbageCollect(ctx context.Context) error {
 	if p.Gateway != nil {
 		p.Gateway.SetStrict(true)
 		defer p.Gateway.SetStrict(false)
 	}
-	return GarbageCollect(ctx, p.Docker, p.container(), p.current() != nil, p.Logs)
+	err := GarbageCollect(ctx, p.Docker, p.container(), p.current() != nil, p.Logs)
+	if rerr := p.waitReady(context.WithoutCancel(ctx)); rerr != nil && err == nil {
+		err = rerr
+	}
+	return err
+}
+
+// Recover undoes what a daemon stopped in the middle of a garbage
+// collection left behind. GarbageCollect stops the registry and starts it
+// again when done; a crash or a kill skips that, leaving the registry
+// stopped (every push fails) and the collector running (started again by
+// hand, the registry would take pushes the collector may delete from).
+// So the collector goes, killed midway it only leaves unreferenced blobs
+// for the next one, and the registry starts. `dock serve` calls it on
+// start, before anything can prune.
+func (p *Platform) Recover(ctx context.Context) error {
+	gc := p.container() + "-gc"
+	if _, err := p.Docker.ContainerRemove(ctx, gc, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("remove the leftover %s: %w", gc, err)
+	}
+	inspect, err := p.Docker.ContainerInspect(ctx, p.container(), client.ContainerInspectOptions{})
+	if cerrdefs.IsNotFound(err) {
+		return nil // install.sh creates it after the daemon starts
+	}
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", p.container(), err)
+	}
+	if inspect.Container.State.Running {
+		return nil
+	}
+	if _, err := p.Docker.ContainerStart(ctx, p.container(), client.ContainerStartOptions{}); err != nil {
+		return fmt.Errorf("start %s: %w", p.container(), err)
+	}
+	return p.waitReady(ctx)
 }
 
 // PushStarted implements core.Registry: a push runs until done (the

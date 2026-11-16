@@ -355,6 +355,7 @@ end) are not listed.
 | Fake health pass | `internal/node/fake/fake.go` (PassHealthAfter) | once, 1 s after a container starts or restarts | `make dev` only (DOCK_FAKE_RUNTIME=1), for a container with a health check | one timer per start; then one health_status event |
 | Health check | `internal/node/docker/health.go` | at once, then 50, 100, 200, 400 ms, then 1 s | a release is health checking | one inspect + HTTP/TCP probe |
 | Cutover drain | `internal/core/deploy.go` | once, 12 s after a cutover | a release was replaced | one timer |
+| Deploy step deadlines | `internal/core/deploy_phases.go` | once per step: the registry wait 10 min, a build slot 30 min, a pull 30 min, starting the container 5 min | a deploy is on that step | one context timer, stopped when the step ends; firing fails the release (`phase_timeout`) |
 | Template database setup retry | `internal/core/templates.go` | 1 s, doubling, 5 attempts (about 15 s) | setting up a new template database's data access failed | one setup attempt |
 | Failed release write retry | `internal/core/deploy.go` | 100 ms, doubling, 6 attempts (about 3 s) | writing a failed deploy's outcome to SQLite failed | one `UPDATE` per attempt |
 | Docker event stream reconnect | `internal/node/docker/events.go` | 0.5 s doubling to 30 s | the stream failed | one reconnect |

@@ -49,10 +49,11 @@ const buildTagPrefix = "dock/p"
 
 // imageUpkeep is the state of registry pruning.
 type imageUpkeep struct {
-	// inUse is read-held by every build that pushes to the registry and
-	// every pull from it; pruning takes it with TryLock, so it never runs
-	// next to one (GarbageCollect stops the registry).
-	inUse sync.RWMutex
+	// gate is used by every build that pushes to the registry and every
+	// pull from it; a prune, a migration or a storage change holds it, so
+	// none runs next to one (GarbageCollect stops the registry). A prune
+	// yields to a build that waits (registryGate).
+	gate registryGate
 
 	mu        sync.Mutex
 	pruning   bool
@@ -64,7 +65,7 @@ type imageUpkeep struct {
 	lastPruned int
 	lastErr    string
 	// migration is the latest move of the images to other storage, which
-	// holds inUse while it runs (MigrateRegistry); migrateIDs are its
+	// holds the gate while it runs (MigrateRegistry); migrateIDs are its
 	// connections (nil: local).
 	migration  *apitypes.RegistryMigration
 	migrateIDs [2]*int64
@@ -74,11 +75,10 @@ type imageUpkeep struct {
 func (u *imageUpkeep) migrating() bool { return u.migration != nil && u.migration.Running }
 
 // useRegistry marks a build or pull that uses the registry until release
-// is called. Uses may nest (a build's pull): the write side only ever
-// TryLocks, so no writer waits between two read locks.
-func (c *Core) useRegistry() (release func()) {
-	c.images.inUse.RLock()
-	return c.images.inUse.RUnlock
+// is called, waiting while a prune or migration holds it (registryGate);
+// an error only when ctx ends first. Uses may nest (a build's pull).
+func (c *Core) useRegistry(ctx context.Context) (release func(), err error) {
+	return c.images.gate.use(ctx)
 }
 
 // repoOf returns the repository of a platform image reference, a build
@@ -263,45 +263,63 @@ func (c *Core) imageNames(r store.Release) []string {
 	return names
 }
 
+// errPruneYielded ends a prune that stopped early because a build or pull
+// waited for the registry (registryGate's yield).
+var errPruneYielded = errors.New("the prune stopped early for a build or pull that needs the registry; the next prune goes on")
+
 // maybePruneRegistry starts a registry prune in the background if none
 // ran within registryPruneEvery and no build or pull uses the registry.
 // Deploys call it when they finish, and archives once they are committed.
+// A build or pull that comes meanwhile stops it (yieldPrune).
 func (c *Core) maybePruneRegistry() {
 	if c.reg == nil {
 		return
 	}
+	ctx, yield := context.WithCancel(c.ctx)
 	u := &c.images
 	u.mu.Lock()
-	due := !u.pruning && time.Since(u.lastPrune) >= registryPruneEvery && u.inUse.TryLock()
+	due := !u.pruning && time.Since(u.lastPrune) >= registryPruneEvery && u.gate.tryHold(yield)
 	u.pruning = u.pruning || due
 	u.mu.Unlock()
 	if !due {
+		yield()
 		return
 	}
 	c.wg.Add(1) // like finishArchive's stops
 	go func() {
 		defer c.wg.Done()
-		_, _ = c.pruneRegistry(c.ctx)
+		defer yield()
+		_, _ = c.pruneRegistry(ctx)
 	}()
 }
 
 // pruneRegistry deletes the manifests no release keeps (ListKeptDigests),
 // then collects unreferenced blobs if anything was deleted (now or by an
 // earlier prune whose collection failed), and returns how many manifests
-// it deleted. The caller has set pruning and holds inUse; pruneRegistry
-// releases both and records the outcome. A failed prune doesn't move
-// lastPrune, so the next deploy tries again.
+// it deleted. The caller has set pruning and holds the gate, which ends
+// ctx when a build or pull waits for the registry; pruneRegistry releases
+// both and records the outcome. A failed or stopped prune doesn't move
+// lastPrune, so the next deploy tries again; a stopped one (errPruneYielded)
+// is no failure: stopping a collection midway only leaves blobs for the
+// next one.
 func (c *Core) pruneRegistry(ctx context.Context) (n int, err error) {
 	u := &c.images
 	defer func() {
-		u.inUse.Unlock()
-		if err != nil {
+		if err != nil && ctx.Err() != nil && c.ctx.Err() == nil {
+			err = errPruneYielded
+		}
+		u.gate.release()
+		if err != nil && !errors.Is(err, errPruneYielded) {
 			c.log.Warn("registry prune", "err", err)
 		}
 		u.mu.Lock()
 		defer u.mu.Unlock()
 		u.pruning = false
 		u.lastPruned = n
+		if errors.Is(err, errPruneYielded) {
+			c.log.Info("registry prune stopped early: a build or pull needs the registry; the next prune goes on")
+			return
+		}
 		u.lastErr = ""
 		if err != nil {
 			u.lastErr = err.Error()

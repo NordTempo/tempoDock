@@ -131,6 +131,11 @@ func serve(ctx context.Context, cfg config.Config, configPath string) error {
 			return err
 		}
 		defer reg.Gateway.Close()
+		// A garbage collection cut short by a crash leaves the registry
+		// stopped; nothing pushes until it runs again.
+		if err := reg.Recover(ctx); err != nil {
+			log.Error("registry: recover from an interrupted garbage collection", "err", err)
+		}
 		opts.Registry = reg
 	}
 	c, hub, err := startCore(ctx, opts, linkID)

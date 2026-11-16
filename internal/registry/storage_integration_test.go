@@ -139,6 +139,32 @@ func TestStorageInBucket(t *testing.T) {
 	pull(t, docker, rt, p, repo, second)
 	push(t, docker, p, "busybox:latest", repo, "3") // the registry owns what was written
 	t.Logf("moved %d objects, %d bytes", objects, size)
+
+	// A daemon killed in the middle of a collection leaves the registry
+	// stopped and the collector running; Recover, on start, removes the
+	// collector and starts the registry.
+	stop := 1
+	if _, err := docker.ContainerStop(ctx, p.Container, client.ContainerStopOptions{Timeout: &stop}); err != nil {
+		t.Fatal(err)
+	}
+	gc, err := docker.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Name:   p.Container + "-gc",
+		Config: &container.Config{Image: "busybox:latest", Cmd: []string{"sleep", "600"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = docker.ContainerRemove(context.Background(), gc.ID, client.ContainerRemoveOptions{Force: true}) })
+	if _, err := docker.ContainerStart(ctx, gc.ID, client.ContainerStartOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := docker.ContainerInspect(ctx, gc.ID, client.ContainerInspectOptions{}); err == nil {
+		t.Fatal("the leftover collector is still there")
+	}
+	push(t, docker, p, "busybox:latest", repo, "4") // the registry runs again
 }
 
 // startMinIO runs MinIO with bucket "dock-test" and returns it. It is

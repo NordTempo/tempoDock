@@ -814,7 +814,11 @@ func (c *Core) pullForMove(ctx context.Context, ss svcScope, rel *store.Release,
 		if !pullAllowed(ss, repo) {
 			return fmt.Errorf("image %s of %s belongs to another project", from, ss)
 		}
-		defer c.useRegistry()()
+		release, err := c.useRegistry(ctx)
+		if err != nil {
+			return fmt.Errorf("pull %s on %s for %s: waiting for the registry: %w", from, srv.Name, ss.svc.Name, err)
+		}
+		defer release()
 		opts = node.PullOptions{Token: c.reg.Token("server "+srv.Name, repo, false)}
 	} else {
 		login, _, err := c.registryLogin(ctx, ss.project.OrgID, from)
