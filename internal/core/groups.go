@@ -11,7 +11,7 @@ import (
 
 // Groups and grants decide what a person may do in an org (ADR 0080,
 // phase 4): the role grants of their groups and their own one-off ones.
-// Every org starts with four groups; a person's role (`dock org role`, an
+// Every org starts with four groups; a person's role (`dock org member role`, an
 // invite's role) puts them in Admins, Developers or Viewers.
 
 // seededGroup is one of the groups every org starts with.
@@ -431,6 +431,24 @@ func (a Actor) Holds(p Perm) bool {
 	for _, g := range a.grants {
 		if g.perms.has(p) {
 			return true
+		}
+	}
+	return false
+}
+
+// ChangesSomewhere reports whether a holds a permission that changes
+// something anywhere, for the MCP tool list: a person whose grants change
+// one environment only still keeps the write tools, whatever the org-wide
+// summary in Scope says.
+func (a Actor) ChangesSomewhere() bool {
+	if !a.hasGrants {
+		return rank(a.Scope) > rank(apitypes.ScopeRead)
+	}
+	for _, g := range a.grants {
+		for p := range permCount {
+			if g.perms.has(p) && !permTable[p].read {
+				return true
+			}
 		}
 	}
 	return false

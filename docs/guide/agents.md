@@ -66,6 +66,9 @@ dock agent rule deploy=all --kinds production --ask    # agents' production depl
 dock token bypass ci on                                # but this CI token
 ```
 
+The rules cap tokens too, so a token only tightens them: loosening a rule
+is for a person in the browser, and no token exempts itself.
+
 ## 2. Give it to the agent
 
 ```sh

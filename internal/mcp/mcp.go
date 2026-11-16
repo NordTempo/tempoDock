@@ -155,7 +155,7 @@ func (h *handler) view(ctx context.Context, a core.Actor) mcpkit.View {
 			v.Hide = append(v.Hide, name)
 		}
 	}
-	v.ReadOnly = a.Scope == apitypes.ScopeRead
+	v.ReadOnly = !a.ChangesSomewhere()
 	return v
 }
 

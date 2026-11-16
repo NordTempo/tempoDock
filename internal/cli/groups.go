@@ -83,7 +83,7 @@ func newGroupCmd(g *globals) *cobra.Command {
 project or one environment, optionally for some environment kinds
 (` + "`dock role list`" + ` shows the roles). People are in groups; a group's
 grants are theirs. Every organization starts with Admins, Developers,
-Viewers and Approvers; a member's role (` + "`dock org role`" + `) is their place
+Viewers and Approvers; a member's role (` + "`dock org member role`" + `) is their place
 in the first three. The organization always keeps someone with Full
 access.`,
 	})

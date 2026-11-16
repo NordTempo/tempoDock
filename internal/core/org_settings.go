@@ -186,7 +186,9 @@ func (c *Core) SetMemberRole(ctx context.Context, a Actor, userID int64, req api
 }
 
 // RemoveMember takes a member out of the org; their account stays. Use
-// LeaveOrg for yourself.
+// LeaveOrg for yourself. Taking a role away is like giving it: the
+// caller must hold what the member's role gives, and the org keeps an
+// admin and someone with Full access.
 func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	u, err := c.member(ctx, a, userID, "removing members")
 	if err != nil {
@@ -195,7 +197,26 @@ func (c *Core) RemoveMember(ctx context.Context, a Actor, userID int64) error {
 	if userID == a.UserID {
 		return invalid("to take yourself out of the organization, leave it")
 	}
-	if err := c.leaveOrgMember(ctx, a.OrgID, userID); err != nil {
+	role, err := c.store.GetMemberRole(ctx, store.GetMemberRoleParams{OrgID: a.OrgID, UserID: userID})
+	if err != nil {
+		return err
+	}
+	if err := a.scopeGive(apitypes.Scope(role), 0, 0, uint8(allKinds), "role "+role+" (removing "+u.Email+" takes it away)"); err != nil {
+		return err
+	}
+	if err := c.keepAnAdmin(ctx, a.OrgID, userID, ""); err != nil {
+		return err
+	}
+	err = c.store.Tx(ctx, func(q *store.Queries) error {
+		if _, err := q.RemoveOrgMember(ctx, store.RemoveOrgMemberParams{OrgID: a.OrgID, UserID: userID}); err != nil {
+			return err
+		}
+		if err := leaveOrgAccess(ctx, q, a.OrgID, userID); err != nil {
+			return err
+		}
+		return keepFullAccess(ctx, q, a)
+	})
+	if err != nil {
 		return err
 	}
 	c.audit(ctx, a, "org.member_remove", nil, nil, u.Email, "removed "+u.Email+" from the organization")

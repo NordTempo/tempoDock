@@ -53,7 +53,7 @@ func (a Actor) refuseScope(need apitypes.Scope, action string) error {
 	if a.actsForPerson() {
 		r.DecidedBy = apitypes.RefusedRole
 		r.Reason = fmt.Sprintf("%s has role %s in %s; %s requires %s", a, a.Scope, a.orgName(), action, need)
-		r.Fix = fmt.Sprintf("an admin of %s can give you role %s in Settings › Members (`dock org role %s %s`)", a.orgName(), need, a.who(), need)
+		r.Fix = fmt.Sprintf("an admin of %s can give you role %s in Settings › Members (`dock org member role %s %s`)", a.orgName(), need, a.who(), need)
 		return a.refuse(r)
 	}
 	r.DecidedBy = apitypes.RefusedScope

@@ -129,7 +129,7 @@ one decides.
 4. **Groups decide** (4a built: the back end and the CLI; 4b: the web
    pages). Groups, their members and grants (migration 0107) decide a
    person's checks; the core seeds every org's four groups at start and
-   puts members in them by role, and a role change (`dock org role`, an
+   puts members in them by role, and a role change (`dock org member role`, an
    invite) is a move between Admins, Developers and Viewers. A person's
    `Scope` is now a summary of their grants (admin with all of Admins on
    the org, deploy with all of Developers), for what still speaks in
