@@ -441,6 +441,7 @@ func (h *handler) addPlatformTools(s *mcpkit.Server[core.Actor]) {
 	h.addPreviewTools(s)
 	h.addSleepTools(s)
 	h.addStatusTools(s)
+	h.addTemplateTools(s)
 
 	mcpkit.AddTool(s, "list_servers", "List servers",
 		"Servers and their status. Operators only.",

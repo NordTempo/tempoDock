@@ -1,0 +1,30 @@
+name = "vaultwarden"
+title = "Vaultwarden"
+summary = "Password manager compatible with Bitwarden apps"
+category = "security"
+website = "https://github.com/dani-garcia/vaultwarden"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Create your account, then turn sign-ups off (SIGNUPS_ALLOWED=false). The admin page is /admin with the ADMIN_TOKEN variable."
+
+[[inputs]]
+  key = "SIGNUPS_ALLOWED"
+  label = "Sign-ups"
+  kind = "choice"
+  choices = ["true", "false"]
+  default = "true"
+  help = "Leave on to create your account, then turn off"
+
+[[services]]
+  name = "app"
+  image = "vaultwarden/server:1.37.5@sha256:4fe17f415f90087377d37c755e0ea3cf189dcc6794e49cdd2a9adbb4937d9e1f"
+  track = '^\d+\.\d+\.\d+$'
+  port = 80
+  health_check_path = "/alive"
+  memory_mb = 128
+  volumes = [{ name = "data", mount_path = "/data" }]
+  generate = { ADMIN_TOKEN = "base64:36" }
+  [services.values]
+    DOMAIN = "https://${{app.DOCK_PUBLIC_DOMAIN}}"

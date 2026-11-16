@@ -1,0 +1,26 @@
+name = "umami"
+title = "Umami"
+summary = "Web analytics without cookies"
+category = "analytics"
+website = "https://umami.is"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in as admin with the password umami and change it at once (Settings, Profile)."
+
+[[services]]
+  name = "app"
+  image = "ghcr.io/umami-software/umami:3.5.0@sha256:b64f40400d77bcadd39cf5c62a1e368c99524ca442024f96e1133355a19a5dbc"
+  track = '^\d+\.\d+\.\d+$'
+  port = 3000
+  health_check_path = "/api/heartbeat"
+  memory_mb = 512
+  depends_on = ["db"]
+  generate = { APP_SECRET = "hex:32" }
+  [services.values]
+    DATABASE_URL = "${{db.DATABASE_URL}}"
+
+[[services]]
+  name = "db"
+  template = "postgres"

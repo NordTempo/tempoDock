@@ -15,7 +15,8 @@ dock service create db --template postgres     # or: --template redis
 dock env set -s api DATABASE_URL='${{db.DATABASE_URL}}' --deploy
 ```
 
-In the UI: **add database** next to an environment on the project page.
+In the UI: **New service › Template**, under Databases. Apps that need a
+database bring their own from a [template](templates.md).
 
 | | Postgres 17 | Redis 8 |
 |---|---|---|

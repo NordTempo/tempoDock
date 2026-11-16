@@ -1,0 +1,46 @@
+name = "listmonk"
+title = "listmonk"
+summary = "Newsletters and mailing lists"
+category = "email"
+website = "https://listmonk.app"
+license = "AGPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "Sign in with the admin user and password you chose, then set up SMTP in Settings."
+
+[[inputs]]
+  key = "LISTMONK_ADMIN_USER"
+  label = "Admin user"
+  kind = "text"
+  default = "admin"
+
+[[inputs]]
+  key = "LISTMONK_ADMIN_PASSWORD"
+  label = "Admin password"
+  kind = "secret"
+
+[[services]]
+  name = "app"
+  image = "listmonk/listmonk:v6.2.0@sha256:f535d59e14991337a9f2d570273685378ae86b0d7698c3e00da444e3bc205286"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 9000
+  health_check_path = "/health"
+  memory_mb = 256
+  depends_on = ["db"]
+  # Installing is idempotent and upgrading a current database is a no-op,
+  # so every start does both.
+  start_command = "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && exec ./listmonk --config ''"
+  volumes = [{ name = "uploads", mount_path = "/listmonk/uploads" }]
+  [services.values]
+    LISTMONK_app__address = "0.0.0.0:9000"
+    LISTMONK_db__host = "${{db.DOCK_PRIVATE_DOMAIN}}"
+    LISTMONK_db__port = "5432"
+    LISTMONK_db__user = "${{db.POSTGRES_USER}}"
+    LISTMONK_db__password = "${{db.POSTGRES_PASSWORD}}"
+    LISTMONK_db__database = "${{db.POSTGRES_DB}}"
+    LISTMONK_db__ssl_mode = "disable"
+
+[[services]]
+  name = "db"
+  template = "postgres"

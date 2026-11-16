@@ -246,6 +246,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "storage.create": ["add storage", "added storage"],
   "storage.delete": ["remove storage", "removed storage"],
   "storage.update": ["update storage", "updated storage"],
+  "template.use": ["use template", "created from a template"],
   "token.cli_login": ["approve dock login", "approved a dock login as"],
   "token.cli_login_denied": ["deny dock login", "denied a dock login as"],
   "token.create": ["create token", "created"],

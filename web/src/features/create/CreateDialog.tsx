@@ -45,6 +45,7 @@ export default function CreateDialog({
         <NewService
           env={request.env}
           source={request.source}
+          template={request.template}
           onClose={onClose}
         />
       );

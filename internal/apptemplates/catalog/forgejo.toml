@@ -1,0 +1,35 @@
+name = "forgejo"
+title = "Forgejo"
+summary = "Git hosting with issues, pull requests and packages"
+category = "dev"
+website = "https://forgejo.org"
+license = "GPL-3.0"
+revision = 1
+main = "app"
+domain = true
+notes = "The first account you register becomes the admin. Git works over HTTPS; SSH isn't available on Dock."
+
+[[services]]
+  name = "app"
+  image = "codeberg.org/forgejo/forgejo:17.0.1@sha256:fcd19ff4ebc85fb098a67e8e1d0d5a84d07dd6e8a23edcfdfd5b71a6178953be"
+  track = '^\d+\.\d+\.\d+$'
+  port = 3000
+  health_check_path = "/api/healthz"
+  memory_mb = 512
+  depends_on = ["db"]
+  volumes = [{ name = "data", mount_path = "/data" }]
+  generate = { FORGEJO__security__SECRET_KEY = "hex:32" }
+  [services.values]
+    FORGEJO__database__DB_TYPE = "postgres"
+    FORGEJO__database__HOST = "${{db.DOCK_PRIVATE_DOMAIN}}:5432"
+    FORGEJO__database__NAME = "${{db.POSTGRES_DB}}"
+    FORGEJO__database__USER = "${{db.POSTGRES_USER}}"
+    FORGEJO__database__PASSWD = "${{db.POSTGRES_PASSWORD}}"
+    FORGEJO__server__DOMAIN = "${{app.DOCK_PUBLIC_DOMAIN}}"
+    FORGEJO__server__ROOT_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}/"
+    FORGEJO__server__DISABLE_SSH = "true"
+    FORGEJO__security__INSTALL_LOCK = "true"
+
+[[services]]
+  name = "db"
+  template = "postgres"

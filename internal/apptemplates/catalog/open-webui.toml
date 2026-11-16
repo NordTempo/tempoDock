@@ -1,0 +1,39 @@
+name = "open-webui"
+title = "Open WebUI"
+summary = "Chat interface for any OpenAI-compatible API"
+category = "ai"
+website = "https://openwebui.com"
+license = "BSD-3-Clause with a branding clause"
+revision = 1
+main = "app"
+domain = true
+notes = "The first account you register becomes the admin."
+
+[[inputs]]
+  key = "OPENAI_API_BASE_URL"
+  label = "API base URL"
+  kind = "text"
+  default = "https://api.openai.com/v1"
+
+[[inputs]]
+  key = "OPENAI_API_KEY"
+  label = "API key"
+  kind = "secret"
+  optional = true
+
+[[services]]
+  name = "app"
+  image = "ghcr.io/open-webui/open-webui:v0.13.3@sha256:46b59158e6558eeb980bc828e0f1b30238ad24d82ed84d5e5eda1dab2a082f14"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 8080
+  health_check_path = "/health"
+  health_check_timeout_seconds = 300
+  memory_mb = 1536
+  volumes = [{ name = "data", mount_path = "/app/backend/data" }]
+  generate = { WEBUI_SECRET_KEY = "hex:32" }
+  [services.values]
+    WEBUI_URL = "https://${{app.DOCK_PUBLIC_DOMAIN}}"
+    ENABLE_OLLAMA_API = "false"
+    SCARF_NO_ANALYTICS = "true"
+    DO_NOT_TRACK = "true"
+    ANONYMIZED_TELEMETRY = "false"

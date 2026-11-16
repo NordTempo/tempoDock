@@ -1,0 +1,19 @@
+name = "stirling-pdf"
+title = "Stirling-PDF"
+summary = "Merge, split, convert and sign PDFs in the browser"
+category = "personal"
+website = "https://www.stirlingpdf.com"
+license = "MIT core"
+revision = 1
+main = "app"
+domain = true
+notes = "It has no sign-in by default; turn on access protection for its domain (Settings, Domains)."
+
+[[services]]
+  name = "app"
+  image = "stirlingtools/stirling-pdf:3.3.0@sha256:ed7b1775c6706b5e5ea24fa6155f078eff1027bd35a17d21834e4407036025e6"
+  track = '^\d+\.\d+\.\d+$'
+  port = 8080
+  health_check_timeout_seconds = 300
+  memory_mb = 1024
+  volumes = [{ name = "configs", mount_path = "/configs" }]

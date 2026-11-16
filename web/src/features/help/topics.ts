@@ -18,6 +18,7 @@ export const topicIds = [
   "start",
   "deploying",
   "services",
+  "templates",
   "variables",
   "domains",
   "previews",
@@ -182,6 +183,31 @@ export const topics: Record<TopicId, Topic> = {
     guide: "deploying#settings-where-they-come-from",
     words:
       "apply staged discard health check port cpu memory volume start stop",
+  },
+
+  templates: {
+    title: "Templates",
+    group: "Ship",
+    what: "Apps and databases created in one step: their services, volumes, secrets and a domain.",
+    do: [
+      { what: "List the templates", cli: "dock template list" },
+      { what: "See a template's inputs", cli: "dock template show umami" },
+      {
+        what: "Create one in this environment",
+        cli: "dock template use umami -e {env}",
+      },
+      {
+        what: "Get it as a project file to edit",
+        cli: "dock template use umami --file -e {env}",
+      },
+    ],
+    watch: [
+      "The services are ordinary afterwards; a newer template doesn't change them.",
+      "Generated secrets are variables: reveal them on the Variables tab.",
+    ],
+    related: ["services", "variables", "data"],
+    guide: "templates",
+    words: "catalog app umami n8n grafana forgejo vaultwarden postgres redis",
   },
 
   variables: {

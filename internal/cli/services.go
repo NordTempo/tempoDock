@@ -344,10 +344,15 @@ func printService(g *globals, svc apitypes.Service) error {
 	if svc.PendingChanges > 0 {
 		pending = plural(svc.PendingChanges, "staged change") + " (see `dock changes`)"
 	}
+	from := ""
+	if t := svc.FromTemplate; t != nil {
+		from = fmt.Sprintf("%s, revision %d (`dock template show %s`)", t.Name, t.Revision, t.Name)
+	}
 	return g.io.Fields(
 		"service", svc.Project+"/"+svc.Environment+"/"+svc.Name,
 		"state", state,
 		"kind", kind,
+		"from template", from,
 		"release", releaseNumber(svc.ActiveRelease),
 		"image", svc.Image,
 		"port", port,

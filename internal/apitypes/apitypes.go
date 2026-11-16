@@ -445,6 +445,8 @@ type Service struct {
 	DataEngine DataEngine `json:"data_engine,omitempty" enum:"postgres,mysql,redis"`
 	// Template is the database template the service was created from.
 	Template Template `json:"template,omitempty" enum:"postgres,redis"`
+	// FromTemplate is the app template (ADR 0083) that created it, if one did.
+	FromTemplate *FromTemplate `json:"from_template,omitempty"`
 	// ActiveRelease is the number of the release serving traffic, if any.
 	ActiveRelease *int64        `json:"active_release,omitempty"`
 	Status        ServiceStatus `json:"status"`

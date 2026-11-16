@@ -1,0 +1,23 @@
+name = "meilisearch"
+title = "Meilisearch"
+summary = "Fast search engine with a REST API"
+category = "dev"
+website = "https://www.meilisearch.com"
+license = "MIT"
+revision = 1
+main = "app"
+domain = true
+notes = "The master key is the variable MEILI_MASTER_KEY; create search keys with it instead of sharing it."
+
+[[services]]
+  name = "app"
+  image = "getmeili/meilisearch:v1.56.2@sha256:9600db22be3fcbf3d506176d3a73dd70a65c5719d9aa1d2837355b75afb8f4fb"
+  track = '^v\d+\.\d+\.\d+$'
+  port = 7700
+  health_check_path = "/health"
+  memory_mb = 512
+  volumes = [{ name = "data", mount_path = "/meili_data" }]
+  generate = { MEILI_MASTER_KEY = "hex:24" }
+  [services.values]
+    MEILI_ENV = "production"
+    MEILI_NO_ANALYTICS = "true"

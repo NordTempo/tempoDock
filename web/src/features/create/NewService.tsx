@@ -1,19 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { useDeploy } from "../../data/mutations";
 import {
   canDeploy,
-  queries,
   useEnvironment,
   useProjectOverview,
   useSession,
 } from "../../data/queries";
-import type { EnvRef, Service, TemplateInfo } from "../../data/types";
+import type { EnvRef, Service } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { Dialog } from "../../ui/Dialog";
 import { Button, CopyButton, ErrorText } from "../../ui/kit";
 import { useGitHubRepos } from "../git/api";
+import { FromTemplate } from "../templates/FromTemplate";
 import { FromGitHub } from "./FromGitHub";
 import {
   autofocus,
@@ -41,7 +40,7 @@ const sources = [
   // "Folder", as the Deploy window says: code from this machine.
   ["source", "Folder"],
   ["github", "GitHub"],
-  ["database", "Database"],
+  ["template", "Template"],
 ] as const;
 
 /** The advanced settings, as typed. Empty means the default. */
@@ -78,30 +77,32 @@ const arg = (v: string) =>
   /^[\w@%+=:,./-]+$/.test(v) ? v : `'${v.replaceAll("'", `'\\''`)}'`;
 
 type Done =
-  | { kind: "database"; service: Service; reference: string }
   | { kind: "github"; service: Service; git: GitConnected }
   | { kind: "unconnected"; service: Service; error: Error };
 
 /**
  * `dock service create` with every flag: from an image, from source (built
  * on deploy), from a GitHub repository (created, then connected like
- * `dock git connect`), or a database from a template. An image deploys
- * right after it is created ("Create, don't deploy" skips that). Opens the
- * service, except where the answer has something to keep: a database's
- * variable reference, a webhook's secret. Submitting with fields missing
+ * `dock git connect`), or `dock template use` for an app or a database
+ * (FromTemplate, which widens the dialog). An image deploys right after it
+ * is created ("Create, don't deploy" skips that). Opens the service,
+ * except where the answer has something to keep: a webhook's secret. Submitting with fields missing
  * marks them instead of doing nothing (useValidation). The environment
  * starts as the one it was opened from and can be changed in the form.
  */
 export function NewService({
   env: opened,
   source: initial = "image",
+  template,
   onClose,
 }: {
   env: EnvRef;
   source?: ServiceSource;
+  template?: string;
   onClose: () => void;
 }) {
   const [environment, setEnvironment] = useState(opened.environment);
+  const [source, setSource] = useState<ServiceSource>(initial);
   const env = { project: opened.project, environment };
   const session = useSession();
   const choices = useProjectOverview(env.project)
@@ -109,12 +110,19 @@ export function NewService({
     .filter((name) => canDeploy(session, { ...env, environment: name }));
   const title = `New service in ${env.project} ${environment}`;
   return (
-    <Dialog title={title} onClose={onClose} wide>
+    <Dialog
+      title={title}
+      onClose={onClose}
+      wide
+      className={source === "template" ? "m-auto max-w-[900px]" : undefined}
+    >
       <ServiceForm
         env={env}
         choices={choices}
         onEnvironment={setEnvironment}
-        initial={initial}
+        source={source}
+        setSource={setSource}
+        template={template}
         onClose={onClose}
       />
     </Dialog>
@@ -125,26 +133,28 @@ function ServiceForm({
   env,
   choices,
   onEnvironment,
-  initial,
+  source,
+  setSource,
+  template,
   onClose,
 }: {
   env: EnvRef;
   /** The environments the caller may add a service to. */
   choices: readonly string[];
   onEnvironment: (environment: string) => void;
-  initial: ServiceSource;
+  source: ServiceSource;
+  setSource: (source: ServiceSource) => void;
+  template?: string;
   onClose: () => void;
 }) {
   const org = useOrg();
   const { services } = useEnvironment(env);
-  const templates = useQuery(queries.templates());
   const create = useCreateService();
   const connect = useConnectGit();
   const deploy = useDeploy();
   const navigate = useNavigate();
   const v = useValidation();
 
-  const [source, setSource] = useState<ServiceSource>(initial);
   // The org's repositories through its GitHub App, once GitHub is picked.
   const repos = useGitHubRepos(source === "github");
   const [typed, setTyped] = useState<string | null>(null);
@@ -154,15 +164,11 @@ function ServiceForm({
   const [branch, setBranch] = useState("main");
   const [dir, setDir] = useState("");
   const [token, setToken] = useState("");
-  const [template, setTemplate] = useState<TemplateInfo["name"]>("postgres");
   const [adv, setAdv] = useState(noAdvanced);
   const [done, setDone] = useState<Done | null>(null);
 
-  const database = source === "database";
   const built = source === "source" || source === "github";
-  // A database is named after its template until a name is typed.
-  const name = typed ?? (database ? template : "");
-  const info = templates.data?.find((t) => t.name === template);
+  const name = typed ?? "";
 
   const portN = whole(port, 65535);
   const timeout = whole(adv.healthTimeout);
@@ -185,7 +191,7 @@ function ServiceForm({
     "Enter the repository as owner/repo.",
   );
   const portError =
-    !database && portN === undefined
+    portN === undefined
       ? "A whole number up to 65535; empty means 8080."
       : undefined;
   const problem =
@@ -209,11 +215,51 @@ function ServiceForm({
       services.map((s) => s.service.name),
     ) ||
     !!portError ||
-    !!problem ||
-    (database && !info);
+    !!problem;
 
   if (done) {
     return <Created env={env} done={done} onClose={onClose} />;
+  }
+
+  // The environment and source pickers, above a form of their own.
+  const head = (
+    <Fields>
+      {choices.length > 1 && (
+        <Field label="Environment">
+          <select
+            value={env.environment}
+            onChange={(e) => onEnvironment(e.target.value)}
+            className="w-fit font-mono"
+          >
+            {choices.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      <Group label="Source">
+        <Choice
+          label="Source"
+          name="source"
+          value={source}
+          options={sources}
+          onChange={setSource}
+        />
+      </Group>
+    </Fields>
+  );
+  if (source === "template") {
+    return (
+      <FromTemplate
+        env={env}
+        taken={services.map((s) => s.service.name)}
+        head={head}
+        initial={template}
+        onClose={onClose}
+      />
+    );
   }
 
   // Through the org's GitHub App, a repository and its directories are
@@ -226,57 +272,27 @@ function ServiceForm({
         repos={appRepos}
         taken={services.map((s) => s.service.name)}
         onClose={onClose}
-        head={
-          <Fields>
-            {choices.length > 1 && (
-              <Field label="Environment">
-                <select
-                  value={env.environment}
-                  onChange={(e) => onEnvironment(e.target.value)}
-                  className="w-fit font-mono"
-                >
-                  {choices.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            <Group label="Source">
-              <Choice
-                label="Source"
-                name="source"
-                value={source}
-                options={sources}
-                onChange={setSource}
-              />
-            </Group>
-          </Fields>
-        }
+        head={head}
       />
     );
   }
 
-  // The request: template only for a database; build settings only when
-  // built from source; empty fields left out.
-  const settings: Omit<Request, "name"> = database
-    ? { template }
-    : {
-        ...(source === "image" && { image: image.trim() }),
-        ...(portN && { port: portN }),
-        ...(adv.start && { start_command: adv.start }),
-        ...(built && adv.build && { build_command: adv.build }),
-        ...(built && adv.dockerfile && { dockerfile_path: adv.dockerfile }),
-        ...(adv.healthPath && { health_check_path: adv.healthPath }),
-        ...(timeout && { health_check_timeout_seconds: timeout }),
-        ...(cpus && { cpus }),
-        ...(memory && { memory_mb: memory }),
-      };
+  // The request: build settings only when built from source; empty
+  // fields left out.
+  const settings: Omit<Request, "name"> = {
+    ...(source === "image" && { image: image.trim() }),
+    ...(portN && { port: portN }),
+    ...(adv.start && { start_command: adv.start }),
+    ...(built && adv.build && { build_command: adv.build }),
+    ...(built && adv.dockerfile && { dockerfile_path: adv.dockerfile }),
+    ...(adv.healthPath && { health_check_path: adv.healthPath }),
+    ...(timeout && { health_check_timeout_seconds: timeout }),
+    ...(cpus && { cpus }),
+    ...(memory && { memory_mb: memory }),
+  };
 
   const where = `-e ${env.environment} -p ${env.project}`;
   const flags = Object.entries({
-    template: settings.template,
     image: settings.image,
     port: settings.port,
     "start-command": settings.start_command,
@@ -302,14 +318,7 @@ function ServiceForm({
   async function submit(deployIt: boolean) {
     if (!v.check(!blocked)) return;
     const service = await create.mutateAsync({ env, name, ...settings });
-    if (database) {
-      const exported = info?.exports[0];
-      setDone({
-        kind: "database",
-        service,
-        reference: exported ? `\${{${service.name}.${exported}}}` : "",
-      });
-    } else if (source === "github") {
+    if (source === "github") {
       try {
         const git = await connect.mutateAsync({
           env,
@@ -374,7 +383,7 @@ function ServiceForm({
             ref={autofocus}
             value={name}
             onChange={(e) => setTyped(toName(e.target.value))}
-            placeholder={database ? template : "web"}
+            placeholder="web"
             spellCheck={false}
             autoComplete="off"
             aria-invalid={!!nameError}
@@ -476,26 +485,7 @@ function ServiceForm({
             </Field>
           </>
         )}
-        {database && (
-          <Group
-            label="Template"
-            note={
-              info &&
-              `${info.description}, a volume at ${info.mount_path}, generated credentials, daily backups. Deploys right away.`
-            }
-          >
-            <Choice
-              label="Template"
-              name="template"
-              value={template}
-              options={(templates.data ?? []).map(
-                (t) => [t.name, t.name] as const,
-              )}
-              onChange={setTemplate}
-            />
-          </Group>
-        )}
-        {!database && (
+        {
           <Field
             label="Port"
             note="Optional: the port the app listens on, 8080 if empty."
@@ -510,10 +500,10 @@ function ServiceForm({
               error={portError}
             />
           </Field>
-        )}
+        }
       </Fields>
 
-      {!database && (
+      {
         <details className="mt-3">
           <summary className="cursor-pointer text-xs text-mut hover:text-fg">
             Advanced
@@ -590,20 +580,14 @@ function ServiceForm({
             </Fields>
           </div>
         </details>
-      )}
+      }
 
       {problem && <p className="mt-3 text-fail">{problem}</p>}
       <Footer
-        submit={
-          database
-            ? "Create database"
-            : source === "image"
-              ? "Create and deploy"
-              : "Create service"
-        }
+        submit={source === "image" ? "Create and deploy" : "Create service"}
         pending={create.isPending || connect.isPending || deploy.isPending}
         problem={v.problem(missing, blocked)}
-        error={templates.error ?? create.error ?? deploy.error}
+        error={create.error ?? deploy.error}
         cli={
           source === "image"
             ? [
@@ -687,26 +671,6 @@ function Created({
       Open {service.name}
     </Link>
   );
-  if (done.kind === "database") {
-    return (
-      <div className="flex flex-col gap-3">
-        <p>
-          Created <span className="font-mono">{service.name}</span>, deploying.
-        </p>
-        {done.reference && (
-          <p className="flex flex-wrap items-center gap-2">
-            Other services use{" "}
-            <code className="font-mono">{done.reference}</code>
-            <CopyButton text={done.reference} />
-          </p>
-        )}
-        <div className="flex gap-2">
-          {open}
-          <Button onClick={onClose}>Done</Button>
-        </div>
-      </div>
-    );
-  }
   if (done.kind === "unconnected") {
     return (
       <div className="flex flex-col gap-3">

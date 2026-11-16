@@ -134,6 +134,8 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeAdmin, "copying values into a clone"}:                            PermVariablesReadSecret,
 	{apitypes.ScopeDeploy, "creating a project"}:                                    PermProjectsCreate,
 	{apitypes.ScopeDeploy, "creating a service"}:                                    PermConfigWrite,
+	{apitypes.ScopeDeploy, "using a template"}:                                      PermConfigWrite,
+	{apitypes.ScopeRead, "using a template"}:                                        PermEnvView,
 	{apitypes.ScopeDeploy, "creating an environment"}:                               PermEnvironmentsCreate,
 	{apitypes.ScopeDeploy, "deleting a snapshot"}:                                   PermConfigWrite,
 	{apitypes.ScopeAdmin, "deleting the organization"}:                              PermOrgSettings,

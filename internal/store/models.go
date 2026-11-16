@@ -986,6 +986,8 @@ type Service struct {
 	StoppedBy                      string
 	PreDeploySnapshot              bool
 	Database                       string
+	FromTemplate                   string
+	FromTemplateRevision           int64
 }
 
 type ServiceAccess struct {
