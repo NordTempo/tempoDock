@@ -1,5 +1,5 @@
 -- name: ListOrgTemplates :many
--- An organization's templates by name (ADR 0082).
+-- An organization's templates by name (ADR 0083).
 SELECT * FROM org_templates WHERE org_id = +? ORDER BY name;
 
 -- name: GetOrgTemplate :one

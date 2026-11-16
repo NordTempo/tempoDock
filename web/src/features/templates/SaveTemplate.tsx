@@ -16,7 +16,7 @@ import {
 import { useSaveTemplateFrom } from "./data";
 
 /**
- * Project settings › Save as template (ADR 0082): an environment's
+ * Project settings › Save as template (ADR 0083): an environment's
  * services as the organization's own template, `dock template save`.
  * Services that build from source can't be in one; variables that aren't
  * references become inputs, so no value is copied.

@@ -64,7 +64,7 @@ const listOrgTemplates = `-- name: ListOrgTemplates :many
 SELECT id, org_id, name, body, created_by, updated_at FROM org_templates WHERE org_id = +? ORDER BY name
 `
 
-// An organization's templates by name (ADR 0082).
+// An organization's templates by name (ADR 0083).
 func (q *Queries) ListOrgTemplates(ctx context.Context, orgID int64) ([]OrgTemplate, error) {
 	rows, err := q.db.QueryContext(ctx, listOrgTemplates, orgID)
 	if err != nil {

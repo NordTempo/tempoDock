@@ -12,7 +12,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// An organization's own templates (ADR 0082): files in the catalog's
+// An organization's own templates (ADR 0083): files in the catalog's
 // format, saved by its admins from a file or from an environment's
 // services, listed and used by every member like Dock's own. Their names
 // can't be those of Dock's templates.
