@@ -87,8 +87,8 @@ func (g *globals) finishPromote(ctx context.Context, s *session, res apitypes.Pr
 			switch r.Status {
 			case apitypes.ReleaseActive:
 				g.io.Successf("%s: release %d (from %s release %d) is live in %s", p.Service, r.Number, res.From, p.FromRelease, res.To)
-			case apitypes.ReleaseFailed:
-				g.io.Failf("%s: release %d failed: %s", p.Service, r.Number, r.Error)
+			case apitypes.ReleaseFailed, apitypes.ReleaseCanceled:
+				g.printNotLive(p.Service, r)
 			default:
 				g.io.Successf("%s: release %d (from %s release %d) queued in %s", p.Service, r.Number, res.From, p.FromRelease, res.To)
 			}

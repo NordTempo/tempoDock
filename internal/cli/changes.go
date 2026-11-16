@@ -86,8 +86,8 @@ func (g *globals) finishApplied(ctx context.Context, s *session, w *watcher, a a
 			switch r.Status {
 			case apitypes.ReleaseActive:
 				g.io.Successf("%s: release %d is live", r.Service, r.Number)
-			case apitypes.ReleaseFailed:
-				g.io.Failf("%s: release %d failed: %s", r.Service, r.Number, r.Error)
+			case apitypes.ReleaseFailed, apitypes.ReleaseCanceled:
+				g.printNotLive(r.Service, r)
 			default:
 				g.io.Successf("%s: release %d started (%s)", r.Service, r.Number, r.Status)
 			}

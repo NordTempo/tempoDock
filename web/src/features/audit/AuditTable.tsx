@@ -198,6 +198,7 @@ const words: Record<string, readonly [label: string, past: string]> = {
   "registry.prune_failed": ["registry prune failed", "failed to prune the"],
   "registry.pruned": ["registry pruned", "pruned the"],
   "registry.storage": ["change registry storage", "changed the storage of the"],
+  "release.cancel": ["cancel deploy", "canceled a deploy of"],
   "release.deploy": ["deploy", "deployed"],
   "release.promote": ["promote", "promoted to"],
   "release.restart": ["restart", "restarted"],

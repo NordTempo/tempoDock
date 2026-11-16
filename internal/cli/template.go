@@ -316,9 +316,7 @@ edit and apply with ` + "`dock apply`" + `.`,
 			return g.io.Print(res, func() error {
 				g.io.Successf("Created %s in %s/%s", strings.Join(res.Services, ", "), t.Project, t.Environment)
 				for _, r := range res.Releases {
-					if r.Status == apitypes.ReleaseFailed {
-						g.io.Failf("%s: release %d failed: %s", r.Service, r.Number, r.Error)
-					}
+					g.printNotLive(r.Service, r)
 				}
 				for _, msg := range res.Failed {
 					g.io.Warnf("%s", msg)

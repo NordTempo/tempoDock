@@ -134,9 +134,7 @@ func (g *globals) applyFile(ctx context.Context, f targetFlags, path string, o a
 		for _, a := range res.Applied {
 			g.io.Successf("Applied %s/%s: %s started", t.Project, a.Environment, plural(len(a.Releases), "release"))
 			for _, r := range a.Releases {
-				if r.Status == apitypes.ReleaseFailed {
-					g.io.Failf("%s: release %d failed: %s", r.Service, r.Number, r.Error)
-				}
+				g.printNotLive(r.Service, r)
 			}
 			for _, f := range a.Failed {
 				g.io.Warnf("Still staged: %s", f)

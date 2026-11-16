@@ -43,6 +43,7 @@ var toolPerms = map[string]core.Perm{
 	"audit_log":                 core.PermActivityRead,
 	"deploy_image":              core.PermDeploy,
 	"promote":                   core.PermDeploy,
+	"cancel_deploy":             core.PermDeploy,
 	"redeploy":                  core.PermServiceOperate,
 	"rollback":                  core.PermServiceOperate,
 	"stop_service":              core.PermServiceOperate,

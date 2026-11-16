@@ -142,7 +142,10 @@ const summarize = ({
 });
 
 const inFlight = (status: Release["status"]) =>
-  status !== "active" && status !== "failed" && status !== "superseded";
+  status === "queued" ||
+  status === "building" ||
+  status === "starting" ||
+  status === "health_checking";
 
 /**
  * Patches a release's new state into its service on the overview, as

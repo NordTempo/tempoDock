@@ -217,6 +217,8 @@ type Core struct {
 	volumes volumeWriters
 	// runs counts one-off commands in flight (runs.go).
 	runs runState
+	// deploys holds the deploys running here, to cancel one (deploy_cancel.go).
+	deploys deployRuns
 	// uptime is the uptime checks' scheduler kick and state (uptime.go).
 	uptime uptimeState
 	// sleep holds the environments that sleep (sleep.go).

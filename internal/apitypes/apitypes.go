@@ -542,7 +542,10 @@ type UpdateServiceRequest struct {
 type ReleaseStatus string
 
 // Release statuses: queued → building → starting → health_checking →
-// active | failed. An active release becomes superseded when replaced.
+// active | failed | canceled. An active release becomes superseded when
+// replaced. A canceled release was stopped before it went live (ADR
+// 0086); it is stored as failed with CodeDeployCanceled, and reported as
+// canceled.
 const (
 	ReleaseQueued         ReleaseStatus = "queued"
 	ReleaseBuilding       ReleaseStatus = "building"
@@ -551,11 +554,12 @@ const (
 	ReleaseActive         ReleaseStatus = "active"
 	ReleaseFailed         ReleaseStatus = "failed"
 	ReleaseSuperseded     ReleaseStatus = "superseded"
+	ReleaseCanceled       ReleaseStatus = "canceled"
 )
 
 // Done reports whether the release has finished deploying.
 func (s ReleaseStatus) Done() bool {
-	return s == ReleaseActive || s == ReleaseFailed || s == ReleaseSuperseded
+	return s == ReleaseActive || s == ReleaseFailed || s == ReleaseSuperseded || s == ReleaseCanceled
 }
 
 // ReleaseSource says what created a release.
@@ -578,7 +582,7 @@ type Release struct {
 	Project     string        `json:"project"`
 	Environment string        `json:"environment"`
 	Service     string        `json:"service"`
-	Status      ReleaseStatus `json:"status" enum:"queued,building,starting,health_checking,active,failed,superseded"`
+	Status      ReleaseStatus `json:"status" enum:"queued,building,starting,health_checking,active,failed,superseded,canceled"`
 	Source      ReleaseSource `json:"source" enum:"upload,image,config,rollback,restart,promote"`
 	// FromRelease is the release number a rollback or restart copied.
 	FromRelease int64  `json:"from_release,omitempty"`
@@ -1658,7 +1662,7 @@ type ServiceOverview struct {
 // ReleaseSummary is the short form of a release.
 type ReleaseSummary struct {
 	Number    int64         `json:"number"`
-	Status    ReleaseStatus `json:"status" enum:"queued,building,starting,health_checking,active,failed,superseded"`
+	Status    ReleaseStatus `json:"status" enum:"queued,building,starting,health_checking,active,failed,superseded,canceled"`
 	Source    ReleaseSource `json:"source" enum:"upload,image,config,rollback,restart,promote"`
 	ImageRef  string        `json:"image_ref"`
 	ImageID   string        `json:"image_id"`

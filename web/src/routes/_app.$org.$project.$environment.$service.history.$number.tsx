@@ -499,6 +499,12 @@ function Title({ release }: { release: Release }) {
       );
     case "superseded":
       return <>{r} was replaced</>;
+    case "canceled":
+      return (
+        <>
+          <span className="text-mut">–</span> {r} was {release.error}
+        </>
+      );
     default:
       return (
         <>

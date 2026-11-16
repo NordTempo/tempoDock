@@ -85,9 +85,9 @@ WHERE environments.server_id = +? AND releases.host_port > 0
 
 -- name: ListProjectReleaseHeads :many
 -- For every service in a project: its active, in-flight and latest
--- releases, and its last finished deploy (not a rollback or restart)
--- when that one failed. A release in several of these roles appears
--- once per role.
+-- releases, and its last finished deploy (not a rollback or restart,
+-- nor canceled: ADR 0086) when that one failed. A release in several of
+-- these roles appears once per role.
 WITH svc AS (
     SELECT services.id FROM services
     JOIN environments ON environments.id = services.environment_id
@@ -107,6 +107,7 @@ SELECT releases.* FROM svc JOIN releases ON releases.service_id = svc.id
 WHERE releases.status = 'failed' AND releases.number = (
     SELECT d.number FROM releases d WHERE d.service_id = svc.id
       AND d.source NOT IN ('rollback', 'restart') AND d.status IN ('active', 'superseded', 'failed')
+      AND d.error_code <> 'deploy_canceled'
     ORDER BY d.number DESC LIMIT 1);
 
 -- name: ListEnvironmentActiveReleases :many

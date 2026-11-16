@@ -763,8 +763,11 @@ func (c *Core) launch(ctx context.Context, a Actor, ss svcScope, rel store.Relea
 	if rel.CommitSha != "" {
 		c.gitDeployStart(ss, rel)
 	}
+	// Tracked before it starts, so it can be canceled from the moment it
+	// is queued (ADR 0086).
+	dctx, run := c.deploys.track(c.ctx, rel.ID)
 	c.wg.Add(1)
-	go c.deploy(ss, rel, spec)
+	go c.deploy(dctx, run, ss, rel, spec)
 }
 
 // setServiceImage changes a service's live image setting, if it differs.
@@ -1096,7 +1099,7 @@ func (c *Core) toRelease(ctx context.Context, ss svcScope, r store.Release, with
 func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, withEvents bool, diags map[int64]*apitypes.DiagnosisRef) (apitypes.Release, error) {
 	out := apitypes.Release{
 		ID: r.ID, Number: r.Number, Project: ss.project.Name, Environment: ss.env.Name, Service: ss.svc.Name,
-		Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
+		Status: releaseStatus(r), Source: apitypes.ReleaseSource(r.Source), FromRelease: r.FromRelease,
 		ImageRef: r.ImageRef, ImageID: r.ImageID, ImageDigest: r.ImageDigest, PinnedRef: r.PinnedRef, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
 		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, FinishedAt: r.FinishedAt, Commit: commitOf(r),
 		// An archive on its server, or a failed release's saved last
@@ -1117,7 +1120,7 @@ func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, 
 	for _, m := range cfg.Mounts {
 		out.Config.Mounts = append(out.Config.Mounts, apitypes.VolumeMount{Volume: m.Volume, Path: m.Path})
 	}
-	switch apitypes.ReleaseStatus(r.Status) {
+	switch releaseStatus(r) {
 	case apitypes.ReleaseFailed, apitypes.ReleaseActive, apitypes.ReleaseSuperseded:
 		// Why it failed, or why it crash looped while live (ADR 0071).
 		if diags != nil {
@@ -1144,7 +1147,7 @@ func (c *Core) toReleaseWith(ctx context.Context, ss svcScope, r store.Release, 
 
 func summarize(r store.Release) *apitypes.ReleaseSummary {
 	return &apitypes.ReleaseSummary{
-		Number: r.Number, Status: apitypes.ReleaseStatus(r.Status), Source: apitypes.ReleaseSource(r.Source),
+		Number: r.Number, Status: releaseStatus(r), Source: apitypes.ReleaseSource(r.Source),
 		ImageRef: r.ImageRef, ImageID: r.ImageID, Error: r.Error, ErrorCode: apitypes.ErrorCode(r.ErrorCode),
 		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt, Commit: commitOf(r),
 	}

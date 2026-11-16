@@ -52,6 +52,9 @@ const (
 	// CodeDeployFailed: anything else (container start, routing, the daemon
 	// stopping mid-deploy).
 	CodeDeployFailed ErrorCode = "deploy_failed"
+	// CodeDeployCanceled: someone canceled the deploy before it went live
+	// (ADR 0086); the release reads as canceled, not failed.
+	CodeDeployCanceled ErrorCode = "deploy_canceled"
 )
 
 // Error is an RFC 9457 (7807) problem response with a machine-readable code.

@@ -191,6 +191,7 @@ func TestPermissionMatrix(t *testing.T) {
 		{"limited token can't create projects", "shop-deploy", "POST", "/api/v1/projects", apitypes.CreateProjectRequest{Name: "new"}, 403, apitypes.CodeForbidden, "unlimited"},
 		{"read can't roll back", "read", "POST", web + "/releases/1/rollback", nil, 403, apitypes.CodeForbidden, "rolling back requires deploy"},
 		{"read can't restart", "read", "POST", web + "/restart", nil, 403, apitypes.CodeForbidden, "restarting requires deploy"},
+		{"read can't cancel a deploy", "read", "POST", web + "/releases/1/cancel", nil, 403, apitypes.CodeForbidden, "canceling a deploy requires deploy"},
 		{"read can't promote", "read", "POST", "/api/v1/projects/shop/promote", toProd, 403, apitypes.CodeForbidden, "promoting requires deploy"},
 		{"read can't apply changes", "read", "POST", shopProd + "/changes/apply", nil, 403, apitypes.CodeForbidden, "applying staged changes requires deploy"},
 		{"limited token can't roll back another project", "shop-deploy", "POST", blogAPI + "/releases/1/rollback", nil, 403, apitypes.CodeForbidden, "limited to project shop"},

@@ -182,10 +182,11 @@ func interrupted(err error, rels []apitypes.Release) error {
 	}
 }
 
-// releaseFailure explains a failed release and what to do next, or returns
-// nil when r didn't fail.
+// releaseFailure explains a failed or canceled release and what to do
+// next, or returns nil when r went live. A canceled one (ADR 0086) exits
+// deploy_canceled, not deploy_failed: nothing went wrong.
 func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
-	if r.Status != apitypes.ReleaseFailed {
+	if r.Status != apitypes.ReleaseFailed && r.Status != apitypes.ReleaseCanceled {
 		return nil
 	}
 	serving := "Nothing else is serving this service."
@@ -196,6 +197,14 @@ func releaseFailure(ctx context.Context, s *session, r apitypes.Release) error {
 			serving = "The service is still stopped; its domains answer 503."
 		case svc.ActiveRelease != nil:
 			serving = fmt.Sprintf("Release %d is still serving; traffic was not switched.", *svc.ActiveRelease)
+		}
+	}
+	if r.Status == apitypes.ReleaseCanceled {
+		return &output.Error{
+			Exit:    output.ExitCanceled,
+			Code:    string(apitypes.CodeDeployCanceled),
+			Message: fmt.Sprintf("release %d of %s was %s", r.Number, r.Service, r.Error),
+			Hint:    serving + fmt.Sprintf(" The changes it carried are staged again: `dock changes %s`.", target{Project: t.Project, Environment: t.Environment}.flags()),
 		}
 	}
 	see := fmt.Sprintf("See what happened: `dock release show %d %s`.", r.Number, t.flags())
@@ -241,6 +250,20 @@ func deployInProgress(err error, t target) error {
 	return &c
 }
 
+// printNotLive prints a release that ended without going live: failed, or
+// canceled (ADR 0086). False for any other status.
+func (g *globals) printNotLive(service string, r apitypes.Release) bool {
+	switch r.Status {
+	case apitypes.ReleaseFailed:
+		g.io.Failf("%s: release %d failed: %s", service, r.Number, r.Error)
+	case apitypes.ReleaseCanceled:
+		g.io.Warnf("%s: release %d was %s", service, r.Number, r.Error)
+	default:
+		return false
+	}
+	return true
+}
+
 // startAndFollow runs start (which starts one release) and follows it
 // unless detach is set. The service's events are watched before start.
 func (g *globals) startAndFollow(ctx context.Context, s *session, t target, detach bool, start func() (apitypes.Release, error)) error {
@@ -271,7 +294,8 @@ func (g *globals) startAndFollow(ctx context.Context, s *session, t target, deta
 }
 
 // finishRelease prints a finished release: its JSON, or where it is live.
-// A failed release is a deploy_failed error (after its JSON, with --json).
+// A failed release is a deploy_failed error, a canceled one a
+// deploy_canceled error (after its JSON, with --json).
 // Its JSON carries the end of its logs; humans see the end of its output,
 // since its build log was either streamed already or is named by the hint.
 func (g *globals) finishRelease(ctx context.Context, s *session, r apitypes.Release) error {

@@ -88,6 +88,13 @@ func registerReleases(s *Server, a huma.API) {
 		return reply(s.core.Rollback(ctx, actor, in.ref(), in.Number))
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "cancel-release", Method: http.MethodPost, Path: releasePathT + "/cancel",
+		Summary: "Cancel a deploy", Description: "Stops a release that is deploying, at any step before traffic moves to it (ADR 0086). What it started is removed, it reads as canceled, the release that served keeps serving, and the changes it carried are staged again. Answers once it is canceled, with the release. 409 if it already finished or is switching traffic. Scope: deploy.",
+		Tags: tags,
+	}, func(ctx context.Context, actor core.Actor, in *ReleasePath) (*out[apitypes.Release], error) {
+		return reply(s.core.CancelRelease(ctx, actor, in.ref(), in.Number))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "restart", Method: http.MethodPost, Path: servicePathT + "/restart",
 		Summary: "Restart a service", Description: "Creates a new release identical to the active one. Scope: deploy.",
 		Tags: tags, DefaultStatus: http.StatusAccepted,

@@ -487,13 +487,14 @@ SELECT releases.id, releases.service_id, releases.number, releases.status, relea
 WHERE releases.status = 'failed' AND releases.number = (
     SELECT d.number FROM releases d WHERE d.service_id = svc.id
       AND d.source NOT IN ('rollback', 'restart') AND d.status IN ('active', 'superseded', 'failed')
+      AND d.error_code <> 'deploy_canceled'
     ORDER BY d.number DESC LIMIT 1)
 `
 
 // For every service in a project: its active, in-flight and latest
-// releases, and its last finished deploy (not a rollback or restart)
-// when that one failed. A release in several of these roles appears
-// once per role.
+// releases, and its last finished deploy (not a rollback or restart,
+// nor canceled: ADR 0086) when that one failed. A release in several of
+// these roles appears once per role.
 func (q *Queries) ListProjectReleaseHeads(ctx context.Context, projectID int64) ([]Release, error) {
 	rows, err := q.db.QueryContext(ctx, listProjectReleaseHeads, projectID)
 	if err != nil {

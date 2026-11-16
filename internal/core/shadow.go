@@ -142,6 +142,7 @@ var actionPerms = map[actionKey]Perm{
 	{apitypes.ScopeDeploy, "creating an environment"}:                               PermEnvironmentsCreate,
 	{apitypes.ScopeDeploy, "deleting a snapshot"}:                                   PermConfigWrite,
 	{apitypes.ScopeAdmin, "deleting the organization"}:                              PermOrgSettings,
+	{apitypes.ScopeDeploy, "canceling a deploy"}:                                    PermDeploy,
 	{apitypes.ScopeDeploy, "deploying"}:                                             PermDeploy,
 	{apitypes.ScopeDeploy, "discarding staged changes"}:                             PermConfigWrite,
 	{apitypes.ScopeDeploy, "disconnecting a GitHub repository"}:                     PermConfigWrite,

@@ -228,7 +228,8 @@ health check path to catch hangs.
 
 ```
 queued → building → starting → health_checking → active
-                         └──────────┴───────────→ failed
+   │                     └──────────┴───────────→ failed
+   └──────────┴──────────┴──────────┴───────────→ canceled
 ```
 
 **Pre-deploy command** first, if the service has one (in `starting`; see
@@ -324,7 +325,33 @@ newest).
 serving.
 
 One deploy per service at a time: a second one gets `deploy_in_progress`
-(exit code 5). Wait and retry.
+(exit code 5). Wait and retry, or cancel the one that runs.
+
+### Cancel a deploy
+
+```sh
+dock release cancel          # the release deploying now
+dock release cancel 42       # that one, if it still deploys
+```
+
+Any step before traffic moves can be canceled: queued, building (pushing
+and pulling too), the pre-deploy command, starting, the health check
+([ADR 0086](../decisions/0086-cancel-a-deploy.md)). The service's page
+has a Cancel action while a release deploys, and agents call MCP
+`cancel_deploy`. It needs the deploy permission, like deploying.
+
+What the release started is removed, as on a failure: a build stops, its
+container goes, its port is freed. The release that served keeps serving
+(a stateful service's, stopped first, starts again), and the changes the
+release carried are staged again (`dock changes`). The release reads as
+`canceled`, not `failed`: no alert, no diagnosis, nothing in Needs
+attention. Following it (`dock deploy`, `dock release wait`) exits 10,
+`deploy_canceled`.
+
+Once the switch-over began it is too late: the cancel is refused, the
+release goes live, and `dock rollback` takes you back. A pre-deploy
+command that already finished (a migration) isn't undone; one that is
+running is stopped where it is.
 
 ## Pre-deploy command
 
@@ -751,7 +778,7 @@ The UI does the same under the service's **Settings → Source**.
 | What arrives | What happens |
 |---|---|
 | A push to the branch | Queued, then deployed as a source release with the commit SHA, subject and author on it (`deploy abc1234 fix checkout`) |
-| A push while a deploy of the service runs | Waits for it; a newer push replaces it. A running deploy is never cancelled |
+| A push while a deploy of the service runs | Waits for it; a newer push replaces it. A push never cancels a running deploy; you can ([Cancel a deploy](#cancel-a-deploy)) |
 | Other branches, tags, deleted branches | Ignored |
 | With `--dir`: a push changing nothing in the directory | Ignored |
 | The commit already live | Ignored (`dock git deploy` deploys it anyway) |
