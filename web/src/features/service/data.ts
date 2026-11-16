@@ -51,3 +51,20 @@ export const useRestartService = () =>
       ),
     ({ ref }) => serviceWide(ref),
   );
+
+/**
+ * Cancels a release that is deploying (ADR 0086). The answer comes once
+ * it is canceled; the release's own event patches the page.
+ */
+export const useCancelRelease = () =>
+  useAction(
+    ({ ref, number }: { ref: ServiceRef; number: number }) =>
+      body(
+        api.POST(
+          "/api/v1/projects/{project}/environments/{environment}/services/{service}/releases/{number}/cancel",
+          { params: { path: { ...servicePath(ref), number } } },
+        ),
+      ),
+    ({ ref }) => serviceWide(ref),
+    ({ number }) => `Canceled r${number}`,
+  );

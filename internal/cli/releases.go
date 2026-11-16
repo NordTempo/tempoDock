@@ -17,8 +17,69 @@ import (
 
 // newReleaseCmd is `dock release` and its subcommands.
 func newReleaseCmd(g *globals) *cobra.Command {
-	cmd := group(&cobra.Command{Use: "release", Short: "List, inspect, wait for and roll back releases"})
-	cmd.AddCommand(newReleaseListCmd(g, "list"), newReleaseShowCmd(g), newReleaseWaitCmd(g), newRollbackCmd(g))
+	cmd := group(&cobra.Command{Use: "release", Short: "List, inspect, wait for, cancel and roll back releases"})
+	cmd.AddCommand(newReleaseListCmd(g, "list"), newReleaseShowCmd(g), newReleaseWaitCmd(g), newReleaseCancelCmd(g), newRollbackCmd(g))
+	return cmd
+}
+
+// newReleaseCancelCmd is `dock release cancel [N]` (ADR 0086): it stops a
+// deploy before traffic moves to it and returns once it is canceled.
+func newReleaseCancelCmd(g *globals) *cobra.Command {
+	var f targetFlags
+	cmd := &cobra.Command{
+		Use:   "cancel [number]",
+		Short: "Cancel a deploy before it goes live (default: the one deploying now)",
+		Long: `Stop a release that is deploying, at any step before traffic moves to it:
+queued, building, pulling, running its pre-deploy command, starting or
+health checking. What it started is removed, the release that served keeps
+serving, and the changes it carried are staged again. Too late once traffic
+is switching: roll back instead.`,
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeReleaseArg,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, t, err := g.open(f, needService)
+			if err != nil {
+				return err
+			}
+			ctx := cmd.Context()
+			var n int64
+			if len(args) == 1 {
+				if n, err = parseReleaseNumber(args[0]); err != nil {
+					return err
+				}
+			} else {
+				r, err := releaseToWait(ctx, s, t, 0)
+				if err != nil {
+					return err
+				}
+				if r.Status.Done() {
+					return &output.Error{
+						Exit:    output.ExitConflict,
+						Message: fmt.Sprintf("no deploy of %s is running; release %d is %s", t, r.Number, r.Status),
+						Hint:    fmt.Sprintf("See its releases with `dock releases %s`.", t.flags()),
+					}
+				}
+				n = r.Number
+			}
+			g.io.Progressf("Canceling release %d of %s", n, t)
+			r, err := send[apitypes.Release](ctx, s, http.MethodPost, t.servicePath()+"/releases/"+itoa(n)+"/cancel", nil)
+			if err != nil {
+				return err
+			}
+			return g.io.Print(r, func() error {
+				if r.Status != apitypes.ReleaseCanceled {
+					g.io.Warnf("Release %d of %s is %s; it ends as canceled in a moment. Check with `dock release show %d %s`.", r.Number, t, r.Status, r.Number, t.flags())
+					return nil
+				}
+				g.io.Successf("Release %d of %s was %s", r.Number, t, r.Error)
+				if svc, err := get[apitypes.Service](ctx, s, t.servicePath()); err == nil && svc.ActiveRelease != nil && svc.StoppedAt == nil {
+					g.io.Progressf("Release %d keeps serving.", *svc.ActiveRelease)
+				}
+				return nil
+			})
+		},
+	}
+	f.add(cmd, needService)
 	return cmd
 }
 

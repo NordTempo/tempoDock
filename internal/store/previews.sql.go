@@ -777,6 +777,7 @@ func (q *Queries) ListPreviewDomains(ctx context.Context, arg ListPreviewDomains
 const listPreviewServiceStates = `-- name: ListPreviewServiceStates :many
 SELECT services.environment_id, services.name,
        CAST(coalesce((SELECT releases.status FROM releases WHERE releases.service_id = services.id
+                      AND releases.error_code <> 'deploy_canceled'
                       ORDER BY releases.number DESC LIMIT 1), '') AS TEXT) AS status
 FROM previews
 JOIN services ON services.environment_id = previews.environment_id
@@ -798,6 +799,7 @@ type ListPreviewServiceStatesRow struct {
 
 // Every live service of a project's open previews (or of one, with
 // environment_id) with its newest release's status, ” for none.
+// Canceled releases are passed over (ADR 0086).
 func (q *Queries) ListPreviewServiceStates(ctx context.Context, arg ListPreviewServiceStatesParams) ([]ListPreviewServiceStatesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPreviewServiceStates, arg.ProjectID, arg.EnvironmentID)
 	if err != nil {

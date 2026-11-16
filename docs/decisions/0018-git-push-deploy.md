@@ -1,6 +1,6 @@
 # 0018: GitHub push-to-deploy
 
-Status: accepted (decided by the agent); superseded in part by [0031](0031-github-app.md) (no GitHub App)
+Status: accepted (decided by the agent); superseded in part by [0031](0031-github-app.md) (no GitHub App); amended by [0086](0086-cancel-a-deploy.md) (a running deploy can be canceled)
 
 ## Context
 
@@ -19,7 +19,7 @@ The daemon's API listens on Tailscale or loopback and must stay there
 | Source | `GET /repos/{o}/{r}/tarball/{sha}`, streamed, re-rooted at the subdirectory, into the upload path of `dock deploy` |
 | Auth to GitHub | Optional fine-grained token per connection (Contents read; Commit statuses write for statuses), sealed with the secrets box |
 | Public surface | Only `/hooks/github/` on `[hooks] public_host`, routed by the control plane's Caddy to a loopback listener that serves nothing else |
-| Queue | Newest push wins: one queued push per connection, in the DB; a running deploy is never cancelled |
+| Queue | Newest push wins: one queued push per connection, in the DB; a running deploy is never cancelled by a push (a person can cancel one since [0086](0086-cancel-a-deploy.md)) |
 | Feedback | Commit statuses (optional), the latest delivery's outcome on the connection, the commit on the release |
 | No GitHub App | See below; superseded by [0031](0031-github-app.md), which adds one beside these webhooks |
 

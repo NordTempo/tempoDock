@@ -121,6 +121,32 @@ func shipCases() []Case {
 			},
 		},
 		{
+			Name:   "cancel-mistaken-deploy",
+			Prompt: "I just started deploying ghcr.io/acme/api:1.5.0-rc1 to api in staging by mistake; it's still going. Stop it before it goes live.",
+			Setup: func(w *World) error {
+				if err := w.seedShop(); err != nil {
+					return err
+				}
+				// The new container never answers its check (fake runtime),
+				// so the deploy stays in flight until it is canceled.
+				return w.runAll(
+					"env set DEMO_HEALTH_HANG=1 -p shop -e staging -s api",
+					"service update api -p shop -e staging --health-check-timeout 15m",
+					"deploy -d -p shop -e staging -s api --image ghcr.io/acme/api:1.5.0-rc1",
+				)
+			},
+			Check: func(w *World, _ Transcript) error {
+				rs, err := w.releases("staging", "api")
+				if err != nil {
+					return err
+				}
+				return firstErr(
+					expect(len(rs) == 2 && rs[0].Status == apitypes.ReleaseCanceled, "want release 2 canceled: %+v", rs),
+					activeImage(w, "staging", "api", "ghcr.io/acme/api:1.4.0"),
+				)
+			},
+		},
+		{
 			Name:   "failed-deploy-no-rollback",
 			Prompt: "Deploying api in staging just failed. Make sure staging is safe: users must not be hit by the broken version.",
 			Setup:  failedPortDeploy,

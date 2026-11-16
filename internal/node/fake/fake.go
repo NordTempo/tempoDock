@@ -859,14 +859,27 @@ func (r *Runtime) ReleaseContainers(_ context.Context, want node.Labels) ([]stri
 	return out, nil
 }
 
-// HealthCheck implements node.Containers.
-func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, _ node.HealthCheck) error {
+// HealthCheck implements node.Containers. A container with
+// DEMO_HEALTH_HANG set never answers: its check waits out hc.Timeout, so
+// `make dev` and the agent eval can cancel a deploy in flight (ADR 0086).
+func (r *Runtime) HealthCheck(ctx context.Context, c node.Container, hc node.HealthCheck) error {
 	r.mu.Lock()
 	gate := r.healthGate
+	hang := r.specs[c.ID].Env["DEMO_HEALTH_HANG"] != ""
 	r.mu.Unlock()
 	if gate != nil {
 		select {
 		case <-gate:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if hang {
+		t := time.NewTimer(hc.Timeout)
+		defer t.Stop()
+		select {
+		case <-t.C:
+			return fmt.Errorf("health check timed out after %s: the app never answered", hc.Timeout)
 		case <-ctx.Done():
 			return ctx.Err()
 		}

@@ -54,6 +54,7 @@ Stable; never renumbered.
 | 7 | `unreachable` | Could not reach the server (or its proxy answered 502/503/504), or the server an environment is placed on is offline (`server_offline`) |
 | 8 | `incompatible` | CLI and server versions don't work together |
 | 9 | `moved` | `dock serve` only: this control plane moved to another server (`dock admin backup --move`); systemd doesn't restart it |
+| 10 | `deploy_canceled` | Someone canceled the deploy before it went live (`dock release cancel`). Traffic was not switched |
 
 API errors are RFC 7807 `application/problem+json` bodies. The exit code
 follows the HTTP status (400/422 → 2, 401/403 → 3, 404/410 → 4, 409/412/423 →
@@ -238,7 +239,8 @@ name. Update older CLI clients before renaming projects they use.
 | `scan [-r N]` | Queue the service's live image (or release N's) for a scan against the current database (deploy). It waits like every scan until no build or deploy has run for a minute |
 | `sbom [-r N] [--format syft-json\|cyclonedx-json\|spdx-json]` | Print the image's SBOM: as Syft made it, or as CycloneDX 1.6 or SPDX 2.3 JSON for tools that take those |
 | `scanning [on\|off]`, `scanning import FILE` | Operators: whether image scanning is on, scans by state and each builder's vulnerability database; `import` uploads a Grype database archive for installs without internet access, which every builder imports at the next quiet minute (with `[scan] offline`, the only way builders get one) |
-| `release wait [N] [--timeout D]` | Follow a release until it is live or failed, like `deploy` does (default: the newest release), with the same output and exit codes: 0 when live, 6 when failed. A release that is already done is printed right away. `--timeout` (or Ctrl-C) stops following with exit 1; the deploy continues |
+| `release wait [N] [--timeout D]` | Follow a release until it is live or failed, like `deploy` does (default: the newest release), with the same output and exit codes: 0 when live, 6 when failed, 10 when canceled. A release that is already done is printed right away. `--timeout` (or Ctrl-C) stops following with exit 1; the deploy continues |
+| `release cancel [N]` | Cancel a deploy before traffic moves to it (default: the release deploying now; deploy): any step from queued to the health check ([ADR 0086](decisions/0086-cancel-a-deploy.md)). What it started is removed, the serving release keeps serving and its changes are staged again; it returns once the release is canceled. Exit 5 when nothing deploys or the switch-over already began (then roll back) |
 | `rollback [N]`, `release rollback [N]` | New release from an earlier one; default the one that served before the active one. Says which release it copies and that release's image and config |
 | `restart` | New release identical to the active one |
 | `connect [service] [--port N] [--confirm ENV] [--show-url]` | Tunnel `127.0.0.1` (the service's port if free, else a free one) to the service's private port until Ctrl-C, for psql, TablePlus, redis-cli ([guide](guide/data.md#connecting-from-your-machine)). Needs data access level write with sensitive visible; production needs `--confirm`, and API tokens never get production. `--show-url` prints the connection URL with its password (audited). `--json` prints one object (`service`, `port`, `local`, `url`, ...) before serving. Exit 3 without access |
@@ -324,7 +326,7 @@ name. Update older CLI clients before renaming projects they use.
 | `node`, `node join TOKEN\|--token-file FILE`, `node set-control-plane HOST:PORT` | On a server that joins a control plane, with `--config`: the node daemon (`dock-node.service`: the link, the registry proxy on `127.0.0.1:5000`, Caddy's `ask`; no API, UI or database), and joining once with a token from `server add` (writes `node.key` and `node.toml` into the data dir, prints the assigned server name). `--token-file -` reads the token from stdin, keeping it out of the process list. `install.sh --node` runs both. `node set-control-plane HOST:PORT` points a joined node at a control plane that moved; the running daemon follows within 30 s |
 
 Commands that start releases (`deploy`, `promote`, `rollback`, `restart`,
-`service start`, `apply`, `--deploy`) follow them until they are live or failed; `--detach` returns
+`service start`, `apply`, `--deploy`) follow them until they are live, failed or canceled; `--detach` returns
 right after they are queued. Ctrl-C stops following, not the deploy.
 `dock release wait N` follows a release again, or one started elsewhere (a
 detached deploy, a git push).

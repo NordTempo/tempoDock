@@ -351,6 +351,33 @@ func TestDeployFailureExitCodes(t *testing.T) {
 	}
 }
 
+// `dock release cancel` stops the deploying release (ADR 0086); following
+// a canceled release exits deploy_canceled, not deploy_failed.
+func TestReleaseCancel(t *testing.T) {
+	setup(t)
+	srv := newTestServer(t)
+	appDir(t)
+	t.Setenv(clientconfig.EnvURL, srv.url)
+	t.Setenv(clientconfig.EnvToken, srv.tokens[apitypes.ScopeDeploy])
+	exec(t, "project", "create", "shop")
+	web := []string{"-p", "shop", "-e", "production", "-s", "web"}
+	ok[apitypes.Release](t, append([]string{"deploy"}, web...)...)
+	if code, _, stderr := exec(t, append([]string{"release", "cancel"}, web...)...); code != int(output.ExitConflict) || !strings.Contains(stderr, "no deploy of shop/production/web is running") {
+		t.Fatalf("cancel with nothing deploying: exit %d\n%s", code, stderr)
+	}
+
+	release := srv.rt.HoldHealthChecks()
+	defer release()
+	ok[apitypes.Release](t, append([]string{"deploy", "-d"}, web...)...)
+	if r := ok[apitypes.Release](t, append([]string{"release", "cancel"}, web...)...); r.Number != 2 || r.Status != apitypes.ReleaseCanceled {
+		t.Fatalf("cancel = %+v", r)
+	}
+	code, _, stderr := exec(t, append([]string{"release", "wait", "2"}, web...)...)
+	if code != int(output.ExitCanceled) || !strings.Contains(stderr, "release 2 of web was canceled by deploy") || !strings.Contains(stderr, "Release 1 is still serving") {
+		t.Fatalf("wait for a canceled release: exit %d\n%s", code, stderr)
+	}
+}
+
 // Stop asks first, shows who stopped the service, and start follows its
 // release: a failed one exits deploy_failed and leaves the service stopped.
 func TestServiceStopStart(t *testing.T) {

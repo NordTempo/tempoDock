@@ -89,11 +89,12 @@ func decodeCarried(s string) (carried, error) {
 	return c, json.Unmarshal([]byte(s), &c)
 }
 
-// restage stages the changes a failed release carried again, each one only
-// if it is still the live value (nothing changed it since), puts back an
-// image setting its deploy changed, and notes the failure on the
-// environment. A change staged since stays staged.
-func (c *Core) restage(ctx context.Context, ss svcScope, rel store.Release, reason string) {
+// restage stages the changes a failed or canceled release carried again,
+// each one only if it is still the live value (nothing changed it since),
+// puts back an image setting its deploy changed, and notes the outcome
+// ("failed (why)", "was canceled by ...") on the environment. A change
+// staged since stays staged.
+func (c *Core) restage(ctx context.Context, ss svcScope, rel store.Release, outcome string) {
 	ch, err := decodeCarried(rel.Carried)
 	if err != nil {
 		c.log.Error("read carried changes", "release", rel.ID, "err", err)
@@ -102,7 +103,7 @@ func (c *Core) restage(ctx context.Context, ss svcScope, rel store.Release, reas
 	if ch.empty() {
 		return
 	}
-	note := fmt.Sprintf("release %d of %s failed (%s); the changes it carried are staged again", rel.Number, ss.svc.Name, reason)
+	note := fmt.Sprintf("release %d of %s %s; the changes it carried are staged again", rel.Number, ss.svc.Name, outcome)
 	n := 0
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error

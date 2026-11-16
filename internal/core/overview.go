@@ -187,9 +187,11 @@ func releaseHeadsByService(rows []store.Release) map[int64]releaseHeads {
 			h.active = r
 		case !status.Done():
 			h.deploying = r
-		case status == apitypes.ReleaseFailed && r.Source != string(apitypes.SourceRollback) && r.Source != string(apitypes.SourceRestart):
+		case status == apitypes.ReleaseFailed && r.ErrorCode != string(apitypes.CodeDeployCanceled) &&
+			r.Source != string(apitypes.SourceRollback) && r.Source != string(apitypes.SourceRestart):
 			// Only the query's last-deploy row is a failed deploy that
-			// isn't the latest release; a failed latest one is both.
+			// isn't the latest release; a failed latest one is both. A
+			// canceled one is neither (ADR 0086).
 			h.lastFailed = r
 		}
 		if h.latest == nil || r.Number > h.latest.Number {

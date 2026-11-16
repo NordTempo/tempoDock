@@ -31,7 +31,7 @@ line means a later record added to it without changing what it decided.
 | [0015](0015-server-pools-and-placement.md) | Server pools, placement and the admin dashboard | superseded in part by [0025](0025-platform-console.md), [0053](0053-moving-environments.md) |
 | [0016](0016-database-panel.md) | Database panel | superseded in part by [0023](0023-connect-tunnels.md), [0024](0024-tempobase-standalone.md) |
 | [0017](0017-mcp-endpoint.md) | MCP endpoint | accepted |
-| [0018](0018-git-push-deploy.md) | GitHub push-to-deploy | superseded in part by [0031](0031-github-app.md) |
+| [0018](0018-git-push-deploy.md) | GitHub push-to-deploy | superseded in part by [0031](0031-github-app.md); amended by [0086](0086-cancel-a-deploy.md) |
 | [0019](0019-templates-and-backups.md) | Database templates and backups | superseded in part by [0039](0039-backups-on-storage-connections.md), [0061](0061-one-restore-model.md); amended by [0069](0069-database-insights.md) |
 | [0020](0020-retention-and-alerts.md) | Retention, disk pruning and alerts | superseded in part by [0062](0062-org-alerts-and-operators.md), [0078](0078-deleting-archived-projects.md), [0079](0079-dock-sends-its-own-email.md) |
 | [0021](0021-control-plane-backup-and-move.md) | Control plane backup, restore and move | accepted |
@@ -99,6 +99,7 @@ line means a later record added to it without changing what it decided.
 | [0083](0083-app-templates.md) | App templates: a catalog of apps as project file fragments with inputs, embedded and pinned | accepted; first catalog built |
 | [0084](0084-registry-storage-gateway.md) | The registry's storage gateway: pushes land on local disk first and upload to the bucket in the background; bucket health from real traffic, stuck blobs repaired by the next push | accepted |
 | [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |
+| [0086](0086-cancel-a-deploy.md) | Cancel a deploy: any step before the cutover, the serving release keeps serving, `canceled` is no failure | accepted |
 
 ## Template
 

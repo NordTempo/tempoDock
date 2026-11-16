@@ -6,7 +6,13 @@ import { Glyph } from "../../ui/kit";
 import { inFlight } from "../../ui/status";
 import { errorSummary } from "./releases";
 
-type StepState = "done" | "running" | "failed" | "pending" | "skipped";
+type StepState =
+  | "done"
+  | "running"
+  | "failed"
+  | "canceled"
+  | "pending"
+  | "skipped";
 
 type Step = {
   name: string;
@@ -22,6 +28,9 @@ const stepOrder = [
   "health_checking",
   "active",
 ];
+
+/** "canceled by ada" as a sentence start: "Canceled by ada". */
+const upper = (s?: string) => (s ? s[0]?.toUpperCase() + s.slice(1) : "");
 
 const at = (r: Release, pattern: RegExp, last = false) => {
   const event = last
@@ -58,12 +67,16 @@ export function deploySteps(
   const healthy = at(r, /^Health check passed/);
   const switched = at(r, / is live$/);
   const failed = r.status === "failed";
+  // Canceled (ADR 0086) ends like a failure, on the step it was on, but
+  // reads as a choice, not an error.
+  const canceled = r.status === "canceled";
+  const ended = failed || canceled;
 
   // Which step the release is on, or failed on: the stored failure
   // (code, else the error's own words) decides over progress events, so
   // this page and the deploy window name the same cause.
   let current = Math.max(0, stepOrder.indexOf(r.status) - 1);
-  if (failed) {
+  if (ended) {
     const error = r.error ?? "";
     current =
       r.error_code === "build_failed" || /^(build|pull)/i.test(error)
@@ -81,12 +94,14 @@ export function deploySteps(
     i < current
       ? "done"
       : i > current
-        ? failed
+        ? ended
           ? "skipped"
           : "pending"
         : failed
           ? "failed"
-          : "running";
+          : canceled
+            ? "canceled"
+            : "running";
 
   const span = (from?: number, to?: number) =>
     from !== undefined && to !== undefined ? to - from : undefined;
@@ -106,6 +121,8 @@ export function deploySteps(
       detail:
         state(0) === "failed" ? (
           <span className="text-fail">{errorSummary(r)}</span>
+        ) : state(0) === "canceled" ? (
+          <span className="text-mut">{upper(r.error)}</span>
         ) : (
           <span className="text-mut">
             {(state(0) === "running" ? phase : build)?.message ??
@@ -118,14 +135,17 @@ export function deploySteps(
       state: state(1),
       ms: span(buildEnd, started?.time),
       // The container's name (dock_p1_e1_s1_r8) only in its title.
-      detail: container ? (
-        <span className="text-mut" title={container}>
-          Container started
-          {old && (stateful ? ` after stopping ${old}` : ` next to ${old}`)}
-        </span>
-      ) : (
-        <span className="text-mut">Start the container</span>
-      ),
+      detail:
+        state(1) === "canceled" ? (
+          <span className="text-mut">{upper(r.error)}</span>
+        ) : container ? (
+          <span className="text-mut" title={container}>
+            Container started
+            {old && (stateful ? ` after stopping ${old}` : ` next to ${old}`)}
+          </span>
+        ) : (
+          <span className="text-mut">Start the container</span>
+        ),
     },
     {
       name: "Health check",
@@ -140,6 +160,8 @@ export function deploySteps(
             <span className="font-mono">{check}</span>:{" "}
             <span className="text-fail">{errorSummary(r)}</span>
           </span>
+        ) : state(2) === "canceled" ? (
+          <span className="text-mut">{upper(r.error)}</span>
         ) : state(2) === "done" ? (
           <span className="text-mut">
             <span className="font-mono">{check}</span> passed
@@ -160,6 +182,8 @@ export function deploySteps(
       detail:
         state(3) === "failed" ? (
           <span className="text-fail">{errorSummary(r)}</span>
+        ) : state(3) === "canceled" ? (
+          <span className="text-mut">{upper(r.error)}</span>
         ) : (
           <span className="text-mut">
             {state(3) === "skipped"
@@ -183,6 +207,7 @@ const glyphs: Record<StepState, ReactNode> = {
     </span>
   ),
   failed: <span className="text-fail">✕</span>,
+  canceled: <span className="text-mut">–</span>,
   pending: <span className="text-mut">○</span>,
   skipped: <span className="text-mut">–</span>,
 };

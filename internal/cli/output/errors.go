@@ -10,15 +10,16 @@ type ExitCode int
 
 const (
 	ExitOK           ExitCode = 0
-	ExitError        ExitCode = 1 // anything not covered below
-	ExitUsage        ExitCode = 2 // bad flags, arguments or input; nothing was done
-	ExitAuth         ExitCode = 3 // no context or token, or the token lacks permission
-	ExitNotFound     ExitCode = 4 // the project, service, context, link... doesn't exist
-	ExitConflict     ExitCode = 5 // already exists, or another operation holds the lock
-	ExitDeployFailed ExitCode = 6 // build or health check failed; traffic was not switched
-	ExitUnreachable  ExitCode = 7 // could not reach the server
-	ExitIncompatible ExitCode = 8 // CLI and server versions don't work together
-	ExitMoved        ExitCode = 9 // dock serve: this control plane moved to another server (ADR 0021); systemd doesn't restart it
+	ExitError        ExitCode = 1  // anything not covered below
+	ExitUsage        ExitCode = 2  // bad flags, arguments or input; nothing was done
+	ExitAuth         ExitCode = 3  // no context or token, or the token lacks permission
+	ExitNotFound     ExitCode = 4  // the project, service, context, link... doesn't exist
+	ExitConflict     ExitCode = 5  // already exists, or another operation holds the lock
+	ExitDeployFailed ExitCode = 6  // build or health check failed; traffic was not switched
+	ExitUnreachable  ExitCode = 7  // could not reach the server
+	ExitIncompatible ExitCode = 8  // CLI and server versions don't work together
+	ExitMoved        ExitCode = 9  // dock serve: this control plane moved to another server (ADR 0021); systemd doesn't restart it
+	ExitCanceled     ExitCode = 10 // the deploy was canceled before it went live (ADR 0086); traffic was not switched
 )
 
 var exitNames = map[ExitCode]string{
@@ -32,6 +33,7 @@ var exitNames = map[ExitCode]string{
 	ExitUnreachable:  "unreachable",
 	ExitIncompatible: "incompatible",
 	ExitMoved:        "moved",
+	ExitCanceled:     "deploy_canceled",
 }
 
 // String is the code's stable machine name, e.g. "not_found".

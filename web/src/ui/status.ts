@@ -40,13 +40,18 @@ const releaseStates: Record<ReleaseStatus, State> = {
   active: { tone: "ok", glyph: "●", label: "active" },
   failed: { tone: "fail", glyph: "✕", label: "failed" },
   superseded: { tone: "mut", label: "replaced" },
+  // Stopped on purpose before it went live (ADR 0086): no failure.
+  canceled: { tone: "mut", glyph: "–", label: "canceled" },
 };
 
 export const releaseState = (s: ReleaseStatus) => releaseStates[s];
 
 /** True while a release is moving through the deploy steps. */
 export const inFlight = (s: ReleaseStatus) =>
-  s !== "active" && s !== "failed" && s !== "superseded";
+  s === "queued" ||
+  s === "building" ||
+  s === "starting" ||
+  s === "health_checking";
 
 /** The deploy step a release in flight is on, as a phrase. */
 export const stepPhrase: Record<ReleaseStatus, string> = {
@@ -57,6 +62,7 @@ export const stepPhrase: Record<ReleaseStatus, string> = {
   active: "live",
   failed: "failed",
   superseded: "replaced",
+  canceled: "canceled",
 };
 
 /** "ran out of memory (limit 512 MB)" */

@@ -43,6 +43,8 @@ type deployment struct {
 	old        *store.Release // active release when the deploy started
 	stateful   bool
 	oldRemoved bool // stateful recreate stopped (or tried to stop) the old container
+	// cancel is this deploy's registration with CancelRelease (ADR 0086).
+	cancel *deployRun
 	// orphans are containers already labelled for this release when it
 	// started (orphanCheck): never its own, so fail leaves them alone.
 	orphans []string
@@ -66,9 +68,12 @@ func step(code apitypes.ErrorCode, format string, args ...any) error {
 	return &stepError{code: code, err: fmt.Errorf(format, args...)}
 }
 
-// deploy runs in its own goroutine; the upload is removed when it finishes.
-func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
+// deploy runs in its own goroutine with ctx, run's context (launch); the
+// upload is removed when it finishes. A deploy canceled before its
+// cutover (run, ADR 0086) ends as canceled instead of failed.
+func (c *Core) deploy(ctx context.Context, run *deployRun, ss svcScope, rel store.Release, spec releaseSpec) {
 	defer c.wg.Done()
+	defer c.deploys.forget(rel.ID, run)
 	// Before anything else: a running image scan is killed now, and none
 	// starts until the platform is quiet again (ADR 0074).
 	c.scanBusy()
@@ -76,9 +81,11 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 	if spec.upload != "" {
 		defer func() { _ = os.Remove(spec.upload) }()
 	}
-	d := &deployment{c: c, ss: ss, rel: rel, rt: c.runtime(ss.env.ServerID), spec: spec}
-	ctx := c.ctx
+	d := &deployment{c: c, ss: ss, rel: rel, rt: c.runtime(ss.env.ServerID), spec: spec, cancel: run}
 	err := d.run(ctx)
+	if by, canceled := run.finish(); canceled && err != nil {
+		err = &canceledError{msg: "canceled by " + by}
+	}
 	if d.log != nil {
 		d.log.Close()
 	}
@@ -94,6 +101,7 @@ func (c *Core) deploy(ss svcScope, rel store.Release, spec releaseSpec) {
 	}
 	if p := spec.promote; p != nil {
 		p.ok = err == nil
+		_, p.canceled = errors.AsType[*canceledError](err)
 		close(p.done)
 	}
 	c.gitDeployDone(ss, d.rel, err)
@@ -112,7 +120,11 @@ func (d *deployment) run(ctx context.Context) error {
 			return ctx.Err()
 		}
 		if !p.prev.ok {
-			return step(apitypes.CodeDeployFailed, "not promoted: %s failed first", p.prev.failed())
+			if stop := p.prev.stopper(); stop.canceled {
+				// A canceled promotion step cancels the ones after it.
+				return &canceledError{msg: fmt.Sprintf("not promoted: %s was canceled first", stop.service)}
+			}
+			return step(apitypes.CodeDeployFailed, "not promoted: %s failed first", p.prev.stopper().service)
 		}
 	}
 	if err := d.waitForMove(ctx); err != nil {
@@ -517,6 +529,10 @@ func (c *Core) buildTimeout() time.Duration {
 // always means "receiving traffic" and no other render can interleave.
 func (d *deployment) cutover(ctx context.Context) error {
 	c := d.c
+	if d.cancel != nil && !d.cancel.switching() {
+		// Canceled after its health check passed: traffic never moves.
+		return context.Canceled
+	}
 	serverID := d.ss.env.ServerID
 	canFallBack := d.old != nil && !d.oldRemoved
 
@@ -612,6 +628,10 @@ func (d *deployment) cutover(ctx context.Context) error {
 // before the failure is recorded, so "failed" means "back to the previous
 // state". A stopped service (ADR 0050) stays stopped.
 //
+// A canceled deploy (canceledError, ADR 0086) is cleaned up the same way
+// but recorded with CodeDeployCanceled, without a diagnosis: nothing went
+// wrong, so nothing alerts either.
+//
 // On shutdown it does nothing: the release stays in flight and recovery
 // finishes it on the next start, so stopping the daemon never waits on
 // containers (systemd gives it TimeoutStopSec=20).
@@ -625,8 +645,12 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	if se, ok := errors.AsType[*stepError](err); ok {
 		code = se.code
 	}
+	_, canceled := errors.AsType[*canceledError](err)
+	if canceled {
+		code = apitypes.CodeDeployCanceled
+	}
 	serverID := d.ss.env.ServerID
-	if isOffline(err) && CodeOf(err) != apitypes.CodeServerOffline {
+	if !canceled && isOffline(err) && CodeOf(err) != apitypes.CodeServerOffline {
 		// The link dropped mid-deploy; the previous release keeps serving.
 		if code == apitypes.CodeInternal {
 			code = apitypes.CodeDeployFailed
@@ -636,7 +660,10 @@ func (d *deployment) fail(ctx context.Context, err error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	// What explains the failure, read while its container still exists.
-	captured := d.captureContainer(ctx)
+	var captured containerCapture
+	if !canceled {
+		captured = d.captureContainer(ctx)
+	}
 	if !c.keepsLogs(serverID) {
 		// Removing the container archives its output on servers that can.
 		c.saveContainerLogs(ctx, d.ss, d.rel.ID)
@@ -664,17 +691,29 @@ func (d *deployment) fail(ctx context.Context, err error) {
 			d.event(ctx, fmt.Sprintf("Release %d starts again when the server is back", d.old.Number))
 		}
 	}
-	// Before the release reads as failed, so a failed release always
-	// carries its cause (ADR 0071).
-	d.recordDiagnosis(ctx, code, msg, isOffline(err), captured)
+	outcome := "failed (" + msg + ")"
+	if canceled {
+		outcome = "was " + msg
+	} else {
+		// Before the release reads as failed, so a failed release always
+		// carries its cause (ADR 0071).
+		d.recordDiagnosis(ctx, code, msg, isOffline(err), captured)
+	}
 	// Before the release reads as failed, so "failed" means the changes it
 	// carried are staged again.
-	c.restage(ctx, d.ss, d.rel, msg)
+	c.restage(ctx, d.ss, d.rel, outcome)
 	c.markFailed(d.rel, code, msg)
 	if removeErr == nil {
 		c.freePort(ctx, d.rel.ID)
 	}
-	d.event(ctx, fmt.Sprintf("Release %d failed: %s", d.rel.Number, msg))
+	switch {
+	case !canceled:
+		d.event(ctx, fmt.Sprintf("Release %d failed: %s", d.rel.Number, msg))
+	case d.old != nil && d.ss.svc.StoppedAt == nil:
+		d.event(ctx, fmt.Sprintf("Release %d %s; release %d keeps serving", d.rel.Number, outcome, d.old.Number))
+	default:
+		d.event(ctx, fmt.Sprintf("Release %d %s", d.rel.Number, outcome))
+	}
 	d.publish(ctx)
 }
 

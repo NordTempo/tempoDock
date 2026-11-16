@@ -48,6 +48,7 @@ import { sleepCli, useWakeEnvironment } from "../overview/EnvironmentSleep";
 import { EnvServer } from "../servers/parts";
 import { ApplyControl } from "../variables/ApplyBox";
 import { ArchiveConfirm } from "./ArchiveConfirm";
+import { CancelDeploy } from "./CancelDeploy";
 import { useRestartService, useStartService, useStopService } from "./data";
 import { RollbackConfirm } from "./ReleasesTable";
 import {
@@ -670,6 +671,8 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
         health === "unhealthy" ? "fail" : "ok",
       );
       setRestarting(null);
+    } else if (latest?.number === restarting && latest.status === "canceled") {
+      setRestarting(null); // the cancel said so itself
     } else if (latest?.number === restarting && latest.status === "failed") {
       const failed = restarting;
       notify(
@@ -877,6 +880,9 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
               release number here read as "the one before" (it may not be). */}
           Roll back <kbd>B</kbd>
         </Act>
+      )}
+      {deploying && (
+        <CancelDeploy serviceRef={ref} number={deploying.number} shortcut />
       )}
       <Act
         primary={!waiting && !stopped}

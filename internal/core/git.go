@@ -778,7 +778,11 @@ func (c *Core) gitDeployDone(ss svcScope, rel store.Release, deployErr error) {
 	}
 	if conn.PostStatus && rel.CommitSha != "" && rel.Source == string(apitypes.SourceUpload) {
 		state, desc := "success", fmt.Sprintf("Release %d is live", rel.Number)
-		if deployErr != nil {
+		if _, canceled := errors.AsType[*canceledError](deployErr); canceled {
+			// GitHub has no canceled state; error is the one that isn't
+			// "the change failed" (ADR 0086).
+			state, desc = "error", fmt.Sprintf("Release %d %s", rel.Number, deployErr)
+		} else if deployErr != nil {
 			state, desc = "failure", fmt.Sprintf("Release %d failed: %s", rel.Number, c.errorLine(deployErr))
 		}
 		c.postGitStatus(ss, conn, rel, state, desc)

@@ -21,18 +21,20 @@ type promoteStep struct {
 	from              store.Release
 	imageRef, imageID string
 	prev              *promoteStep
-	// done closes when the release finished; ok is set before.
-	done chan struct{}
-	ok   bool
+	// done closes when the release finished; ok and canceled are set
+	// before.
+	done     chan struct{}
+	ok       bool
+	canceled bool
 }
 
-// failed names the service whose failure stopped a promotion at p (p or
-// one before it).
-func (p *promoteStep) failed() string {
+// stopper is the step whose failure or cancel stopped a promotion at p
+// (p or one before it).
+func (p *promoteStep) stopper() *promoteStep {
 	if p.prev != nil && !p.prev.ok {
-		return p.prev.failed()
+		return p.prev.stopper()
 	}
-	return p.service
+	return p
 }
 
 // Promote starts promoting the images running in req.From to req.To in

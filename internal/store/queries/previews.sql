@@ -135,8 +135,10 @@ WHERE id = +? AND closed_at IS NULL;
 -- name: ListPreviewServiceStates :many
 -- Every live service of a project's open previews (or of one, with
 -- environment_id) with its newest release's status, '' for none.
+-- Canceled releases are passed over (ADR 0086).
 SELECT services.environment_id, services.name,
        CAST(coalesce((SELECT releases.status FROM releases WHERE releases.service_id = services.id
+                      AND releases.error_code <> 'deploy_canceled'
                       ORDER BY releases.number DESC LIMIT 1), '') AS TEXT) AS status
 FROM previews
 JOIN services ON services.environment_id = previews.environment_id

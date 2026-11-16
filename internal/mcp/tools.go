@@ -662,6 +662,23 @@ func (h *handler) addReleaseTools(s *mcpkit.Server[core.Actor]) {
 			return h.waitOne(ctx, c, "Rollback", rel, wait)
 		})
 
+	mcpkit.AddTool(s, "cancel_deploy", "Cancel a deploy",
+		"Stop a service's deploy before it goes live; the serving release keeps serving and the changes it carried are staged again. Only when asked, or to stop a deploy you started by mistake.",
+		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {
+			ServiceInput
+			Number int64 `json:"number,omitempty" doc:"Default: the release deploying now."`
+		}) (mcpkit.Reply, error) {
+			ref, err := serviceOf(c, in.ServiceInput)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			rel, err := h.core.CancelRelease(ctx, c.Actor, ref, in.Number)
+			if err != nil {
+				return mcpkit.Reply{}, err
+			}
+			return mcpkit.Reply{Summary: describeRelease(rel) + ".", Data: viewRelease(rel)}, nil
+		})
+
 	mcpkit.AddTool(s, "promote", "Promote",
 		"Deploy the images an environment runs to another of the project (e.g. staging to production), with the target's own config, and wait.",
 		mcpkit.Mutating, func(ctx context.Context, c *call, in struct {

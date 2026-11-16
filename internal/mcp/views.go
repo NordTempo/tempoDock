@@ -221,7 +221,7 @@ func viewServer(s apitypes.Server) serverView {
 // web: active" or "release 12 of web: failed (health_check_failed: ...)".
 func describeRelease(r apitypes.Release) string {
 	s := fmt.Sprintf("release %d of %s: %s", r.Number, r.Service, r.Status)
-	if r.Status == apitypes.ReleaseFailed && r.Error != "" {
+	if (r.Status == apitypes.ReleaseFailed || r.Status == apitypes.ReleaseCanceled) && r.Error != "" {
 		s += " (" + r.Error + ")"
 	}
 	return s

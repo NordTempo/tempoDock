@@ -470,7 +470,8 @@ FROM services
 JOIN environments ON environments.id = services.environment_id
 JOIN projects ON projects.id = environments.project_id
 CROSS JOIN releases ON releases.service_id = services.id
-  AND releases.number = (SELECT max(newest.number) FROM releases newest WHERE newest.service_id = services.id)
+  AND releases.number = (SELECT newest.number FROM releases newest WHERE newest.service_id = services.id
+    AND newest.error_code <> 'deploy_canceled' ORDER BY newest.number DESC LIMIT 1)
 WHERE releases.status = 'failed' AND services.archived_at IS NULL
 `
 
@@ -488,7 +489,8 @@ type ListFailedLatestReleasesRow struct {
 // Services whose newest release failed: what failed-deploy alerts should
 // be open after the alert engine missed events, with their cause. One pass over services
 // (CROSS JOIN keeps SQLite from scanning releases instead), each newest
-// release found through (service_id, number).
+// release found through (service_id, number), walking back past canceled
+// ones: a cancel is no outcome (ADR 0086).
 func (q *Queries) ListFailedLatestReleases(ctx context.Context) ([]ListFailedLatestReleasesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listFailedLatestReleases)
 	if err != nil {
