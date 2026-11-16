@@ -2,6 +2,11 @@ name: cla
 
 # Contributors accept the CLA (CLA.md) once, by commenting on their pull
 # request as the bot asks. Signatures are kept on the cla-signatures branch.
+# Only pull requests from forks need it: maintainers and agents push
+# branches to this repository, and agent commits carry co-author lines the
+# allowlist can't name. An issue_comment payload doesn't say whether the
+# pull request is a fork's, so the sign and recheck comments always run; the
+# bot only asks for them on forks' pull requests.
 # pull_request_target runs this repository's workflow with a write token on
 # a fork's pull request, so the job never checks out or runs the pull
 # request's code: the action only reads its commit authors and comments.
@@ -19,7 +24,10 @@ permissions:
 
 jobs:
   cla:
-    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request && (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA')
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.fork == true) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
     runs-on: ubuntu-24.04
     steps:
       - uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
