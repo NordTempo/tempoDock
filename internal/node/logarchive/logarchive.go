@@ -16,6 +16,7 @@ package logarchive
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -211,9 +212,32 @@ var copyMember = io.Copy
 // archiveFile is one release's archive: its name in a service's
 // directory, or <service>/<name> under the root for enforceTotal.
 type archiveFile struct {
-	name  string
-	size  int64
-	mtime time.Time
+	name    string
+	release uint64
+	size    int64
+	mtime   time.Time
+}
+
+// newestFirst orders archives by when they were last written, newest
+// first, and archives with the same mtime (written within one clock tick)
+// by release ID, later releases first, so a limit never drops the newer
+// archive in favour of an older one.
+func newestFirst(a, b archiveFile) int {
+	if c := b.mtime.Compare(a.mtime); c != 0 {
+		return c
+	}
+	return cmp.Compare(b.release, a.release)
+}
+
+// archiveRelease is the release ID in an archive's file name, and whether
+// the name is an archive's at all.
+func archiveRelease(name string) (uint64, bool) {
+	id, ok := strings.CutSuffix(name, ext)
+	if !ok || !validID(id) {
+		return 0, false
+	}
+	n, _ := strconv.ParseUint(id, 10, 64) // validID parsed it
+	return n, true
 }
 
 // enforce removes a service directory's archives past limits: those last
@@ -240,12 +264,14 @@ func enforce(dir string, limits node.LogLimits, now time.Time) (node.PruneResult
 			if now.Sub(info.ModTime()) > tempStale {
 				_ = os.Remove(filepath.Join(dir, name))
 			}
-		case strings.HasSuffix(name, ext) && validID(strings.TrimSuffix(name, ext)):
-			files = append(files, archiveFile{name: name, size: info.Size(), mtime: info.ModTime()})
+		default:
+			if rel, ok := archiveRelease(name); ok {
+				files = append(files, archiveFile{name: name, release: rel, size: info.Size(), mtime: info.ModTime()})
+			}
 		}
 	}
 	// Newest first; what doesn't fit, or is too old, goes.
-	slices.SortFunc(files, func(a, b archiveFile) int { return b.mtime.Compare(a.mtime) })
+	slices.SortFunc(files, newestFirst)
 	var total int64
 	var errs []error
 	for _, f := range files {
@@ -347,14 +373,18 @@ func enforceTotal(root string, max int64) (node.PruneResult, error) {
 		}
 		entries, _ := os.ReadDir(filepath.Join(root, d.Name()))
 		for _, e := range entries {
-			info, err := e.Info()
-			if err != nil || !info.Mode().IsRegular() || !strings.HasSuffix(e.Name(), ext) || !validID(strings.TrimSuffix(e.Name(), ext)) {
+			rel, ok := archiveRelease(e.Name())
+			if !ok {
 				continue
 			}
-			files = append(files, archiveFile{name: filepath.Join(d.Name(), e.Name()), size: info.Size(), mtime: info.ModTime()})
+			info, err := e.Info()
+			if err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			files = append(files, archiveFile{name: filepath.Join(d.Name(), e.Name()), release: rel, size: info.Size(), mtime: info.ModTime()})
 		}
 	}
-	slices.SortFunc(files, func(a, b archiveFile) int { return b.mtime.Compare(a.mtime) })
+	slices.SortFunc(files, newestFirst)
 	var total int64
 	var errs []error
 	for _, f := range files {
