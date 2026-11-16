@@ -44,13 +44,13 @@ type Actor struct {
 	grants      []grantEntry
 	hasGrants   bool
 	watchGrants bool
-	// agentAsk is, for a personal agent, what its person asked to approve
-	// first, per environment kind (agents.go).
-	agentAsk [3]Perms
-	// agentRuleAsk is what the org's agent rules ask an approver first for.
-	agentRuleAsk [3]Perms
-	// agentData is its Data panel level per kind (capAgentData).
-	agentData    [3]string
+	// agent is, for an agent capped by its person's settings or the org's
+	// agent rules, what it asks first and its Data panel level per kind
+	// (agents.go); nil for everyone else. A pointer, not the arrays: the
+	// Actor is passed by value through every check, and 96 more bytes cost
+	// each one a copy (BenchmarkCheckEnvShadowed). Never mutated once set;
+	// copies share it.
+	agent        *agentCap
 	platformOnly bool
 	userPlatform apitypes.PlatformRole
 	// ProjectID and EnvironmentID limit a token to one project or one

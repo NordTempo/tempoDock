@@ -81,7 +81,7 @@ func (c *Core) loadTokenAccess(ctx context.Context, a Actor, t store.Token) (Act
 		}
 		if len(rules) > 0 {
 			cp := capOf(nil, rules, false)
-			entries, a.agentRuleAsk, a.agentData = cp.capEntries(entries), cp.ruleAsk, cp.data
+			entries, a.agent = cp.capEntries(entries), &cp
 		}
 	}
 	a.grants = entries

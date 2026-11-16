@@ -189,13 +189,13 @@ func (a Actor) isPersonalAgent() bool {
 // person: the check's permission is one they asked to approve first in
 // e's kind, and no approved request lets this call through.
 func (a Actor) asksOwner(need apitypes.Scope, action string, e store.Environment) bool {
-	return a.asks(a.agentAsk, need, action, e)
+	return a.agent != nil && a.asks(a.agent.ask, need, action, e)
 }
 
 // asksApprover reports whether an agent's change in e waits for an
 // approver: the org's agent rules ask first for its permission there.
 func (a Actor) asksApprover(need apitypes.Scope, action string, e store.Environment) bool {
-	return a.asks(a.agentRuleAsk, need, action, e)
+	return a.agent != nil && a.asks(a.agent.ruleAsk, need, action, e)
 }
 
 // asks reports whether a check's permission in e is in an ask set.
