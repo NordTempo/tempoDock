@@ -3,6 +3,7 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -48,7 +50,18 @@ func newDrainReceiver(h *harness, blocked bool) *drainReceiver {
 	if !blocked {
 		close(k.block)
 	}
-	k.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	k.srv = httptest.NewServer(k.handler(h))
+	h.t.Cleanup(k.srv.Close)
+	if blocked {
+		// Runs before srv.Close, which waits for handlers.
+		h.t.Cleanup(func() { close(k.block) })
+	}
+	return k
+}
+
+// handler records the lines posted to it, once k.block is closed.
+func (k *drainReceiver) handler(h *harness) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-k.block
 		// A delivery cut short (the drain gave up or the test ended while
 		// the request was held) was never delivered: skip its partial body.
@@ -67,13 +80,7 @@ func newDrainReceiver(h *harness, blocked bool) *drainReceiver {
 			}
 			k.lines = append(k.lines, l)
 		}
-	}))
-	h.t.Cleanup(k.srv.Close)
-	if blocked {
-		// Runs before srv.Close, which waits for handlers.
-		h.t.Cleanup(func() { close(k.block) })
-	}
-	return k
+	})
 }
 
 // texts returns the texts received so far.
@@ -572,5 +579,296 @@ func TestLogDrainSettings(t *testing.T) {
 	h.restart()
 	if got := h.c.logDrains.get(d.ID); got == nil || got.cfg.Token != "tok" {
 		t.Fatalf("after a restart: %+v", got)
+	}
+}
+
+// drainStatus is a drain's status, by ID.
+func (h *harness) drainStatus(id int64) apitypes.LogDrainStatus {
+	h.t.Helper()
+	list, err := h.c.ListLogDrains(h.ctx, testSystem, EnvRef{"shop", "production"})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	for _, d := range list {
+		if d.ID == id {
+			return d.Status
+		}
+	}
+	h.t.Fatalf("no log drain %d", id)
+	return apitypes.LogDrainStatus{}
+}
+
+// readSyslogFrame reads one octet-counted syslog message and returns its
+// text (the part after the header).
+func readSyslogFrame(t *testing.T, r *bufio.Reader) string {
+	t.Helper()
+	n, err := r.ReadString(' ')
+	if err != nil {
+		t.Fatal(err)
+	}
+	size, err := strconv.Atoi(strings.TrimSuffix(n, " "))
+	if err != nil {
+		t.Fatalf("frame length %q", n)
+	}
+	msg := make([]byte, size)
+	if _, err := io.ReadFull(r, msg); err != nil {
+		t.Fatal(err)
+	}
+	f := strings.SplitN(string(msg), " ", 8)
+	if len(f) != 8 {
+		t.Fatalf("message = %q", msg)
+	}
+	return f[7]
+}
+
+// A tcp syslog drain whose server closed the connection between batches
+// dials again rather than writing the next batch into the closed one,
+// which loses it; a server that is down shows as the drain's error until
+// it is back.
+func TestSyslogDrainRedials(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "nginx:1")
+	h.c.AllowLoopbackLogDrains(true)
+	listen := func(addr string) *net.TCPListener {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			t.Skipf("listen on %s: %v", addr, err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+		return ln.(*net.TCPListener)
+	}
+	ln := listen("127.0.0.1:0")
+	addr := ln.Addr().String()
+	d := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainSyslog, URL: "tcp://" + addr})
+	// accept reads one message from a new connection, then closes it, as
+	// a server restarting or dropping idle connections does.
+	accept := func(want string) {
+		t.Helper()
+		_ = ln.SetDeadline(time.Now().Add(5 * time.Second))
+		conn, err := ln.Accept()
+		if err != nil {
+			t.Fatalf("waiting for %q: %v", want, err)
+		}
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		if got := readSyslogFrame(t, bufio.NewReader(conn)); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	}
+	h.rt.AddLogs(h.ctr(web, 1), "first")
+	accept("first")
+	eventually(t, "the first line counted", func() bool { return h.drainStatus(d.ID).Sent == 1 })
+	h.rt.AddLogs(h.ctr(web, 1), "second")
+	accept("second")
+	eventually(t, "the second line counted", func() bool { return h.drainStatus(d.ID).Sent == 2 })
+
+	// The server goes away: the drain fails and says so, then recovers.
+	_ = ln.Close()
+	h.rt.AddLogs(h.ctr(web, 1), "third")
+	eventually(t, "the error", func() bool { return h.drainStatus(d.ID).LastError != "" })
+	ln = listen(addr)
+	accept("third")
+	eventually(t, "the error to clear", func() bool { st := h.drainStatus(d.ID); return st.LastError == "" && st.Sent == 3 })
+}
+
+// stuckReceiver is an http drain's endpoint that never answers: each
+// request waits until the sender gives up on it, and counts.
+type stuckReceiver struct {
+	srv       *httptest.Server
+	in, ended atomic.Int32
+}
+
+func newStuckReceiver(h *harness) *stuckReceiver {
+	h.c.AllowLoopbackLogDrains(true)
+	k := &stuckReceiver{}
+	release := make(chan struct{})
+	k.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read the body first: the server only notices the sender giving
+		// up (r.Context ending) once it reads the connection again.
+		_, _ = io.Copy(io.Discard, r.Body)
+		k.in.Add(1)
+		select {
+		case <-r.Context().Done():
+			k.ended.Add(1)
+		case <-release:
+		}
+	}))
+	h.t.Cleanup(k.srv.Close)
+	h.t.Cleanup(func() { close(release) }) // before srv.Close, which waits for handlers
+	return k
+}
+
+// A drain whose sink never answers holds up neither the followers nor
+// the environment's other drains: those keep receiving while it drops
+// and counts. Removing it ends its send in flight, and so does closing
+// the daemon, without waiting for drainSendTimeout.
+func TestLogDrainStuckSinkHoldsUpNothing(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "nginx:1")
+	stuck := newStuckReceiver(h)
+	ok := newDrainReceiver(h, false)
+	s := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "stuck", URL: stuck.srv.URL})
+	h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "ok", URL: ok.srv.URL})
+
+	h.rt.AddLogs(h.ctr(web, 1), "first")
+	eventually(t, "the healthy drain's first line", func() bool { return slices.Contains(ok.texts(), "first") })
+	eventually(t, "the stuck send", func() bool { return stuck.in.Load() == 1 })
+	flood := make([]string, drainQueueLines+drainBatchLines)
+	for i := range flood {
+		flood[i] = "line " + strconv.Itoa(i)
+	}
+	h.rt.AddLogs(h.ctr(web, 1), flood...)
+	h.rt.AddLogs(h.ctr(web, 1), "after the flood")
+	eventually(t, "the healthy drain's line after the flood", func() bool { return slices.Contains(ok.texts(), "after the flood") })
+	if st := h.drainStatus(s.ID); st.Dropped == 0 || st.Sent != 0 {
+		t.Fatalf("stuck drain = %+v", st)
+	}
+
+	start := time.Now()
+	if err := h.c.RemoveLogDrain(h.ctx, testSystem, EnvRef{"shop", "production"}, s.ID); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the stuck send to end", func() bool { return stuck.ended.Load() == 1 })
+	if d := time.Since(start); d > drainSendTimeout/3 {
+		t.Fatalf("removing a stuck drain took %s", d)
+	}
+
+	// Closing the daemon ends a stuck send too.
+	stuck2 := newStuckReceiver(h)
+	h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, Name: "stuck2", URL: stuck2.srv.URL})
+	h.rt.AddLogs(h.ctr(web, 1), "last")
+	eventually(t, "the second stuck send", func() bool { return stuck2.in.Load() == 1 })
+	start = time.Now()
+	h.restart()
+	if d := time.Since(start); d > drainSendTimeout/3 {
+		t.Fatalf("closing with a stuck send took %s", d)
+	}
+	eventually(t, "the second stuck send to end", func() bool { return stuck2.ended.Load() == 1 })
+}
+
+// A drain whose sink refuses connections backs off and shows the error;
+// once the sink is back, the queued lines go through and the error
+// clears.
+func TestLogDrainRecoversWhenTheSinkComesBack(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.deploy(web, "nginx:1")
+	h.c.AllowLoopbackLogDrains(true)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	d := h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, URL: "http://" + addr})
+	h.rt.AddLogs(h.ctr(web, 1), "while down")
+	eventually(t, "the error", func() bool { return strings.Contains(h.drainStatus(d.ID).LastError, "refused") })
+
+	if ln, err = net.Listen("tcp", addr); err != nil {
+		t.Skipf("the port was taken meanwhile: %v", err)
+	}
+	k := &drainReceiver{block: make(chan struct{})}
+	close(k.block)
+	k.srv = httptest.NewUnstartedServer(k.handler(h))
+	_ = k.srv.Listener.Close()
+	k.srv.Listener = ln
+	k.srv.Start()
+	t.Cleanup(k.srv.Close)
+	eventually(t, "the queued line", func() bool { return slices.Equal(k.texts(), []string{"while down"}) })
+	eventually(t, "the error to clear", func() bool {
+		st := h.drainStatus(d.ID)
+		return st.LastError == "" && st.LastErrorAt == nil && st.Sent == 1
+	})
+}
+
+// Every path a container's lines take to a drain masks its release's
+// secret values: the follower started when the drain is added, the one a
+// container start event starts, and the one a server resync starts. A
+// new release with a changed value is masked with its own values.
+func TestLogDrainMasksOnEveryPath(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{})
+	h.set(web.Env(), "web", map[string]string{"STRIPE_KEY": "sk_live_old"}, false)
+	h.deploy(web, "nginx:1")
+	k := newDrainReceiver(h, false)
+	h.addDrain(apitypes.AddLogDrainRequest{Kind: apitypes.DrainHTTP, URL: k.srv.URL})
+	h.rt.AddLogs(h.ctr(web, 1), "added sk_live_old")
+	eventually(t, "the line", func() bool { return len(k.texts()) == 1 })
+
+	// A container start event (a restart).
+	ctr := h.containerID(web, 1)
+	h.rt.Emit(node.ContainerEvent{ContainerID: ctr, Action: "die", ExitCode: 1})
+	eventually(t, "the follower to end", func() bool { return !h.followed(ctr) })
+	h.rt.Emit(node.ContainerEvent{ContainerID: ctr, Action: "start"})
+	h.rt.AddLogs(h.ctr(web, 1), "restarted sk_live_old")
+	eventually(t, "the line after the restart", func() bool { return len(k.texts()) == 2 })
+
+	// A resync: the container runs again without an event dock saw.
+	h.rt.Emit(node.ContainerEvent{ContainerID: ctr, Action: "die", ExitCode: 1})
+	eventually(t, "the follower to end", func() bool { return !h.followed(ctr) })
+	c, err := h.rt.Inspect(h.ctx, ctr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.State = node.StateRunning
+	h.rt.AddContainer(c)
+	h.c.followServer(h.ctx, h.c.localID)
+	h.rt.AddLogs(h.ctr(web, 1), "resynced sk_live_old")
+	eventually(t, "the line after the resync", func() bool { return len(k.texts()) == 3 })
+
+	// A new release with a new value.
+	h.set(web.Env(), "web", map[string]string{"STRIPE_KEY": "sk_live_new"}, false)
+	h.deploy(web, "nginx:2")
+	h.rt.AddLogs(h.ctr(web, 2), "new sk_live_new, old sk_live_old")
+	eventually(t, "release 2's line", func() bool { return len(k.texts()) == 4 })
+
+	want := []string{"added " + secretMask, "restarted " + secretMask, "resynced " + secretMask, "new " + secretMask + ", old sk_live_old"}
+	if got := k.texts(); !slices.Equal(got, want) {
+		t.Fatalf("drained %q, want %q", got, want)
+	}
+}
+
+// A syslog write blocked on a server that stopped reading ends as soon
+// as the delivery's context does, not at drainSendTimeout: removing the
+// drain or closing the daemon would otherwise wait for it.
+func TestSyslogDrainStuckWriteEndsOnCancel(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	client, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	srv, err := ln.Accept() // never read
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = srv.Close() }()
+	_ = client.(*net.TCPConn).SetWriteBuffer(4096)
+	_ = srv.(*net.TCPConn).SetReadBuffer(4096)
+
+	d := &drain{ctx: t.Context(), cfg: drainConfig{URL: "tcp://" + ln.Addr().String()}}
+	d.conn.conn, d.conn.used = client, time.Now()
+	src := newLogSource("shop", "production", "web", 1)
+	batch := make([]drainRecord, 64) // 4 MB: far past both buffers
+	for i := range batch {
+		batch[i] = drainRecord{Time: time.Now(), Stream: "stdout", Text: strings.Repeat("x", 64<<10), src: src}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	done := make(chan error, 1)
+	go func() { done <- newDrainManager(nil).sendSyslog(ctx, d, batch, new(bytes.Buffer)) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a write to a server that stopped reading succeeded")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the write didn't end with its context")
 	}
 }

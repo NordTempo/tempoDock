@@ -211,8 +211,8 @@ const (
 	// maxSyslogDatagram keeps a udp message within one datagram.
 	maxSyslogDatagram = 65_000
 	// syslogConnIdle is how long an unused tcp or tls connection is
-	// trusted: past it the next batch dials again, rather than finding
-	// out from a write that the server closed it.
+	// kept: past it the next batch dials again. Within it, the
+	// connection's watcher tells when the server closed it first.
 	syslogConnIdle = time.Minute
 )
 
@@ -253,11 +253,35 @@ func appendSyslogField(b []byte, s string, limit int) []byte {
 }
 
 // syslogConn is a syslog drain's connection, kept between batches and
-// used by one sender (or a test) at a time.
+// used by one sender (or a test) at a time. gone is closed once a tcp or
+// tls connection's server closed or reset it (watchSyslog); nil for udp.
 type syslogConn struct {
 	mu   sync.Mutex
 	conn net.Conn
+	gone chan struct{}
 	used time.Time
+}
+
+// watchSyslog reads a tcp or tls syslog connection until it fails, then
+// closes gone. Syslog servers never send, so a read ending is the server
+// closing the connection, which a write wouldn't say until the batch
+// after the one it lost. Reading through tls handles the session tickets
+// a server sends after the handshake. It blocks in the read, costing
+// nothing while idle, and ends when the connection is closed (the drain
+// stopping closes it); it touches nothing else, so c.wg doesn't count it.
+func watchSyslog(conn net.Conn, gone chan<- struct{}) {
+	defer close(gone)
+	_, _ = io.Copy(io.Discard, conn)
+}
+
+// closed reports whether the kept connection's server closed it.
+func (s *syslogConn) closed() bool {
+	select {
+	case <-s.gone:
+		return true
+	default:
+		return false
+	}
 }
 
 // close closes the connection, if any; the drain's context ending calls it.
@@ -284,7 +308,7 @@ func (m *drainManager) sendSyslog(ctx context.Context, d *drain, batch []drainRe
 	if err != nil {
 		return err
 	}
-	if sc.conn != nil && time.Since(sc.used) > syslogConnIdle {
+	if sc.conn != nil && (time.Since(sc.used) > syslogConnIdle || sc.closed()) {
 		_ = sc.conn.Close()
 		sc.conn = nil
 	}
@@ -292,10 +316,20 @@ func (m *drainManager) sendSyslog(ctx context.Context, d *drain, batch []drainRe
 		if sc.conn, err = m.dialSyslog(ctx, u); err != nil {
 			return err
 		}
+		sc.gone = nil
+		if u.Scheme != "udp" {
+			sc.gone = make(chan struct{})
+			go watchSyslog(sc.conn, sc.gone)
+		}
 	}
 	if dl, ok := ctx.Deadline(); ok {
 		_ = sc.conn.SetWriteDeadline(dl)
 	}
+	// A receiver that stops reading fills the socket's buffers and blocks
+	// the write; removing the drain or closing the daemon ends it then,
+	// not at the deadline (close can't: it waits for sc.mu).
+	conn := sc.conn
+	defer context.AfterFunc(ctx, func() { _ = conn.SetWriteDeadline(time.Unix(1, 0)) })()
 	msg := make([]byte, 0, 512)
 	if u.Scheme == "udp" {
 		for _, r := range batch {
