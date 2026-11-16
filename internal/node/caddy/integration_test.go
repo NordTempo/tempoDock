@@ -281,9 +281,10 @@ func TestIntegrationRouting(t *testing.T) {
 		t.Errorf("http->https: got %d %q, want 308 %q", code, h.Get("Location"), want)
 	}
 
-	code, h, body := tc.get(t, tc.url("http", "unknown.test", "/"))
-	if code != 404 || !strings.Contains(body, "Nothing is deployed") || !strings.HasPrefix(h.Get("Content-Type"), "text/html") {
-		t.Errorf("unknown host: got %d %q %q", code, h.Get("Content-Type"), body)
+	// Plain HTTP doesn't tell an unknown host from a known one (ADR 0087).
+	code, h, _ = tc.get(t, tc.url("http", "unknown.test", "/p"))
+	if want := tc.url("https", "unknown.test", "/p"); code != 308 || h.Get("Location") != want {
+		t.Errorf("unknown host over http: got %d %q, want 308 %q", code, h.Get("Location"), want)
 	}
 }
 
@@ -834,8 +835,9 @@ func TestIntegrationTunnelListener(t *testing.T) {
 			t.Errorf("tunnel %s: got %d %q (marker %q), want 200 %q", host, code, body, h.Get(MarkerHeader), want)
 		}
 	}
-	if code, _, _ := tc.get(t, tc.url("http", "t.test", "/")); code != 404 {
-		t.Errorf("public http t.test: got %d, want 404 (tunnel only)", code)
+	if resp, err := tc.client.Get(tc.url("https", "t.test", "/")); err == nil {
+		_ = resp.Body.Close()
+		t.Errorf("public https t.test: got %d, want no certificate (tunnel only)", resp.StatusCode)
 	}
 	if code, _, _ := tc.get(t, tc.url("http", "a.test", "/")); code != 308 {
 		t.Errorf("public http a.test: got %d, want the redirect to https", code)

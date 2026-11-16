@@ -61,17 +61,16 @@ func TestRenderTLS(t *testing.T) {
 	}
 	assertNotFound(t, https.Routes[2])
 
+	// Plain HTTP sends every host to HTTPS, known or not (ADR 0087): one
+	// route with no matcher. Caddy answers ACME HTTP-01 challenges before
+	// any route, so certificates are still issued.
 	plain := cfg.Apps.HTTP.Servers["http"]
-	if len(plain.Routes) != 2 {
-		t.Fatalf("http server has %d routes, want redirect + catch-all", len(plain.Routes))
+	if len(plain.Routes) != 1 || len(plain.Routes[0].Match) != 0 || !plain.Routes[0].Terminal {
+		t.Fatalf("http routes = %+v, want one redirect for every host", plain.Routes)
 	}
-	if got := plain.Routes[0].Match[0].Host; len(got) != 3 {
-		t.Errorf("http->https redirect covers %v, want all 3 hostnames", got)
+	if h := plain.Routes[0].Handle[0]; h.StatusCode != 308 || h.Headers["Location"][0] != "https://{http.request.host}{http.request.uri}" {
+		t.Errorf("http->https redirect = %+v", h)
 	}
-	if loc := plain.Routes[0].Handle[0].Headers["Location"][0]; loc != "https://{http.request.host}{http.request.uri}" {
-		t.Errorf("http->https Location = %q", loc)
-	}
-	assertNotFound(t, plain.Routes[1])
 
 	tlsApp := cfg.Apps.TLS
 	if tlsApp == nil || len(tlsApp.Automation.Policies) != 1 {
@@ -188,6 +187,9 @@ func TestBootstrapConfig(t *testing.T) {
 		if len(srv.Routes) != 1 {
 			t.Errorf("%s server has %d routes, want only the catch-all", name, len(srv.Routes))
 			continue
+		}
+		if name == "http" {
+			continue // the redirect to HTTPS (TestRenderTLS)
 		}
 		assertNotFound(t, srv.Routes[0])
 	}
@@ -450,10 +452,8 @@ func TestRenderTunnelListener(t *testing.T) {
 	if got := strings.Join(hosts(tunnelServer), ","); got != "app.example.com,app.tempo.run" {
 		t.Errorf("tunnel listener serves %s", got)
 	}
-	for _, name := range []string{"https", "http"} {
-		if got := strings.Join(hosts(name), ","); got != "app.example.com" {
-			t.Errorf("%s listener serves %s", name, got)
-		}
+	if got := strings.Join(hosts("https"), ","); got != "app.example.com" {
+		t.Errorf("https listener serves %s", got)
 	}
 	if s := routeHosts(routes); len(*s) != 1 {
 		t.Errorf("certificates asked for %v", *s)
