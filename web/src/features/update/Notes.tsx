@@ -38,7 +38,10 @@ export function Notes({ text }: { text: string }) {
     if (heading) {
       flush();
       blocks.push(
-        <h4 key={blocks.length} className="mt-2 mb-0.5 text-xs font-semibold">
+        <h4
+          key={blocks.length}
+          className="mt-3 mb-1 text-xs font-medium text-mut"
+        >
           {inline(heading[1] ?? "")}
         </h4>,
       );

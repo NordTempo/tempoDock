@@ -44,7 +44,7 @@ function ResetPassword() {
         : undefined;
   return (
     <div className="flex min-h-screen flex-col items-center px-4 pt-[16vh] pb-10">
-      <main className="flex w-full max-w-[360px] flex-col gap-[22px]">
+      <main className="flex w-full max-w-[420px] flex-col gap-[22px]">
         <div className="flex flex-col gap-1">
           <span className="font-mono text-lg font-bold">dock</span>
           <h1 className="text-xl font-semibold">Set a new password</h1>

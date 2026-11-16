@@ -180,28 +180,34 @@ function RunForm({
         </Act>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        {/* Form values are selects; underlined segments are for views
+            and ranges. */}
         {mounts && (
-          <span className="flex items-center gap-1.5">
+          <label className="flex items-center gap-1.5">
             <span className="text-faint">Volumes</span>
-            <span className="seg">
+            <select
+              className="field"
+              value={volumes}
+              disabled={!!reason}
+              onChange={(e) =>
+                setVolumes(
+                  volumeModes.find(([mode]) => mode === e.target.value)?.[0] ??
+                    "read",
+                )
+              }
+            >
               {volumeModes.map(([mode, label]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={volumes === mode}
-                  disabled={!!reason}
-                  onClick={() => setVolumes(mode)}
-                >
+                <option key={mode} value={mode}>
                   {label}
-                </button>
+                </option>
               ))}
-            </span>
-          </span>
+            </select>
+          </label>
         )}
         <label className="flex items-center gap-1.5">
           <span className="text-faint">Timeout</span>
           <select
-            className="field py-0.5 font-mono text-xs"
+            className="field font-mono"
             value={timeout}
             disabled={!!reason}
             onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
@@ -266,7 +272,7 @@ function History({
   onSelect: (id: number | null) => void;
   canRead: boolean;
 }) {
-  if (runs.length === 0) return <p className="py-2 text-mut">No runs yet.</p>;
+  if (runs.length === 0) return <p className="text-mut">No runs yet.</p>;
   return (
     <Panel>
       <table>
@@ -277,7 +283,7 @@ function History({
             <th>Command</th>
             <th>Who</th>
             <th>Started</th>
-            <th>Took</th>
+            <th className="text-right">Took</th>
           </tr>
         </thead>
         <tbody>
@@ -310,7 +316,7 @@ function History({
                   <td className="font-mono" title={ago(r.started_at)}>
                     {day(r.started_at)} {clock(r.started_at)}
                   </td>
-                  <td className="font-mono">{took(r)}</td>
+                  <td className="text-right font-mono">{took(r)}</td>
                 </tr>
                 {open && (
                   <tr>

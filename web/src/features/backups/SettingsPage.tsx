@@ -83,16 +83,7 @@ export function BackupSettingsPage() {
               <Glyph char="▲" />
             </span>{" "}
             Backups stay on the server they were made on, so losing a server
-            loses its backups.{" "}
-            {!moving && !busy && (
-              <button
-                type="button"
-                className="text-fg underline underline-offset-3"
-                onClick={() => setMoving(true)}
-              >
-                Move to a storage bucket
-              </button>
-            )}
+            loses its backups.
           </p>
         )}
         <ErrorText error={run.error} />

@@ -164,19 +164,30 @@ export function VitalsView({
             </button>
           ))}
         </span>
-        <span className="text-faint">
-          <span className="text-ok">●</span> good ·{" "}
-          <span className="text-warn">▲</span> needs improvement ·{" "}
-          <span className="text-fail">■</span> poor · p75 is the 75th
-          percentile: 3 in 4 of {count(data.all.loads)} page loads were this
-          fast or faster ·{" "}
+        {/* The legend; what p75 means is its tooltip, what each vital
+            measures the tiles' and the link's. */}
+        <span className="flex flex-wrap items-center gap-x-3 text-faint">
+          <span>
+            <span className="text-ok">●</span> good
+          </span>
+          <span>
+            <span className="text-warn">▲</span> needs improvement
+          </span>
+          <span>
+            <span className="text-fail">■</span> poor
+          </span>
+          <span
+            title={`p75 is the 75th percentile: 3 in 4 of ${count(data.all.loads)} page loads were this fast or faster.`}
+          >
+            p75 of {count(data.all.loads)} page loads
+          </span>
           <a
             href="https://web.dev/articles/vitals"
             target="_blank"
             rel="noreferrer"
-            className="underline underline-offset-3"
+            className="text-info"
           >
-            what each vital measures
+            What they measure ↗
           </a>
         </span>
       </div>

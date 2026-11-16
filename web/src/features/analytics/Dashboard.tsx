@@ -113,6 +113,17 @@ function Main({
   const o = stats.overview;
   const p = stats.previous;
   const panel = { project, site, stats, range, filters, onPick };
+  const changes = {
+    visitors: delta(o.visitors, p.visitors, range),
+    pageviews: delta(o.pageviews, p.pageviews, range),
+    sessions: delta(o.sessions, p.sessions, range),
+    bounce:
+      o.sessions && p.sessions
+        ? points(o.bounce_rate, p.bounce_rate, range)
+        : undefined,
+    duration: delta(o.duration_ms, p.duration_ms, range, duration),
+    events: delta(o.events, p.events, range),
+  };
   return (
     <>
       {/* Six tiles in one row on wide windows; two rows of three below 1400px. */}
@@ -120,43 +131,36 @@ function Main({
         <Kpi
           label="Visitors"
           value={count(o.visitors)}
-          change={delta(o.visitors, p.visitors, range)}
+          change={changes.visitors}
           on={metric === "visitors"}
           onClick={() => setMetric("visitors")}
         />
         <Kpi
           label="Page views"
           value={count(o.pageviews)}
-          change={delta(o.pageviews, p.pageviews, range)}
+          change={changes.pageviews}
           on={metric === "pageviews"}
           onClick={() => setMetric("pageviews")}
         />
         <Kpi
           label="Sessions"
           value={count(o.sessions)}
-          change={delta(o.sessions, p.sessions, range)}
+          change={changes.sessions}
         />
         <Kpi
           label="Bounce rate"
           value={`${Math.round(o.bounce_rate * 100)}%`}
-          change={
-            o.sessions && p.sessions
-              ? points(o.bounce_rate, p.bounce_rate, range)
-              : undefined
-          }
+          change={changes.bounce}
         />
         <Kpi
           label="Session length"
           value={duration(o.duration_ms)}
-          change={delta(o.duration_ms, p.duration_ms, range, duration)}
+          change={changes.duration}
         />
-        <Kpi
-          label="Events"
-          value={count(o.events)}
-          change={delta(o.events, p.events, range)}
-        />
+        <Kpi label="Events" value={count(o.events)} change={changes.events} />
       </div>
-      {p && (
+      {/* Said once, and only when a tile shows a change. */}
+      {Object.values(changes).some(Boolean) && (
         <p className="-mt-2 text-xs text-faint">
           Changes compare with the previous {range}.
         </p>

@@ -41,25 +41,28 @@ export function RegistryPage() {
       <>
         <PageBar title="Registry" />
         <Page gap="gap-3">
-          <p>
-            No registry: images stay on the server that built them. A second
+          {/* Muted like every console page's empty state; the command in a
+              box that fits it, the guide a link in the sentence. */}
+          <p className="max-w-[70ch] text-mut">
+            No registry: images stay on the server that built them, and a second
             server needs one. Run install.sh again on the control plane with{" "}
-            <span className="font-mono">REGISTRY=1</span>:
+            <span className="font-mono">REGISTRY=1</span>, as the{" "}
+            <a
+              href="https://github.com/NordTempo/tempoDock/blob/main/docs/guide/install.md#registry"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-info underline decoration-info/50 underline-offset-[3px] hover:decoration-info"
+            >
+              install guide
+            </a>{" "}
+            shows:
           </p>
-          <div className="flex max-w-[760px] items-center gap-2.5 rounded-ctl border border-line px-3 py-2">
-            <code className="min-w-0 flex-1 overflow-x-auto font-mono whitespace-nowrap">
+          <div className="flex max-w-full items-center gap-2.5 self-start rounded-ctl border border-line px-3 py-2">
+            <code className="min-w-0 overflow-x-auto font-mono whitespace-nowrap">
               {ENABLE}
             </code>
             <CopyButton text={ENABLE} />
           </div>
-          <a
-            href="https://github.com/NordTempo/tempoDock/blob/main/docs/guide/install.md#registry"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="lnk self-start"
-          >
-            Registry in the install guide →
-          </a>
         </Page>
       </>
     );

@@ -582,19 +582,24 @@ function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // The newest run failed: said here, not hidden behind an older success.
   const failed = backups[0]?.status === "failed" ? backups[0] : undefined;
   return (
-    <Link
-      to="/$org/$project/$environment/$service/settings/backups"
-      params={{ org, ...ref }}
-      className="-my-[4px] inline-flex min-h-[24px] items-center hover:underline"
-    >
+    <span className="flex flex-wrap items-center gap-x-2">
       {failed && (
-        <span className="mr-2 text-fail">
+        <span className="text-fail">
           ✕ latest failed {ago(failed.started_at)}
         </span>
       )}
-      {last?.finished_at ? `last good ${ago(last.finished_at)}` : "none yet"}
-      <span className="ml-2 text-mut">backups →</span>
-    </Link>
+      <span className={last?.finished_at ? "" : "text-mut"}>
+        {last?.finished_at ? `last good ${ago(last.finished_at)}` : "none yet"}
+      </span>
+      {/* A button like Domains' Manage: it is where backups are set up. */}
+      <Link
+        to="/$org/$project/$environment/$service/settings/backups"
+        params={{ org, ...ref }}
+        className="btn sm -my-[4px]"
+      >
+        Manage
+      </Link>
+    </span>
   );
 }
 

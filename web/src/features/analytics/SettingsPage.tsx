@@ -80,7 +80,7 @@ export function SettingsPage() {
   const { project, site, canEdit } = useSiteView();
   const cmd = `dock analytics site set ${site.name} -p ${project}`;
   return (
-    <div className="flex max-w-[960px] flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <ConsentWarning
         project={project}
         site={site}

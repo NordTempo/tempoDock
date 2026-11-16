@@ -113,6 +113,13 @@ export function Hostnames({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </h2>
       <Panel>
         <table>
+          <thead>
+            <tr>
+              <th>Hostname</th>
+              <th>Visits</th>
+              <th />
+            </tr>
+          </thead>
           <tbody>
             {hosts.map((h) => {
               const site = counted.get(h);
@@ -137,6 +144,7 @@ export function Hostnames({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                   <td className="text-right">
                     {site ? (
                       <Act
+                        small
                         cli={`dock analytics disable ${h}`}
                         disabled={!canDeploy || disable.isPending}
                         onClick={() => disable.mutate(h)}
@@ -145,6 +153,7 @@ export function Hostnames({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                       </Act>
                     ) : (
                       <Act
+                        small
                         cli={`dock analytics enable ${h}`}
                         disabled={!canDeploy || enable.isPending}
                         onClick={() => enable.mutate({ hostname: h })}

@@ -5,7 +5,6 @@ import { queries, servicePath, useService } from "../data/queries";
 import type { Service, ServiceRef, StatsRange } from "../data/types";
 import { AppMetricsPanel } from "../features/appmetrics/AppMetricsPanel";
 import { appMetricsQuery } from "../features/appmetrics/data";
-import { CpuUsage, MemoryUsage } from "../features/service/Usage";
 import { LineChart } from "../features/stats/LineChart";
 import { useLiveService } from "../features/stats/live";
 import { LiveNote, RangeSwitch, Stat } from "../features/stats/parts";
@@ -62,8 +61,18 @@ function MetricsTab() {
     <>
       <section aria-label="Now" className="flex flex-col gap-2">
         <Now service={service} />
-        {/* Live only next to live numbers; without a sample, Now says why. */}
-        {(service.usage || live !== "live") && <LiveNote state={live} />}
+        {/* Live next to live numbers (or when updates stop); without a
+            sample, why there is none. */}
+        {service.usage ||
+        (service.status.state === "running" && live !== "live") ? (
+          <LiveNote state={live} />
+        ) : (
+          <span className="text-xs text-mut">
+            {service.status.state === "running"
+              ? "Waiting for the first sample."
+              : "No running container, so no live numbers."}
+          </span>
+        )}
       </section>
       <section aria-labelledby="history">
         <SectionHead
@@ -96,28 +105,25 @@ function MetricsTab() {
 }
 
 /**
- * The latest sample against the limits. Without one, why: nothing runs,
- * or the first sample of a running container is still to come.
+ * The latest sample against the limits; without one, the limits with a
+ * dash for each number, so the row keeps its place.
  */
 function Now({ service: s }: { service: Service }) {
   const u = s.usage;
-  if (!u) {
-    return (
-      <p className="text-mut">
-        {s.status.state === "running"
-          ? "Waiting for the first sample."
-          : "No running container, so no live numbers."}{" "}
-        Limits: <MemoryUsage service={s} />, <CpuUsage service={s} />.
-      </p>
-    );
-  }
+  const none = <span className="text-faint">-</span>;
   return (
     <div className="flex flex-wrap gap-x-10 gap-y-3">
       <Stat
         label="CPU"
-        value={pct(
-          s.effective_cpus ? u.cpu_percent / s.effective_cpus : u.cpu_percent,
-        )}
+        value={
+          u
+            ? pct(
+                s.effective_cpus
+                  ? u.cpu_percent / s.effective_cpus
+                  : u.cpu_percent,
+              )
+            : none
+        }
         of={
           s.effective_cpus
             ? `of ${cpus(s.effective_cpus)}${s.cpus_from_default ? " default" : ""}`
@@ -126,15 +132,21 @@ function Now({ service: s }: { service: Service }) {
       />
       <Stat
         label="Memory"
-        value={size(u.memory_bytes)}
+        value={u ? size(u.memory_bytes) : none}
         of={
           s.effective_memory_mb
             ? `/ ${size(s.effective_memory_mb * MiB)}${s.memory_from_default ? " default" : ""}`
             : undefined
         }
       />
-      <Stat label="Disk read" value={`${size(u.io_read_bytes_per_sec)}/s`} />
-      <Stat label="Disk write" value={`${size(u.io_write_bytes_per_sec)}/s`} />
+      <Stat
+        label="Disk read"
+        value={u ? `${size(u.io_read_bytes_per_sec)}/s` : none}
+      />
+      <Stat
+        label="Disk write"
+        value={u ? `${size(u.io_write_bytes_per_sec)}/s` : none}
+      />
     </div>
   );
 }

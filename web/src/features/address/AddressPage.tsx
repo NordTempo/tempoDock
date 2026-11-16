@@ -169,24 +169,23 @@ function HostnameForm({ address }: { address: Address }) {
           </Button>
         )}
         <Saved ok={set.isSuccess && !changed} />
-      </span>
-      {/* Remove sits apart from the field, and asks first. */}
-      <span className="flex flex-wrap items-center gap-2">
-        {empty ? (
-          <span role="alert" className="text-xs text-fail">
-            Type the name Dock answers at, like dock.example.com.
-          </span>
-        ) : (
-          <span className="text-xs text-mut">
-            Needed for invite links and GitHub pushes.
-          </span>
-        )}
+        {/* Beside the field while it holds the saved name, where Save and
+            Cancel go once it changes; it asks first. */}
         {address.hostname && !changed && (
-          <Button small className="ml-auto" onClick={() => setAsking(true)}>
-            Remove address…
+          <Button small danger onClick={() => setAsking(true)}>
+            Remove
           </Button>
         )}
       </span>
+      {empty ? (
+        <span role="alert" className="text-xs text-fail">
+          Type the name Dock answers at, like dock.example.com.
+        </span>
+      ) : (
+        <span className="text-xs text-mut">
+          Needed for invite links and GitHub pushes.
+        </span>
+      )}
       <ErrorText error={set.error} />
       {asking && (
         <Confirm

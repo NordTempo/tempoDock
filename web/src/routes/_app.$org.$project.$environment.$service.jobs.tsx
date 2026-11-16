@@ -27,17 +27,18 @@ function JobsTab() {
   const jobs = useSuspenseQuery(jobQueries.list(ref)).data;
   return (
     <>
-      <section
-        id="run"
-        aria-labelledby="run-head"
-        className="flex flex-col gap-3"
-      >
+      {/* Headings keep their own margin; the gap is between what's under them. */}
+      <section id="run" aria-labelledby="run-head">
         <SectionHead id="run-head">Run a command</SectionHead>
-        <RunPanel serviceRef={ref} />
+        <div className="flex flex-col gap-3">
+          <RunPanel serviceRef={ref} />
+        </div>
       </section>
-      <section aria-labelledby="jobs-head" className="flex flex-col gap-3">
+      <section aria-labelledby="jobs-head">
         <SectionHead id="jobs-head">Scheduled</SectionHead>
-        <JobsPanel serviceRef={ref} jobs={jobs} />
+        <div className="flex flex-col gap-3">
+          <JobsPanel serviceRef={ref} jobs={jobs} />
+        </div>
       </section>
     </>
   );

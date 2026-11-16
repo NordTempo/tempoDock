@@ -63,8 +63,7 @@ export function JobsPanel({
     <>
       {jobs.length === 0 ? (
         <p className="text-mut">
-          No jobs yet. Add one here, with <code>dock job set</code>, or under{" "}
-          <code>[[jobs]]</code> in dock.toml.
+          No jobs yet. Add one here or under <code>[[jobs]]</code> in dock.toml.
         </p>
       ) : (
         <JobsTable
@@ -238,8 +237,11 @@ function JobsTable({
                   <td>{j.source === "repo" ? "dock.toml" : "api"}</td>
                   <td className="text-right">
                     <span className="inline-flex gap-1.5">
+                      {/* One width for Disable and Enable, so Run now
+                          stays put from row to row. */}
                       <Act
                         small
+                        className="min-w-[68px] justify-center"
                         cli={`dock job ${j.enabled ? "disable" : "enable"} ${j.name} ${target(ref)}`}
                         disabled={!canDeploy || pending(enable)}
                         title={denied}
@@ -463,7 +465,7 @@ function Editor({
     .filter(Boolean)
     .join(" ");
 
-  const label = "text-right text-faint";
+  const label = "text-faint";
   return (
     <form
       aria-label={job ? `Schedule of ${job.name}` : "New job"}
@@ -569,7 +571,7 @@ function Editor({
       <span className="flex flex-wrap items-center gap-2.5">
         <select
           id="job-timeout"
-          className="field py-0.5 font-mono text-xs"
+          className="field font-mono"
           value={timeout}
           disabled={readOnly}
           onChange={(e) => setTimeoutSeconds(Number(e.target.value))}
@@ -580,25 +582,20 @@ function Editor({
             </option>
           ))}
         </select>
-        <span className="text-faint">If still running</span>
-        <span className="seg">
-          {(
-            [
-              ["skip", "skip"],
-              ["allow", "run anyway"],
-            ] as const
-          ).map(([mode, text]) => (
-            <button
-              key={mode}
-              type="button"
-              aria-pressed={overlap === mode}
-              disabled={readOnly}
-              onClick={() => setOverlap(mode)}
-            >
-              {text}
-            </button>
-          ))}
-        </span>
+        <label className="flex items-center gap-2.5">
+          <span className="text-faint">If still running</span>
+          <select
+            className="field"
+            value={overlap}
+            disabled={readOnly}
+            onChange={(e) =>
+              setOverlap(e.target.value === "allow" ? "allow" : "skip")
+            }
+          >
+            <option value="skip">skip</option>
+            <option value="allow">run anyway</option>
+          </select>
+        </label>
       </span>
       <span />
       <span className="flex flex-wrap items-center gap-2.5">
@@ -682,7 +679,7 @@ function History({
             <th>Exit</th>
             <th>Trigger</th>
             <th>Started</th>
-            <th>Took</th>
+            <th className="text-right">Took</th>
             <th>Release</th>
           </tr>
         </thead>
@@ -712,7 +709,7 @@ function History({
                   <td className="font-mono" title={ago(r.started_at)}>
                     {day(r.started_at)} {clock(r.started_at)}
                   </td>
-                  <td className="font-mono">
+                  <td className="text-right font-mono">
                     {r.status === "skipped" ? "" : took(r)}
                   </td>
                   <td className="font-mono">

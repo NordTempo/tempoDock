@@ -23,12 +23,14 @@ export function BucketSection({ bucket: b }: { bucket: Bucket }) {
   if (quiet) {
     return (
       <section aria-labelledby="bucket">
+        {/* The state beside the heading, not at the far edge, so the one
+            line reads as one. */}
         <SectionHead
           id="bucket"
-          right={
-            <span>
+          aside={
+            <>
               <Tone state={bucketStates.healthy} /> · nothing waiting to upload
-            </span>
+            </>
           }
         >
           Storage
@@ -45,7 +47,7 @@ export function BucketSection({ bucket: b }: { bucket: Bucket }) {
   return (
     <section aria-labelledby="bucket">
       <SectionHead id="bucket">Storage</SectionHead>
-      <dl className="props [grid-template-columns:180px_minmax(0,1fr)] [&>dd]:flex [&>dd]:flex-wrap [&>dd]:items-baseline [&>dd]:gap-x-2.5 [&>dd]:gap-y-1">
+      <dl className="props grid-cols-[140px_minmax(0,1fr)] [&>dd]:flex [&>dd]:flex-wrap [&>dd]:items-baseline [&>dd]:gap-x-2.5 [&>dd]:gap-y-1">
         <Prop label="Bucket">
           <Tone
             state={{
@@ -81,6 +83,7 @@ export function BucketSection({ bucket: b }: { bucket: Bucket }) {
         </Prop>
         <Prop label="Spool">
           <Bar
+            label="Spool used"
             percent={spoolPct}
             tone={b.refusing === "spool" ? "fail" : b.waiting ? "warn" : "mut"}
           />
@@ -96,6 +99,7 @@ export function BucketSection({ bucket: b }: { bucket: Bucket }) {
         {b.refusing && (
           <Prop label="Disk">
             <Bar
+              label="Disk used"
               percent={diskUsedPct}
               tone={b.refusing === "disk" ? "fail" : "mut"}
             />
@@ -175,17 +179,26 @@ function Tone({ state }: { state: State }) {
   );
 }
 
-/** A thin fixed-width bar, filled to percent. */
+/** A thin fixed-width bar, filled to percent; a progressbar named `label`. */
 function Bar({
+  label,
   percent,
   tone,
 }: {
+  label: string;
   percent: number;
   tone: "mut" | "warn" | "fail";
 }) {
   const fill = { mut: "bg-sec", warn: "bg-warn", fail: "bg-fail" }[tone];
   return (
-    <span className="inline-block h-1 w-30 self-center overflow-hidden rounded-full bg-chip">
+    <span
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      className="inline-block h-1 w-30 self-center overflow-hidden rounded-full bg-chip"
+    >
       <span
         className={`block h-full ${fill}`}
         style={{

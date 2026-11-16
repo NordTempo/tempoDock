@@ -45,10 +45,14 @@ function useAllProblems(project: string): Problem[] {
   return [...problems.slice(0, at), ...extra, ...problems.slice(at)];
 }
 
-/** The environment a problem is in; "" for servers and alerts. */
+/**
+ * The environment a problem is in; "" for servers and for alerts about
+ * no one environment.
+ */
 function problemEnvironment(p: Problem): string {
   if ("service" in p) return serviceRef(p.service.service).environment;
   if (p.kind === "staged") return p.environment.environment.name;
+  if (p.kind === "alert") return p.alert.environment ?? "";
   return "";
 }
 
@@ -61,7 +65,7 @@ export function Problems({
   environment,
 }: {
   project: string;
-  /** Only this environment's problems, and those of no environment (servers, alerts). */
+  /** Only this environment's problems, and those of no one environment (servers, org-wide alerts). */
   environment?: string;
 }) {
   const problems = fold(

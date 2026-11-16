@@ -85,9 +85,12 @@ export function ReplaysView({
   if (!data) return <p className="text-mut">Loading…</p>;
   const replays = data.replays ?? [];
   const kept = site.settings.replay_retention_days;
+  // Off with nothing kept from before: the one message and its action,
+  // without an empty list's controls.
+  const off = !data.recording && replays.length === 0;
   return (
     <div className="flex flex-col gap-3">
-      {skipped.length > 0 && (
+      {!off && skipped.length > 0 && (
         <p className="text-xs text-mut">
           Replays don't record{" "}
           {skipped.map((f) => f.dimension.replace("_", " ")).join(", ")}; those
@@ -127,117 +130,121 @@ export function ReplaysView({
       {!data.store_online && (
         <p className="text-warn-text">{data.store_error}</p>
       )}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-        <span className="text-sm">
-          <b className="font-semibold">{count(replays.length)}</b>{" "}
-          {replays.length === 1 ? "replay" : "replays"}
-        </span>
-        <span className="text-faint">
-          {data.recording
-            ? `${data.sample_rate}% of page loads recorded · `
-            : ""}
-          kept {kept} days · inputs masked
-        </span>
-        <span className="seg">
-          {(["All", "With errors"] as const).map((label) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={(label === "With errors") === errorsOnly}
-              onClick={() => onErrorsOnly(label === "With errors")}
-            >
-              {label}
-            </button>
-          ))}
-        </span>
-        <span className="seg">
-          {devices.map(([label, d]) => (
-            <button
-              key={label}
-              type="button"
-              aria-pressed={device === d}
-              onClick={() => onDevice(d)}
-            >
-              {label}
-            </button>
-          ))}
-        </span>
-        <span className="ml-auto flex items-center gap-2 text-faint">
-          <span className="inline-block h-3 w-0.5 bg-faint" /> page view
-          <span className="inline-block h-3 w-0.5 bg-fail" /> error
-        </span>
-      </div>
-      <Panel>
-        <table className="tabular-nums">
-          <thead>
-            <tr>
-              <th className="w-24">Started</th>
-              <th className="w-56">Session</th>
-              <th>Pages and visitor</th>
-            </tr>
-          </thead>
-          <tbody>
-            {replays.map((r) => (
-              <tr key={r.id}>
-                <td className="text-xs">
-                  <Link
-                    to="/$org/analytics/$project/$site/replays/$replay"
-                    params={{ org, project, site: site.name, replay: r.id }}
-                    search={{
-                      ...(range !== "30d" && { range }),
-                      ...(errorsOnly && { errors: true }),
-                      ...(device && { device }),
-                      ...(filters.length > 0 && {
-                        f: filters.map(
-                          (f) => `${f.dimension}:${f.op}:${f.value}`,
-                        ),
-                      }),
-                    }}
-                    className="block"
-                  >
-                    <span className="block text-fg">
-                      {day(r.start)} {clock(r.start)}
-                    </span>
-                    <span className="text-mut">
-                      {length(Date.parse(r.end) - Date.parse(r.start))}
-                    </span>
-                  </Link>
-                </td>
-                <td>
-                  <Shape replay={r} />
-                  <Summary replay={r} />
-                </td>
-                <td className="max-w-0 text-xs">
-                  <span className="block truncate">
-                    {r.entry_path} <span className="text-faint">→</span>{" "}
-                    {r.exit_path}
-                  </span>
-                  <span className="block truncate text-mut">
-                    {[
-                      r.country && country(r.country),
-                      r.device &&
-                        r.device[0]?.toUpperCase() + r.device.slice(1),
-                      r.browser,
-                      r.os,
-                      `${count(r.events)} ${r.events === 1 ? "event" : "events"}`,
-                      r.release,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {replays.length === 0 && (
-              <tr>
-                <td colSpan={3} className="text-mut">
-                  No replays in this range.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Panel>
+      {!off && (
+        <>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+            <span className="text-sm">
+              <b className="font-semibold">{count(replays.length)}</b>{" "}
+              {replays.length === 1 ? "replay" : "replays"}
+            </span>
+            <span className="text-faint">
+              {data.recording
+                ? `${data.sample_rate}% of page loads recorded · `
+                : ""}
+              kept {kept} days · inputs masked
+            </span>
+            <span className="seg">
+              {(["All", "With errors"] as const).map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={(label === "With errors") === errorsOnly}
+                  onClick={() => onErrorsOnly(label === "With errors")}
+                >
+                  {label}
+                </button>
+              ))}
+            </span>
+            <span className="seg">
+              {devices.map(([label, d]) => (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={device === d}
+                  onClick={() => onDevice(d)}
+                >
+                  {label}
+                </button>
+              ))}
+            </span>
+            <span className="ml-auto flex items-center gap-2 text-faint">
+              <span className="inline-block h-3 w-0.5 bg-faint" /> page view
+              <span className="inline-block h-3 w-0.5 bg-fail" /> error
+            </span>
+          </div>
+          <Panel>
+            <table className="tabular-nums">
+              <thead>
+                <tr>
+                  <th className="w-24">Started</th>
+                  <th className="w-56">Session</th>
+                  <th>Pages and visitor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {replays.map((r) => (
+                  <tr key={r.id}>
+                    <td className="text-xs">
+                      <Link
+                        to="/$org/analytics/$project/$site/replays/$replay"
+                        params={{ org, project, site: site.name, replay: r.id }}
+                        search={{
+                          ...(range !== "30d" && { range }),
+                          ...(errorsOnly && { errors: true }),
+                          ...(device && { device }),
+                          ...(filters.length > 0 && {
+                            f: filters.map(
+                              (f) => `${f.dimension}:${f.op}:${f.value}`,
+                            ),
+                          }),
+                        }}
+                        className="block"
+                      >
+                        <span className="block text-fg">
+                          {day(r.start)} {clock(r.start)}
+                        </span>
+                        <span className="text-mut">
+                          {length(Date.parse(r.end) - Date.parse(r.start))}
+                        </span>
+                      </Link>
+                    </td>
+                    <td>
+                      <Shape replay={r} />
+                      <Summary replay={r} />
+                    </td>
+                    <td className="max-w-0 text-xs">
+                      <span className="block truncate">
+                        {r.entry_path} <span className="text-faint">→</span>{" "}
+                        {r.exit_path}
+                      </span>
+                      <span className="block truncate text-mut">
+                        {[
+                          r.country && country(r.country),
+                          r.device &&
+                            r.device[0]?.toUpperCase() + r.device.slice(1),
+                          r.browser,
+                          r.os,
+                          `${count(r.events)} ${r.events === 1 ? "event" : "events"}`,
+                          r.release,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {replays.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="text-mut">
+                      No replays in this range.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </Panel>
+        </>
+      )}
     </div>
   );
 }

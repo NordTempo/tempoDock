@@ -48,26 +48,39 @@ export function FunnelsView({
   const current = funnels.find((f) => f.name === selected) ?? funnels[0];
   return (
     <div className="flex flex-col gap-4">
+      {/* The funnels to pick from, with the shown one's Edit and Remove beside them. */}
       <div className="flex flex-wrap items-center gap-3 text-sm">
         {funnels.map((f) => (
           <button
             key={f.name}
             type="button"
             aria-pressed={f === current}
-            className={f === current ? "font-semibold text-fg" : "text-mut"}
+            className={`min-h-[24px] ${f === current ? "font-semibold text-fg" : "text-mut hover:text-fg"}`}
             onClick={() => onSelect(f.name)}
           >
             {f.name}
           </button>
         ))}
+        {canEdit && !editing && current && (
+          <span className="flex gap-2">
+            <Button small onClick={() => setEditing(current)}>
+              Edit
+            </Button>
+            <Act
+              small
+              danger
+              cli={`dock analytics funnels remove ${site} ${JSON.stringify(current.name)}`}
+              disabled={remove.isPending}
+              onClick={() => setAsking(true)}
+            >
+              Remove
+            </Act>
+          </span>
+        )}
         {canEdit && !editing && (
-          <button
-            type="button"
-            className="text-xs text-mut"
-            onClick={() => setEditing("new")}
-          >
-            + Funnel
-          </button>
+          <Button small onClick={() => setEditing("new")}>
+            New funnel
+          </Button>
         )}
       </div>
       {editing ? (
@@ -89,19 +102,6 @@ export function FunnelsView({
             range={range}
             filters={filters}
           />
-          {canEdit && (
-            <div className="flex gap-2">
-              <Button onClick={() => setEditing(current)}>Edit</Button>
-              <Act
-                danger
-                cli={`dock analytics funnels remove ${site} ${JSON.stringify(current.name)}`}
-                disabled={remove.isPending}
-                onClick={() => setAsking(true)}
-              >
-                Remove
-              </Act>
-            </div>
-          )}
           {asking && (
             <Confirm
               danger
@@ -189,13 +189,18 @@ function Chart({
               key={`${s.kind}:${s.match}`}
               className="flex min-w-0 flex-col gap-1"
             >
+              {/* The step names its column, above its bar and numbers. */}
+              <span className="truncate text-xs" title={`${s.kind} ${s.match}`}>
+                {i + 1}. <span className="text-mut">{s.kind}</span>{" "}
+                <span className="font-mono">{s.match}</span>
+              </span>
               <div className="relative h-36 rounded-ctl bg-hover">
-                {/* A nonzero count always shows a sliver. */}
+                {/* A nonzero count always shows a bar you can see. */}
                 <div
                   className="absolute inset-x-0 bottom-0 rounded-ctl bg-info/40"
                   style={{
                     height: `${first ? (s.sessions / first) * 100 : 0}%`,
-                    minHeight: s.sessions > 0 ? 3 : 0,
+                    minHeight: s.sessions > 0 ? 8 : 0,
                   }}
                   title={`${count(s.sessions)} visits`}
                 />
@@ -208,10 +213,6 @@ function Chart({
                 {prev !== undefined && prev > 0 && first > 0
                   ? `${pct(s.sessions, prev)} of step ${i} · ${pct(s.sessions, first)} overall`
                   : "\u00a0"}
-              </span>
-              <span className="truncate text-xs" title={`${s.kind} ${s.match}`}>
-                {i + 1}. <span className="text-mut">{s.kind}</span>{" "}
-                <span className="font-mono">{s.match}</span>
               </span>
             </li>
           );
@@ -314,7 +315,7 @@ function Editor({
               <button
                 type="button"
                 aria-label={`Remove step ${i + 1}`}
-                className="text-faint"
+                className="min-h-[24px] min-w-[24px] text-faint hover:text-fg"
                 onClick={() => setSteps((x) => x.filter((_, j) => j !== i))}
               >
                 ✕

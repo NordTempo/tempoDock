@@ -165,9 +165,12 @@ function Switches({
         : undefined;
   return (
     <div className="flex flex-col gap-2 border-b border-line pb-4">
-      <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
-        <span className="flex flex-wrap items-center gap-2">
-          Password sign-in <OnOff on={set.password_sign_in} />
+      {/* One row per switch, labels in a column, so a disabled switch's
+          reason never runs into the next one. */}
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-6 gap-y-1.5 [&>dt]:text-mut">
+        <dt>Password sign-in</dt>
+        <dd className="flex flex-wrap items-center gap-2">
+          <OnOff on={set.password_sign_in} />
           <Act
             small
             cli={`dock sso password-sign-in ${set.password_sign_in ? "off" : "on"}`}
@@ -181,9 +184,10 @@ function Switches({
           >
             Turn {set.password_sign_in ? "off" : "on"}
           </Act>
-        </span>
-        <span className="flex flex-wrap items-center gap-2">
-          Invite only <OnOff on={set.invite_only} />
+        </dd>
+        <dt>Invite only</dt>
+        <dd className="flex flex-wrap items-center gap-2">
+          <OnOff on={set.invite_only} />
           <Act
             small
             cli={`dock sso invite-only ${set.invite_only ? "off" : "on"}`}
@@ -196,15 +200,15 @@ function Switches({
           >
             Turn {set.invite_only ? "off" : "on"}
           </Act>
-        </span>
-        <span className="flex min-w-0 flex-wrap items-center gap-2 text-mut">
-          Redirect URL
+        </dd>
+        <dt>Redirect URL</dt>
+        <dd className="flex min-w-0 flex-wrap items-center gap-2">
           <code className="min-w-0 font-mono text-xs text-sec [overflow-wrap:anywhere]">
             {redirect}
           </code>
           <CopyButton text={redirect} />
-        </span>
-      </div>
+        </dd>
+      </dl>
       <p className="text-xs text-mut">
         {set.invite_only
           ? "Providers sign in people with an account here, and make accounts only for people with an open invite."
@@ -554,7 +558,8 @@ function ProviderForm({
   return (
     <form
       aria-label={provider ? `Change ${provider.label}` : "Add a provider"}
-      className="flex max-w-[640px] flex-col gap-3.5"
+      // 760px, a form page's width: every kind fits on one line.
+      className="flex max-w-[760px] flex-col gap-3.5"
       onSubmit={(e) => {
         e.preventDefault();
         if (!ready) return;
@@ -587,7 +592,7 @@ function ProviderForm({
         <div
           role="radiogroup"
           aria-label="Kind"
-          className="flex flex-wrap gap-x-5 gap-y-2"
+          className="flex flex-wrap gap-x-4 gap-y-2"
         >
           {kinds.map((k) => (
             <label

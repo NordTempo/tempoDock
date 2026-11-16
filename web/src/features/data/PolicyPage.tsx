@@ -17,7 +17,7 @@ import { kindNames, kinds } from "./policy";
  * The rules editor is the data panel's (style G, shared with tempoBase).
  * On the org's settings page its tokens take style A's values, so it reads as
  * part of the app: the app's fonts, a black page, a white primary,
- * the table in a panel.
+ * the table on the page under a hairline.
  */
 const styleA = [
   "g",
@@ -46,12 +46,11 @@ const styleA = [
   "[&_select.g-field]:bg-no-repeat",
   "[&_select.g-field]:bg-position-[right_8px_center]",
   "[&_select.g-field:disabled]:bg-none",
-  // The rules table in a bordered panel, like the app's other tables.
-  "[&_div:has(>.g-table)]:rounded-panel",
-  "[&_div:has(>.g-table)]:border",
+  // The rules table on the page under a hairline, like the app's other
+  // tables (no box).
+  "[&_div:has(>.g-table)]:border-t",
   "[&_div:has(>.g-table)]:border-line",
-  "[&_.g-table_tr:last-child>td]:border-0",
-  "[&_.g-table_:is(th,td):first-child]:pl-3.5",
+  "[&_.g-table_:is(th,td):first-child]:pl-0",
 ].join(" ");
 
 /** The scope one level up: environment → project → default → built-in. */
