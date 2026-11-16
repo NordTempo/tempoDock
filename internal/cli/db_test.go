@@ -278,3 +278,20 @@ func TestTokenDataFlags(t *testing.T) {
 		t.Errorf("invalid level = %d, want usage", code)
 	}
 }
+
+// On Redis, `sensitive list` shows the key patterns `set --keys`
+// replaces, so a new one can be added to the list.
+func TestDBSensitiveListKeys(t *testing.T) {
+	setup(t)
+	newFakeAPI(t, map[string]http.HandlerFunc{
+		"GET " + dbPath + "/schema": jsonReply(apitypes.DataSchema{
+			Tables: []apitypes.DataTable{}, Keyspace: []apitypes.DataKeyspaceDB{{}}, SensitiveKeys: []string{"session:*", "auth:*"},
+		}),
+	})
+	if code, stdout, stderr := exec(t, dbArgs("db", "sensitive", "list")...); code != 0 || stdout != "session:*\nauth:*\n" {
+		t.Fatalf("list: exit %d\n%s%s", code, stdout, stderr)
+	}
+	if got := ok[[]string](t, dbArgs("db", "sensitive", "list")...); strings.Join(got, ",") != "session:*,auth:*" {
+		t.Fatalf("--json = %q", got)
+	}
+}

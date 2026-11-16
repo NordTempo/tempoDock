@@ -130,7 +130,8 @@ dock db query 'ZRANGE board 0 9 REV WITHSCORES' --db 0
 - Key names need level `read`, like rows: they often hold IDs and
   emails.
 - Sensitive keys are patterns an admin marks (`dock db sensitive set
-  --keys 'session:*'`, or Sensitive keys in the Keys view). Callers who
+  --keys 'session:*'`, which replaces the list `dock db sensitive list`
+  shows, or Sensitive keys in the Keys view). Callers who
   see sensitive values masked get matching keys by pattern, not name, and
   no console (Redis ACLs can't deny a pattern, so the console could read
   what the list masks); the others read them with an audited reveal

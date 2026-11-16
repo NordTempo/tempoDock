@@ -1506,12 +1506,23 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 	list := dbCmd(g, &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
-		Short:   "List sensitive columns",
+		Short:   "List sensitive columns (or, on Redis, key patterns)",
 		Args:    cobra.NoArgs,
 	}, func(ctx context.Context, s *session, _ target, data string, _ []string) error {
 		sc, err := schemaOf(ctx, s, data)
 		if err != nil {
 			return err
+		}
+		if sc.Keyspace != nil || sc.SensitiveKeys != nil {
+			// A key-value database: its patterns, as `set --keys` prints
+			// them, so a new one can be added to the list it replaces.
+			patterns := append([]string{}, sc.SensitiveKeys...)
+			return g.io.Print(patterns, func() error {
+				for _, p := range patterns {
+					_, _ = fmt.Fprintln(g.io.Out, p)
+				}
+				return nil
+			})
 		}
 		cols := []apitypes.DataColumnRef{}
 		for _, tb := range sc.Tables {
@@ -1531,7 +1542,8 @@ visible reveal them with ` + "`dock db rows TABLE --reveal`" + `, which is audit
 		Long: `Replace the whole list with the columns named (a bare table name is looked
 up, Postgres's public schema first), or empty it with --clear. On Redis, --keys takes key patterns (globs such as
 session:*): matching keys are masked for callers who see sensitive values
-masked, and read only with an audited --reveal by the others.`,
+masked, and read only with an audited --reveal by the others. The patterns
+given replace the list: ` + "`dock db sensitive list`" + ` shows the current one.`,
 		Example: `  dock db sensitive set users.password_hash users.email
   dock db sensitive set --keys 'session:*' 'auth:*'
   dock db sensitive set --clear`,
