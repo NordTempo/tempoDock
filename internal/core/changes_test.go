@@ -4,8 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"errors"
-	"slices"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -422,5 +422,22 @@ func TestDeployRedeploysReferencingServices(t *testing.T) {
 	}
 	if p, _ := h.c.GetChanges(h.ctx, testSystem, api.Env(), false); p.Count != 0 {
 		t.Errorf("staged after the deploy: %+v", p)
+	}
+}
+
+// Staged changes name the services applying would redeploy: running ones,
+// not those that take the change with their first deploy.
+func TestChangesNameRedeploys(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(web, h.deploy(web, "app:1").Number)
+	h.service("api", apitypes.CreateServiceRequest{Image: "app:1"}) // never deployed
+	shared := apitypes.SetVariablesRequest{Set: map[string]string{"REGION": "eu"}}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), shared); err != nil {
+		t.Fatal(err)
+	}
+	p, err := h.c.GetChanges(h.ctx, testSystem, web.Env(), false)
+	if err != nil || !slices.Equal(p.Affected, []string{"api", "web"}) || !slices.Equal(p.Redeploys, []string{"web"}) {
+		t.Fatalf("affected %v, redeploys %v, %v", p.Affected, p.Redeploys, err)
 	}
 }

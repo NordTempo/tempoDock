@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -189,8 +190,15 @@ func printChanges(g *globals, p apitypes.PendingChanges, reveal bool) error {
 	if err := t.Flush(); err != nil {
 		return err
 	}
-	if len(p.Affected) > 0 {
-		_, _ = fmt.Fprintf(g.io.Out, "Applying redeploys: %s\n", strings.Join(p.Affected, ", "))
+	redeploys := p.Redeploys
+	if redeploys == nil {
+		redeploys = p.Affected // a daemon that doesn't send redeploys
+	}
+	if len(redeploys) > 0 {
+		_, _ = fmt.Fprintf(g.io.Out, "Applying redeploys: %s\n", strings.Join(redeploys, ", "))
+	}
+	if later := slices.DeleteFunc(slices.Clone(p.Affected), func(s string) bool { return slices.Contains(redeploys, s) }); len(later) > 0 {
+		_, _ = fmt.Fprintf(g.io.Out, "Not running, so they take it with their first deploy: %s\n", strings.Join(later, ", "))
 	}
 	if p.LastFailure != "" {
 		g.io.Warnf("Staged again: %s", p.LastFailure)
