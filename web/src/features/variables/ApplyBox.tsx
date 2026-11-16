@@ -46,20 +46,26 @@ const marks: Record<VariableChange["action"], string> = {
  */
 function useStaged({
   env,
-  reveal,
+  shows = () => false,
   variables = [],
   service,
 }: {
   env: EnvRef;
-  /** Show old and new values (admin, on request). */
-  reveal: boolean;
+  /**
+   * Which staged variables show old and new values: those the table
+   * above shows (admin, on request). The rest stay masked, as there.
+   */
+  shows?: (change: VariableChange) => boolean;
   /** All variables of the environment, to name overriding services. */
   variables?: Variable[];
   /** The service on screen: its own changes can be discarded alone. */
   service?: string | null;
 }) {
   const changes = useChanges(env);
-  const revealed = useRevealedChanges(env, reveal).data;
+  const revealed = useRevealedChanges(
+    env,
+    changes.variables.some((c) => shows(c)),
+  ).data;
   const { services } = useEnvironment(env);
   const apply = useApplyChanges();
   const discard = useDiscardChanges();
@@ -148,7 +154,9 @@ function useStaged({
       note: c.summary,
     })),
     ...changes.variables.map((c) => {
-      const v = values.get(`${c.service ?? ""}:${c.key}`);
+      const v = shows(c)
+        ? values.get(`${c.service ?? ""}:${c.key}`)
+        : undefined;
       const overriders =
         c.scope === "environment"
           ? variables
@@ -285,7 +293,7 @@ export function ApplyControl({
   env: EnvRef;
   service: string;
 }) {
-  const staged = useStaged({ env, reveal: false, service });
+  const staged = useStaged({ env, service });
   const { changes, busy, applyBlocked, apply, downtimes, applyLabel } = staged;
   const [open, setOpen] = useState(false);
   const run = () => {
