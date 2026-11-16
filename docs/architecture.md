@@ -104,7 +104,7 @@ GitHub and Cloudflare connections and backup runs; their shapes are in
   [dock.toml](dock-toml.md). A whole project's config can be exported and
   applied as a [project file](project-file.md).
 - **Staged changes.** Setting variables, changing service settings and adding
-  volumes or domains are staged next to the live values, Railway-style.
+  volumes or domains are staged next to the live values.
   Applying an environment's changes is one transaction that also queues
   one `config` release per affected running service, including services
   whose variables reference a changed one; it is refused while the server
@@ -231,8 +231,7 @@ Details in [ADR 0015](decisions/0015-server-pools-and-placement.md).
 ## Networking
 
 - Each (project, environment) gets its own Docker network, with addresses
-  from a dedicated pool. Services reach each other by service name, like
-  Railway's private networking.
+  from a dedicated pool. Services reach each other by service name.
 - Services with a domain publish their port on `127.0.0.1` only. Caddy proxies
   to it, so app containers are never directly exposed.
 - A root-installed firewall (`dock-firewall.service`) keeps apps and builds

@@ -16,7 +16,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/store"
 )
 
-// Staged changes (Railway-style): setting variables, changing service
+// Staged changes: setting variables, changing service
 // settings and adding volumes are stored next to the live values and only go
 // live when applied. Applying an environment's changes is one transaction
 // that also queues one config release per affected service that is running.
