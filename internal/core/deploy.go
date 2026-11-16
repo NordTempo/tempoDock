@@ -49,6 +49,9 @@ type deployment struct {
 	// pre is how the pre-deploy command ran, for a diagnosis (ADR 0071);
 	// nil when none ran.
 	pre *apitypes.DiagnosisPreDeploy
+	// stalled is the step that ran out of its deadline, for the
+	// diagnosis; nil when none did (deploy_phases.go).
+	stalled *stalledPhase
 }
 
 type stepError struct {
@@ -178,7 +181,13 @@ func (d *deployment) run(ctx context.Context) error {
 			return step(apitypes.CodeDeployFailed, "stop release %d: %w", d.old.Number, err)
 		}
 	}
-	ctr, err := d.rt.Start(ctx, c.containerSpec(d.ss, d.rel, d.cfg))
+	var ctr node.Container
+	err = d.within(ctx, stalledPhase{what: "starting the container", limit: startWait, code: apitypes.CodeDeployFailed,
+		hint: "the server's Docker didn't answer in time"}, func(ctx context.Context) error {
+		var err error
+		ctr, err = d.rt.Start(ctx, c.containerSpec(d.ss, d.rel, d.cfg))
+		return err
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "already in use") {
 			// A container of the same name that no release owns (see
@@ -320,12 +329,29 @@ func (d *deployment) image(ctx context.Context) (string, error) {
 // in the platform registry: only for a repository of the release's own
 // project (see pullAllowed). Any other registry gets the org's credential
 // for its host, if there is one (ADR 0051).
-func (d *deployment) pull(ctx context.Context, ref string) (string, error) {
+//
+// The pull has pullWait to finish (deploy_phases.go).
+func (d *deployment) pull(ctx context.Context, ref string) (id string, err error) {
+	err = d.within(ctx, stalledPhase{what: "pulling " + ref, limit: pullWait, code: apitypes.CodeBuildFailed,
+		hint: "its registry or the server's connection may be slow"}, func(ctx context.Context) error {
+		var err error
+		id, err = d.pullNow(ctx, ref)
+		return err
+	})
+	return id, err
+}
+
+// pullNow is pull without its deadline.
+func (d *deployment) pullNow(ctx context.Context, ref string) (string, error) {
 	if repo, ok := d.c.inRegistry(ref); ok {
 		if !pullAllowed(d.ss, repo) {
 			return "", fmt.Errorf("image %s belongs to another project; deploy it in that project, or push it to a registry of your own and deploy it with --image", ref)
 		}
-		defer d.c.useRegistry()()
+		release, err := d.registry(ctx)
+		if err != nil {
+			return "", err
+		}
+		defer release()
 		return d.rt.Pull(ctx, ref, d.log, node.PullOptions{Token: d.c.reg.Token("server "+d.server.Name, repo, false)})
 	}
 	login, host, err := d.c.registryLogin(ctx, d.ss.project.OrgID, ref)
@@ -367,15 +393,33 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	if builder.ID != d.server.ID {
 		where = "the build server"
 	}
+	if c.reg != nil {
+		// The registry before the builder's slot: a build waiting for the
+		// registry doesn't hold the slot every other build needs.
+		release, err := d.registry(ctx)
+		if err != nil {
+			return "", err
+		}
+		defer release()
+	}
 	sem := c.buildLock(builder.ID)
 	select {
 	case sem <- struct{}{}:
 	default:
 		d.event(ctx, "Waiting for another build on "+where+" to finish")
-		select {
-		case sem <- struct{}{}:
-		case <-ctx.Done():
-			return "", ctx.Err()
+		// The build holding the slot has its own deadlines, so this one
+		// waits at most about as long as a build may run.
+		wait := stalledPhase{what: "waiting for another build on " + where, limit: c.buildTimeout(), code: apitypes.CodeBuildFailed,
+			hint: "the build before it didn't end"}
+		if err := d.within(ctx, wait, func(ctx context.Context) error {
+			select {
+			case sem <- struct{}{}:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}); err != nil {
+			return "", err
 		}
 	}
 	unlock := sync.OnceFunc(func() { <-sem })
@@ -400,7 +444,6 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	if c.reg != nil {
 		repo = repoOf(ref, c.reg.Host())
 		req.Push = &node.PushTarget{Ref: c.reg.Host() + "/" + ref, Token: c.reg.Token("server "+builder.Name, repo, true)}
-		defer c.useRegistry()()
 		defer c.reg.PushStarted()()
 	}
 	if builder.ID != d.server.ID {
@@ -414,6 +457,7 @@ func (d *deployment) build(ctx context.Context) (string, error) {
 	cancel()
 	if err != nil {
 		if ctx.Err() == nil && errors.Is(bctx.Err(), context.DeadlineExceeded) {
+			d.stalled = &stalledPhase{what: "the build (and its push)", limit: timeout, code: apitypes.CodeBuildFailed}
 			return "", step(apitypes.CodeBuildFailed, "build took longer than %s and was stopped; raise [buildkit] timeout_minutes on the control plane if it needs longer", timeout)
 		}
 		if req.Push != nil {

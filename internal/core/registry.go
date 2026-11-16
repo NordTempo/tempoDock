@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -32,7 +33,9 @@ type Registry interface {
 	Prune(ctx context.Context, keep []string) (int, error)
 	// GarbageCollect removes blobs no manifest references any more. The
 	// registry is stopped while it runs, so core calls it only when no
-	// build or pull uses the registry.
+	// build or pull uses the registry, and ends ctx when one waits: it
+	// stops early (what it left goes next time) and returns once the
+	// registry answers again.
 	GarbageCollect(ctx context.Context) error
 	// Stored returns the size of the registry's blobs, on disk or in its
 	// bucket.
@@ -143,16 +146,20 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 		return apitypes.Registry{}, invalid("this Dock has no registry; images stay on the server that built them")
 	}
 	u := &c.images
+	pctx, yield := context.WithCancel(c.ctx)
 	u.mu.Lock()
 	switch {
 	case u.pruning:
 		u.mu.Unlock()
+		yield()
 		return apitypes.Registry{}, conflict("the registry is being pruned already; wait for it to finish")
 	case u.migrating():
 		u.mu.Unlock()
+		yield()
 		return apitypes.Registry{}, conflict("the registry's images are moving to other storage; prune once that finishes")
-	case !u.inUse.TryLock():
+	case !u.gate.tryHold(yield):
 		u.mu.Unlock()
+		yield()
 		return apitypes.Registry{}, conflict("builds or pulls are using the registry; prune once they finish")
 	}
 	u.pruning = true
@@ -164,7 +171,12 @@ func (c *Core) PruneRegistry(ctx context.Context, a Actor) (apitypes.Registry, e
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		n, err := c.pruneRegistry(c.ctx)
+		defer yield()
+		n, err := c.pruneRegistry(pctx)
+		if errors.Is(err, errPruneYielded) {
+			c.audit(c.ctx, System, "registry.pruned", nil, nil, "registry", fmt.Sprintf("pruned %d images no release keeps; a build needed the registry before its garbage collection ended, so the next prune collects", n))
+			return
+		}
 		if err != nil {
 			c.audit(c.ctx, System, "registry.prune_failed", nil, nil, "registry", fmt.Sprintf("registry prune failed: %v", err))
 			return
@@ -217,12 +229,12 @@ func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.Migrat
 	case u.pruning:
 		u.mu.Unlock()
 		return apitypes.Registry{}, conflict("the registry is being pruned; migrate once that finishes")
-	case !u.inUse.TryLock():
+	case !u.gate.tryHold(nil):
 		u.mu.Unlock()
 		return apitypes.Registry{}, conflict("builds or pulls are using the registry; migrate once they finish")
 	}
 	// Read where the images are only now: a migration commits while it
-	// holds inUse, so the setting can't change under this one.
+	// holds the gate, so the setting can't change under this one.
 	fromID, err := c.registryStorageID(ctx)
 	var from registryEnd
 	if err == nil {
@@ -232,7 +244,7 @@ func (c *Core) MigrateRegistry(ctx context.Context, a Actor, req apitypes.Migrat
 		err = invalid("the registry keeps its images in %s already", from.name)
 	}
 	if err != nil {
-		u.inUse.Unlock()
+		u.gate.release()
 		u.mu.Unlock()
 		return apitypes.Registry{}, err
 	}
@@ -302,7 +314,7 @@ func (c *Core) pickStorage(ctx context.Context, name string) (store.StorageConne
 }
 
 // migrateRegistry runs a migration MigrateRegistry started, which holds
-// inUse, and records how it went.
+// the gate, and records how it went.
 func (c *Core) migrateRegistry(ctx context.Context, a Actor, from, to registryEnd) {
 	u := &c.images
 	committed := false
@@ -318,7 +330,7 @@ func (c *Core) migrateRegistry(ctx context.Context, a Actor, from, to registryEn
 			summary += fmt.Sprintf("; the old copy in %s couldn't be removed (%v), delete it by hand", from.name, derr)
 		}
 	}
-	u.inUse.Unlock()
+	u.gate.release()
 	u.mu.Lock()
 	m := u.migration
 	m.Running, m.Objects, m.Bytes = false, objects, size
@@ -348,10 +360,10 @@ func (c *Core) holdRegistry() (release func(), err error) {
 	u := &c.images
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	if u.pruning || u.migrating() || !u.inUse.TryLock() {
+	if u.pruning || u.migrating() || !u.gate.tryHold(nil) {
 		return nil, conflict("the registry is in use (builds, pulls, a prune or a migration); try again once they finish")
 	}
-	return u.inUse.Unlock, nil
+	return u.gate.release, nil
 }
 
 // registryMigrating reports whether a running migration moves images to

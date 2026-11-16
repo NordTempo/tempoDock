@@ -39,6 +39,8 @@ type diagInput struct {
 	health node.HealthFailure
 	exit   *apitypes.DiagnosisExit
 	pre    *apitypes.DiagnosisPreDeploy
+	// stalled is a step that ran out of its deadline (deploy_phases.go).
+	stalled *stalledPhase
 	// container and build are the last lines of the container's output
 	// and of the build or pull, as captured.
 	container []string
@@ -96,6 +98,7 @@ func runCause(cmd string, cfg releaseConfig, code int, output string) string {
 // diagRules in order: the first that matches is the cause.
 var diagRules = []diagRule{
 	{"server_offline", ruleServerOffline},
+	{"phase_timeout", rulePhaseTimeout},
 	{"push_failed", rulePushFailed},
 	{"build_failed", ruleBuildFailed},
 	{"pull_failed", rulePullFailed},
@@ -249,6 +252,19 @@ func firstBuildError(lines []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// rulePhaseTimeout: a step of the deploy ran out of its deadline, which
+// says more than any of its output (a stalled step usually has none).
+func rulePhaseTimeout(in *diagInput) diagVerdict {
+	s := in.stalled
+	if s == nil {
+		return diagVerdict{why: "every step ended in time"}
+	}
+	what := strings.ToUpper(s.what[:1]) + s.what[1:]
+	return diagVerdict{matched: true, why: "it ran out of time",
+		summary: fmt.Sprintf("%s didn't finish in %s; deploy again", what, humanDuration(s.limit)),
+		detail:  s.hint}
 }
 
 func rulePullFailed(in *diagInput) diagVerdict {

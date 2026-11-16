@@ -156,7 +156,7 @@ func (d *deployment) assemble(ctx context.Context, code apitypes.ErrorCode, msg 
 		kind: apitypes.DiagnosisRelease, service: d.ss.svc.Name, environment: d.ss.env.Name,
 		step: b.Failure.Step, code: code, err: msg, offline: offline,
 		pulled: apitypes.ReleaseSource(d.rel.Source) != apitypes.SourceUpload,
-		cfg:    d.cfg, exit: cc.exit, pre: d.pre, container: cc.lines,
+		cfg:    d.cfg, exit: cc.exit, pre: d.pre, stalled: d.stalled, container: cc.lines,
 		build: tailFile(c.buildLogPath(d.rel.ID), diagBuildLines),
 	}
 	if in.inHealthCheck() {

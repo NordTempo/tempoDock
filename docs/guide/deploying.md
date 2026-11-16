@@ -253,6 +253,26 @@ one never stopped serving. The release is `failed` with `error` and
 `error_code`: `build_failed`, `health_check_failed` or `deploy_failed`. The
 CLI exits with code 6.
 
+**Every step ends.** A deploy never waits forever: each step that waits
+on something else has a deadline, and one that runs out fails the
+release with the step in its error and diagnosis ("pulling ... didn't
+finish in 30 minutes; deploy again").
+
+| Step | Deadline |
+|---|---|
+| Downloading the source from GitHub (a push) | 10 minutes, before the release exists |
+| Waiting for the platform registry (its images moving, a storage change) | 10 minutes |
+| Waiting for another build on the same builder | as long as a build may run |
+| The build and its push | `[buildkit] timeout_minutes` (30) |
+| Pulling the image | 30 minutes |
+| Starting the container | 5 minutes |
+| The pre-deploy command, the health check | the service's own timeouts |
+
+The registry's cleanup (a prune, which stops the registry while it
+collects unused layers) never holds a build: a build that needs the
+registry stops the collection, and the next prune finishes it. While a
+release waits for the registry or a build slot, its progress says so.
+
 **Why it failed.** Dock keeps a diagnosis of every failed release
 ([ADR 0071](../decisions/0071-deploy-diagnosis.md)), captured as it
 fails: the likely cause from a small set of rules (the app listening on

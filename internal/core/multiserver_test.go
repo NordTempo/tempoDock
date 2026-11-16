@@ -31,6 +31,9 @@ type fakeRegistry struct {
 	// Migrate until it is closed.
 	migrateErr error
 	gate       chan struct{}
+	// gcHangs makes GarbageCollect run until its context ends, like a
+	// collection over a large bucket.
+	gcHangs bool
 }
 
 func (r *fakeRegistry) op(format string, args ...any) {
@@ -64,8 +67,13 @@ func (r *fakeRegistry) Prune(_ context.Context, keep []string) (int, error) {
 	return r.pruned, nil
 }
 
-func (r *fakeRegistry) GarbageCollect(context.Context) error {
+func (r *fakeRegistry) GarbageCollect(ctx context.Context) error {
 	r.op("gc")
+	if r.gcHangs {
+		<-ctx.Done()
+		r.op("gc stopped")
+		return ctx.Err()
+	}
 	return nil
 }
 

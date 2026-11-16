@@ -671,7 +671,11 @@ func (c *Core) makeSBOM(ctx context.Context, row store.ImageScan, srv store.Serv
 	if row.PullRef != "" {
 		if repo, ok := c.inRegistry(row.PullRef); ok {
 			req.PullOptions = node.PullOptions{Token: c.reg.Token("server "+srv.Name, repo, false)}
-			defer c.useRegistry()()
+			release, err := c.useRegistry(ctx)
+			if err != nil {
+				return err
+			}
+			defer release()
 		} else {
 			login, _, err := c.registryLogin(ctx, row.OrgID, row.PullRef)
 			if err != nil {
