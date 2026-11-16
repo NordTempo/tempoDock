@@ -231,10 +231,15 @@ func (r *resolver) value(scope, key string) (string, error) {
 		sub := refRe.FindStringSubmatch(m)
 		refScope, refKey := sub[1], sub[2]
 		where := fmt.Sprintf("variable %s of %s references %s", key, scope, m)
+		// What to do next: fix the value or drop the staged change.
+		fix := fmt.Sprintf("; fix it with `dock env set -s %s %s=...` or drop it with `dock discard %s -s %s`", scope, key, key, scope)
+		if scope == sharedScope {
+			fix = fmt.Sprintf("; fix it with `dock env set --shared %s=...` or drop it with `dock discard %s --shared`", key, key)
+		}
 		vars, ok := r.vars[refScope]
 		if !ok {
 			if firstErr == nil {
-				firstErr = invalid("%s, but there is no service %q in %s", where, refScope, r.env)
+				firstErr = invalid("%s, but there is no service %q in %s%s", where, refScope, r.env, fix)
 			}
 			return ""
 		}
@@ -246,7 +251,7 @@ func (r *resolver) value(scope, key string) (string, error) {
 		}
 		if _, ok := vars[refKey]; !ok {
 			if firstErr == nil {
-				firstErr = invalid("%s, but %s has no variable %s", where, refScope, refKey)
+				firstErr = invalid("%s, but %s has no variable %s%s", where, refScope, refKey, fix)
 			}
 			return ""
 		}

@@ -461,3 +461,17 @@ func TestUnsetUnknownVariable(t *testing.T) {
 		t.Errorf("unset the shared one: %v", err)
 	}
 }
+
+// A broken reference refuses the apply and says how to fix or drop it.
+func TestBrokenReferenceSaysWhatToDo(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	h.wait(web, h.deploy(web, "app:1").Number)
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Set: map[string]string{"BAD": "${{nosuch.KEY}}"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.c.ApplyChanges(h.ctx, testSystem, web.Env())
+	if CodeOf(err) != apitypes.CodeValidation || !strings.Contains(err.Error(), "`dock discard BAD -s web`") {
+		t.Errorf("apply with a broken reference: %v", err)
+	}
+}
