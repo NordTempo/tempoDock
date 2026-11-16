@@ -188,6 +188,15 @@ func TestOrgTemplates(t *testing.T) {
 	if vars["STRIPE_KEY"] != "sk_test_2" || vars["DATABASE_URL"] != "${{api-db.DATABASE_URL}}" {
 		t.Fatalf("staging api variables: %v", vars)
 	}
+	// Saved again from staging, the parts lose the main's prefix and the
+	// reference orders the deploys, as Dock's own templates do.
+	if _, err := h.c.SaveAppTemplateFrom(h.ctx, testSystem, EnvRef{"shop", "staging"}, apitypes.SaveTemplateFromRequest{Name: "shop-again"}); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := h.c.AppTemplateFile(h.ctx, testSystem, "shop-again")
+	if !strings.Contains(again, "name = 'db'") || !strings.Contains(again, "${{db.DATABASE_URL}}") || !strings.Contains(again, "depends_on = ['db']") || strings.Contains(again, "api-db") {
+		t.Fatalf("saved from staging:\n%s", again)
+	}
 
 	if _, err := h.c.SaveAppTemplate(h.ctx, testSystem, apitypes.SaveTemplateRequest{File: strings.Replace(file, "name = 'shop-stack'", "name = 'umami'", 1)}); CodeOf(err) != apitypes.CodeConflict {
 		t.Fatalf("saving over Dock's umami: %v", err)

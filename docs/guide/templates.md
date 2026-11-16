@@ -55,13 +55,14 @@ which its members find first in the picker and use like Dock's:
 ```sh
 dock template save shop-stack -p shop -e production --services api,worker,db
 dock template show umami --toml > stats.toml   # start from one of Dock's
-dock template save --file stats.toml           # the name is in the file
+dock template save --file stats.toml           # after changing its name
 dock template remove shop-stack                # services made from it stay
 ```
 
 In the UI: Project settings, **Save as template…**. Settings, volumes,
-jobs and the references between the services are kept, and database
-templates stay templates. Variables that aren't references become inputs
+jobs and the references between the services are kept, a service
+deploys after those it references, parts named after the main service
+(`shop-db`) lose its name (`db`), and database templates stay templates. Variables that aren't references become inputs
 the form asks for: a template never carries a value someone set. Services
 that build from source can't be in one; deploy them from an image first.
 

@@ -52,7 +52,8 @@ func (c *Core) SaveAppTemplate(ctx context.Context, a Actor, req apitypes.SaveTe
 }
 
 // SaveAppTemplateFrom saves services of an environment as an organization
-// template: their settings, volumes, jobs and references between them.
+// template: their settings, volumes, jobs and references between them
+// (which also order their first deploys).
 // Variables whose values aren't references become inputs the form asks
 // for, as secrets: a template never carries a value someone set. Database
 // templates stay templates and make their own credentials. Needs admin,
@@ -132,12 +133,56 @@ func templateFrom(fe apitypes.EnvironmentExport, ref EnvRef, req apitypes.SaveTe
 	}
 	i := slices.IndexFunc(fe.Services, func(s apitypes.ServiceExport) bool { return s.Name == t.Main })
 	t.Domain = len(fe.Services[i].Domains) > 0
+	parts := partNames(t.Main, pick)
 	for i, in := range t.Inputs {
+		t.Inputs[i].Service = parts[in.Service]
 		if in.Service == t.Main {
 			t.Inputs[i].Service = ""
 		}
 	}
+	for i := range t.Services {
+		dependOnReferences(&t.Services[i], parts)
+	}
 	return t, nil
+}
+
+// partNames maps the saved services' names to their names in the
+// template: a part named after the main the way using a template names
+// it (MAIN-db) is saved as db, so using it under another name doesn't
+// carry this one's prefix. A part whose short name another saved service
+// has keeps its name.
+func partNames(main string, pick []string) map[string]string {
+	out := map[string]string{}
+	for _, name := range pick {
+		out[name] = name
+		if part, ok := strings.CutPrefix(name, main+"-"); ok && part != "" && !slices.Contains(pick, part) {
+			out[name] = part
+		}
+	}
+	return out
+}
+
+// dependOnReferences renames a saved service and its references to the
+// template's part names, and has it depend on the parts it references,
+// so using the template deploys them first: an export carries no
+// depends_on (it isn't stored), but a reference says the same.
+func dependOnReferences(s *apptemplates.Service, parts map[string]string) {
+	s.Name = parts[s.Name]
+	s.DependsOn = nil
+	for k, v := range s.Values {
+		s.Values[k] = refRe.ReplaceAllStringFunc(v, func(m string) string {
+			sub := refRe.FindStringSubmatch(m)
+			part, ok := parts[sub[1]]
+			if !ok {
+				return m
+			}
+			if part != s.Name && !slices.Contains(s.DependsOn, part) {
+				s.DependsOn = append(s.DependsOn, part)
+			}
+			return "${{" + part + "." + sub[2] + "}}"
+		})
+	}
+	slices.Sort(s.DependsOn)
 }
 
 // saveOrgTemplate stores a checked template under its name, raising the
