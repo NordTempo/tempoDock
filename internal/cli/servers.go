@@ -478,7 +478,7 @@ already on the server stay where they are.`,
 	f.BoolVar(&enable, "enable-placement", false, "take new placements again")
 	f.BoolVar(&builder, "builder", false, "build images here")
 	f.BoolVar(&noBuilder, "no-builder", false, "stop building images here")
-	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<project>[-<env>].<base>; needs wildcard DNS to this server")
+	f.StringVar(&baseDomain, "base-domain", "", "base of generated hostnames, <service>-<project>[-<env>]-<random>.<base>; needs wildcard DNS to this server")
 	return cmd
 }
 

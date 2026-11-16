@@ -465,14 +465,13 @@ func (c *Core) EnableHostnameAnalytics(ctx context.Context, a Actor, hostname st
 // createSite makes a live site in an environment of a project, named
 // name or, when the project has a live site called that, name-2, name-3:
 // site names are unique in their project, as they address the site. Its
-// public dashboard address is its name's, suffixed the same way when
-// another site, in any org, holds that.
+// public dashboard address is stats-<name>-<random> (newPublicSlug).
 func (c *Core) createSite(ctx context.Context, q *store.Queries, projectID, envID int64, name, by string, t time.Time) (store.Site, error) {
 	name, err := freeSiteName(ctx, q, projectID, name)
 	if err != nil {
 		return store.Site{}, err
 	}
-	slug, err := freePublicSlug(ctx, q, 0, publicSlug(name))
+	slug, err := newPublicSlug(ctx, q, name)
 	if err != nil {
 		return store.Site{}, err
 	}
@@ -725,10 +724,9 @@ func (c *Core) siteDomainAdded(ctx context.Context, a Actor, ss svcScope, host, 
 	return !keepHere || site.EnvironmentID != ss.env.ID, nil
 }
 
-// UpdateSite renames a site or changes its settings. A new name moves
-// its public dashboard address to the name's, suffixed -2, -3 when
-// another site, in any org, holds that one (as createSite does), so a
-// rename never takes another site's address or says that one exists.
+// UpdateSite renames a site or changes its settings. Its public
+// dashboard address stays as it was made (ADR 0087), so a link to it
+// keeps working.
 func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, req apitypes.UpdateSiteRequest) (apitypes.Site, error) {
 	s, err := c.loadSite(ctx, a, project, name, apitypes.ScopeDeploy, "changing a site")
 	if err != nil {
@@ -769,17 +767,7 @@ func (c *Core) UpdateSite(ctx context.Context, a Actor, project, name string, re
 		if newName == s.site.Name {
 			return nil
 		}
-		if err := q.RenameSite(ctx, store.RenameSiteParams{Name: newName, ID: s.site.ID}); err != nil {
-			return err
-		}
-		if publicSlug(newName) == publicSlug(s.site.Name) {
-			return nil
-		}
-		slug, err := freePublicSlug(ctx, q, s.site.ID, publicSlug(newName))
-		if err != nil {
-			return err
-		}
-		return q.SetSitePublicSlug(ctx, store.SetSitePublicSlugParams{PublicSlug: &slug, ID: s.site.ID})
+		return q.RenameSite(ctx, store.RenameSiteParams{Name: newName, ID: s.site.ID})
 	})
 	if err != nil {
 		return apitypes.Site{}, err

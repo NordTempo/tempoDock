@@ -144,7 +144,7 @@ type SiteSettings struct {
 	ErrorRetentionDays  *int      `json:"error_retention_days,omitempty" minimum:"1" maximum:"3650"`
 	ExcludedPaths       *[]string `json:"excluded_paths,omitempty" maxItems:"50" doc:"Paths not counted; * matches any run of characters"`
 	IgnoredIPs          *[]string `json:"ignored_ips,omitempty" maxItems:"50" doc:"Addresses or CIDR ranges whose visits aren't counted"`
-	Public              *bool     `json:"public,omitempty" doc:"A public, read-only dashboard (phase A4): at stats-<site>.<base domain> and public_domain"`
+	Public              *bool     `json:"public,omitempty" doc:"A public, read-only dashboard (phase A4): at stats-<site>-<random>.<base domain> and public_domain"`
 	PublicDomain        *string   `json:"public_domain,omitempty" maxLength:"253" doc:"A domain of your own for the public dashboard, e.g. stats.example.com; empty for none. Per site, not a default"`
 	PublicErrors        *bool     `json:"public_errors,omitempty" doc:"Show error groups (type, message, count; no stack traces) on the public dashboard"`
 }

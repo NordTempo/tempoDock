@@ -94,15 +94,19 @@ dock domain list --json     # everything, machine-readable
 dock domain generate
 ```
 
-Gives the service `<service>-<project>[-<environment>].<base_domain>`
+Gives the service `<service>-<project>[-<environment>]-<random>.<base_domain>`
 instantly, with no DNS work. The environment part is left out for
-`production`; `-2`, `-3`, ... are added on collisions. Examples with
-`base_domain = "apps.example.com"`:
+`production`. The random part (7 characters) keeps others from finding
+your services by guessing names ([ADR 0087](../decisions/0087-unguessable-generated-hostnames.md));
+it is made once, so redeploys, renames and moves between servers with the
+same base domain keep the hostname. Hostnames generated before it keep
+working unchanged; to swap one for an unguessable one, generate a new
+domain and remove the old. Examples with `base_domain = "apps.example.com"`:
 
 | Service | Generated |
 |---|---|
-| `web` in `shop/production` | `web-shop.apps.example.com` |
-| `web` in `shop/staging` | `web-shop-staging.apps.example.com` |
+| `web` in `shop/production` | `web-shop-k7m2q9x.apps.example.com` |
+| `web` in `shop/staging` | `web-shop-staging-p4fz2ma.apps.example.com` |
 
 Needs `base_domain` in the server's `config.toml` and one wildcard record,
 `*.apps.example.com A <public_ip>`. Without it the command fails with a hint

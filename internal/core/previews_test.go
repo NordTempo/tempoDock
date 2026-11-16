@@ -209,7 +209,8 @@ func TestPreviewLifecycle(t *testing.T) {
 		pv, err = h.c.GetPreview(h.ctx, testSystem, EnvRef{"shop", "pr-7"})
 		return err == nil && pv.Status == apitypes.PreviewLive
 	})
-	if len(pv.URLs) != 1 || pv.URLs[0] != (apitypes.PreviewURL{Service: "web", URL: "https://web-shop-pr-7.apps.test"}) {
+	host := h.generatedHost(ServiceRef{"shop", "pr-7", "web"})
+	if len(pv.URLs) != 1 || pv.URLs[0] != (apitypes.PreviewURL{Service: "web", URL: "https://" + host}) || !generatedLike("web-shop-pr-7", "apps.test").MatchString(host) {
 		t.Fatalf("preview %+v", pv)
 	}
 	// A project file leaves it out: pull requests make previews.
@@ -217,12 +218,12 @@ func TestPreviewLifecycle(t *testing.T) {
 		t.Fatalf("export: %+v, %v", ex.Environments, err)
 	}
 	waitFor(t, func() bool { return strings.Contains(pc.only(t), "**live**") })
-	if body := pc.only(t); !strings.Contains(body, "https://web-shop-pr-7.apps.test") || !strings.Contains(body, "sleeps after 30 min without traffic") {
+	if body := pc.only(t); !strings.Contains(body, "https://"+host) || !strings.Contains(body, "sleeps after 30 min without traffic") {
 		t.Fatalf("comment %q", body)
 	}
 	waitFor(t, func() bool {
 		st, _, _ := gh.seen()
-		return slices.Contains(st, "aaaaaaa success dock/preview https://web-shop-pr-7.apps.test")
+		return slices.Contains(st, "aaaaaaa success dock/preview https://"+host)
 	})
 
 	// A redelivery, and a late event older than the last one applied,
@@ -252,7 +253,7 @@ func TestPreviewLifecycle(t *testing.T) {
 	if slices.ContainsFunc(envs, func(e apitypes.Environment) bool { return strings.HasPrefix(e.Name, "pr-") }) {
 		t.Fatalf("closed preview listed: %+v", envs)
 	}
-	if exists, _ := h.store.HostnameExists(h.ctx, "web-shop-pr-7.apps.test"); exists {
+	if exists, _ := h.store.HostnameExists(h.ctx, host); exists {
 		t.Fatal("the preview's hostname is still taken")
 	}
 	var left int

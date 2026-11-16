@@ -532,10 +532,25 @@ func TestMoveKeepsOneGeneratedDomainPerServer(t *testing.T) {
 		}
 		return m
 	}
-	both := []string{"web-shop-staging.cp.example.dev", "web-shop-staging.lab.example.dev"}
+	// One under each base, kept from the first move on: moving back and
+	// forth never makes a new hostname.
+	var both []string
+	var onCP string
 	for i, to := range []string{cp, "homelab", cp} {
 		m := move(to)
-		if got := generated(); !slices.Equal(got, both) {
+		got := generated()
+		if i == 0 {
+			both = got
+			for _, host := range got {
+				if generatedLike("web-shop-staging", "cp.example.dev").MatchString(host) {
+					onCP = host
+				}
+			}
+			if len(got) != 2 || onCP == "" || !slices.ContainsFunc(got, generatedLike("web-shop-staging", "lab.example.dev").MatchString) {
+				t.Fatalf("after move 1: generated domains %v, want one under each base", got)
+			}
+		}
+		if !slices.Equal(got, both) {
 			t.Fatalf("after move %d (to %s): generated domains %v, want %v", i+1, to, got, both)
 		}
 		if notes := strings.Join(m.Notes, "\n"); strings.Contains(notes, "point the DNS of web-shop-staging") {
@@ -545,7 +560,7 @@ func TestMoveKeepsOneGeneratedDomainPerServer(t *testing.T) {
 	if err := p.c.RemoveServer(p.ctx, testSystem, "homelab"); err != nil {
 		t.Fatal(err)
 	}
-	if got := generated(); !slices.Equal(got, both[:1]) {
-		t.Fatalf("after removing homelab: generated domains %v, want %v", got, both[:1])
+	if got := generated(); !slices.Equal(got, []string{onCP}) {
+		t.Fatalf("after removing homelab: generated domains %v, want %v", got, onCP)
 	}
 }

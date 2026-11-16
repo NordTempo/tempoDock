@@ -1255,7 +1255,7 @@ type Server struct {
 	TunnelHostname string   `json:"tunnel_hostname,omitempty" doc:"CNAME target of its Cloudflare tunnel"`
 	DockerVersion  string   `json:"docker_version,omitempty"`
 	// BaseDomain is the base of generated hostnames for environments on
-	// this server: <service>-<project>[-<env>].<base_domain>.
+	// this server: <service>-<project>[-<env>]-<random>.<base_domain>.
 	BaseDomain string `json:"base_domain"`
 	// AcceptsProduction and AcceptsNonProduction say which environment
 	// kinds may be placed here.

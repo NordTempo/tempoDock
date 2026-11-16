@@ -15,7 +15,8 @@ import (
 )
 
 // Public dashboards (ADR 0037, phase A4). A site with its public setting
-// on has a read-only dashboard at stats-<site>.<base domain> and at its
+// on has a read-only dashboard at stats-<site>-<random>.<base domain>
+// (newPublicSlug; sites from before ADR 0087 lack the random part) and at its
 // own public_domain, if set. Both are one live site's across every org
 // (unique indexes), so no org can take or shadow another's. The control
 // plane's Caddy routes those hostnames to [analytics] stats_listen, a
@@ -37,8 +38,8 @@ type publicIndex struct {
 
 // publicSlug is a site's name as a hostname label: "shop.example.com" is
 // "shop-example-com", and a name with no letters or digits is "site". A
-// site holds its label (sites.public_slug), unique across every org, so
-// its address is its own: see freePublicSlug.
+// site holds its address's label (sites.public_slug), unique across every
+// org, so its address is its own: see newPublicSlug.
 func publicSlug(name string) string {
 	var b strings.Builder
 	dash := false
@@ -61,9 +62,25 @@ func publicSlug(name string) string {
 	return slug
 }
 
+// newPublicSlug is a new site's address label: its name's and a random
+// part (ADR 0087), so nobody finds a dashboard by guessing a site's name.
+// It is fixed from then on; a rename keeps it.
+func newPublicSlug(ctx context.Context, q *store.Queries, name string) (string, error) {
+	for range hostKeyTries {
+		slug := strings.TrimPrefix(hostLabel("stats-"+publicSlug(name), newHostKey()), "stats-")
+		switch _, err := q.PublicSlugHolder(ctx, &slug); {
+		case store.IsNotFound(err):
+			return slug, nil
+		case err != nil:
+			return "", err
+		}
+	}
+	return "", conflict("no free dashboard address after %d tries; try again", hostKeyTries)
+}
+
 // freePublicSlug is slug, or slug-2, slug-3..., whichever no live site
-// but siteID (0 for one being made) holds in any org: a site made, or
-// given an address from before they were stored, never takes another's.
+// but siteID holds in any org: a site given the address it had before
+// addresses were stored (assignPublicSlugs) never takes another's.
 func freePublicSlug(ctx context.Context, q *store.Queries, siteID int64, slug string) (string, error) {
 	for i := 1; ; i++ {
 		candidate := slug
