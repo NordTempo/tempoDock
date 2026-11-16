@@ -5,8 +5,9 @@ without being able to break or destroy things.
 
 The model: the agent gets a **scoped API token**, never SSH or Docker access.
 `dock login` in the browser is for people at a terminal; it gives the CLI
-your own, unlimited access. Agents get their own token, limited to what
-they deploy.
+your own access, as much of it as your agent setting lets your agents use
+(see [Your agents](#your-agents)). Agents of the organization get their
+own token, limited to what they deploy.
 Every rule is enforced by the daemon, not by the agent behaving. The worst
 outcome of a bad deploy is a failed release that never got traffic.
 
@@ -38,6 +39,32 @@ is shown once. Pick the narrowest fit:
 
 Tokens are stored hashed, show `last_used_at`, and can be revoked any time:
 `dock token list`, `dock token revoke <id>`.
+
+A token is an agent of the organization: its scope and limit are grants
+(its scope's roles at its limit's place), which an admin can widen, end
+or add to by putting it in groups, like a person:
+
+```sh
+dock token access claude-shop-staging                       # its grants and groups
+dock token grant claude-shop-staging logs:view -p shop      # read shop's logs too
+dock group add Triage claude-shop-staging --agent           # what Triage gives
+dock grant revoke 42                                        # end a grant
+```
+
+They decide while the platform's permission model does (`dock platform
+access-model enforce`); until then its scope and limit do.
+
+### The organization's agent rules
+
+Admins cap every agent of the organization, people's and its own, in
+Settings › Agent rules or with `dock agent rule`, and can make their
+changes somewhere wait for an approver:
+
+```sh
+dock agent rule data=propose --kinds production        # no agent writes production data
+dock agent rule deploy=all --kinds production --ask    # agents' production deploys wait for an approver
+dock token bypass ci on                                # but this CI token
+```
 
 ## 2. Give it to the agent
 
@@ -232,6 +259,32 @@ $ dock request wait 12
   An admin can also open the environment for a while instead.
 - Data panel changes in a locked environment are changesets for an admin
   to approve, as on production.
+
+## Your agents
+
+An agent that runs with your `dock login` (Claude Code at your terminal)
+acts for you: it can do what you can, as you are now, and no more. On
+your Account page, or with `dock agent`, you decide how much of that your
+agents may use, per area role and environment kind, and where they ask
+you first:
+
+```sh
+dock agent settings                                   # each area's level per kind
+dock agent set deploy=view --kinds production         # look, don't touch, in production
+dock agent set deploy=edit --kinds production --ask   # or: ask me first
+dock agent set data=off                               # no Data panel at all
+dock agent set logs=view --agent 42                   # narrow one agent only
+```
+
+- With no setting, agents may use everything you have but approving.
+- An agent may tighten its setting itself; loosening it takes you, signed
+  in on the Account page.
+- A change where you asked to be asked becomes an access request that
+  only you decide, in the Inbox: `setting variables in shop/production
+  waits for ada@example.com's approval as access request #12`. Approved,
+  it runs as the agent.
+- This applies while the platform's permission model decides
+  (`dock platform access-model enforce`); until then your role does.
 
 ## What a `deploy` token can and can't do
 

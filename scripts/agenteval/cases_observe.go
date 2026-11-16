@@ -103,8 +103,11 @@ func observeCases() []Case {
 			},
 		},
 		{
+			// The day is a date in the prompt, not "tomorrow": the agent
+			// reads tomorrow in its own time zone, the check in UTC, and
+			// they differ for an hour every night.
 			Name:   "schedule-maintenance",
-			Prompt: "Schedule maintenance on the acme status page for the API component: tomorrow from 02:00 to 03:00 UTC, for a database upgrade.",
+			Prompt: "Schedule maintenance on the acme status page for the API component: on " + maintenanceDay + " from 02:00 to 03:00 UTC, for a database upgrade.",
 			Token:  TokenSpec{AllEnvs: true},
 			Setup:  seedStatusPage,
 			Check: func(w *World, _ Transcript) error {
@@ -112,11 +115,10 @@ func observeCases() []Case {
 				if err != nil {
 					return err
 				}
-				tomorrow := time.Now().UTC().Add(24 * time.Hour).Format("2006-01-02")
 				return expect(slices.ContainsFunc(in, func(i apitypes.StatusIncident) bool {
-					return i.Kind == apitypes.KindMaintenance && i.StartedAt.UTC().Format("2006-01-02T15") == tomorrow+"T02" &&
+					return i.Kind == apitypes.KindMaintenance && i.StartedAt.UTC().Format("2006-01-02T15") == maintenanceDay+"T02" &&
 						i.EndsAt != nil && i.EndsAt.UTC().Format("15:04") == "03:00"
-				}), "no maintenance tomorrow 02:00-03:00 UTC: %+v", in)
+				}), "no maintenance on %s 02:00-03:00 UTC: %+v", maintenanceDay, in)
 			},
 		},
 	}
@@ -292,3 +294,7 @@ func incidents(w *World) ([]apitypes.StatusIncident, error) {
 	p, err := get[apitypes.StatusPage](w.daemon, "/status-pages/acme")
 	return p.Incidents, err
 }
+
+// maintenanceDay is the schedule-maintenance case's day, two days ahead
+// in UTC when the run starts, so prompt and check agree on it.
+var maintenanceDay = time.Now().UTC().AddDate(0, 0, 2).Format("2006-01-02")

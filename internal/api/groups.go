@@ -72,6 +72,84 @@ func registerGroups(s *Server, a huma.API) {
 		return nil, s.core.DeleteRole(ctx, actor, in.Role)
 	})
 	authed(s, a, huma.Operation{
+		OperationID: "get-agent-settings", Method: http.MethodGet, Path: Prefix + "/me/agent-settings",
+		Summary: "What your agents may do", Tags: tags,
+		Description: "ADR 0080: what your `dock login` tokens may use of your access in this organization, per area role and environment kind, and where they ask you first. agent 0 is all of them; an agent's ID its own narrowing.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Agent int64 `query:"agent" doc:"One agent's narrowing; 0 or none for all your agents"`
+	}) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.AgentSettings(ctx, actor, in.Agent))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-agent-settings", Method: http.MethodPut, Path: Prefix + "/me/agent-settings",
+		Summary: "Change what your agents may do", Tags: tags,
+		Description: "The cells given replace theirs. An agent may tighten its setting; loosening needs you signed in, recently.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AgentSettings }) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.SetAgentSettings(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "agent-access", Method: http.MethodGet, Path: Prefix + "/tokens/{token}/access",
+		Summary: "An org agent's grants and groups", Tags: tags,
+		Description: "ADR 0080: an organization's token is an org agent; its scope and limit became grants, and admins add more or put it in groups. token is its name or ID. Needs agents.manage.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Token string `path:"token" doc:"The token's name or ID"`
+	}) (*out[apitypes.AgentAccess], error) {
+		return reply(s.core.AgentAccess(ctx, actor, in.Token))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "grant-agent", Method: http.MethodPost, Path: Prefix + "/tokens/{token}/grants",
+		Summary: "Give an org agent a role at a place", Tags: tags,
+		Description: "Beside what its groups give. End it like any grant (DELETE /grants/{id}). Needs agents.manage, with a recent sign-in in the browser.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Token string `path:"token" doc:"The token's name or ID"`
+		Body  apitypes.GrantRequest
+	}) (*out[apitypes.AgentAccess], error) {
+		return reply(s.core.GrantAgent(ctx, actor, in.Token, in.Body))
+	})
+	for _, op := range []struct {
+		id, method, summary string
+		in                  bool
+	}{
+		{"add-group-agent", http.MethodPut, "Put an org agent in a group", true},
+		{"remove-group-agent", http.MethodDelete, "Take an org agent out of a group", false},
+	} {
+		authed(s, a, huma.Operation{
+			OperationID: op.id, Method: op.method, Path: Prefix + "/groups/{group}/agents/{token}",
+			Summary: op.summary, Tags: tags, Description: "token is the agent's name or ID. Needs members.manage.",
+		}, func(ctx context.Context, actor core.Actor, in *struct {
+			GroupPath
+			Token string `path:"token" doc:"The token's name or ID"`
+		}) (*out[apitypes.Group], error) {
+			return reply(s.core.SetGroupAgent(ctx, actor, in.Group, in.Token, op.in))
+		})
+	}
+	authed(s, a, huma.Operation{
+		OperationID: "get-agent-rules", Method: http.MethodGet, Path: Prefix + "/agent-rules",
+		Summary: "The organization's agent rules", Tags: tags,
+		Description: "ADR 0080: per area role and environment kind, the most any agent (a person's `dock login` or one of the organization's tokens) may use, and whether its changes there ask an approver first. all is no rule. Needs members.read.",
+	}, func(ctx context.Context, actor core.Actor, _ *struct{}) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.AgentRules(ctx, actor))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-agent-rules", Method: http.MethodPut, Path: Prefix + "/agent-rules",
+		Summary: "Change the organization's agent rules", Tags: tags,
+		Description: "The cells given replace theirs; every agent's next request follows them, but tokens that bypass them. Needs agents.manage, with a recent sign-in in the browser.",
+	}, func(ctx context.Context, actor core.Actor, in *struct{ Body apitypes.AgentSettings }) (*out[apitypes.AgentSettings], error) {
+		return reply(s.core.SetAgentRules(ctx, actor, in.Body))
+	})
+	authed(s, a, huma.Operation{
+		OperationID: "set-agent-rules-bypass", Method: http.MethodPut, Path: Prefix + "/tokens/{token}/rules-bypass",
+		Summary: "Exempt an org agent from the agent rules, or stop", Tags: tags,
+		Description: "For a trusted token (CI). Needs agents.manage, with a recent sign-in in the browser.",
+	}, func(ctx context.Context, actor core.Actor, in *struct {
+		Token string `path:"token" doc:"The token's name or ID"`
+		Body  struct {
+			Bypass bool `json:"bypass"`
+		}
+	}) (*out[apitypes.AgentAccess], error) {
+		return reply(s.core.SetAgentRulesBypass(ctx, actor, in.Token, in.Body.Bypass))
+	})
+	authed(s, a, huma.Operation{
 		OperationID: "list-groups", Method: http.MethodGet, Path: Prefix + "/groups",
 		Summary: "List groups", Tags: tags,
 		Description: "The organization's groups with their members and grants. Needs members.read.",

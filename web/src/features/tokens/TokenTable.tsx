@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRevokeToken } from "../../data/mutations";
 import { useIsAdmin, useIsOperator } from "../../data/queries";
 import type { Token } from "../../data/types";
@@ -7,6 +7,7 @@ import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
 import { Icon } from "../../ui/icons";
 import { Actor, actorKind, Confirm, Menu, menuItem, Panel } from "../../ui/kit";
+import { AgentAccess } from "../access/AgentAccess";
 import { useSaveTokenData } from "../data/dockPolicy";
 import {
   TokenDataEditor,
@@ -90,6 +91,7 @@ function TokenRow({
   const operator = useIsOperator();
   const [confirming, setConfirming] = useState(false);
   const [editingData, setEditingData] = useState(false);
+  const [access, setAccess] = useState(false);
   const saveData = useSaveTokenData();
   const expired =
     !!token.expires_at && Date.parse(token.expires_at) < Date.now();
@@ -170,6 +172,20 @@ function TokenRow({
             >
               {(close) => (
                 <>
+                  {admin && !dead && token.origin === "manual" && (
+                    <button
+                      type="button"
+                      className={menuItem}
+                      role="menuitem"
+                      title={`dock token access ${token.name}`}
+                      onClick={() => {
+                        close();
+                        setAccess(!access);
+                      }}
+                    >
+                      Grants and groups
+                    </button>
+                  )}
                   {admin && !dead && (
                     <button
                       type="button"
@@ -229,6 +245,15 @@ function TokenRow({
           </div>
         </td>
       </tr>
+      {access && (
+        <tr>
+          <td colSpan={mine ? 6 : 7}>
+            <Suspense fallback={<p className="text-faint">Loading</p>}>
+              <AgentAccess id={token.id} name={token.name} />
+            </Suspense>
+          </td>
+        </tr>
+      )}
       {editingData && (
         <tr>
           <td colSpan={mine ? 6 : 7}>

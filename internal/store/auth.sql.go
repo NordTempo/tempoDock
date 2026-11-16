@@ -54,7 +54,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (i
 const createToken = `-- name: CreateToken :one
 INSERT INTO tokens (name, hash, scope, org_id, operator, platform, project_id, environment_id, created_by, user_id, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform
+RETURNING id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass
 `
 
 type CreateTokenParams struct {
@@ -107,6 +107,9 @@ func (q *Queries) CreateToken(ctx context.Context, arg CreateTokenParams) (Token
 		&i.Operator,
 		&i.TwoFactor,
 		&i.Platform,
+		&i.Granted,
+		&i.OwnGrants,
+		&i.RulesBypass,
 	)
 	return i, err
 }
@@ -203,6 +206,49 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 	return err
 }
 
+const getOrgTokenByName = `-- name: GetOrgTokenByName :one
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass FROM tokens WHERE org_id = +?1 AND name = ?2 AND revoked_at IS NULL AND origin = 'manual'
+ORDER BY id DESC LIMIT 1
+`
+
+type GetOrgTokenByNameParams struct {
+	OrgID *int64
+	Name  string
+}
+
+// GetOrgTokenByName is an org's active manual token by name, the newest
+// when several share it.
+func (q *Queries) GetOrgTokenByName(ctx context.Context, arg GetOrgTokenByNameParams) (Token, error) {
+	row := q.db.QueryRowContext(ctx, getOrgTokenByName, arg.OrgID, arg.Name)
+	var i Token
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Hash,
+		&i.Scope,
+		&i.ProjectID,
+		&i.EnvironmentID,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+		&i.Origin,
+		&i.DataProduction,
+		&i.DataNonProduction,
+		&i.DataSensitive,
+		&i.UserID,
+		&i.OrgID,
+		&i.Operator,
+		&i.TwoFactor,
+		&i.Platform,
+		&i.Granted,
+		&i.OwnGrants,
+		&i.RulesBypass,
+	)
+	return i, err
+}
+
 const getSessionUser = `-- name: GetSessionUser :one
 SELECT users.id, users.email, users.name, users.password_hash, users.created_at, users.disabled_at, users.factor_failures, users.factor_failed_at, users.email_requests, users.platform_role, users.email_proven, sessions.id, sessions.user_id, sessions.hash, sessions.created_at, sessions.expires_at, sessions.factor, sessions.pending, sessions.attempts, sessions.verified_at, sessions.sso_provider_id, sessions.legacy_cookie, sso_providers.name AS sso_name, sso_providers.label AS sso_label
 FROM sessions JOIN users ON users.id = sessions.user_id
@@ -252,7 +298,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, hash string) (GetSessionUs
 }
 
 const getToken = `-- name: GetToken :one
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform FROM tokens WHERE id = +?
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass FROM tokens WHERE id = +?
 `
 
 func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
@@ -279,12 +325,15 @@ func (q *Queries) GetToken(ctx context.Context, id int64) (Token, error) {
 		&i.Operator,
 		&i.TwoFactor,
 		&i.Platform,
+		&i.Granted,
+		&i.OwnGrants,
+		&i.RulesBypass,
 	)
 	return i, err
 }
 
 const getTokenByHash = `-- name: GetTokenByHash :one
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, users.email AS user_email, users.platform_role AS user_platform_role,
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass, users.email AS user_email, users.platform_role AS user_platform_role,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.hash = +?
@@ -326,6 +375,9 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 		&i.Token.Operator,
 		&i.Token.TwoFactor,
 		&i.Token.Platform,
+		&i.Token.Granted,
+		&i.Token.OwnGrants,
+		&i.Token.RulesBypass,
 		&i.UserEmail,
 		&i.UserPlatformRole,
 		&i.UserDisabledAt,
@@ -336,7 +388,7 @@ func (q *Queries) GetTokenByHash(ctx context.Context, hash string) (GetTokenByHa
 }
 
 const getTokenByIDWithOwner = `-- name: GetTokenByIDWithOwner :one
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, users.email AS user_email, users.platform_role AS user_platform_role,
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass, users.email AS user_email, users.platform_role AS user_platform_role,
     users.disabled_at AS user_disabled_at, orgs.slug AS org_slug, orgs.suspended_at AS org_suspended_at
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE tokens.id = +?
@@ -377,6 +429,9 @@ func (q *Queries) GetTokenByIDWithOwner(ctx context.Context, id int64) (GetToken
 		&i.Token.Operator,
 		&i.Token.TwoFactor,
 		&i.Token.Platform,
+		&i.Token.Granted,
+		&i.Token.OwnGrants,
+		&i.Token.RulesBypass,
 		&i.UserEmail,
 		&i.UserPlatformRole,
 		&i.UserDisabledAt,
@@ -502,9 +557,9 @@ func (q *Queries) ListOrgMembers(ctx context.Context, arg ListOrgMembersParams) 
 }
 
 const listOrgTokens = `-- name: ListOrgTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform FROM tokens WHERE tokens.org_id = +?1
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass FROM tokens WHERE tokens.org_id = +?1
 UNION ALL
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass FROM org_members JOIN tokens ON tokens.user_id = org_members.user_id
 WHERE org_members.org_id = +?1 AND tokens.origin = 'cli_login' AND tokens.platform IS NULL
 `
 
@@ -540,6 +595,9 @@ func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, err
 			&i.Operator,
 			&i.TwoFactor,
 			&i.Platform,
+			&i.Granted,
+			&i.OwnGrants,
+			&i.RulesBypass,
 		); err != nil {
 			return nil, err
 		}
@@ -555,7 +613,7 @@ func (q *Queries) ListOrgTokens(ctx context.Context, orgID *int64) ([]Token, err
 }
 
 const listPlatformTokens = `-- name: ListPlatformTokens :many
-SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, users.email AS user_email, orgs.slug AS org_slug
+SELECT tokens.id, tokens.name, tokens.hash, tokens.scope, tokens.project_id, tokens.environment_id, tokens.created_by, tokens.created_at, tokens.expires_at, tokens.last_used_at, tokens.revoked_at, tokens.origin, tokens.data_production, tokens.data_non_production, tokens.data_sensitive, tokens.user_id, tokens.org_id, tokens.operator, tokens.two_factor, tokens.platform, tokens.granted, tokens.own_grants, tokens.rules_bypass, users.email AS user_email, orgs.slug AS org_slug
 FROM tokens LEFT JOIN users ON users.id = tokens.user_id LEFT JOIN orgs ON orgs.id = tokens.org_id
 WHERE (tokens.platform IS NOT NULL OR tokens.operator) AND tokens.revoked_at IS NULL
 ORDER BY tokens.id DESC
@@ -601,6 +659,9 @@ func (q *Queries) ListPlatformTokens(ctx context.Context) ([]ListPlatformTokensR
 			&i.Token.Operator,
 			&i.Token.TwoFactor,
 			&i.Token.Platform,
+			&i.Token.Granted,
+			&i.Token.OwnGrants,
+			&i.Token.RulesBypass,
 			&i.UserEmail,
 			&i.OrgSlug,
 		); err != nil {
@@ -618,7 +679,7 @@ func (q *Queries) ListPlatformTokens(ctx context.Context) ([]ListPlatformTokensR
 }
 
 const listUserTokens = `-- name: ListUserTokens :many
-SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform FROM tokens WHERE user_id = +?1
+SELECT id, name, hash, scope, project_id, environment_id, created_by, created_at, expires_at, last_used_at, revoked_at, origin, data_production, data_non_production, data_sensitive, user_id, org_id, operator, two_factor, platform, granted, own_grants, rules_bypass FROM tokens WHERE user_id = +?1
     AND (origin = 'cli_login' OR org_id = +?2)
 ORDER BY id
 `
@@ -660,6 +721,9 @@ func (q *Queries) ListUserTokens(ctx context.Context, arg ListUserTokensParams) 
 			&i.Operator,
 			&i.TwoFactor,
 			&i.Platform,
+			&i.Granted,
+			&i.OwnGrants,
+			&i.RulesBypass,
 		); err != nil {
 			return nil, err
 		}

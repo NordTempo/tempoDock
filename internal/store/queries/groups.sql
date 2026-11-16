@@ -56,8 +56,8 @@ WHERE groups.org_id = +?
 ORDER BY users.email;
 
 -- name: CreateGrant :one
-INSERT INTO grants (org_id, group_id, user_id, role, role_id, project_id, environment_id, kinds, expires_at, via, granted_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO grants (org_id, group_id, user_id, token_id, role, role_id, project_id, environment_id, kinds, expires_at, via, granted_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetGrant :one
@@ -157,3 +157,44 @@ SELECT grants.role_id, groups.name AS group_name, users.email AS user_email FROM
 LEFT JOIN groups ON groups.id = grants.group_id
 LEFT JOIN users ON users.id = grants.user_id
 WHERE grants.org_id = +sqlc.arg(org_id) AND grants.role_id IS NOT NULL;
+
+-- ListTokenGrants is what an org agent holds: its own grants and its
+-- groups', through grants_token, group_agents and grants_group. Every
+-- request of an org token runs it.
+-- name: ListTokenGrants :many
+SELECT grants.role, roles.parts, grants.project_id, grants.environment_id, grants.kinds FROM grants
+LEFT JOIN roles ON roles.id = grants.role_id
+WHERE grants.token_id = +sqlc.arg(token_id)
+  AND (grants.expires_at IS NULL OR grants.expires_at > +sqlc.arg(now))
+UNION ALL
+SELECT grants.role, roles.parts, grants.project_id, grants.environment_id, grants.kinds FROM group_agents
+JOIN grants ON grants.group_id = group_agents.group_id
+LEFT JOIN roles ON roles.id = grants.role_id
+WHERE group_agents.token_id = +sqlc.arg(token_id)
+  AND (grants.expires_at IS NULL OR grants.expires_at > +sqlc.arg(now));
+
+-- ListTokensToGrant is the org tokens whose scope and limit aren't grants
+-- yet, for the core to turn them into grants at start.
+-- name: ListTokensToGrant :many
+SELECT * FROM tokens
+WHERE granted = 0 AND origin = 'manual' AND platform IS NULL AND org_id IS NOT NULL AND revoked_at IS NULL;
+
+-- name: SetTokenGranted :exec
+UPDATE tokens SET granted = 1 WHERE id = +?;
+
+-- name: SetTokenOwnGrants :exec
+UPDATE tokens SET own_grants = 1 WHERE id = +?;
+
+-- name: AddGroupAgent :exec
+INSERT INTO group_agents (group_id, token_id) VALUES (?, ?) ON CONFLICT DO NOTHING;
+
+-- name: RemoveGroupAgent :execrows
+DELETE FROM group_agents WHERE group_id = +? AND token_id = +?;
+
+-- ListGroupAgents is every org agent in the org's groups, by name.
+-- name: ListGroupAgents :many
+SELECT group_agents.group_id, tokens.id AS token_id, tokens.name FROM groups
+JOIN group_agents ON group_agents.group_id = groups.id
+JOIN tokens ON tokens.id = group_agents.token_id
+WHERE groups.org_id = +? AND tokens.revoked_at IS NULL
+ORDER BY tokens.name;

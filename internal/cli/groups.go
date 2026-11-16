@@ -102,6 +102,9 @@ access.`,
 			for _, m := range gr.Members {
 				who = append(who, m.Email)
 			}
+			for _, a := range gr.Agents {
+				who = append(who, "token "+a.Name)
+			}
 			g.io.Detail("Members: " + dash(strings.Join(who, ", ")))
 			return nil
 		})
@@ -193,14 +196,21 @@ access.`,
 			})
 		},
 	}
+	var agent bool
+	who := func(ref string) string {
+		if agent {
+			return "/agents/" + url.PathEscape(ref)
+		}
+		return "/members/" + url.PathEscape(ref)
+	}
 	add := &cobra.Command{
-		Use: "add <group> <email|id>", Short: "Put a member in a group", Args: cobra.ExactArgs(2),
+		Use: "add <group> <email|id>", Short: "Put a member in a group; --agent an org token (its name or ID)", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
-			gr, err := send[apitypes.Group](cmd.Context(), s, http.MethodPut, path(args[0])+"/members/"+url.PathEscape(args[1]), nil)
+			gr, err := send[apitypes.Group](cmd.Context(), s, http.MethodPut, path(args[0])+who(args[1]), nil)
 			if err != nil {
 				return err
 			}
@@ -208,18 +218,21 @@ access.`,
 		},
 	}
 	take := &cobra.Command{
-		Use: "remove <group> <email|id>", Short: "Take a member out of a group", Args: cobra.ExactArgs(2),
+		Use: "remove <group> <email|id>", Short: "Take a member out of a group; --agent an org token", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := g.connect()
 			if err != nil {
 				return err
 			}
-			gr, err := send[apitypes.Group](cmd.Context(), s, http.MethodDelete, path(args[0])+"/members/"+url.PathEscape(args[1]), nil)
+			gr, err := send[apitypes.Group](cmd.Context(), s, http.MethodDelete, path(args[0])+who(args[1]), nil)
 			if err != nil {
 				return err
 			}
 			return printGroup(gr)
 		},
+	}
+	for _, c := range []*cobra.Command{add, take} {
+		c.Flags().BoolVar(&agent, "agent", false, "the member is an org agent: one of the organization's tokens, by name or ID")
 	}
 	var gf grantFlags
 	grant := &cobra.Command{

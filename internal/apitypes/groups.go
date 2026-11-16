@@ -13,7 +13,25 @@ type Group struct {
 	// developers, viewers, approvers.
 	Seeded  string        `json:"seeded,omitempty" enum:"admins,developers,viewers,approvers"`
 	Members []GroupMember `json:"members"`
-	Grants  []Grant       `json:"grants"`
+	// Agents are the org's tokens in it (ADR 0080, org agents).
+	Agents []GroupAgent `json:"agents"`
+	Grants []Grant      `json:"grants"`
+}
+
+// GroupAgent is an org agent (a token of the organization's) in a group.
+type GroupAgent struct {
+	TokenID int64  `json:"token_id"`
+	Name    string `json:"name"`
+}
+
+// AgentAccess is an org agent's grants and groups.
+type AgentAccess struct {
+	TokenID int64  `json:"token_id"`
+	Name    string `json:"name"`
+	// RulesBypass: the organization's agent rules don't apply to it.
+	RulesBypass bool     `json:"rules_bypass,omitempty"`
+	Groups      []string `json:"groups"`
+	Grants      []Grant  `json:"grants"`
 }
 
 // GroupMember is a person in a group.
@@ -125,4 +143,21 @@ type RoleRequest struct {
 	Description string   `json:"description,omitempty" maxLength:"200"`
 	Includes    []string `json:"includes,omitempty"`
 	Permissions []string `json:"permissions,omitempty"`
+}
+
+// AgentSetting is what a person's agents may use of their access in one
+// area role and environment kind (ADR 0080): one of the area's levels,
+// all of it, or off; Ask makes its changes wait for the person.
+type AgentSetting struct {
+	Area  string `json:"area" example:"deploy"`
+	Kind  string `json:"kind" enum:"production,other,previews"`
+	Level string `json:"level" example:"edit"`
+	Ask   bool   `json:"ask,omitempty"`
+}
+
+// AgentSettings is a person's setting for all their agents in an org
+// (Agent 0), or one agent's narrowing of it: every area role and kind.
+type AgentSettings struct {
+	Agent    int64          `json:"agent,omitempty"`
+	Settings []AgentSetting `json:"settings"`
 }

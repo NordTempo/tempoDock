@@ -229,6 +229,11 @@ type Core struct {
 	// enforceGrants: people's groups and grants decide their checks (ADR
 	// 0080's enforce); false, their roles do and the model watches.
 	enforceGrants atomic.Bool
+	// agentRules caches each org's agent rules (orgRules), which every
+	// agent's request needs and admins rarely change: one entry per org.
+	// rulesGen counts changes, so a read that raced one isn't kept.
+	agentRules sync.Map
+	rulesGen   atomic.Int64
 	// email is the outbox's sender (email_send.go, ADR 0079).
 	email emailState
 	// moves holds the environment moves being driven (ADR 0053).
@@ -453,6 +458,10 @@ func (c *Core) Start(ctx context.Context) error {
 	// Orgs from before ADR 0080's groups get theirs before anyone acts.
 	if err := c.seedAccess(ctx); err != nil {
 		return fmt.Errorf("seed groups: %w", err)
+	}
+	// Org tokens from before org agents get their grants (ADR 0080, 6b).
+	if err := c.grantTokens(ctx); err != nil {
+		return fmt.Errorf("grant tokens: %w", err)
 	}
 	c.loadAccessModel(ctx)
 	c.applyRegistryStorage(ctx)

@@ -11,6 +11,7 @@ make agent-eval AGENT_EVAL_FLAGS='-cases rollback|diagnose'
 go run ./scripts/agenteval -mode cli                    # the CLI with --json instead
 go run ./scripts/agenteval -model claude-opus-5-5 -runs 3
 go run ./scripts/agenteval -dry                         # setup and checks, no model
+go run ./scripts/agenteval -enforce                     # grants decide (ADR 0080), not scopes
 go run ./scripts/agenteval -list
 go run ./scripts/agenteval -tools                       # each MCP tool's size, largest first
 ```

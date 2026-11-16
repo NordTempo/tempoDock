@@ -61,7 +61,10 @@ func (s AccessRequestStatus) Decided() bool { return s != RequestPending && s !=
 // AccessRequest is a token's change that a locked environment refused,
 // waiting for an admin (ADR 0044). Approved, it runs again as the token.
 type AccessRequest struct {
-	ID          int64               `json:"id"`
+	ID int64 `json:"id"`
+	// Decide says the caller decides it: an approver there, or the person
+	// whose agent asked them first (ADR 0080).
+	Decide      bool                `json:"decide,omitempty"`
 	Status      AccessRequestStatus `json:"status" enum:"pending,approved,rejected,expired,done,failed"`
 	Project     string              `json:"project"`
 	Environment string              `json:"environment"`

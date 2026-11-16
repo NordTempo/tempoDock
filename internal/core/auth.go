@@ -157,6 +157,10 @@ func (c *Core) tokenActor(ctx context.Context, row store.GetTokenByIDWithOwnerRo
 		}
 		a.EnvironmentID, a.EnvironmentName = e.ID, e.Name
 	}
+	if t.Granted {
+		// An org agent: its grants (org_agents.go).
+		return c.loadTokenAccess(ctx, a, t)
+	}
 	return a, nil
 }
 
@@ -629,8 +633,16 @@ func (c *Core) createToken(ctx context.Context, a Actor, req apitypes.CreateToke
 	var t store.Token
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		var err error
-		if t, err = q.CreateToken(ctx, params); err != nil || req.Data == nil {
+		if t, err = q.CreateToken(ctx, params); err != nil {
 			return err
+		}
+		// An org agent from the start: its scope and limit as grants.
+		if err := grantToken(ctx, q, t); err != nil {
+			return err
+		}
+		t.Granted = true
+		if req.Data == nil {
+			return nil
 		}
 		dataAccess.ID = t.ID
 		t.DataProduction, t.DataNonProduction, t.DataSensitive = dataAccess.DataProduction, dataAccess.DataNonProduction, dataAccess.DataSensitive

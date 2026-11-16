@@ -41,9 +41,16 @@ type Actor struct {
 	// summary (loadAccess). Tokens and the system have none yet.
 	// watchGrants says they are loaded for the shadow only (ADR 0080's
 	// shadow mode): the role decides and the model answers from them.
-	grants       []grantEntry
-	hasGrants    bool
-	watchGrants  bool
+	grants      []grantEntry
+	hasGrants   bool
+	watchGrants bool
+	// agentAsk is, for a personal agent, what its person asked to approve
+	// first, per environment kind (agents.go).
+	agentAsk [3]Perms
+	// agentRuleAsk is what the org's agent rules ask an approver first for.
+	agentRuleAsk [3]Perms
+	// agentData is its Data panel level per kind (capAgentData).
+	agentData    [3]string
 	platformOnly bool
 	userPlatform apitypes.PlatformRole
 	// ProjectID and EnvironmentID limit a token to one project or one
@@ -398,6 +405,12 @@ func (a Actor) checkEnv(need apitypes.Scope, action string, p store.Project, e s
 	}
 	if rank(need) > rank(apitypes.ScopeRead) && a.lockedOut(e) {
 		return a.lockedErr(p, e, action)
+	}
+	if rank(need) > rank(apitypes.ScopeRead) && a.asksApprover(need, action, e) {
+		return a.ruleAskErr(p, e, action)
+	}
+	if rank(need) > rank(apitypes.ScopeRead) && a.asksOwner(need, action, e) {
+		return a.askOwnerErr(p, e, action)
 	}
 	return nil
 }

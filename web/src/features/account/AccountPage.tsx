@@ -12,6 +12,7 @@ import { useValidation } from "../create/form";
 import { roleNote } from "../org/data";
 import { useOwnTokens } from "../tokens/data";
 import { TokenTable } from "../tokens/TokenTable";
+import { AgentSettings } from "./AgentSettings";
 import { myEmailQuery, useSetMyEmail, useUpdateName } from "./data";
 import { TwoFactorSection } from "./TwoFactorSection";
 
@@ -105,6 +106,7 @@ export function AccountPage() {
           <>
             <TwoFactorSection />
             <MyAccess />
+            <MyAgents />
             <OwnTokens />
             <ChangePassword />
             <EmailSection />
@@ -116,8 +118,8 @@ export function AccountPage() {
         )}
         {/* The page's CLI equivalents, in the usual mono footer. */}
         <p className="font-mono text-2xs text-mut">
-          dock whoami · dock can · dock me password · dock me two-factor · dock
-          me email · dock token list --mine
+          dock whoami · dock can · dock agent settings · dock me password · dock
+          me two-factor · dock me email · dock token list --mine
         </p>
       </Page>
     </>
@@ -191,6 +193,21 @@ function MyAccess() {
       <ShadowNote />
       <Suspense fallback={<p className="text-faint">Loading</p>}>
         <AccessView who="" />
+      </Suspense>
+    </section>
+  );
+}
+
+/**
+ * What the caller's agents may use of their access here (ADR 0080):
+ * their `dock login` tokens, all at once or one narrowed.
+ */
+function MyAgents() {
+  return (
+    <section aria-labelledby="my-agents" className="flex flex-col gap-3">
+      <SectionHead id="my-agents">What your agents may do</SectionHead>
+      <Suspense fallback={<p className="text-faint">Loading</p>}>
+        <AgentSettings />
       </Suspense>
     </section>
   );

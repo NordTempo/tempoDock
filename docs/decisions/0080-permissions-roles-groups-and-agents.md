@@ -194,7 +194,35 @@ one decides.
    leaves out what the caller holds nowhere: for tokens that is what
    their scope already hid, so their tool lists don't change until agents
    get grants (phase 6), when `make agent-eval` runs on them.
-6. Agents: personal agents and their settings, org agents, agent rules.
+6. **Agents.** 6a, personal agents (built): a person's `dock login`
+   tokens act for them with their grants as they are now, capped by
+   their agent setting (migration 0112, `agent_settings`: per area role
+   and environment kind a level, `all` or `off`, and ask) and by the
+   agent's own narrowing (the same rows with its token), which only
+   lowers. No setting: everything but approving, as `dock login` was.
+   Environment permissions are capped per kind; org and project ones by
+   what every kind allows. A change in a cell marked ask is a
+   LockedError that files an access request with `ask_user_id`: only that
+   person decides it, in the browser (a lock still goes to the
+   approvers). Settled while building: an agent may tighten its setting
+   (the CLI is usually the agent's own login) but loosening needs the
+   person signed in, recently; settings apply while grants decide
+   (enforce), and the shadow compares with them. 6b, org agents
+   (built): an organization's tokens hold grants (`grants.token_id`,
+   migration 0113 rebuilds grants for the third holder) and join groups
+   (`group_agents`); a token's scope and limit become grants when it is
+   made, older tokens' once at start (`tokens.granted`), so each does
+   exactly what it did. Settled while building: a token keeps its scope
+   and limit for what still speaks in them (the data policy's subject,
+   MCP's implied project and environment); `dock token access|grant`,
+   `dock group add --agent`, and Grants and groups in a token's menu.
+   6c, agent rules (built): the org's ceilings per area role and kind
+   (migration 0114, `agent_rules`: the most any agent may use, and ask),
+   read with every agent's request; an agent uses the lowest of its
+   person's setting, its narrowing and the rule. A rule's ask files a
+   request the environment's approvers decide (a person's ask goes to
+   them). `tokens.rules_bypass` exempts a trusted org agent. Settings ›
+   Agent rules, `dock agent rules|rule`, `dock token bypass`.
 7. Protection.
 
 ## Consequences
