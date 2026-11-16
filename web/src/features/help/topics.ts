@@ -596,14 +596,18 @@ export const topics: Record<TopicId, Topic> = {
       { what: "Web Vitals", cli: "dock analytics vitals shop" },
       { what: "Watch a visitor's session", cli: "dock analytics replays shop" },
       {
+        what: "Hold everything until consent",
+        cli: "dock analytics site set shop --consent all",
+      },
+      {
         what: "Follow a funnel",
         cli: "dock analytics funnels add shop checkout /cart /pay /done",
       },
     ],
     watch: [
       "An operator picks the analytics server first: dock analytics server.",
-      "No cookies, so no banner; a visitor counts once a day.",
-      "Replay records a sampled share of page loads, only on sites that turn it on.",
+      "No cookies; a visitor counts once a day. Settings, Privacy says what needs consent.",
+      "Replay records a sampled share of page loads, only on sites that turn it on, and waits for dock.consent(true) by default.",
     ],
     related: ["errors", "requests", "status-pages"],
     guide: "watching#analytics",

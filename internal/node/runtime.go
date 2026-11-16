@@ -1154,13 +1154,15 @@ type AnalyticsConfig struct {
 // run of characters) and client addresses or CIDR ranges; whether it
 // collects errors and Web Vitals (on unless ErrorsOff); and the share of
 // page loads it records for session replay (0: none) and whether
-// replays mask all text.
+// replays mask all text; and what its script holds back until the page
+// calls dock.consent(true): "replay", "all", or nothing ("").
 type SiteRules struct {
 	ExcludedPaths []string `json:",omitempty"`
 	IgnoredIPs    []string `json:",omitempty"`
 	ErrorsOff     bool     `json:",omitempty"`
 	ReplayPercent int      `json:",omitempty"`
 	MaskAllText   bool     `json:",omitempty"`
+	Consent       string   `json:",omitempty"`
 }
 
 // SpoolBatch is events read from a spool.

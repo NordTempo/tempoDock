@@ -49,7 +49,7 @@ line means a later record added to it without changing what it decided.
 | [0034](0034-registry-object-storage.md) | The registry's images in S3-compatible object storage | accepted |
 | [0035](0035-server-disk-breakdown.md) | Where a server's disk goes | accepted |
 | [0036](0036-cloudflare-api.md) | Cloudflare tunnels, and domains through them, from Dock | superseded in part by [0062](0062-org-alerts-and-operators.md), [0068](0068-redirects-on-cloudflare-zones.md) |
-| [0037](0037-analytics.md) | Dock Analytics | superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md) |
+| [0037](0037-analytics.md) | Dock Analytics | superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md); amended by [0085](0085-analytics-consent.md) |
 | [0038](0038-own-tokens.md) | Tokens in organization settings, your own on your account | accepted |
 | [0039](0039-backups-on-storage-connections.md) | Backups on storage connections, and moving them | accepted |
 | [0040](0040-traffic-counts-requests.md) | Traffic counts requests; visitors are Analytics' | accepted |
@@ -96,6 +96,7 @@ line means a later record added to it without changing what it decided.
 | [0081](0081-named-identity-providers.md) | Named identity providers: Microsoft, GitLab, Okta, Auth0, Keycloak and Authentik by a tenant, domain or realm | accepted |
 | [0082](0082-open-source-license.md) | Open source under the AGPL, with a trademark policy and a CLA; CI safe for a public repo; going public is v1.0.0 | accepted; not yet public |
 | [0083](0083-app-templates.md) | App templates: a catalog of apps as project file fragments with inputs, embedded and pinned | accepted; first catalog built |
+| [0085](0085-analytics-consent.md) | Analytics consent: replay waits for `dock.consent(true)` by default, a privacy status per site, policy text to copy | accepted |
 
 ## Template
 

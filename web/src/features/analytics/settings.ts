@@ -2,11 +2,11 @@ import type { SiteSettings } from "./data";
 
 // The site settings the UI edits (ADR 0037): on a site, and as the
 // install's defaults. Each is text in a form: lists one entry per line,
-// switches "on" or "off". Public dashboards are per site and have a
+// switches "on" or "off", choices their value. Public dashboards are per site and have a
 // section of their own (PublicSection).
 
 /** How a setting is edited and checked. */
-type Kind = "list" | "days" | "percent" | "switch";
+type Kind = "list" | "days" | "percent" | "switch" | "choice";
 
 export const fields = [
   {
@@ -45,6 +45,18 @@ export const fields = [
     help: "How long errors and their stacks are kept, in days.",
   },
   {
+    key: "consent",
+    kind: "choice",
+    flag: "--consent",
+    label: "Wait for consent",
+    help: "What runs only after the page calls dock.consent(true).",
+    options: [
+      ["none", "Nothing waits"],
+      ["replay", "Replay waits"],
+      ["all", "Everything waits"],
+    ],
+  },
+  {
     key: "replay",
     kind: "switch",
     flag: "--replay",
@@ -78,6 +90,8 @@ export const fields = [
   flag: string;
   label: string;
   help: string;
+  /** A choice's values and their words. */
+  options?: readonly (readonly [string, string])[];
 }[];
 
 export type Field = (typeof fields)[number];
@@ -109,6 +123,8 @@ export function value(key: Key, text: string): SiteSettings {
       return { [key]: lines(text) };
     case "switch":
       return { [key]: text === "on" };
+    case "choice":
+      return { [key]: text };
     default:
       return { [key]: Number(text) };
   }
@@ -116,8 +132,10 @@ export function value(key: Key, text: string): SiteSettings {
 
 /** Whether a setting's text is a value the API takes. */
 export function valid(key: Key, text: string) {
-  const { kind } = kindOf[key];
+  const field = kindOf[key];
+  const { kind } = field;
   if (kind === "list" || kind === "switch") return true;
+  if ("options" in field) return field.options.some(([v]) => v === text);
   const n = Number(text);
   return (
     text.trim() !== "" &&
@@ -141,7 +159,10 @@ export function summary(s: SiteSettings, key: Key) {
   const v = s[key];
   if (Array.isArray(v)) return v.length ? `${v.length}` : "none";
   if (typeof v === "boolean") return v ? "on" : "off";
-  switch (kindOf[key].kind) {
+  const field = kindOf[key];
+  if ("options" in field)
+    return field.options.find(([o]) => o === v)?.[1] ?? String(v);
+  switch (field.kind) {
     case "days":
       return `${v} days`;
     case "percent":

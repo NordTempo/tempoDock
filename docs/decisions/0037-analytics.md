@@ -4,6 +4,10 @@ Status: accepted (the plan agreed with Saile; the budgets revised by the
 agent with the spike's numbers below, and the UI mocks picked by the
 agent on Saile's direction).
 Superseded in part by [0059](0059-analytics-area-and-slimmer-service-page.md) (the service's Analytics tab became the org's Analytics area).
+Amended by [0085](0085-analytics-consent.md): "no banner needed" below
+was too broad. Session replay needs the visitor's consent and waits for
+`dock.consent(true)` by default, and Norwegian law has no explicit
+exemption for the cookieless basics either.
 
 ## Context
 
@@ -16,7 +20,7 @@ public dashboards, in phases A0 to A4.
 
 | Force | Means here |
 |---|---|
-| Cookieless | No cookies, localStorage or sessionStorage; no banner needed. Nothing that names a visitor is stored |
+| Cookieless | No cookies, localStorage or sessionStorage. Nothing that names a visitor is stored. (Amended by 0085: not "no banner needed" for every setting) |
 | Idle means idle | A site without traffic costs nothing; no polling, timers only while there is work ([performance](../performance.md)) |
 | The dock binary | Stays pure Go: no CGO, no size change. `go build ./cmd/dock` must never link the engine |
 | Small servers | One 4 GB VPS runs everything out of the box. Optionally the store lives on another server (the homelab) that may be off for hours |

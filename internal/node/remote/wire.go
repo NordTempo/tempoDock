@@ -875,6 +875,9 @@ type wireSiteRules struct {
 	// Replay settings, new in protocol 12; an older node records nothing.
 	ReplayPercent int  `json:"replay_percent,omitempty"`
 	MaskAllText   bool `json:"mask_all_text,omitempty"`
+	// Consent is new with ADR 0085; an older node ignores it and records
+	// at load, as before.
+	Consent string `json:"consent,omitempty"`
 }
 
 type tailSpoolRequest struct {

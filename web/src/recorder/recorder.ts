@@ -11,9 +11,16 @@ import { record } from "@rrweb/record";
 // elements with data-dock-block are left out. Events go every few
 // seconds as gzipped chunks; a page load stops recording past its byte
 // budget or at a chunk too big to send.
+//
+// s.js loads it only once the visitor consented where the site asks for
+// consent (ADR 0085). dock.consent(false) then sets off and calls stop:
+// recording ends and what is buffered is dropped, not sent.
 
-/** What s.js hands the recorder: m masks all text. */
-type Config = { m?: number };
+/**
+ * What s.js hands the recorder: m masks all text; off is set when consent
+ * was withdrawn, and stop is the recorder's, for s.js to call.
+ */
+type Config = { m?: number; off?: number; stop?: () => void };
 
 const w = window as Window & { dock?: { r?: Config } };
 const config = w.dock?.r ?? {};
@@ -43,7 +50,7 @@ function gzip(s: string): Promise<Blob> {
 /** flush sends the buffered events as the next chunk. */
 async function flush(hidden: boolean) {
   const chunk = events;
-  if (chunk.length === 0 || sent > maxBytes) return;
+  if (chunk.length === 0 || sent > maxBytes || config.off) return;
   events = [];
   const first = chunk[0]?.timestamp ?? 0;
   const last = chunk[chunk.length - 1]?.timestamp ?? first;
@@ -71,21 +78,28 @@ async function flush(hidden: boolean) {
   }).catch(() => {});
 }
 
-const stop = record({
-  emit(e) {
-    events.push(e);
-    if (events.length >= maxEvents) void flush(false);
-  },
-  maskAllInputs: true,
-  maskTextSelector: config.m ? "*" : undefined,
-  blockSelector: "[data-dock-block]",
-  sampling: { mousemove: 50, scroll: 150, input: "last" },
-  recordCanvas: false,
-  collectFonts: false,
-  inlineImages: false,
-});
+const stop = config.off
+  ? undefined
+  : record({
+      emit(e) {
+        events.push(e);
+        if (events.length >= maxEvents) void flush(false);
+      },
+      maskAllInputs: true,
+      maskTextSelector: config.m ? "*" : undefined,
+      blockSelector: "[data-dock-block]",
+      sampling: { mousemove: 50, scroll: 150, input: "last" },
+      recordCanvas: false,
+      collectFonts: false,
+      inlineImages: false,
+    });
 
 const timer = setInterval(() => void flush(false), every);
+config.stop = () => {
+  stop?.();
+  clearInterval(timer);
+  events = [];
+};
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") void flush(true);
 });

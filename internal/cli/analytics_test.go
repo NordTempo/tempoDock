@@ -68,6 +68,10 @@ func TestAnalyticsSiteCommands(t *testing.T) {
 	if *site.Settings.ReplaySampleRate != 20 || site.Overrides.ReplaySampleRate != nil {
 		t.Errorf("after the reset: %+v", site.Settings)
 	}
+	site = ok[apitypes.Site](t, "analytics", "site", "set", "shop.example.com", "-p", "shop", "--consent", "none")
+	if *site.Settings.Consent != "none" || !site.Privacy.NeedsConsent {
+		t.Errorf("--consent none with replay on: %+v", site.Privacy)
+	}
 	if code, _, stderr := exec(t, "analytics", "site", "set", "shop.example.com", "-p", "shop", "--replay", "maybe"); code == 0 || !strings.Contains(stderr, "on or off") {
 		t.Errorf("--replay maybe: %d %s", code, stderr)
 	}

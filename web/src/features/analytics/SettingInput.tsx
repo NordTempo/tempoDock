@@ -1,6 +1,6 @@
 import type { Field } from "./settings";
 
-/** One site setting's input, by its kind: lines, a number or on/off. */
+/** One site setting's input, by its kind: lines, a number, on/off or a choice. */
 export function SettingInput({
   field,
   value,
@@ -23,6 +23,21 @@ export function SettingInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
+      );
+    case "choice":
+      return (
+        <fieldset className="seg self-start" aria-label={field.label}>
+          {("options" in field ? field.options : []).map(([v, words]) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={value === v}
+              onClick={() => onChange(v)}
+            >
+              {words}
+            </button>
+          ))}
+        </fieldset>
       );
     case "switch":
       return (
