@@ -116,7 +116,7 @@ function Users() {
                 <thead>
                   <tr>
                     <th>Person</th>
-                    <th>Organizations</th>
+                    <th className="w-1/3">Organizations</th>
                     <th>Status</th>
                     <th title="Whether they sign in with a second factor">
                       Two-factor
@@ -356,13 +356,15 @@ const UserRow = memo(function UserRow({
       </td>
       <td className="py-2.5 whitespace-normal">
         {role && (
-          <span className="block text-2xs text-warn">platform {role}</span>
+          <span className="block whitespace-nowrap text-warn">
+            platform {role}
+          </span>
         )}
         {(u.orgs ?? []).length === 0 && !role && (
           <span className="text-faint">none</span>
         )}
         {(u.orgs ?? []).map((o) => (
-          <span key={o.org} className="mr-3 inline-block text-xs">
+          <span key={o.org} className="block whitespace-nowrap">
             <Link to="/console/orgs" search={{ org: o.org }}>
               {o.org}
             </Link>{" "}
