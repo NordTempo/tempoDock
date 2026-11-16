@@ -531,7 +531,7 @@ func (r *Runtime) copyOut(ctx context.Context, image, src, dst string) error {
 		return err
 	}
 	defer func() {
-		_, _ = r.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true})
+		_, _ = r.cli.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}()
 	rc, err := r.cli.CopyFromContainer(ctx, created.ID, client.CopyFromContainerOptions{SourcePath: src})
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
 
 	"github.com/NordTempo/tempoDock/internal/node"
@@ -84,7 +85,8 @@ func TestRunJobPause(t *testing.T) {
 }
 
 // UnpauseStranded unpauses what this runtime's cut-short job left paused
-// and removes the job's container; another runtime's job keeps its pause.
+// and removes this runtime's job containers with their anonymous volumes;
+// another runtime's job keeps its pause.
 func TestUnpauseStranded(t *testing.T) {
 	e := newEnv(t)
 	e.DataDir = t.TempDir()
@@ -96,7 +98,9 @@ func TestUnpauseStranded(t *testing.T) {
 	// recording it.
 	strand := func(name, owner, id string) string {
 		spec := node.JobSpec{Name: e.name(name), Image: shellImage, Script: "sleep 600"}
-		created, err := e.cli.ContainerCreate(ctx, jobOptions(spec, []string{id}, owner))
+		opts := jobOptions(spec, []string{id}, owner)
+		opts.Config.Volumes = map[string]struct{}{"/scratch": {}} // an image's VOLUME
+		created, err := e.cli.ContainerCreate(ctx, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,13 +114,16 @@ func TestUnpauseStranded(t *testing.T) {
 	// A cut-short job that pauses nothing (a pre-deploy command, a
 	// `dock run`), still running.
 	runSpec := node.JobSpec{Name: e.name("run-mine"), Image: shellImage, Script: "sleep 600"}
-	myRun, err := e.cli.ContainerCreate(ctx, jobOptions(runSpec, nil, e.owner()))
+	runOpts := jobOptions(runSpec, nil, e.owner())
+	runOpts.Config.Volumes = map[string]struct{}{"/scratch": {}}
+	myRun, err := e.cli.ContainerCreate(ctx, runOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.cli.ContainerStart(ctx, myRun.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	anon := map[string]string{"paused": anonVolume(t, e, myJob, "/scratch"), "running": anonVolume(t, e, myRun.ID, "/scratch")}
 
 	if n, err := e.UnpauseStranded(ctx); err != nil || n != 1 {
 		t.Fatalf("UnpauseStranded = %d, %v", n, err)
@@ -130,6 +137,12 @@ func TestUnpauseStranded(t *testing.T) {
 	}
 	if _, err := e.cli.ContainerInspect(ctx, myRun.ID, client.ContainerInspectOptions{}); err == nil {
 		t.Error("the cut-short running job's container is still there")
+	}
+	for job, vol := range anon {
+		if _, err := e.cli.VolumeInspect(ctx, vol, client.VolumeInspectOptions{}); !cerrdefs.IsNotFound(err) {
+			t.Errorf("the cut-short %s job's anonymous volume %s: %v, want it gone", job, vol, err)
+			_, _ = e.cli.VolumeRemove(context.Background(), vol, client.VolumeRemoveOptions{})
+		}
 	}
 	if _, err := e.cli.ContainerInspect(ctx, theirJob, client.ContainerInspectOptions{}); err != nil {
 		t.Errorf("other runtime's job container: %v", err)

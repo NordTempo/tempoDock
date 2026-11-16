@@ -450,15 +450,11 @@ func (r *Runtime) UnpauseStranded(ctx context.Context) (int, error) {
 		if o, ok := job.Labels[node.LabelOwner]; !ok || o != owner {
 			continue
 		}
-		if job.Labels[labelPauses] == "" {
-			if _, err := r.cli.ContainerRemove(ctx, job.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
-				return n, fmt.Errorf("remove job container %s: %w", job.ID, err)
-			}
-			slog.Warn("removed the container of a job a stopped runtime cut short", "job", job.ID)
-			continue
-		}
 		var failed bool
-		for _, id := range strings.Split(job.Labels[labelPauses], ",") {
+		for id := range strings.SplitSeq(job.Labels[labelPauses], ",") {
+			if id == "" {
+				continue
+			}
 			_, err := r.cli.ContainerUnpause(ctx, id, client.ContainerUnpauseOptions{})
 			switch {
 			case err == nil:
@@ -472,12 +468,15 @@ func (r *Runtime) UnpauseStranded(ctx context.Context) (int, error) {
 			}
 		}
 		// Kept while something may still be paused, so the next start
-		// tries again.
-		if !failed {
-			if _, err := r.cli.ContainerRemove(ctx, job.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-				return n, fmt.Errorf("remove job container %s: %w", job.ID, err)
-			}
+		// tries again. A job never serves, so its anonymous volumes go
+		// with it.
+		if failed {
+			continue
 		}
+		if _, err := r.cli.ContainerRemove(ctx, job.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			return n, fmt.Errorf("remove job container %s: %w", job.ID, err)
+		}
+		slog.Warn("removed the container of a job a stopped runtime cut short", "job", job.ID)
 	}
 	return n, nil
 }
