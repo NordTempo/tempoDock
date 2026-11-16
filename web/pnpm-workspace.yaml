@@ -7,3 +7,7 @@ peerDependencyRules:
     openapi-typescript>typescript: '6'
     '@glideapps/glide-data-grid>react': '19'
     '@glideapps/glide-data-grid>react-dom': '19'
+# minimatch 7.x to 11.0.0 can be made to expand glob patterns without bound
+# (a DoS, GHSA alert 48); @linaria's 9.x only matches build-time paths.
+overrides:
+  'minimatch@>=7 <11.0.1': '^11.0.1'
