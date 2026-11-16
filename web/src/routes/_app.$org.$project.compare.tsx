@@ -136,7 +136,9 @@ function Compare() {
       onChange={(e) =>
         navigate({ search: { ...search, [key]: e.target.value } })
       }
-      className="field py-[5px] pr-7"
+      // 28px, no taller than the title beside it, so the page bar keeps
+      // every other page's height.
+      className="field py-[4px] pr-7"
     >
       {environments.map((e) => (
         <option key={e.environment.id}>{e.environment.name}</option>

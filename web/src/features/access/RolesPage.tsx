@@ -94,10 +94,11 @@ export function RolesPage({
                   <tr key={r.key}>
                     <td className="py-1.5">{r.name}</td>
                     <td className="py-1.5 text-mut">
+                      {/* A role with one level has no level names. */}
                       {(r.levels ?? [])
                         .map((l) => l.name)
                         .filter(Boolean)
-                        .join(" · ")}
+                        .join(" · ") || "one level"}
                     </td>
                   </tr>
                 ))}

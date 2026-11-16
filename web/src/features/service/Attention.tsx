@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { domainNeedsAttention } from "../../data/problems";
-import type { ServiceRef, ServiceView } from "../../data/types";
+import type { Domain, ServiceRef, ServiceView } from "../../data/types";
 import { useOrg } from "../../shell/location";
 import { ago } from "../../ui/format";
 import { failurePhrase } from "../../ui/status";
@@ -91,7 +91,7 @@ export function NeedsAttention({
           <span className="text-fail">An uptime check is down</span>
         </Row>
       )}
-      {domains.length > 0 && (
+      {domains[0] && (
         <Row
           tone="warn"
           action={
@@ -100,16 +100,58 @@ export function NeedsAttention({
               params={{ org, ...ref }}
               className="btn sm"
             >
-              Domains
+              {domains[0].status === "waiting_for_dns"
+                ? "Set up DNS"
+                : domains.length > 1
+                  ? "Fix domains"
+                  : "Fix domain"}
             </Link>
           }
         >
-          <span className="font-mono">{domains[0]?.hostname}</span>
-          {domains.length > 1 && ` and ${domains.length - 1} more`}{" "}
-          {domains.length > 1 ? "need" : "needs"} attention
+          <span className="font-mono">{domains[0].hostname}</span>{" "}
+          {domainProblem(domains[0])}
+          {domains.length > 1 && (
+            <span className="text-mut">
+              {" "}
+              · {domains.length - 1} more{" "}
+              {domains.length > 2 ? "domains need" : "domain needs"} attention
+            </span>
+          )}
         </Row>
       )}
     </section>
+  );
+}
+
+/**
+ * What is wrong with a domain that needs attention, after its hostname:
+ * "is waiting for DNS · needs A 203.0.113.7", or its error.
+ */
+function domainProblem(d: Domain) {
+  if (d.dns?.status === "error") {
+    return (
+      <span className="text-warn">Cloudflare: {d.dns.reason ?? "error"}</span>
+    );
+  }
+  if (d.status === "error") {
+    return (
+      <span className="text-warn">{d.status_reason ?? "has an error"}</span>
+    );
+  }
+  const record = d.dns_records?.[0];
+  return (
+    <>
+      is waiting for DNS
+      {record && (
+        <span className="text-mut">
+          {" "}
+          · needs{" "}
+          <span className="font-mono">
+            {record.type} {record.value}
+          </span>
+        </span>
+      )}
+    </>
   );
 }
 

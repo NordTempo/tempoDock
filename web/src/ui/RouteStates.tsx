@@ -15,10 +15,16 @@ import { ErrorBlock } from "./ErrorBlock";
 
 // Words after /<org>/ that are pages of the organization, not projects.
 const orgPages: Record<string, string> = {
+  alerts: "Alerts",
   analytics: "Analytics",
   audit: "Activity",
+  errors: "Errors",
+  help: "Help",
+  images: "Images",
+  inbox: "Inbox",
   requests: "Requests",
   settings: "Organization settings",
+  "status-pages": "Status pages",
 };
 
 type Crumb = { label: string; href: string };
@@ -124,34 +130,101 @@ export function PagePending() {
   );
 }
 
+type Missing = {
+  /** What it is, when the address says: project, environment, service. */
+  kind?: "project" | "environment" | "service";
+  name: string;
+  /** Where it was looked for: shop, shop/production. */
+  where?: string;
+  /** The parts of the address one level up. */
+  up: string[];
+};
+
+/**
+ * What a missing address names: /<org>/<project>/<environment>/<service>
+ * by position (a project the sidebar doesn't list is the missing one),
+ * else only the last word, for organization pages, the console and
+ * deeper pages.
+ */
+function missingFor(parts: string[], projects: string[]): Missing {
+  const [first = "", second, third, fourth] = parts;
+  const generic = { name: parts.at(-1) ?? "", up: parts.slice(0, -1) };
+  if (first === "console" || first === "account" || !second) return generic;
+  if (orgPages[second]) return generic;
+  if (parts.length === 2 || (projects.length && !projects.includes(second)))
+    return { kind: "project", name: second, up: [first] };
+  if (parts.length === 3 && third)
+    return {
+      kind: "environment",
+      name: third,
+      where: second,
+      up: [first, second],
+    };
+  if (parts.length === 4 && third && fourth)
+    return {
+      kind: "service",
+      name: fourth,
+      where: `${second}/${third}`,
+      up: [first, second, third],
+    };
+  return generic;
+}
+
 /**
  * A page that isn't there, in place of the page so the sidebar stays: the
  * routes' loaders throw notFound at the org (or console) route, which
  * renders this in the shell. The header keeps where the address points;
- * the page names what is missing and links one level up, where what's
- * there can be seen.
+ * the page names what is missing (a project, an environment, a service
+ * when the address says) and links one level up, where what's there can
+ * be seen.
  */
 export function NotFound() {
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const projects =
+    useQueryClient()
+      .getQueryData<{ name: string }[]>(["projects"])
+      ?.map((p) => p.name) ?? [];
   const parts = path.split("/").filter(Boolean);
-  const missing = parts.at(-1) ?? "";
-  const up = parts.length > 1 ? `/${parts.slice(0, -1).join("/")}` : "/";
+  const m = missingFor(parts, projects);
+  const up = `/${m.up.join("/")}`;
+  // One level under an organization is its Overview; the console's and
+  // the account's top pages go by their own names.
+  const upName =
+    m.up.length === 1 && m.up[0] !== "console" && m.up[0] !== "account"
+      ? "overview"
+      : (m.up.at(-1) ?? "projects");
   return (
     <>
       <Bar title="Not found" />
       <div className="flex w-full max-w-[1400px] flex-col items-start gap-2 px-4 py-8 sm:px-7">
         <p className="text-md">
-          There's nothing called <b className="font-mono">{missing}</b> here.
+          {m.kind ? (
+            <>
+              No {m.kind} called <b className="font-mono">{m.name}</b>
+              {m.where && (
+                <>
+                  {" in "}
+                  <span className="font-mono">{m.where}</span>
+                </>
+              )}
+              .
+            </>
+          ) : (
+            <>
+              There's nothing called <b className="font-mono">{m.name}</b> here.
+            </>
+          )}
         </p>
         <p className="text-mut">
           It may have been renamed, archived or removed, or the link has a typo.
-          Archived projects are under Archived in the sidebar.
+          {m.kind === "project" &&
+            " Archived projects are under Archived in the sidebar."}
         </p>
         <div className="mt-2 flex gap-2">
           <a href={up} className="btn pri">
-            Go to {up === "/" ? "projects" : (parts.at(-2) ?? "projects")}
+            Go to {upName}
           </a>
-          {up !== "/" && (
+          {m.up.length > 1 && (
             <Link to="/" className="btn">
               All projects
             </Link>

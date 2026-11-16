@@ -244,7 +244,10 @@ export function ServiceTabs({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   );
 }
 
-/** Image, address, resources, port and server, start command: the Overview's facts. */
+/**
+ * Image, domains, backups (stateful services), resources, port and server,
+ * then the start command: the Overview's facts.
+ */
 export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   const org = useOrg();
   const view = useService(ref);
@@ -285,7 +288,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     [
       "Domains",
       // The address, how many more, and the way to all of them (Settings).
-      <span key="a" className="flex flex-wrap items-center gap-x-2">
+      <span key="a" className="flex flex-wrap items-center gap-x-2 gap-y-2">
         {domain && (
           <a
             href={`https://${domain.hostname}`}
@@ -341,7 +344,7 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
     // once; this is where the start command changes.
     [
       "Start command",
-      <span key="c" className="flex flex-wrap items-center gap-x-3">
+      <span key="c" className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {service.start_command ? (
           <LongCommand text={service.start_command} />
         ) : (
@@ -358,8 +361,13 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       </span>,
     ],
   ];
+  // One row at wide widths: four facts, or five with Backups; Start
+  // command takes the full row below.
+  const wide = facts.length > 5 ? "@4xl:grid-cols-5" : "@4xl:grid-cols-4";
   return (
-    <dl className="facts grid grid-cols-2 gap-x-6 border-t border-line @4xl:grid-cols-4">
+    <dl
+      className={`facts grid grid-cols-2 gap-x-6 border-t border-line ${wide}`}
+    >
       {facts.map(([term, value]) => (
         <div
           key={term}
@@ -375,16 +383,18 @@ export function ServiceFacts({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
 /**
  * A command that can run long (a database's dozens of -c options): two
- * lines, wrapped at spaces, with Show all when there is more.
+ * lines, wrapped at spaces, with Show all when there is more. Rendered
+ * into its parent's wrapping flex row: a long command takes the whole
+ * first line, so Show all and the actions after it share the next.
  */
 function LongCommand({ text }: { text: string }) {
   const [all, setAll] = useState(false);
   const long = text.length > 140;
   return (
-    <span className="flex min-w-0 flex-col items-start gap-1">
+    <>
       <code
         title={text}
-        className={`font-mono break-words ${long && !all ? "line-clamp-2" : ""}`}
+        className={`min-w-0 font-mono break-words ${long ? `basis-full ${all ? "" : "line-clamp-2"}` : ""}`}
       >
         {text}
       </code>
@@ -393,7 +403,7 @@ function LongCommand({ text }: { text: string }) {
           {all ? "Show less" : "Show all"}
         </button>
       )}
-    </span>
+    </>
   );
 }
 
@@ -498,7 +508,8 @@ export function StatusSentence({ view }: { view: ServiceView }) {
           mayDeploy && (
             <button
               type="button"
-              className="lnk"
+              // The sentence's size and colour, like its release links.
+              className="text-inherit underline decoration-faint underline-offset-2 hover:decoration-current"
               onClick={() => openDeploy(refOf(service))}
             >
               Deploy it
@@ -583,7 +594,7 @@ function BackupsFact({ serviceRef: ref }: { serviceRef: ServiceRef }) {
   // The newest run failed: said here, not hidden behind an older success.
   const failed = backups[0]?.status === "failed" ? backups[0] : undefined;
   return (
-    <span className="flex flex-wrap items-center gap-x-2">
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-2">
       {failed && (
         <span className="text-fail">
           ✕ latest failed {ago(failed.started_at)}
@@ -952,13 +963,15 @@ function Actions({ serviceRef: ref }: { serviceRef: ServiceRef }) {
 
 /**
  * An image name that wraps after its slashes and before its tag or
- * digest (ghcr.io/org/ · name · :2.3.0), not in the middle of a part.
+ * digest (ghcr.io/org/ · name · :2.3.0), not in the middle of a part:
+ * each part is one inline box, so "1.4.0-rc1" never breaks at its hyphen.
+ * A part wider than the column still wraps inside its box.
  */
 function BreakAtParts({ text }: { text: string }) {
   return text.split(/(?<=\/)|(?=[:@])/).map((part, i) => (
     <Fragment key={`${i}-${part}`}>
       {i > 0 && <wbr />}
-      {part}
+      <span className="inline-block max-w-full">{part}</span>
     </Fragment>
   ));
 }

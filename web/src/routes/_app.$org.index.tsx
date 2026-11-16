@@ -14,7 +14,7 @@ import { AuditTable } from "../features/audit/AuditTable";
 import { canCreateProject } from "../features/create/access";
 import { openCreate } from "../features/create/open";
 import { errorsQuery } from "../features/errors/data";
-import { statusQueries } from "../features/status/data";
+import { publishState, statusQueries } from "../features/status/data";
 import { useOrg } from "../shell/location";
 import { ago, plural } from "../ui/format";
 import { Icon } from "../ui/icons";
@@ -27,6 +27,7 @@ import {
   PageBar,
   Panel,
   SectionHead,
+  StateText,
 } from "../ui/kit";
 
 // An organization's home ("/" lands here too), its Overview in the top
@@ -371,11 +372,13 @@ function NeedsYou() {
       {open.length === 0 ? (
         <p className="text-mut">Nothing waits on anyone.</p>
       ) : (
-        <ul className="border-t border-line">
+        // A grid shared by the rows (subgrid), so the times line up
+        // whatever the width of the button after them.
+        <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-3 border-t border-line">
           {open.slice(0, 6).map((a) => (
             <li
               key={a.id}
-              className="flex flex-wrap items-baseline gap-x-3 border-b border-soft py-2"
+              className="col-span-full grid grid-cols-subgrid items-baseline border-b border-soft py-2"
             >
               <span
                 className={
@@ -384,9 +387,13 @@ function NeedsYou() {
               >
                 {a.severity === "critical" ? "✕" : "▲"}
               </span>
-              <span className="min-w-0 flex-1">{a.title}</span>
-              <span className="text-xs text-mut">{ago(a.opened_at)}</span>
-              <AlertLink alert={a} className="btn sm no-underline" />
+              <span className="min-w-0">{a.title}</span>
+              <span className="text-right text-xs text-mut">
+                {ago(a.opened_at)}
+              </span>
+              <span className="justify-self-end">
+                <AlertLink alert={a} className="btn sm no-underline" />
+              </span>
             </li>
           ))}
         </ul>
@@ -511,11 +518,7 @@ function StatusPages() {
             <span className="text-xs text-mut">
               {plural(p.components, "component")}
             </span>
-            <span
-              className={p.published ? "text-xs text-ok" : "text-xs text-mut"}
-            >
-              {p.published ? "published" : "unpublished"}
-            </span>
+            <StateText state={publishState(p.published)} />
             {p.url && p.published && (
               <span className="font-mono text-xs text-sec">
                 {p.url.replace(/^https?:\/\//, "")}

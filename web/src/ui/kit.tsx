@@ -437,7 +437,12 @@ export function PageBar({
         {/* The line is kept when there is no way up, so every title sits
             at the same height. */}
         {parent ? (
-          <nav aria-label="Breadcrumb" className="text-xs text-mut">
+          // 18px like the spacer below, whatever its links' targets are,
+          // so every title sits at the same height.
+          <nav
+            aria-label="Breadcrumb"
+            className="flex h-[18px] items-center text-xs text-mut"
+          >
             {parent}
           </nav>
         ) : (

@@ -157,7 +157,8 @@ function Members() {
                         Two-factor
                       </th>
                       <th>Access</th>
-                      <th>Added</th>
+                      {/* Left out on a narrow page, so the row's actions stay in view. */}
+                      <th className="@max-[900px]:hidden">Added</th>
                       <th />
                     </tr>
                   </thead>
@@ -447,7 +448,7 @@ function MemberRow({
           )}
         </td>
       )}
-      <td className="min-w-[240px] py-2">
+      <td className="min-w-[150px] py-2 @min-[1000px]:min-w-[240px]">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           {groups.map((g) => (
             <span key={g} className="whitespace-nowrap">
@@ -503,7 +504,9 @@ function MemberRow({
       >
         {access || "none"}
       </td>
-      <td className="py-2 text-faint">{day(member.created_at)}</td>
+      <td className="py-2 text-faint @max-[900px]:hidden">
+        {day(member.created_at)}
+      </td>
       <td className="w-full py-1.5 text-right">
         {!you && (
           <Button danger small onClick={() => setAsking(true)}>
@@ -605,7 +608,7 @@ function InviteRow({
       <td className="py-2 whitespace-nowrap text-faint">
         {invite.expired ? "expired" : `until ${day(expires_at)}`}
       </td>
-      <td />
+      <td className="@max-[900px]:hidden" />
       <td className="w-full py-1.5 text-right">
         <span className="inline-flex gap-1.5">
           <Button small onClick={() => setRenewing(true)}>

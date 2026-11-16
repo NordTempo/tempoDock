@@ -33,9 +33,9 @@ export function GoalsPanel({
           to="/$org/analytics/$project/$site/settings"
           params={{ org, project, site }}
           hash="set-goals"
-          className="text-xs text-mut hover:text-fg"
+          className="ml-auto inline-flex min-h-[24px] items-center text-xs text-mut hover:text-fg"
         >
-          Settings
+          Edit goals
         </Link>
       </div>
       <Panel>

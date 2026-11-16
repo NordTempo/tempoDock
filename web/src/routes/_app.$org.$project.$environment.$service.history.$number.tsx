@@ -205,7 +205,7 @@ function ReleasePage() {
                 <b className="font-semibold">
                   {/* Said as it was then; a later release may serve now. */}
                   {previous && previous.number !== serving
-                    ? `r${previous.number} kept serving then; since, r${serving} took over.`
+                    ? `r${previous.number} kept serving until r${serving} took over.`
                     : `r${serving} is still serving.`}
                 </b>{" "}
                 <span className="text-mut">
@@ -261,15 +261,13 @@ function ReleasePage() {
           {fix &&
             !fixing &&
             (mayDeploy ? (
-              <Button primary onClick={() => setFixing(true)}>
-                {fix.label}
-              </Button>
+              <Button onClick={() => setFixing(true)}>{fix.label}</Button>
             ) : (
               <Link
                 to="/$org/$project/$environment/$service/settings"
                 params={{ org, ...ref }}
                 search={{ edit: fix.edit }}
-                className="btn pri"
+                className="btn"
               >
                 {fix.label}
               </Link>
@@ -283,7 +281,7 @@ function ReleasePage() {
                   }
                 : { to: "/$org/$project/$environment/$service/variables" })}
               params={{ org, ...ref }}
-              className="btn pri"
+              className="btn"
             >
               {edit.label}
             </Link>
@@ -293,16 +291,15 @@ function ReleasePage() {
               to="/$org/$project/$environment/$service/settings"
               params={{ org, ...ref }}
               search={{ edit: "port" }}
-              className="btn pri"
+              className="btn"
               title={`Nothing answered on :${service.port}. If the app listens on another port, set that one.`}
             >
               Change port
             </Link>
           )}
+          {/* Secondary like every action here: the header's Deploy is the
+              view's one primary. */}
           <Act
-            // The next step only while it is building or after it failed;
-            // on a healthy release, reading its log is just one option.
-            primary={!edit && !refused && (failed || inFlight(release.status))}
             cli={`dock logs --build -r ${release.number} -s ${ref.service} -e ${ref.environment}`}
             onClick={() =>
               navigate({
@@ -680,7 +677,7 @@ function FixAndDeploy({
             spellCheck={false}
           />
         </label>
-        <button type="submit" className="btn pri" disabled={pending}>
+        <button type="submit" className="btn" disabled={pending}>
           {commit || image ? "Save and deploy" : "Save and choose a folder"}{" "}
           <kbd>↵</kbd>
         </button>

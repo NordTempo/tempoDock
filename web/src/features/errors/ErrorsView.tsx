@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useOrg } from "../../shell/location";
 import { since } from "../../ui/format";
+import { Icon } from "../../ui/icons";
 import { Button, ErrorText, Menu, menuItem, SectionHead } from "../../ui/kit";
 import {
   byState,
@@ -127,7 +128,7 @@ export function ErrorsPicker({
     .sort((a, b) => b.new - a.new || b.issues - a.issues);
   const withEnv = envs.length > 1 && !filter.environment;
   return (
-    <span className="flex flex-wrap items-center gap-1 font-mono text-xs">
+    <span className="flex flex-wrap items-center gap-1 text-xs">
       <Segment
         label="Project"
         text={filter.project ?? "All projects"}
@@ -183,9 +184,9 @@ export function ErrorsPicker({
           onPick={onFilter}
         />
       ) : (
-        <span className="btn sm text-faint" title="Pick a project first">
-          All services <span aria-hidden>▾</span>
-        </span>
+        <Button small disabled reason="pick a project first">
+          All services <Icon name="chevronDown" size={12} />
+        </Button>
       )}
       {envs.length > 1 && (
         <Segment
@@ -241,8 +242,8 @@ function Segment({
     <Menu
       label={`${label}: ${text}`}
       button={
-        <span className={`btn sm font-mono ${on ? "border-fg text-fg" : ""}`}>
-          {text} <span aria-hidden>▾</span>
+        <span className={`btn sm ${on ? "border-fg text-fg" : ""}`}>
+          {text} <Icon name="chevronDown" size={12} />
         </span>
       }
     >
@@ -312,13 +313,13 @@ function ServiceIssues({ group: g }: { group: Group }) {
       {/* Column heads, on the rows' grid: what each number is. */}
       <div
         aria-hidden
-        className="grid grid-cols-[84px_minmax(0,1fr)_auto_76px_96px] gap-x-3 border-t border-line px-1 pt-2 pb-1 text-xs text-mut"
+        className="grid grid-cols-[84px_minmax(0,1fr)_auto_76px_96px] gap-x-3 border-t border-line pt-2 pb-1 text-xs text-mut"
       >
         <span>State</span>
         <span>Error</span>
         <span>Source</span>
         <span className="text-right">Events</span>
-        <span className="text-right">24 h, since</span>
+        <span className="text-right">Last 24 h</span>
       </div>
       <ul className="border-t border-soft">
         {shown.map((i) => (
@@ -343,7 +344,7 @@ function IssueRow({ issue: i }: { issue: ErrorIssue }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="grid w-full grid-cols-[84px_minmax(0,1fr)_auto_76px_96px] items-baseline gap-x-3 px-1 py-2 text-left hover:bg-hover"
+        className="grid w-full grid-cols-[84px_minmax(0,1fr)_auto_76px_96px] items-baseline gap-x-3 py-2 text-left hover:bg-hover"
       >
         <span>
           <span

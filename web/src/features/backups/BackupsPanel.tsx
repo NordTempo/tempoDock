@@ -151,7 +151,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
       >
         Restore points
       </SectionHead>
-      <dl className="props grid-cols-[120px_minmax(0,1fr)]">
+      <dl className="props [grid-template-columns:200px_minmax(0,1fr)]">
         <dt>Backups</dt>
         <dd>
           {backupWhat[backups.kind]}, <Where backups={backups} />
@@ -218,7 +218,7 @@ export function BackupsPanel({ serviceRef: ref }: { serviceRef: ServiceRef }) {
                 <th>Size</th>
                 <th>Where</th>
                 <th className="w-full">Detail</th>
-                <th>
+                <th colSpan={4}>
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
@@ -402,8 +402,8 @@ const none = <span className="text-faint">-</span>;
 
 /**
  * One restore point: when, what (kind, id, trigger), size, where and its
- * note or error, with its actions at the row's right edge. Failed and
- * removed points are muted: they can't be restored.
+ * note or error, with its actions in fixed slots at the right edge. Failed
+ * and removed points are muted: they can't be restored.
  */
 function PointRow({
   point: p,
@@ -464,35 +464,34 @@ function PointRow({
           none
         )}
       </td>
-      <td className="whitespace-nowrap">
-        <span className="flex items-center justify-end gap-1.5">
-          {onLog && (
-            <Button small onClick={onLog}>
-              View log
-            </Button>
-          )}
-          {onRetry && (
-            <Button small onClick={onRetry}>
-              Retry
-            </Button>
-          )}
-          {onDelete && (
-            <Button small danger onClick={onDelete}>
-              Delete
-            </Button>
-          )}
-          {restore && (
-            <Button
-              small
-              primary={latest}
-              disabled={!!why}
-              reason={why}
-              onClick={restore}
-            >
-              {intoNew ? "Restore as new service" : "Restore"}
-            </Button>
-          )}
-        </span>
+      {/* One cell per action, so each sits at the same x on every row. */}
+      <td className="pr-1.5 text-right">
+        {onLog && (
+          <Button small onClick={onLog}>
+            View log
+          </Button>
+        )}
+      </td>
+      <td className="pr-1.5 text-right">
+        {onRetry && (
+          <Button small onClick={onRetry}>
+            Retry
+          </Button>
+        )}
+      </td>
+      <td className="pr-1.5 text-right">
+        {onDelete && (
+          <Button small danger onClick={onDelete}>
+            Delete
+          </Button>
+        )}
+      </td>
+      <td className="text-right">
+        {restore && (
+          <Button small disabled={!!why} reason={why} onClick={restore}>
+            {intoNew ? "Restore as new service" : "Restore"}
+          </Button>
+        )}
       </td>
     </tr>
   );

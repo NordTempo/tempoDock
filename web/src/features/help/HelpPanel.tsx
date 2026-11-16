@@ -11,7 +11,7 @@ import {
 import { useCurrentContext, useOrg } from "../../shell/location";
 import { closeHelp, type HelpState, openHelp } from "./open";
 import { matchTopics } from "./search";
-import { fillCli, TopicBody, TopicList, topicItem } from "./Topic";
+import { fillCli, helpLink, TopicBody, TopicList, topicItem } from "./Topic";
 import { type TopicId, topics } from "./topics";
 import { topicAt } from "./where";
 
@@ -120,7 +120,11 @@ export default function HelpPanel({ pick }: { pick: HelpState["pick"] }) {
               onGo={keep}
               onGuide={closeHelp}
               topicLink={(id, label) => (
-                <button type="button" className="lnk" onClick={() => show(id)}>
+                <button
+                  type="button"
+                  className={helpLink}
+                  onClick={() => show(id)}
+                >
                   {label}
                 </button>
               )}

@@ -37,7 +37,7 @@ import {
 import { openCreate } from "../features/create/open";
 import { closeHelp, openHelp, useHelpOpen } from "../features/help/open";
 import { useUpdateNote } from "../features/update/data";
-import { since } from "../ui/format";
+import { plural, since } from "../ui/format";
 import { Icon, type IconName } from "../ui/icons";
 import { ErrorText, Glyph, LockMark, Menu, menuItem } from "../ui/kit";
 import { serverState, serviceState, toneText } from "../ui/status";
@@ -713,7 +713,7 @@ function ProjectTree() {
   if (projects.length === 0) {
     return (
       <>
-        <p className="px-2.5 py-1 text-xs text-faint">No projects yet</p>
+        <p className="py-1 pl-[24px] text-xs text-faint">No projects yet</p>
         {newProject}
       </>
     );
@@ -758,7 +758,6 @@ function ProjectTree() {
                 {environments && (
                   <ProjectNote
                     services={environments.flatMap((e) => e.services)}
-                    shown={env?.services.length ?? 0}
                   />
                 )}
               </Link>
@@ -1069,15 +1068,10 @@ function NewInProject({
 
 /**
  * "deploying" or "1 failed" in any environment, else how many services
- * the tree lists (`shown`: the environment it shows).
+ * the project has: names counted once across its environments, so the
+ * number doesn't change with the environment the tree shows.
  */
-function ProjectNote({
-  services,
-  shown,
-}: {
-  services: ServiceView[];
-  shown: number;
-}) {
+function ProjectNote({ services }: { services: ServiceView[] }) {
   const failed = services.filter((s) => serviceState(s).tone === "fail");
   if (services.some((s) => s.deploying)) {
     return <span className="text-2xs text-warn">deploying</span>;
@@ -1085,7 +1079,14 @@ function ProjectNote({
   if (failed.length > 0) {
     return <span className="text-2xs text-fail">{failed.length} failed</span>;
   }
-  return <span className="text-2xs text-faint">{shown}</span>;
+  const count = new Set(services.map((s) => s.service.name)).size;
+  const words = plural(count, "service");
+  return (
+    <span title={words} className="text-2xs text-faint">
+      <span aria-hidden>{count}</span>
+      <span className="sr-only">{words}</span>
+    </span>
+  );
 }
 
 function ServiceLink({ view }: { view: ServiceView }) {
@@ -1185,7 +1186,7 @@ function ConsoleNav() {
       <NavLink to="/console/tokens" icon="key">
         Tokens
       </NavLink>
-      <NavLink to="/console/sign-in" icon="key">
+      <NavLink to="/console/sign-in" icon="lock">
         Sign-in
       </NavLink>
       <NavLink to="/console/email" icon="mail">

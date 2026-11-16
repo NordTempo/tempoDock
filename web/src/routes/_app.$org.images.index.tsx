@@ -80,7 +80,9 @@ function Images() {
         }
       />
       <Page gap="gap-3">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {/* Two groups, where and which, split by the divider the service
+            tab strip uses. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <span className="seg">
             <button
               type="button"
@@ -97,6 +99,7 @@ function Images() {
               Everywhere
             </button>
           </span>
+          <span aria-hidden className="h-[18px] w-px flex-none bg-edge" />
           <span className="seg">
             <button
               type="button"
@@ -166,7 +169,9 @@ function Images() {
           </div>
         )}
         {database_built && (
-          <p className="text-xs text-mut">Database of {day(database_built)}.</p>
+          <p className="text-xs text-mut">
+            Vulnerability database from {day(database_built)}.
+          </p>
         )}
       </Page>
     </>

@@ -22,7 +22,7 @@ function Ignores() {
           <Link
             to="/$org/images"
             params={{ org }}
-            className="inline-flex min-h-[24px] items-center hover:text-fg"
+            className="-my-[3px] inline-flex min-h-[24px] items-center hover:text-fg"
           >
             Images
           </Link>

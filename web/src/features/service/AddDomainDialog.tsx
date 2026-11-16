@@ -49,7 +49,7 @@ export default function AddDomainDialog({
   const v = useValidation();
   const hostError = v.required(!host, "Enter a hostname.");
   const option = (on: boolean, off = false) =>
-    `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"} ${off ? "text-faint" : ""}`;
+    `flex gap-2.5 rounded-ctl border p-2.5 ${on ? "border-edge bg-sel" : "border-line"} ${off ? "text-mut" : ""}`;
   return (
     <Dialog title={`Add a domain to ${ref.service}`} onClose={onClose} wide>
       <form
@@ -137,7 +137,7 @@ export default function AddDomainDialog({
                   : zonesQuery.error
                     ? `Can't list the connected zones: ${zonesQuery.error.message}`
                     : zones.length === 0
-                      ? "No zone is connected to Dock; an operator adds one in Console › Cloudflare."
+                      ? "Needs a zone: an operator connects one in Console › Cloudflare."
                       : "Dock creates the record and routes it through the server's tunnel."}
               </span>
             </span>

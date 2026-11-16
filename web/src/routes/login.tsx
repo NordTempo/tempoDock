@@ -114,11 +114,11 @@ function purpose(back: string | undefined): { title: string; note?: string } {
   if (path === "/no-org") {
     return {
       title: "Sign in to Dock",
-      note: "Then Dock opens your organization, or says how to join one.",
+      note: "Signing in opens your organization, or says how to join one.",
     };
   }
   if (path && path !== "/") {
-    return { title: "Sign in", note: `Then Dock opens ${path}.` };
+    return { title: "Sign in", note: `Signing in takes you on to ${path}.` };
   }
   return { title: "Sign in" };
 }

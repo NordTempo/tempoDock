@@ -134,7 +134,6 @@ export function EnvironmentTable({
         {admin && !environment.lock && (
           <Act
             small
-            className="ml-auto"
             cli={cli(`lock ${ref.environment}`)}
             aria-expanded={locking}
             onClick={() => setLocking(!locking)}
@@ -143,11 +142,10 @@ export function EnvironmentTable({
           </Act>
         )}
         {/* The same actions on the project and the environment page: Lock,
-            and the rest in one named menu. */}
+            and the rest in one named menu. Both stay beside the name,
+            locked or not (a lock adds its strip below, with Unlock). */}
         <Menu
           label={`${environment.name}: more actions`}
-          right
-          className={admin && !environment.lock ? "" : "ml-auto"}
           button={
             // Named, so its contents can be guessed before opening it.
             <span className="btn sm">

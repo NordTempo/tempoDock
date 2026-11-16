@@ -69,7 +69,7 @@ export function AgentMatrix({
                   <td key={k} className="py-1.5">
                     <span className="flex items-center gap-2">
                       <select
-                        className="field"
+                        className="field w-28"
                         aria-label={`${area} in ${k}`}
                         value={c.level}
                         onChange={(e) => update(i, { level: e.target.value })}

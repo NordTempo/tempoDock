@@ -124,6 +124,14 @@ export function AuditPage({
     .join(" ");
 
   const q = search.q?.toLowerCase();
+  // Clear shows only when a filter is on; it keeps which log this is.
+  const filtered = !!(
+    search.project ||
+    search.action ||
+    search.kind ||
+    search.actor ||
+    search.q
+  );
   const shown = events.filter(
     (e) =>
       (!search.kind || e.actor_kind === search.kind) &&
@@ -244,11 +252,17 @@ export function AuditPage({
             placeholder="search target"
             value={search.q ?? ""}
             onChange={(e) => set({ q: e.target.value || undefined })}
-            className={`field ${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] py-0 text-xs`}
+            className={`${control} max-w-[240px] min-w-[140px] flex-[1_1_140px] rounded-ctl border border-edge bg-page px-[9px] text-[12px] outline-none hover:border-dash focus:border-info`}
           />
-          <button type="button" onClick={() => onSearch({})} className="lnk">
-            Clear
-          </button>
+          {filtered && (
+            <button
+              type="button"
+              onClick={() => onSearch({ platform: search.platform })}
+              className="lnk"
+            >
+              Clear
+            </button>
+          )}
         </form>
         <p>
           Last 24h

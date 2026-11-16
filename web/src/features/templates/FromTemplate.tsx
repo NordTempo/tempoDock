@@ -331,7 +331,7 @@ export function FromTemplate({
             </div>
             <div className="mt-4">
               <Fields>
-                <Field label="Name" error={nameError || undefined}>
+                <Field label="Service name" error={nameError || undefined}>
                   <input
                     ref={initial ? autofocus : undefined}
                     value={name}

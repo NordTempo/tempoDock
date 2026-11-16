@@ -230,10 +230,14 @@ export function RollbackConfirm({
       r.number > target.number &&
       r.number < (serving?.number ?? 0),
   );
+  // Why the newer ones are passed over, as one plain sentence:
+  // "r7 matches r9 and r8 failed."
+  const names = (rs: Release[]) => rs.map((r) => `r${r.number}`).join(", ");
   const passed = [
-    ...skipped.map((r) => `r${r.number} is the same as ${from}`),
-    ...failed.map((r) => `r${r.number} failed`),
-  ];
+    skipped.length > 0 &&
+      `${names(skipped)} ${skipped.length === 1 ? "matches" : "match"} ${from}`,
+    failed.length > 0 && `${names(failed)} failed`,
+  ].filter(Boolean);
   return (
     <Confirm
       danger={losses.length > 0}
@@ -255,7 +259,7 @@ export function RollbackConfirm({
       {passed.length > 0 && (
         <p className="mb-3 text-mut">
           r{target.number} is the last release that served and differs from{" "}
-          {from}: {passed.join(", ")}.
+          {from}. {passed.join(" and ")}.
         </p>
       )}
       {/* What it takes away comes first, in red: the reason to stop. */}
@@ -276,10 +280,11 @@ export function RollbackConfirm({
         {target.number}'s image and settings.{" "}
         {from &&
           (stateful ? (
-            <b>
-              {ref.service} is down for a few seconds while {from} stops and the
-              new one starts: only one copy can use its volume at a time.
-            </b>
+            <>
+              <b>{ref.service} is down for a few seconds</b> while {from} stops
+              and the new one starts: only one copy can use its volume at a
+              time.
+            </>
           ) : (
             `${from} keeps serving until the new release passes its health check.`
           ))}
