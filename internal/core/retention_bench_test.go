@@ -14,6 +14,10 @@ import (
 func BenchmarkRetentionPass(b *testing.B) {
 	bc := newBenchCore(b)
 	now := time.Now()
+	// The first pass can take hundreds of milliseconds on a slow runner
+	// while the fresh Core finishes starting. Measured, it alone would be
+	// the benchmark (one iteration), with all that ran meanwhile counted.
+	bc.c.retain(bc.ctx, now)
 	b.ReportAllocs()
 	for b.Loop() {
 		if got := bc.c.retain(bc.ctx, now); got != (retained{}) {
