@@ -105,7 +105,7 @@ dock analytics errors shop               # browser errors, grouped
 dock analytics vitals shop               # LCP, INP, CLS at p75
 dock analytics replays shop              # sessions, with --errors for the ones that failed
 dock analytics goals add shop signup page:/welcome
-dock analytics funnels add shop checkout /cart /pay /done
+dock analytics funnels add shop checkout page:/cart page:/pay page:/done
 dock analytics site set shop --replay on # a site's own settings
 dock analytics site set shop --consent all # nothing before consent
 ```
