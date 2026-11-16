@@ -71,6 +71,35 @@ func TestApplyExportRoundTrip(t *testing.T) {
 	}
 }
 
+// A service's pre-deploy command and timeout are in its export, and a file
+// that changes them stages the change.
+func TestApplyPreDeployCommand(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "web:1", PreDeployCommand: "./migrate up", PreDeployTimeoutSeconds: 90})
+	ex, file := h.exportTOML("shop")
+	if s := ex.Environments[0].Services[0]; s.PreDeployCommand != "./migrate up" || s.PreDeployTimeoutSeconds != 90 {
+		t.Fatalf("export: %+v", s)
+	}
+	file = strings.Replace(file, "./migrate up", "./migrate all", 1)
+	plan, err := h.c.PlanProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(lines(plan.Changes), []string{"production web setting update pre_deploy_command"}) {
+		t.Fatalf("plan: %q\n%s", lines(plan.Changes), file)
+	}
+	if _, err := h.c.ApplyProject(h.ctx, testSystem, "shop", apitypes.ApplyRequest{File: file}); err != nil {
+		t.Fatal(err)
+	}
+	ch, err := h.c.GetChanges(h.ctx, testSystem, web.Env(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ch.Settings) != 1 || ch.Settings[0].New != "./migrate all" {
+		t.Fatalf("staged: %+v", ch.Settings)
+	}
+}
+
 // The property behind config as code: a project exported, applied as a
 // new project with its secrets' values, and applied live exports the same
 // as the original. Random projects: services with random settings,
@@ -186,6 +215,9 @@ func randomProject(h *harness, rnd *rand.Rand) map[string]string {
 				}
 				if rnd.IntN(3) == 0 {
 					req.CPUs = 0.5
+				}
+				if rnd.IntN(3) == 0 {
+					req.PreDeployCommand, req.PreDeployTimeoutSeconds = "./migrate --"+pick("up", "all"), pick0(rnd, 0, 120)
 				}
 			}
 			if _, err := h.c.CreateService(h.ctx, testSystem, ref, req); err != nil {
