@@ -441,3 +441,23 @@ func TestChangesNameRedeploys(t *testing.T) {
 		t.Fatalf("affected %v, redeploys %v, %v", p.Affected, p.Redeploys, err)
 	}
 }
+
+// Unsetting a variable that isn't there says so instead of staging
+// nothing; a shared one unset on a service names --shared.
+func TestUnsetUnknownVariable(t *testing.T) {
+	h := newHarness(t)
+	web := h.service("web", apitypes.CreateServiceRequest{Image: "app:1"})
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Set: map[string]string{"LOG_LEVEL": "debug"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Unset: []string{"LOG_LEVEL"}})
+	if CodeOf(err) != apitypes.CodeNotFound || !strings.Contains(err.Error(), "--shared") {
+		t.Errorf("unset a shared variable on web: %v", err)
+	}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Service: "web", Unset: []string{"NOPE"}}); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("unset NOPE: %v", err)
+	}
+	if _, err := h.c.SetVariables(h.ctx, testSystem, web.Env(), apitypes.SetVariablesRequest{Unset: []string{"LOG_LEVEL"}}); err != nil {
+		t.Errorf("unset the shared one: %v", err)
+	}
+}

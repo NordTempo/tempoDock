@@ -115,6 +115,9 @@ func (c *Core) SetVariables(ctx context.Context, a Actor, ref EnvRef, req apityp
 			}
 		}
 		for _, k := range req.Unset {
+			if err := unsetKnown(ctx, q, es.env.ID, serviceID, k, target); err != nil {
+				return err
+			}
 			if err := stageUnset(ctx, q, es.env.ID, serviceID, k); err != nil {
 				return err
 			}
@@ -148,6 +151,22 @@ func (c *Core) stageSet(ctx context.Context, q *store.Queries, envID int64, serv
 		return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "", PendingValue: nil, UpdatedAt: now(), ID: cur.ID})
 	}
 	return q.SetVariablePending(ctx, store.SetVariablePendingParams{Pending: "set", PendingValue: sealed, UpdatedAt: now(), ID: cur.ID})
+}
+
+// unsetKnown refuses unsetting a variable that isn't there (target names
+// the scope), instead of staging nothing and saying it did: most often a
+// shared variable unset on a service.
+func unsetKnown(ctx context.Context, q *store.Queries, envID int64, serviceID *int64, key, target string) error {
+	_, err := q.GetVariable(ctx, store.GetVariableParams{EnvironmentID: envID, ServiceID: serviceID, Key: key})
+	if !store.IsNotFound(err) {
+		return err
+	}
+	if serviceID != nil {
+		if _, err := q.GetVariable(ctx, store.GetVariableParams{EnvironmentID: envID, Key: key}); err == nil {
+			return notFound("%s has no variable %s of its own; it is a shared variable: unset it with --shared", target, key)
+		}
+	}
+	return notFound("%s has no variable %s; `dock env list` lists them", target, key)
 }
 
 func stageUnset(ctx context.Context, q *store.Queries, envID int64, serviceID *int64, key string) error {
