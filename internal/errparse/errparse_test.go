@@ -183,6 +183,59 @@ func TestJSStack(t *testing.T) {
 	}
 }
 
+// Node prints an uncaught exception under the place it was thrown, the
+// source line and a caret: that header is no error of its own, even
+// when the line it quotes says Error, and the exception is one.
+func TestNodeUncaught(t *testing.T) {
+	for name, tc := range map[string]struct {
+		lines []string
+		title string
+	}{
+		"in a module": {[]string{
+			"/app/node_modules/pg/lib/client.js:132",
+			"      Error.captureStackTrace(err)",
+			"            ^",
+			"",
+			"Error: connect ECONNREFUSED 127.0.0.1:5432",
+			"    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1555:16) {",
+			"  errno: -111,",
+			"  code: 'ECONNREFUSED'",
+			"}",
+			"",
+			"Node.js v20.11.0",
+		}, "Error: connect ECONNREFUSED 127.0.0.1:5432"},
+		"at the top level": {[]string{
+			"/app/index.js:3",
+			`throw new Error("boom");`,
+			"^",
+			"",
+			"Error: boom",
+			"    at Object.<anonymous> (/app/index.js:3:7)",
+		}, "Error: boom"},
+		"an unhandled error event": {[]string{
+			"node:events:497",
+			"      throw er; // Unhandled 'error' event",
+			"      ^",
+			"",
+			"Error: listen EADDRINUSE: address already in use :::3000",
+			"    at Server.setupListenHandle [as _listen2] (node:net:1872:16)",
+			"Emitted 'error' event on Server instance at:",
+			"    at emitErrorNT (node:net:1899:8) {",
+			"  code: 'EADDRINUSE'",
+			"}",
+		}, "Error: listen EADDRINUSE: address already in use :::3000"},
+	} {
+		ev := one(t, tc.lines...)
+		if ev.Title != tc.title {
+			t.Errorf("%s: event = %+v", name, ev)
+		}
+	}
+	// Without the caret it is an error line after a path, as written.
+	if ev := one(t, "src/app.ts:12", "error: config missing", "listening on :8080"); ev.Sample != "error: config missing" {
+		t.Errorf("an error line after a path: %+v", ev)
+	}
+}
+
 // A Java logger's error line, the exception it logged and its frames are
 // one error named by the exception; causes don't change the culprit.
 func TestJavaStack(t *testing.T) {
@@ -231,6 +284,18 @@ func TestNotErrors(t *testing.T) {
 		"    at the end of the day", // indented "at" without an exception before it
 	); len(evs) != 0 {
 		t.Fatalf("events = %+v", evs)
+	}
+	// Postgres as Dock starts, stops or restarts it.
+	if evs := events(
+		"2026-11-16 12:00:00.123 UTC [30] FATAL:  the database system is starting up",
+		"2026-11-16 12:00:00.123 UTC [31] FATAL:  the database system is not yet accepting connections",
+		"2026-11-16 12:00:00.123 UTC [32] FATAL:  the database system is shutting down",
+		"2026-11-16 12:00:00.123 UTC [33] FATAL:  terminating connection due to administrator command",
+	); len(evs) != 0 {
+		t.Fatalf("Postgres's routine lines: %+v", evs)
+	}
+	if ev := one(t, `2026-11-16 12:00:00.123 UTC [34] FATAL:  password authentication failed for user "app"`); !strings.Contains(ev.Title, "password authentication failed") {
+		t.Fatalf("a real FATAL: %+v", ev)
 	}
 }
 
