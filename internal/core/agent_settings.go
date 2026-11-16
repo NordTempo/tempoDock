@@ -170,7 +170,7 @@ func (c *Core) AgentRules(ctx context.Context, a Actor) (apitypes.AgentSettings,
 // replace theirs. They apply to every agent's next request, personal and
 // the org's, but org agents that bypass them.
 func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSettings) (apitypes.AgentSettings, error) {
-	if err := a.require(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
 		return apitypes.AgentSettings{}, err
 	}
 	if err := a.requireRecent("managing agent rules"); err != nil {
@@ -192,6 +192,16 @@ func (c *Core) SetAgentRules(ctx context.Context, a Actor, req apitypes.AgentSet
 			return cur, invalid("%s has no level %q; pick off, all or one of its own (`dock role list`)", s.Area, s.Level)
 		}
 		next[ai*3+ki] = s
+	}
+	// The rules cap every agent, so an agent only tightens them: a token
+	// that loosened them would lift its own ceiling.
+	if a.Kind == "token" {
+		for i, s := range next {
+			r, was := areas[i/3], cur.Settings[i]
+			if levelRank(r, s.Level) > levelRank(r, was.Level) || was.Ask && !s.Ask {
+				return cur, errf(apitypes.CodeForbidden, "an agent can tighten the organization's agent rules, not loosen them: an admin changes them in Settings › Agent rules in the browser")
+			}
+		}
 	}
 	err = c.store.Tx(ctx, func(q *store.Queries) error {
 		if err := q.DeleteAgentRules(ctx, a.OrgID); err != nil {
@@ -223,8 +233,11 @@ func (c *Core) SetAgentRulesBypass(ctx context.Context, a Actor, ref string, byp
 	if err != nil {
 		return apitypes.AgentAccess{}, err
 	}
-	if err := a.require(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
+	if err := a.requireUnlimited(apitypes.ScopeAdmin, "managing agent rules"); err != nil {
 		return apitypes.AgentAccess{}, err
+	}
+	if bypass && a.Kind == "token" && a.TokenID == t.ID {
+		return apitypes.AgentAccess{}, errf(apitypes.CodeForbidden, "a token can't exempt itself from the agent rules that cap it: an admin does it with their own `dock login`")
 	}
 	if err := a.requireRecent("managing agent rules"); err != nil {
 		return apitypes.AgentAccess{}, err

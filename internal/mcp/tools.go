@@ -56,6 +56,9 @@ func envOf(c *call, in EnvInput) (core.EnvRef, error) {
 	if e == "" && p == c.Actor.ProjectName {
 		e = c.Actor.EnvironmentName
 	}
+	if e == "" && c.Actor.EnvironmentName != "" {
+		return core.EnvRef{}, mcpkit.Invalid("pass environment: your token is limited to %s/%s, so it acts only there", c.Actor.ProjectName, c.Actor.EnvironmentName)
+	}
 	if e == "" {
 		return core.EnvRef{}, mcpkit.Invalid("pass environment: your token isn't limited to one (project_overview lists them)")
 	}
