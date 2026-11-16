@@ -330,14 +330,16 @@ func signWebhook(secret string, at time.Time, body []byte) string {
 
 // newChannelClient is an HTTP client webhook and Slack channels post
 // with. It never follows redirects: a channel's URL is where alerts go,
-// nowhere else. It never connects to addresses g refuses either (checked
-// after DNS), and keeps no idle connections: alerts are rare.
+// nowhere else. It never uses a proxy (that would connect to the proxy,
+// not the channel, past the guard) and never connects to addresses g
+// refuses (checked after DNS), and keeps no idle connections: alerts are
+// rare.
 func newChannelClient(g *egressGuard) *http.Client {
 	return &http.Client{
 		Timeout:       deliveryTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
+			Proxy:               nil,
 			DialContext:         (&net.Dialer{Timeout: deliveryTimeout, Control: g.control}).DialContext,
 			TLSHandshakeTimeout: deliveryTimeout,
 			DisableKeepAlives:   true,

@@ -493,6 +493,19 @@ func (c *Core) previewEvent(ctx context.Context, p store.Project, repo string, e
 		head.branch = fmt.Sprintf("pull/%d/head", ev.Number)
 	}
 
+	if head.fork {
+		// A fork's code is built only by services that allow forks, also
+		// in a preview opened while they did: turning forks off stops it.
+		matched = slices.DeleteFunc(matched, func(conn store.GitConnection) bool { return !builds[conn.ServiceID].AllowForks })
+		if len(matched) == 0 {
+			if ev.Action != "edited" { // a new title is no new commit to mark
+				conn := conns[slices.IndexFunc(conns, func(c store.GitConnection) bool { _, ok := builds[c.ServiceID]; return ok })]
+				c.postPreviewStatus(bes, conn, sha, "error", "No preview: pull requests from forks aren't previewed", "")
+			}
+			return pr + ": ignored, it comes from a fork and previews of forks are off", nil
+		}
+	}
+
 	if open {
 		e, err := c.store.GetEnvironment(ctx, last.EnvironmentID)
 		if err != nil {
@@ -502,15 +515,6 @@ func (c *Core) previewEvent(ctx context.Context, p store.Project, repo string, e
 	}
 	if ev.Action == "edited" {
 		return pr + ": ignored, no open preview", nil
-	}
-	if head.fork {
-		// A fork's code is built only by services that allow forks.
-		matched = slices.DeleteFunc(matched, func(conn store.GitConnection) bool { return !builds[conn.ServiceID].AllowForks })
-		if len(matched) == 0 {
-			conn := conns[slices.IndexFunc(conns, func(c store.GitConnection) bool { _, ok := builds[c.ServiceID]; return ok })]
-			c.postPreviewStatus(bes, conn, sha, "error", "No preview: pull requests from forks aren't previewed", "")
-			return pr + ": ignored, it comes from a fork and previews of forks are off", nil
-		}
 	}
 	setup, err := c.previewSetupOf(ctx, base.ID)
 	if err != nil {

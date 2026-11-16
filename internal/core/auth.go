@@ -266,6 +266,10 @@ func (a Actor) member(org store.Org, role string, most apitypes.Scope) Actor {
 
 var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password")
 
+// maxEmailLen is the longest email address Dock accepts (RFC 5321's
+// limit), as the API's maxLength:"254" on every email field says too.
+const maxEmailLen = 254
+
 // Login checks a user's password and starts a session, or, when they
 // have a second factor, a pending sign-in for LoginSecondFactor to finish.
 // Refused while the platform's password sign-in is off (ADR 0065).
@@ -273,6 +277,11 @@ var errWrongPassword = errf(apitypes.CodeUnauthorized, "wrong email or password"
 // (httpkit.LoginLimiter), so a guesser can't lock the owner out; failures
 // are logged and audited (never the password).
 func (c *Core) Login(ctx context.Context, email, password, clientIP string) (LoginResult, error) {
+	// No address is longer (RFC 5321), and the email becomes limiter keys,
+	// log lines and audit rows before any account is found.
+	if len(email) > maxEmailLen {
+		return LoginResult{}, invalid("an email address is at most %d characters", maxEmailLen)
+	}
 	t := now()
 	if !c.loginLimit.Allow(email, clientIP, t) {
 		c.log.Warn("login rate limited", "email", email, "ip", clientIP)

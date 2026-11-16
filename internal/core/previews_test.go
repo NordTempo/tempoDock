@@ -322,6 +322,14 @@ func TestPreviewRefusals(t *testing.T) {
 	if pv, err := h.c.GetPreview(h.ctx, testSystem, EnvRef{"shop", "pr-1"}); err != nil || !pv.Fork || pv.Branch != "pull/1/head" {
 		t.Fatalf("fork preview %+v, %v", pv, err)
 	}
+	// Forks off again: the open fork preview gets no new commits.
+	h.servicePreviews(ServiceRef{"shop", "staging", "web"}, apitypes.SetServicePreviewsRequest{Build: true})
+	if msg, _ := h.deliver(appHook, "f3", prEvent{action: "synchronize", number: 1, sha: shaC, updated: t0.Add(2 * time.Minute), fork: true}); !strings.Contains(msg, "comes from a fork") {
+		t.Fatalf("fork commit after forks were turned off: %q", msg)
+	}
+	if pv, err := h.c.GetPreview(h.ctx, testSystem, EnvRef{"shop", "pr-1"}); err != nil || pv.Commit == shaC {
+		t.Fatalf("fork preview took the new commit: %+v, %v", pv, err)
+	}
 
 	// Turned off, new pull requests get nothing, and open previews still
 	// close with their pull requests.

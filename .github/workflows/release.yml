@@ -16,47 +16,51 @@ on:
 permissions:
   contents: read
 
+# Every job runs on GitHub-hosted runners, never a self-hosted one: a
+# release must not build where other jobs leave caches behind. While the
+# repository is private, the repo variables RELEASE_RUNNER and
+# RELEASE_ARM_RUNNER point them at Blacksmith (GitHub-hosted runners are
+# free only for public repositories); scripts/go-public.sh deletes them.
+
 jobs:
   # The release reuses main's CI result for the tagged commit: passes if
   # ci succeeded on main for it, waits up to 40 minutes for a run still in
-  # progress (the tag usually follows the merge), fails otherwise. On
-  # Blacksmith like the builds, not a self-hosted runner, as it may wait
-  # while main's CI uses every self-hosted slot (blacksmith-2vcpu jobs sat
-  # queued with no runner).
+  # progress (the tag usually follows the merge), fails otherwise.
   ci:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.RELEASE_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     permissions:
       actions: read
       contents: read
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: CI passed on main
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/release/wait-for-ci.sh "$GITHUB_SHA" 2400
 
   build:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.RELEASE_RUNNER || 'ubuntu-24.04' }}
     steps:
-      - uses: useblacksmith/checkout@v1
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      # No GitHub caches: a release builds from clean downloads, so a cache
+      # entry written by any earlier run can't end up in the binaries.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: web/package.json
-          cache: true
-          cache_dependency_path: web/pnpm-lock.yaml
       - run: make release-local VERSION="$GITHUB_REF_NAME"
       # Artifact uploads strip executable bits; tar preserves them for the
       # tempoBase image's entrypoint and the release binaries.
       - name: Archive release artifacts
         run: tar -C dist -cf "$RUNNER_TEMP/release-artifacts.tar" .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-artifacts
           path: ${{ runner.temp }}/release-artifacts.tar
@@ -71,18 +75,18 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: blacksmith-4vcpu-ubuntu-2404
+            runner: ${{ vars.RELEASE_RUNNER || 'ubuntu-24.04' }}
           - arch: arm64
-            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner: ${{ vars.RELEASE_ARM_RUNNER || 'ubuntu-24.04-arm' }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: useblacksmith/checkout@v1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Build dock-analytics-linux-${{ matrix.arch }}
         run: |
           docker build -f deploy/analytics/Dockerfile --target binary \
             --build-arg VERSION="$GITHUB_REF_NAME" --output type=local,dest=out .
           test -x "out/dock-analytics-linux-${{ matrix.arch }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: analytics-${{ matrix.arch }}
           path: out/dock-analytics-linux-${{ matrix.arch }}
@@ -94,17 +98,17 @@ jobs:
   # rebuild.
   release:
     needs: [ci, build, analytics]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ vars.RELEASE_RUNNER || 'ubuntu-24.04' }}
     permissions:
       contents: write
       packages: write
     steps:
-      - uses: useblacksmith/checkout@v1
-      - uses: actions/download-artifact@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: release-artifacts
           path: ${{ runner.temp }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           pattern: analytics-*
           merge-multiple: true
@@ -129,10 +133,10 @@ jobs:
       # tempoBase's image (deploy/tempobase/Dockerfile) from the binaries
       # just released. Only on a v* tag, and only once the release has
       # tempoBase binaries (cmd/tempobase exists).
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('dist/tempobase-linux-amd64') != ''
         with:
           registry: ghcr.io

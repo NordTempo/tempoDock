@@ -1,6 +1,6 @@
 # 0008: Keep open source and hosting possible, cheaply
 
-Status: accepted; superseded in part by [0027](0027-organizations.md) (organizations)
+Status: accepted; superseded in part by [0027](0027-organizations.md) (organizations) and [0082](0082-open-source-license.md) (the license)
 
 ## Context
 

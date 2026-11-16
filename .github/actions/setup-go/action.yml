@@ -4,9 +4,10 @@
 # caches are safe for several processes at once and trim entries unused
 # for five days. The build cache then holds -race builds too, and passing
 # tests whose inputs didn't change are not run again (go test's cache;
-# make test-integration passes -count=1). Elsewhere (Blacksmith through
-# CI_RUNNER) setup-go restores its cache from GitHub, a ~460 MB download
-# per job.
+# make test-integration passes -count=1). Elsewhere (GitHub-hosted
+# runners) setup-go restores its cache from GitHub, a ~460 MB download
+# per job. Only trusted code may see the host cache: ci.yml keeps pull
+# requests from forks off the self-hosted runners.
 name: Set up Go
 description: setup-go, with Go's caches on the runner host's cache volume when there is one
 inputs:
@@ -35,7 +36,7 @@ runs:
           } >> "$GITHUB_ENV"
           echo "host-cache=true" >> "$GITHUB_OUTPUT"
         fi
-    - uses: actions/setup-go@v6
+    - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
       with:
         go-version-file: ${{ inputs.go-version-file }}
         cache: ${{ steps.host.outputs.host-cache != 'true' }}

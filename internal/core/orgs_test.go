@@ -87,6 +87,9 @@ func TestOrgsAreIsolated(t *testing.T) {
 	if err := h.c.RevokeToken(h.ctx, bob, tok.Token.ID); CodeOf(err) != apitypes.CodeNotFound {
 		t.Errorf("acme revokes the test org's token: %v", err)
 	}
+	if _, err := h.c.UpdateToken(h.ctx, bob, tok.Token.ID, apitypes.UpdateTokenRequest{}); CodeOf(err) != apitypes.CodeNotFound {
+		t.Errorf("acme updates the test org's token: %v", err)
+	}
 	if _, err := h.c.AuthenticateToken(h.ctx, tok.Secret, "acme"); CodeOf(err) != apitypes.CodeForbidden {
 		t.Errorf("test org token acting in acme: %v", err)
 	}
