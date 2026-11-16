@@ -50,7 +50,7 @@ var templates = map[apitypes.Template]dbTemplate{
 	apitypes.TemplatePostgres: postgresTemplate(apitypes.TemplatePostgres, "PostgreSQL", "PostgreSQL 17, tuned for 512 MB",
 		"postgres:17-alpine@sha256:1bcc18d81671b02906296aad470ec9778a6b71016ce953092024b680bad007b0"),
 	// pgvector is Postgres with the vector extension, for apps that store
-	// embeddings (ADR 0082). Its backups and restores run in its own
+	// embeddings (ADR 0083). Its backups and restores run in its own
 	// image, so a restore has the extension too.
 	apitypes.TemplatePgvector: postgresTemplate(apitypes.TemplatePgvector, "PostgreSQL with pgvector", "PostgreSQL 17 with the vector extension, tuned for 512 MB",
 		"pgvector/pgvector:0.8.7-pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd"),

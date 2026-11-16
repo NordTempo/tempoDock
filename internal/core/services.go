@@ -77,7 +77,7 @@ func validateSettings(s apitypes.ServiceSettings, registry string, pulls *egress
 // execForm reads a start command in exec form, a JSON array of strings
 // like a Dockerfile's CMD ["worker"]: its arguments replace the image's
 // command as they are, without a shell, for images whose entrypoint takes
-// its mode as arguments (ADR 0082). Any other start command runs with
+// its mode as arguments (ADR 0083). Any other start command runs with
 // `sh -c`.
 func execForm(cmd string) ([]string, bool) {
 	cmd = strings.TrimSpace(cmd)

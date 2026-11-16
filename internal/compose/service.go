@@ -673,7 +673,7 @@ func httpCheck(words []string) (checkPath string, port int, ok bool) {
 
 // command maps command and entrypoint to the start command. Compose
 // passes command to the image's entrypoint as arguments, without a shell,
-// and so does a start command in exec form (`["worker"]`, ADR 0082): that
+// and so does a start command in exec form (`["worker"]`, ADR 0083): that
 // is what a command alone becomes, so images whose entrypoint takes its
 // mode as arguments keep working. Dock keeps the image's entrypoint, so
 // with an entrypoint the two become one shell line, run with `sh -c`

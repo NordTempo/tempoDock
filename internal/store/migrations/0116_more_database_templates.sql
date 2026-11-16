@@ -1,6 +1,6 @@
 -- foreign_keys: off
 -- Database templates for MySQL, MariaDB, Valkey and Postgres with
--- pgvector (ADR 0082), and MySQL dumps as a backup kind: the CHECKs on
+-- pgvector (ADR 0083), and MySQL dumps as a backup kind: the CHECKs on
 -- services.template and backups.kind list them. SQLite can't change a
 -- CHECK, so both tables are rebuilt as they are, column for column, with
 -- their indexes; foreign keys are off while they are swapped and checked
