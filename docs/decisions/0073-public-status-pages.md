@@ -12,8 +12,8 @@ Phases 1 to 5 of 5 are in; [Later phases](#later-phases) says what is left.
 Dock knows when production is down: uptime checks from another server
 ([0055](0055-uptime-checks.md)), crash loops and unhealthy services
 ([0020](0020-retention-and-alerts.md), [0043](0043-ongoing-health-checks.md)).
-The people who use those apps learn none of it, so a team pays for
-Statuspage or Instatus and runs a second set of monitors that disagree
+The people who use those apps learn none of it, so a team sets up a
+separate status page, with a second set of monitors that can disagree
 with Dock's.
 
 | Force | Means here |

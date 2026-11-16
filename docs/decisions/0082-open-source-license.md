@@ -23,9 +23,9 @@ someone else sell hosted Dock first.
 No OSI license forbids offering the software as a service. A non-compete
 license (FSL, BSL, Elastic) would, but isn't open source, and an extra
 restriction added to the AGPL may be removed by any recipient (its
-section 7). Dokploy's history shows the cost of mixing: Apache-2.0 with
-extra resale terms drew criticism until it moved to an open core (Apache
-core, proprietary enterprise folder).
+section 7). Mixing the two costs trust: an open source license with
+extra resale terms is no longer open source, and the community treats it
+so.
 
 ## Decision
 

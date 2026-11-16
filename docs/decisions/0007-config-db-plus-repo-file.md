@@ -7,7 +7,7 @@ Status: accepted
 Service configuration can live in the platform (edited in UI/CLI) or in the
 app's repository (edited in code).
 
-**Platform DB (Railway-style)**
+**Platform DB**
 - Pros: the UI and CLI can edit everything; changes are instant; secrets must
   live outside the repo anyway; works for services with no repo (prebuilt
   images, database templates).

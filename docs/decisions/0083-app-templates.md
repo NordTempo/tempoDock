@@ -6,8 +6,8 @@ Status: accepted (asked by Saile, 2026-11-14; the UI is mock A of the plan).
 
 Self-hosting an app on Dock today means reading its compose file and
 recreating each service by hand, or `dock import compose` and fixing what
-it couldn't map. Coolify and Dokploy ship a catalog of apps that deploy in
-one step. Dock has the pieces already: database templates (ADR 0019),
+it couldn't map. A catalog of apps that deploy in one step would do it
+for them. Dock has the pieces already: database templates (ADR 0019),
 project files with references, volumes and `depends_on` (ADR 0049), and
 staged plans. What it lacks is a catalog and a way to fill in an app's
 few inputs.

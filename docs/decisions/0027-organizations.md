@@ -89,8 +89,7 @@ optional `org` query parameter (the slug):
 Why a parameter and not `/orgs/{org}/projects/...`: 54 of 92 paths would
 move, breaking every existing client and token user for no gain in
 safety (the actor carries the org either way). One mechanism serves REST,
-SSE (`EventSource` can't set headers) and MCP. Vercel's API does the same
-with `teamId`.
+SSE (`EventSource` can't set headers) and MCP.
 
 The CLI gets `--org`, `dock org list | create | use`, and records the org
 in `dock link`. The web UI puts the org in its URLs (`/<org>/<project>/...`;

@@ -21,8 +21,8 @@ Norway:
 - Norway has no exemption for statistics, and Nkom and Datatilsynet have
   not ruled on cookieless analytics. France's CNIL exempts audience
   measurement that yields anonymous statistics (salted hashes with a site
-  and day component, truncated IPs, no replay). Plausible, Fathom and
-  Pirsch sites run without a banner on that common reading.
+  and day component, truncated IPs, no replay). Cookieless analytics
+  commonly run without a banner on that reading.
 - Session replay needs consent everywhere (CNIL's 2026 recommendation,
   even for debugging). No source argues otherwise.
 - Every feature belongs in the site's privacy policy (GDPR Arts 13, 21).

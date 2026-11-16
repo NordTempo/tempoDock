@@ -31,8 +31,8 @@ services get working HTTPS hostnames with no DNS work. The wildcard is first
 level only (`web-shop-staging.<zone>`, not `web.staging.<zone>`), because
 Cloudflare's free certificates cover one level.
 
-App hostnames use a separate zone from the product's own domain, like
-Railway's `up.railway.app`, to keep app cookies and reputation apart.
+App hostnames use a separate zone from the product's own domain, to keep
+app cookies and reputation apart.
 
 **Custom domains on tunnel servers** work when the domain's DNS is on our
 Cloudflare account: the platform shows the CNAME to the tunnel to create.

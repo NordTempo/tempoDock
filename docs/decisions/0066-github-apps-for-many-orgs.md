@@ -66,8 +66,8 @@ or an org's.
 ### Later: pull request feedback
 
 Previews already post a `dock/preview` status and one comment, edited in
-place ([0056](0056-preview-environments.md)). To get closer to what
-Vercel shows, the next steps are a row per service in the comment with
+place ([0056](0056-preview-environments.md)). To show each service's
+state in the pull request, the next steps are a row per service in the comment with
 its state (building, ready, failed) and a link to its release, and
 GitHub Deployments (`deployments: write`). With Deployments, the pull
 request shows "View deployment" and the preview's environment on its

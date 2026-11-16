@@ -11,9 +11,8 @@ built.
 
 When a Dock app is slow or answers 500, Dock says that it happens (the
 Traffic tab, Errors, deploy diagnosis) but not where the time went or
-which call failed. People pay Datadog, Honeycomb or Grafana Cloud for
-that, or run Jaeger or Tempo on the small server Dock is trying to keep
-free. Dock already knows the service, environment and release behind
+which call failed. Finding out takes a separate tracing service, or a
+tracing backend on the small server Dock is trying to keep free. Dock already knows the service, environment and release behind
 every request and fronts it with Caddy, so it can be the trace backend
 with no setup, and link traces to what it shows.
 

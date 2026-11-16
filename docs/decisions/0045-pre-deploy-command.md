@@ -9,7 +9,7 @@ traffic. Without a hook, people put `migrate && node server.js` in the
 start command. That runs the migration in the serving container, again on
 every crash restart, and a failed migration surfaces as a failed health
 check after the old release may already be gone (stateful services stop
-first). Railway, Render and Fly all have a release or pre-deploy command
+first). A command run once per release, before it starts, is the place
 for this.
 
 ## Decision

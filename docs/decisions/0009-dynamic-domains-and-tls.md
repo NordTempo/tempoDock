@@ -4,7 +4,7 @@ Status: accepted; superseded in part by [0042](0042-domain-verification.md) (a h
 
 ## Context
 
-Adding a domain should feel like Railway: type a hostname in the CLI or UI,
+Adding a domain should be one step: type a hostname in the CLI or UI,
 point DNS at the server, done. Any hostname should work: apex domains,
 subdomains, multiple domains per service, and platform-generated subdomains.
 Nobody should ever edit proxy config by hand.

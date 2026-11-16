@@ -4,7 +4,8 @@ Architecture decision records: context, decision, consequences. Records are
 history and are not rewritten. A detail settled later in the same area is a
 dated "Amendment" section at the end of the record. A decision made
 differently later gets a new record, and the old record's status line points
-at it.
+at it. So a record says what was decided then and why; what Dock does today
+is in the [guide](../guide/README.md) and the [architecture](../architecture.md).
 
 Status is **proposed**, **accepted** or **superseded**. A record whose
 decision changed in part stays accepted and reads **superseded in part by
