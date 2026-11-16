@@ -1,8 +1,9 @@
 # 0082: Open source under the AGPL, with a trademark policy and a CLA
 
 Status: accepted (decided with Saile, 2026-11-14). Answers the license
-question [0008](0008-keep-doors-open.md) left open. Not yet public: the
-repository goes public with v1.0.0, through `scripts/go-public.sh`.
+question [0008](0008-keep-doors-open.md) left open. Decision 6 changed: the
+repository went public on 2026-11-16 at 0.x (v0.52.1), through
+`scripts/go-public.sh`; v1.0.0 comes later.
 
 ## Context
 
@@ -23,9 +24,9 @@ someone else sell hosted Dock first.
 No OSI license forbids offering the software as a service. A non-compete
 license (FSL, BSL, Elastic) would, but isn't open source, and an extra
 restriction added to the AGPL may be removed by any recipient (its
-section 7). Dokploy's history shows the cost of mixing: Apache-2.0 with
-extra resale terms drew criticism until it moved to an open core (Apache
-core, proprietary enterprise folder).
+section 7). Mixing the two costs trust: an open source license with
+extra resale terms is no longer open source, and the community treats it
+so.
 
 ## Decision
 

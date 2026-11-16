@@ -29,7 +29,7 @@ Shipped beyond the milestones, by area:
 ## M6: Ready for others (if we go open source)
 
 - Done: install script and in-place updates ([0028](decisions/0028-updates-from-the-console.md)), the [user guide](guide/README.md), roles in the UI, organizations with members, invites, org variables and org alert channels, no telemetry.
-- License decided: AGPL-3.0 with a trademark policy and a CLA; going public is v1.0.0 ([0082](decisions/0082-open-source-license.md)). Open signup, email verification and payments come with paying customers; until then orgs are invite-only. Servers stay the platform's: orgs only say production or non-production.
+- License decided: AGPL-3.0 with a trademark policy and a CLA; public since 2026-11-16, at 0.x ([0082](decisions/0082-open-source-license.md)). Open signup, email verification and payments come with paying customers; until then orgs are invite-only. Servers stay the platform's: orgs only say production or non-production.
 - Hosting customers' apps on our servers: sandboxing, quotas, metering, billing, abuse handling. Its own ADR first.
 
 ## Backlog

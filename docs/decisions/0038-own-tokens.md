@@ -1,6 +1,8 @@
 # 0038: Tokens in organization settings, your own on your account
 
-Status: accepted (asked by Saile, 2026-10-30).
+Status: accepted (asked by Saile, 2026-10-30); superseded in part by [0080](0080-permissions-roles-groups-and-agents.md)
+(an org's tokens are org agents, managed with `agents.manage` and capped at
+what their creator holds; `dock login` tokens are personal agents).
 
 ## Context
 

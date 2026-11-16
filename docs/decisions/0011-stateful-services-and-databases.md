@@ -4,16 +4,15 @@ Status: accepted; superseded in part by [0047](0047-volume-snapshots.md) (snapsh
 
 ## Context
 
-Apps need databases. Railway lets you add Postgres or Redis next to your app
-in a project. We want the same, without the platform becoming a database
-company, and without risking data with deploy strategies meant for stateless
+Apps need databases: Postgres or Redis added next to the app in its
+project. We want that without the platform becoming a database company, and without risking data with deploy strategies meant for stateless
 apps.
 
 Options:
 
 | Option | Verdict |
 |---|---|
-| **Database = a service from a template** | Default. Isolated, matches the Railway model. |
+| **Database = a service from a template** | Default. Isolated, and a database is one more service in the project. |
 | One shared Postgres per server, a database per app | Saves RAM, but one bad query or upgrade hits every app, and all apps share a version. Maybe later as an opt-in for tight servers. |
 | External managed database (Neon, Supabase, RDS) | Always supported: it's just a variable. |
 

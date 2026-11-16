@@ -7,8 +7,8 @@ Status: accepted (decided by the agent, on Saile's direction)
 The UI grew around operating what exists: deploys, logs, variables,
 domains, data. Creating things stayed CLI-only. A first-time user in the
 browser could not create a project, an environment or a non-database
-service, deploy a directory, or change their own password. For a
-Railway-style product the browser is the front door.
+service, deploy a directory, or change their own password. For a deploy
+platform the browser is the front door.
 
 ## Decision
 
