@@ -7,8 +7,11 @@ environments, services and variables. Built so AI agents can deploy safely (CLI,
 without being able to break or destroy things. Lightweight enough that the
 platform never competes with the apps it hosts.
 
-Built by NordTempo, for NordTempo first. Open source and paid hosting are
-deliberately kept possible (see [vision](docs/vision.md)).
+**[dock.nordtempo.com](https://dock.nordtempo.com)** ·
+[Install](docs/guide/install.md) · [Guide](docs/guide/README.md)
+
+Built by NordTempo, for NordTempo first, and open source under the
+[AGPL-3.0](LICENSE) (see [vision](docs/vision.md)).
 
 ## Status
 
