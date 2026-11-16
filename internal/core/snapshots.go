@@ -209,7 +209,7 @@ func (c *Core) SnapshotBefore(ctx context.Context, a Actor, ss svcScope, trigger
 	// HTTP request ending) must not leave it running for ever.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Hour)
 	defer cancel()
-	vols, err := c.appliedVolumes(ctx, ss)
+	vols, err := c.mountedVolumes(ctx, ss)
 	if err != nil || len(vols) == 0 {
 		return nil, err
 	}
@@ -232,6 +232,31 @@ func (c *Core) appliedVolumes(ctx context.Context, ss svcScope) ([]store.Volume,
 	return slices.DeleteFunc(vols, func(v store.Volume) bool { return v.Pending }), err
 }
 
+// mountedVolumes lists the volumes a snapshot copies: the applied ones
+// the service's active release mounts. One applied since only exists
+// once the release that mounts it starts (adding a volume and applying
+// it with a pre-deploy snapshot), and has no data to copy yet.
+func (c *Core) mountedVolumes(ctx context.Context, ss svcScope) ([]store.Volume, error) {
+	vols, err := c.appliedVolumes(ctx, ss)
+	if err != nil || len(vols) == 0 {
+		return vols, err
+	}
+	active, err := c.store.GetActiveRelease(ctx, ss.svc.ID)
+	if store.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := c.openConfig(active)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(vols, func(v store.Volume) bool {
+		return !slices.ContainsFunc(cfg.Mounts, func(m configMount) bool { return m.DockerName == v.DockerName })
+	}), nil
+}
+
 func volumeNames(vols []store.Volume) []string {
 	out := make([]string, len(vols))
 	for i, v := range vols {
@@ -251,12 +276,12 @@ func (c *Core) startSnapshot(ctx context.Context, a Actor, ss svcScope, trigger 
 	if ss.svc.ArchivedAt != nil {
 		return store.VolumeSnapshot{}, nil, invalid("service %s is archived", ss)
 	}
-	vols, err := c.appliedVolumes(ctx, ss)
+	vols, err := c.mountedVolumes(ctx, ss)
 	if err != nil {
 		return store.VolumeSnapshot{}, nil, err
 	}
 	if len(vols) == 0 {
-		return store.VolumeSnapshot{}, nil, invalid("%s has no volume, so there is nothing to snapshot", ss)
+		return store.VolumeSnapshot{}, nil, invalid("%s has no volume its running release uses, so there is nothing to snapshot", ss)
 	}
 	if _, err := c.runtimeFor(ss.env.ServerID); err != nil {
 		return store.VolumeSnapshot{}, nil, err

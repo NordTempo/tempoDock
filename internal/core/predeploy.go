@@ -92,7 +92,8 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 // the release's environment (ADR 0047), since the command may change any
 // of them. The release's own service is one too: its previous release
 // still runs (a stateful service stops it only after the command). A
-// service never deployed has no data yet and is skipped. Each snapshot
+// service never deployed has no data yet and is skipped, and so is a
+// volume its running release doesn't mount yet (mountedVolumes). Each snapshot
 // is a release event and a build log line. The first that fails fails
 // the release before the command runs, so nothing has changed yet.
 func (d *deployment) snapshotBeforePreDeploy(ctx context.Context) error {
