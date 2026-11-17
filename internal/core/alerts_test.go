@@ -384,6 +384,65 @@ func TestAlertLinks(t *testing.T) {
 	}
 }
 
+// A channel that gets a final answer (Slack's 404 for a removed webhook,
+// 410 for an archived channel) is marked broken: its error says so in
+// Slack's words and an alert of its org stays open until a test works or
+// the channel is removed. The channel is never removed by Dock.
+func TestFinalAnswerMarksChannelBroken(t *testing.T) {
+	saved := deliveryBackoff
+	deliveryBackoff = []time.Duration{0, time.Millisecond}
+	t.Cleanup(func() { deliveryBackoff = saved })
+	h := newHarness(t)
+	h.c.AllowLoopbackAlertChannels(true)
+	var mu sync.Mutex
+	status, answer := http.StatusNotFound, "no_service"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, answer)
+	}))
+	t.Cleanup(srv.Close)
+	answers := func(s int, a string) {
+		mu.Lock()
+		status, answer = s, a
+		mu.Unlock()
+	}
+	h.channel(apitypes.CreateAlertChannelRequest{Name: "team", Kind: apitypes.ChannelSlack, URL: srv.URL})
+	ch, err := h.store.GetAlertChannel(h.ctx, store.GetAlertChannelParams{Org: 1, Name: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := channelAlertKey(ch.ID)
+
+	h.c.signalAlert(h.ctx, alertSignal{Key: "x", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something broke", orgID: 1})
+	a := h.openAlert(key, true)
+	if a.Kind != string(apitypes.AlertConnection) || alertOrgID(a) != 1 || a.Title != "Alert channel team is broken" ||
+		!strings.Contains(a.Message, "Slack says this webhook no longer exists (404 no_service)") || a.Command != "dock alerts channel test team" {
+		t.Fatalf("broken channel alert = %+v", a)
+	}
+	chs, err := h.c.ListAlertChannels(h.ctx, testSystem, false)
+	if err != nil || len(chs) != 1 || !strings.HasPrefix(chs[0].LastError, "Slack says this webhook no longer exists") {
+		t.Fatalf("channels = %+v, %v", chs, err)
+	}
+
+	answers(http.StatusOK, "ok")
+	if res, err := h.c.TestAlertChannel(h.ctx, testSystem, false, "team"); err != nil || !res.OK {
+		t.Fatalf("test = %+v, %v", res, err)
+	}
+	h.openAlert(key, false)
+
+	answers(http.StatusGone, "channel_is_archived")
+	h.c.signalAlert(h.ctx, alertSignal{Key: "y", Kind: "test", Severity: apitypes.SeverityWarning, Title: "Something else", orgID: 1})
+	if a := h.openAlert(key, true); !strings.Contains(a.Message, "Slack channel is archived (410 channel_is_archived)") {
+		t.Fatalf("archived channel alert = %+v", a)
+	}
+	if err := h.c.RemoveAlertChannel(h.ctx, testSystem, false, "team"); err != nil {
+		t.Fatal(err)
+	}
+	h.openAlert(key, false)
+}
+
 // Slack's rate limit (429 with Retry-After) makes the next attempt wait as
 // long as it asks; an answer retrying can't change (404 no_service for a
 // removed webhook, 410 channel_is_archived) ends the retries at once.

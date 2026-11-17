@@ -247,7 +247,8 @@ type deliveryError struct {
 	status int
 	// retryAfter is the answer's Retry-After in seconds, 0 without one.
 	retryAfter time.Duration
-	msg        string
+	// answer is the start of the body, msg the whole error.
+	answer, msg string
 }
 
 func (e *deliveryError) Error() string { return e.msg }
@@ -304,20 +305,70 @@ func (c *Core) sendWithRetries(id int64, n apitypes.AlertNotification) {
 	}
 }
 
+// channelSent records a delivery that worked, which also resolves the
+// channel's broken alert (channelFailed); without one that is a map
+// lookup.
 func (c *Core) channelSent(ctx context.Context, id int64) {
 	if err := c.store.SetAlertChannelSent(ctx, store.SetAlertChannelSentParams{LastSentAt: ptr(now()), ID: id}); err != nil {
 		c.log.Error("alerts: record delivery", "err", err)
 	}
+	c.connectionWorks(ctx, channelAlertKey(id))
 }
 
+// channelFailed records a delivery that failed on the channel. One that
+// got a final answer (deliveryError.final: Slack's 404 for a removed
+// webhook, 410 for an archived channel) marks the channel broken: its
+// last error says so and what to do (brokenText), and an alert of the
+// channel's org (or the platform's) stays open until a delivery or a test
+// works or the channel is removed. The channel itself is kept.
 func (c *Core) channelFailed(ctx context.Context, id int64, cause error) {
 	msg := cause.Error()
-	if len(msg) > 500 {
-		msg = msg[:500]
+	de, final := errors.AsType[*deliveryError](cause)
+	final = final && de.final()
+	var ch store.AlertChannel
+	if final {
+		var err error
+		if ch, err = c.store.GetAlertChannelByID(ctx, id); err != nil {
+			return // removed meanwhile
+		}
+		msg = brokenText(apitypes.AlertChannelKind(ch.Kind), de)
 	}
-	if err := c.store.SetAlertChannelFailed(ctx, store.SetAlertChannelFailedParams{LastError: msg, LastErrorAt: ptr(now()), ID: id}); err != nil {
+	if err := c.store.SetAlertChannelFailed(ctx, store.SetAlertChannelFailedParams{LastError: clip(msg, 500), LastErrorAt: ptr(now()), ID: id}); err != nil {
 		c.log.Error("alerts: record delivery", "err", err)
 	}
+	if !final {
+		return
+	}
+	command := "dock alerts channel test " + ch.Name
+	if ch.OrgID == nil {
+		command += " --platform"
+	}
+	c.connectionFailedIn(ctx, channelOrg(ch), channelAlertKey(id), "alert_channel:"+ch.Name,
+		"Alert channel "+ch.Name+" is broken", msg, command)
+}
+
+// channelAlertKey names a broken channel's alert.
+func channelAlertKey(id int64) string { return "alert_channel:" + strconv.FormatInt(id, 10) }
+
+// channelOrg is a channel's org, 0 for the platform's.
+func channelOrg(ch store.AlertChannel) int64 {
+	if ch.OrgID == nil {
+		return 0
+	}
+	return *ch.OrgID
+}
+
+// brokenText says why a channel that got a final answer is broken and
+// what to do about it, in Slack's words for a Slack webhook.
+func brokenText(kind apitypes.AlertChannelKind, de *deliveryError) string {
+	switch {
+	case kind == apitypes.ChannelSlack && de.status == http.StatusNotFound:
+		return fmt.Sprintf("Slack says this webhook no longer exists (404 %s). Nothing reaches the channel: remove it and add it again with a new webhook URL.", de.answer)
+	case kind == apitypes.ChannelSlack && de.status == http.StatusGone:
+		return fmt.Sprintf("Slack says the webhook's Slack channel is archived (410 %s). Nothing reaches the channel: unarchive it in Slack, or remove the channel and add it again with a new webhook URL.", de.answer)
+	}
+	return fmt.Sprintf("The channel's URL answered %d %s: %s. Sending again can't change that, so nothing reaches the channel: fix the receiver, or remove the channel and add it again with the right URL.",
+		de.status, http.StatusText(de.status), de.answer)
 }
 
 // send makes one delivery attempt.
@@ -426,7 +477,8 @@ func (e *alertEngine) post(ctx context.Context, org bool, target string, body []
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
-		de := &deliveryError{status: resp.StatusCode, msg: fmt.Sprintf("the channel's URL answered %s: %s", resp.Status, strings.TrimSpace(string(snippet)))}
+		answer := strings.TrimSpace(string(snippet))
+		de := &deliveryError{status: resp.StatusCode, answer: answer, msg: fmt.Sprintf("the channel's URL answered %s: %s", resp.Status, answer)}
 		if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
 			de.retryAfter = time.Duration(s) * time.Second
 		}
@@ -713,6 +765,7 @@ func (c *Core) RemoveAlertChannel(ctx context.Context, a Actor, platform bool, n
 	if err := c.store.DeleteAlertChannel(ctx, ch.ID); err != nil {
 		return err
 	}
+	c.connectionWorks(ctx, channelAlertKey(ch.ID)) // a broken channel's alert goes with it
 	c.audit(ctx, channelAudit(a, org), "alert.channel_remove", nil, nil, "alert channel "+name, "removed alert channel "+name)
 	return nil
 }
