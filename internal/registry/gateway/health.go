@@ -133,7 +133,7 @@ func (g *Gateway) Status() Status {
 func (g *Gateway) statusLocked(now time.Time) Status {
 	st := Status{SpoolBytes: g.sp.used, SpoolMax: g.sp.max, Refusing: g.sp.refusing, RefusingSince: g.sp.refusingSince}
 	for _, e := range g.sp.idx {
-		if e.local {
+		if e.local || e.uploaded {
 			continue
 		}
 		st.Waiting++

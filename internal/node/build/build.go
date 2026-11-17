@@ -27,16 +27,20 @@
 // plan is generated with the Railpack library in a capped child process
 // (PlanMain) and built with the matching Railpack BuildKit frontend, which
 // is what Railpack recommends for platforms; its images are pinned by
-// digest (railpackImages). Results are exported straight into the local
-// Docker Engine, new layers compressed with zstd.
+// digest (railpackImages). New layers are compressed with zstd.
 //
 // # Push
 //
-// With BuildRequest.Push the built image is also pushed to the platform
-// registry (ADR 0014 section 4), so the builder starts it without a pull
-// while other servers pull it by digest. The control plane passes a
-// short-lived token scoped to the one repository; nothing on the builder
-// stores registry credentials. See push for why Docker pushes.
+// With BuildRequest.Push the built image goes to the platform registry
+// (ADR 0014 section 4), which other servers pull it from by digest.
+// BuildKit pushes it itself, through the relay (relay.go), and the
+// builder pulls it back into Docker: only the layers that changed move,
+// where a Docker export sends the whole image every build (ADR 0089
+// amendment). Without the relay, the image is loaded into Docker and
+// Docker pushes it (dockerPush). The control plane passes a short-lived
+// token scoped to the one repository; nothing on the builder stores
+// registry credentials. Without a push, results are loaded straight
+// into the local Docker Engine.
 //
 // # Variables
 //
@@ -88,6 +92,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -119,11 +124,19 @@ type Builder struct {
 	// used, recreated or pruned: builds fail saying so instead. Set it
 	// before the first build.
 	Owner string
+	// Probe is the host path of dock-probe (probe.Install) and RelayDir a
+	// host directory for the relay's socket: with both, BuildKit pushes
+	// to the registry itself through the relay (relay.go), and the node
+	// pulls what it built. Without, the image is loaded into Docker and
+	// Docker pushes it. The BuildKit container mounts both directories.
+	// Set them before the first build.
+	Probe, RelayDir string
 
 	docker  *client.Client
 	cfg     config.BuildKit
 	workDir string
 	sem     chan struct{}
+	warmMu  sync.Mutex // one WarmBuilder at a time
 	// name and cacheVolume are the BuildKit container and its cache volume:
 	// ContainerName and CacheVolume, except in tests.
 	name, cacheVolume string
@@ -202,18 +215,28 @@ func (b *Builder) Build(ctx context.Context, req node.BuildRequest) (node.Built,
 
 	started := time.Now()
 	froms := map[string]string{} // image -> digest, from FROM steps
-	if err := b.solve(ctx, bk, opt, req.Tag, logs, froms); err != nil {
+	var push *relayPush
+	if req.Push != nil {
+		if host := b.relayHost(req.Push); host != "" {
+			push = &relayPush{PushTarget: req.Push, host: host}
+		}
+	}
+	if err := b.solve(ctx, bk, opt, req.Tag, push, logs, froms); err != nil {
 		return node.Built{}, b.explain(ctx, err, started)
 	}
-
+	switch {
+	case push != nil:
+		if err := b.pull(ctx, req.Tag, req.Push, logs); err != nil {
+			return node.Built{}, err
+		}
+	case req.Push != nil:
+		if err := b.dockerPush(ctx, req.Tag, req.Push, logs); err != nil {
+			return node.Built{}, err
+		}
+	}
 	img, err := b.docker.ImageInspect(ctx, req.Tag)
 	if err != nil {
 		return node.Built{}, fmt.Errorf("inspect built image: %w", err)
-	}
-	if req.Push != nil {
-		if err := b.push(ctx, req.Tag, req.Push, logs); err != nil {
-			return node.Built{}, err
-		}
 	}
 	out := node.Built{ID: img.ID}
 	if base != "" {
@@ -350,36 +373,60 @@ func localOpt(frontend string, attrs map[string]string, contextDir, dockerfileDi
 	}, nil
 }
 
-// solve runs the build, streaming plain progress to logs and the resulting
-// image tarball into Docker's image load API.
+// relayPush is a push BuildKit makes itself, through the relay to
+// host (relay.go).
+type relayPush struct {
+	*node.PushTarget
+	host string
+}
+
+// solve runs the build, streaming plain progress to logs, and exports
+// the image: pushed by BuildKit when push is set, otherwise as a tarball
+// into Docker's image load API.
 //
 // The frontend runs from a build function rather than as the solve's own
 // frontend, so the image config it returns is labelled node.LabelImage
 // (labelImage) before the export: Railpack's frontend takes no label
 // options, and disk pruning only removes images carrying the label.
-func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, tag string, logs io.Writer, froms map[string]string) error {
-	pr, pw := io.Pipe()
-	opt.Exports = []bkclient.ExportEntry{{
-		Type: bkclient.ExporterDocker,
-		// zstd compresses about three times faster than gzip (a cold
-		// Railpack export 15.6 s -> 5.2 s on two cores, ADR 0089), and
-		// Docker 23+ reads it. Layers that already have a blob keep it,
-		// so unchanged layers aren't pushed again.
-		Attrs:  map[string]string{"name": tag, "compression": "zstd"},
-		Output: func(map[string]string) (io.WriteCloser, error) { return pw, nil },
-	}}
-
-	loaded := make(chan error, 1)
-	go func() {
-		err := b.load(ctx, pr)
-		_ = pr.CloseWithError(err)
-		loaded <- err
-	}()
-
+//
+// Layers are compressed with zstd, about three times faster than gzip (a
+// cold Railpack export 15.6 s -> 5.2 s on two cores, ADR 0089), which
+// Docker 23+ reads. Layers that already have a blob keep it, so
+// unchanged layers aren't pushed again.
+func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.SolveOpt, tag string, push *relayPush, logs io.Writer, froms map[string]string) error {
 	display, err := progressui.NewDisplay(logs, progressui.PlainMode)
 	if err != nil {
 		return err
 	}
+	var loaded chan error
+	var pw *io.PipeWriter
+	if push != nil {
+		// The pushed image only lives in the registry and, once pulled,
+		// in Docker: store=false keeps no image record in BuildKit, which
+		// would hold its layers past the build cache's pruning.
+		opt.Exports = []bkclient.ExportEntry{{
+			Type: bkclient.ExporterImage,
+			Attrs: map[string]string{
+				"name": push.Ref, "push": "true", "store": "false", "compression": "zstd",
+			},
+		}}
+		opt.Session = append(opt.Session, newRegistryAuth(push.host, push.Token))
+	} else {
+		var pr *io.PipeReader
+		pr, pw = io.Pipe()
+		opt.Exports = []bkclient.ExportEntry{{
+			Type:   bkclient.ExporterDocker,
+			Attrs:  map[string]string{"name": tag, "compression": "zstd"},
+			Output: func(map[string]string) (io.WriteCloser, error) { return pw, nil },
+		}}
+		loaded = make(chan error, 1)
+		go func() {
+			err := b.load(ctx, pr)
+			_ = pr.CloseWithError(err)
+			loaded <- err
+		}()
+	}
+
 	status, shown := make(chan *bkclient.SolveStatus), make(chan struct{})
 	tapped := make(chan *bkclient.SolveStatus)
 	go func() {
@@ -402,20 +449,53 @@ func (b *Builder) solve(ctx context.Context, bk *bkclient.Client, opt bkclient.S
 	}()
 
 	frontend, attrs := opt.Frontend, opt.FrontendAttrs
-	_, err = bk.Build(ctx, opt, "dock", func(ctx context.Context, c gateway.Client) (*gateway.Result, error) {
-		res, err := c.Solve(ctx, gateway.SolveRequest{Frontend: frontend, FrontendOpt: attrs})
+	var stopRelay func()
+	var pushStarted time.Time
+	resp, err := bk.Build(ctx, opt, "dock", func(ctx context.Context, c gateway.Client) (*gateway.Result, error) {
+		// With a push, the build's steps all run here, before the relay
+		// opens the registry to the container for the export.
+		res, err := c.Solve(ctx, gateway.SolveRequest{Frontend: frontend, FrontendOpt: attrs, Evaluate: push != nil})
 		if err != nil {
 			return nil, err
 		}
-		return res, labelImage(res.Metadata)
+		if err := labelImage(res.Metadata); err != nil {
+			return nil, err
+		}
+		if push != nil {
+			if stopRelay, err = b.openRelay(ctx, push.host); err != nil {
+				return nil, err
+			}
+			pushStarted = time.Now()
+			_, _ = fmt.Fprintf(logs, "Pushing %s\n", push.Ref)
+		}
+		return res, nil
 	}, status)
-	_ = pw.CloseWithError(err) // unblocks load if the export never started
-	<-shown                    // the tap has closed: froms is complete
-	loadErr := <-loaded
-	if err != nil {
+	if stopRelay != nil {
+		stopRelay()
+		if err != nil {
+			// Every step passed: the export or its push failed, which
+			// core's diagnosis tells from the build by this prefix.
+			err = fmt.Errorf("push %s: %w", push.Ref, err)
+		}
+	}
+	if pw != nil {
+		_ = pw.CloseWithError(err) // unblocks load if the export never started
+	}
+	<-shown // the tap has closed: froms is complete
+	if loaded != nil {
+		if loadErr := <-loaded; err == nil {
+			err = loadErr
+		}
+	}
+	if err != nil || push == nil {
 		return err
 	}
-	return loadErr
+	digest := resp.ExporterResponse[exptypes.ExporterImageDigestKey]
+	if digest == "" {
+		return fmt.Errorf("push %s: BuildKit reported no digest", push.Ref)
+	}
+	_, _ = fmt.Fprintf(logs, "Pushed %s (%s) in %.1fs\n", push.Ref, digest, time.Since(pushStarted).Seconds())
+	return nil
 }
 
 // labelImage sets node.LabelImage in the image configs of a frontend's

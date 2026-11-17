@@ -557,6 +557,9 @@ func (c *Core) Start(ctx context.Context) error {
 	c.kickJobs()
 	// Scans wait for a quiet minute; with nothing queued it exits.
 	c.startScans(ctx)
+	// A new builder, or one updated to other Railpack images, fetches
+	// them now rather than in its first build.
+	c.warmBuilder(ctx, c.localID)
 	// Mail queued before a stop goes now; with none the sender exits.
 	c.email.mu.Lock()
 	c.email.started = true

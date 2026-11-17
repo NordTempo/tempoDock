@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -58,6 +60,9 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		// with this runtime's.
 		want += " owner=" + b.Owner
 	}
+	if b.Probe != "" && b.RelayDir != "" {
+		want += " relay" // mounts the relay's directories (relay.go)
+	}
 	mem := int64(b.cfg.MemoryMB) << 20
 
 	inspect, err := b.docker.ContainerInspect(ctx, b.name, client.ContainerInspectOptions{})
@@ -97,6 +102,9 @@ func (b *Builder) ensureDaemon(ctx context.Context, logs io.Writer) (*bkclient.C
 		}
 	}
 
+	if err := b.relayDir(); err != nil { // its mount fails the start without it
+		return nil, err
+	}
 	if _, err := b.docker.ContainerStart(ctx, b.name, client.ContainerStartOptions{}); err != nil {
 		return nil, fmt.Errorf("start %s: %w", b.name, err)
 	}
@@ -149,6 +157,9 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 		node.LabelManaged: "true",
 		node.LabelRole:    roleBuildKit,
 	}
+	if err := b.relayDir(); err != nil {
+		return err
+	}
 	if _, err := b.docker.VolumeCreate(ctx, client.VolumeCreateOptions{Name: b.cacheVolume, Labels: labels}); err != nil {
 		return fmt.Errorf("create volume %s: %w", b.cacheVolume, err)
 	}
@@ -174,7 +185,7 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 				Type:   "local",
 				Config: map[string]string{"max-size": "10m", "max-file": "3"},
 			},
-			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: b.cacheVolume, Target: "/var/lib/buildkit"}},
+			Mounts: b.mounts(),
 			Resources: container.Resources{
 				Memory:     mem,
 				MemorySwap: docker.NoSwap(mem), // hitting the cap fails the build instead of thrashing the disk
@@ -185,6 +196,31 @@ func (b *Builder) createDaemon(ctx context.Context, configLabel string, logs io.
 	})
 	if err != nil {
 		return fmt.Errorf("create %s: %w", b.name, err)
+	}
+	return nil
+}
+
+// mounts are the BuildKit container's mounts: its cache volume, and the
+// relay's directories when it has them. Probe's directory, not the file:
+// an update replaces dock-probe through a rename, which a mounted file
+// wouldn't show.
+func (b *Builder) mounts() []mount.Mount {
+	m := []mount.Mount{{Type: mount.TypeVolume, Source: b.cacheVolume, Target: "/var/lib/buildkit"}}
+	if b.Probe != "" && b.RelayDir != "" {
+		m = append(m,
+			mount.Mount{Type: mount.TypeBind, Source: filepath.Dir(b.Probe), Target: relayProbeDir, ReadOnly: true},
+			mount.Mount{Type: mount.TypeBind, Source: b.RelayDir, Target: relaySockDir})
+	}
+	return m
+}
+
+// relayDir creates RelayDir, which the container mounts, if it has one.
+func (b *Builder) relayDir() error {
+	if b.Probe == "" || b.RelayDir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(b.RelayDir, 0o700); err != nil {
+		return fmt.Errorf("create the registry relay's directory: %w", err)
 	}
 	return nil
 }

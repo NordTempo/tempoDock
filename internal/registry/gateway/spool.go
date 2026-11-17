@@ -38,6 +38,9 @@ type entry struct {
 	local bool
 	// queued is when it started waiting to upload.
 	queued time.Time
+	// uploaded: the bucket has it, and the file stays only for reads
+	// until the pushes running when it uploaded end (PushStarted).
+	uploaded bool
 
 	// The uploader's state (upload.go).
 	busy     chan struct{} // closed when the running upload ends; nil when none runs
@@ -132,6 +135,9 @@ func (s *spool) reserveLocked(n int64, now time.Time) error {
 	case float64(free-n) < s.minFree*float64(total):
 		reason = "disk"
 	}
+	if reason != "" && s.dropUploadedLocked() > 0 {
+		return s.reserveLocked(n, now) // the bucket has those: room first
+	}
 	if reason != "" {
 		if s.refusing != reason {
 			s.refusing, s.refusingSince = reason, now
@@ -182,7 +188,7 @@ func (s *spool) commitLocked(key, tmp string, size int64, etag string, now time.
 	} else {
 		s.used -= e.size
 	}
-	e.size, e.mod, e.etag = size, now, etag
+	e.size, e.mod, e.etag, e.uploaded = size, now, etag, false
 	e.gen++
 	return e, nil
 }
@@ -203,6 +209,19 @@ func (s *spool) removeLocked(key string) (wait chan struct{}) {
 		e.cancel()
 	}
 	return e.busy
+}
+
+// dropUploadedLocked deletes the files the bucket already has and
+// returns how many.
+func (s *spool) dropUploadedLocked() int {
+	n := 0
+	for key, e := range s.idx {
+		if e.uploaded && e.busy == nil {
+			s.removeLocked(key)
+			n++
+		}
+	}
+	return n
 }
 
 // pruneDirs removes dir and its parents while empty, up to obj/ or tmp/.

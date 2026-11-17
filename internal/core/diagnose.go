@@ -209,6 +209,10 @@ func rulePushFailed(in *diagInput) diagVerdict {
 	if e := strings.ToLower(in.err); strings.Contains(e, "timeout") || strings.Contains(e, "deadline exceeded") {
 		v.summary = "The image built, but the platform registry didn't answer in time; deploy again, and if it keeps failing an operator checks `dock registry` and the registry's storage"
 	}
+	if strings.Contains(in.err, "build failed: pull ") {
+		v.why = "the image built and was pushed; pulling it back from the platform registry failed"
+		v.summary = "The image built and was pushed, but this server couldn't pull it back from the platform registry; deploy again, and if it keeps failing an operator checks `dock registry` and the registry's storage"
+	}
 	if _, why, ok := strings.Cut(in.err, registryStorageSays); ok {
 		// The gateway knew why (ADR 0084): say that instead.
 		v.summary = "The image built, but the platform registry didn't take it: " + strings.TrimSuffix(why, ")")
@@ -217,10 +221,14 @@ func rulePushFailed(in *diagInput) diagVerdict {
 }
 
 // pushFailed reports whether a build's error is its push to the
-// registry failing: deploy.go's "build failed: " around the builder's
-// "push <ref>: ..." (internal/node/build/push.go).
+// registry failing, or the builder's pull of what BuildKit pushed:
+// deploy.go's "build failed: " around the builder's "push <ref>: ..."
+// or "pull <ref>: ..." (internal/node/build).
 func pushFailed(err string) bool {
 	_, rest, ok := strings.Cut(err, "build failed: push ")
+	if !ok {
+		_, rest, ok = strings.Cut(err, "build failed: pull ")
+	}
 	return ok && strings.Contains(rest, ": ")
 }
 

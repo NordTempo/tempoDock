@@ -199,7 +199,12 @@ func (g *Gateway) SetBucket(b *s3.Bucket) {
 
 // PushStarted tells the gateway a push to the registry runs until done is
 // called: meanwhile a stuck blob is reported missing so the push uploads
-// it again.
+// it again, and an object that finishes uploading keeps its spool file
+// until the last running push is done (keepWhilePushing). Core holds a
+// push through the build's pulls (the builder's own, and the release
+// server's), so they read the new layers from disk, not from a bucket
+// that may be slow; a spool that runs out of room drops those files
+// first.
 func (g *Gateway) PushStarted() (done func()) {
 	g.mu.Lock()
 	g.pushes++
@@ -209,6 +214,9 @@ func (g *Gateway) PushStarted() (done func()) {
 		once.Do(func() {
 			g.mu.Lock()
 			g.pushes--
+			if g.pushes == 0 && g.sp.dropUploadedLocked() > 0 {
+				g.afterRemoveLocked()
+			}
 			g.mu.Unlock()
 		})
 	}

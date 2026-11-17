@@ -33,7 +33,10 @@ import (
 // Railpack) gets a cold build on a fresh BuildKit and a warm one after a
 // one-line change, and logs the steps that took a second or more.
 // DOCK_BUILD_CPUS and DOCK_BUILD_MEMORY_MB set the builder's caps,
-// DOCK_BUILD_LOG a directory for the build logs. Skipped unless
+// DOCK_BUILD_LOG a directory for the build logs, DOCK_BUILD_DOCKER_PUSH
+// (any value) has Docker push instead of BuildKit, and DOCK_BUILD_WARM
+// (any value) fetches Railpack's images (WarmBuilder) before its cold
+// build. Skipped unless
 // DOCK_BUILD_APP is set (ADR 0089).
 func TestBuildTimes(t *testing.T) {
 	app := os.Getenv("DOCK_BUILD_APP")
@@ -61,10 +64,20 @@ func TestBuildTimes(t *testing.T) {
 			b := New(docker, cfg, t.TempDir())
 			b.name, b.cacheVolume = name+"-"+path, name+"-"+path+"-cache"
 			b.Owner = b.name
+			if os.Getenv("DOCK_BUILD_DOCKER_PUSH") == "" {
+				withRelay(t, b)
+			}
 			t.Cleanup(func() {
 				_, _ = docker.ContainerRemove(context.Background(), b.name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 				_, _ = docker.VolumeRemove(context.Background(), b.cacheVolume, client.VolumeRemoveOptions{Force: true})
 			})
+			if path == "railpack" && os.Getenv("DOCK_BUILD_WARM") != "" {
+				start := time.Now()
+				if err := b.WarmBuilder(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				t.Logf("railpack images fetched ahead (WarmBuilder) in %s", time.Since(start).Round(100*time.Millisecond))
+			}
 			src := copyApp(t, app, path)
 			for i, round := range []string{"cold", "warm"} {
 				if i > 0 {
@@ -151,11 +164,12 @@ func (l *stampedLog) String() string {
 var (
 	vertexName = regexp.MustCompile(`^\s*[\d.]+ #(\d+) (\[.*|[a-z].*)$`)
 	vertexDone = regexp.MustCompile(`^\s*([\d.]+) #(\d+) (DONE ([\d.]+)s|CACHED)`)
-	stampLine  = regexp.MustCompile(`^\s*([\d.]+) (Pushing|Pushed) `)
+	stampLine  = regexp.MustCompile(`^\s*([\d.]+) (Pushing|Pushed|Loaded into Docker) `)
 )
 
 // phases lists the build's steps that took a second or more (BuildKit's
-// own DONE durations) and the push.
+// own DONE durations), the push (with BuildKit's, its export too) and
+// the pull back into Docker.
 func (l *stampedLog) phases() []string {
 	names := map[string]string{}
 	var out []string
@@ -174,10 +188,14 @@ func (l *stampedLog) phases() []string {
 		}
 		if m := stampLine.FindStringSubmatch(line); m != nil {
 			at, _ := strconv.ParseFloat(m[1], 64)
-			if m[2] == "Pushing" {
+			switch m[2] {
+			case "Pushing":
 				pushStart = at
-			} else {
+			case "Pushed":
 				out = append(out, fmt.Sprintf("%6.1fs push to registry", at-pushStart))
+				pushStart = at
+			default:
+				out = append(out, fmt.Sprintf("%6.1fs pull into Docker", at-pushStart))
 			}
 		}
 	}

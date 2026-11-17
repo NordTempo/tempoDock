@@ -2,6 +2,9 @@
 
 Status: accepted (asked by Saile through the coordinator, 2026-11-17).
 Amends [0006](0006-every-way-to-build.md): the builder's CPU cap.
+Amended the same day: BuildKit pushes, and builders fetch Railpack's
+images ahead (below); that amends
+[0084](0084-registry-storage-gateway.md)'s reads.
 
 ## Context
 
@@ -120,3 +123,101 @@ the default on a two-core server, zstd, pins), build and push:
   push, start; cold, then warm after a one-line change):
   `DOCK_BUILD_APP=$PWD/e2e/apps/nextjs-pnpm DOCK_BUILD_CPUS=2 go test
   -tags integration -run TestBuildTimes -v ./internal/node/build/`.
+
+## Amendment (2026-11-17): BuildKit pushes, Railpack's images ahead
+
+The two leftovers above. Measured as before (`TestBuildTimes`, two cores,
+the same app), build and push:
+
+| | Before | BuildKit pushes | And Railpack's images fetched ahead |
+|---|---|---|---|
+| Dockerfile, cold | 37.8 s | 40.3 s | |
+| Dockerfile, warm | 20.2 s | 19.3 s | |
+| Dockerfile with the cache mount, cold | 42.9 s | 43.2 s | |
+| Dockerfile with the cache mount, warm | 15.1 s | 14.0 s | |
+| Railpack, cold | 61.6 s | 61.9 s | 41.0 s (the fetch: 16.1 s, ahead) |
+| Railpack, warm | 16.8 s | 13.2 s | |
+
+The cold rows move with the build steps' own noise, ±2 s. The part
+this changes, from the start of the export until the image is pushed
+and in Docker:
+
+| | Before | After |
+|---|---|---|
+| Dockerfile, cold | 2.6 s | 2.1 s |
+| Dockerfile, warm | 2.2 s | 1.6 s |
+| Railpack, cold | 10.9 s | 9.0 s |
+| Railpack, warm | 3.2 s | 1.4 s |
+
+**BuildKit pushes to the registry itself, and the builder pulls the
+image back.** The Docker export sent the whole image as a tarball
+through the daemon every build (2.2 s of a warm Railpack build), waited
+for Docker to unpack it (up to 4.9 s cold), and then Docker pushed.
+BuildKit's image exporter pushes only the layers the registry doesn't
+have, and Docker's pull of the result fetches only the ones it doesn't
+have, over loopback. The saving grows with the image. Layers stay zstd,
+and BuildKit keeps no image record (`store=false`), which would hold
+layers past the build cache's pruning.
+
+The registry is on the host's loopback (the registry on the control
+plane, the node link's tunnel on other servers), out of reach of the
+BuildKit container on its own network. So a relay carries the push. For
+the export only, the daemon serves a Unix socket in its data dir
+(`builds/relay`), bind-mounted into the container, and joins each
+connection to the registry. `dock-probe relay`, a mode of the probe
+binary Dock already installs, runs in the container through the exec
+API, listens on the registry's address in the container's own network
+namespace and joins each connection to the socket. BuildKit pushes to
+the same reference Docker did, plain HTTP on loopback. The push token
+reaches BuildKit through the build's session (a token authority for
+that one host); other registries stay anonymous. A builder without the
+probe (a plain `go build`) loads into Docker and has Docker push, as
+before.
+
+**Security property: no build step reaches the registry.** Build steps
+share the BuildKit container's network namespace, so whatever listens
+there, a step could reach. The relay opens only after the build's last
+step finished: the build function evaluates the result before the
+export, starts the relay, and stops it when the export returns. Steps'
+processes end with their step, so none is left to connect, or to listen
+on the address first and catch the token.
+`TestStepsDontReachTheRegistry` checks it from a step of a build that
+pushes.
+
+**A push keeps what it uploaded on disk until it ends** (amends 0084's
+reads). With the bucket gateway, an object that finished uploading left
+the spool at once, so the pull right after a build read the new layers
+back from the bucket, slow or stuck as it may be. That was already true
+of other servers' pulls, and with this change it would be true of the
+builder's own. Now, while a push runs (`PushStarted`, which core holds
+through the build and its pulls), an uploaded object keeps its spool
+file. The file goes when the last push ends, or earlier when a write
+needs the room. "What waits to upload" doesn't count those files.
+
+**Builders fetch Railpack's images ahead, once per set of pins.** A
+cold Railpack build spent about 20 s fetching the images its plan runs
+on: the builder image (414 MB compressed) took 15 s, the runtime and
+frontend the rest. The images are pinned (above), so they can be
+fetched before any build needs them. Core asks a builder to fetch them
+(`WarmBuilder`, protocol 32) whenever one may have become a builder:
+the control plane at start, a node on connect, a server set to build.
+The builder skips the fetch when a marker in its data dir names the
+same pins. So it happens once on a new builder, and once after an
+update that pins other images. The fetch reads each image's root
+through BuildKit, which pulls and unpacks it as a build step would.
+
+- **Builders only.** `[buildkit] enabled` is true on every server, app
+  servers included, so a fetch at daemon start would put about 1.5 GB
+  on servers that never build. Core knows which servers build.
+- **The BuildKit container starts for the fetch** and keeps running,
+  as after a first build: about 15 MB and no CPU while idle.
+- **Builds don't wait for it.** A build that starts meanwhile shares
+  BuildKit's fetches.
+- The images count toward the build cache. Pruning
+  (`build_cache_keep_mb`) may remove them on a builder that only builds
+  Dockerfiles, and then the next Railpack build fetches them, as before.
+- No timer and no ticker: start, connect and the builder setting are
+  the events. Shipping the images through the platform registry
+  instead would make the control plane serve 460 MB to each new
+  builder, from a bucket in bucket mode. That is no faster than
+  ghcr.io, and it means another copy to keep in sync with the pins.

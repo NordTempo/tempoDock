@@ -145,6 +145,28 @@ func (c *Core) canBuild(s store.Server) bool {
 	return st.Status != remote.StatusOnline || st.Hello.Builder
 }
 
+// warmBuilder has a builder fetch what builds need before its first one
+// (Railpack's images, ADR 0089 amendment), in the background. It is
+// called whenever a server may have become a builder that can (the
+// control plane at start, a server on connect, one set to build); the
+// server skips what it has fetched already. Failures only cost the first
+// Railpack build the fetch.
+func (c *Core) warmBuilder(ctx context.Context, serverID int64) {
+	srv, err := c.store.GetServer(ctx, serverID)
+	if err != nil || !c.canBuild(srv) {
+		return
+	}
+	rt := c.connected(serverID)
+	if rt == nil {
+		return
+	}
+	c.wg.Go(func() {
+		if err := rt.WarmBuilder(c.ctx); err != nil && c.ctx.Err() == nil {
+			c.log.Warn("fetch Railpack's images ahead of builds; the first Railpack build fetches them", "server", srv.Name, "err", c.nodeErr(serverID, err))
+		}
+	})
+}
+
 // builderFor picks the server that builds source for an environment of
 // kind on target (ADR 0010): target itself when it is an online builder,
 // else the oldest online builder, which pushes the image to the registry

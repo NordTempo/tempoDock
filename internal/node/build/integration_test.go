@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -27,6 +28,7 @@ import (
 	"github.com/NordTempo/tempoDock/internal/config"
 	"github.com/NordTempo/tempoDock/internal/node"
 	dockerrt "github.com/NordTempo/tempoDock/internal/node/docker"
+	"github.com/NordTempo/tempoDock/internal/node/probe"
 )
 
 const (
@@ -81,8 +83,39 @@ func newBuilder(t *testing.T, docker *client.Client, memoryMB int) *Builder {
 	b := New(docker, cfg, t.TempDir())
 	b.name, b.cacheVolume = testContainer, testCache
 	b.Owner = testContainer
+	withRelay(t, b)
 	return b
 }
+
+// withRelay gives b the relay, so BuildKit pushes itself, when this test
+// binary embeds dock-probe (`make probe`, which make test-integration
+// runs). Without it, Docker pushes. The directories outlive each test:
+// tests share the BuildKit container that mounts them.
+func withRelay(t *testing.T, b *Builder) {
+	t.Helper()
+	relayOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "dock-relay-")
+		if err != nil {
+			relayErr = err
+			return
+		}
+		afterTests = append(afterTests, func() { _ = os.RemoveAll(dir) })
+		relayProbe, relayErr = probe.Install(dir)
+		relaySocks = filepath.Join(dir, "relay")
+	})
+	if relayErr != nil {
+		t.Logf("no relay, Docker pushes: %v", relayErr)
+		return
+	}
+	b.Probe, b.RelayDir = relayProbe, relaySocks
+}
+
+// The relay's directories for every test's builder (withRelay).
+var (
+	relayOnce              sync.Once
+	relayProbe, relaySocks string
+	relayErr               error
+)
 
 // labelled fails the test unless image id carries node.LabelImage, which
 // disk pruning needs to tell the platform's images from others.

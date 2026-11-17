@@ -6,6 +6,7 @@
 //
 //	dock-probe tcp PORT TIMEOUT_MS
 //	dock-probe http PORT PATH TIMEOUT_MS
+//	dock-probe relay ADDR SOCKET
 //	dock-probe version
 //
 // It connects to PORT on the container's loopback, then, if nothing
@@ -14,12 +15,20 @@
 // on a 2xx or 3xx status. Exit status 0 is healthy, 1 unhealthy; the one
 // line it prints says why, and Docker keeps it in the health log.
 //
-// It imports only net, os, strconv and time (no net/http, no fmt) to stay
-// small: Docker execs it every interval in the app's own cgroup.
+// relay is the BuildKit container's way to the platform registry (ADR
+// 0089 amendment): it listens on ADDR (the registry's 127.0.0.1:PORT,
+// in the container's own network namespace), joins each connection to
+// the Unix socket SOCKET, which the dock daemon serves on the host, and
+// prints "ready" once it listens. It runs only while a build exports,
+// and exits when its standard input closes (the daemon ends the exec).
+//
+// It imports only io, net, os, strconv and time (no net/http, no fmt) to
+// stay small: Docker execs it every interval in the app's own cgroup.
 package main
 
 import (
 	"errors"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -44,6 +53,9 @@ func run(args []string) error {
 	if len(args) == 1 && args[0] == "version" {
 		_, _ = os.Stdout.WriteString(version + "\n")
 		return nil
+	}
+	if len(args) == 3 && args[0] == "relay" {
+		return relay(args[1], args[2], os.Stdin)
 	}
 	if len(args) < 3 {
 		return errors.New("usage: dock-probe tcp PORT TIMEOUT_MS | http PORT PATH TIMEOUT_MS")
@@ -164,4 +176,46 @@ func describe(what string, err error) error {
 		return errors.New(what + ": connection reset")
 	}
 	return errors.New(what + ": " + err.Error())
+}
+
+// relay serves addr until stdin ends, joining each connection to the
+// Unix socket sock.
+func relay(addr, sock string, stdin io.Reader) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		_, _ = io.Copy(io.Discard, stdin)
+		_ = ln.Close()
+	}()
+	_, _ = os.Stdout.WriteString("ready\n")
+	for {
+		c, err := ln.Accept()
+		if err != nil {
+			return nil // stdin ended
+		}
+		go join(c, sock)
+	}
+}
+
+// join copies between c and a new connection to sock until both sides
+// are done, passing on each side's end of stream.
+func join(c net.Conn, sock string) {
+	defer func() { _ = c.Close() }()
+	u, err := net.Dial("unix", sock)
+	if err != nil {
+		return
+	}
+	defer func() { _ = u.Close() }()
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(u, c)
+		_ = u.(*net.UnixConn).CloseWrite()
+		close(done)
+	}()
+	_, _ = io.Copy(c, u)
+	_ = c.(*net.TCPConn).CloseWrite()
+	<-done
 }

@@ -359,6 +359,9 @@ func (n *Node) runtimeRoutes(mux *http.ServeMux, rt node.Runtime) {
 		r, err := rt.PruneBuildCache(ctx, a.KeepBytes)
 		return pruneResult(r), err
 	}))
+	h(opWarmBuilder, unary(func(ctx context.Context, _ empty) (empty, error) {
+		return empty{}, rt.WarmBuilder(ctx)
+	}))
 	h(opEnsureNetwork, unary(func(ctx context.Context, a resourceRequest) (empty, error) {
 		return empty{}, rt.EnsureNetwork(ctx, a.Name, a.Labels.node())
 	}))

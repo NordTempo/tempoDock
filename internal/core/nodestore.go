@@ -376,8 +376,9 @@ func (c *Core) reconnected(ctx context.Context, serverID int64) {
 	c.kickDomains()
 	c.kickBackups() // overdue backups run now
 	c.followServer(ctx, serverID)
-	c.kickJobs()              // and overdue jobs
-	c.kickScans()             // a builder, or a live CI image to pin, may be back (ADR 0074)
+	c.kickJobs()  // and overdue jobs
+	c.kickScans() // a builder, or a live CI image to pin, may be back (ADR 0074)
+	c.warmBuilder(ctx, serverID)
 	c.resumeMoves(ctx, false) // a move may have waited for it
 	c.resumeServerDrains(ctx) // and a drain
 }

@@ -146,6 +146,42 @@ func TestPushPullPrune(t *testing.T) {
 	waitForRegistry(t, registryURL(t, docker, name)) // running again
 }
 
+// TestStepsDontReachTheRegistry: BuildKit pushes through the relay, which
+// listens on the registry's address in the BuildKit container, the
+// network namespace build steps share. It opens only once the last step
+// finished, so a step, even one in a build that pushes, finds nothing
+// there. The step proves its check works on a listener of its own first.
+func TestStepsDontReachTheRegistry(t *testing.T) {
+	docker := dockerClient(t)
+	suffix := make([]byte, 4)
+	_, _ = rand.Read(suffix)
+	name := "dock-steptest-" + hex.EncodeToString(suffix)
+	key, err := registry.LoadOrCreateKey(t.TempDir() + "/" + registry.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer := registry.NewSigner(key, registry.Config{Service: "dock-test-registry", Realm: "http://127.0.0.1:1/token"})
+	regHost := strings.TrimPrefix(startRegistry(t, docker, name, signer), "http://")
+	b := newBuilder(t, docker, 1024)
+	if b.Probe == "" {
+		t.Skip("no dock-probe embedded (make probe), so Docker pushes and there is no relay")
+	}
+	b.name, b.cacheVolume = name+"-buildkit", name+"-buildkit-cache"
+	t.Cleanup(func() {
+		_, _ = docker.ContainerRemove(context.Background(), b.name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+		_, _ = docker.VolumeRemove(context.Background(), b.cacheVolume, client.VolumeRemoveOptions{Force: true})
+	})
+	port := regHost[strings.LastIndexByte(regHost, ':')+1:]
+	const repo = "test/app"
+	push := &node.PushTarget{Ref: regHost + "/" + repo + ":staging-1", Token: signer.Mint("test builder", registry.PushTokenTTL, registry.Push(repo))}
+	src := map[string]string{"Dockerfile": "FROM busybox:latest\n" +
+		"RUN echo " + name + " && (nc -l -p 9 -s 127.0.0.1 &) && sleep 0.3 && nc -z -w 2 127.0.0.1 9\n" +
+		"RUN echo " + name + " && ! nc -z -w 2 127.0.0.1 " + port + "\n"}
+	if _, logs, err := build(t, b, node.BuildRequest{Source: sourceTar(t, src), Tag: name + "/local:1", Push: push}); err != nil {
+		t.Fatalf("a build step reached the registry's address in BuildKit, or the build failed: %v\n%s", err, tail(logs, 30))
+	}
+}
+
 // startRegistry runs registry:3 as name, configured by registry.WriteConfig
 // and locked down like install.sh runs it (as an unprivileged user that
 // can read the 0640 config: this test's), and returns its URL on a

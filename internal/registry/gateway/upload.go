@@ -111,7 +111,7 @@ func (g *Gateway) nextLocked() (string, *entry, *s3.Client) {
 		key := u.queue[0]
 		u.queue = u.queue[1:]
 		delete(u.queued, key)
-		if e := g.sp.idx[key]; e != nil && e.busy == nil && !e.local {
+		if e := g.sp.idx[key]; e != nil && e.busy == nil && !e.local && !e.uploaded {
 			return key, e, g.bucket
 		}
 	}
@@ -192,7 +192,12 @@ func (g *Gateway) finish(key string, e *entry, gen uint64, res *resume, err erro
 		// Deleted while uploading; the delete waited for this to end.
 	case err == nil && e.gen == gen:
 		e.resume = nil
-		g.sp.removeLocked(key)
+		if g.pushes > 0 {
+			// keepWhilePushing (PushStarted): a pull right after reads it here.
+			e.uploaded = true
+		} else {
+			g.sp.removeLocked(key)
+		}
 		g.afterRemoveLocked()
 	case err == nil:
 		e.resume, e.failures = nil, 0
@@ -244,7 +249,7 @@ func (g *Gateway) afterRemoveLocked() {
 func (g *Gateway) waitingLocked() int {
 	n := 0
 	for _, e := range g.sp.idx {
-		if !e.local {
+		if !e.local && !e.uploaded {
 			n++
 		}
 	}
