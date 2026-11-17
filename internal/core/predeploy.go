@@ -80,7 +80,17 @@ func (d *deployment) preDeploy(ctx context.Context) error {
 		return step(apitypes.CodeDeployFailed, "pre-deploy command could not run: %w", d.c.nodeErr(d.ss.env.ServerID, err))
 	case res.ExitCode != 0:
 		if tail := lastLines(res.Output, preDeployTailLines); tail != "" {
-			d.event(ctx, "Pre-deploy command output (last lines):\n"+tail)
+			// A release's events are stored once and shown to everyone
+			// who sees the environment, so the release's secret values
+			// are masked in them whoever reads, as in a log drain. The
+			// build log has the output as written, for those who may
+			// reveal. Without the release's values nothing is shown.
+			if red, err := d.c.releaseRedactor(d.rel); err != nil {
+				d.c.log.Error("mask pre-deploy output", "release", d.rel.ID, "err", err)
+			} else {
+				tail, _ = red.line(tail)
+				d.event(ctx, "Pre-deploy command output (last lines):\n"+tail)
+			}
 		}
 		return step(apitypes.CodeDeployFailed, "pre-deploy command exited with code %d after %s; the previous release keeps serving (output in the build log)", res.ExitCode, took)
 	}
