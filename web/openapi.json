@@ -18136,6 +18136,9 @@
             "format": "date-time",
             "type": "string"
           },
+          "rules_bypass": {
+            "type": "boolean"
+          },
           "scope": {
             "enum": [
               "read",

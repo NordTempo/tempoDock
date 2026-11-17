@@ -61,4 +61,10 @@ func TestAgentRuleCommands(t *testing.T) {
 	if a := ok[apitypes.AgentAccess](t, "token", "bypass", "ci", "on"); !a.RulesBypass {
 		t.Fatalf("bypass = %+v", a)
 	}
+	// The token list says so too (Settings › Agent rules shows it).
+	for _, tk := range ok[[]apitypes.Token](t, "token", "list") {
+		if tk.Name == "ci" && !tk.RulesBypass {
+			t.Errorf("token list: ci = %+v", tk)
+		}
+	}
 }
