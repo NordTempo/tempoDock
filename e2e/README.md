@@ -61,8 +61,10 @@ user timer on the dev VM (the servers live there, out of reach of
 GitHub's runners):
 
 1. checks out main's newest commit whose `ci` run passed, in
-   `~/.cache/dock-nightly/src`, and builds it into a directory release
-   (`v<next patch>-nightly.<date>.g<sha>`);
+   `~/.cache/dock-nightly/src`, runs `make perf-bench` with timing
+   budgets enforced against the baseline (CI judges a pull request's
+   timings only against its base, docs/performance.md), and builds it
+   into a directory release (`v<next patch>-nightly.<date>.g<sha>`);
 2. starts the `e2e-nightly` slot (a control plane and two nodes) with the
    latest published release;
 3. points the control plane's `[updates] source` at the build and runs
@@ -78,7 +80,7 @@ It holds `/tmp/dock-heavy.lock` from the build to the last scenario
 RAM is free, and caps the whole cycle at 4 hours.
 
 **Results.** Everything goes to `~/.cache/dock-nightly/<date>/`:
-`nightly.log`, one log per step (`build`, `up`, `update`, ...) and per
+`nightly.log`, one log per step (`perf-bench`, `build`, `up`, `update`, ...) and per
 scenario (`run-apps.log`, `features-lock.log`, ...), `results.tsv`, and
 `soak-<server>.out` from the update's hammers. Each night adds one line to
 `~/.cache/dock-nightly/history.log`. A failure opens one issue labelled

@@ -2,7 +2,10 @@
 # The nightly end-to-end run: a safety net that catches regressions before
 # a release. Each night (a systemd user timer, 03:00 Europe/Oslo) it
 #
-#   1. checks out main's newest commit whose ci run passed, and builds it
+#   1. checks out main's newest commit whose ci run passed, runs its Go
+#      benchmarks strictly against scripts/perf/baseline.json (make
+#      perf-bench: CI judges a pull request's timings only against its base,
+#      so a slowdown spread over several changes shows here), and builds it
 #      into a directory release (the shape `dock update` reads, ADR 0028);
 #   2. starts fresh servers in their own e2e/vm slot (e2e-nightly: a control
 #      plane and two nodes) and installs the latest published release on
@@ -125,6 +128,9 @@ inner() {
 	export TMPDIR=$HOME_DIR/tmp GOTMPDIR=$HOME_DIR/tmp
 	mkdir -p "$TMPDIR"
 	nightly_key || die "can't make the nightly signing key"
+	# Timing budgets enforced, as on a quiet machine (the heavy lock is
+	# held); a failure is reported like a scenario's, and the night goes on.
+	((${#ONLY[@]})) || step perf-bench perf_bench
 	step build build_release "$nv" || return 1
 	step down e2e/vm/down.sh
 	step up env E2E_RELEASE="$latest" e2e/vm/up.sh "$NODES" || return 1
@@ -158,6 +164,19 @@ result() {
 	(($2 == 0)) || st=fail
 	(($2 == 124)) && st=timeout
 	printf '%s\t%s\t%s\t%s\n' "$1" "$st" "$3" "$4" >>"$RESULTS"
+}
+
+# perf_bench runs the Go benchmarks against the baseline with timing
+# budgets enforced, then repeats the rows over budget, so the report's
+# last lines of the log name them.
+perf_bench() {
+	local out=$RUN_DIR/perf-bench.out rc
+	make perf-bench PERF_FLAGS="-base-rev ''" >"$out" 2>&1
+	rc=$?
+	cat "$out"
+	printf '\nover budget:\n'
+	grep -E '  (FAIL|warn)$' "$out"
+	return $rc
 }
 
 # build_release VERSION builds this checkout into $RUN_DIR/release/VERSION
