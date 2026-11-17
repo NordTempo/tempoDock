@@ -1075,6 +1075,9 @@ type Token struct {
 	// Origin is "cli_login" for tokens created by approving `dock login`
 	// in the browser, else "manual".
 	Origin string `json:"origin" enum:"manual,cli_login"`
+	// RulesBypass: the organization's agent rules don't apply to this org
+	// token (Settings › Agent rules, `dock token bypass`).
+	RulesBypass bool `json:"rules_bypass,omitempty"`
 	// Operator marks a legacy token that is both an org's and the
 	// platform's (ADR 0080): it keeps working until it is split.
 	Operator bool `json:"operator,omitempty"`

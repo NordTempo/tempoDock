@@ -1052,7 +1052,7 @@ func toToken(ctx context.Context, names *names, t store.Token) apitypes.Token {
 	out := apitypes.Token{
 		ID: t.ID, Name: t.Name, Scope: apitypes.Scope(t.Scope), CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt,
 		ExpiresAt: t.ExpiresAt, LastUsedAt: t.LastUsedAt, RevokedAt: t.RevokedAt, Origin: t.Origin,
-		Operator: t.Operator, Platform: deref(t.Platform), Data: tokenData(t),
+		Operator: t.Operator, Platform: deref(t.Platform), Data: tokenData(t), RulesBypass: t.RulesBypass,
 	}
 	if t.ProjectID != nil {
 		out.Project = names.project(ctx, *t.ProjectID)

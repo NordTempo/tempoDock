@@ -12064,6 +12064,7 @@ export interface components {
             project?: string;
             /** Format: date-time */
             revoked_at?: string;
+            rules_bypass?: boolean;
             /** @enum {string} */
             scope: "read" | "deploy" | "admin";
             user?: string;
