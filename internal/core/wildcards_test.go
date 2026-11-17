@@ -207,9 +207,12 @@ func TestWildcardCertificate(t *testing.T) {
 		t.Errorf("Address shows %+v", w)
 	}
 
+	// Every op since the restart: background work (a log prune) may run
+	// after the routes are set.
+	before := len(p.rt.Ops())
 	p.restart()
-	if !slices.ContainsFunc(p.rt.Ops()[len(p.rt.Ops())-1:], func(op string) bool { return strings.Contains(op, "certs *.apps.test,apps.test") }) {
-		t.Errorf("routes after a restart don't carry the certificate: %v", p.rt.Ops()[len(p.rt.Ops())-1:])
+	if since := p.rt.Ops()[before:]; !slices.ContainsFunc(since, func(op string) bool { return strings.Contains(op, "certs *.apps.test,apps.test") }) {
+		t.Errorf("routes after a restart don't carry the certificate: %v", since)
 	}
 	if p.ca.obtained() != 1 {
 		t.Errorf("a restart obtained again (%d)", p.ca.obtained())
