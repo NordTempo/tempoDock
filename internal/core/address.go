@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -67,6 +68,10 @@ func (c *Core) publicURL() string {
 	}
 	return ""
 }
+
+// uiURL is where links to the UI point (commit statuses, Slack alerts):
+// [hooks] ui_url, else Dock's public URL; "" with neither.
+func (c *Core) uiURL() string { return cmp.Or(c.cfg.Hooks.UIURL, c.publicURL()) }
 
 // Address describes where Dock is reached and checks the public address's
 // DNS and certificate now. Operators only.

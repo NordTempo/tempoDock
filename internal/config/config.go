@@ -476,8 +476,9 @@ type Hooks struct {
 	// Listen is the loopback address Caddy proxies webhook requests to.
 	Listen string `toml:"listen"`
 	// UIURL is the UI's base URL, e.g. "https://dock.example.com", used
-	// for the "Details" link of commit statuses. Empty: statuses have no
-	// link (it is shown to everyone who can see the repository).
+	// for the "Details" link of commit statuses (shown to everyone who can
+	// see the repository) and the link in Slack alerts. Empty: Dock's
+	// public address, if it has one.
 	UIURL string `toml:"ui_url"`
 }
 

@@ -340,7 +340,7 @@ func (c *Core) send(ctx context.Context, ch store.AlertChannel, n apitypes.Alert
 			SignatureHeader: signWebhook(cfg.Secret, time.Now(), body), "Dock-Event": n.Event,
 		})
 	case apitypes.ChannelSlack:
-		body, err := json.Marshal(map[string]string{"text": slackText(n)})
+		body, err := json.Marshal(map[string]string{"text": slackText(n, c.alertLink(ctx, ch.OrgID, n.Alert))})
 		if err != nil {
 			return err
 		}
@@ -452,8 +452,9 @@ func headline(n apitypes.AlertNotification) string {
 
 // slackText is a Slack message, escaped: alert messages quote release
 // errors and build output, which must not turn into @channel mentions or
-// disguised links (<https://...|text>).
-func slackText(n apitypes.AlertNotification) string {
+// disguised links (<https://...|text>). With a link (alertLink) it ends
+// with Slack's <url|Open in Dock>, the one link Dock itself makes.
+func slackText(n apitypes.AlertNotification, link string) string {
 	text := headline(n)
 	if n.Alert.Message != "" && n.Event != "resolved" {
 		text += "\n" + n.Alert.Message
@@ -461,7 +462,40 @@ func slackText(n apitypes.AlertNotification) string {
 	if n.Alert.Command != "" && n.Event != "resolved" {
 		text += "\n`" + n.Alert.Command + "`"
 	}
-	return slackEscaper.Replace(text)
+	text = slackEscaper.Replace(text)
+	if link != "" {
+		text += "\n<" + slackEscaper.Replace(link) + "|Open in Dock>"
+	}
+	return text
+}
+
+// alertLink is the UI page of alert a for a channel of org (nil: the
+// platform's): the release it names, else its service, else its server
+// in the console, else the alerts page; "" when Dock has no UI URL
+// (uiURL). An org channel's link costs one indexed read.
+func (c *Core) alertLink(ctx context.Context, org *int64, a apitypes.Alert) string {
+	ui := c.uiURL()
+	switch {
+	case ui == "":
+		return ""
+	case org == nil && a.Server != "":
+		return ui + "/console/servers/" + url.PathEscape(a.Server)
+	case org == nil:
+		return ui + "/console/alerts"
+	}
+	o, err := c.store.GetOrg(ctx, *org)
+	if err != nil {
+		return ""
+	}
+	base := ui + "/" + url.PathEscape(o.Slug)
+	if a.Project == "" || a.Environment == "" || a.Service == "" {
+		return base + "/alerts"
+	}
+	base += "/" + url.PathEscape(a.Project) + "/" + url.PathEscape(a.Environment) + "/" + url.PathEscape(a.Service)
+	if a.Target != nil && a.Target.Release != 0 {
+		return base + "/releases/" + strconv.FormatInt(a.Target.Release, 10)
+	}
+	return base
 }
 
 // slackEscaper escapes Slack's control characters.

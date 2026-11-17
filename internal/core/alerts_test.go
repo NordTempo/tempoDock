@@ -310,12 +310,47 @@ func TestWebhookSignedAtAttempt(t *testing.T) {
 }
 
 // Alert text can quote build output; Slack must show it, not act on it.
+// The one link is Dock's own, to the UI.
 func TestSlackTextIsEscaped(t *testing.T) {
 	got := slackText(apitypes.AlertNotification{Event: "opened", Alert: apitypes.Alert{
 		Severity: apitypes.SeverityWarning, Title: "Deploy of a/b/c failed", Message: "<!channel> <https://evil.example|log in> & retry",
-	}})
-	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry"; got != want {
+	}}, "https://dock.example.com/a&b")
+	if want := "[warning] Deploy of a/b/c failed\n&lt;!channel&gt; &lt;https://evil.example|log in&gt; &amp; retry\n<https://dock.example.com/a&amp;b|Open in Dock>"; got != want {
 		t.Fatalf("slack text = %q", got)
+	}
+}
+
+// Slack alerts link to the page that shows them, once Dock knows its UI's
+// address: the release a deploy alert names, a platform alert's server,
+// else the alerts page.
+func TestAlertLinks(t *testing.T) {
+	h := newHarness(t)
+	org := int64(1)
+	deploy := apitypes.Alert{Project: "shop", Environment: "production", Service: "web", Target: &apitypes.AlertTarget{Release: 7}}
+	if got := h.c.alertLink(h.ctx, &org, deploy); got != "" {
+		t.Fatalf("link without a UI address = %q", got)
+	}
+	h.opts.Config.Hooks.UIURL = "https://dock.example.com"
+	h.restart()
+	o, err := h.store.GetOrg(h.ctx, org)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := "https://dock.example.com"
+	for _, tc := range []struct {
+		org  *int64
+		a    apitypes.Alert
+		want string
+	}{
+		{&org, deploy, ui + "/" + o.Slug + "/shop/production/web/releases/7"},
+		{&org, apitypes.Alert{Project: "shop", Environment: "production", Service: "web"}, ui + "/" + o.Slug + "/shop/production/web"},
+		{&org, apitypes.Alert{Title: "Cloudflare connection cf is failing"}, ui + "/" + o.Slug + "/alerts"},
+		{nil, apitypes.Alert{Server: "edge"}, ui + "/console/servers/edge"},
+		{nil, apitypes.Alert{Title: "Registry push failing"}, ui + "/console/alerts"},
+	} {
+		if got := h.c.alertLink(h.ctx, tc.org, tc.a); got != tc.want {
+			t.Errorf("link for %+v = %q, want %q", tc.a, got, tc.want)
+		}
 	}
 }
 

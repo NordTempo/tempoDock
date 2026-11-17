@@ -182,7 +182,7 @@ dock made, and a few neighbouring gaps are closed.
 No new periodic work: the prune is still a list and removals while a disk
 is full, and archives prune the registry the way deploys do.
 
-## Amendment (2026-11-17): Slack's answers
+## Amendment (2026-11-17): Slack's answers and links
 
 Decided by the agent after testing Slack channels against a mock of
 Slack's incoming webhooks on real servers.
@@ -201,3 +201,7 @@ Slack's incoming webhooks on real servers.
   later alerts, resolutions included. The channel isn't turned off: its
   error shows in `dock alerts channel list` and the UI, and the next
   alert tries again, one request each.
+- **Slack messages link to the UI** (`<url|Open in Dock>`) when Dock
+  knows its UI's address (`[hooks] ui_url`, else its public address): a
+  deploy alert's release, a service's page, a platform alert's server in
+  the console, else the alerts page.
