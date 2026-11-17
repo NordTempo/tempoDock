@@ -1,19 +1,25 @@
 ---
-import { earlyAccessHref } from "../site";
+import { install } from "../site";
 import Button from "./Button.astro";
+import Command from "./Command.astro";
 import Stack from "./Stack.astro";
 ---
 
 <header class="mx-auto grid max-w-[1200px] items-center gap-10 px-6 pt-16 pb-16 md:px-14 lg:grid-cols-[520px_1fr] lg:gap-0 lg:pt-14 lg:pb-12">
-  <div>
+  <!-- min-w-0: the command scrolls in its box instead of widening the column. -->
+  <div class="min-w-0">
     <h1 class="text-[56px] leading-[0.95] font-[650] tracking-[-0.045em] sm:text-[72px] lg:text-[86px]">
       The whole<br />platform.<br />One binary.
     </h1>
     <p class="mt-6 mb-8 max-w-[470px] text-[19px] leading-normal text-sub">
       Deploys, databases, tracing, status pages and agents on servers you own. Idle at 29 MB.
     </p>
+    <Command command={install.server} />
+    <p class="mt-3 mb-7 text-sm text-body">
+      Debian or Ubuntu. Installs Docker if it's missing. Signed releases.
+    </p>
     <div class="flex flex-wrap gap-3">
-      <Button href={earlyAccessHref}>Get early access →</Button>
+      <Button href="#install" variant="secondary">Install the CLI</Button>
       <Button href="#chapters" variant="secondary">See how it works</Button>
     </div>
   </div>

@@ -1,21 +1,27 @@
 ---
-import { earlyAccessHref, site } from "../site";
-import Button from "./Button.astro";
+import { earlyAccessHref, install, site } from "../site";
+import Command from "./Command.astro";
 import Stack from "./Stack.astro";
 ---
 
-<section class="relative overflow-hidden border-t border-line">
+<section id="install" class="relative overflow-hidden border-t border-line">
   <div class="pointer-events-none absolute top-8 right-5 hidden w-[380px] opacity-55 md:block">
     <Stack />
   </div>
   <div class="relative mx-auto max-w-[1200px] px-6 py-24 md:px-14 lg:py-[110px]">
-    <h2 class="text-5xl leading-none font-[650] tracking-[-0.045em] sm:text-[72px]">Your servers.<br />Your platform.</h2>
+    <h2 class="text-5xl leading-none font-[650] tracking-[-0.045em] sm:text-[72px]">Your servers.<br />Your laptop.</h2>
     <p class="mt-6 mb-8 max-w-[460px] text-[19px] leading-normal text-sub">
-      Tempo Dock is in early access. Tell us where you host and we'll help you move in.
+      The server's install ends with your login and this line for your laptop: it installs the CLI your server runs and signs you in.
     </p>
-    <div class="flex flex-wrap items-center gap-5">
-      <Button href={earlyAccessHref}>Get early access →</Button>
-      <a href={earlyAccessHref} class="font-mono text-sm text-meta hover:text-white">{site.earlyAccessEmail}</a>
+    <div class="flex max-w-[720px] flex-col gap-2">
+      <Command command={install.cli} />
+      <Command command={install.brew} />
     </div>
+    <p class="mt-5 text-sm text-meta">
+      macOS, Linux, Windows in WSL{" · "}
+      <a href={site.installGuideUrl} class="text-white hover:underline">Install guide</a>{" · "}
+      Moving a team in?{" "}
+      <a href={earlyAccessHref} class="text-white hover:underline">{site.earlyAccessEmail}</a>
+    </p>
   </div>
 </section>
