@@ -27,15 +27,10 @@ guard
 say() { printf '\n== %s\n' "$*"; }
 die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 
-# save_credentials keeps install.sh's operator token and admin password and
-# puts the host's GitHub token where the updater reads it.
+# save_credentials keeps install.sh's operator token and admin password.
 save_credentials() {
   grep -o 'dock_[A-Za-z0-9_-]*' $U/install.out | head -1 > $U/admin.token
   grep -o 'password [^ ]*' $U/install.err | awk '{print $2}' > $U/admin.password
-  if [[ -f $U/ghtok ]]; then
-    install -m 0640 -o root -g dock $U/ghtok /etc/dock/github-token
-    rm -f $U/ghtok
-  fi
 }
 
 # d runs the dock CLI as the operator.
