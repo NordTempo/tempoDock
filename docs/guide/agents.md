@@ -290,6 +290,9 @@ dock agent set logs=view --agent 42                   # narrow one agent only
 ```
 
 - With no setting, agents may use everything you have but approving.
+- In the Data panel your agents get what the data access policy gives
+  you ([data](data.md)), up to the `data` level you set here: an admin's
+  agent with `data=all` opens tunnels as the admin does.
 - An agent may tighten its setting itself; loosening it takes you, signed
   in on the Account page.
 - A change where you asked to be asked becomes an access request that

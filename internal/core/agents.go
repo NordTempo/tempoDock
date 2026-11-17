@@ -93,6 +93,23 @@ type agentCap struct {
 	// data is the Data panel's level per kind (data.go caps the data
 	// policy's answer with it while it decides data access).
 	data [3]string
+	// person is, for a personal agent, its person's summary role from
+	// their grants before this cap: the role the data policy judges the
+	// agent by (dataScope). Empty for an org agent.
+	person apitypes.Scope
+}
+
+// dataScope is the role the data policy judges the actor by: its Scope,
+// but for a personal agent its person's (ADR 0080, amended 2026-11-17).
+// An agent's own summary is never admin, since agents don't approve by
+// default, and the data policy would take an admin's `dock login` for a
+// deploy user; what the agent uses of its person's data access is its
+// Data panel setting's to say (capAgentData).
+func (a Actor) dataScope() apitypes.Scope {
+	if a.hasGrants && a.agent != nil && a.agent.person != "" {
+		return a.agent.person
+	}
+	return a.Scope
 }
 
 // capOf works an agent's cap out of its person's setting (settings rows
